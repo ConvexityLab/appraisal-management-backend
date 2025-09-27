@@ -2,17 +2,23 @@
   "name": "appraisal-management-backend",
   "version": "1.0.0",
   "description": "Enterprise Appraisal Management System Backend",
-  "main": "dist/index.js",
+  "main": "dist/app.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "start": "node dist/app.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:verification": "node dist/test-verification.js",
+    "test:perligo": "node dist/perligo-integration-demo.js",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
+    "clean": "rm -rf dist/",
+    "build:clean": "npm run clean && npm run build",
     "docker:build": "docker build -t appraisal-management .",
-    "docker:run": "docker run -p 3000:3000 appraisal-management"
+    "docker:run": "docker run -p 3000:3000 appraisal-management",
+    "container:build": "docker build -t appraisal-management:latest .",
+    "container:run": "docker run -p 3000:3000 --env-file .env appraisal-management:latest"
   },
   "keywords": [
     "appraisal",
