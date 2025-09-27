@@ -46,10 +46,7 @@
     "@azure/event-hubs": "^5.11.2",
     "@azure/identity": "^3.3.0",
     "@azure/keyvault-secrets": "^4.7.0",
-    "@azure/ai-form-recognizer": "^5.0.0",
-    "@azure/cognitiveservices-computervision": "^8.2.0",
-    "@azure/ai-text-analytics": "^5.1.0",
-    "@azure/openai": "^1.0.0-beta.5",
+    "@azure/openai": "^1.0.0-beta.12",
     "perligo": "file:../perligo",
     "perligo-agents": "file:../perligo-agents"
   },

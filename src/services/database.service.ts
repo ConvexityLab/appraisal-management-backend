@@ -1,4 +1,4 @@
-import { AppraisalOrder, Vendor, OrderFilters } from '@/types';
+import { AppraisalOrder, Vendor, OrderFilters } from '../types/index.js';
 
 export interface DatabaseOrderRepository {
   create(order: AppraisalOrder): Promise<AppraisalOrder>;

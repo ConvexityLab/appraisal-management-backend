@@ -1,4 +1,4 @@
-import { AppraisalOrder, Vendor } from '@/types';
+import { AppraisalOrder, Vendor } from '../types/index.js';
 
 export class NotificationService {
   async notifyVendorAssignment(vendorId: string, order: AppraisalOrder): Promise<void> {

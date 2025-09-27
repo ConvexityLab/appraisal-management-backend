@@ -1,5 +1,5 @@
-import { Vendor, AppraisalOrder, ApiResponse, VendorStatus } from '@/types';
-import { DatabaseService } from './database.service';
+import { Vendor, AppraisalOrder, ApiResponse, VendorStatus } from '../types/index.js';
+import { DatabaseService } from './database.service.js';
 
 export class VendorManagementService {
   private db: DatabaseService;

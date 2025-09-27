@@ -1,9 +1,9 @@
-import { AppraisalOrder, OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '@/types';
+import { AppraisalOrder, OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '../types/index.js';
 import { DatabaseService } from './database.service.js';
 import { VendorManagementService } from './vendor-management.service.js';
 import { NotificationService } from './notification.service.js';
 import { AuditService } from './audit.service.js';
-import { Logger } from '@/utils/logger';
+import { Logger } from '../utils/logger.js';
 
 // Simple event emitter implementation
 class SimpleEventEmitter {
