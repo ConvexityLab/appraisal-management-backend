@@ -1,4 +1,4 @@
-import { AppraisalOrder, Vendor, OrderFilters } from '../types/index.js';
+import { AppraisalOrder, Vendor, OrderFilters, PropertyDetails, PropertyAddress } from '../types/index.js';
 
 export interface DatabaseOrderRepository {
   create(order: AppraisalOrder): Promise<AppraisalOrder>;
@@ -16,14 +16,39 @@ export interface DatabaseVendorRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface PropertyRecord {
+  id: string;
+  address: PropertyAddress;
+  details: PropertyDetails;
+  metadata?: Record<string, any>;
+  searchableFields?: string[];
+  coordinates?: { latitude: number; longitude: number };
+  marketData?: any;
+  riskFactors?: any;
+  valuationHistory?: any[];
+  auditTrail?: any[];
+  status?: string;
+}
+
+export interface DatabasePropertyRepository {
+  create(property: PropertyRecord): Promise<PropertyRecord>;
+  findById(id: string): Promise<PropertyRecord | null>;
+  findMany(filters: any, offset: number, limit: number): Promise<{ properties: PropertyRecord[]; total: number }>;
+  update(id: string, property: PropertyRecord): Promise<PropertyRecord>;
+  delete(id: string): Promise<void>;
+  count(filters: any): Promise<number>;
+}
+
 export class DatabaseService {
   public orders: DatabaseOrderRepository;
   public vendors: DatabaseVendorRepository;
+  public properties: DatabasePropertyRepository;
 
   constructor() {
     // These will be implemented with actual database connections
     this.orders = new MockOrderRepository();
     this.vendors = new MockVendorRepository();
+    this.properties = new MockPropertyRepository();
   }
 }
 
@@ -85,5 +110,69 @@ class MockVendorRepository implements DatabaseVendorRepository {
 
   async delete(id: string): Promise<void> {
     this.vendors.delete(id);
+  }
+}
+
+class MockPropertyRepository implements DatabasePropertyRepository {
+  private properties: Map<string, PropertyRecord> = new Map();
+
+  async create(property: PropertyRecord): Promise<PropertyRecord> {
+    this.properties.set(property.id, property);
+    return property;
+  }
+
+  async findById(id: string): Promise<PropertyRecord | null> {
+    return this.properties.get(id) || null;
+  }
+
+  async findMany(filters: any, offset: number, limit: number): Promise<{ properties: PropertyRecord[]; total: number }> {
+    const allProperties = Array.from(this.properties.values());
+    // Apply basic filters
+    let filteredProperties = allProperties;
+    
+    // Filter by status
+    if (filters.status && filters.status.$ne) {
+      filteredProperties = filteredProperties.filter(p => p.status !== filters.status.$ne);
+    }
+    
+    // Filter by property type
+    if (filters['details.propertyType']) {
+      filteredProperties = filteredProperties.filter(p => p.details.propertyType === filters['details.propertyType']);
+    }
+    
+    // Filter by city (case insensitive)
+    if (filters['address.city'] && filters['address.city'].$regex) {
+      const cityRegex = new RegExp(filters['address.city'].$regex, filters['address.city'].$options || '');
+      filteredProperties = filteredProperties.filter(p => cityRegex.test(p.address.city));
+    }
+    
+    const total = filteredProperties.length;
+    const properties = filteredProperties.slice(offset, offset + limit);
+    return { properties, total };
+  }
+
+  async update(id: string, property: PropertyRecord): Promise<PropertyRecord> {
+    this.properties.set(id, property);
+    return property;
+  }
+
+  async delete(id: string): Promise<void> {
+    this.properties.delete(id);
+  }
+
+  async count(filters: any): Promise<number> {
+    const allProperties = Array.from(this.properties.values());
+    let filteredProperties = allProperties;
+    
+    // Apply same filtering logic as findMany
+    if (filters.status && filters.status.$ne) {
+      filteredProperties = filteredProperties.filter(p => p.status !== filters.status.$ne);
+    }
+    
+    if (filters['details.propertyType']) {
+      filteredProperties = filteredProperties.filter(p => p.details.propertyType === filters['details.propertyType']);
+    }
+    
+    return filteredProperties.length;
   }
 }

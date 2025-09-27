@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { createOrderRouter } from './controllers/order.controller.js';
+import { AIMLController } from './controllers/aiml.controller.js';
 import { Logger } from './utils/logger.js';
 import { ApiError } from './types/index.js';
 
@@ -101,6 +102,13 @@ class AppraisalManagementApp {
             'POST /api/orders/:id/assign': 'Assign order to vendor',
             'GET /api/orders/:id/history': 'Get order audit history'
           },
+          ai_ml: {
+            'POST /api/ai/valuation/comprehensive': 'Comprehensive property valuation',
+            'POST /api/ai/qc/comprehensive': 'AI-powered quality control',
+            'GET /api/ai/portfolio/dashboard': 'Portfolio analytics dashboard',
+            'POST /api/ai/agents/deploy': 'Deploy Perligo AI agents',
+            'POST /api/ai/workflows/complete-analysis': 'Complete AI analysis workflow'
+          },
           health: {
             'GET /health': 'System health check'
           }
@@ -108,16 +116,24 @@ class AppraisalManagementApp {
         features: [
           'Comprehensive order lifecycle management',
           'AI-powered vendor assignment',
-          'Automated quality control',
+          'Advanced valuation engine with ML models',
+          'Automated quality control with AI analysis',
+          'Portfolio analytics and predictive insights',
           'Real-time event notifications',
           'Comprehensive audit trails',
-          'Perligo AI agent integration'
+          'Production-ready Perligo AI agent integration',
+          'Multi-layer quality control automation',
+          'Advanced reporting and market intelligence'
         ]
       });
     });
 
     // Order management routes
     this.app.use('/api/orders', createOrderRouter());
+
+    // AI/ML services routes
+    const aimlController = new AIMLController();
+    this.app.use('/api/ai', aimlController.initializeRoutes());
 
     // 404 handler for undefined routes
     this.app.use('*', (req: Request, res: Response) => {
