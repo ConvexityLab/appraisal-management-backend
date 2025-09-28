@@ -670,4 +670,284 @@ export class EnhancedPropertyIntelligenceController {
       });
     }
   };
+
+  // ===========================
+  // CENSUS INTELLIGENCE SERVICES
+  // ===========================
+
+  /**
+   * POST /api/property-intelligence/census/demographics
+   * Get comprehensive demographic analysis using U.S. Census data
+   */
+  getCensusDemographics = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { latitude, longitude, propertyId } = req.body;
+
+      if (!latitude || !longitude) {
+        res.status(400).json({
+          success: false,
+          error: 'Latitude and longitude are required'
+        });
+        return;
+      }
+
+      const coordinates: Coordinates = { latitude, longitude };
+      const startTime = Date.now();
+
+      this.logger.info('Census demographics request received', { propertyId, coordinates });
+
+      const demographics = await this.multiProviderService.getDemographicIntelligence(coordinates, propertyId);
+
+      res.json({
+        success: true,
+        data: demographics,
+        metadata: {
+          processingTime: Date.now() - startTime,
+          dataSource: 'U.S. Census Bureau ACS 2022',
+          geographicLevel: 'Census Block Group',
+          lastUpdated: new Date(),
+          propertyId
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Census demographics analysis failed', { error, body: req.body });
+      res.status(500).json({
+        success: false,
+        error: 'Census demographic analysis failed'
+      });
+    }
+  };
+
+  /**
+   * POST /api/property-intelligence/census/economics
+   * Get economic vitality analysis using Census economic data
+   */
+  getCensusEconomics = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { latitude, longitude, propertyId } = req.body;
+
+      if (!latitude || !longitude) {
+        res.status(400).json({
+          success: false,
+          error: 'Latitude and longitude are required'
+        });
+        return;
+      }
+
+      const coordinates: Coordinates = { latitude, longitude };
+      const startTime = Date.now();
+
+      this.logger.info('Census economics request received', { propertyId, coordinates });
+
+      const economics = await this.multiProviderService.getEconomicIntelligence(coordinates, propertyId);
+
+      res.json({
+        success: true,
+        data: economics,
+        metadata: {
+          processingTime: Date.now() - startTime,
+          dataSource: 'U.S. Census Bureau ACS 2022',
+          geographicLevel: 'Census Block Group',
+          lastUpdated: new Date(),
+          propertyId
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Census economics analysis failed', { error, body: req.body });
+      res.status(500).json({
+        success: false,
+        error: 'Census economic analysis failed'
+      });
+    }
+  };
+
+  /**
+   * POST /api/property-intelligence/census/housing
+   * Get housing market analysis using Census housing data
+   */
+  getCensusHousing = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { latitude, longitude, propertyId } = req.body;
+
+      if (!latitude || !longitude) {
+        res.status(400).json({
+          success: false,
+          error: 'Latitude and longitude are required'
+        });
+        return;
+      }
+
+      const coordinates: Coordinates = { latitude, longitude };
+      const startTime = Date.now();
+
+      this.logger.info('Census housing request received', { propertyId, coordinates });
+
+      const housing = await this.multiProviderService.getHousingIntelligence(coordinates, propertyId);
+
+      res.json({
+        success: true,
+        data: housing,
+        metadata: {
+          processingTime: Date.now() - startTime,
+          dataSource: 'U.S. Census Bureau ACS 2022',
+          geographicLevel: 'Census Block Group',
+          lastUpdated: new Date(),
+          propertyId
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Census housing analysis failed', { error, body: req.body });
+      res.status(500).json({
+        success: false,
+        error: 'Census housing analysis failed'
+      });
+    }
+  };
+
+  /**
+   * POST /api/property-intelligence/census/comprehensive
+   * Get comprehensive Census intelligence analysis combining demographics, economics, and housing
+   */
+  getComprehensiveCensusIntelligence = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { latitude, longitude, propertyId } = req.body;
+
+      if (!latitude || !longitude) {
+        res.status(400).json({
+          success: false,
+          error: 'Latitude and longitude are required'
+        });
+        return;
+      }
+
+      const coordinates: Coordinates = { latitude, longitude };
+      const startTime = Date.now();
+
+      this.logger.info('Comprehensive Census intelligence request received', { propertyId, coordinates });
+
+      const analysis = await this.multiProviderService.getComprehensiveCensusIntelligence(coordinates, propertyId);
+
+      res.json({
+        success: true,
+        data: {
+          ...analysis,
+          summary: {
+            overallCommunityScore: analysis.overallCommunityScore,
+            demographicCompatibility: analysis.demographics.demographicCompatibilityScore,
+            economicVitality: analysis.economics.economicVitalityScore,
+            housingMarketStrength: analysis.housing.housingMarketScore,
+            keyInsights: this.generateCensusInsights(analysis),
+            investmentRecommendations: this.generateInvestmentRecommendations(analysis)
+          }
+        },
+        metadata: {
+          processingTime: Date.now() - startTime,
+          dataSource: 'U.S. Census Bureau ACS 2022 + Decennial Census 2020',
+          geographicLevel: 'Census Block Group',
+          analysisComponents: ['demographics', 'economics', 'housing'],
+          lastUpdated: new Date(),
+          propertyId
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Comprehensive Census intelligence analysis failed', { error, body: req.body });
+      res.status(500).json({
+        success: false,
+        error: 'Comprehensive Census intelligence analysis failed'
+      });
+    }
+  };
+
+  // ===========================
+  // CENSUS ANALYSIS UTILITIES
+  // ===========================
+
+  /**
+   * Generate actionable insights from comprehensive Census analysis
+   */
+  private generateCensusInsights(analysis: {
+    demographics: any;
+    economics: any;
+    housing: any;
+    overallCommunityScore: number;
+  }): string[] {
+    const insights: string[] = [];
+
+    // Demographic insights
+    if (analysis.demographics.diversityMetrics.racialDiversityIndex > 70) {
+      insights.push('Highly diverse community with strong multicultural presence');
+    }
+    if (analysis.demographics.populationCharacteristics.ageDistribution.age18to34 > 30) {
+      insights.push('Young professional population suggests dynamic, growing community');
+    }
+
+    // Economic insights  
+    if (analysis.economics.economicVitalityScore > 75) {
+      insights.push('Strong economic fundamentals with stable employment base');
+    }
+    if (analysis.economics.incomeMetrics.medianHouseholdIncome > 75000) {
+      insights.push('Above-average household income indicates affluent neighborhood');
+    }
+
+    // Housing insights
+    if (analysis.housing.housingStock.ownerOccupiedRate > 70) {
+      insights.push('High homeownership rate suggests stable, established community');
+    }
+    if (analysis.housing.housingAffordability.housingCostBurden.over50percent < 15) {
+      insights.push('Excellent housing affordability with low cost burden');
+    }
+
+    // Overall community insights
+    if (analysis.overallCommunityScore > 80) {
+      insights.push('Exceptional community characteristics ideal for long-term investment');
+    } else if (analysis.overallCommunityScore > 60) {
+      insights.push('Strong community fundamentals with good investment potential');
+    }
+
+    return insights;
+  }
+
+  /**
+   * Generate investment recommendations based on Census analysis
+   */
+  private generateInvestmentRecommendations(analysis: {
+    demographics: any;
+    economics: any;
+    housing: any;
+    overallCommunityScore: number;
+  }): string[] {
+    const recommendations: string[] = [];
+
+    // High-scoring communities
+    if (analysis.overallCommunityScore > 75) {
+      recommendations.push('Strongly recommended for long-term investment');
+      recommendations.push('Consider premium property types given strong community fundamentals');
+    }
+
+    // Economic strength indicators
+    if (analysis.economics.economicVitalityScore > 70 && analysis.economics.incomeMetrics.medianHouseholdIncome > 60000) {
+      recommendations.push('Economic stability supports property value appreciation');
+    }
+
+    // Demographic opportunity indicators
+    if (analysis.demographics.populationCharacteristics.ageDistribution.age25to54 > 40) {
+      recommendations.push('Prime demographic for rental property investment');
+    }
+
+    // Housing market indicators
+    if (analysis.housing.housingStock.vacancyRate < 8 && analysis.housing.housingMarketScore > 65) {
+      recommendations.push('Tight housing market indicates strong rental demand');
+    }
+
+    // Risk considerations
+    if (analysis.economics.employmentCharacteristics.unemploymentRate > 8) {
+      recommendations.push('Monitor economic conditions - elevated unemployment may impact demand');
+    }
+
+    return recommendations;
+  }
 }

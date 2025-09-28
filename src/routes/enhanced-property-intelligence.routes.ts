@@ -200,4 +200,52 @@ router.use((error: any, req: any, res: any, next: any) => {
   });
 });
 
+// ===========================
+// CENSUS INTELLIGENCE ROUTES
+// ===========================
+
+/**
+ * POST /census/demographics
+ * Get comprehensive demographic analysis using U.S. Census data
+ * Rate limited to 30 requests per minute per IP
+ */
+router.post('/census/demographics',
+  rateLimiter(30),
+  validateCoordinates,
+  controller.getCensusDemographics
+);
+
+/**
+ * POST /census/economics  
+ * Get economic vitality analysis using Census economic data
+ * Rate limited to 30 requests per minute per IP
+ */
+router.post('/census/economics',
+  rateLimiter(30),
+  validateCoordinates,
+  controller.getCensusEconomics
+);
+
+/**
+ * POST /census/housing
+ * Get housing market analysis using Census housing data
+ * Rate limited to 30 requests per minute per IP
+ */
+router.post('/census/housing',
+  rateLimiter(30),
+  validateCoordinates,
+  controller.getCensusHousing
+);
+
+/**
+ * POST /census/comprehensive
+ * Get comprehensive Census intelligence analysis combining demographics, economics, and housing
+ * Rate limited to 20 requests per minute per IP (more intensive analysis)
+ */
+router.post('/census/comprehensive',
+  rateLimiter(20),
+  validateCoordinates,
+  controller.getComprehensiveCensusIntelligence
+);
+
 export { router as enhancedPropertyIntelligenceRoutes };

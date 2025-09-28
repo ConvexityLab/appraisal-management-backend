@@ -598,3 +598,262 @@ export interface POISearchResult {
   website?: string;
   attributes: Record<string, any>;
 }
+
+// ===========================
+// U.S. CENSUS DATA INTELLIGENCE TYPES
+// ===========================
+
+export interface DemographicIntelligence {
+  demographicCompatibilityScore: number; // 0-100
+  
+  populationCharacteristics: {
+    totalPopulation: number;
+    populationDensity: number; // per sq mile
+    populationGrowthRate: number; // 5-year trend
+    ageDistribution: {
+      under18: number;
+      age18to34: number;
+      age35to54: number;
+      age55to74: number;
+      over75: number;
+      medianAge: number;
+    };
+    generationalMix: {
+      genZ: number; // % under 25
+      millennials: number; // % 25-40
+      genX: number; // % 41-56
+      boomers: number; // % 57-75
+      silent: number; // % over 75
+    };
+  };
+
+  householdComposition: {
+    averageHouseholdSize: number;
+    familyHouseholds: number; // percentage
+    singlePersonHouseholds: number;
+    householdsWithChildren: number;
+    marriedCoupleHouseholds: number;
+    singleParentHouseholds: number;
+  };
+
+  diversityMetrics: {
+    racialDiversityIndex: number; // 0-100 (Simpson's Diversity Index)
+    ethnicComposition: {
+      white: number;
+      black: number;
+      hispanic: number;
+      asian: number;
+      nativeAmerican: number;
+      pacificIslander: number;
+      multiracial: number;
+    };
+    languageDiversity: {
+      englishOnly: number;
+      spanish: number;
+      otherLanguages: number;
+      linguisticIsolation: number; // households with limited English
+    };
+  };
+}
+
+export interface EconomicIntelligence {
+  economicVitalityScore: number; // 0-100
+  
+  incomeMetrics: {
+    medianHouseholdIncome: number;
+    perCapitaIncome: number;
+    incomeDistribution: {
+      under25k: number;
+      income25to50k: number;
+      income50to75k: number;
+      income75to100k: number;
+      income100to150k: number;
+      over150k: number;
+    };
+    incomeGrowthRate: number; // 5-year trend
+    giniCoefficient: number; // income inequality measure
+  };
+
+  employmentCharacteristics: {
+    unemploymentRate: number;
+    laborForceParticipation: number;
+    employmentByIndustry: {
+      professional: number;
+      healthcare: number;
+      retail: number;
+      manufacturing: number;
+      education: number;
+      government: number;
+      technology: number;
+      finance: number;
+    };
+    workFromHomeRate: number; // % working from home
+    commuteTimes: {
+      averageCommuteMinutes: number;
+      under15min: number;
+      over60min: number;
+    };
+  };
+
+  economicStability: {
+    povertyRate: number;
+    publicAssistanceRate: number;
+    snapBenefitsRate: number; // food assistance
+    medicaidCoverage: number;
+    economicMobilityIndex: number; // opportunity for advancement
+  };
+}
+
+export interface HousingIntelligence {
+  housingMarketScore: number; // 0-100
+  
+  housingStock: {
+    totalHousingUnits: number;
+    occupancyRate: number;
+    vacancyRate: number;
+    ownerOccupiedRate: number;
+    renterOccupiedRate: number;
+    
+    housingTypes: {
+      singleFamily: number; // percentage
+      townhouse: number;
+      smallApartment: number; // 2-4 units
+      largeApartment: number; // 5+ units
+      mobileHome: number;
+      other: number;
+    };
+    
+    housingAge: {
+      built2020orLater: number;
+      built2010to2019: number;
+      built2000to2009: number;
+      built1990to1999: number;
+      built1980to1989: number;
+      built1970to1979: number;
+      builtBefore1970: number;
+    };
+  };
+
+  housingAffordability: {
+    medianHomeValue: number;
+    medianGrossRent: number;
+    housingCostBurden: {
+      under30percent: number; // paying <30% income on housing
+      percent30to50: number;  // paying 30-50% income on housing
+      over50percent: number;   // paying >50% income on housing
+    };
+    rentToIncomeRatio: number;
+    homeValueToIncomeRatio: number;
+  };
+
+  housingTrends: {
+    homeValueGrowthRate: number; // 5-year trend
+    rentGrowthRate: number;
+    newConstructionRate: number;
+    movingTurnoverRate: number; // % moved in last year
+  };
+}
+
+export interface EducationIntelligence {
+  educationEcosystemScore: number; // 0-100
+  
+  educationalAttainment: {
+    lessThanHighSchool: number;
+    highSchoolGraduate: number;
+    someCollege: number;
+    associateDegree: number;
+    bachelorsDegree: number;
+    graduateDegree: number;
+    medianEducationLevel: number;
+  };
+
+  schoolAgePopulation: {
+    ages3to4: number; // preschool age
+    ages5to9: number; // elementary
+    ages10to14: number; // middle school
+    ages15to17: number; // high school
+    ages18to24: number; // college age
+    schoolEnrollment: {
+      preschool: number;
+      elementary: number;
+      highSchool: number;
+      college: number;
+    };
+  };
+
+  educationInvestment: {
+    familiesWithSchoolAgeChildren: number;
+    educationExpenditures: number; // household spending on education
+    privateSchoolEnrollment: number; // percentage
+    homeschoolRate: number;
+  };
+
+  intellectualEnvironment: {
+    publicLibraryUsage: number;
+    internetSubscriptions: number;
+    computerOwnership: number;
+    educationalServices: number; // tutoring, test prep businesses
+  };
+}
+
+export interface MobilityIntelligence {
+  populationStabilityScore: number; // 0-100
+  
+  migrationPatterns: {
+    sameHouse1YearAgo: number; // stability indicator
+    movedWithinCounty: number;
+    movedFromOtherCounty: number;
+    movedFromOtherState: number;
+    movedFromAbroad: number;
+    
+    inMigrationRate: number; // people moving in
+    outMigrationRate: number; // people moving out
+    netMigrationRate: number; // net change
+  };
+
+  residentialStability: {
+    averageResidenceLength: number;
+    homeownershipRate: number;
+    rentalTurnover: number;
+    neighborhoodTenure: {
+      under2years: number;
+      years2to5: number;
+      years6to10: number;
+      years11to20: number;
+      over20years: number;
+    };
+  };
+
+  attractionFactors: {
+    jobRelatedMoves: number;
+    familyRelatedMoves: number;
+    retirementMoves: number;
+    housingRelatedMoves: number;
+    climateRelatedMoves: number;
+  };
+
+  originDestinationAnalysis: {
+    topOriginStates: string[];
+    topDestinationStates: string[];
+    internationalMigration: number;
+    domesticMigration: number;
+  };
+}
+
+export interface CensusGeographicIdentifier {
+  state: string;
+  county: string;
+  tract: string;
+  blockGroup?: string;
+  block?: string;
+}
+
+export interface CensusDataRequest {
+  variables: string[];
+  geography: {
+    level: 'block' | 'blockGroup' | 'tract' | 'county' | 'state';
+    codes: CensusGeographicIdentifier;
+  };
+  year: number;
+  dataset: 'acs5' | 'acs1' | 'dec' | 'popest';
+}

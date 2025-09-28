@@ -13,6 +13,7 @@
 
 import { Logger } from '../utils/logger';
 import { GenericCacheService } from './cache/generic-cache.service';
+import { CensusIntelligenceService } from './census-intelligence.service';
 import { Coordinates } from '../types/geospatial';
 import {
   ViewAnalysis,
@@ -21,7 +22,10 @@ import {
   ProximityAnalysis,
   QualityOfLifeAnalysis,
   POISearchResult,
-  PropertyIntelligence
+  PropertyIntelligence,
+  DemographicIntelligence,
+  EconomicIntelligence,
+  HousingIntelligence
 } from '../types/property-intelligence';
 
 export interface DataProvider {
@@ -50,6 +54,7 @@ export interface ProviderResult<T> {
 export class MultiProviderPropertyIntelligenceService {
   private logger: Logger;
   private cache: GenericCacheService;
+  private censusService: CensusIntelligenceService;
   
   // Provider configurations
   private providers!: {
@@ -112,6 +117,7 @@ export class MultiProviderPropertyIntelligenceService {
   constructor() {
     this.logger = new Logger();
     this.cache = new GenericCacheService();
+    this.censusService = new CensusIntelligenceService();
     
     this.initializeProviders();
   }
@@ -1055,5 +1061,98 @@ export class MultiProviderPropertyIntelligenceService {
       uniqueCharacteristics: [],
       investmentRecommendations: []
     };
+  }
+
+  // ===========================
+  // CENSUS INTELLIGENCE METHODS
+  // ===========================
+
+  /**
+   * Get comprehensive demographic analysis using U.S. Census data
+   */
+  async getDemographicIntelligence(coordinates: Coordinates, propertyId?: string): Promise<DemographicIntelligence> {
+    try {
+      this.logger.info('Fetching Census demographic intelligence', { propertyId, coordinates });
+      return await this.censusService.analyzeDemographics(coordinates, propertyId);
+    } catch (error) {
+      this.logger.error('Census demographic analysis failed', { error, propertyId, coordinates });
+      throw error;
+    }
+  }
+
+  /**
+   * Get economic vitality analysis using Census economic data
+   */
+  async getEconomicIntelligence(coordinates: Coordinates, propertyId?: string): Promise<EconomicIntelligence> {
+    try {
+      this.logger.info('Fetching Census economic intelligence', { propertyId, coordinates });
+      return await this.censusService.analyzeEconomicVitality(coordinates, propertyId);
+    } catch (error) {
+      this.logger.error('Census economic analysis failed', { error, propertyId, coordinates });
+      throw error;
+    }
+  }
+
+  /**
+   * Get housing market analysis using Census housing data
+   */
+  async getHousingIntelligence(coordinates: Coordinates, propertyId?: string): Promise<HousingIntelligence> {
+    try {
+      this.logger.info('Fetching Census housing intelligence', { propertyId, coordinates });
+      return await this.censusService.analyzeHousingMarket(coordinates, propertyId);
+    } catch (error) {
+      this.logger.error('Census housing analysis failed', { error, propertyId, coordinates });
+      throw error;
+    }
+  }
+
+  /**
+   * Comprehensive Census intelligence analysis combining demographics, economics, and housing
+   */
+  async getComprehensiveCensusIntelligence(coordinates: Coordinates, propertyId?: string): Promise<{
+    demographics: DemographicIntelligence;
+    economics: EconomicIntelligence;
+    housing: HousingIntelligence;
+    overallCommunityScore: number;
+  }> {
+    try {
+      this.logger.info('Starting comprehensive Census intelligence analysis', { propertyId, coordinates });
+
+      // Fetch all Census data in parallel
+      const [demographics, economics, housing] = await Promise.all([
+        this.censusService.analyzeDemographics(coordinates, propertyId),
+        this.censusService.analyzeEconomicVitality(coordinates, propertyId),
+        this.censusService.analyzeHousingMarket(coordinates, propertyId)
+      ]);
+
+      // Calculate overall community score
+      const overallCommunityScore = Math.round(
+        (demographics.demographicCompatibilityScore * 0.35 +
+         economics.economicVitalityScore * 0.35 +
+         housing.housingMarketScore * 0.30)
+      );
+
+      const result = {
+        demographics,
+        economics,
+        housing,
+        overallCommunityScore
+      };
+
+      this.logger.info('Comprehensive Census intelligence analysis completed', {
+        propertyId,
+        coordinates,
+        overallCommunityScore,
+        demographicScore: demographics.demographicCompatibilityScore,
+        economicScore: economics.economicVitalityScore,
+        housingScore: housing.housingMarketScore
+      });
+
+      return result;
+
+    } catch (error) {
+      this.logger.error('Comprehensive Census intelligence analysis failed', { error, propertyId, coordinates });
+      throw new Error('Census intelligence analysis service unavailable');
+    }
   }
 }
