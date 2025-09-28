@@ -14,6 +14,7 @@ import {
 } from '../types/events';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber';
 import { ServiceBusEventPublisher } from './service-bus-publisher';
+import { WebPubSubService, WebSocketConnectionManager } from './web-pubsub.service';
 import { Logger } from '../utils/logger';
 
 export interface NotificationRule {
@@ -31,6 +32,7 @@ export interface NotificationRule {
 
 export interface NotificationServiceConfig {
   serviceBusConnectionString?: string;
+  webPubSubConnectionString?: string;
   enableWebSockets?: boolean;
   enableEmail?: boolean;
   enableSMS?: boolean;
@@ -40,6 +42,8 @@ export interface NotificationServiceConfig {
 export class NotificationService {
   private subscriber: ServiceBusEventSubscriber;
   private publisher: ServiceBusEventPublisher;
+  private webPubSub: WebPubSubService;
+  private connectionManager: WebSocketConnectionManager;
   private logger: Logger;
   private rules: Map<string, NotificationRule[]> = new Map();
   private throttleMap: Map<string, number> = new Map();
@@ -59,6 +63,19 @@ export class NotificationService {
       config.serviceBusConnectionString,
       'notification-events'
     );
+
+    // Initialize Web PubSub services
+    const webPubSubConfig: any = {
+      hubName: 'appraisal-notifications',
+      enableLocalEmulation: true
+    };
+    if (config.webPubSubConnectionString) {
+      webPubSubConfig.connectionString = config.webPubSubConnectionString;
+    }
+    
+    this.webPubSub = new WebPubSubService(webPubSubConfig);
+    
+    this.connectionManager = new WebSocketConnectionManager(this.webPubSub);
 
     this.setupDefaultRules();
   }
@@ -330,10 +347,35 @@ export class NotificationService {
   }
 
   private async sendWebSocketNotifications(notifications: NotificationMessage[]): Promise<void> {
-    // For now, just log the WebSocket notifications - we'll implement WebPubSub integration next
-    this.logger.info(`Sending ${notifications.length} WebSocket notifications`, {
-      notifications: notifications.map(n => ({ id: n.id, title: n.title, priority: n.priority }))
-    });
+    try {
+      for (const notification of notifications) {
+        // Check if notification has specific user targeting
+        const userId = notification.data?.userId;
+        const userRole = notification.data?.userRole;
+        const group = notification.data?.group;
+
+        if (userId) {
+          // Send to specific user
+          await this.webPubSub.sendToUser(userId, notification);
+        } else if (userRole) {
+          // Send to users with specific role
+          await this.connectionManager.sendRoleBasedNotification(userRole, notification);
+        } else if (group) {
+          // Send to specific group
+          await this.webPubSub.sendToGroup(group, notification);
+        } else {
+          // Broadcast to all connected clients
+          await this.webPubSub.broadcastNotification(notification);
+        }
+      }
+
+      this.logger.info(`Sent ${notifications.length} WebSocket notifications via Web PubSub`, {
+        notifications: notifications.map(n => ({ id: n.id, title: n.title, priority: n.priority }))
+      });
+    } catch (error) {
+      this.logger.error('Failed to send WebSocket notifications', { error, notificationCount: notifications.length });
+      throw error;
+    }
   }
 
   private async sendEmailNotifications(notifications: NotificationMessage[]): Promise<void> {
@@ -357,6 +399,52 @@ export class NotificationService {
     });
   }
 
+  // WebSocket connection management
+  async connectUser(userId: string, userRole: string): Promise<string> {
+    try {
+      const accessUrl = await this.connectionManager.handleUserConnection(userId, userRole);
+      
+      // Send welcome message
+      await this.webPubSub.sendToUser(userId, {
+        id: `welcome-${Date.now()}`,
+        title: 'Connected to Appraisal Management System',
+        message: `Welcome! You are now connected to real-time notifications.`,
+        priority: EventPriority.LOW,
+        category: EventCategory.SYSTEM,
+        targets: [{ channel: NotificationChannel.WEBSOCKET, address: accessUrl }],
+        data: { userId, userRole, connectionTime: new Date() }
+      });
+
+      return accessUrl;
+    } catch (error) {
+      this.logger.error('Failed to connect user', { error, userId, userRole });
+      throw error;
+    }
+  }
+
+  async disconnectUser(userId: string): Promise<void> {
+    try {
+      await this.connectionManager.handleUserDisconnection(userId);
+    } catch (error) {
+      this.logger.error('Failed to disconnect user', { error, userId });
+      throw error;
+    }
+  }
+
+  async broadcastSystemMessage(message: string, priority: EventPriority = EventPriority.NORMAL): Promise<void> {
+    const systemNotification: NotificationMessage = {
+      id: `system-${Date.now()}`,
+      title: 'System Notification',
+      message,
+      priority,
+      category: EventCategory.SYSTEM,
+      targets: [{ channel: NotificationChannel.WEBSOCKET, address: 'broadcast' }],
+      data: { timestamp: new Date(), source: 'notification-service' }
+    };
+
+    await this.webPubSub.broadcastNotification(systemNotification);
+  }
+
   // Helper methods
   getTotalRuleCount(): number {
     return Array.from(this.rules.values()).reduce((total, rules) => total + rules.length, 0);
@@ -367,6 +455,13 @@ export class NotificationService {
       eventType,
       ruleCount: rules.length
     }));
+  }
+
+  getWebSocketStats(): any {
+    return {
+      connectionStats: this.connectionManager.getConnectionStats(),
+      hubStats: this.webPubSub.getHubStats()
+    };
   }
 }
 
