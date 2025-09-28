@@ -121,6 +121,7 @@ export class CosmosDbService {
 
   /**
    * Create containers with optimal partition keys and indexing policies
+   * Uses simplified indexing for emulator, complex for production
    */
   private async initializeContainers(): Promise<void> {
     if (!this.database) {
@@ -128,46 +129,68 @@ export class CosmosDbService {
     }
 
     try {
-      // Orders container
-      const { container: ordersContainer } = await this.database.containers.createIfNotExists({
+      const isEmulator = this.endpoint.includes('localhost') || this.endpoint.includes('127.0.0.1');
+      
+      // Orders container with environment-specific configuration
+      const ordersContainerDef: any = {
         id: this.containers.orders,
-        partitionKey: '/status', // Partition by order status for even distribution
-        indexingPolicy: {
+        partitionKey: '/clientId' // Partition by clientId for better distribution
+      };
+
+      if (isEmulator) {
+        // Simple indexing for emulator compatibility
+        ordersContainerDef.indexingPolicy = {
           indexingMode: 'consistent',
           automatic: true,
-          includedPaths: [
-            { path: '/*' }
-          ],
-          excludedPaths: [
-            { path: '/property/details/*' }, // Exclude large nested objects from indexing
-            { path: '/attachments/*' }
-          ],
+          includedPaths: [{ path: '/*' }]
+        };
+        this.logger.info('Using simplified indexing for emulator');
+      } else {
+        // Production indexing with composite indexes
+        ordersContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
           compositeIndexes: [
             [
               { path: '/status', order: 'ascending' },
+              { path: '/dueDate', order: 'ascending' }
+            ],
+            [
+              { path: '/priority', order: 'ascending' },
               { path: '/createdAt', order: 'descending' }
             ],
             [
-              { path: '/assignedVendorId', order: 'ascending' },
-              { path: '/dueDate', order: 'ascending' }
+              { path: '/clientId', order: 'ascending' },
+              { path: '/status', order: 'ascending' }
             ]
           ]
-        }
-      });
+        };
+        this.logger.info('Using production indexing with composite indexes');
+      }
+
+      const { container: ordersContainer } = await this.database.containers.createIfNotExists(ordersContainerDef);
       this.ordersContainer = ordersContainer;
 
-      // Vendors container
-      const { container: vendorsContainer } = await this.database.containers.createIfNotExists({
+      // Vendors container with environment-specific configuration
+      const vendorsContainerDef: any = {
         id: this.containers.vendors,
-        partitionKey: '/licenseState', // Partition by license state for geographic distribution
-        indexingPolicy: {
+        partitionKey: '/licenseState'
+      };
+
+      if (isEmulator) {
+        vendorsContainerDef.indexingPolicy = {
           indexingMode: 'consistent',
           automatic: true,
-          includedPaths: [
-            { path: '/*' }
-          ],
+          includedPaths: [{ path: '/*' }]
+        };
+      } else {
+        vendorsContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
           excludedPaths: [
-            { path: '/bankingInfo/*' }, // Exclude sensitive data from indexing
+            { path: '/bankingInfo/*' },
             { path: '/insuranceInfo/documents/*' }
           ],
           compositeIndexes: [
@@ -177,24 +200,32 @@ export class CosmosDbService {
             ],
             [
               { path: '/licenseState', order: 'ascending' },
-              { path: '/productTypes', order: 'ascending' }
+              { path: '/serviceTypes', order: 'ascending' }
             ]
           ]
-        }
-      });
+        };
+      }
+
+      const { container: vendorsContainer } = await this.database.containers.createIfNotExists(vendorsContainerDef);
       this.vendorsContainer = vendorsContainer;
 
-      // Property Summaries container (lightweight, frequently accessed)
-      const { container: propertySummariesContainer } = await this.database.containers.createIfNotExists({
+      // Property Summaries container with environment-specific configuration
+      const propertySummariesContainerDef: any = {
         id: this.containers.propertySummaries,
-        partitionKey: '/address/state', // Partition by state for geographic queries
-        indexingPolicy: {
+        partitionKey: '/address/state'
+      };
+
+      if (isEmulator) {
+        propertySummariesContainerDef.indexingPolicy = {
           indexingMode: 'consistent',
           automatic: true,
-          includedPaths: [
-            { path: '/*' }
-          ],
-          // Remove spatial indexes for emulator compatibility
+          includedPaths: [{ path: '/*' }]
+        };
+      } else {
+        propertySummariesContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
           compositeIndexes: [
             [
               { path: '/address/state', order: 'ascending' },
@@ -203,45 +234,59 @@ export class CosmosDbService {
             [
               { path: '/propertyType', order: 'ascending' },
               { path: '/valuation/estimatedValue', order: 'descending' }
-            ],
-            [
-              { path: '/address/city', order: 'ascending' },
-              { path: '/building/yearBuilt', order: 'descending' }
             ]
           ]
-        }
-      });
+        };
+      }
+
+      const { container: propertySummariesContainer } = await this.database.containers.createIfNotExists(propertySummariesContainerDef);
       this.propertySummariesContainer = propertySummariesContainer;
 
-      // Properties container (comprehensive details, less frequently accessed)
-      const { container: propertiesContainer } = await this.database.containers.createIfNotExists({
+      // Properties container with environment-specific configuration
+      const propertiesContainerDef: any = {
         id: this.containers.properties,
-        partitionKey: '/address/state',
-        indexingPolicy: {
+        partitionKey: '/address/state'
+      };
+
+      if (isEmulator) {
+        propertiesContainerDef.indexingPolicy = {
           indexingMode: 'consistent',
           automatic: true,
-          includedPaths: [
-            { path: '/*' }
-          ],
+          includedPaths: [{ path: '/*' }]
+        };
+      } else {
+        propertiesContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
           excludedPaths: [
-            { path: '/deedHistory/*' }, // Large historical data
+            { path: '/deedHistory/*' },
             { path: '/demographics/*' },
             { path: '/mortgageHistory/*' }
           ]
-        }
-      });
+        };
+      }
+
+      const { container: propertiesContainer } = await this.database.containers.createIfNotExists(propertiesContainerDef);
       this.propertiesContainer = propertiesContainer;
 
-      // QC Results container
-      const { container: qcResultsContainer } = await this.database.containers.createIfNotExists({
+      // QC Results container with environment-specific configuration
+      const qcResultsContainerDef: any = {
         id: this.containers.qcResults,
-        partitionKey: '/orderId',
-        indexingPolicy: {
+        partitionKey: '/orderId'
+      };
+
+      if (isEmulator) {
+        qcResultsContainerDef.indexingPolicy = {
           indexingMode: 'consistent',
           automatic: true,
-          includedPaths: [
-            { path: '/*' }
-          ],
+          includedPaths: [{ path: '/*' }]
+        };
+      } else {
+        qcResultsContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
           compositeIndexes: [
             [
               { path: '/orderId', order: 'ascending' },
@@ -252,20 +297,29 @@ export class CosmosDbService {
               { path: '/validatedAt', order: 'descending' }
             ]
           ]
-        }
-      });
+        };
+      }
+
+      const { container: qcResultsContainer } = await this.database.containers.createIfNotExists(qcResultsContainerDef);
       this.qcResultsContainer = qcResultsContainer;
 
-      // Analytics container
-      const { container: analyticsContainer } = await this.database.containers.createIfNotExists({
+      // Analytics container with environment-specific configuration
+      const analyticsContainerDef: any = {
         id: this.containers.analytics,
-        partitionKey: '/reportType',
-        indexingPolicy: {
+        partitionKey: '/reportType'
+      };
+
+      if (isEmulator) {
+        analyticsContainerDef.indexingPolicy = {
           indexingMode: 'consistent',
           automatic: true,
-          includedPaths: [
-            { path: '/*' }
-          ],
+          includedPaths: [{ path: '/*' }]
+        };
+      } else {
+        analyticsContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
           compositeIndexes: [
             [
               { path: '/reportType', order: 'ascending' },
@@ -276,8 +330,10 @@ export class CosmosDbService {
               { path: '/dateRange/to', order: 'descending' }
             ]
           ]
-        }
-      });
+        };
+      }
+
+      const { container: analyticsContainer } = await this.database.containers.createIfNotExists(analyticsContainerDef);
       this.analyticsContainer = analyticsContainer;
 
       this.logger.info('Cosmos DB containers initialized successfully');
