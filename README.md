@@ -4,6 +4,19 @@
 
 A comprehensive property intelligence platform that integrates multiple premium geospatial data providers to deliver unprecedented insights into property characteristics, neighborhood dynamics, and lifestyle factors.
 
+## 🆕 **Latest Enhancement: Dynamic Code Execution Service**
+
+🚀 **NEW**: Added enterprise-grade **Dynamic JavaScript/Node.js Code Execution Service** - a secure, sandboxed code execution engine that enables runtime business logic, financial calculations, data transformations, and complex rule processing with complete safety and control.
+
+**Key Capabilities:**
+- 🔒 **Secure VM Sandboxing** - Safe execution of untrusted code
+- ⚡ **Real-time Business Rules** - Dynamic pricing, approval workflows
+- 💰 **Financial Calculations** - Loan payments, risk assessments
+- 🔄 **Data Transformation** - API response processing, format conversions
+- ✅ **Advanced Validation** - Complex data quality checks
+
+**📚 [Complete Documentation](./DYNAMIC_CODE_EXECUTION_SERVICE.md)** | **🧪 [Run Demo](./src/demos/advanced-dynamic-code-demo.ts)**
+
 ## 🌟 Key Features
 
 - **🏛️ Census Intelligence** - Official demographic, economic, and housing analysis using U.S. Census data
