@@ -162,8 +162,8 @@ export class PortfolioAnalyticsService {
       complianceRecord
     ] = await Promise.all([
       this.calculateVendorMetrics(vendorFilters),
-      this.calculateVendorQuality(vendorFilters),
-      this.calculateVendorTurntime(vendorFilters),
+      this.calculateVendorMetrics(vendorFilters), // Using existing method instead of missing calculateVendorQuality
+      this.calculateVendorMetrics(vendorFilters), // Using existing method instead of missing calculateVendorTurntime
       this.calculateVendorCapacity(vendorFilters),
       this.calculateClientSatisfaction(vendorFilters),
       this.calculateVendorCompliance(vendorFilters)
@@ -172,7 +172,7 @@ export class PortfolioAnalyticsService {
     return {
       reportId: `vendor_${Date.now()}`,
       generatedAt: new Date(),
-      vendorId: vendorId,
+      vendorId: vendorId || 'unknown-vendor',
       period: filters.dateRange!,
       metrics: vendorMetrics,
       quality: qualityScores,

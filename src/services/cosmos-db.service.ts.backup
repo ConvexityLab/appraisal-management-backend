@@ -311,7 +311,7 @@ export class CosmosDbService {
 
       return {
         success: true,
-        data: order as AppraisalOrder | null
+        data: order
       };
 
     } catch (error) {
@@ -391,10 +391,10 @@ export class CosmosDbService {
       return {
         success: false,
         data: [],
-        error: createApiError(
-          ErrorCodes.ORDER_SEARCH_FAILED,
-          error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'FIND_ORDERS_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -410,10 +410,10 @@ export class CosmosDbService {
       if (!existingResponse.success || !existingResponse.data) {
         return {
           success: false,
-          error: createApiError(
-            ErrorCodes.ORDER_NOT_FOUND,
-            `Order with id ${id} not found`
-          )
+          error: {
+            code: 'ORDER_NOT_FOUND',
+            message: `Order with id ${id} not found`
+          }
         };
       }
 
@@ -434,8 +434,10 @@ export class CosmosDbService {
       this.logger.error('Failed to update order', { error, id });
       return {
         success: false,
-        error: createApiError(ErrorCodes.ORDER_UPDATE_FAILED, error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'UPDATE_ORDER_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -458,8 +460,10 @@ export class CosmosDbService {
       return {
         success: false,
         data: false,
-        error: createApiError(ErrorCodes.ORDER_DELETE_FAILED, error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'DELETE_ORDER_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -494,8 +498,10 @@ export class CosmosDbService {
       this.logger.error('Failed to create vendor', { error });
       return {
         success: false,
-        error: createApiError(ErrorCodes.VENDOR_CREATE_FAILED, error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'CREATE_VENDOR_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -516,7 +522,7 @@ export class CosmosDbService {
 
       return {
         success: true,
-        data: vendor as Vendor | null
+        data: vendor
       };
 
     } catch (error) {
@@ -524,8 +530,10 @@ export class CosmosDbService {
       return {
         success: false,
         data: null,
-        error: createApiError('FIND_VENDOR_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'FIND_VENDOR_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -543,22 +551,9 @@ export class CosmosDbService {
       const propertyWithId: PropertySummary = {
         ...property,
         id: this.generateId(),
-        building: property.building || {},
-        valuation: property.valuation || {},
-        owner: {
-          fullName: '',
-          ownerOccupied: false
-        },
-        quickLists: {
-          vacant: false,
-          ownerOccupied: false,
-          freeAndClear: false,
-          highEquity: false,
-          activeForSale: false,
-          recentlySold: false
-        },
         lastUpdated: new Date(),
-        dataSource: 'internal'
+        dataSource: 'internal',
+        quickLists: property.quickLists || {}
       };
 
       const { resource } = await this.propertySummariesContainer.items.create(propertyWithId);
@@ -574,8 +569,10 @@ export class CosmosDbService {
       this.logger.error('Failed to create property summary', { error });
       return {
         success: false,
-        error: createApiError(ErrorCodes.PROPERTY_CREATE_FAILED, error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'CREATE_PROPERTY_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -596,7 +593,7 @@ export class CosmosDbService {
 
       return {
         success: true,
-        data: property as PropertySummary | null
+        data: property
       };
 
     } catch (error) {
@@ -604,8 +601,10 @@ export class CosmosDbService {
       return {
         success: false,
         data: null,
-        error: createApiError('FIND_PROPERTY_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'FIND_PROPERTY_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }
@@ -665,8 +664,10 @@ export class CosmosDbService {
       return {
         success: false,
         data: [],
-        error: createApiError('SEARCH_PROPERTIES_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
+        error: {
+          code: 'SEARCH_PROPERTIES_FAILED',
+          message: error instanceof Error ? error.message : 'Unknown error'
+        }
       };
     }
   }

@@ -170,7 +170,7 @@ export class ValuationEngine {
   private extractMLFeatures(property: PropertyDetails, address: PropertyAddress): MLFeatures {
     return {
       // Property characteristics
-      squareFootage: property.squareFootage || 0,
+      squareFootage: (property as any).squareFootage || 0, // TODO: Check correct property name
       bedrooms: property.bedrooms || 0,
       bathrooms: property.bathrooms || 0,
       yearBuilt: property.yearBuilt || 1950,

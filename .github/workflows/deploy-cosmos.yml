@@ -1,0 +1,161 @@
+name: Deploy Cosmos DB
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - production
+      resource_group:
+        description: 'Azure Resource Group (leave empty for default)'
+        required: false
+        type: string
+      location:
+        description: 'Azure Region'
+        required: false
+        default: 'East US'
+        type: string
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  deploy-cosmos:
+    name: Deploy Cosmos DB to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Environment Variables
+        id: env
+        run: |
+          if [ "${{ inputs.environment }}" == "production" ]; then
+            resource_group="${{ inputs.resource_group || vars.RESOURCE_GROUP_PROD || 'rg-appraisal-prod' }}"
+          else
+            resource_group="${{ inputs.resource_group || vars.RESOURCE_GROUP_DEV || 'rg-appraisal-dev' }}"
+          fi
+          
+          echo "resource_group=$resource_group" >> $GITHUB_OUTPUT
+          echo "location=${{ inputs.location || vars.AZURE_REGION || 'East US' }}" >> $GITHUB_OUTPUT
+          echo "deployment_name=cosmos-${{ inputs.environment }}-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Validate Bicep Template
+        run: |
+          echo "🔍 Validating Bicep template..."
+          az bicep build --file infrastructure/deploy-cosmos.bicep
+
+      - name: What-If Deployment Analysis
+        run: |
+          echo "📊 Running what-if analysis..."
+          az deployment group what-if \
+            --resource-group "${{ steps.env.outputs.resource_group }}" \
+            --template-file "infrastructure/deploy-cosmos.bicep" \
+            --parameters "@infrastructure/parameters/cosmos-${{ inputs.environment }}.parameters.json" \
+            --parameters location="${{ steps.env.outputs.location }}"
+
+      - name: Create Resource Group
+        run: |
+          echo "📦 Ensuring resource group exists..."
+          az group create \
+            --name "${{ steps.env.outputs.resource_group }}" \
+            --location "${{ steps.env.outputs.location }}" \
+            --tags \
+              Environment="${{ inputs.environment }}" \
+              Project="AppraisalManagement" \
+              Service="CosmosDB" \
+              DeployedBy="GitHubActions" \
+              DeployedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Deploy Cosmos DB
+        id: deploy
+        run: |
+          echo "🚀 Deploying Cosmos DB..."
+          az deployment group create \
+            --resource-group "${{ steps.env.outputs.resource_group }}" \
+            --name "${{ steps.env.outputs.deployment_name }}" \
+            --template-file "infrastructure/deploy-cosmos.bicep" \
+            --parameters "@infrastructure/parameters/cosmos-${{ inputs.environment }}.parameters.json" \
+            --parameters location="${{ steps.env.outputs.location }}" \
+            --output json > deployment-output.json
+          
+          echo "✅ Deployment completed successfully!"
+
+      - name: Extract Deployment Outputs
+        id: outputs
+        run: |
+          # Extract outputs from deployment
+          cosmos_account=$(jq -r '.properties.outputs.cosmosAccountName.value // "N/A"' deployment-output.json)
+          cosmos_endpoint=$(jq -r '.properties.outputs.cosmosEndpoint.value // "N/A"' deployment-output.json)
+          database_name=$(jq -r '.properties.outputs.databaseName.value // "N/A"' deployment-output.json)
+          resource_id=$(jq -r '.properties.outputs.cosmosResourceId.value // "N/A"' deployment-output.json)
+          
+          echo "cosmos_account=$cosmos_account" >> $GITHUB_OUTPUT
+          echo "cosmos_endpoint=$cosmos_endpoint" >> $GITHUB_OUTPUT
+          echo "database_name=$database_name" >> $GITHUB_OUTPUT
+          echo "resource_id=$resource_id" >> $GITHUB_OUTPUT
+
+      - name: Display Results
+        run: |
+          echo "## 🎯 Cosmos DB Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Resource Group** | ${{ steps.env.outputs.resource_group }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Location** | ${{ steps.env.outputs.location }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment Name** | ${{ steps.env.outputs.deployment_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Cosmos DB Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Account Name** | ${{ steps.outputs.outputs.cosmos_account }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Endpoint** | ${{ steps.outputs.outputs.cosmos_endpoint }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Database** | ${{ steps.outputs.outputs.database_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Container Names" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Display container names
+          jq -r '.properties.outputs.containerNames.value[]' deployment-output.json | while read container; do
+            echo "- $container" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚙️ Application Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Use these environment variables in your application:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          jq -r '.properties.outputs.appSettings.value | to_entries[] | "\(.key)=\(.value)"' deployment-output.json >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify Deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          
+          # Check if Cosmos account is accessible
+          az cosmosdb show \
+            --name "${{ steps.outputs.outputs.cosmos_account }}" \
+            --resource-group "${{ steps.env.outputs.resource_group }}" \
+            --query "provisioningState" -o tsv
+          
+          echo "✅ Cosmos DB account is accessible and ready!"
+
+      - name: Output Connection Information (Secure)
+        run: |
+          echo "::notice title=Deployment Complete::Cosmos DB has been successfully deployed to ${{ inputs.environment }} environment"
+          echo "::notice title=Next Steps::Configure your application with the environment variables shown in the deployment summary"

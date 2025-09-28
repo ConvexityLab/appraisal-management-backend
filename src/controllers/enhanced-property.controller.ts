@@ -115,6 +115,14 @@ export class EnhancedPropertyController {
     try {
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Property ID is required'
+        });
+        return;
+      }
+
       this.logger.info('Get property summary request', { id, userId: req.user?.id });
 
       const property = await this.propertyService.getPropertySummary(id);
@@ -304,6 +312,14 @@ export class EnhancedPropertyController {
     try {
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Property ID is required'
+        });
+        return;
+      }
+
       this.logger.info('Get property details request', { id, userId: req.user?.id });
 
       const property = await this.propertyService.getPropertyDetails(id);
@@ -341,6 +357,14 @@ export class EnhancedPropertyController {
     try {
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Property ID is required'
+        });
+        return;
+      }
+
       this.logger.info('Enrich property request', { id, userId: req.user?.id });
 
       const enrichedProperty = await this.propertyService.enrichPropertyWithExternalData(id);
@@ -374,6 +398,15 @@ export class EnhancedPropertyController {
   private async getPropertyMarketAnalysis(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: 'Property ID is required'
+        });
+        return;
+      }
+
       const radius = parseFloat(req.query.radius as string) || 0.5;
 
       this.logger.info('Property market analysis request', { 

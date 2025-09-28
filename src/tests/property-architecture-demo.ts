@@ -95,7 +95,7 @@ export class PropertyArchitectureDemo {
       console.log('   ✓ Perfect for listings and search results\n');
 
     } catch (error) {
-      console.log(`   ✗ Summary operations failed: ${error.message}\n`);
+      console.log(`   ✗ Summary operations failed: ${error instanceof Error ? error.message : 'Unknown error'}\n`);
     }
   }
 
@@ -147,7 +147,7 @@ export class PropertyArchitectureDemo {
       console.log('   ✓ Perfect for appraisals and comprehensive analysis\n');
 
     } catch (error) {
-      console.log(`   ✗ Details operations failed: ${error.message}\n`);
+      console.log(`   ✗ Details operations failed: ${error instanceof Error ? error.message : 'Unknown error'}\n`);
     }
   }
 
@@ -201,7 +201,7 @@ export class PropertyArchitectureDemo {
       console.log('   ✓ Summary operations are significantly more efficient for listings\n');
 
     } catch (error) {
-      console.log(`   ✗ Performance comparison failed: ${error.message}\n`);
+      console.log(`   ✗ Performance comparison failed: ${error instanceof Error ? error.message : 'Unknown error'}\n`);
     }
   }
 

@@ -16,12 +16,7 @@ param environment string = 'dev'
 @description('Unique suffix for resource naming')
 param suffix string = uniqueString(subscription().subscriptionId, location)
 
-@description('Administrator username for SQL databases')
-param sqlAdminUsername string
-
-@secure()
-@description('Administrator password for SQL databases')
-param sqlAdminPassword string
+// Note: SQL Server parameters removed - using Cosmos DB only
 
 @description('Tags to apply to all resources')
 param tags object = {
@@ -59,7 +54,7 @@ module coreInfrastructure 'modules/core-infrastructure.bicep' = {
   }
 }
 
-// Data Services Module
+// Data Services Module (Storage and Cache only)
 module dataServices 'modules/data-services.bicep' = {
   name: 'data-services-deployment'
   scope: primaryResourceGroup
@@ -67,9 +62,19 @@ module dataServices 'modules/data-services.bicep' = {
     location: location
     environment: environment
     suffix: suffix
-    sqlAdminUsername: sqlAdminUsername
-    sqlAdminPassword: sqlAdminPassword
     tags: tags
+  }
+}
+
+// Cosmos DB Module (Single consolidated database)
+module cosmosDb 'modules/cosmos-production.bicep' = {
+  name: 'cosmosdb-deployment'
+  scope: primaryResourceGroup
+  params: {
+    location: location
+    environment: environment
+    cosmosAccountName: 'appraisal-cosmos-${environment}-${suffix}'
+    databaseName: 'appraisal-management'
   }
 }
 
@@ -112,21 +117,19 @@ module securityServices 'modules/security-services.bicep' = {
   }
 }
 
-// Disaster Recovery Module
-module disasterRecovery 'modules/disaster-recovery.bicep' = {
-  name: 'disaster-recovery-deployment'
-  scope: drResourceGroup
-  params: {
-    location: drLocation
-    primaryLocation: location
-    environment: environment
-    suffix: suffix
-    tags: union(tags, { Purpose: 'Disaster-Recovery' })
-    primarySqlServerName: dataServices.outputs.sqlServerName
-    primaryStorageAccountName: dataServices.outputs.primaryStorageAccountName
-    drSqlAdminPassword: sqlAdminPassword
-  }
-}
+// Disaster Recovery Module - Disabled (Cosmos DB has built-in geo-replication)
+// module disasterRecovery 'modules/disaster-recovery.bicep' = {
+//   name: 'disaster-recovery-deployment'
+//   scope: drResourceGroup
+//   params: {
+//     location: drLocation
+//     primaryLocation: location
+//     environment: environment
+//     suffix: suffix
+//     tags: union(tags, { Purpose: 'Disaster-Recovery' })
+//     primaryStorageAccountName: dataServices.outputs.primaryStorageAccountName
+//   }
+// }
 
 // Integration Services Module
 module integrationServices 'modules/integration-services.bicep' = {
@@ -147,7 +150,13 @@ output drResourceGroupName string = drResourceGroup.name
 output keyVaultName string = coreInfrastructure.outputs.keyVaultName
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
 output containerAppNames array = appServices.outputs.containerAppNames
-output sqlServerName string = dataServices.outputs.sqlServerName
 output applicationInsightsName string = coreInfrastructure.outputs.applicationInsightsName
 output storageAccountName string = dataServices.outputs.primaryStorageAccountName
+output redisCacheName string = dataServices.outputs.redisCacheName
 output apiManagementName string = integrationServices.outputs.apiManagementName
+
+// Cosmos DB Outputs
+output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
+output cosmosEndpoint string = cosmosDb.outputs.cosmosEndpoint
+output cosmosDatabaseName string = cosmosDb.outputs.databaseName
+output cosmosContainerNames array = cosmosDb.outputs.containerNames

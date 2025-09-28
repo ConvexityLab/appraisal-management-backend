@@ -4,10 +4,11 @@ import {
   Vendor, 
   OrderFilters, 
   PropertyDetails,
-  PropertySummary,
   PropertyAddress,
   ApiResponse
 } from '../types/index.js';
+import { PropertySummary } from '../types/property-enhanced.js';
+import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -98,7 +99,7 @@ export class ProductionDatabaseService {
   /**
    * Get collection by name
    */
-  getCollection<T = any>(name: string): Collection<T> {
+  getCollection<T extends Document = any>(name: string): Collection<T> {
     if (!this.db) {
       throw new Error('Database not connected');
     }
@@ -149,16 +150,14 @@ export class ProductionDatabaseService {
       
       return {
         success: true,
-        data: createdOrder!,
-        message: 'Order created successfully'
+        data: createdOrder!
       };
 
     } catch (error) {
       this.logger.error('Failed to create order', { error });
       return {
         success: false,
-        error: 'Failed to create order',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.ORDER_CREATE_FAILED, 'Failed to create order')
       };
     }
   }
@@ -171,8 +170,7 @@ export class ProductionDatabaseService {
       
       return {
         success: true,
-        data: order,
-        message: order ? 'Order found' : 'Order not found'
+        data: order
       };
 
     } catch (error) {
@@ -180,8 +178,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: null,
-        error: 'Failed to find order',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.ORDER_RETRIEVE_FAILED, 'Failed to find order')
       };
     }
   }
@@ -224,7 +221,6 @@ export class ProductionDatabaseService {
       return {
         success: true,
         data: orders,
-        message: `Found ${orders.length} orders`,
         metadata: { total, offset, limit }
       };
 
@@ -233,8 +229,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: [],
-        error: 'Failed to find orders',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.ORDER_SEARCH_FAILED, 'Failed to find orders')
       };
     }
   }
@@ -254,26 +249,23 @@ export class ProductionDatabaseService {
         { returnDocument: 'after' }
       );
 
-      if (!result.value) {
+      if (!result) {
         return {
           success: false,
-          error: 'Order not found',
-          message: `Order with id ${id} not found`
+          error: createApiError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found')
         };
       }
 
       return {
         success: true,
-        data: result.value,
-        message: 'Order updated successfully'
+        data: result
       };
 
     } catch (error) {
       this.logger.error('Failed to update order', { error, id });
       return {
         success: false,
-        error: 'Failed to update order',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.ORDER_UPDATE_FAILED, 'Failed to update order')
       };
     }
   }
@@ -286,8 +278,7 @@ export class ProductionDatabaseService {
 
       return {
         success: result.deletedCount > 0,
-        data: result.deletedCount > 0,
-        message: result.deletedCount > 0 ? 'Order deleted successfully' : 'Order not found'
+        data: result.deletedCount > 0
       };
 
     } catch (error) {
@@ -295,8 +286,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: false,
-        error: 'Failed to delete order',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.ORDER_DELETE_FAILED, 'Failed to delete order')
       };
     }
   }
@@ -327,16 +317,14 @@ export class ProductionDatabaseService {
       
       return {
         success: true,
-        data: createdVendor!,
-        message: 'Vendor created successfully'
+        data: createdVendor!
       };
 
     } catch (error) {
       this.logger.error('Failed to create vendor', { error });
       return {
         success: false,
-        error: 'Failed to create vendor',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.VENDOR_CREATE_FAILED, 'Failed to create vendor')
       };
     }
   }
@@ -349,8 +337,7 @@ export class ProductionDatabaseService {
       
       return {
         success: true,
-        data: vendor,
-        message: vendor ? 'Vendor found' : 'Vendor not found'
+        data: vendor
       };
 
     } catch (error) {
@@ -358,8 +345,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: null,
-        error: 'Failed to find vendor',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.VENDOR_RETRIEVE_FAILED, 'Failed to find vendor')
       };
     }
   }
@@ -397,7 +383,6 @@ export class ProductionDatabaseService {
       return {
         success: true,
         data: vendors,
-        message: `Found ${vendors.length} vendors`,
         metadata: { total, offset, limit }
       };
 
@@ -406,8 +391,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: [],
-        error: 'Failed to find vendors',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.VENDOR_SEARCH_FAILED, 'Failed to find vendors')
       };
     }
   }
@@ -427,26 +411,23 @@ export class ProductionDatabaseService {
         { returnDocument: 'after' }
       );
 
-      if (!result.value) {
+      if (!result) {
         return {
           success: false,
-          error: 'Vendor not found',
-          message: `Vendor with id ${id} not found`
+          error: createApiError(ErrorCodes.VENDOR_NOT_FOUND, `Vendor with id ${id} not found`)
         };
       }
 
       return {
         success: true,
-        data: result.value,
-        message: 'Vendor updated successfully'
+        data: result
       };
 
     } catch (error) {
       this.logger.error('Failed to update vendor', { error, id });
       return {
         success: false,
-        error: 'Failed to update vendor',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.VENDOR_UPDATE_FAILED, 'Failed to update vendor')
       };
     }
   }
@@ -459,8 +440,7 @@ export class ProductionDatabaseService {
 
       return {
         success: result.deletedCount > 0,
-        data: result.deletedCount > 0,
-        message: result.deletedCount > 0 ? 'Vendor deleted successfully' : 'Vendor not found'
+        data: result.deletedCount > 0
       };
 
     } catch (error) {
@@ -468,8 +448,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: false,
-        error: 'Failed to delete vendor',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.VENDOR_DELETE_FAILED, 'Failed to delete vendor')
       };
     }
   }
@@ -489,7 +468,7 @@ export class ProductionDatabaseService {
         lastUpdated: new Date()
       };
 
-      const result = await this.propertySummariesCollection.insertOne(propertyWithId as PropertySummary);
+      const result = await this.propertySummariesCollection.insertOne(propertyWithId as unknown as PropertySummary);
       
       if (!result.acknowledged) {
         throw new Error('Failed to create property');
@@ -499,16 +478,14 @@ export class ProductionDatabaseService {
       
       return {
         success: true,
-        data: createdProperty!,
-        message: 'Property created successfully'
+        data: createdProperty!
       };
 
     } catch (error) {
       this.logger.error('Failed to create property', { error });
       return {
         success: false,
-        error: 'Failed to create property',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.PROPERTY_CREATE_FAILED, 'Failed to create property')
       };
     }
   }
@@ -521,8 +498,7 @@ export class ProductionDatabaseService {
       
       return {
         success: true,
-        data: property,
-        message: property ? 'Property found' : 'Property not found'
+        data: property
       };
 
     } catch (error) {
@@ -530,8 +506,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: null,
-        error: 'Failed to find property',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.PROPERTY_RETRIEVE_FAILED, 'Failed to find property')
       };
     }
   }
@@ -570,7 +545,6 @@ export class ProductionDatabaseService {
       return {
         success: true,
         data: properties,
-        message: `Found ${properties.length} properties`,
         metadata: { total, offset, limit }
       };
 
@@ -579,8 +553,7 @@ export class ProductionDatabaseService {
       return {
         success: false,
         data: [],
-        error: 'Failed to find properties',
-        message: error instanceof Error ? error.message : 'Unknown error'
+        error: createApiError(ErrorCodes.PROPERTY_SEARCH_FAILED, 'Failed to find properties')
       };
     }
   }

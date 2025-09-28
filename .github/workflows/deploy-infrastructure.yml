@@ -1,0 +1,189 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/deploy-infrastructure.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - production
+      resource_group:
+        description: 'Azure Resource Group'
+        required: true
+        default: 'rg-appraisal-dev'
+        type: string
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  validate:
+    name: Validate Bicep Templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Azure CLI
+        uses: azure/CLI@v1
+        with:
+          azcliversion: latest
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Validate Cosmos DB Template
+        run: |
+          az bicep build --file infrastructure/deploy-cosmos.bicep
+          
+      - name: What-If Deployment (Development)
+        if: github.event_name == 'pull_request'
+        run: |
+          az deployment group what-if \
+            --resource-group "rg-appraisal-dev" \
+            --template-file "infrastructure/deploy-cosmos.bicep" \
+            --parameters "@infrastructure/parameters/cosmos-development.parameters.json"
+
+  deploy-development:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: validate
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    environment: development
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name "${{ vars.RESOURCE_GROUP_DEV || 'rg-appraisal-dev' }}" \
+            --location "${{ vars.AZURE_REGION || 'East US' }}" \
+            --tags \
+              Environment="development" \
+              Project="AppraisalManagement" \
+              Service="Infrastructure" \
+              DeployedBy="GitHubActions"
+
+      - name: Deploy Cosmos DB - Development
+        id: deploy
+        run: |
+          deployment_name="cosmos-dev-$(date +%Y%m%d-%H%M%S)"
+          
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP_DEV || 'rg-appraisal-dev' }}" \
+            --name "$deployment_name" \
+            --template-file "infrastructure/deploy-cosmos.bicep" \
+            --parameters "@infrastructure/parameters/cosmos-development.parameters.json" \
+            --parameters location="${{ vars.AZURE_REGION || 'East US' }}" \
+            --output json > deployment-output.json
+          
+          echo "deployment_name=$deployment_name" >> $GITHUB_OUTPUT
+
+      - name: Display Deployment Results
+        run: |
+          echo "## 🚀 Development Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Name:** ${{ steps.deploy.outputs.deployment_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** ${{ vars.RESOURCE_GROUP_DEV || 'rg-appraisal-dev' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Development" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract key outputs
+          cosmos_account=$(jq -r '.properties.outputs.cosmosAccountName.value // "N/A"' deployment-output.json)
+          cosmos_endpoint=$(jq -r '.properties.outputs.cosmosEndpoint.value // "N/A"' deployment-output.json)
+          database_name=$(jq -r '.properties.outputs.databaseName.value // "N/A"' deployment-output.json)
+          
+          echo "**Cosmos DB Account:** $cosmos_account" >> $GITHUB_STEP_SUMMARY
+          echo "**Cosmos DB Endpoint:** $cosmos_endpoint" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Name:** $database_name" >> $GITHUB_STEP_SUMMARY
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: validate
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name "${{ vars.RESOURCE_GROUP_PROD || 'rg-appraisal-prod' }}" \
+            --location "${{ vars.AZURE_REGION || 'East US' }}" \
+            --tags \
+              Environment="production" \
+              Project="AppraisalManagement" \
+              Service="Infrastructure" \
+              DeployedBy="GitHubActions"
+
+      - name: Deploy Cosmos DB - Production
+        id: deploy
+        run: |
+          deployment_name="cosmos-prod-$(date +%Y%m%d-%H%M%S)"
+          
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP_PROD || 'rg-appraisal-prod' }}" \
+            --name "$deployment_name" \
+            --template-file "infrastructure/deploy-cosmos.bicep" \
+            --parameters "@infrastructure/parameters/cosmos-production.parameters.json" \
+            --parameters location="${{ vars.AZURE_REGION || 'East US' }}" \
+            --output json > deployment-output.json
+          
+          echo "deployment_name=$deployment_name" >> $GITHUB_OUTPUT
+
+      - name: Display Deployment Results
+        run: |
+          echo "## 🎯 Production Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Name:** ${{ steps.deploy.outputs.deployment_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** ${{ vars.RESOURCE_GROUP_PROD || 'rg-appraisal-prod' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract key outputs
+          cosmos_account=$(jq -r '.properties.outputs.cosmosAccountName.value // "N/A"' deployment-output.json)
+          cosmos_endpoint=$(jq -r '.properties.outputs.cosmosEndpoint.value // "N/A"' deployment-output.json)
+          database_name=$(jq -r '.properties.outputs.databaseName.value // "N/A"' deployment-output.json)
+          
+          echo "**Cosmos DB Account:** $cosmos_account" >> $GITHUB_STEP_SUMMARY
+          echo "**Cosmos DB Endpoint:** $cosmos_endpoint" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Name:** $database_name" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Success
+        run: |
+          echo "✅ Production deployment completed successfully!"
+          echo "🎉 Cosmos DB is ready for production workloads"

@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger.js';
-import { DatabaseService } from './enhanced-database.service.js';
+import { DatabaseService } from './database.service.js';
 import { 
   PropertyType, 
   PropertyCondition, 
@@ -174,7 +174,7 @@ export class AdvancedSearchService {
       const filters = this.buildPropertyFilters(criteria);
       
       // Execute search
-      const results = await this.databaseService.findProperties(
+      const results = await this.databaseService.properties.findMany(
         filters,
         criteria.offset || 0,
         criteria.limit || 50
@@ -271,7 +271,7 @@ export class AdvancedSearchService {
       const filters = this.buildVendorFilters(criteria);
       
       // Execute search
-      const results = await this.databaseService.findVendors(
+      const results = await this.databaseService.vendors.findMany(
         filters,
         criteria.offset || 0,
         criteria.limit || 50
@@ -368,7 +368,7 @@ export class AdvancedSearchService {
       const filters = this.buildOrderFilters(criteria);
       
       // Execute search
-      const results = await this.databaseService.findOrders(
+      const results = await this.databaseService.orders.findMany(
         filters,
         criteria.offset || 0,
         criteria.limit || 50
@@ -420,7 +420,7 @@ export class AdvancedSearchService {
           facets.state = await this.getPropertyStateFacets(baseFilters);
           facets.yearBuilt = await this.getYearBuiltFacets(baseFilters);
           facets.squareFootage = await this.getSquareFootageFacets(baseFilters);
-          totalCount = await this.databaseService.countProperties(baseFilters || {});
+          totalCount = await this.databaseService.properties.count(baseFilters || {});
           break;
 
         case 'vendors':
@@ -516,7 +516,7 @@ export class AdvancedSearchService {
       filters.textSearch = searchTerms;
     }
 
-    const results = await this.databaseService.findOrders(filters, 0, limit);
+    const results = await this.databaseService.orders.findMany(filters, 0, limit);
     return results.orders;
   }
 
@@ -531,7 +531,7 @@ export class AdvancedSearchService {
       filters.textSearch = searchTerms;
     }
 
-    const results = await this.databaseService.findVendors(filters, 0, limit);
+    const results = await this.databaseService.vendors.findMany(filters, 0, limit);
     return results.vendors;
   }
 
@@ -546,7 +546,7 @@ export class AdvancedSearchService {
       filters.textSearch = searchTerms;
     }
 
-    const results = await this.databaseService.findProperties(filters, 0, limit);
+    const results = await this.databaseService.properties.findMany(filters, 0, limit);
     return results.properties;
   }
 

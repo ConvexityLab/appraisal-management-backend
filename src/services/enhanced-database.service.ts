@@ -513,6 +513,8 @@ export class EnhancedDatabaseService {
         licenseNumber: 'CA-12345',
         licenseState: 'CA',
         licenseExpiry: new Date('2025-12-31'),
+        onboardingDate: new Date('2024-01-15'),
+        lastActive: new Date('2024-12-15'),
         certifications: [],
         serviceAreas: [],
         productTypes: [ProductType.FULL_APPRAISAL, ProductType.DESKTOP_APPRAISAL],
@@ -528,11 +530,11 @@ export class EnhancedDatabaseService {
           lastUpdated: new Date()
         },
         status: VendorStatus.ACTIVE,
-        bankingInfo: {
-          accountName: 'Apex Appraisal Services',
-          routingNumber: '123456789',
-          accountNumber: '987654321'
-        },
+        // bankingInfo: { // TODO: Property doesn't exist on Vendor type
+        //   accountName: 'Apex Appraisal Services',
+        //   routingNumber: '123456789',
+        //   accountNumber: '987654321'
+        // },
         insuranceInfo: {
           provider: 'Professional Insurance Co',
           policyNumber: 'POL-123456',
@@ -558,11 +560,11 @@ export class EnhancedDatabaseService {
             portal: true
           }
         },
-        createdAt: new Date('2024-01-15'),
-        updatedAt: new Date('2024-12-15'),
-        createdBy: 'system',
-        tags: ['reliable', 'fast-turnaround'],
-        metadata: {}
+        // createdAt: new Date('2024-01-15'), // TODO: Property doesn't exist on Vendor type
+        // updatedAt: new Date('2024-12-15'), // TODO: Property doesn't exist on Vendor type
+        // createdBy: 'system', // TODO: Property doesn't exist on Vendor type
+        // tags: ['reliable', 'fast-turnaround'], // TODO: Property doesn't exist on Vendor type
+        // metadata: {} // TODO: Property doesn't exist on Vendor type
       }
     ];
 

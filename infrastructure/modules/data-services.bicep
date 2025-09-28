@@ -1,20 +1,14 @@
-// Data Services Module - Database, storage, and data processing services
-// Includes SQL databases, storage accounts, data lake, and analytics services
+// Data Services Module - Storage and analytics services only
+// Cosmos DB is handled by the dedicated cosmos-production.bicep module
 
 param location string
 param environment string
 param suffix string
-param sqlAdminUsername string
-@secure()
-param sqlAdminPassword string
 param tags object
 
-// Variables
-var sqlServerName = 'sql-appraisal-${environment}-${suffix}'
+// Variables - Removed SQL Server and Cosmos DB (handled separately)
 var primaryStorageAccountName = 'stappraisal${environment}${take(suffix, 8)}'
 var dataLakeStorageName = 'stadlappraisal${environment}${take(suffix, 8)}'
-var cosmosDbAccountName = 'cosmos-appraisal-${environment}-${suffix}'
-var synapseWorkspaceName = 'synapse-appraisal-${environment}-${suffix}'
 var redisName = 'redis-appraisal-${environment}-${suffix}'
 
 // Primary Storage Account for general blob storage
@@ -198,204 +192,8 @@ resource analyticsDataContainer 'Microsoft.Storage/storageAccounts/blobServices/
   }
 }
 
-// SQL Server
-resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
-  name: sqlServerName
-  location: location
-  tags: tags
-  properties: {
-    administratorLogin: sqlAdminUsername
-    administratorLoginPassword: sqlAdminPassword
-    version: '12.0'
-    minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled'
-    restrictOutboundNetworkAccess: 'Disabled'
-  }
-}
-
-// SQL Server firewall rules
-resource sqlServerFirewallRuleAzure 'Microsoft.Sql/servers/firewallRules@2023-05-01-preview' = {
-  parent: sqlServer
-  name: 'AllowAllWindowsAzureIps'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
-}
-
-// Primary transactional database
-resource primaryDatabase 'Microsoft.Sql/servers/databases@2023-05-01-preview' = {
-  parent: sqlServer
-  name: 'AppraisalManagement'
-  location: location
-  tags: tags
-  sku: {
-    name: environment == 'prod' ? 'S2' : 'S0'
-    tier: 'Standard'
-  }
-  properties: {
-    collation: 'SQL_Latin1_General_CP1_CI_AS'
-    maxSizeBytes: environment == 'prod' ? 268435456000 : 34359738368 // 250GB prod, 32GB non-prod
-    catalogCollation: 'SQL_Latin1_General_CP1_CI_AS'
-    zoneRedundant: environment == 'prod'
-    readScale: environment == 'prod' ? 'Enabled' : 'Disabled'
-    requestedBackupStorageRedundancy: environment == 'prod' ? 'Geo' : 'Local'
-    isLedgerOn: false
-  }
-}
-
-// Analytics database for reporting
-resource analyticsDatabase 'Microsoft.Sql/servers/databases@2023-05-01-preview' = {
-  parent: sqlServer
-  name: 'AppraisalAnalytics'
-  location: location
-  tags: tags
-  sku: {
-    name: environment == 'prod' ? 'S3' : 'S1'
-    tier: 'Standard'
-  }
-  properties: {
-    collation: 'SQL_Latin1_General_CP1_CI_AS'
-    maxSizeBytes: environment == 'prod' ? 536870912000 : 68719476736 // 500GB prod, 64GB non-prod
-    catalogCollation: 'SQL_Latin1_General_CP1_CI_AS'
-    zoneRedundant: environment == 'prod'
-    readScale: environment == 'prod' ? 'Enabled' : 'Disabled'
-    requestedBackupStorageRedundancy: environment == 'prod' ? 'Geo' : 'Local'
-    isLedgerOn: false
-  }
-}
-
-// Cosmos DB Account for document storage
-resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
-  name: cosmosDbAccountName
-  location: location
-  tags: tags
-  kind: 'GlobalDocumentDB'
-  properties: {
-    consistencyPolicy: {
-      defaultConsistencyLevel: 'Session'
-    }
-    locations: [
-      {
-        locationName: location
-        failoverPriority: 0
-        isZoneRedundant: environment == 'prod'
-      }
-    ]
-    databaseAccountOfferType: 'Standard'
-    enableAutomaticFailover: true
-    enableMultipleWriteLocations: false
-    capabilities: []
-    publicNetworkAccess: 'Enabled'
-    networkAclBypass: 'AzureServices'
-    disableKeyBasedMetadataWriteAccess: false
-    enableFreeTier: environment != 'prod'
-    analyticalStorageConfiguration: {
-      schemaType: 'WellDefined'
-    }
-    createMode: 'Default'
-  }
-}
-
-// Cosmos DB SQL Database
-resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-11-15' = {
-  parent: cosmosDbAccount
-  name: 'AppraisalDocuments'
-  properties: {
-    resource: {
-      id: 'AppraisalDocuments'
-    }
-    options: {
-      throughput: environment == 'prod' ? 1000 : 400
-    }
-  }
-}
-
-// Cosmos DB Containers
-resource ordersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-11-15' = {
-  parent: cosmosDatabase
-  name: 'Orders'
-  properties: {
-    resource: {
-      id: 'Orders'
-      partitionKey: {
-        paths: ['/clientId']
-        kind: 'Hash'
-      }
-      indexingPolicy: {
-        indexingMode: 'Consistent'
-        automatic: true
-        includedPaths: [
-          {
-            path: '/*'
-          }
-        ]
-        excludedPaths: [
-          {
-            path: '/"_etag"/?'
-          }
-        ]
-      }
-    }
-  }
-}
-
-resource appraisalsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-11-15' = {
-  parent: cosmosDatabase
-  name: 'Appraisals'
-  properties: {
-    resource: {
-      id: 'Appraisals'
-      partitionKey: {
-        paths: ['/orderId']
-        kind: 'Hash'
-      }
-      indexingPolicy: {
-        indexingMode: 'Consistent'
-        automatic: true
-        includedPaths: [
-          {
-            path: '/*'
-          }
-        ]
-        excludedPaths: [
-          {
-            path: '/"_etag"/?'
-          }
-        ]
-      }
-    }
-  }
-}
-
-resource auditTrailContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-11-15' = {
-  parent: cosmosDatabase
-  name: 'AuditTrail'
-  properties: {
-    resource: {
-      id: 'AuditTrail'
-      partitionKey: {
-        paths: ['/entityId']
-        kind: 'Hash'
-      }
-      defaultTtl: environment == 'prod' ? 2592000 : 604800 // 30 days prod, 7 days non-prod
-      indexingPolicy: {
-        indexingMode: 'Consistent'
-        automatic: true
-        includedPaths: [
-          {
-            path: '/*'
-          }
-        ]
-        excludedPaths: [
-          {
-            path: '/"_etag"/?'
-          }
-        ]
-      }
-    }
-  }
-}
+// Note: Database services moved to dedicated cosmos-production.bicep module
+// This module now focuses on storage and caching services only
 
 // Azure Cache for Redis
 resource redisCache 'Microsoft.Cache/redis@2023-08-01' = {
@@ -420,64 +218,13 @@ resource redisCache 'Microsoft.Cache/redis@2023-08-01' = {
   }
 }
 
-// Synapse Analytics Workspace (for big data analytics)
-resource synapseWorkspace 'Microsoft.Synapse/workspaces@2021-06-01' = {
-  name: synapseWorkspaceName
-  location: location
-  tags: tags
-  properties: {
-    defaultDataLakeStorage: {
-      accountUrl: dataLakeStorage.properties.primaryEndpoints.dfs
-      filesystem: 'analytics-data'
-    }
-    sqlAdministratorLogin: sqlAdminUsername
-    sqlAdministratorLoginPassword: sqlAdminPassword
-    managedResourceGroupName: 'rg-synapse-managed-${environment}-${suffix}'
-    publicNetworkAccess: 'Enabled'
-    cspWorkspaceAdminProperties: {
-      initialWorkspaceAdminObjectId: ''
-    }
-  }
-  identity: {
-    type: 'SystemAssigned'
-  }
-}
+// Note: Synapse Analytics removed - analytics can be handled through Cosmos DB analytical store
 
-// Synapse Firewall Rules
-resource synapseFirewallRuleAzure 'Microsoft.Synapse/workspaces/firewallRules@2021-06-01' = {
-  parent: synapseWorkspace
-  name: 'AllowAllWindowsAzureIps'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
-}
-
-// Grant Synapse workspace access to storage accounts
-resource synapseStorageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(dataLakeStorage.id, synapseWorkspace.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  scope: dataLakeStorage
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
-    principalId: synapseWorkspace.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Outputs
-output sqlServerName string = sqlServer.name
-output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
-output primaryDatabaseName string = primaryDatabase.name
-output analyticsDatabaseName string = analyticsDatabase.name
+// Outputs - Storage and cache services only
 output primaryStorageAccountName string = primaryStorageAccount.name
 output primaryStorageAccountId string = primaryStorageAccount.id
 output dataLakeStorageName string = dataLakeStorage.name
 output dataLakeStorageId string = dataLakeStorage.id
-output cosmosDbAccountName string = cosmosDbAccount.name
-output cosmosDbAccountId string = cosmosDbAccount.id
-output cosmosDbEndpoint string = cosmosDbAccount.properties.documentEndpoint
 output redisCacheName string = redisCache.name
 output redisCacheId string = redisCache.id
 output redisCacheHostName string = redisCache.properties.hostName
-output synapseWorkspaceName string = synapseWorkspace.name
-output synapseWorkspaceId string = synapseWorkspace.id

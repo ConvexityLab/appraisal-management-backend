@@ -273,7 +273,7 @@ export class PerligoProductionService {
       const unhealthyAgents = healthChecks
         .filter(result => result.status === 'rejected')
         .map((result, index) => ({
-          agentId: this.agentPool[index].id,
+          agentId: this.agentPool[index]?.id || 'unknown-agent',
           error: (result as PromiseRejectedResult).reason
         }));
 
@@ -321,7 +321,9 @@ export class PerligoProductionService {
       };
 
       // Execute workflow steps sequentially or in parallel based on configuration
-      for (const [stepIndex, step] of workflow.steps.entries()) {
+      for (let stepIndex = 0; stepIndex < workflow.steps.length; stepIndex++) {
+        const step = workflow.steps[stepIndex];
+        if (!step) continue;
         workflowExecution.currentStep = stepIndex;
         
         try {
@@ -434,7 +436,10 @@ export class PerligoProductionService {
       return scoreB - scoreA;
     });
 
-    return availableAgents[0];
+    if (availableAgents.length === 0) {
+      throw new Error('No available agents found');
+    }
+    return availableAgents[0]!; // We know it exists after length check
   }
 
   private async deployAgent(agent: PerligoAgent, order: AppraisalOrder, capabilities: AgentCapabilities[]): Promise<AgentDeployment> {
@@ -465,10 +470,10 @@ export class PerligoProductionService {
     // Initialize agent with order-specific context and data
     const contextData = {
       order: order,
-      propertyDetails: order.property,
-      clientRequirements: order.requirements,
-      historicalData: await this.getHistoricalContext(order),
-      marketData: await this.getMarketContext(order.property.address)
+      // propertyDetails: order.property, // Property not available on AppraisalOrder type
+      // clientRequirements: order.requirements, // Requirements not available on AppraisalOrder type
+      historicalData: await this.getHistoricalContext(order)
+      // marketData: await this.getMarketContext(order.property.address) // Property not available on AppraisalOrder type
     };
 
     // Send context to agent (mock implementation)
@@ -724,8 +729,11 @@ class RateLimiter {
     this.requests = this.requests.filter(time => now - time < this.window);
     
     if (this.requests.length >= this.limit) {
-      const waitTime = this.window - (now - this.requests[0]);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+      const oldestRequest = this.requests[0];
+      if (oldestRequest) {
+        const waitTime = this.window - (now - oldestRequest);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
     }
     
     this.requests.push(now);

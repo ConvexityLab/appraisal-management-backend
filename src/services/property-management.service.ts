@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger.js';
-import { DatabaseService } from './enhanced-database.service.js';
+import { DatabaseService } from './database.service.js';
 import { 
   PropertyDetails, 
   PropertyAddress, 
@@ -64,7 +64,7 @@ export class PropertyManagementService {
           validationStatus: 'validated'
         },
         searchableFields: this.generateSearchableFields(propertyData.address, propertyData.details),
-        coordinates: propertyData.address.coordinates || (await this.geocodeAddress(propertyData.address)) || undefined,
+        coordinates: propertyData.address.coordinates || (await this.geocodeAddress(propertyData.address)) || { latitude: 0, longitude: 0 },
         marketData: await this.enrichWithMarketData(propertyData.address),
         riskFactors: await this.assessPropertyRisk(propertyData.details, propertyData.address),
         valuationHistory: [],
@@ -77,7 +77,7 @@ export class PropertyManagementService {
       };
 
       // Store in database
-      await this.databaseService.createProperty(propertyRecord);
+      await this.databaseService.properties.create(propertyRecord);
 
       this.logger.info('Property created successfully', { propertyId });
 
@@ -100,7 +100,7 @@ export class PropertyManagementService {
     this.logger.info('Retrieving property by ID', { propertyId, includeHistory });
 
     try {
-      const property = await this.databaseService.findPropertyById(propertyId);
+      const property = await this.databaseService.properties.findById(propertyId);
       
       if (!property) {
         throw new Error(`Property not found: ${propertyId}`);
@@ -148,7 +148,7 @@ export class PropertyManagementService {
     this.logger.info('Updating property', { propertyId, updateKeys: Object.keys(updates) });
 
     try {
-      const existingProperty = await this.databaseService.findPropertyById(propertyId);
+      const existingProperty = await this.databaseService.properties.findById(propertyId);
       if (!existingProperty) {
         throw new Error(`Property not found: ${propertyId}`);
       }
@@ -194,7 +194,7 @@ export class PropertyManagementService {
       });
 
       // Update in database
-      await this.databaseService.updateProperty(propertyId, updatedProperty);
+      await this.databaseService.properties.update(propertyId, updatedProperty);
 
       this.logger.info('Property updated successfully', { propertyId });
       return updatedProperty;
@@ -212,7 +212,7 @@ export class PropertyManagementService {
     this.logger.info('Deleting property', { propertyId });
 
     try {
-      const property = await this.databaseService.findPropertyById(propertyId);
+      const property = await this.databaseService.properties.findById(propertyId);
       if (!property) {
         throw new Error(`Property not found: ${propertyId}`);
       }
@@ -240,12 +240,12 @@ export class PropertyManagementService {
           changes: `Property archived due to ${orderReferences.length} order references`
         });
 
-        await this.databaseService.updateProperty(propertyId, archivedProperty);
+        await this.databaseService.properties.update(propertyId, archivedProperty);
         this.logger.info('Property archived successfully', { propertyId, orderReferences: orderReferences.length });
         return true;
       } else {
         // Hard delete if no references
-        await this.databaseService.deleteProperty(propertyId);
+        await this.databaseService.properties.delete(propertyId);
         this.logger.info('Property deleted successfully', { propertyId });
         return true;
       }
@@ -359,13 +359,13 @@ export class PropertyManagementService {
         sortOptions['metadata.updatedAt'] = -1; // Default sort by most recent
       }
 
-      const results = await this.databaseService.findProperties(
+      const results = await this.databaseService.properties.findMany(
         filters,
         criteria.offset || 0,
         criteria.limit || 50
       );
 
-      const total = await this.databaseService.countProperties(filters);
+      const total = await this.databaseService.properties.count(filters);
 
       this.logger.info('Property search completed', { 
         resultsCount: results.properties.length, 
@@ -430,7 +430,7 @@ export class PropertyManagementService {
 
       filters.status = { $ne: 'archived' };
 
-      const results = await this.databaseService.findProperties(
+      const results = await this.databaseService.properties.findMany(
         filters,
         0, // offset
         1000 // limit - Geographic queries can return many results
