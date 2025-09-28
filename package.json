@@ -12,6 +12,8 @@
     "test:watch": "jest --watch",
     "test:verification": "node dist/test-verification.js",
     "test:perligo": "node dist/perligo-integration-demo.js",
+    "test:cosmos": "ts-node src/tests/cosmos-db-test-runner.ts",
+    "test:cosmos-service": "ts-node src/tests/cosmos-service-test.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "clean": "rm -rf dist/",

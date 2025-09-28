@@ -6,13 +6,13 @@ import {
   PropertyDetails,
   PropertyAddress,
   ApiResponse
-} from '../types/index.js';
+} from '../types/index';
 import { 
   PropertySummary, 
   CreatePropertySummaryRequest 
-} from '../types/property-enhanced.js';
-import { Logger } from '../utils/logger.js';
-import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
+} from '../types/property-enhanced';
+import { Logger } from '../utils/logger';
+import { createApiError, ErrorCodes } from '../utils/api-response.util';
 
 /**
  * Comprehensive Azure Cosmos DB Service for Appraisal Management Platform
@@ -68,16 +68,34 @@ export class CosmosDbService {
         throw new Error('Cosmos DB endpoint and key must be provided');
       }
 
-      // Initialize Cosmos client
-      this.client = new CosmosClient({
+      // Initialize Cosmos client with emulator support
+      const isEmulator = this.endpoint.includes('localhost') || this.endpoint.includes('127.0.0.1');
+      const clientOptions: any = {
         endpoint: this.endpoint,
-        key: this.key,
-        connectionPolicy: {
+        key: this.key
+      };
+
+      if (isEmulator) {
+        // Configure for local emulator
+        const https = require('https');
+        clientOptions.agent = new https.Agent({
+          rejectUnauthorized: false
+        });
+        clientOptions.connectionPolicy = {
+          requestTimeout: 30000,
+          enableEndpointDiscovery: false
+        };
+        this.logger.info('Detected Cosmos DB Emulator - using local configuration');
+      } else {
+        // Configure for production
+        clientOptions.connectionPolicy = {
           requestTimeout: 30000,
           enableEndpointDiscovery: true,
           preferredLocations: ['East US', 'West US', 'Central US']
-        }
-      });
+        };
+      }
+
+      this.client = new CosmosClient(clientOptions);
 
       // Create database if it doesn't exist
       const { database } = await this.client.databases.createIfNotExists({
@@ -176,18 +194,7 @@ export class CosmosDbService {
           includedPaths: [
             { path: '/*' }
           ],
-          spatialIndexes: [
-            { 
-              path: '/address/location/*', 
-              types: ['Point' as any],
-              boundingBox: {
-                xmin: -180,
-                ymin: -90,
-                xmax: 180,
-                ymax: 90
-              }
-            }
-          ],
+          // Remove spatial indexes for emulator compatibility
           compositeIndexes: [
             [
               { path: '/address/state', order: 'ascending' },
@@ -214,10 +221,7 @@ export class CosmosDbService {
           indexingMode: 'consistent',
           automatic: true,
           includedPaths: [
-            { path: '/id/?' },
-            { path: '/address/*' },
-            { path: '/assessment/*' },
-            { path: '/valuation/*' }
+            { path: '/*' }
           ],
           excludedPaths: [
             { path: '/deedHistory/*' }, // Large historical data
