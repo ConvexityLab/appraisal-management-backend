@@ -109,6 +109,18 @@ class AppraisalManagementApp {
             'POST /api/ai/agents/deploy': 'Deploy Perligo AI agents',
             'POST /api/ai/workflows/complete-analysis': 'Complete AI analysis workflow'
           },
+          property_intelligence: {
+            'POST /api/property-intelligence/address/geocode': 'Multi-provider address geocoding',
+            'POST /api/property-intelligence/address/validate': 'Address validation using multiple providers',
+            'POST /api/property-intelligence/analyze/comprehensive': 'Complete property intelligence analysis',
+            'POST /api/property-intelligence/analyze/creative-features': 'Creative property characteristics analysis',
+            'POST /api/property-intelligence/analyze/batch': 'Batch property analysis (up to 50 properties)',
+            'POST /api/property-intelligence/analyze/views': 'View analysis (water, city, mountain views)',
+            'POST /api/property-intelligence/analyze/transportation': 'Transportation accessibility analysis',
+            'POST /api/property-intelligence/analyze/neighborhood': 'Neighborhood intelligence and demographics',
+            'GET /api/property-intelligence/providers/status': 'Data provider status and capabilities',
+            'GET /api/property-intelligence/health': 'Property intelligence service health check'
+          },
           health: {
             'GET /health': 'System health check'
           }
@@ -123,7 +135,15 @@ class AppraisalManagementApp {
           'Comprehensive audit trails',
           'Production-ready Perligo AI agent integration',
           'Multi-layer quality control automation',
-          'Advanced reporting and market intelligence'
+          'Advanced reporting and market intelligence',
+          'Multi-provider property intelligence with Google Maps, Azure Maps, OpenStreetMap',
+          'Creative property characteristics analysis (lifestyle scoring, instagrammability)',
+          'Comprehensive address validation and geocoding services',
+          'View analysis (water, city, mountain, nature views)',
+          'Transportation accessibility and neighborhood intelligence',
+          'Batch property analysis with intelligent rate limiting',
+          'Coffee accessibility scoring and dining diversity analysis',
+          'Demographic inference and community fabric scoring'
         ]
       });
     });
@@ -134,6 +154,10 @@ class AppraisalManagementApp {
     // AI/ML services routes
     const aimlController = new AIMLController();
     this.app.use('/api/ai', aimlController.initializeRoutes());
+
+    // Enhanced Property Intelligence routes
+    const { enhancedPropertyIntelligenceRoutes } = require('./routes/enhanced-property-intelligence.routes');
+    this.app.use('/api/property-intelligence', enhancedPropertyIntelligenceRoutes);
 
     // 404 handler for undefined routes
     this.app.use('*', (req: Request, res: Response) => {
