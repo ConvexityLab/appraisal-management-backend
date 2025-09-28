@@ -6,6 +6,7 @@ A comprehensive property intelligence platform that integrates multiple premium 
 
 ## 🌟 Key Features
 
+- **🏛️ Census Intelligence** - Official demographic, economic, and housing analysis using U.S. Census data
 - **☕ Coffee Accessibility Scoring** - Quantify coffee culture around properties
 - **📸 Instagrammability Analysis** - Assess social media appeal and visual attractiveness  
 - **🏙️ Comprehensive View Analysis** - Water, city, mountain, and nature view assessment
@@ -80,6 +81,29 @@ const analysis = await response.json();
 console.log('Coffee Score:', analysis.data.creativeFeatures.lifestyle.coffeeAccessibilityScore);
 console.log('Instagrammability:', analysis.data.creativeFeatures.uniqueCharacteristics.instagrammabilityScore);
 console.log('View Quality:', analysis.data.viewAnalysis.overallViewScore);
+```
+
+### Census Intelligence Analysis
+
+```javascript
+// Get comprehensive demographic, economic, and housing analysis
+const response = await fetch('/api/property-intelligence/census/comprehensive', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    latitude: 40.7589,
+    longitude: -73.9851,
+    propertyId: 'manhattan-property-123'
+  })
+});
+
+const analysis = await response.json();
+
+// Key census metrics
+console.log('Community Score:', analysis.data.overallCommunityScore + '/100');
+console.log('Demographic Compatibility:', analysis.data.demographics.demographicCompatibilityScore);
+console.log('Economic Vitality:', analysis.data.economics.economicVitalityScore);
+console.log('Housing Market Strength:', analysis.data.housing.housingMarketScore);
 ```
 
 ### Address Validation
