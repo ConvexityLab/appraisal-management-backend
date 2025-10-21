@@ -15,10 +15,9 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 
 // Import our services
-import { EnhancedOrderManagementService } from '../services/enhanced-order-management.service';
-import { ComprehensiveQCValidationService } from '../services/comprehensive-qc-validation.service';
-import { ComprehensiveVendorManagementService } from '../services/comprehensive-vendor-management.service';
 import { CosmosDbService } from '../services/cosmos-db.service';
+import { EnhancedPropertyIntelligenceController } from '../controllers/enhanced-property-intelligence.controller';
+import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -32,12 +31,16 @@ interface AuthenticatedRequest extends express.Request {
 export class AppraisalManagementAPIServer {
   private app: express.Application;
   private dbService: CosmosDbService;
+  private propertyIntelligenceController: EnhancedPropertyIntelligenceController;
+  private dynamicCodeService: DynamicCodeExecutionService;
   private port: number;
 
   constructor(port = 3000) {
     this.app = express();
     this.port = port;
     this.dbService = new CosmosDbService();
+    this.propertyIntelligenceController = new EnhancedPropertyIntelligenceController();
+    this.dynamicCodeService = new DynamicCodeExecutionService();
     this.setupMiddleware();
     this.setupRoutes();
     this.setupErrorHandling();
@@ -203,6 +206,79 @@ export class AppraisalManagementAPIServer {
       this.validateAnalyticsQuery(),
       this.getPerformanceAnalytics.bind(this)
     );
+
+    // Property Intelligence routes
+    this.app.post('/api/property-intelligence/address/geocode',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.geocodeAddress
+    );
+
+    this.app.post('/api/property-intelligence/address/validate',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.validateAddress
+    );
+
+    this.app.post('/api/property-intelligence/analyze/comprehensive',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.comprehensiveAnalysis
+    );
+
+    this.app.post('/api/property-intelligence/analyze/creative',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.creativeFeatureAnalysis
+    );
+
+    this.app.post('/api/property-intelligence/analyze/view',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.viewAnalysis
+    );
+
+    this.app.post('/api/property-intelligence/analyze/transportation',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.transportationAnalysis
+    );
+
+    this.app.post('/api/property-intelligence/analyze/neighborhood',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.neighborhoodAnalysis
+    );
+
+    this.app.post('/api/property-intelligence/analyze/batch',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.batchAnalysis
+    );
+
+    this.app.get('/api/property-intelligence/census/demographics',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.getCensusDemographics
+    );
+
+    this.app.get('/api/property-intelligence/census/economics',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.getCensusEconomics
+    );
+
+    this.app.get('/api/property-intelligence/census/housing',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.getCensusHousing
+    );
+
+    this.app.get('/api/property-intelligence/census/comprehensive',
+      this.authenticateToken.bind(this),
+      this.propertyIntelligenceController.getComprehensiveCensusIntelligence
+    );
+
+    this.app.get('/api/property-intelligence/health',
+      this.propertyIntelligenceController.healthCheck
+    );
+
+    // Dynamic Code Execution routes
+    this.app.post('/api/code/execute',
+      this.authenticateToken.bind(this),
+      this.requirePermission('code_execute'),
+      this.validateCodeExecution(),
+      this.executeCode.bind(this)
+    );
   }
 
   // Authentication middleware
@@ -336,6 +412,16 @@ export class AppraisalManagementAPIServer {
       query('startDate').isISO8601().optional(),
       query('endDate').isISO8601().optional(),
       query('groupBy').isIn(['day', 'week', 'month']).optional(),
+      this.handleValidationErrors
+    ];
+  }
+
+  private validateCodeExecution() {
+    return [
+      body('code').isLength({ min: 1, max: 10000 }).trim(),
+      body('context').isObject().optional(),
+      body('timeout').isInt({ min: 100, max: 30000 }).optional(),
+      body('memoryLimit').isInt({ min: 1024, max: 67108864 }).optional(), // 1KB to 64MB
       this.handleValidationErrors
     ];
   }
@@ -1018,6 +1104,54 @@ export class AppraisalManagementAPIServer {
     }
   }
 
+  private async executeCode(req: AuthenticatedRequest, res: express.Response): Promise<void> {
+    try {
+      const { code, context = {}, timeout = 5000, memoryLimit = 16777216 } = req.body;
+      
+      const executionContext = {
+        event: context.event || {},
+        context: context.context || {},
+        rule: context.rule || {},
+        timestamp: new Date(),
+        user: req.user,
+        utils: {
+          date: Date,
+          math: Math,
+          json: JSON,
+          regex: RegExp,
+          console: {
+            log: console.log,
+            warn: console.warn,
+            error: console.error
+          }
+        }
+      };
+
+      const result = await this.dynamicCodeService.executeCode(code, executionContext, {
+        timeout,
+        memoryLimit
+      });
+
+      res.json({
+        success: result.success,
+        result: result.result,
+        executionTime: result.executionTime,
+        memoryUsed: result.memoryUsed,
+        error: result.error,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Code execution failed',
+        code: 'CODE_EXECUTION_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
   // Helper methods for user management (in real implementation, these would interact with database)
   private async validateUserCredentials(email: string, password: string): Promise<any> {
     // Mock implementation - replace with database query
@@ -1191,6 +1325,10 @@ export class AppraisalManagementAPIServer {
       console.error('❌ Failed to start API server:', error);
       process.exit(1);
     }
+  }
+
+  public getExpressApp(): express.Application {
+    return this.app;
   }
 }
 

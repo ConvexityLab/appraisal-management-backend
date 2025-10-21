@@ -1,0 +1,341 @@
+name: Application Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (dev, staging, prod)'
+      app-service-name:
+        required: true
+        type: string
+        description: 'App Service name from infrastructure deployment'
+      app-service-url:
+        required: true
+        type: string
+        description: 'App Service URL for testing'
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        description: 'Target environment'
+      app-service-name:
+        required: true
+        type: string
+        description: 'App Service name'
+      app-service-url:
+        required: true
+        type: string
+        description: 'App Service URL'
+
+env:
+  NODE_VERSION: '18.x'
+
+jobs:
+  build-application:
+    name: Build Application
+    runs-on: ubuntu-latest
+    
+    outputs:
+      build-version: ${{ steps.version.outputs.version }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Generate build version
+      id: version
+      run: |
+        VERSION="1.0.0-${GITHUB_SHA:0:7}-$(date +%Y%m%d%H%M%S)"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "BUILD_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "📦 Build version: $VERSION"
+        
+    - name: Update package.json version
+      run: |
+        npm version ${{ steps.version.outputs.version }} --no-git-tag-version
+        
+    - name: Build production application
+      run: |
+        echo "🔨 Building production application..."
+        npm run build:production
+        
+    - name: Prepare deployment package
+      run: |
+        echo "📦 Preparing deployment package..."
+        
+        # Create deployment directory
+        mkdir -p deployment-package
+        
+        # Copy production files
+        cp -r dist/ deployment-package/
+        cp package.json deployment-package/
+        cp package-lock.json deployment-package/
+        
+        # Create startup script for Azure App Service
+        cat > deployment-package/startup.js << 'EOF'
+        const path = require('path');
+        process.chdir(__dirname);
+        require('./dist/app-production.js');
+        EOF
+        
+        # Create web.config for Azure App Service
+        cat > deployment-package/web.config << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+          <system.webServer>
+            <handlers>
+              <add name="iisnode" path="startup.js" verb="*" modules="iisnode"/>
+            </handlers>
+            <rewrite>
+              <rules>
+                <rule name="StaticContent">
+                  <action type="Rewrite" url="public{REQUEST_URI}"/>
+                </rule>
+                <rule name="DynamicContent">
+                  <conditions>
+                    <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="True"/>
+                  </conditions>
+                  <action type="Rewrite" url="startup.js"/>
+                </rule>
+              </rules>
+            </rewrite>
+            <iisnode watchedFiles="web.config;*.js"/>
+          </system.webServer>
+        </configuration>
+        EOF
+        
+        echo "✅ Deployment package prepared"
+        
+    - name: Archive deployment package
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-package-${{ inputs.environment }}
+        path: deployment-package/
+        retention-days: 30
+
+  deploy-application:
+    name: Deploy to App Service (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    needs: build-application
+    environment: ${{ inputs.environment }}
+    
+    steps:
+    - name: Download deployment package
+      uses: actions/download-artifact@v4
+      with:
+        name: deployment-package-${{ inputs.environment }}
+        path: deployment-package/
+        
+    - name: Azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Deploy to App Service
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ inputs.app-service-name }}
+        package: deployment-package/
+        
+    - name: Wait for deployment to complete
+      run: |
+        echo "⏳ Waiting for deployment to complete..."
+        sleep 60
+        
+    - name: Verify deployment
+      run: |
+        echo "🔍 Verifying deployment..."
+        
+        max_attempts=20
+        attempt=1
+        health_url="${{ inputs.app-service-url }}/health"
+        
+        echo "Testing health endpoint: $health_url"
+        
+        while [ $attempt -le $max_attempts ]; do
+          echo "Attempt $attempt/$max_attempts"
+          
+          response=$(curl -s -w "%{http_code}" "$health_url" -o /tmp/health_response.json)
+          
+          if [ "$response" = "200" ]; then
+            echo "✅ Health check passed!"
+            echo "Response:"
+            cat /tmp/health_response.json | jq '.'
+            break
+          elif [ $attempt -eq $max_attempts ]; then
+            echo "❌ Health check failed after $max_attempts attempts"
+            echo "Last response code: $response"
+            cat /tmp/health_response.json
+            exit 1
+          else
+            echo "⏳ Health check failed (HTTP $response), retrying in 15s..."
+            sleep 15
+            ((attempt++))
+          fi
+        done
+
+  integration-tests:
+    name: Integration Tests (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    needs: deploy-application
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run API integration tests
+      env:
+        API_BASE_URL: ${{ inputs.app-service-url }}
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        echo "🧪 Running integration tests against $API_BASE_URL"
+        
+        # Test health endpoint
+        echo "Testing health endpoint..."
+        response=$(curl -s "$API_BASE_URL/health")
+        echo "$response" | jq '.'
+        
+        # Test API info endpoint
+        echo "Testing API info endpoint..."
+        response=$(curl -s "$API_BASE_URL/api")
+        echo "$response" | jq '.'
+        
+        # Test authentication endpoint
+        echo "Testing authentication endpoint..."
+        response=$(curl -s -X POST "$API_BASE_URL/api/auth/login" \
+          -H "Content-Type: application/json" \
+          -d '{"email":"demo@appraisal.com","password":"demo123"}')
+        echo "$response" | jq '.'
+        
+        # Extract token for further tests
+        token=$(echo "$response" | jq -r '.token // empty')
+        
+        if [ -n "$token" ]; then
+          echo "✅ Authentication successful, testing protected endpoints..."
+          
+          # Test code execution endpoint
+          echo "Testing code execution endpoint..."
+          response=$(curl -s -X POST "$API_BASE_URL/api/code/execute" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $token" \
+            -d '{"code":"return Math.max(1, 2, 3);","timeout":1000}')
+          echo "$response" | jq '.'
+        else
+          echo "⚠️ No token received, skipping protected endpoint tests"
+        fi
+        
+        echo "✅ Integration tests completed"
+
+  performance-tests:
+    name: Performance Tests (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    needs: deploy-application
+    if: inputs.environment != 'dev'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install k6
+      run: |
+        sudo gpg -k
+        sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+        
+    - name: Run performance tests
+      run: |
+        echo "🚀 Running performance tests against ${{ inputs.app-service-url }}"
+        
+        # Create k6 test script
+        cat > performance-test.js << 'EOF'
+        import http from 'k6/http';
+        import { check } from 'k6';
+        
+        export let options = {
+          stages: [
+            { duration: '2m', target: 10 },
+            { duration: '5m', target: 10 },
+            { duration: '2m', target: 0 },
+          ],
+          thresholds: {
+            http_req_duration: ['p(95)<2000'],
+            http_req_failed: ['rate<0.1'],
+          },
+        };
+        
+        export default function() {
+          let response = http.get(`${__ENV.API_BASE_URL}/health`);
+          check(response, {
+            'status is 200': (r) => r.status === 200,
+            'response time < 2s': (r) => r.timings.duration < 2000,
+          });
+        }
+        EOF
+        
+        # Run k6 test
+        k6 run performance-test.js \
+          --env API_BASE_URL=${{ inputs.app-service-url }}
+
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [build-application, deploy-application, integration-tests]
+    if: always()
+    
+    steps:
+    - name: Create deployment summary
+      run: |
+        echo "## 🚀 Application Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| App Service | ${{ inputs.app-service-name }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Application URL | [${{ inputs.app-service-url }}](${{ inputs.app-service-url }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build Version | ${{ needs.build-application.outputs.build-version }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build Status | ${{ needs.build-application.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Deployment Status | ${{ needs.deploy-application.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.deploy-application.result }}" == "success" && "${{ needs.integration-tests.result }}" == "success" ]]; then
+          echo "✅ **Deployment completed successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Quick Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏥 [Health Check](${{ inputs.app-service-url }}/health)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📚 [API Documentation](${{ inputs.app-service-url }}/api)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📊 [System Status](${{ inputs.app-service-url }}/api/status)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Deployment encountered issues. Please check the logs.**" >> $GITHUB_STEP_SUMMARY
+        fi

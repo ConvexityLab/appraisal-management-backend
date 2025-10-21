@@ -1,0 +1,195 @@
+name: Infrastructure Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (dev, staging, prod)'
+      location:
+        required: false
+        type: string
+        default: 'eastus2'
+        description: 'Azure region for deployment'
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        description: 'Target environment'
+      location:
+        required: false
+        type: string
+        default: 'eastus2'
+        description: 'Azure region for deployment'
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  deploy-infrastructure:
+    name: Deploy Infrastructure (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    outputs:
+      resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
+      app-service-name: ${{ steps.deploy.outputs.appServiceName }}
+      app-service-url: ${{ steps.deploy.outputs.appServiceUrl }}
+      key-vault-name: ${{ steps.deploy.outputs.keyVaultName }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Set Azure subscription
+      run: az account set --subscription ${{ env.AZURE_SUBSCRIPTION_ID }}
+      
+    - name: Validate Bicep template
+      run: |
+        echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
+        az deployment sub validate \
+          --location ${{ inputs.location }} \
+          --template-file infrastructure/main-production.bicep \
+          --parameters infrastructure/parameters/${{ inputs.environment }}.parameters.json
+          
+    - name: Deploy infrastructure
+      id: deploy
+      run: |
+        echo "🚀 Deploying infrastructure to ${{ inputs.environment }}..."
+        
+        deployment_output=$(az deployment sub create \
+          --location ${{ inputs.location }} \
+          --template-file infrastructure/main-production.bicep \
+          --parameters infrastructure/parameters/${{ inputs.environment }}.parameters.json \
+          --query 'properties.outputs' \
+          --output json)
+        
+        echo "📋 Deployment completed successfully!"
+        echo "$deployment_output" | jq '.'
+        
+        # Extract outputs
+        resource_group=$(echo "$deployment_output" | jq -r '.resourceGroupName.value')
+        app_service_name=$(echo "$deployment_output" | jq -r '.appServiceName.value')
+        app_service_url=$(echo "$deployment_output" | jq -r '.appServiceUrl.value')
+        key_vault_name=$(echo "$deployment_output" | jq -r '.keyVaultName.value')
+        
+        # Set outputs
+        echo "resourceGroupName=$resource_group" >> $GITHUB_OUTPUT
+        echo "appServiceName=$app_service_name" >> $GITHUB_OUTPUT
+        echo "appServiceUrl=$app_service_url" >> $GITHUB_OUTPUT
+        echo "keyVaultName=$key_vault_name" >> $GITHUB_OUTPUT
+        
+        echo "✅ Infrastructure deployment outputs:"
+        echo "   Resource Group: $resource_group"
+        echo "   App Service: $app_service_name"
+        echo "   App Service URL: $app_service_url"
+        echo "   Key Vault: $key_vault_name"
+        
+    - name: Verify deployment
+      run: |
+        echo "🔍 Verifying deployment..."
+        
+        # Check resource group
+        az group show --name ${{ steps.deploy.outputs.resourceGroupName }} --output table
+        
+        # Check key resources
+        echo "📋 Checking deployed resources..."
+        az resource list \
+          --resource-group ${{ steps.deploy.outputs.resourceGroupName }} \
+          --output table \
+          --query '[].{Name:name, Type:type, Location:location}'
+          
+    - name: Run infrastructure tests
+      run: |
+        echo "🧪 Running infrastructure validation tests..."
+        
+        # Test App Service health
+        echo "Testing App Service..."
+        app_url="${{ steps.deploy.outputs.appServiceUrl }}"
+        
+        # Wait for App Service to be ready
+        max_attempts=30
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+          echo "Attempt $attempt/$max_attempts: Testing $app_url/health"
+          
+          if curl -f -s "$app_url/health" > /dev/null; then
+            echo "✅ App Service health check passed"
+            break
+          elif [ $attempt -eq $max_attempts ]; then
+            echo "❌ App Service health check failed after $max_attempts attempts"
+            exit 1
+          else
+            echo "⏳ App Service not ready, waiting 30s..."
+            sleep 30
+            ((attempt++))
+          fi
+        done
+        
+        # Test Key Vault connectivity
+        echo "Testing Key Vault connectivity..."
+        az keyvault secret list \
+          --vault-name ${{ steps.deploy.outputs.keyVaultName }} \
+          --query '[].name' \
+          --output tsv
+        echo "✅ Key Vault connectivity verified"
+        
+    - name: Update deployment summary
+      run: |
+        echo "## 🚀 Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Location | ${{ inputs.location }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Resource Group | ${{ steps.deploy.outputs.resourceGroupName }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| App Service | ${{ steps.deploy.outputs.appServiceName }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| App Service URL | [${{ steps.deploy.outputs.appServiceUrl }}](${{ steps.deploy.outputs.appServiceUrl }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Key Vault | ${{ steps.deploy.outputs.keyVaultName }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Infrastructure deployment completed successfully!" >> $GITHUB_STEP_SUMMARY
+
+  notify-completion:
+    name: Notify Completion
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    if: always()
+    
+    steps:
+    - name: Notify Teams on Success
+      if: needs.deploy-infrastructure.result == 'success'
+      uses: jdcargile/ms-teams-notification@v1.3
+      with:
+        github-token: ${{ github.token }}
+        ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+        notification-summary: "✅ Infrastructure deployed successfully to ${{ inputs.environment }}"
+        notification-color: good
+        timezone: America/New_York
+        
+    - name: Notify Teams on Failure
+      if: needs.deploy-infrastructure.result == 'failure'
+      uses: jdcargile/ms-teams-notification@v1.3
+      with:
+        github-token: ${{ github.token }}
+        ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+        notification-summary: "❌ Infrastructure deployment failed for ${{ inputs.environment }}"
+        notification-color: danger
+        timezone: America/New_York

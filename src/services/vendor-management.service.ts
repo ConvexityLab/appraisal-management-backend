@@ -568,6 +568,12 @@ export class VendorManagementService {
       };
     }
   }
+
+  /**
+   * Update vendor performance after order completion
+   */
+  async updateVendorPerformanceAfterOrder(vendorId: string, orderOutcome: any): Promise<ApiResponse<Vendor>> {
+    try {
       const vendor = await this.db.vendors.findById(vendorId);
       
       if (!vendor) {

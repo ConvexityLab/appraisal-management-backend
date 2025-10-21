@@ -43,7 +43,8 @@ export class GoogleMapsPropertyIntelligenceService {
     this.apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
     
     if (!this.apiKey) {
-      throw new Error('Google Maps API key is required');
+      this.logger.warn('Google Maps API key not found. Service will use mock data for development.');
+      // Don't throw error - allow service to work with mock data
     }
 
     this.baseUrls = {

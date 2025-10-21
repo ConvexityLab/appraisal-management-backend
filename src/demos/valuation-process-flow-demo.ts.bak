@@ -1,0 +1,695 @@
+#!/usr/bin/env node
+
+/**
+ * Valuation Process Flow Demo
+ * 
+ * Demonstrates how the platform components orchestrate the complete
+ * Valuation and Appraisal Management Process Flow from order intake
+ * through vendor assignment using actual service classes.
+ */
+
+import { OrderIntakeService } from '../services/order-intake.service';
+import { VendorAssignmentService } from '../services/vendor-assignment.service';
+import { ValuationProcessOrchestrator } from '../services/valuation-process-orchestrator.service';
+import { OrderManagementService } from '../services/order-management.service';
+import { VendorManagementService } from '../services/vendor-management.service';
+import { NotificationService } from '../services/notification.service';
+import { Logger } from '../utils/logger';
+import { AppraisalOrder, OrderType, ProductType, Priority } from '../types/index.js';
+
+interface DemoOrderRequest {
+  clientId: string;
+  clientEmail: string;
+  orderType: OrderType;
+  productType: ProductType;
+  propertyAddress: string;
+  loanAmount: number;
+  priority: Priority;
+  borrowerInfo: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+}
+
+class ValuationProcessDemo {
+  private orderIntakeService: OrderIntakeService;
+  private vendorAssignmentService: VendorAssignmentService;
+  private orchestrator: ValuationProcessOrchestrator;
+  private orderService: OrderManagementService;
+  private vendorService: VendorManagementService;
+  private notificationService: NotificationService;
+  private logger: Logger;
+
+  constructor() {
+    this.logger = new Logger('ValuationProcessDemo');
+    this.orderService = new OrderManagementService();
+    this.vendorService = new VendorManagementService();
+    this.notificationService = new NotificationService();
+    this.orderIntakeService = new OrderIntakeService();
+    this.vendorAssignmentService = new VendorAssignmentService();
+    this.orchestrator = new ValuationProcessOrchestrator(
+      this.orderIntakeService,
+      this.vendorAssignmentService,
+      this.notificationService
+    );
+  }
+
+  async runDemo(): Promise<void> {
+    console.log('\n🏠 Valuation and Appraisal Management Process Flow Demo');
+    console.log('=====================================================\n');
+
+    // Sample data for demonstration
+    const orderRequest = this.createSampleOrderRequest();
+    const clientConfig = this.getClientConfiguration(orderRequest.clientId);
+    const vendorPool = this.getAvailableVendors();
+
+    await this.demonstratePhase1_OrderIntake(orderRequest, clientConfig);
+    await this.demonstratePhase2_VendorEngagement(orderRequest, vendorPool);
+    await this.demonstrateAutomatedWorkflow(orderRequest, clientConfig, vendorPool);
+
+    console.log('\n✅ Complete valuation process flow demonstrated!\n');
+  }
+
+  /**
+   * Phase 1: Order Entry & Intake Demonstration
+   */
+  private async demonstratePhase1_OrderIntake(
+    orderRequest: OrderIntakeRequest, 
+    clientConfig: any
+  ): Promise<void> {
+    console.log('📋 Phase 1: Order Entry & Intake');
+    console.log('=================================');
+
+    // 1. Order Validation and Compliance Check
+    const intakeValidationCode = `
+      const { orderData, clientConfig } = event.data;
+      const { loanAmount, productType, complianceRequirements } = orderData;
+      
+      const validationResult = {
+        errors: [],
+        warnings: [],
+        checks: {},
+        isComplete: true,
+        priorityScore: 0
+      };
+      
+      // AMC License Check
+      if (clientConfig.requiresAMCLicense && !complianceRequirements.stateAMCLicense) {
+        validationResult.errors.push('State AMC license verification required');
+        validationResult.isComplete = false;
+      } else {
+        validationResult.checks.amcLicense = 'VERIFIED';
+      }
+      
+      // Loan Amount Validation
+      if (loanAmount > clientConfig.maxLoanAmount) {
+        validationResult.errors.push(\`Loan amount $\${loanAmount.toLocaleString()} exceeds client limit $\${clientConfig.maxLoanAmount.toLocaleString()}\`);
+      } else if (loanAmount > clientConfig.reviewThreshold) {
+        validationResult.warnings.push('High-value loan requires additional review');
+        validationResult.priorityScore += 2;
+      }
+      validationResult.checks.loanAmount = 'VALIDATED';
+      
+      // Product Type Support
+      if (!clientConfig.supportedProductTypes.includes(productType)) {
+        validationResult.warnings.push('Product type may require specialized vendor');
+        validationResult.priorityScore += 1;
+      }
+      validationResult.checks.productType = 'SUPPORTED';
+      
+      // Compliance Guidelines Check
+      const missingGuidelines = clientConfig.requiredGuidelines.filter(
+        guideline => !complianceRequirements.clientGuidelines.includes(guideline)
+      );
+      if (missingGuidelines.length > 0) {
+        validationResult.warnings.push(\`Missing guidelines: \${missingGuidelines.join(', ')}\`);
+      }
+      validationResult.checks.guidelines = 'REVIEWED';
+      
+      // Calculate due date based on priority
+      const baseDays = clientConfig.standardTurnaround;
+      const urgencyMultiplier = orderData.priority === 'RUSH' ? 0.5 : 
+                               orderData.priority === 'EMERGENCY' ? 0.25 : 1;
+      const adjustedDays = Math.max(1, Math.floor(baseDays * urgencyMultiplier));
+      
+      validationResult.suggestedDueDate = new Date(Date.now() + adjustedDays * 24 * 60 * 60 * 1000);
+      validationResult.priorityScore += orderData.priority === 'RUSH' ? 3 : 
+                                       orderData.priority === 'EMERGENCY' ? 5 : 0;
+      
+      return validationResult;
+    `;
+
+    try {
+      const result = await this.codeService.executeCode(intakeValidationCode, {
+        event: { data: { orderData: orderRequest, clientConfig } },
+        context: { userId: 'intake-specialist-001', role: 'intake' },
+        rule: { name: 'order-intake-validation' },
+        timestamp: new Date(),
+        utils: { date: Date, math: Math, json: JSON, regex: RegExp, console: console }
+      });
+
+      if (result.success) {
+        console.log('  ✅ Order Intake Validation:');
+        console.log(`     Order Complete: ${result.result.isComplete}`);
+        console.log(`     Priority Score: ${result.result.priorityScore}`);
+        console.log(`     Suggested Due Date: ${result.result.suggestedDueDate.toLocaleDateString()}`);
+        
+        if (result.result.errors.length > 0) {
+          console.log('     🚨 Errors:');
+          result.result.errors.forEach((error: string) => {
+            console.log(`       • ${error}`);
+          });
+        }
+        
+        if (result.result.warnings.length > 0) {
+          console.log('     ⚠️  Warnings:');
+          result.result.warnings.forEach((warning: string) => {
+            console.log(`       • ${warning}`);
+          });
+        }
+
+        console.log('     ✓ Validation Checks:');
+        Object.entries(result.result.checks).forEach(([check, status]) => {
+          console.log(`       ${check}: ${status}`);
+        });
+      }
+    } catch (error) {
+      console.log(`  ❌ Intake validation failed: ${error}`);
+    }
+
+    // 2. Payment Processing Logic
+    const paymentProcessingCode = `
+      const { orderData, clientConfig } = event.data;
+      const { loanAmount, priority } = orderData;
+      
+      let paymentRequired = false;
+      let paymentAmount = 0;
+      let paymentMethod = 'INVOICE';
+      let processingFee = 0;
+      
+      // Base fee calculation
+      const baseFee = clientConfig.feeStructure[orderData.orderType] || 500;
+      paymentAmount = baseFee;
+      
+      // Priority adjustments
+      if (priority === 'RUSH') {
+        const rushFee = baseFee * 0.5; // 50% rush fee
+        paymentAmount += rushFee;
+      } else if (priority === 'EMERGENCY') {
+        const emergencyFee = baseFee * 1.0; // 100% emergency fee
+        paymentAmount += emergencyFee;
+      }
+      
+      // High-value loan adjustment
+      if (loanAmount > 1000000) {
+        const complexityFee = baseFee * 0.25; // 25% complexity fee
+        paymentAmount += complexityFee;
+      }
+      
+      // Determine payment responsibility
+      if (clientConfig.paymentModel === 'BORROWER_PAID') {
+        paymentRequired = true;
+        paymentMethod = 'CREDIT_CARD';
+        processingFee = paymentAmount * 0.029; // 2.9% processing fee
+      } else if (clientConfig.paymentModel === 'CLIENT_INVOICE') {
+        paymentMethod = 'INVOICE';
+        paymentRequired = false; // Will be invoiced later
+      }
+      
+      return {
+        paymentRequired,
+        paymentAmount: Math.round(paymentAmount * 100) / 100,
+        paymentMethod,
+        processingFee: Math.round(processingFee * 100) / 100,
+        totalAmount: Math.round((paymentAmount + processingFee) * 100) / 100,
+        breakdown: {
+          baseFee,
+          priorityFee: paymentAmount - baseFee,
+          processingFee
+        }
+      };
+    `;
+
+    try {
+      const paymentResult = await this.codeService.executeCode(paymentProcessingCode, {
+        event: { data: { orderData: orderRequest, clientConfig } },
+        context: { userId: 'payment-processor', role: 'finance' },
+        rule: { name: 'payment-calculation' },
+        timestamp: new Date(),
+        utils: { date: Date, math: Math, json: JSON, regex: RegExp, console: console }
+      });
+
+      if (paymentResult.success) {
+        console.log('\n  💰 Payment Processing:');
+        console.log(`     Payment Required: ${paymentResult.result.paymentRequired}`);
+        console.log(`     Payment Method: ${paymentResult.result.paymentMethod}`);
+        console.log(`     Base Amount: $${paymentResult.result.breakdown.baseFee}`);
+        if (paymentResult.result.breakdown.priorityFee > 0) {
+          console.log(`     Priority Fee: $${paymentResult.result.breakdown.priorityFee}`);
+        }
+        if (paymentResult.result.processingFee > 0) {
+          console.log(`     Processing Fee: $${paymentResult.result.processingFee}`);
+        }
+        console.log(`     Total Amount: $${paymentResult.result.totalAmount}`);
+      }
+    } catch (error) {
+      console.log(`  ❌ Payment processing failed: ${error}`);
+    }
+
+    console.log();
+  }
+
+  /**
+   * Phase 2: Vendor Engagement Demonstration
+   */
+  private async demonstratePhase2_VendorEngagement(
+    orderRequest: OrderIntakeRequest,
+    vendorPool: VendorProfile[]
+  ): Promise<void> {
+    console.log('🤝 Phase 2: Vendor Engagement');
+    console.log('==============================');
+
+    // 1. Intelligent Vendor Selection
+    const vendorSelectionCode = `
+      const { orderData, vendors } = event.data;
+      const { orderType, priority, loanAmount } = orderData;
+      
+      const scoredVendors = vendors
+        .filter(vendor => {
+          // Basic eligibility checks
+          if (!vendor.isAvailable) return false;
+          if (!vendor.serviceTypes.includes(orderType)) return false;
+          if (vendor.excludedClients.includes(orderData.clientId)) return false;
+          if (vendor.currentWorkload >= vendor.maxConcurrentOrders) return false;
+          
+          return true;
+        })
+        .map(vendor => {
+          let score = 0;
+          const reasons = [];
+          
+          // QC Score (40% weight)
+          if (vendor.averageQCScore >= 95) {
+            score += 40;
+            reasons.push('Excellent QC score (95%+)');
+          } else if (vendor.averageQCScore >= 90) {
+            score += 35;
+            reasons.push('Very good QC score (90%+)');
+          } else if (vendor.averageQCScore >= 85) {
+            score += 30;
+            reasons.push('Good QC score (85%+)');
+          } else {
+            score += 20;
+            reasons.push('Acceptable QC score');
+          }
+          
+          // Turnaround time (30% weight)
+          if (priority === 'EMERGENCY' && vendor.averageTurnaroundDays <= 1) {
+            score += 30;
+            reasons.push('Same-day capability for emergency orders');
+          } else if (priority === 'RUSH' && vendor.averageTurnaroundDays <= 3) {
+            score += 30;
+            reasons.push('Fast turnaround for rush orders');
+          } else if (vendor.averageTurnaroundDays <= 5) {
+            score += 25;
+            reasons.push('Good standard turnaround');
+          } else {
+            score += 15;
+            reasons.push('Acceptable turnaround time');
+          }
+          
+          // Workload capacity (20% weight)
+          const capacityUtilization = vendor.currentWorkload / vendor.maxConcurrentOrders;
+          if (capacityUtilization < 0.5) {
+            score += 20;
+            reasons.push('Low workload - high availability');
+          } else if (capacityUtilization < 0.7) {
+            score += 15;
+            reasons.push('Moderate workload - good availability');
+          } else {
+            score += 10;
+            reasons.push('High workload - limited availability');
+          }
+          
+          // High-value loan bonus (10% weight)
+          if (loanAmount > 1000000 && vendor.averageQCScore >= 92) {
+            score += 10;
+            reasons.push('Qualified for high-value loans');
+          }
+          
+          return {
+            vendor,
+            score: Math.round(score),
+            reasons,
+            capacityUtilization: Math.round(capacityUtilization * 100)
+          };
+        })
+        .sort((a, b) => b.score - a.score);
+      
+      return {
+        eligibleVendors: scoredVendors.length,
+        topVendors: scoredVendors.slice(0, 3),
+        recommendedVendor: scoredVendors[0] || null
+      };
+    `;
+
+    try {
+      const selectionResult = await this.codeService.executeCode(vendorSelectionCode, {
+        event: { data: { orderData: orderRequest, vendors: vendorPool } },
+        context: { userId: 'vendor-coordinator', role: 'vendor_management' },
+        rule: { name: 'vendor-selection-algorithm' },
+        timestamp: new Date(),
+        utils: { date: Date, math: Math, json: JSON, regex: RegExp, console: console }
+      });
+
+      if (selectionResult.success) {
+        console.log('  🎯 Vendor Selection Results:');
+        console.log(`     Eligible Vendors: ${selectionResult.result.eligibleVendors}`);
+        
+        if (selectionResult.result.recommendedVendor) {
+          const recommended = selectionResult.result.recommendedVendor;
+          console.log('\n     🏆 Recommended Vendor:');
+          console.log(`       Business: ${recommended.vendor.businessName}`);
+          console.log(`       Score: ${recommended.score}/100`);
+          console.log(`       Capacity: ${recommended.capacityUtilization}% utilized`);
+          console.log('       Selection Reasons:');
+          recommended.reasons.forEach((reason: string) => {
+            console.log(`         • ${reason}`);
+          });
+        }
+
+        if (selectionResult.result.topVendors.length > 1) {
+          console.log('\n     📋 Alternative Vendors:');
+          selectionResult.result.topVendors.slice(1).forEach((vendor: any, index: number) => {
+            console.log(`       ${index + 2}. ${vendor.vendor.businessName} (Score: ${vendor.score})`);
+          });
+        }
+      }
+    } catch (error) {
+      console.log(`  ❌ Vendor selection failed: ${error}`);
+    }
+
+    // 2. Conflict of Interest Check
+    const conflictCheckCode = `
+      const { vendor, orderData } = event.data;
+      const conflicts = [];
+      const warnings = [];
+      
+      // Check borrower name against vendor's previous clients
+      const borrowerName = orderData.borrowerInfo.name.toLowerCase();
+      // Simulate previous client check
+      const previousClientNames = ['john smith', 'mary johnson']; // Mock data
+      if (previousClientNames.some(name => name === borrowerName)) {
+        conflicts.push('Previous relationship with borrower detected');
+      }
+      
+      // Property address check
+      const propertyAddress = orderData.propertyAddress.toLowerCase();
+      // Simulate property history check
+      const previousProperties = ['456 oak st, austin, tx']; // Mock data
+      if (previousProperties.some(addr => addr === propertyAddress)) {
+        conflicts.push('Previously appraised this property');
+      }
+      
+      // Client exclusion check
+      if (vendor.excludedClients.includes(orderData.clientId)) {
+        conflicts.push('Vendor excluded by client policy');
+      }
+      
+      // Geographic concentration check
+      const vendorLocation = vendor.state;
+      const propertyState = orderData.propertyAddress.split(', ')[2]?.split(' ')[0] || '';
+      if (vendorLocation !== propertyState) {
+        warnings.push('Out-of-state vendor assignment');
+      }
+      
+      // Workload concentration warning
+      if (vendor.currentWorkload >= vendor.maxConcurrentOrders * 0.9) {
+        warnings.push('Vendor approaching capacity limit');
+      }
+      
+      return {
+        hasConflicts: conflicts.length > 0,
+        conflicts,
+        warnings,
+        canProceed: conflicts.length === 0,
+        riskLevel: conflicts.length > 0 ? 'HIGH' : 
+                  warnings.length > 0 ? 'MEDIUM' : 'LOW'
+      };
+    `;
+
+    try {
+      // Use the first vendor from our sample data for conflict check
+      const testVendor = vendorPool[0];
+      
+      const conflictResult = await this.codeService.executeCode(conflictCheckCode, {
+        event: { data: { vendor: testVendor, orderData: orderRequest } },
+        context: { userId: 'compliance-officer', role: 'compliance' },
+        rule: { name: 'conflict-of-interest-check' },
+        timestamp: new Date(),
+        utils: { date: Date, math: Math, json: JSON, regex: RegExp, console: console }
+      });
+
+      if (conflictResult.success) {
+        console.log('\n  🔍 Conflict of Interest Check:');
+        console.log(`     Can Proceed: ${conflictResult.result.canProceed}`);
+        console.log(`     Risk Level: ${conflictResult.result.riskLevel}`);
+        
+        if (conflictResult.result.conflicts.length > 0) {
+          console.log('     🚨 Conflicts Detected:');
+          conflictResult.result.conflicts.forEach((conflict: string) => {
+            console.log(`       • ${conflict}`);
+          });
+        }
+        
+        if (conflictResult.result.warnings.length > 0) {
+          console.log('     ⚠️  Warnings:');
+          conflictResult.result.warnings.forEach((warning: string) => {
+            console.log(`       • ${warning}`);
+          });
+        }
+        
+        if (conflictResult.result.canProceed) {
+          console.log('     ✅ Assignment approved - no conflicts detected');
+        }
+      }
+    } catch (error) {
+      console.log(`  ❌ Conflict check failed: ${error}`);
+    }
+
+    console.log();
+  }
+
+  /**
+   * Automated Workflow Demonstration
+   */
+  private async demonstrateAutomatedWorkflow(
+    orderRequest: OrderIntakeRequest,
+    clientConfig: any,
+    vendorPool: VendorProfile[]
+  ): Promise<void> {
+    console.log('🤖 Automated Workflow Management');
+    console.log('=================================');
+
+    // Escalation Rules
+    const escalationRulesCode = `
+      const { assignment, hoursElapsed, orderPriority, vendorPool } = event.data;
+      
+      const escalationThresholds = {
+        EMERGENCY: 1,   // 1 hour
+        RUSH: 4,        // 4 hours
+        STANDARD: 12    // 12 hours
+      };
+      
+      const threshold = escalationThresholds[orderPriority] || 12;
+      let shouldEscalate = hoursElapsed > threshold;
+      let escalationAction = 'NONE';
+      let escalationReason = '';
+      
+      if (shouldEscalate) {
+        escalationReason = \`No vendor response after \${hoursElapsed} hours (threshold: \${threshold}h)\`;
+        
+        // Determine escalation action
+        if (vendorPool.alternates && vendorPool.alternates.length > 0) {
+          escalationAction = 'REASSIGN_TO_ALTERNATE';
+        } else if (vendorPool.outOfState && vendorPool.outOfState.length > 0) {
+          escalationAction = 'EXPAND_TO_OUT_OF_STATE';
+        } else {
+          escalationAction = 'MANUAL_INTERVENTION_REQUIRED';
+        }
+      }
+      
+      // Generate notifications
+      const notifications = [];
+      if (shouldEscalate) {
+        notifications.push({
+          recipient: 'vendor-coordinator@company.com',
+          priority: 'HIGH',
+          message: \`Order \${assignment.orderId} requires escalation: \${escalationReason}\`
+        });
+        
+        if (escalationAction === 'MANUAL_INTERVENTION_REQUIRED') {
+          notifications.push({
+            recipient: 'manager@company.com',
+            priority: 'URGENT',
+            message: 'Manual intervention required for vendor assignment'
+          });
+        }
+      }
+      
+      return {
+        shouldEscalate,
+        escalationAction,
+        escalationReason,
+        notifications,
+        recommendedNextSteps: shouldEscalate ? [
+          'Review vendor availability',
+          'Check alternative coverage options',
+          'Consider adjusting order parameters'
+        ] : ['Continue monitoring for vendor response']
+      };
+    `;
+
+    try {
+      // Simulate a scenario where vendor hasn't responded for 6 hours
+      const escalationResult = await this.codeService.executeCode(escalationRulesCode, {
+        event: { 
+          data: { 
+            assignment: { orderId: 'ORD-2024-001', vendorId: 'VEN-001' },
+            hoursElapsed: 6,
+            orderPriority: orderRequest.priority,
+            vendorPool: { 
+              alternates: vendorPool.slice(1, 3),
+              outOfState: vendorPool.slice(3)
+            }
+          } 
+        },
+        context: { userId: 'system', role: 'automation' },
+        rule: { name: 'escalation-management' },
+        timestamp: new Date(),
+        utils: { date: Date, math: Math, json: JSON, regex: RegExp, console: console }
+      });
+
+      if (escalationResult.success) {
+        console.log('  ⏰ Escalation Management:');
+        console.log(`     Should Escalate: ${escalationResult.result.shouldEscalate}`);
+        console.log(`     Action Required: ${escalationResult.result.escalationAction}`);
+        
+        if (escalationResult.result.escalationReason) {
+          console.log(`     Reason: ${escalationResult.result.escalationReason}`);
+        }
+        
+        if (escalationResult.result.notifications.length > 0) {
+          console.log('     📧 Notifications Triggered:');
+          escalationResult.result.notifications.forEach((notification: any) => {
+            console.log(`       • ${notification.priority}: ${notification.message}`);
+          });
+        }
+        
+        console.log('     📝 Recommended Next Steps:');
+        escalationResult.result.recommendedNextSteps.forEach((step: string) => {
+          console.log(`       • ${step}`);
+        });
+      }
+    } catch (error) {
+      console.log(`  ❌ Escalation processing failed: ${error}`);
+    }
+
+    console.log();
+  }
+
+  // Helper methods to create sample data
+  private createSampleOrderRequest(): OrderIntakeRequest {
+    return {
+      clientId: 'CLIENT_MEGABANK_001',
+      orderType: 'FULL_APPRAISAL',
+      productType: 'SINGLE_FAMILY',
+      propertyAddress: '123 Main St, Austin, TX 78701',
+      loanAmount: 650000,
+      priority: 'RUSH',
+      borrowerInfo: {
+        name: 'Sarah Wilson',
+        email: 'sarah.wilson@email.com',
+        phone: '555-0199'
+      },
+      complianceRequirements: {
+        stateAMCLicense: true,
+        clientGuidelines: ['USPAP', 'FANNIE_MAE']
+      }
+    };
+  }
+
+  private getClientConfiguration(clientId: string): any {
+    return {
+      requiresAMCLicense: true,
+      maxLoanAmount: 2000000,
+      reviewThreshold: 500000,
+      supportedProductTypes: ['SINGLE_FAMILY', 'CONDO', 'MULTI_FAMILY'],
+      requiredGuidelines: ['USPAP', 'FANNIE_MAE'],
+      standardTurnaround: 7, // days
+      paymentModel: 'CLIENT_INVOICE',
+      feeStructure: {
+        FULL_APPRAISAL: 550,
+        DRIVE_BY: 350,
+        EXTERIOR_ONLY: 275,
+        DESK_REVIEW: 200
+      }
+    };
+  }
+
+  private getAvailableVendors(): VendorProfile[] {
+    return [
+      {
+        id: 'VEN_001',
+        businessName: 'Elite Appraisal Services',
+        email: 'assignments@eliteappraisal.com',
+        phone: '555-0123',
+        state: 'TX',
+        serviceTypes: ['FULL_APPRAISAL', 'DRIVE_BY', 'EXTERIOR_ONLY'],
+        averageQCScore: 96,
+        averageTurnaroundDays: 4,
+        currentWorkload: 8,
+        maxConcurrentOrders: 15,
+        isAvailable: true,
+        excludedClients: []
+      },
+      {
+        id: 'VEN_002',
+        businessName: 'Rapid Valuations LLC',
+        email: 'orders@rapidvaluations.com',
+        phone: '555-0456',
+        state: 'TX',
+        serviceTypes: ['FULL_APPRAISAL', 'RUSH_APPRAISAL'],
+        averageQCScore: 92,
+        averageTurnaroundDays: 2,
+        currentWorkload: 12,
+        maxConcurrentOrders: 18,
+        isAvailable: true,
+        excludedClients: []
+      },
+      {
+        id: 'VEN_003',
+        businessName: 'Professional Property Evaluators',
+        email: 'info@propertyeval.com',
+        phone: '555-0789',
+        state: 'TX',
+        serviceTypes: ['FULL_APPRAISAL', 'DRIVE_BY'],
+        averageQCScore: 89,
+        averageTurnaroundDays: 6,
+        currentWorkload: 5,
+        maxConcurrentOrders: 12,
+        isAvailable: true,
+        excludedClients: ['CLIENT_COMPETITOR_001']
+      }
+    ];
+  }
+}
+
+// Run the demo
+if (require.main === module) {
+  const demo = new ValuationProcessDemo();
+  demo.runDemo().catch(console.error);
+}
+
+export { ValuationProcessDemo };

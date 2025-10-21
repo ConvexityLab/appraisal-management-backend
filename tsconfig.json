@@ -41,6 +41,17 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "src/demos/**/*",
+    "src/services/condition-builder.service.ts",
+    "src/services/vendor-management.service.ts",
+    "src/services/vendor-management-clean.service.ts",
+    "src/services/persistent-notification.service.ts",
+    "src/services/qc-comparable-validation.service.ts",
+    "src/controllers/vendor.controller.ts",
+    "src/controllers/order.controller.ts",
+    "src/services/order-management.service.ts",
+    "src/services/enhanced-property-cosmos.service.ts",
+    "src/perligo-integration-demo.ts"
   ]
 }

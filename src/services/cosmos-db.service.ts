@@ -543,7 +543,8 @@ export class CosmosDbService {
         updatedAt: new Date()
       };
 
-      const { resource } = await this.ordersContainer.item(id, updatedOrder.status).replace(updatedOrder);
+      // Use clientId as partition key (not status)
+      const { resource } = await this.ordersContainer.item(id, updatedOrder.clientId).replace(updatedOrder);
 
       return {
         success: true,
@@ -739,33 +740,45 @@ export class CosmosDbService {
       let query = 'SELECT * FROM c WHERE 1=1';
       const parameters: any[] = [];
 
-      // Build dynamic query
-      if (filters.propertyType && filters.propertyType.length > 0) {
-        query += ' AND c.propertyType IN (' + filters.propertyType.map((_: any, index: number) => `@type${index}`).join(', ') + ')';
-        filters.propertyType.forEach((type: any, index: number) => {
-          parameters.push({ name: `@type${index}`, value: type });
-        });
+      // Handle property type - support both array and string formats
+      if (filters.propertyType) {
+        if (Array.isArray(filters.propertyType) && filters.propertyType.length > 0) {
+          query += ' AND c.propertyType IN (' + filters.propertyType.map((_: any, index: number) => `@type${index}`).join(', ') + ')';
+          filters.propertyType.forEach((type: any, index: number) => {
+            parameters.push({ name: `@type${index}`, value: type });
+          });
+        } else if (typeof filters.propertyType === 'string') {
+          query += ' AND c.propertyType = @propertyType';
+          parameters.push({ name: '@propertyType', value: filters.propertyType });
+        }
       }
 
-      if (filters.address?.state) {
+      // Handle state - support both nested and flat structures
+      const state = filters.state || filters.address?.state;
+      if (state) {
         query += ' AND c.address.state = @state';
-        parameters.push({ name: '@state', value: filters.address.state });
+        parameters.push({ name: '@state', value: state });
       }
 
-      if (filters.address?.city) {
+      // Handle city - support both nested and flat structures
+      const city = filters.city || filters.address?.city;
+      if (city) {
         query += ' AND c.address.city = @city';
-        parameters.push({ name: '@city', value: filters.address.city });
+        parameters.push({ name: '@city', value: city });
       }
 
-      if (filters.priceRange) {
-        if (filters.priceRange.min) {
-          query += ' AND c.valuation.estimatedValue >= @minPrice';
-          parameters.push({ name: '@minPrice', value: filters.priceRange.min });
-        }
-        if (filters.priceRange.max) {
-          query += ' AND c.valuation.estimatedValue <= @maxPrice';
-          parameters.push({ name: '@maxPrice', value: filters.priceRange.max });
-        }
+      // Handle value range - support both nested and flat structures
+      const minValue = filters.minValue || filters.priceRange?.min;
+      const maxValue = filters.maxValue || filters.priceRange?.max;
+      
+      if (minValue) {
+        query += ' AND c.valuation.estimatedValue >= @minPrice';
+        parameters.push({ name: '@minPrice', value: minValue });
+      }
+      
+      if (maxValue) {
+        query += ' AND c.valuation.estimatedValue <= @maxPrice';
+        parameters.push({ name: '@maxPrice', value: maxValue });
       }
 
       query += ' ORDER BY c.lastUpdated DESC';
