@@ -276,6 +276,10 @@ export interface QCChecklist {
   isActive: boolean;
   tags: string[];
   
+  // Organization and client context
+  clientId?: string;
+  organizationId?: string;
+  
   // Regulatory and Compliance
   regulatoryFramework?: string; // e.g., 'GSE', 'FHA', 'VA', 'USDA'
   complianceStandards?: string[];

@@ -619,15 +619,15 @@ export class QCResultsController {
       const reports = await this.cosmosService.queryItems('qc-reports', query, parameters);
 
       // Remove data field for list view (too large)
-      const reportSummaries = reports.map(report => ({
+      const reportSummaries = (reports.data || []).map((report: any) => ({
         ...report,
         data: undefined,
-        dataCount: report.data?.length || 0
+        dataCount: Array.isArray(report.data) ? report.data.length : 0
       }));
 
       res.json(createApiResponse({
         reports: reportSummaries,
-        pagination: { limit, offset, hasMore: reports.length === limit }
+        pagination: { limit, offset, hasMore: (reports.data?.length || 0) === limit }
       }, 'QC reports list retrieved successfully'));
 
     } catch (error) {
@@ -651,21 +651,31 @@ export class QCResultsController {
       const { reportId } = req.params;
       const includeData = req.query.includeData === 'true';
 
+      if (!reportId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('INVALID_REPORT_ID', 'Report ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Getting QC report', {
         reportId,
         includeData,
         userId: req.user?.id
       });
 
-      const report = await this.cosmosService.getItem('qc-reports', reportId);
+      const reportResponse = await this.cosmosService.getItem('qc-reports', reportId);
 
-      if (!report) {
+      if (!reportResponse.data) {
         res.status(404).json({
           success: false,
           error: createApiError('QC_REPORT_NOT_FOUND', `QC report ${reportId} not found`)
         });
         return;
       }
+
+      const report: any = reportResponse.data;
 
       // Check access permissions
       if (!this.hasReportAccess(req.user, report)) {
@@ -705,20 +715,30 @@ export class QCResultsController {
     try {
       const { reportId } = req.params;
 
+      if (!reportId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('INVALID_REPORT_ID', 'Report ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Deleting QC report', {
         reportId,
         userId: req.user?.id
       });
 
-      const report = await this.cosmosService.getItem('qc-reports', reportId);
+      const reportResponse = await this.cosmosService.getItem('qc-reports', reportId);
 
-      if (!report) {
+      if (!reportResponse.data) {
         res.status(404).json({
           success: false,
           error: createApiError('QC_REPORT_NOT_FOUND', `QC report ${reportId} not found`)
         });
         return;
       }
+
+      const report: any = reportResponse.data;
 
       // Check permissions
       if (report.generatedBy !== req.user?.id && req.user?.role !== 'admin') {
@@ -1165,12 +1185,12 @@ export class QCResultsController {
     const results = await this.cosmosService.queryItems('qc-results', sql, parameters);
 
     return {
-      data: results,
+      data: results.data || [],
       pagination: {
         offset,
         limit,
-        total: results.length,
-        hasMore: results.length === limit
+        total: results.data?.length || 0,
+        hasMore: (results.data?.length || 0) === limit
       }
     };
   }

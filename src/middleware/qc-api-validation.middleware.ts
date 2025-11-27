@@ -426,9 +426,9 @@ export class QCApiValidationMiddleware {
       
       if (!errors.isEmpty()) {
         const validationErrors = errors.array().map(error => ({
-          field: error.param,
+          field: (error as any).param || (error as any).path || 'unknown',
           message: error.msg,
-          value: error.value
+          value: (error as any).value || 'unknown'
         }));
 
         this.logger.debug('Validation errors', {

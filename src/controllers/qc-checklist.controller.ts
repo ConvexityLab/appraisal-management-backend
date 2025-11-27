@@ -142,11 +142,11 @@ export class QCChecklistController {
         organizationId: req.body.organizationId || req.user?.organizationId
       };
 
-      const result = await this.qcService.createChecklist(checklistData);
+      const result = await this.qcService.createChecklist(checklistData, req.user?.id || 'system');
 
       this.logger.info('QC checklist created successfully', {
-        checklistId: result.id,
-        name: result.name,
+        checklistId: result.data?.id,
+        name: result.data?.name,
         userId: req.user?.id
       });
 
@@ -397,7 +397,7 @@ export class QCChecklistController {
         userId: req.user?.id
       });
 
-      const result = await this.qcService.createChecklistFromTemplate(
+      const result = await this.qcService.createFromTemplate(
         templateId,
         name,
         customizations,
@@ -520,7 +520,7 @@ export class QCChecklistController {
       const filters = {
         checklistId: req.query.checklistId as string,
         targetId: req.query.targetId as string,
-        assignmentType: req.query.assignmentType as string,
+        assignmentType: req.query.assignmentType as ("user" | "client" | "organization" | "role"),
         isActive: req.query.isActive !== 'false',
         clientId: req.query.clientId as string || req.user?.clientId,
         organizationId: req.query.organizationId as string || req.user?.organizationId
@@ -594,12 +594,20 @@ export class QCChecklistController {
     try {
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('INVALID_ASSIGNMENT_ID', 'Assignment ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Removing checklist assignment', {
         assignmentId: id,
         userId: req.user?.id
       });
 
-      await this.qcService.removeAssignment(id, req.user?.id || 'system');
+      await this.qcService.removeAssignment(id);
 
       this.logger.info('Checklist assignment removed successfully', {
         assignmentId: id,
@@ -633,6 +641,14 @@ export class QCChecklistController {
     try {
       const { id } = req.params;
       const { testData } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('INVALID_CHECKLIST_ID', 'Checklist ID is required')
+        });
+        return;
+      }
 
       this.logger.debug('Validating checklist logic', {
         checklistId: id,

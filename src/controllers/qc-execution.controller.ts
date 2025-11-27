@@ -12,7 +12,10 @@ import { createApiError, createApiResponse } from '../utils/api-response.util';
 import {
   QCExecutionStatus,
   QCExecutionMode,
-  QCExecutionConfig
+  QCExecutionConfig,
+  QCExecutionRequest,
+  QCBatchExecutionRequest,
+  QCExecutionResult
 } from '../types/qc-management';
 import { QCExecutionContext, QCChecklist } from '../types/qc-checklist.types';
 import { ApiResponse } from '../types/index';
@@ -161,18 +164,18 @@ export class QCExecutionController {
       const { checklistId, targetId, documentData, executionMode = QCExecutionMode.STANDARD, executionConfig } = req.body;
 
       this.logger.debug('Starting QC review execution', {
-        checklistId: executionRequest.checklistId,
-        targetId: executionRequest.targetId,
-        executionMode: executionRequest.executionMode,
+        checklistId,
+        targetId,
+        executionMode,
         userId: req.user?.id
       });
 
       // Validate checklist exists and user has access
-      const checklist = await this.checklistService.getChecklist(executionRequest.checklistId);
+      const checklist = await this.checklistService.getChecklist(checklistId);
       if (!checklist) {
         res.status(404).json({
           success: false,
-          error: createApiError('QC_CHECKLIST_NOT_FOUND', `QC checklist ${executionRequest.checklistId} not found`)
+          error: createApiError('QC_CHECKLIST_NOT_FOUND', `QC checklist ${checklistId} not found`)
         });
         return;
       }
@@ -189,9 +192,9 @@ export class QCExecutionController {
       const sessionId = this.generateSessionId();
       const session: QCExecutionSession = {
         id: sessionId,
-        checklistId: executionRequest.checklistId,
-        targetId: executionRequest.targetId,
-        documentData: executionRequest.documentData,
+        checklistId,
+        targetId,
+        documentData,
         status: QCExecutionStatus.RUNNING,
         progress: {
           totalCategories: checklist.categories.length,
@@ -210,11 +213,11 @@ export class QCExecutionController {
 
       // Execute QC review
       const executionContext = {
-        checklistId: executionRequest.checklistId,
-        documentId: executionRequest.targetId,
+        checklistId,
+        documentId: targetId,
         documentType: checklist.documentType,
         executionId: sessionId,
-        documentData: executionRequest.documentData,
+        documentData,
         userId: req.user?.id || 'system',
         clientId: req.user?.clientId,
         organizationId: req.user?.organizationId,
@@ -224,7 +227,7 @@ export class QCExecutionController {
 
       const result = await this.executionEngine.executeQCReview(
         checklist,
-        executionRequest.documentData,
+        documentData,
         executionContext
       );
 
@@ -236,10 +239,10 @@ export class QCExecutionController {
 
       this.logger.info('QC review execution completed', {
         sessionId,
-        checklistId: executionRequest.checklistId,
-        targetId: executionRequest.targetId,
-        totalIssues: result.summary.totalIssues,
-        overallScore: result.summary.overallScore,
+        checklistId,
+        targetId,
+        totalIssues: result.data?.categoryResults?.length || 0,
+        overallScore: result.data?.overallScore,
         userId: req.user?.id
       });
 
@@ -425,10 +428,22 @@ export class QCExecutionController {
           });
 
           const checklist = await this.checklistService.getChecklist(request.checklistId);
+          const executionContext = {
+            checklistId: request.checklistId,
+            documentId: request.targetId,
+            documentType: checklist?.documentType || 'unknown',
+            executionId: this.generateSessionId(),
+            documentData: request.documentData,
+            userId: req.user?.id || 'system',
+            clientId: req.user?.clientId || '',
+            organizationId: req.user?.organizationId || '',
+            autoExecute: true,
+            requireHumanReview: false
+          };
           const result = await this.executionEngine.executeQCReview(
             checklist!,
             request.documentData,
-            request.executionConfig
+            executionContext
           );
 
           batchResults.push({
@@ -860,7 +875,7 @@ export class QCExecutionController {
           id: checklist.id,
           name: checklist.name,
           version: checklist.version,
-          documentTypes: checklist.documentTypes
+          documentTypes: [checklist.documentType]
         },
         executionPlan: {
           totalCategories: checklist.categories.length,
@@ -1156,14 +1171,24 @@ export class QCExecutionController {
       session.status = QCExecutionStatus.RUNNING;
       this.activeSessions.set(session.id, session);
 
+      // Create proper QCExecutionContext from available data
+      const context: QCExecutionContext = {
+        checklistId: session.checklistId,
+        documentId: session.targetId,
+        documentType: checklist.documentType || 'appraisal_report',
+        executionId: session.id,
+        documentData: executionRequest.documentData,
+        userId: session.executedBy,
+        // Use defaults for optional properties not in QCExecutionConfig
+        aiProvider: 'azure',
+        autoExecute: true,
+        requireHumanReview: false
+      };
+
       const result = await this.executionEngine.executeQCReview(
         checklist,
         executionRequest.documentData,
-        executionRequest.executionConfig,
-        (progress) => {
-          session.progress = progress;
-          this.activeSessions.set(session.id, session);
-        }
+        context
       );
 
       session.status = QCExecutionStatus.COMPLETED;
@@ -1174,8 +1199,8 @@ export class QCExecutionController {
       this.logger.info('Background QC execution completed', {
         sessionId: session.id,
         checklistId: session.checklistId,
-        totalIssues: result.summary.totalIssues,
-        overallScore: result.summary.overallScore
+        totalIssues: result.data?.categoryResults?.length || 0,
+        overallScore: result.data?.overallScore
       });
 
     } catch (error) {
