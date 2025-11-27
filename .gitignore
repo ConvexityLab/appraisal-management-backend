@@ -57,6 +57,7 @@ func.log
 # Bicep compiled files
 *.json
 !package.json
+!package-lock.json
 !tsconfig.json
 
 # Local development

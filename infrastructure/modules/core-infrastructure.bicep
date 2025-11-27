@@ -238,6 +238,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
+
+
 // Public IP for Application Gateway
 resource appGatewayPublicIP 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   name: 'pip-appgw-${environment}-${suffix}'

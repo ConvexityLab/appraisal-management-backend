@@ -63,6 +63,7 @@ module dataServices 'modules/data-services.bicep' = {
     environment: environment
     suffix: suffix
     tags: tags
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
 
@@ -75,6 +76,7 @@ module cosmosDb 'modules/cosmos-production.bicep' = {
     environment: environment
     cosmosAccountName: 'appraisal-cosmos-${environment}-${suffix}'
     databaseName: 'appraisal-management'
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
 
@@ -102,6 +104,7 @@ module appServices 'modules/app-services.bicep' = {
     keyVaultName: coreInfrastructure.outputs.keyVaultName
     logAnalyticsWorkspaceId: coreInfrastructure.outputs.logAnalyticsWorkspaceId
   }
+
 }
 
 // Security Services Module
@@ -144,12 +147,23 @@ module integrationServices 'modules/integration-services.bicep' = {
   }
 }
 
+// Key Vault Role Assignments (after container apps are deployed)
+module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
+  name: 'keyvault-role-assignments-deployment'
+  scope: primaryResourceGroup
+  params: {
+    keyVaultName: coreInfrastructure.outputs.keyVaultName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
 // Outputs
 output resourceGroupName string = primaryResourceGroup.name
 output drResourceGroupName string = drResourceGroup.name
 output keyVaultName string = coreInfrastructure.outputs.keyVaultName
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
 output containerAppNames array = appServices.outputs.containerAppNames
+output containerAppPrincipalIds array = appServices.outputs.containerAppPrincipalIds
 output applicationInsightsName string = coreInfrastructure.outputs.applicationInsightsName
 output storageAccountName string = dataServices.outputs.primaryStorageAccountName
 output redisCacheName string = dataServices.outputs.redisCacheName
@@ -160,3 +174,5 @@ output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
 output cosmosEndpoint string = cosmosDb.outputs.cosmosEndpoint
 output cosmosDatabaseName string = cosmosDb.outputs.databaseName
 output cosmosContainerNames array = cosmosDb.outputs.containerNames
+
+

@@ -11,8 +11,6 @@ param logAnalyticsWorkspaceId string
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
-var appServicePlanName = 'asp-appraisal-${environment}-${suffix}'
-var functionAppStorageName = 'stfunc${environment}${take(suffix, 8)}'
 
 // Container Registry for application images
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -187,127 +185,19 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for a
   }
 }]
 
-// Role assignment for Container Apps to pull from ACR
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (app, i) in containerApps: {
+// ACR Pull role assignments for container apps to pull images
+resource acrPullRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (app, i) in containerApps: {
   name: guid(containerRegistry.id, containerAppInstances[i].id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
   scope: containerRegistry
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
     principalId: containerAppInstances[i].identity.principalId
     principalType: 'ServicePrincipal'
+    description: 'Allows ${containerAppInstances[i].name} to pull container images from ACR'
   }
 }]
 
-// Storage Account for Azure Functions
-resource functionAppStorage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: functionAppStorageName
-  location: location
-  tags: tags
-  sku: {
-    name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
-  properties: {
-    dnsEndpointType: 'Standard'
-    defaultToOAuthAuthentication: false
-    publicNetworkAccess: 'Enabled'
-    allowCrossTenantReplication: false
-    minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: true
-    supportsHttpsTrafficOnly: true
-    encryption: {
-      requireInfrastructureEncryption: false
-      services: {
-        file: {
-          keyType: 'Account'
-          enabled: true
-        }
-        blob: {
-          keyType: 'Account'
-          enabled: true
-        }
-      }
-      keySource: 'Microsoft.Storage'
-    }
-    accessTier: 'Hot'
-  }
-}
 
-// App Service Plan for Azure Functions
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
-  name: appServicePlanName
-  location: location
-  tags: tags
-  sku: {
-    name: environment == 'prod' ? 'EP1' : 'Y1'
-    tier: environment == 'prod' ? 'ElasticPremium' : 'Dynamic'
-  }
-  kind: environment == 'prod' ? 'elastic' : 'functionapp'
-  properties: {
-    reserved: true // Linux
-    maximumElasticWorkerCount: environment == 'prod' ? 20 : 1
-  }
-}
-
-// Azure Functions App for background processing
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
-  name: 'func-appraisal-${environment}-${suffix}'
-  location: location
-  tags: tags
-  kind: 'functionapp,linux'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: appServicePlan.id
-    reserved: true
-    isXenon: false
-    hyperV: false
-    vnetRouteAllEnabled: false
-    vnetImagePullEnabled: false
-    vnetContentShareEnabled: false
-    siteConfig: {
-      numberOfWorkers: 1
-      linuxFxVersion: 'Python|3.11'
-      acrUseManagedIdentityCreds: false
-      alwaysOn: environment == 'prod'
-      http20Enabled: false
-      functionAppScaleLimit: environment == 'prod' ? 200 : 10
-      minimumElasticInstanceCount: environment == 'prod' ? 1 : 0
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${functionAppStorage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${functionAppStorage.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${functionAppStorage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${functionAppStorage.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower('func-appraisal-${environment}-${suffix}')
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'python'
-        }
-        {
-          name: 'WEBSITE_PYTHON_DEFAULT_VERSION'
-          value: '3.11'
-        }
-      ]
-    }
-    httpsOnly: true
-    redundancyMode: 'None'
-    storageAccountRequired: false
-    keyVaultReferenceIdentity: 'SystemAssigned'
-  }
-}
 
 // Logic Apps for workflow automation  
 resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
@@ -332,12 +222,9 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
 output containerAppEnvironmentName string = containerAppEnvironment.name
 output containerAppEnvironmentId string = containerAppEnvironment.id
 output containerAppNames array = [for (app, i) in containerApps: containerAppInstances[i].name]
+output containerAppPrincipalIds array = [for (app, i) in containerApps: containerAppInstances[i].identity.principalId]
 output containerRegistryName string = containerRegistry.name
 output containerRegistryId string = containerRegistry.id
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
-output functionAppName string = functionApp.name
-output functionAppId string = functionApp.id
-output appServicePlanName string = appServicePlan.name
-output appServicePlanId string = appServicePlan.id
 output logicAppName string = logicApp.name
 output logicAppId string = logicApp.id

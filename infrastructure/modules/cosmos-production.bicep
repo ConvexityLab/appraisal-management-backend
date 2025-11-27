@@ -3,6 +3,7 @@ param location string = resourceGroup().location
 param environment string = 'production'
 param cosmosAccountName string = 'appraisal-cosmos-${environment}-${uniqueString(resourceGroup().id)}'
 param databaseName string = 'appraisal-management'
+param containerAppPrincipalIds array = []
 
 var tags = {
   Environment: environment
@@ -289,6 +290,30 @@ resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-pr
     ]
   }
 }
+
+// Role assignments - Cosmos DB Built-in Data Reader for container apps
+resource cosmosDbDataReaderRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(cosmosAccount.id, principalId, '00000000-0000-0000-0000-000000000001')
+  scope: cosmosAccount
+  properties: {
+    roleDefinitionId: resourceId('Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions', cosmosAccount.name, '00000000-0000-0000-0000-000000000001') // Cosmos DB Built-in Data Reader
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to read Cosmos DB data'
+  }
+}]
+
+// Role assignments - Cosmos DB Built-in Data Contributor for container apps
+resource cosmosDbDataContributorRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(cosmosAccount.id, principalId, '00000000-0000-0000-0000-000000000002')
+  scope: cosmosAccount
+  properties: {
+    roleDefinitionId: resourceId('Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions', cosmosAccount.name, '00000000-0000-0000-0000-000000000002') // Cosmos DB Built-in Data Contributor
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to read and write Cosmos DB data'
+  }
+}]
 
 // Outputs for application configuration
 output cosmosAccountId string = cosmosAccount.id

@@ -5,6 +5,7 @@ param location string
 param environment string
 param suffix string
 param tags object
+param containerAppPrincipalIds array = []
 
 // Variables - Removed SQL Server and Cosmos DB (handled separately)
 var primaryStorageAccountName = 'stappraisal${environment}${take(suffix, 8)}'
@@ -219,6 +220,40 @@ resource redisCache 'Microsoft.Cache/redis@2023-08-01' = {
 }
 
 // Note: Synapse Analytics removed - analytics can be handled through Cosmos DB analytical store
+
+// Role assignments for container apps to access storage accounts
+resource primaryStorageRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(primaryStorageAccount.id, principalId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: primaryStorageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to read/write/delete blobs in primary storage'
+  }
+}]
+
+resource primaryStorageQueueRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(primaryStorageAccount.id, principalId, '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+  scope: primaryStorageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88') // Storage Queue Data Contributor
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to send/receive messages from storage queues'
+  }
+}]
+
+resource dataLakeStorageRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(dataLakeStorage.id, principalId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: dataLakeStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to access data lake storage for analytics'
+  }
+}]
 
 // Outputs - Storage and cache services only
 output primaryStorageAccountName string = primaryStorageAccount.name
