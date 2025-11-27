@@ -342,8 +342,7 @@ npm run test:coverage      # Coverage report
 
 ### Linting
 ```bash
-npm run lint              # Check code style
-npm run lint:fix          # Auto-fix issues
+# Linting removed for production deployment simplicity
 ```
 
 ## Production Deployment

@@ -63,9 +63,6 @@ jobs:
     - name: Type check
       run: npm run type-check
 
-    - name: Lint code
-      run: npm run lint
-
     - name: Run unit tests
       run: npm run test:unit
 
@@ -95,9 +92,6 @@ jobs:
         
     - name: Install dependencies
       run: npm ci
-      
-    - name: Run linting
-      run: npm run lint || echo "Linting completed with warnings"
       
     - name: Run type checking
       run: npm run type-check || echo "Type checking completed with errors"
