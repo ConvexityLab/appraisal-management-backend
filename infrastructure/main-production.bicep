@@ -25,9 +25,6 @@ param resourceNamingPattern string = '{appName}-{environment}'
 @description('Tags to apply to all resources')
 param tags object
 
-@description('Azure API version for resource groups')
-param resourceGroupApiVersion string = '2023-07-01'
-
 @description('Custom resource group name override (optional)')
 param customResourceGroupName string = ''
 
@@ -94,7 +91,6 @@ module appServices 'modules/app-services.bicep' = {
     environment: environment
     suffix: substring(uniqueString(resourceGroup.id), 0, 6)
     tags: tags
-    keyVaultName: '${namingPrefix}-kv-${substring(uniqueString(resourceGroup.id), 0, 6)}'
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
@@ -117,7 +113,6 @@ module storage 'modules/storage.bicep' = {
   scope: resourceGroup
   params: {
     location: location
-    namingPrefix: namingPrefix
     environment: environment
     tags: tags
   }

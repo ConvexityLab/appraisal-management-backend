@@ -5,7 +5,6 @@ param location string
 param environment string
 param suffix string
 param tags object
-param keyVaultName string
 param logAnalyticsWorkspaceId string
 
 // Variables

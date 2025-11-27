@@ -101,7 +101,6 @@ module appServices 'modules/app-services.bicep' = {
     environment: environment
     suffix: suffix
     tags: tags
-    keyVaultName: coreInfrastructure.outputs.keyVaultName
     logAnalyticsWorkspaceId: coreInfrastructure.outputs.logAnalyticsWorkspaceId
   }
 

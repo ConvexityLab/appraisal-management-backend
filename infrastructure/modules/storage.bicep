@@ -4,9 +4,6 @@
 @description('The Azure region for deployment')
 param location string
 
-@description('Naming prefix for resources')
-param namingPrefix string
-
 @description('Environment name')
 param environment string
 
