@@ -47,39 +47,16 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   tags: tags
 }
 
-@description('App Service Plan configuration')
-param appServicePlan object = {}
-
-@description('App Service configuration')  
-param appServiceConfig object = {}
-
-@description('Node.js version for App Service')
-param nodeVersion string = '18-lts'
-
-// App Service Plan and Web App
-module appService 'modules/app-service.bicep' = {
-  name: 'app-service-deployment'
-  scope: resourceGroup
-  params: {
-    location: location
-    namingPrefix: namingPrefix
-    environment: environment
-    tags: tags
-    appServicePlanConfig: appServicePlan
-    appServiceConfig: appServiceConfig
-    nodeVersion: nodeVersion
-  }
-}
-
-// Cosmos DB
-module cosmosDb 'modules/cosmos-db.bicep' = {
+// Cosmos DB with Container App role assignments
+module cosmosDb 'modules/cosmos-production.bicep' = {
   name: 'cosmos-db-deployment'
   scope: resourceGroup
   params: {
     location: location
-    namingPrefix: namingPrefix
     environment: environment
-    tags: tags
+    cosmosAccountName: '${namingPrefix}-cosmos'
+    databaseName: 'appraisal-management'
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
 
@@ -95,7 +72,7 @@ module serviceBus 'modules/service-bus.bicep' = {
   }
 }
 
-// Key Vault
+// Key Vault (no principal IDs initially)
 module keyVault 'modules/key-vault.bicep' = {
   name: 'key-vault-deployment'
   scope: resourceGroup
@@ -104,7 +81,21 @@ module keyVault 'modules/key-vault.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    appServicePrincipalId: appService.outputs.appServiceManagedIdentityId
+    appServicePrincipalId: '00000000-0000-0000-0000-000000000000' // Temporary placeholder
+  }
+}
+
+// Container Apps and Container Registry (deployed first to get principal IDs)
+module appServices 'modules/app-services.bicep' = {
+  name: 'app-services-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
+    tags: tags
+    keyVaultName: '${namingPrefix}-kv-${substring(uniqueString(resourceGroup.id), 0, 6)}'
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -138,40 +129,40 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   scope: resourceGroup
   params: {
     keyVaultName: keyVault.outputs.keyVaultName
-    cosmosAccountName: cosmosDb.outputs.accountName
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
     serviceBusNamespaceName: serviceBus.outputs.namespaceName
     storageAccountName: storage.outputs.storageAccountName
     applicationInsightsKey: monitoring.outputs.instrumentationKey
   }
 }
 
-// App Service Configuration
-module appServiceConfig 'modules/app-service-config.bicep' = {
-  name: 'app-service-config-deployment'
+// Key Vault Role Assignments for Container Apps
+module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
+  name: 'keyvault-role-assignments-deployment'
   scope: resourceGroup
   params: {
-    appServiceName: appService.outputs.appServiceName
     keyVaultName: keyVault.outputs.keyVaultName
-    applicationInsightsConnectionString: monitoring.outputs.connectionString
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
-  dependsOn: [
-    keyVaultSecrets
-  ]
 }
 
 // Outputs
 output resourceGroupName string = resourceGroup.name
-output appServiceName string = appService.outputs.appServiceName
-output appServiceUrl string = appService.outputs.appServiceUrl
+output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
+output containerAppNames array = appServices.outputs.containerAppNames
+output containerRegistryName string = appServices.outputs.containerRegistryName
+output containerRegistryLoginServer string = appServices.outputs.containerRegistryLoginServer
 output keyVaultName string = keyVault.outputs.keyVaultName
-output cosmosAccountName string = cosmosDb.outputs.accountName
+output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
 output applicationInsightsName string = monitoring.outputs.applicationInsightsName
 output deploymentSummary object = {
   resourceGroup: resourceGroup.name
   location: location
   environment: environment
-  appServiceUrl: appService.outputs.appServiceUrl
-  cosmosEndpoint: cosmosDb.outputs.endpoint
+  containerAppEnvironment: appServices.outputs.containerAppEnvironmentName
+  containerRegistry: appServices.outputs.containerRegistryName
+  containerApps: appServices.outputs.containerAppNames
+  cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
   keyVaultUri: keyVault.outputs.keyVaultUri
   monitoringWorkspace: monitoring.outputs.logAnalyticsWorkspaceName
 }

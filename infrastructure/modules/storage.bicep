@@ -34,9 +34,9 @@ var storageConfigs = {
 
 var config = storageConfigs[environment]
 
-// Storage Account
+// Storage Account (must be 3-24 chars, lowercase letters and numbers only)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
-  name: '${replace(namingPrefix, '-', '')}storage'
+  name: 'appr${environment}${take(uniqueString(resourceGroup().id), 6)}st'
   location: location
   tags: tags
   sku: {

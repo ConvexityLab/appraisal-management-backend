@@ -72,3 +72,10 @@ func.log
 # Temporary files
 tmp/
 temp/
+
+# Security - Never commit credentials or secrets
+github-secrets.md
+*secrets*.md
+.credentials
+*.key
+*.pem
