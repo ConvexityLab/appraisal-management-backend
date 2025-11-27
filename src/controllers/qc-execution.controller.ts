@@ -372,6 +372,15 @@ export class QCExecutionController {
 
       for (let i = 0; i < batchRequest.requests.length; i++) {
         const request = batchRequest.requests[i];
+        if (!request) {
+          validationResults.push({
+            index: i,
+            valid: false,
+            error: 'Invalid request data'
+          });
+          continue;
+        }
+
         try {
           const checklist = await this.checklistService.getChecklist(request.checklistId);
           if (!checklist) {
@@ -420,6 +429,14 @@ export class QCExecutionController {
       // Execute each request
       for (let i = 0; i < batchRequest.requests.length; i++) {
         const request = batchRequest.requests[i];
+        if (!request) {
+          batchResults.push({
+            index: i,
+            success: false,
+            error: 'Invalid request data'
+          });
+          continue;
+        }
         
         try {
           this.logger.debug(`Executing batch request ${i + 1}/${batchRequest.requests.length}`, {
@@ -514,6 +531,14 @@ export class QCExecutionController {
     try {
       const { sessionId } = req.params;
       
+      if (!sessionId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('SESSION_ID_REQUIRED', 'Session ID is required')
+        });
+        return;
+      }
+      
       this.logger.debug('Getting execution status', {
         sessionId,
         userId: req.user?.id
@@ -570,6 +595,14 @@ export class QCExecutionController {
     try {
       const { sessionId } = req.params;
 
+      if (!sessionId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('SESSION_ID_REQUIRED', 'Session ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Getting execution progress', {
         sessionId,
         userId: req.user?.id
@@ -625,6 +658,14 @@ export class QCExecutionController {
   private async getExecutionResults(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { sessionId } = req.params;
+
+      if (!sessionId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('SESSION_ID_REQUIRED', 'Session ID is required')
+        });
+        return;
+      }
 
       this.logger.debug('Getting execution results', {
         sessionId,
@@ -775,6 +816,14 @@ export class QCExecutionController {
   private async cancelExecution(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { sessionId } = req.params;
+
+      if (!sessionId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('SESSION_ID_REQUIRED', 'Session ID is required')
+        });
+        return;
+      }
 
       this.logger.debug('Cancelling execution', {
         sessionId,
@@ -1408,8 +1457,8 @@ export class QCExecutionController {
     const issueMap = new Map<string, number>();
 
     sessions.forEach(session => {
-      session.results?.categoryResults?.forEach(categoryResult => {
-        categoryResult.issues?.forEach(issue => {
+      session.results?.categoryResults?.forEach((categoryResult: any) => {
+        categoryResult.issues?.forEach((issue: any) => {
           const issueKey = `${issue.category}_${issue.type}`;
           issueMap.set(issueKey, (issueMap.get(issueKey) || 0) + 1);
         });
@@ -1463,7 +1512,9 @@ export class QCExecutionController {
 
     sessions.forEach(session => {
       const day = session.startedAt.toISOString().split('T')[0];
-      dayMap.set(day, (dayMap.get(day) || 0) + 1);
+      if (day) {
+        dayMap.set(day, (dayMap.get(day) || 0) + 1);
+      }
     });
 
     return Array.from(dayMap.entries())
@@ -1477,10 +1528,12 @@ export class QCExecutionController {
     sessions.forEach(session => {
       if (session.results?.summary?.overallScore !== undefined) {
         const day = session.startedAt.toISOString().split('T')[0];
-        if (!dayMap.has(day)) {
-          dayMap.set(day, []);
+        if (day) {
+          if (!dayMap.has(day)) {
+            dayMap.set(day, []);
+          }
+          dayMap.get(day)!.push(session.results.summary.overallScore);
         }
-        dayMap.get(day)!.push(session.results.summary.overallScore);
       }
     });
 

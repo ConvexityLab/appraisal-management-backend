@@ -96,8 +96,12 @@ export class QCApiValidationMiddleware {
     }
 
     return helmet({
-      contentSecurityPolicy: this.config.security.contentSecurityPolicy,
-      crossOriginEmbedderPolicy: this.config.security.crossOriginEmbedderPolicy,
+      ...(this.config.security.contentSecurityPolicy !== undefined && {
+        contentSecurityPolicy: this.config.security.contentSecurityPolicy
+      }),
+      ...(this.config.security.crossOriginEmbedderPolicy !== undefined && {
+        crossOriginEmbedderPolicy: this.config.security.crossOriginEmbedderPolicy
+      }),
       hsts: {
         maxAge: 31536000, // 1 year
         includeSubDomains: true,
@@ -126,7 +130,9 @@ export class QCApiValidationMiddleware {
     return rateLimit({
       windowMs: this.config.rateLimiting.windowMs,
       max: this.config.rateLimiting.maxRequests,
-      skipSuccessfulRequests: this.config.rateLimiting.skipSuccessfulRequests,
+      ...(this.config.rateLimiting.skipSuccessfulRequests !== undefined && {
+        skipSuccessfulRequests: this.config.rateLimiting.skipSuccessfulRequests
+      }),
       message: {
         success: false,
         error: createApiError('RATE_LIMIT_EXCEEDED', 'Too many requests, please try again later')
@@ -179,7 +185,7 @@ export class QCApiValidationMiddleware {
         }
 
         req.user = user;
-        next();
+        return next();
 
       } catch (error) {
         this.logger.error('Authentication failed', {
@@ -187,7 +193,7 @@ export class QCApiValidationMiddleware {
           endpoint: req.originalUrl
         });
 
-        res.status(401).json({
+        return res.status(401).json({
           success: false,
           error: createApiError('AUTHENTICATION_FAILED', 'Authentication failed')
         });
@@ -220,7 +226,7 @@ export class QCApiValidationMiddleware {
         }
 
         req.user = user;
-        next();
+        return next();
 
       } catch (error) {
         this.logger.error('API key authentication failed', {
@@ -228,7 +234,7 @@ export class QCApiValidationMiddleware {
           endpoint: req.originalUrl
         });
 
-        res.status(401).json({
+        return res.status(401).json({
           success: false,
           error: createApiError('API_KEY_AUTHENTICATION_FAILED', 'API key authentication failed')
         });
@@ -299,7 +305,7 @@ export class QCApiValidationMiddleware {
         });
       }
 
-      next();
+      return next();
     };
   }
 
@@ -335,7 +341,7 @@ export class QCApiValidationMiddleware {
         });
       }
 
-      next();
+      return next();
     };
   }
 
@@ -444,7 +450,7 @@ export class QCApiValidationMiddleware {
         });
       }
 
-      next();
+      return next();
     };
   }
 
@@ -697,7 +703,7 @@ export class QCApiValidationMiddleware {
       }
 
       // Default server error
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         error: createApiError('INTERNAL_SERVER_ERROR', 
           isDevelopment ? error.message : 'Internal server error',

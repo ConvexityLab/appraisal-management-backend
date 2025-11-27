@@ -173,6 +173,14 @@ export class QCChecklistController {
       const { id } = req.params;
       const includeInactive = req.query.includeInactive === 'true';
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('QC_CHECKLIST_ID_REQUIRED', 'Checklist ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Getting QC checklist', { 
         checklistId: id, 
         userId: req.user?.id,
@@ -220,6 +228,14 @@ export class QCChecklistController {
   private async updateChecklist(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('QC_CHECKLIST_ID_REQUIRED', 'Checklist ID is required')
+        });
+        return;
+      }
 
       this.logger.debug('Updating QC checklist', { 
         checklistId: id, 
@@ -281,6 +297,14 @@ export class QCChecklistController {
     try {
       const { id } = req.params;
 
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('QC_CHECKLIST_ID_REQUIRED', 'Checklist ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Deleting QC checklist', { 
         checklistId: id, 
         userId: req.user?.id 
@@ -340,10 +364,12 @@ export class QCChecklistController {
         documentType: req.query.documentType as string,
         isTemplate: req.query.isTemplate === 'true',
         isActive: req.query.isActive !== 'false', // Default to active only
-        tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
         createdBy: req.query.createdBy as string,
-        clientId: req.query.clientId as string || req.user?.clientId,
-        organizationId: req.query.organizationId as string || req.user?.organizationId
+        ...(req.query.tags && { tags: (req.query.tags as string).split(',') }),
+        ...(req.query.clientId && { clientId: req.query.clientId as string }),
+        ...(req.user?.clientId && !req.query.clientId && { clientId: req.user.clientId }),
+        ...(req.query.organizationId && { organizationId: req.query.organizationId as string }),
+        ...(req.user?.organizationId && !req.query.organizationId && { organizationId: req.user.organizationId })
       };
 
       // Remove undefined values
@@ -434,6 +460,14 @@ export class QCChecklistController {
     try {
       const { id } = req.params;
       const { name } = req.body;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('QC_CHECKLIST_ID_REQUIRED', 'Checklist ID is required')
+        });
+        return;
+      }
 
       this.logger.debug('Cloning QC checklist', {
         sourceChecklistId: id,
@@ -562,6 +596,14 @@ export class QCChecklistController {
     try {
       const { targetId } = req.params;
       const documentType = req.query.documentType as string;
+
+      if (!targetId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('TARGET_ID_REQUIRED', 'Target ID is required')
+        });
+        return;
+      }
 
       this.logger.debug('Getting active assignments', {
         targetId,

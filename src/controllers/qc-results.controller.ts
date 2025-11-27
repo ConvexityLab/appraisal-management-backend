@@ -241,6 +241,14 @@ export class QCResultsController {
     try {
       const { resultId } = req.params;
 
+      if (!resultId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('RESULT_ID_REQUIRED', 'Result ID is required')
+        });
+        return;
+      }
+
       this.logger.debug('Getting QC result', {
         resultId,
         userId: req.user?.id
@@ -298,9 +306,9 @@ export class QCResultsController {
       });
 
       const filters: QCResultsFilter = {
-        checklistId,
-        clientId: req.user?.clientId,
-        organizationId: req.user?.organizationId
+        ...(checklistId && { checklistId }),
+        ...(req.user?.clientId && { clientId: req.user.clientId }),
+        ...(req.user?.organizationId && { organizationId: req.user.organizationId })
       };
 
       const query: QCResultsQuery = {
@@ -344,9 +352,9 @@ export class QCResultsController {
       });
 
       const filters: QCResultsFilter = {
-        targetId,
-        clientId: req.user?.clientId,
-        organizationId: req.user?.organizationId
+        ...(targetId && { targetId }),
+        ...(req.user?.clientId && { clientId: req.user.clientId }),
+        ...(req.user?.organizationId && { organizationId: req.user.organizationId })
       };
 
       const query: QCResultsQuery = {
