@@ -212,17 +212,17 @@ export class QCExecutionController {
       this.activeSessions.set(sessionId, session);
 
       // Execute QC review
-      const executionContext = {
+      const executionContext: QCExecutionContext = {
         checklistId,
         documentId: targetId,
         documentType: checklist.documentType,
         executionId: sessionId,
         documentData,
         userId: req.user?.id || 'system',
-        clientId: req.user?.clientId,
-        organizationId: req.user?.organizationId,
         autoExecute: true,
-        requireHumanReview: false
+        requireHumanReview: false,
+        ...(req.user?.clientId && { clientId: req.user.clientId }),
+        ...(req.user?.organizationId && { organizationId: req.user.organizationId })
       };
 
       const result = await this.executionEngine.executeQCReview(

@@ -2,9 +2,9 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
 
 env:
   NODE_VERSION: '18.x'
@@ -36,7 +36,7 @@ jobs:
       continue-on-error: true
       
     - name: Run TypeScript check
-      run: npm run type-check
+      run: npm run build
       
     - name: Security audit
       run: npm audit --audit-level=high
@@ -61,7 +61,7 @@ jobs:
       run: npm ci
       
     - name: Build TypeScript
-      run: npm run build:production
+      run: npm run build
       
     - name: Run unit tests
       run: npm run test:unit
