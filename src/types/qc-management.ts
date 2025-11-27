@@ -13,23 +13,286 @@ import {
 } from './property-intelligence';
 
 // ===========================
+// SUPPORTING ENUMS AND TYPES
+// ===========================
+
+export enum RiskSeverity {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical'
+}
+
+export enum FraudSeverity {
+  NONE = 'none',
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical'
+}
+
+export enum AnomalyType {
+  VALUE = 'value',
+  COMPARABLE = 'comparable',
+  MARKET = 'market',
+  DATA = 'data'
+}
+
+export enum AnomalySeverity {
+  MINOR = 'minor',
+  MODERATE = 'moderate',
+  MAJOR = 'major',
+  CRITICAL = 'critical'
+}
+
+export enum QCActionType {
+  REVIEW = 'review',
+  INVESTIGATE = 'investigate',
+  REVISE = 'revise',
+  REJECT = 'reject',
+  ESCALATE = 'escalate'
+}
+
+export enum ActionPriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  URGENT = 'urgent'
+}
+
+export enum ActionStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled'
+}
+
+export enum AppraisalSection {
+  SUBJECT_PROPERTY = 'subject_property',
+  COMPARABLES = 'comparables',
+  MARKET_ANALYSIS = 'market_analysis',
+  VALUATION = 'valuation',
+  CERTIFICATION = 'certification'
+}
+
+export enum RevisionType {
+  MINOR = 'minor',
+  MAJOR = 'major',
+  TECHNICAL = 'technical',
+  COMPLIANCE = 'compliance'
+}
+
+export enum RevisionPriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical'
+}
+
+export enum ComplianceStatus {
+  COMPLIANT = 'compliant',
+  NON_COMPLIANT = 'non_compliant',
+  NEEDS_REVIEW = 'needs_review',
+  PENDING = 'pending'
+}
+
+export enum FraudAction {
+  MONITOR = 'monitor',
+  INVESTIGATE = 'investigate',
+  FLAG = 'flag',
+  REJECT = 'reject'
+}
+
+// ===========================
+// SUPPORTING INTERFACES
+// ===========================
+
+export interface MarketTrend {
+  indicator: string;
+  value: number;
+  trend: 'increasing' | 'decreasing' | 'stable';
+  confidence: number;
+}
+
+export interface MarketAssumptionValidation {
+  assumption: string;
+  isValid: boolean;
+  confidence: number;
+  supportingData: string[];
+}
+
+export interface MarketRiskFlag {
+  type: string;
+  severity: RiskSeverity;
+  description: string;
+}
+
+export interface GeographicValidationResult {
+  isValid: boolean;
+  confidence: number;
+  issues: string[];
+}
+
+export interface ComparableRiskFlag {
+  type: string;
+  severity: RiskSeverity;
+  description: string;
+}
+
+export interface ComplianceFlag {
+  regulation: string;
+  severity: 'minor' | 'major' | 'critical';
+  description: string;
+}
+
+export interface RiskRecommendation {
+  type: string;
+  priority: ActionPriority;
+  description: string;
+  action: string;
+}
+
+export interface USPAPComplianceResult {
+  compliant: boolean;
+  violations: string[];
+  score: number;
+}
+
+export interface FIRREAComplianceResult {
+  compliant: boolean;
+  violations: string[];
+  score: number;
+}
+
+export interface ClientOverlayResult {
+  overlayId: string;
+  compliant: boolean;
+  issues: string[];
+}
+
+export interface FormValidationResult {
+  valid: boolean;
+  errors: string[];
+  completeness: number;
+}
+
+export interface CertificationValidationResult {
+  valid: boolean;
+  issues: string[];
+  expiryDate?: Date;
+}
+
+export interface DemographicDiscrepancy {
+  field: string;
+  expected: any;
+  actual: any;
+  significance: number;
+}
+
+export interface ValueRangeValidation {
+  inRange: boolean;
+  expectedRange: [number, number];
+  actualValue: number;
+}
+
+export interface MarketConditionValidation {
+  valid: boolean;
+  marketTrend: 'up' | 'down' | 'stable';
+  confidence: number;
+}
+
+export interface CreativePropertyFeatures {
+  hasUnusualFeatures: boolean;
+  features: string[];
+  marketImpact: number;
+}
+
+export interface LocationValidation {
+  valid: boolean;
+  accuracy: number;
+  issues: string[];
+}
+
+export interface AdjustmentRecommendation {
+  type: string;
+  amount: number;
+  reason: string;
+  confidence: number;
+}
+
+export interface ComparableRiskFactor {
+  factor: string;
+  severity: RiskSeverity;
+  impact: number;
+}
+
+export interface GeographicSpread {
+  distance: number;
+  acceptable: boolean;
+  marketArea: string;
+}
+
+export interface NeighborhoodConsistency {
+  consistent: boolean;
+  score: number;
+  issues: string[];
+}
+
+export interface TransportationConsistency {
+  consistent: boolean;
+  accessibility: number;
+  issues: string[];
+}
+
+export interface AdjustmentSupportingData {
+  source: string;
+  data: any;
+  reliability: number;
+}
+
+export interface FraudEvidencePoint {
+  type: string;
+  description: string;
+  severity: FraudSeverity;
+}
+
+export interface SimilarityBreakdown {
+  overall: number;
+  byCategory: Record<string, number>;
+  details: string[];
+}
+
+export interface RevisionSupportingData {
+  source: string;
+  data: any;
+  relevance: number;
+}
+
+export interface QCStageHistory {
+  stage: string;
+  startTime: Date;
+  endTime?: Date;
+  status: string;
+}
+
+export interface QCBlocker {
+  type: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface QCEscalation {
+  reason: string;
+  escalatedTo: string;
+  escalatedAt: Date;
+  resolved: boolean;
+}
+
+// ===========================
 // CORE QC TYPES
 // ===========================
 
-export interface QCValidationReport {
-  appraisalId: string;
-  validatedAt: Date;
-  validatedBy: string;
-  overallQCScore: number; // 0-100
-  validationResults: {
-    marketValidation: MarketValidationReport;
-    comparableValidation: ComparableValidationReport;
-    riskAssessment: RiskAssessmentReport;
-  };
-  actionItems: QCActionItem[];
-  qcDecision: QCDecision;
-  processingTime: number;
-}
+// Duplicate interface removed - keeping the more complete one below
 
 export interface AppraisalData {
   id: string;
@@ -524,6 +787,170 @@ export enum VerificationStatus {
   UNVERIFIED = 'unverified',
   PARTIALLY_VERIFIED = 'partially_verified',
   REQUIRES_VERIFICATION = 'requires_verification'
+}
+
+// ===========================
+// QC EXECUTION TYPES
+// ===========================
+
+export enum QCExecutionStatus {
+  QUEUED = 'queued',
+  RUNNING = 'running',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled'
+}
+
+export enum QCExecutionMode {
+  QUICK = 'quick',
+  STANDARD = 'standard',
+  COMPREHENSIVE = 'comprehensive',
+  CUSTOM = 'custom'
+}
+
+export interface QCExecutionRequest {
+  checklistId: string;
+  targetId: string;
+  documentData: Record<string, any>;
+  executionMode?: QCExecutionMode;
+  executionConfig?: QCExecutionConfig;
+  executedBy: string;
+}
+
+export interface QCBatchExecutionRequest {
+  requests: QCExecutionRequest[];
+  executedBy: string;
+  batchConfig?: {
+    parallelExecution?: boolean;
+    continueOnError?: boolean;
+    maxConcurrency?: number;
+  };
+}
+
+export interface QCExecutionConfig {
+  mode: QCExecutionMode;
+  aiConfig?: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    systemPrompt?: string;
+  };
+  timeoutSettings?: {
+    questionTimeout?: number;
+    categoryTimeout?: number;
+    totalTimeout?: number;
+  };
+  validationSettings?: {
+    strictMode?: boolean;
+    requireAllAnswers?: boolean;
+    allowPartialResults?: boolean;
+  };
+  reportingSettings?: {
+    includeDetails?: boolean;
+    includeRecommendations?: boolean;
+    exportFormat?: string[];
+  };
+}
+
+export interface QCExecutionResult {
+  id: string;
+  checklistId: string;
+  targetId: string;
+  status: QCExecutionStatus;
+  executedBy: string;
+  startedAt: Date;
+  completedAt?: Date;
+  executionTime?: number;
+  summary: QCResultsSummary;
+  categoryResults: QCCategoryResult[];
+  issues: QCIssue[];
+  recommendations: QCRecommendation[];
+  metadata: {
+    executionConfig: QCExecutionConfig;
+    aiAnalysisUsed: boolean;
+    dataCompleteness: number;
+    validationErrors?: string[];
+  };
+}
+
+export interface QCResultsSummary {
+  overallScore: number;
+  totalQuestions: number;
+  answeredQuestions: number;
+  passedQuestions: number;
+  failedQuestions: number;
+  criticalIssues: number;
+  totalIssues: number;
+  riskLevel: RiskLevel;
+  complianceStatus: ComplianceStatus;
+  recommendedAction: QCDecision;
+}
+
+export interface QCCategoryResult {
+  categoryId: string;
+  categoryName: string;
+  score: number;
+  passed: boolean;
+  subcategoryResults: QCSubcategoryResult[];
+  issues: QCIssue[];
+  summary: string;
+  aiAnalysis?: string;
+}
+
+export interface QCSubcategoryResult {
+  subcategoryId: string;
+  subcategoryName: string;
+  score: number;
+  passed: boolean;
+  questionResults: QCQuestionResult[];
+  issues: QCIssue[];
+}
+
+export interface QCQuestionResult {
+  questionId: string;
+  question: string;
+  answer: any;
+  passed: boolean;
+  score?: number;
+  aiAnalysis?: string;
+  evidence?: any[];
+  confidence?: number;
+  issues?: QCIssue[];
+}
+
+export interface QCIssue {
+  id: string;
+  category: string;
+  subcategory?: string;
+  questionId?: string;
+  type: string;
+  severity: RiskSeverity;
+  description: string;
+  impact: string;
+  evidence?: any;
+  recommendation?: string;
+  aiGenerated?: boolean;
+}
+
+export interface QCRecommendation {
+  id: string;
+  type: 'action' | 'review' | 'investigation' | 'revision';
+  priority: ActionPriority;
+  description: string;
+  affectedSections: string[];
+  estimatedEffort?: string;
+  dueDate?: Date;
+  assignedTo?: string;
+}
+
+export interface QCReviewProgress {
+  totalCategories: number;
+  completedCategories: number;
+  totalQuestions: number;
+  completedQuestions: number;
+  currentCategory: string;
+  currentSubcategory: string;
+  estimatedTimeRemaining: number;
 }
 
 // Additional supporting interfaces would continue here...

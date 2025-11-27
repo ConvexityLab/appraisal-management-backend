@@ -27,7 +27,16 @@ export class ProductionDatabaseService {
   private propertiesCollection: Collection<PropertyDetails> | null = null;
   private propertySummariesCollection: Collection<PropertySummary> | null = null;
 
-  constructor(private connectionString: string = process.env.MONGODB_CONNECTION_STRING || 'mongodb://localhost:27017/appraisal_management') {
+  constructor(private connectionString: string = (() => {
+    const connStr = process.env.MONGODB_CONNECTION_STRING;
+    if (!connStr) {
+      if (process.env.NODE_ENV === 'development' && process.env.MONGODB_USE_LOCAL === 'true') {
+        return 'mongodb://localhost:27017/appraisal_management';
+      }
+      throw new Error('MONGODB_CONNECTION_STRING environment variable is required');
+    }
+    return connStr;
+  })()) {
     this.logger = new Logger();
   }
 

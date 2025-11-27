@@ -13,7 +13,7 @@ import {
   PropertyType,
   OccupancyType,
   VendorStatus 
-} from '../src/types/index';
+} from '../../src/types/index';
 
 // Test configuration
 const API_BASE_URL = 'http://localhost:3000';

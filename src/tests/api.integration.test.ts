@@ -1,14 +1,14 @@
 import request from 'supertest';
-import { ProductionAPIServer } from '../production-server';
+import { AppraisalManagementAPIServer } from '../api/api-server';
 
 describe('API Integration Tests', () => {
-  let server: ProductionAPIServer;
+  let server: AppraisalManagementAPIServer;
   let app: any;
   let authToken: string;
 
   beforeAll(async () => {
     // Start the server for testing
-    server = new ProductionAPIServer(0); // Use port 0 to get a random available port
+    server = new AppraisalManagementAPIServer(0); // Use port 0 to get a random available port
     app = server.getExpressApp();
     
     // Wait a moment for server to be ready

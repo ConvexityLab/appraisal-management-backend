@@ -4,7 +4,7 @@
  */
 
 import dotenv from 'dotenv';
-import ProductionAPIServer from './production-server';
+import { AppraisalManagementAPIServer } from './api/api-server';
 
 // Load environment variables
 dotenv.config();
@@ -33,7 +33,7 @@ if (process.env.WEBSITE_SITE_NAME) {
 }
 
 // Start server
-const server = new ProductionAPIServer(config.port);
+const server = new AppraisalManagementAPIServer(config.port);
 
 // Graceful shutdown
 const gracefulShutdown = (signal: string) => {
@@ -56,7 +56,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start the server
-server.start().catch((error) => {
+server.start().catch((error: Error) => {
   console.error('❌ Failed to start server:', error);
   process.exit(1);
 });

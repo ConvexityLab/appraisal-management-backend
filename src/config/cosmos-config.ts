@@ -27,12 +27,24 @@ export class CosmosDbConfig {
   private constructor() {
     this.logger = new Logger();
     
-    // Load configuration from environment variables
-    this.endpoint = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT || 'https://localhost:8081';
-    this.key = process.env.COSMOS_KEY || process.env.AZURE_COSMOS_KEY || 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
+    // Load configuration from environment variables with proper validation
+    this.endpoint = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT || (() => {
+      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
+        return 'https://localhost:8081';
+      }
+      throw new Error('COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT environment variable is required');
+    })();
+    
+    this.key = process.env.COSMOS_KEY || process.env.AZURE_COSMOS_KEY || (() => {
+      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
+        return 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
+      }
+      throw new Error('COSMOS_KEY or AZURE_COSMOS_KEY environment variable is required');
+    })();
+    
     this.databaseName = process.env.COSMOS_DATABASE_NAME || 'appraisal-management';
     this.environment = process.env.NODE_ENV || 'development';
-    this.region = process.env.AZURE_REGION || 'East US';
+    this.region = process.env.AZURE_REGION || 'eastus';
 
     // Container mappings
     this.containers = {

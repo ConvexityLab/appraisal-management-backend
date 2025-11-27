@@ -1,57 +1,53 @@
-name: Deploy to Azure
+name: Deploy Appraisal Management Platform
 
 on:
   push:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      environment:
-        required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - prod
-        description: 'Target environment'
-        default: 'dev'
-      deploy_infrastructure:
-        required: false
-        type: boolean
-        description: 'Deploy infrastructure (uncheck for application-only deployment)'
-        default: true
 
 env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  CONTAINER_APP_NAME: ${{ secrets.CONTAINER_APP_NAME }}
   NODE_VERSION: '18.x'
 
 jobs:
-  determine-environment:
-    name: Determine Target Environment
+  build-and-test:
     runs-on: ubuntu-latest
-    outputs:
-      environment: ${{ steps.env.outputs.environment }}
-      deploy-infrastructure: ${{ steps.env.outputs.deploy-infrastructure }}
     
     steps:
-    - name: Determine environment
-      id: env
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=${{ github.event.inputs.deploy_infrastructure }}" >> $GITHUB_OUTPUT
-        elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          echo "environment=dev" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=true" >> $GITHUB_OUTPUT
-        else
-          echo "environment=dev" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
-        fi
-        
-        echo "🎯 Target environment: $(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)"
-        echo "🏗️ Deploy infrastructure: $(cat $GITHUB_OUTPUT | grep deploy-infrastructure | cut -d'=' -f2)"
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Type check
+      run: npm run type-check
+
+    - name: Lint code
+      run: npm run lint
+
+    - name: Run unit tests
+      run: npm run test:unit
+
+    - name: Build application
+      run: npm run build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
 
   continuous-integration:
     name: Continuous Integration

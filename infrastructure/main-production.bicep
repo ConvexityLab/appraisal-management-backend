@@ -1,29 +1,44 @@
 // Appraisal Management Platform - Main Infrastructure Template
-// Streamlined deployment for production-ready API server
+// Fully parameterized deployment for production-ready API server
 
 targetScope = 'subscription'
 
 @description('The primary Azure region for resource deployment')
-param location string = 'eastus2'
+param location string
 
 @description('Environment name (dev, staging, prod)')
 @allowed(['dev', 'staging', 'prod'])
 param environment string
 
 @description('Application name for resource naming')
-param appName string = 'appraisal-mgmt'
+param appName string
+
+@description('Organization or project identifier')
+param organizationPrefix string = ''
+
+@description('Resource group naming pattern')
+param resourceGroupNamingPattern string = 'rg-{appName}-{environment}-{location}'
+
+@description('Resource naming pattern')
+param resourceNamingPattern string = '{appName}-{environment}'
 
 @description('Tags to apply to all resources')
-param tags object = {
-  Environment: environment
-  Application: appName
-  ManagedBy: 'Bicep'
-  DeployedBy: 'GitHub-Actions'
-}
+param tags object
 
-// Variables
-var resourceGroupName = 'rg-${appName}-${environment}-${location}'
-var namingPrefix = '${appName}-${environment}'
+@description('Azure API version for resource groups')
+param resourceGroupApiVersion string = '2023-07-01'
+
+@description('Custom resource group name override (optional)')
+param customResourceGroupName string = ''
+
+// Variables - all derived from parameters, no hardcoded values
+var resourceGroupName = empty(customResourceGroupName) 
+  ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
+  : customResourceGroupName
+
+var namingPrefix = empty(organizationPrefix) 
+  ? replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)
+  : '${organizationPrefix}-${replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)}'
 
 // Resource Group
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
@@ -31,6 +46,15 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   location: location
   tags: tags
 }
+
+@description('App Service Plan configuration')
+param appServicePlan object = {}
+
+@description('App Service configuration')  
+param appServiceConfig object = {}
+
+@description('Node.js version for App Service')
+param nodeVersion string = '18-lts'
 
 // App Service Plan and Web App
 module appService 'modules/app-service.bicep' = {
@@ -41,6 +65,9 @@ module appService 'modules/app-service.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
+    appServicePlanConfig: appServicePlan
+    appServiceConfig: appServiceConfig
+    nodeVersion: nodeVersion
   }
 }
 

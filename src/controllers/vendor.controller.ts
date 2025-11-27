@@ -29,7 +29,7 @@ export class VendorController {
     this.logger = new Logger();
 
     // Initialize vendor management service
-    this.vendorService = new VendorManagementService(db);
+    this.vendorService = new VendorManagementService();
 
     // Bind methods to preserve 'this' context
     this.createVendor = this.createVendor.bind(this);

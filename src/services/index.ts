@@ -12,7 +12,6 @@ export { AuditService } from './audit.service.js';
 export { QualityControlEngine } from './quality-control-engine.service.js';
 export { AdvancedSearchService } from './advanced-search.service.js';
 export { OrderEventService } from './order-event.service.js';
-export { CosmosDbDatabaseService } from './cosmos-database.service.js';
 
 // Legacy services (temporarily disabled for compilation)
 // These will be re-enabled once they're updated to work with the new consolidated architecture

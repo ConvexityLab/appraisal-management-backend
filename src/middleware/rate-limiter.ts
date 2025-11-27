@@ -229,13 +229,26 @@ export function tieredRateLimiter(defaultLimit: number, premiumLimit: number) {
 function checkPremiumTier(apiKey?: string): boolean {
   if (!apiKey) return false;
   
-  // Mock implementation - in production, check against your user/subscription database
-  const premiumKeys = new Set([
-    'premium-key-1',
-    'premium-key-2'
+  // Validate API key against configured premium keys or database
+  if (process.env.NODE_ENV === 'production') {
+    // In production, validate against environment variable or database
+    const premiumApiKeys = process.env.PREMIUM_API_KEYS?.split(',') || [];
+    const isValidPremiumKey = premiumApiKeys.includes(apiKey);
+    
+    if (!isValidPremiumKey) {
+      logger.warn('Invalid premium API key', { apiKey: apiKey.substring(0, 8) + '...' });
+    }
+    
+    return isValidPremiumKey;
+  }
+  
+  // Development mode: allow specific test keys
+  const devTestKeys = new Set([
+    'dev-premium-key-1',
+    'dev-premium-key-2'
   ]);
   
-  return premiumKeys.has(apiKey);
+  return devTestKeys.has(apiKey);
 }
 
 /**

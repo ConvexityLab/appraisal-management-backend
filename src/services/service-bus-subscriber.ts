@@ -22,7 +22,12 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
     topicName: string = 'appraisal-events',
     subscriptionName: string = 'notification-service'
   ) {
-    this.connectionString = connectionString || process.env.AZURE_SERVICE_BUS_CONNECTION_STRING || 'local-emulator';
+    this.connectionString = connectionString || process.env.AZURE_SERVICE_BUS_CONNECTION_STRING || (() => {
+      if (process.env.NODE_ENV === 'development' && process.env.SERVICE_BUS_USE_EMULATOR === 'true') {
+        return 'local-emulator';
+      }
+      throw new Error('AZURE_SERVICE_BUS_CONNECTION_STRING environment variable is required');
+    })();
     this.topicName = topicName;
     this.subscriptionName = subscriptionName;
     this.logger = new Logger('ServiceBusEventSubscriber');

@@ -289,13 +289,23 @@ export class NotificationService {
     // In a real implementation, this would lookup user preferences, etc.
     switch (channel) {
       case NotificationChannel.WEBSOCKET:
-        return 'ws://localhost:8080/notifications';
+        return process.env.WEBSOCKET_NOTIFICATION_URL || (() => {
+          if (process.env.NODE_ENV === 'development' && process.env.WEBSOCKET_USE_LOCAL === 'true') {
+            return 'ws://localhost:8080/notifications';
+          }
+          throw new Error('WEBSOCKET_NOTIFICATION_URL environment variable is required');
+        })();
       case NotificationChannel.EMAIL:
-        return 'admin@appraisal-system.com';
+        return process.env.NOTIFICATION_EMAIL || 'admin@appraisal-system.com';
       case NotificationChannel.SMS:
-        return '+1234567890';
+        return process.env.NOTIFICATION_SMS || '+1234567890';
       case NotificationChannel.WEBHOOK:
-        return 'http://localhost:3000/webhooks/notifications';
+        return process.env.WEBHOOK_NOTIFICATION_URL || (() => {
+          if (process.env.NODE_ENV === 'development' && process.env.WEBHOOK_USE_LOCAL === 'true') {
+            return 'http://localhost:3000/webhooks/notifications';
+          }
+          throw new Error('WEBHOOK_NOTIFICATION_URL environment variable is required');
+        })();
       default:
         return '';
     }

@@ -3,16 +3,16 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
-import { ProductionAPIServer } from '../../src/production-server'
+import { AppraisalManagementAPIServer } from '../../src/api/api-server'
 import type { Application } from 'express'
 
 describe('API Performance Tests', () => {
   let app: Application
-  let server: ProductionAPIServer
+  let server: AppraisalManagementAPIServer
   let authToken: string
 
   beforeAll(async () => {
-    server = new ProductionAPIServer(0)
+    server = new AppraisalManagementAPIServer(0)
     app = server.getExpressApp()
 
     // Get auth token for authenticated tests

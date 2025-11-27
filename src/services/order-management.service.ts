@@ -272,10 +272,10 @@ export class OrderManagementService extends SimpleEventEmitter {
     try {
       // Check if vendor is available and qualified
       const vendorCheck = await this.vendorService.checkVendorAvailability(vendorId, orderId);
-      if (!vendorCheck.success) {
+      if (!vendorCheck) {
         return {
           success: false,
-          error: vendorCheck.error || {
+          error: {
             code: 'VENDOR_UNAVAILABLE',
             message: 'Vendor not available for assignment',
             timestamp: new Date()
@@ -339,7 +339,7 @@ export class OrderManagementService extends SimpleEventEmitter {
       // Temporary fallback until Perligo is integrated
       const bestVendor = await this.vendorService.findBestVendorForOrder(order);
       
-      if (!bestVendor.success || !bestVendor.data) {
+      if (!bestVendor) {
         return {
           success: false,
           error: {
@@ -350,7 +350,7 @@ export class OrderManagementService extends SimpleEventEmitter {
         };
       }
 
-      return await this.assignOrderToVendor(orderId, bestVendor.data.id, userId);
+      return await this.assignOrderToVendor(orderId, bestVendor.id, userId);
     } catch (error) {
       this.logger.error('Error auto-assigning order', { error, orderId });
       return {

@@ -1,5 +1,27 @@
-# Use Node.js 18 Alpine as base image for smaller size and security
-FROM node:18-alpine
+# Multi-stage build for Azure Container Apps
+# Stage 1: Build
+FROM node:18-alpine AS builder
+
+WORKDIR /usr/src/app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# Install all dependencies including dev dependencies for build
+RUN npm ci
+
+# Copy source code
+COPY src/ ./src/
+
+# Build TypeScript
+RUN npm run build
+
+# Stage 2: Production
+FROM node:18-alpine AS production
+
+# Install security updates
+RUN apk update && apk upgrade && apk add --no-cache dumb-init
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -8,23 +30,16 @@ WORKDIR /usr/src/app
 RUN addgroup -g 1001 -S appuser && \
     adduser -S appuser -u 1001 -G appuser
 
-# Copy package files first for better Docker layer caching
+# Copy package files and install production dependencies only
 COPY package*.json ./
-COPY tsconfig.json ./
-
-# Install dependencies
 RUN npm ci --only=production && \
     npm cache clean --force
 
-# Copy application source code
-COPY src/ ./src/
+# Copy built application from builder stage
+COPY --from=builder /usr/src/app/dist ./dist
 
-# Build TypeScript to JavaScript
-RUN npm run build
-
-# Remove source files and dev dependencies to reduce image size
-RUN rm -rf src/ tsconfig.json && \
-    npm prune --production
+# Copy any additional runtime files if needed
+# COPY ./config ./config
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /usr/src/app
@@ -32,18 +47,22 @@ RUN chown -R appuser:appuser /usr/src/app
 # Switch to non-root user
 USER appuser
 
-# Expose port
-EXPOSE 3000
+# Expose port (Azure Container Apps expects this)
+EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (res) => { \
+# Enhanced health check for Azure Container Apps
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:8080/health/live', (res) => { \
         if (res.statusCode === 200) process.exit(0); else process.exit(1); \
     }).on('error', () => process.exit(1))"
 
-# Set environment variables
+# Set environment variables for Azure
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8080
+ENV NODE_OPTIONS="--max-old-space-size=1024"
+
+# Use dumb-init to handle signals properly in containers
+ENTRYPOINT ["dumb-init", "--"]
 
 # Start the application
-CMD ["node", "dist/app.js"]
+CMD ["node", "dist/app-production.js"]

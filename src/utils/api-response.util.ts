@@ -5,6 +5,18 @@ import { ApiError } from '../types/index.js';
  */
 
 /**
+ * Creates a standardized API response object
+ */
+export function createApiResponse<T>(data: T, message: string = 'Success'): { success: boolean; data: T; message: string; timestamp: Date } {
+  return {
+    success: true,
+    data,
+    message,
+    timestamp: new Date()
+  };
+}
+
+/**
  * Creates a properly formatted ApiError object
  */
 export function createApiError(code: string, message: string, details?: Record<string, any>): ApiError {

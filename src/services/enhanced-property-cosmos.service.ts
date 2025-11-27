@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger.js';
-import CosmosDbDatabaseService from './cosmos-database.service.js';
+import { CosmosDbService } from './cosmos-db.service.js';
 import { 
   PropertySummary, 
   PropertyDetails, 
@@ -20,18 +20,18 @@ import {
  */
 export class EnhancedPropertyService {
   private logger: Logger;
-  private databaseService: CosmosDbDatabaseService;
+  private databaseService: CosmosDbService;
 
   constructor() {
     this.logger = new Logger();
-    this.databaseService = new CosmosDbDatabaseService();
+    this.databaseService = new CosmosDbService();
   }
 
   /**
    * Initialize the service (connect to database)
    */
   async initialize(): Promise<void> {
-    await this.databaseService.connect();
+    await this.databaseService.initialize();
   }
 
   // ===============================
@@ -52,9 +52,13 @@ export class EnhancedPropertyService {
         criteria.limit || 50
       );
 
+      if (!results.success || !results.data) {
+        throw new Error(results.error?.message || 'Failed to search properties');
+      }
+
       return {
-        properties: results.properties,
-        total: results.total,
+        properties: results.data,
+        total: results.data.length, // Note: Cosmos service doesn't provide total count yet
         aggregations: await this.buildAggregations(criteria),
         searchCriteria: criteria,
         // executionTime: Date.now() - Date.now() // TODO: implement proper timing - property doesn't exist
@@ -73,8 +77,13 @@ export class EnhancedPropertyService {
     try {
       this.logger.info('Getting property summary', { id });
 
-      const property = await this.databaseService.findPropertySummaryById(id);
-      return property;
+      const result = await this.databaseService.findPropertySummaryById(id);
+      
+      if (!result.success || result.data === undefined) {
+        return null;
+      }
+      
+      return result.data;
 
     } catch (error) {
       this.logger.error('Failed to get property summary', { error, id });
@@ -89,11 +98,13 @@ export class EnhancedPropertyService {
     try {
       this.logger.info('Getting property summaries', { count: ids.length });
 
-      const properties = await Promise.all(
+      const results = await Promise.all(
         ids.map(id => this.databaseService.findPropertySummaryById(id))
       );
 
-      return properties.filter((p): p is PropertySummary => p !== null);
+      return results
+        .filter(result => result.success && result.data !== null)
+        .map(result => result.data!);
 
     } catch (error) {
       this.logger.error('Failed to get property summaries', { error, ids });
@@ -108,10 +119,14 @@ export class EnhancedPropertyService {
     try {
       this.logger.info('Creating property summary', { address: property.address.street });
 
-      const createdProperty = await this.databaseService.createPropertySummary(property);
+      const result = await this.databaseService.createPropertySummary(property);
       
-      this.logger.info('Property summary created successfully', { id: createdProperty.id });
-      return createdProperty;
+      if (!result.success || !result.data) {
+        throw new Error(result.error?.message || 'Failed to create property summary');
+      }
+      
+      this.logger.info('Property summary created successfully', { id: result.data.id });
+      return result.data;
 
     } catch (error) {
       this.logger.error('Failed to create property summary', { error, property });
@@ -126,23 +141,30 @@ export class EnhancedPropertyService {
     try {
       this.logger.info('Updating property summary', { id: data.id });
 
-      const existing = await this.databaseService.findPropertySummaryById(data.id);
-      if (!existing) {
+      const existingResult = await this.databaseService.findPropertySummaryById(data.id);
+      if (!existingResult.success || !existingResult.data) {
         throw new Error(`Property not found: ${data.id}`);
       }
 
+      const existing = existingResult.data;
       const updateData = {
         ...existing,
         ...data,
-        lastUpdated: new Date()
+        lastUpdated: new Date(),
+        // Ensure address is always present
+        address: data.address || existing.address
       };
 
       // Note: For Cosmos DB, we need to replace the entire document
       // This is a simplified version - in production, you'd use the Cosmos update methods
-      const updatedProperty = await this.databaseService.createPropertySummary(updateData);
+      const result = await this.databaseService.createPropertySummary(updateData);
+      
+      if (!result.success || !result.data) {
+        throw new Error(result.error?.message || 'Failed to update property summary');
+      }
       
       this.logger.info('Property summary updated successfully', { id: data.id });
-      return updatedProperty;
+      return result.data;
 
     } catch (error) {
       this.logger.error('Failed to update property summary', { error, data });
@@ -203,12 +225,12 @@ export class EnhancedPropertyService {
     try {
       this.logger.info('Getting property details', { id });
 
-      const summary = await this.databaseService.findPropertySummaryById(id);
-      if (!summary) {
+      const result = await this.databaseService.findPropertySummaryById(id);
+      if (!result.success || !result.data) {
         return null;
       }
 
-      const details = await this.convertSummaryToDetails(summary);
+      const details = await this.convertSummaryToDetails(result.data);
       return details;
 
     } catch (error) {
@@ -224,11 +246,12 @@ export class EnhancedPropertyService {
     try {
       this.logger.info('Enriching property with external data', { id });
 
-      const summary = await this.databaseService.findPropertySummaryById(id);
-      if (!summary) {
+      const result = await this.databaseService.findPropertySummaryById(id);
+      if (!result.success || !result.data) {
         throw new Error(`Property not found: ${id}`);
       }
 
+      const summary = result.data;
       // Simulate external data enrichment
       const externalData = await this.fetchExternalPropertyData(summary.address);
       const enrichedDetails = await this.mergeExternalData(summary, externalData);
@@ -292,13 +315,17 @@ export class EnhancedPropertyService {
 
       for (const id of ids) {
         try {
-          const property = await this.databaseService.findPropertySummaryById(id);
-          if (property) {
+          const result = await this.databaseService.findPropertySummaryById(id);
+          if (result.success && result.data) {
+            const property = result.data;
             // Simulate valuation update
             const newValuation = await this.calculateUpdatedValuation(property);
-            property.valuation = { ...property.valuation, ...newValuation };
+            const updatedProperty = { 
+              ...property,
+              valuation: { ...property.valuation, ...newValuation }
+            };
             
-            await this.databaseService.createPropertySummary(property); // Replace document
+            await this.databaseService.createPropertySummary(updatedProperty); // Replace document
             results.updated++;
           }
         } catch (error) {

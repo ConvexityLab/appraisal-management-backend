@@ -3,17 +3,17 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import request from 'supertest'
-import { ProductionAPIServer } from '../../src/production-server'
+import { AppraisalManagementAPIServer } from '../../src/api/api-server'
 import type { Application } from 'express'
 
 describe('Production API Server Integration Tests', () => {
   let app: Application
-  let server: ProductionAPIServer
+  let server: AppraisalManagementAPIServer
   let authToken: string
 
   beforeAll(async () => {
     // Create server instance for testing
-    server = new ProductionAPIServer(0) // Use random port
+    server = new AppraisalManagementAPIServer(0) // Use random port
     app = server.getExpressApp()
     
     // Wait a moment for server to be ready

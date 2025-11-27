@@ -651,7 +651,8 @@ export class QualityControlEngine {
   }
 
   private fallbackMLAssessment(qcResults: any): MLQualityAssessment {
-    const avgScore = Object.values(qcResults).reduce((sum: number, result: any) => sum + result.score, 0) / Object.keys(qcResults).length;
+    const results = Object.values(qcResults) as any[];
+    const avgScore = results.reduce((sum: number, result: any) => sum + (result?.score || 0), 0) / Math.max(results.length, 1);
     
     return {
       overallQualityScore: avgScore,

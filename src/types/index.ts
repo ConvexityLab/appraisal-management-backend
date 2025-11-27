@@ -1,8 +1,8 @@
 // Core domain types for the Appraisal Management System
 
 // Import geospatial risk assessment types
-export * from './geospatial.js';
-import { PropertyRiskAssessment } from './geospatial.js';
+export * from './geospatial';
+import { PropertyRiskAssessment } from './geospatial';
 
 export interface AppraisalOrder {
   id: string;

@@ -17,7 +17,20 @@ import bcrypt from 'bcrypt';
 // Import our services
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { EnhancedPropertyIntelligenceController } from '../controllers/enhanced-property-intelligence.controller';
+import { AIServicesController } from '../controllers/ai-services.controller';
 import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
+import { Logger } from '../utils/logger';
+
+// Import QC controllers and middleware
+import { qcChecklistRouter } from '../controllers/qc-checklist.controller';
+import { qcExecutionRouter } from '../controllers/qc-execution.controller';
+import { qcResultsRouter } from '../controllers/qc-results.controller';
+import { 
+  authenticateJWT, 
+  requireRole, 
+  sanitizeInput, 
+  errorHandler
+} from '../middleware/qc-api-validation.middleware';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -32,15 +45,30 @@ export class AppraisalManagementAPIServer {
   private app: express.Application;
   private dbService: CosmosDbService;
   private propertyIntelligenceController: EnhancedPropertyIntelligenceController;
+  private aiServicesController: AIServicesController;
   private dynamicCodeService: DynamicCodeExecutionService;
+  private logger: Logger;
   private port: number;
+  
+  // QC routers
+  private qcChecklistRouter: express.Router;
+  private qcExecutionRouter: express.Router;
+  private qcResultsRouter: express.Router;
 
-  constructor(port = 3000) {
+  constructor(port = parseInt(process.env.PORT || '3000')) {
     this.app = express();
     this.port = port;
+    this.logger = new Logger();
     this.dbService = new CosmosDbService();
     this.propertyIntelligenceController = new EnhancedPropertyIntelligenceController();
+    this.aiServicesController = new AIServicesController();
     this.dynamicCodeService = new DynamicCodeExecutionService();
+    
+    // Initialize QC routers
+    this.qcChecklistRouter = qcChecklistRouter;
+    this.qcExecutionRouter = qcExecutionRouter;
+    this.qcResultsRouter = qcResultsRouter;
+    
     this.setupMiddleware();
     this.setupRoutes();
     this.setupErrorHandling();
@@ -65,16 +93,16 @@ export class AppraisalManagementAPIServer {
 
     // CORS configuration
     this.app.use(cors({
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+      origin: process.env.ALLOWED_ORIGINS?.split(',') || (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000']),
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
     }));
 
-    // Rate limiting
+    // Rate limiting - configurable for different environments
     const limiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100, // limit each IP to 100 requests per windowMs
+      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // Default: 15 minutes
+      max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // Default: 100 requests per window
       message: {
         error: 'Too many requests from this IP, please try again later.',
         code: 'RATE_LIMIT_EXCEEDED'
@@ -279,6 +307,93 @@ export class AppraisalManagementAPIServer {
       this.validateCodeExecution(),
       this.executeCode.bind(this)
     );
+
+    // AI Services routes
+    this.app.post('/api/ai/qc/analyze',
+      this.authenticateToken.bind(this),
+      this.requirePermission('qc_validate'),
+      this.aiServicesController.validateQCAnalysis(),
+      this.aiServicesController.performQCAnalysis
+    );
+
+    this.app.post('/api/ai/qc/technical',
+      this.authenticateToken.bind(this),
+      this.requirePermission('qc_validate'),
+      this.aiServicesController.validateQCAnalysis(),
+      this.aiServicesController.performTechnicalQC
+    );
+
+    this.app.post('/api/ai/qc/compliance',
+      this.authenticateToken.bind(this),
+      this.requirePermission('qc_validate'),
+      this.aiServicesController.validateQCAnalysis(),
+      this.aiServicesController.performComplianceQC
+    );
+
+    this.app.post('/api/ai/market/insights',
+      this.authenticateToken.bind(this),
+      this.aiServicesController.validateMarketInsights(),
+      this.aiServicesController.generateMarketInsights
+    );
+
+    this.app.post('/api/ai/property/description',
+      this.authenticateToken.bind(this),
+      this.aiServicesController.validateMarketInsights(),
+      this.aiServicesController.generatePropertyDescription
+    );
+
+    this.app.post('/api/ai/vision/analyze',
+      this.authenticateToken.bind(this),
+      this.aiServicesController.validateImageAnalysis(),
+      this.aiServicesController.analyzePropertyImages
+    );
+
+    this.app.post('/api/ai/vision/condition',
+      this.authenticateToken.bind(this),
+      this.aiServicesController.validateImageAnalysis(),
+      this.aiServicesController.analyzePropertyCondition
+    );
+
+    this.app.post('/api/ai/embeddings',
+      this.authenticateToken.bind(this),
+      this.aiServicesController.validateEmbeddingGeneration(),
+      this.aiServicesController.generateEmbeddings
+    );
+
+    this.app.post('/api/ai/completion',
+      this.authenticateToken.bind(this),
+      this.requirePermission('ai_generate'),
+      this.aiServicesController.validateCompletion(),
+      this.aiServicesController.generateCompletion
+    );
+
+    this.app.get('/api/ai/health',
+      this.aiServicesController.getServiceHealth
+    );
+
+    this.app.get('/api/ai/usage',
+      this.authenticateToken.bind(this),
+      this.requirePermission('analytics_view'),
+      this.aiServicesController.getUsageStats
+    );
+
+    // QC Management routes - comprehensive quality control system
+    // Mount QC router modules with authentication
+    this.app.use('/api/qc/checklists', 
+      this.authenticateToken.bind(this),
+      this.qcChecklistRouter
+    );
+    
+    this.app.use('/api/qc/execution', 
+      this.authenticateToken.bind(this),
+      this.requirePermission('qc_execute'),
+      this.qcExecutionRouter
+    );
+    
+    this.app.use('/api/qc/results', 
+      this.authenticateToken.bind(this),
+      this.qcResultsRouter
+    );
   }
 
   // Authentication middleware
@@ -292,7 +407,17 @@ export class AppraisalManagementAPIServer {
     }
 
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        this.logger.error('JWT_SECRET environment variable is not configured');
+        res.status(500).json({ 
+          error: 'Authentication service misconfigured', 
+          code: 'AUTH_MISCONFIGURED' 
+        });
+        return;
+      }
+
+      const decoded = jwt.verify(token, jwtSecret) as any;
       req.user = decoded;
       next();
     } catch (error) {
@@ -480,6 +605,15 @@ export class AppraisalManagementAPIServer {
         return;
       }
 
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        res.status(500).json({ 
+          error: 'Authentication service misconfigured', 
+          code: 'AUTH_MISCONFIGURED' 
+        });
+        return;
+      }
+
       const token = jwt.sign(
         { 
           id: user.id, 
@@ -487,7 +621,7 @@ export class AppraisalManagementAPIServer {
           role: user.role,
           permissions: user.permissions 
         },
-        process.env.JWT_SECRET || 'your-secret-key',
+        jwtSecret,
         { expiresIn: '24h' }
       );
 
@@ -525,7 +659,7 @@ export class AppraisalManagementAPIServer {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 12);
       
-      // Create user (in real implementation, save to database)
+      // Create user in database
       const user = await this.createUser({
         email,
         password: hashedPassword,
@@ -534,6 +668,15 @@ export class AppraisalManagementAPIServer {
         role
       });
 
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        res.status(500).json({ 
+          error: 'Authentication service misconfigured', 
+          code: 'AUTH_MISCONFIGURED' 
+        });
+        return;
+      }
+
       const token = jwt.sign(
         { 
           id: user.id, 
@@ -541,7 +684,7 @@ export class AppraisalManagementAPIServer {
           role: user.role,
           permissions: user.permissions 
         },
-        process.env.JWT_SECRET || 'your-secret-key',
+        jwtSecret,
         { expiresIn: '24h' }
       );
 
@@ -572,6 +715,15 @@ export class AppraisalManagementAPIServer {
         return;
       }
 
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        res.status(500).json({ 
+          error: 'Authentication service misconfigured', 
+          code: 'AUTH_MISCONFIGURED' 
+        });
+        return;
+      }
+
       const newToken = jwt.sign(
         { 
           id: req.user.id, 
@@ -579,7 +731,7 @@ export class AppraisalManagementAPIServer {
           role: req.user.role,
           permissions: req.user.permissions 
         },
-        process.env.JWT_SECRET || 'your-secret-key',
+        jwtSecret,
         { expiresIn: '24h' }
       );
 
@@ -746,20 +898,25 @@ export class AppraisalManagementAPIServer {
 
   private async getOrderDashboard(req: AuthenticatedRequest, res: express.Response): Promise<void> {
     try {
-      // Mock dashboard data - in production, this would aggregate from database
+      // Get real dashboard data from database
+      const [summaryResult, metricsResult, recentOrdersResult] = await Promise.allSettled([
+        this.dbService.getOrderSummary(),
+        this.dbService.getOrderMetrics(),
+        this.dbService.getRecentOrders(10)
+      ]);
+
       const dashboard = {
-        summary: {
-          totalOrders: 125,
-          pendingOrders: 23,
-          inProgressOrders: 45,
-          completedOrders: 57
-        },
-        metrics: {
-          averageCompletionTime: 5.2,
-          onTimeDeliveryRate: 94.5,
-          qcPassRate: 96.8
-        },
-        recentOrders: [] // Would fetch recent orders from database
+        summary: summaryResult.status === 'fulfilled' && summaryResult.value.success 
+          ? summaryResult.value.data 
+          : { totalOrders: 0, pendingOrders: 0, inProgressOrders: 0, completedOrders: 0 },
+        
+        metrics: metricsResult.status === 'fulfilled' && metricsResult.value.success
+          ? metricsResult.value.data
+          : { averageCompletionTime: 0, onTimeDeliveryRate: 0, qcPassRate: 0 },
+          
+        recentOrders: recentOrdersResult.status === 'fulfilled' && recentOrdersResult.value.success
+          ? recentOrdersResult.value.data
+          : []
       };
 
       res.json(dashboard);
@@ -1106,7 +1263,12 @@ export class AppraisalManagementAPIServer {
 
   private async executeCode(req: AuthenticatedRequest, res: express.Response): Promise<void> {
     try {
-      const { code, context = {}, timeout = 5000, memoryLimit = 16777216 } = req.body;
+      const { 
+        code, 
+        context = {}, 
+        timeout = parseInt(process.env.DYNAMIC_CODE_TIMEOUT || '5000'), 
+        memoryLimit = parseInt(process.env.DYNAMIC_CODE_MEMORY_LIMIT || '16777216') 
+      } = req.body;
       
       const executionContext = {
         event: context.event || {},
@@ -1120,9 +1282,9 @@ export class AppraisalManagementAPIServer {
           json: JSON,
           regex: RegExp,
           console: {
-            log: console.log,
-            warn: console.warn,
-            error: console.error
+            log: (message: string) => this.logger.info(message),
+            warn: (message: string) => this.logger.warn(message),
+            error: (message: string) => this.logger.error(message)
           }
         }
       };
@@ -1152,50 +1314,90 @@ export class AppraisalManagementAPIServer {
     }
   }
 
-  // Helper methods for user management (in real implementation, these would interact with database)
+  // User management methods - integrated with Cosmos DB
   private async validateUserCredentials(email: string, password: string): Promise<any> {
-    // Mock implementation - replace with database query
-    const mockUsers = {
-      'admin@example.com': {
-        id: '1',
-        email: 'admin@example.com',
-        password: await bcrypt.hash('password123', 12),
-        firstName: 'Admin',
-        lastName: 'User',
-        role: 'admin',
-        permissions: ['*']
+    try {
+      const userResult = await this.dbService.getUserByEmail(email);
+      
+      if (!userResult.success || !userResult.data) {
+        return null;
       }
-    };
 
-    const user = mockUsers[email as keyof typeof mockUsers];
-    if (user && await bcrypt.compare(password, user.password)) {
-      return user;
+      const user = userResult.data;
+      const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+      
+      if (!isValidPassword) {
+        return null;
+      }
+
+      // Return user without password hash
+      const { passwordHash, ...userWithoutPassword } = user;
+      return {
+        ...userWithoutPassword,
+        permissions: this.getRolePermissions(user.role)
+      };
+    } catch (error) {
+      this.logger.error('Error validating user credentials', { error: error instanceof Error ? error.message : String(error) });
+      return null;
     }
-    return null;
   }
 
   private async findUserByEmail(email: string): Promise<any> {
-    // Mock implementation - replace with database query
-    return null;
+    try {
+      const userResult = await this.dbService.getUserByEmail(email);
+      return userResult.success ? userResult.data : null;
+    } catch (error) {
+      this.logger.error('Error finding user by email', { error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
   }
 
   private async createUser(userData: any): Promise<any> {
-    // Mock implementation - replace with database insertion
-    const permissions = this.getRolePermissions(userData.role);
-    return {
-      id: Date.now().toString(),
-      ...userData,
-      permissions,
-      createdAt: new Date()
-    };
+    try {
+      const permissions = this.getRolePermissions(userData.role);
+      const newUser = {
+        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        email: userData.email,
+        passwordHash: userData.password, // Already hashed in register method
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        role: userData.role,
+        permissions,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: null,
+        organizationId: userData.organizationId || 'default'
+      };
+
+      const result = await this.dbService.createUser(newUser);
+      
+      if (result.success) {
+        // Return user without password hash
+        const { passwordHash, ...userWithoutPassword } = result.data;
+        return userWithoutPassword;
+      } else {
+        const errorMessage = typeof result.error === 'string' ? result.error : 
+          (result.error ? JSON.stringify(result.error) : 'Failed to create user');
+        throw new Error(errorMessage);
+      }
+    } catch (error) {
+      this.logger.error('Error creating user', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
 
   private getRolePermissions(role: string): string[] {
     const rolePermissions = {
       admin: ['*'],
-      manager: ['order_manage', 'vendor_manage', 'qc_validate', 'analytics_view'],
-      appraiser: ['order_view', 'order_update'],
-      qc_analyst: ['qc_validate', 'qc_metrics', 'analytics_view']
+      manager: [
+        'order_manage', 'vendor_manage', 'qc_validate', 'analytics_view',
+        'qc_execute', 'qc_manage', 'qc_checklist_manage', 'qc_results_view'
+      ],
+      appraiser: ['order_view', 'order_update', 'qc_results_view'],
+      qc_analyst: [
+        'qc_validate', 'qc_metrics', 'analytics_view', 'qc_execute', 
+        'qc_manage', 'qc_checklist_manage', 'qc_results_view'
+      ]
     };
     return rolePermissions[role as keyof typeof rolePermissions] || [];
   }
@@ -1250,7 +1452,7 @@ export class AppraisalManagementAPIServer {
 
     // Global error handler
     this.app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-      console.error('Unhandled error:', error);
+      this.logger.error('Unhandled API error', { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
       
       res.status(error.status || 500).json({
         error: 'Internal server error',
@@ -1305,6 +1507,82 @@ export class AppraisalManagementAPIServer {
               '200': { description: 'Orders retrieved successfully' }
             }
           }
+        },
+        '/api/qc/checklists': {
+          post: {
+            summary: 'Create QC checklist',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Management'],
+            responses: {
+              '201': { description: 'QC checklist created successfully' }
+            }
+          },
+          get: {
+            summary: 'Search QC checklists',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Management'],
+            responses: {
+              '200': { description: 'QC checklists retrieved successfully' }
+            }
+          }
+        },
+        '/api/qc/checklists/{checklistId}': {
+          get: {
+            summary: 'Get QC checklist by ID',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Management'],
+            parameters: [
+              {
+                name: 'checklistId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' }
+              }
+            ],
+            responses: {
+              '200': { description: 'QC checklist retrieved successfully' }
+            }
+          }
+        },
+        '/api/qc/execution/execute': {
+          post: {
+            summary: 'Execute QC review',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Execution'],
+            responses: {
+              '200': { description: 'QC execution completed successfully' }
+            }
+          }
+        },
+        '/api/qc/execution/execute-async': {
+          post: {
+            summary: 'Execute QC review asynchronously',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Execution'],
+            responses: {
+              '202': { description: 'QC execution started successfully' }
+            }
+          }
+        },
+        '/api/qc/results/search': {
+          get: {
+            summary: 'Search QC results',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Results'],
+            responses: {
+              '200': { description: 'QC results retrieved successfully' }
+            }
+          }
+        },
+        '/api/qc/results/analytics/summary': {
+          get: {
+            summary: 'Get QC analytics summary',
+            security: [{ bearerAuth: [] }],
+            tags: ['QC Analytics'],
+            responses: {
+              '200': { description: 'QC analytics summary retrieved successfully' }
+            }
+          }
         }
       }
     };
@@ -1316,13 +1594,13 @@ export class AppraisalManagementAPIServer {
       await this.initializeDatabase();
       
       this.app.listen(this.port, () => {
-        console.log(`🚀 Appraisal Management API Server running on port ${this.port}`);
-        console.log(`📚 API Documentation available at http://localhost:${this.port}/api-docs`);
-        console.log(`❤️  Health check available at http://localhost:${this.port}/health`);
-        console.log(`🗄️  Database: Connected to Cosmos DB`);
+        this.logger.info(`Appraisal Management API Server running on port ${this.port}`);
+        this.logger.info(`API Documentation available at http://localhost:${this.port}/api-docs`);
+        this.logger.info(`Health check available at http://localhost:${this.port}/health`);
+        this.logger.info(`Database: Connected to Cosmos DB`);
       });
     } catch (error) {
-      console.error('❌ Failed to start API server:', error);
+      this.logger.error('Failed to start API server', { error: error instanceof Error ? error.message : String(error) });
       process.exit(1);
     }
   }

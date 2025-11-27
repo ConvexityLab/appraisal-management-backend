@@ -79,7 +79,7 @@ export class GenericCacheService {
     const now = new Date();
     let cleanedCount = 0;
     
-    for (const [key, value] of this.cache.entries()) {
+    for (const [key, value] of Array.from(this.cache.entries())) {
       if (value.expires < now) {
         this.cache.delete(key);
         cleanedCount++;

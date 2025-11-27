@@ -28,18 +28,28 @@ export class CosmosDbService {
   // Container references
   private ordersContainer: Container | null = null;
   private vendorsContainer: Container | null = null;
+  private usersContainer: Container | null = null;
   private propertiesContainer: Container | null = null;
   private propertySummariesContainer: Container | null = null;
   private qcResultsContainer: Container | null = null;
+  private qcChecklistsContainer: Container | null = null;
+  private qcExecutionsContainer: Container | null = null;
+  private qcSessionsContainer: Container | null = null;
+  private qcTemplatesContainer: Container | null = null;
   private analyticsContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
     orders: 'orders',
     vendors: 'vendors',
+    users: 'users',
     properties: 'properties',
     propertySummaries: 'property-summaries',
     qcResults: 'qc-results',
+    qcChecklists: 'qc-checklists',
+    qcExecutions: 'qc-executions',
+    qcSessions: 'qc-sessions',
+    qcTemplates: 'qc-templates',
     analytics: 'analytics'
   };
 
@@ -49,11 +59,18 @@ export class CosmosDbService {
   ) {
     this.logger = new Logger();
     
-    // Use Cosmos DB Emulator for local development if no endpoint provided
-    if (!this.endpoint && process.env.NODE_ENV === 'development') {
-      this.endpoint = 'https://localhost:8081';
-      this.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
-      this.logger.info('Using Cosmos DB Emulator for local development');
+    // Validate required configuration
+    if (!this.endpoint || !this.key) {
+      const error = 'Cosmos DB configuration is required. Set AZURE_COSMOS_ENDPOINT and AZURE_COSMOS_KEY environment variables.';
+      this.logger.error(error);
+      
+      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
+        this.endpoint = 'https://localhost:8081';
+        this.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
+        this.logger.warn('Using Cosmos DB Emulator - set COSMOS_USE_EMULATOR=true only for local development');
+      } else {
+        throw new Error(error);
+      }
     }
   }
 
@@ -336,7 +353,138 @@ export class CosmosDbService {
       const { container: analyticsContainer } = await this.database.containers.createIfNotExists(analyticsContainerDef);
       this.analyticsContainer = analyticsContainer;
 
-      this.logger.info('Cosmos DB containers initialized successfully');
+      // Users container
+      const usersContainerDef: any = {
+        id: this.containers.users,
+        partitionKey: '/organizationId'
+      };
+
+      if (!isEmulator) {
+        usersContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
+          excludedPaths: [{ path: '/passwordHash' }],
+          compositeIndexes: [
+            [
+              { path: '/role', order: 'ascending' },
+              { path: '/isActive', order: 'ascending' }
+            ]
+          ]
+        };
+      }
+
+      const { container: usersContainer } = await this.database.containers.createIfNotExists(usersContainerDef);
+      this.usersContainer = usersContainer;
+
+      // QC Checklists container
+      const qcChecklistsContainerDef: any = {
+        id: this.containers.qcChecklists,
+        partitionKey: '/clientId'
+      };
+
+      if (!isEmulator) {
+        qcChecklistsContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
+          compositeIndexes: [
+            [
+              { path: '/status', order: 'ascending' },
+              { path: '/category', order: 'ascending' }
+            ],
+            [
+              { path: '/clientId', order: 'ascending' },
+              { path: '/createdAt', order: 'descending' }
+            ]
+          ]
+        };
+      }
+
+      const { container: qcChecklistsContainer } = await this.database.containers.createIfNotExists(qcChecklistsContainerDef);
+      this.qcChecklistsContainer = qcChecklistsContainer;
+
+      // QC Executions container
+      const qcExecutionsContainerDef: any = {
+        id: this.containers.qcExecutions,
+        partitionKey: '/checklistId'
+      };
+
+      if (!isEmulator) {
+        qcExecutionsContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
+          compositeIndexes: [
+            [
+              { path: '/status', order: 'ascending' },
+              { path: '/executedAt', order: 'descending' }
+            ],
+            [
+              { path: '/checklistId', order: 'ascending' },
+              { path: '/status', order: 'ascending' }
+            ]
+          ]
+        };
+      }
+
+      const { container: qcExecutionsContainer } = await this.database.containers.createIfNotExists(qcExecutionsContainerDef);
+      this.qcExecutionsContainer = qcExecutionsContainer;
+
+      // QC Sessions container
+      const qcSessionsContainerDef: any = {
+        id: this.containers.qcSessions,
+        partitionKey: '/userId'
+      };
+
+      if (!isEmulator) {
+        qcSessionsContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
+          compositeIndexes: [
+            [
+              { path: '/status', order: 'ascending' },
+              { path: '/startedAt', order: 'descending' }
+            ]
+          ]
+        };
+      }
+
+      const { container: qcSessionsContainer } = await this.database.containers.createIfNotExists(qcSessionsContainerDef);
+      this.qcSessionsContainer = qcSessionsContainer;
+
+      // QC Templates container
+      const qcTemplatesContainerDef: any = {
+        id: this.containers.qcTemplates,
+        partitionKey: '/category'
+      };
+
+      if (!isEmulator) {
+        qcTemplatesContainerDef.indexingPolicy = {
+          indexingMode: 'consistent',
+          automatic: true,
+          includedPaths: [{ path: '/*' }],
+          compositeIndexes: [
+            [
+              { path: '/category', order: 'ascending' },
+              { path: '/version', order: 'descending' }
+            ],
+            [
+              { path: '/isActive', order: 'ascending' },
+              { path: '/priority', order: 'ascending' }
+            ]
+          ]
+        };
+      }
+
+      const { container: qcTemplatesContainer } = await this.database.containers.createIfNotExists(qcTemplatesContainerDef);
+      this.qcTemplatesContainer = qcTemplatesContainer;
+
+      this.logger.info('Cosmos DB containers initialized successfully', {
+        containers: Object.keys(this.containers).length,
+        qcContainers: ['qc-checklists', 'qc-executions', 'qc-sessions', 'qc-templates']
+      });
 
     } catch (error) {
       this.logger.error('Failed to initialize containers', { error });
@@ -1013,15 +1161,8 @@ export class CosmosDbService {
           completedOrders: orderMetrics.completedOrders || 0,
           averageCompletionTime: orderMetrics.avgCompletionDays || 0,
           qcPassRate: qcMetrics.totalQc > 0 ? (qcMetrics.passCount / qcMetrics.totalQc) * 100 : 0,
-          topVendors: topVendors.map(v => ({
-            vendorId: v.assignedVendorId,
-            completedOrders: v.completedOrders,
-            rating: 4.5 // Mock rating - would be calculated from actual performance data
-          })),
-          monthlyTrends: {
-            orders: [85, 92, 78, 110, 95], // Mock data - would be calculated from actual order data
-            qcScores: [94.2, 95.1, 93.8, 94.7, 94.5]
-          }
+          topVendors: await this.calculateTopVendorRatings(topVendors),
+          monthlyTrends: await this.calculateMonthlyTrends()
         }
       };
 
@@ -1207,6 +1348,229 @@ export class CosmosDbService {
   }
 
   // ===============================
+  // User Management Methods
+  // ===============================
+
+  /**
+   * Get user by email
+   */
+  async getUserByEmail(email: string): Promise<ApiResponse<any>> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not connected. Call initialize() first.');
+      }
+
+      const usersContainer = this.database!.container('users');
+      const query = {
+        query: 'SELECT * FROM c WHERE c.email = @email',
+        parameters: [{ name: '@email', value: email }]
+      };
+
+      const { resources } = await usersContainer.items.query(query).fetchAll();
+      
+      if (resources.length === 0) {
+        return {
+          success: false,
+          error: createApiError('USER_NOT_FOUND', 'User not found')
+        };
+      }
+
+      return {
+        success: true,
+        data: resources[0]
+      };
+    } catch (error) {
+      this.logger.error('Failed to get user by email', { error, email });
+      return {
+        success: false,
+        error: createApiError('GET_USER_BY_EMAIL_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
+  /**
+   * Create new user
+   */
+  async createUser(userData: any): Promise<ApiResponse<any>> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not connected. Call initialize() first.');
+      }
+
+      const usersContainer = this.database!.container('users');
+      
+      // Add metadata
+      const user = {
+        ...userData,
+        _ts: Math.floor(Date.now() / 1000),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const { resource } = await usersContainer.items.create(user);
+      
+      return {
+        success: true,
+        data: resource
+      };
+    } catch (error) {
+      this.logger.error('Failed to create user', { error, email: userData.email });
+      return {
+        success: false,
+        error: createApiError('CREATE_USER_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
+  // ===============================
+  // Dashboard and Analytics Methods
+  // ===============================
+
+  /**
+   * Get order summary for dashboard
+   */
+  async getOrderSummary(): Promise<ApiResponse<any>> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not connected. Call initialize() first.');
+      }
+
+      const ordersContainer = this.database!.container('orders');
+      
+      const queries = [
+        { query: 'SELECT VALUE COUNT(1) FROM c', status: 'total' },
+        { query: 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "pending"', status: 'pending' },
+        { query: 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "in_progress"', status: 'inProgress' },
+        { query: 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "completed"', status: 'completed' }
+      ];
+
+      const results = await Promise.all(
+        queries.map(async ({ query, status }) => {
+          const { resources } = await ordersContainer.items.query(query).fetchAll();
+          return { status, count: resources[0] || 0 };
+        })
+      );
+
+      const summary = results.reduce((acc, { status, count }) => {
+        if (status === 'total') {
+          acc.totalOrders = count;
+        } else if (status === 'pending') {
+          acc.pendingOrders = count;
+        } else if (status === 'inProgress') {
+          acc.inProgressOrders = count;
+        } else if (status === 'completed') {
+          acc.completedOrders = count;
+        }
+        return acc;
+      }, { totalOrders: 0, pendingOrders: 0, inProgressOrders: 0, completedOrders: 0 });
+
+      return {
+        success: true,
+        data: summary
+      };
+    } catch (error) {
+      this.logger.error('Failed to get order summary', { error });
+      return {
+        success: false,
+        error: createApiError('GET_ORDER_SUMMARY_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
+  /**
+   * Get order metrics for dashboard
+   */
+  async getOrderMetrics(): Promise<ApiResponse<any>> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not connected. Call initialize() first.');
+      }
+
+      const ordersContainer = this.database!.container('orders');
+      
+      // Calculate average completion time for completed orders
+      const completionQuery = {
+        query: `SELECT 
+          AVG(DateDiff('day', c.createdAt, c.completedAt)) as avgCompletionTime,
+          COUNT(1) as totalCompleted
+          FROM c 
+          WHERE c.status = 'completed' AND c.completedAt != null`
+      };
+
+      const { resources: completionResults } = await ordersContainer.items.query(completionQuery).fetchAll();
+      const completionData = completionResults[0] || { avgCompletionTime: 0, totalCompleted: 0 };
+
+      // Calculate on-time delivery rate
+      const onTimeQuery = {
+        query: `SELECT 
+          COUNT(1) as onTimeCount
+          FROM c 
+          WHERE c.status = 'completed' 
+          AND c.completedAt != null 
+          AND c.dueDate != null
+          AND c.completedAt <= c.dueDate`
+      };
+
+      const { resources: onTimeResults } = await ordersContainer.items.query(onTimeQuery).fetchAll();
+      const onTimeCount = onTimeResults[0]?.onTimeCount || 0;
+      const onTimeDeliveryRate = completionData.totalCompleted > 0 
+        ? (onTimeCount / completionData.totalCompleted) * 100 
+        : 0;
+
+      // Get QC pass rate (mock for now - would need QC results container)
+      const qcPassRate = 96.8; // This would be calculated from actual QC data
+
+      const metrics = {
+        averageCompletionTime: Number(completionData.avgCompletionTime?.toFixed(1)) || 0,
+        onTimeDeliveryRate: Number(onTimeDeliveryRate.toFixed(1)),
+        qcPassRate: qcPassRate
+      };
+
+      return {
+        success: true,
+        data: metrics
+      };
+    } catch (error) {
+      this.logger.error('Failed to get order metrics', { error });
+      return {
+        success: false,
+        error: createApiError('GET_ORDER_METRICS_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
+  /**
+   * Get recent orders for dashboard
+   */
+  async getRecentOrders(limit: number = 10): Promise<ApiResponse<any[]>> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not connected. Call initialize() first.');
+      }
+
+      const ordersContainer = this.database!.container('orders');
+      
+      const query = {
+        query: `SELECT TOP @limit * FROM c ORDER BY c._ts DESC`,
+        parameters: [{ name: '@limit', value: limit }]
+      };
+
+      const { resources } = await ordersContainer.items.query(query).fetchAll();
+      
+      return {
+        success: true,
+        data: resources
+      };
+    } catch (error) {
+      this.logger.error('Failed to get recent orders', { error });
+      return {
+        success: false,
+        error: createApiError('GET_RECENT_ORDERS_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
+  // ===============================
   // Utility Methods
   // ===============================
 
@@ -1222,6 +1586,291 @@ export class CosmosDbService {
   private generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
+
+  private async calculateTopVendorRatings(topVendors: any[]): Promise<any[]> {
+    try {
+      const vendorRatings = await Promise.all(topVendors.map(async (vendor) => {
+        // Calculate real rating based on completed orders and QC scores
+        const vendorOrders = await this.getVendorOrders(vendor.assignedVendorId);
+        const rating = this.calculateVendorPerformanceRating(vendorOrders);
+        
+        return {
+          vendorId: vendor.assignedVendorId,
+          completedOrders: vendor.completedOrders,
+          rating: Math.round(rating * 10) / 10 // Round to 1 decimal place
+        };
+      }));
+      
+      return vendorRatings;
+    } catch (error) {
+      this.logger.error('Failed to calculate vendor ratings', { error });
+      // Return vendors with null ratings instead of mock data
+      return topVendors.map(v => ({
+        vendorId: v.assignedVendorId,
+        completedOrders: v.completedOrders,
+        rating: null
+      }));
+    }
+  }
+
+  private async calculateMonthlyTrends(): Promise<{ orders: number[], qcScores: number[] }> {
+    try {
+      // Calculate real monthly trends from last 5 months
+      const monthlyData = await this.getMonthlyOrderTrends();
+      const monthlyQcScores = await this.getMonthlyQcTrends();
+      
+      return {
+        orders: monthlyData,
+        qcScores: monthlyQcScores
+      };
+    } catch (error) {
+      this.logger.error('Failed to calculate monthly trends', { error });
+      // Return empty arrays instead of mock data
+      return {
+        orders: [],
+        qcScores: []
+      };
+    }
+  }
+
+  private calculateVendorPerformanceRating(orders: any[]): number {
+    if (!orders || orders.length === 0) return 0;
+    
+    // Calculate rating based on completion rate, QC scores, and turnaround time
+    let totalScore = 0;
+    let completedOrders = 0;
+    
+    for (const order of orders) {
+      if (order.status === 'completed') {
+        completedOrders++;
+        const qcScore = order.qcResult?.overallScore || 0;
+        const timelinessScore = this.calculateTimelinessScore(order);
+        totalScore += (qcScore * 0.7 + timelinessScore * 0.3); // Weight QC more heavily
+      }
+    }
+    
+    if (completedOrders === 0) return 0;
+    return Math.min(5.0, totalScore / completedOrders / 20); // Scale to 5-point rating
+  }
+
+  private calculateTimelinessScore(order: any): number {
+    // Calculate score based on whether order was completed on time
+    if (!order.dueDate || !order.completedDate) return 50; // Neutral score if dates missing
+    
+    const dueDate = new Date(order.dueDate);
+    const completedDate = new Date(order.completedDate);
+    const daysDifference = (completedDate.getTime() - dueDate.getTime()) / (1000 * 3600 * 24);
+    
+    if (daysDifference <= 0) return 100; // Completed early/on time
+    if (daysDifference <= 1) return 80;  // 1 day late
+    if (daysDifference <= 3) return 60;  // 2-3 days late
+    return 20; // More than 3 days late
+  }
+
+  private async getVendorOrders(vendorId: string): Promise<any[]> {
+    try {
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      
+      const container = this.database.container('orders');
+      const query = `SELECT * FROM c WHERE c.assignedVendorId = @vendorId AND c.status IN ('completed', 'in_progress')`;
+      const result = await container.items.query({
+        query,
+        parameters: [{ name: '@vendorId', value: vendorId }]
+      }).fetchAll();
+      
+      return result.resources;
+    } catch (error) {
+      this.logger.error('Failed to get vendor orders', { vendorId, error });
+      return [];
+    }
+  }
+
+  private async getMonthlyOrderTrends(): Promise<number[]> {
+    try {
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      
+      const container = this.database.container('orders');
+      const fiveMonthsAgo = new Date();
+      fiveMonthsAgo.setMonth(fiveMonthsAgo.getMonth() - 5);
+      
+      const query = `SELECT VALUE COUNT(1) FROM c WHERE c.createdAt >= @startDate GROUP BY DateTimeFromParts(DateTimePart('year', c.createdAt), DateTimePart('month', c.createdAt), 1, 0, 0, 0, 0) ORDER BY DateTimeFromParts(DateTimePart('year', c.createdAt), DateTimePart('month', c.createdAt), 1, 0, 0, 0, 0)`;
+      
+      const result = await container.items.query({
+        query,
+        parameters: [{ name: '@startDate', value: fiveMonthsAgo.toISOString() }]
+      }).fetchAll();
+      
+      return result.resources.slice(-5); // Last 5 months
+    } catch (error) {
+      this.logger.error('Failed to get monthly order trends', { error });
+      return [];
+    }
+  }
+
+  /**
+   * Generic CRUD operations for any container
+   */
+  async createItem<T>(containerName: string, item: any): Promise<ApiResponse<T>> {
+    try {
+      if (!this.database) {
+        await this.initialize();
+      }
+
+      const container = this.database!.container(containerName);
+      const response = await container.items.create(item);
+
+      return {
+        success: true,
+        data: response.resource as T
+      };
+    } catch (error) {
+      this.logger.error('Failed to create item', { error: error instanceof Error ? error.message : 'Unknown error', containerName });
+      return {
+        success: false,
+        error: this.createApiError('CREATE_ITEM_FAILED', 'Failed to create item')
+      };
+    }
+  }
+
+  async getItem<T>(containerName: string, id: string, partitionKey?: string): Promise<ApiResponse<T>> {
+    try {
+      if (!this.database) {
+        await this.initialize();
+      }
+
+      const container = this.database!.container(containerName);
+      const response = await container.item(id, partitionKey || id).read();
+
+      if (!response.resource) {
+        return {
+          success: false,
+          error: this.createApiError('ITEM_NOT_FOUND', `Item ${id} not found`)
+        };
+      }
+
+      return {
+        success: true,
+        data: response.resource as T
+      };
+    } catch (error) {
+      this.logger.error('Failed to get item', { error: error instanceof Error ? error.message : 'Unknown error', containerName, id });
+      return {
+        success: false,
+        error: this.createApiError('GET_ITEM_FAILED', 'Failed to retrieve item')
+      };
+    }
+  }
+
+  async updateItem<T>(containerName: string, id: string, updates: Partial<T>, partitionKey?: string): Promise<ApiResponse<T>> {
+    try {
+      if (!this.database) {
+        await this.initialize();
+      }
+
+      const container = this.database!.container(containerName);
+      const existingResponse = await container.item(id, partitionKey || id).read();
+      
+      if (!existingResponse.resource) {
+        return {
+          success: false,
+          error: this.createApiError('ITEM_NOT_FOUND', `Item ${id} not found`)
+        };
+      }
+
+      const updatedItem = { ...existingResponse.resource, ...updates };
+      const response = await container.item(id, partitionKey || id).replace(updatedItem);
+
+      return {
+        success: true,
+        data: response.resource as T
+      };
+    } catch (error) {
+      this.logger.error('Failed to update item', { error: error instanceof Error ? error.message : 'Unknown error', containerName, id });
+      return {
+        success: false,
+        error: this.createApiError('UPDATE_ITEM_FAILED', 'Failed to update item')
+      };
+    }
+  }
+
+  async deleteItem(containerName: string, id: string, partitionKey?: string): Promise<ApiResponse<boolean>> {
+    try {
+      if (!this.database) {
+        await this.initialize();
+      }
+
+      const container = this.database!.container(containerName);
+      await container.item(id, partitionKey || id).delete();
+
+      return {
+        success: true,
+        data: true
+      };
+    } catch (error) {
+      this.logger.error('Failed to delete item', { error: error instanceof Error ? error.message : 'Unknown error', containerName, id });
+      return {
+        success: false,
+        error: this.createApiError('DELETE_ITEM_FAILED', 'Failed to delete item')
+      };
+    }
+  }
+
+  async queryItems<T>(containerName: string, query: string, parameters?: any[]): Promise<ApiResponse<T[]>> {
+    try {
+      if (!this.database) {
+        await this.initialize();
+      }
+
+      const container = this.database!.container(containerName);
+      const querySpec = {
+        query,
+        parameters: parameters || []
+      };
+
+      const response = await container.items.query(querySpec).fetchAll();
+
+      return {
+        success: true,
+        data: response.resources as T[]
+      };
+    } catch (error) {
+      this.logger.error('Failed to query items', { error: error instanceof Error ? error.message : 'Unknown error', containerName, query });
+      return {
+        success: false,
+        error: this.createApiError('QUERY_ITEMS_FAILED', 'Failed to query items')
+      };
+    }
+  }
+
+  private async getMonthlyQcTrends(): Promise<number[]> {
+    try {
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+      
+      const container = this.database.container('orders');
+      const fiveMonthsAgo = new Date();
+      fiveMonthsAgo.setMonth(fiveMonthsAgo.getMonth() - 5);
+      
+      const query = `SELECT AVG(c.qcResult.overallScore) as avgScore FROM c WHERE c.createdAt >= @startDate AND IS_DEFINED(c.qcResult.overallScore) GROUP BY DateTimeFromParts(DateTimePart('year', c.createdAt), DateTimePart('month', c.createdAt), 1, 0, 0, 0, 0) ORDER BY DateTimeFromParts(DateTimePart('year', c.createdAt), DateTimePart('month', c.createdAt), 1, 0, 0, 0, 0)`;
+      
+      const result = await container.items.query({
+        query,
+        parameters: [{ name: '@startDate', value: fiveMonthsAgo.toISOString() }]
+      }).fetchAll();
+      
+      return result.resources.slice(-5).map(r => r.avgScore || 0);
+    } catch (error) {
+      this.logger.error('Failed to get monthly QC trends', { error });
+      return [];
+    }
+  }
+
+
 
   private createApiError(code: string, message: string, details?: Record<string, any>): any {
     const error: any = {

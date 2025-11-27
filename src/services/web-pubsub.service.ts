@@ -29,7 +29,12 @@ export class WebPubSubService {
 
   constructor(config: WebPubSubConfig = {}) {
     this.hubName = config.hubName || 'appraisal-notifications';
-    this.connectionString = config.connectionString || process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING || 'local-emulator';
+    this.connectionString = config.connectionString || process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING || (() => {
+      if (process.env.NODE_ENV === 'development' && process.env.WEB_PUBSUB_USE_EMULATOR === 'true') {
+        return 'local-emulator';
+      }
+      throw new Error('AZURE_WEB_PUBSUB_CONNECTION_STRING environment variable is required');
+    })();
     this.isEmulator = this.connectionString === 'local-emulator' || config.enableLocalEmulation === true;
     this.logger = new Logger('WebPubSubService');
 
@@ -148,7 +153,7 @@ export class WebPubSubService {
    */
   async generateClientAccessUrl(userId?: string, roles?: string[]): Promise<string> {
     if (this.isEmulator) {
-      const mockUrl = `ws://localhost:8080/client/hubs/${this.hubName}`;
+      const mockUrl = `ws://localhost:${process.env.WEB_PUBSUB_EMULATOR_PORT || '8080'}/client/hubs/${this.hubName}`;
       this.logger.info(`Generated mock client access URL: ${mockUrl}`, { userId, roles });
       return mockUrl;
     }

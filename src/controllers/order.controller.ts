@@ -28,7 +28,7 @@ export class OrderController {
   constructor() {
     // Initialize service dependencies
     const db = new DatabaseService();
-    const vendorService = new VendorManagementService(db);
+    const vendorService = new VendorManagementService();
     const notificationService = new NotificationService();
     const auditService = new AuditService();
     this.logger = new Logger();

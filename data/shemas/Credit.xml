@@ -1,0 +1,1217 @@
+  <MISMO CREDIT>  
+    <xsd:complexType name="CREDIT_RESPONSE">
+        <xsd:annotation>
+            <xsd:documentation>Contains the credit report data for a borrower or a pair of borrowers.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="COMBINED_LTVS" type="COMBINED_LTVS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more COMBINED_LTV. Holds all occurrences of COMBINED_LTV.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_BUREAU" type="CREDIT_BUREAU" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about an entity that collects and reports at information of consumers credit history and provides credit reporting services.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_COMMENTS" type="CREDIT_COMMENTS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_COMMENT. Holds all occurrences of CREDIT_COMMENT.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_CONSUMER_REFERRALS" type="CREDIT_CONSUMER_REFERRALS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_CONSUMER_REFERRAL. Holds all occurrences of CREDIT_CONSUMER_REFERRAL.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_ERROR_MESSAGES" type="CREDIT_ERROR_MESSAGES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_ERROR_MESSAGE. Holds all occurrences of CREDIT_ERROR_MESSAGE.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_FILES" type="CREDIT_FILES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_FILE. Holds all occurrences of CREDIT_FILE.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_INQUIRIES" type="CREDIT_INQUIRIES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_INQUIRY. Holds all occurrences of CREDIT_INQUIRY.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_LIABILITIES" type="CREDIT_LIABILITIES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_LIABILITY. Holds all occurrences of CREDIT_LIABILITY.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_PUBLIC_RECORDS" type="CREDIT_PUBLIC_RECORDS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_PUBLIC_RECORD. Holds all occurrences of CREDIT_PUBLIC_RECORD.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_REPORT_PRICES" type="CREDIT_REPORT_PRICES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_REPORT_PRICE. Holds all occurrences of CREDIT_REPORT_PRICE.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_REPOSITORY_INCLUDED" type="CREDIT_REPOSITORY_INCLUDED" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Identifies which credit data repository data source(s) should be or have been included in the credit report.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_REQUEST_DATA" type="CREDIT_REQUEST_DATA" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Provides information about the options or other parameters submitted to a credit bureau to request a credit report on the borrower(s).</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_RESPONSE_ALERT_MESSAGES" type="CREDIT_RESPONSE_ALERT_MESSAGES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_RESPONSE_ALERT_MESSAGE. Holds all occurrences of CREDIT_RESPONSE_ALERT_MESSAGE.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_RESPONSE_DATA_INFORMATION" type="CREDIT_RESPONSE_DATA_INFORMATION" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about the identify of the software and version number that was used to produce the Credit Response file. This data element may also be used to identify the credit repository data versions used in the Credit Response transaction.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_RESPONSE_DETAIL" type="CREDIT_RESPONSE_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The elements in this container identify a variety of data values and option parameters about the credit response, such as the credit report identifier, first issued and last updated dates, report type, etc.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SCORE_MODELS" type="CREDIT_SCORE_MODELS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_SCORE_MODEL. Holds all occurrences of CREDIT_SCORE_MODEL.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SCORES" type="CREDIT_SCORES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_SCORE. Holds all occurrences of CREDIT_SCORE.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SUMMARIES" type="CREDIT_SUMMARIES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_SUMMARY. Holds all occurrences of CREDIT_SUMMARY.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_TRADE_REFERENCES" type="CREDIT_TRADE_REFERENCES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_TRADE_REFERENCE. Holds all occurrences of CREDIT_TRADE_REFERENCE.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="LOANS" type="LOANS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A collection of loans that are part of a single deal.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="PARTIES" type="PARTIES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A collection of objects that define specific parties to a deal. This includes the direct participating parties, such as borrower and seller and the indirect parties such as the credit report provider.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="REGULATORY_PRODUCTS" type="REGULATORY_PRODUCTS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more REGULATORY_PRODUCT. Holds all occurrences of REGULATORY_PRODUCT.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_RESPONSE_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_RESPONSE_ALERT_MESSAGE">
+        <xsd:annotation>
+            <xsd:documentation>Provides an optional repeating element for holding alert messages reported by the credit repository or bureau.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditRepositorySourceType" type="CreditRepositorySourceEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This element describes the source of the credit file, Equifax, Experian, Trans Union or Unspecified if the specific sources are not specified.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditRepositorySourceTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Repository Source Type is set to Other, enter its value in this data element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageAdverseIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This indicator is set to Y when the Credit Response Alert Message contains information which may be considered adverse and may require further investigation or other action.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageCategoryType" type="CreditResponseAlertMessageCategoryEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Describes the general category of the alert message. This allows for automated processing by systems reading the credit alert messages.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageCategoryTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Response Alert Message Category Type is set to Other, enter its value in this data element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageCode" type="MISMOCode" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This is the code value associated with the Credit Response Alert Message Text and/or Credit Response Alert Message Type.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageCodeSourceType" type="CreditResponseAlertMessageCodeSourceEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This element identifies the name of the source for the code values used in the Credit Response Alert Message Code. The enumeration definition identifies the source document and name of the table that contains the code values.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageCodeSourceTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When the Credit Response Alert Message Code Source Type has a value of Other, this element identifies the name of the source for the code values used in the Credit Response Alert Message Code.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageText" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Text of the alert message.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageType" type="CreditResponseAlertMessageEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Lists the name of the repository bureau or other product that generated the alert message.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditResponseAlertMessageTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Response Alert Message Type is set to Other, enter its value in this data element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_RESPONSE_ALERT_MESSAGE_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_RESPONSE_ALERT_MESSAGES">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_RESPONSE_ALERT_MESSAGE. Holds all occurrences of CREDIT_RESPONSE_ALERT_MESSAGE.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_RESPONSE_ALERT_MESSAGE" type="CREDIT_RESPONSE_ALERT_MESSAGE" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>Provides an optional repeating element for holding alert messages reported by the credit repository or bureau.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_RESPONSE_ALERT_MESSAGES_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_RESPONSE_DATA_INFORMATION">
+        <xsd:annotation>
+            <xsd:documentation>Information about the identify of the software and version number that was used to produce the Credit Response file. This data element may also be used to identify the credit repository data versions used in the Credit Response transaction.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="DATA_VERSIONS" type="DATA_VERSIONS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more DATA_VERSION. Holds all occurrences of DATA_VERSION.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_RESPONSE_DATA_INFORMATION_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_RESPONSE_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>The elements in this container identify a variety of data values and option parameters about the credit response, such as the credit report identifier, first issued and last updated dates, report type, etc.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditRatingCodeType" type="CreditRatingCodeEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Identifies which system of Manner Of Payment (MOP) rating codes is in the credit report. If Other is selected, then the name of the coding system will appear in the Credit Rating Code Type Other Description.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditRatingCodeTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>If the Credit Rating Code Type is set to Other, enter its description in this data attribute.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportFirstIssuedDate" type="MISMODate" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Date and time the referenced credit report was first issued.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportIdentifier" type="MISMOIdentifier" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A reference number assigned by the credit bureau to a specific credit report. This report number is also referenced when a Reissue, Upgrade, or Status Query of an existing report is requested.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportLastUpdatedDate" type="MISMODate" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The date and time that the referenced credit report was last updated or revised.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportMergeType" type="CreditReportMergeEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This element indicates how duplicate data from multiple sources is handled on a credit report.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportTransactionIdentifier" type="MISMOIdentifier" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Uniquely identifies a specific instance of a credit report transaction.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportType" type="CreditReportEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The type of credit report that was requested or produced. Most common types are Merged report (data from credit data repositories is merged), and RMCR (Residential Mortgage Credit Report - contains verified liabilities, employment, etc.).</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Report Type is set to Other, enter its description in this element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="PaymentPatternRatingCodeType" type="PaymentPatternRatingCodeEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Identifies which system of rating codes is used within the Credit Liability Payment Pattern Data text string.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="PaymentPatternRatingCodeTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Payment Pattern Rating Code Type has a value of Other, this element identifies the rating code system applied to the Credit Liability Payment Pattern Data text string.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_RESPONSE_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE">
+        <xsd:annotation>
+            <xsd:documentation>Information specific to a Credit Score that was obtained on one or more borrowers.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SCORE_DETAIL" type="CREDIT_SCORE_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Additional information about the credit score.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SCORE_FACTORS" type="CREDIT_SCORE_FACTORS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_SCORE_FACTOR. Holds all occurrences of CREDIT_SCORE_FACTOR.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SCORE_PROVIDER" type="CREDIT_SCORE_PROVIDER" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about the entity that provided the credit score data for a borrower.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>Additional information about the credit score.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditReportIdentifier" type="MISMOIdentifier" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A reference number assigned by the credit bureau to a specific credit report. This report number is also referenced when a Reissue, Upgrade, or Status Query of an existing report is requested.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportType" type="CreditReportEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The type of credit report that was requested or produced. Most common types are Merged report (data from credit data repositories is merged), and RMCR (Residential Mortgage Credit Report - contains verified liabilities, employment, etc.).</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditReportTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Report Type is set to Other, enter its description in this element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditRepositorySingleSourceIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>If true, indicates the credit report was  based on the input from a single credit repository. Also known as a single in-file credit report.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditRepositorySourceIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Indicates whether a Credit Repository Source is available. If a Credit Repository Source is available then the source can be provided in Credit Repository Source Type.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditRepositorySourceType" type="CreditRepositorySourceEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This element describes the source of the credit file, Equifax, Experian, Trans Union or Unspecified if the specific sources are not specified.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditRepositorySourceTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Repository Source Type is set to Other, enter its value in this data element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreCategoryType" type="CreditScoreCategoryEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>An enumerated list that describes the general type or purpose of a credit score model. This allows LOS systems to extract scores by a more general category, without having to know the specific score model names.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreCategoryTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Score Category Type is set to "Other", enter its value in this data element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreCategoryVersionType" type="CreditScoreCategoryVersionEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A value from a MISMO prescribed list that represents a specific version, release of a Credit Score Category Type.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreCategoryVersionTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A free-form text field that specifies the enumeration when the value of Other is used for Credit Score Category Version Type.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreDate" type="MISMODate" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Date that the referenced credit score was produced.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreExclusionReasonType" type="CreditScoreExclusionReasonEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A value from a MISMO defined list that identifies the reason why a credit score could not be generated.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreFACTAInquiriesIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This indicator is set to True when the Credit Risk Score Value of the borrower or guarantor was negatively affected by the presence of credit inquiry records on their credit report. There may be FACT Act compliance requirements related to this alert message.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreImpairmentType" type="CreditScoreImpairmentEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Identifies a characteristic of the Credit Score that impairs its effectiveness as an indicator of credit risk.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreImpairmentTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A free-form text field used to collect additional information when Other is selected for Credit Score Impairment Type.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreModelNameType" type="CreditScoreModelNameEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A value from a MISMO prescribed list that specifies the score algorithm model name used to produce the referenced credit risk score.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreModelNameTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When the Credit Score Model Name Type is set to Other, this element holds the description.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreRankPercentileDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A detailed description of how the credit score compares to the scores of other consumers.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreRankPercentileValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The percentile that the parties credit score is in comparison to all consumers.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Numeric credit score resulting from credit evaluation model.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="SelectedCreditScoreIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When true, indicates that the Credit Score Value is the recommended value chosen from a collection of credit scores for a single borrower or guarantor, based on criteria as defined by trading partners. For example, this may be used to identify the middle Credit Score.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_FACTOR">
+        <xsd:annotation>
+            <xsd:documentation>Identifies a reason or factor that reduced the Credit Score Value from its maximum possible value.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditScoreFactorCode" type="MISMOCode" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Factors of the borrower's or guarantor's credit which give context to the referenced credit score. The factor is normally a numeric code. The Credit Score Factor Text contains the text for the factor code.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreFactorText" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The text remarks associated with a Credit Score Factor</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_FACTOR_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_FACTORS">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_SCORE_FACTOR. Holds all occurrences of CREDIT_SCORE_FACTOR.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SCORE_FACTOR" type="CREDIT_SCORE_FACTOR" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>Identifies a reason or factor that reduced the Credit Score Value from its maximum possible value.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_FACTORS_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_HISTOGRAM_INTERVAL">
+        <xsd:annotation>
+            <xsd:documentation>Contains the detail for a specific score interval that can be used for building the histogram that is required by Fair Credit Reporting Risk-Based Pricing Regulations.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditScoreHistogramIntervalHighValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The highest possible value for the score model within the given credit score histogram interval.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreHistogramIntervalLowValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The lowest possible value for the score model within the given credit score histogram interval.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreHistogramIntervalScoreRangeOccurrencePercent" type="MISMOPercent" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The percent of consumers that have score values within this credit score histogram interval.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_HISTOGRAM_INTERVAL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_HISTOGRAM_INTERVALS">
+        <xsd:annotation>
+            <xsd:documentation>Container for specifying all the specific intervals that can be used for building the histogram that is required by Fair Credit Reporting Risk-Based Pricing Regulations.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SCORE_HISTOGRAM_INTERVAL" type="CREDIT_SCORE_HISTOGRAM_INTERVAL" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>Contains the detail for a specific score interval that can be used for building the histogram that is required by Fair Credit Reporting Risk-Based Pricing Regulations.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_HISTOGRAM_INTERVALS_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_MODEL">
+        <xsd:annotation>
+            <xsd:documentation>The name and other information about the statistical analysis algorithm used to evaluate the risk of issuing a loan or credit to a borrower.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SCORE_HISTOGRAM_INTERVALS" type="CREDIT_SCORE_HISTOGRAM_INTERVALS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Container for specifying all the specific intervals that can be used for building the histogram that is required by Fair Credit Reporting Risk-Based Pricing Regulations.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SCORE_MODEL_DETAIL" type="CREDIT_SCORE_MODEL_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The name and other information about the statistical analysis algorithm used to evaluate the risk of issuing a loan or credit to a borrower.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_MODEL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_MODEL_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>The name and other information about the statistical analysis algorithm used to evaluate the risk of issuing a loan or credit to a borrower.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditScoreCategoryType" type="CreditScoreCategoryEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>An enumerated list that describes the general type or purpose of a credit score model. This allows LOS systems to extract scores by a more general category, without having to know the specific score model names.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreCategoryTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When Credit Score Category Type is set to "Other", enter its value in this data element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreMaximumValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This is the upper range of possible score values for this Credit Score Model Name Type. The range of credit score values is required to be part of the FACTA disclosure.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreMinimumValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This is the lower range of possible score values for this Credit Score Model Name Type. The range of credit score values is required to be part of the FACTA disclosure.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreModelNameType" type="CreditScoreModelNameEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A value from a MISMO prescribed list that specifies the score algorithm model name used to produce the referenced credit risk score.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreModelNameTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When the Credit Score Model Name Type is set to Other, this element holds the description.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreModelRangeOfScoresDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The range of scores possible under the credit score model.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_MODEL_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_MODELS">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_SCORE_MODEL. Holds all occurrences of CREDIT_SCORE_MODEL.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SCORE_MODEL" type="CREDIT_SCORE_MODEL" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>The name and other information about the statistical analysis algorithm used to evaluate the risk of issuing a loan or credit to a borrower.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_MODELS_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_PROVIDER">
+        <xsd:annotation>
+            <xsd:documentation>Information about the entity that provided the credit score data for a borrower.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="ADDRESS" type="ADDRESS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Address is based upon USPS publication 28. Publication 28 has two sections, format of an address on a piece of mail and data points that MAY compose an address. The data point children of ADDRESS are the union components of an address on a piece of mail or a package.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CONTACTS" type="CONTACTS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CONTACT. Holds all occurrences of CONTACT.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SCORE_PROVIDER_DETAIL" type="CREDIT_SCORE_PROVIDER_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Additional information about the entity that provided the credit score data, including the entity name and website.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_PROVIDER_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORE_PROVIDER_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>Additional information about the entity that provided the credit score data, including the entity name and website.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditScoreProviderName" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Identifies the name of the company providing the credit score data. This is one of the requirements of the 2003 FACT Act.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditScoreProviderURL" type="MISMOURL" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Specifies the URL or web site address of the company providing the credit score data.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORE_PROVIDER_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SCORES">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_SCORE. Holds all occurrences of CREDIT_SCORE.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SCORE" type="CREDIT_SCORE" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>Information specific to a Credit Score that was obtained on one or more borrowers.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SCORES_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SUMMARIES">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_SUMMARY. Holds all occurrences of CREDIT_SUMMARY.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SUMMARY" type="CREDIT_SUMMARY" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>This structure provides two methods for presenting summary data. The first uses repeating CREDIT SUMMARY DATA SET elements, each with Credit Summary Data Set Name and Credit Summary Data Set Value element pairs. The second method uses a CREDIT SUMMARY DETAIL element to hold the summary data within a Credit Summary Text element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SUMMARIES_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SUMMARY">
+        <xsd:annotation>
+            <xsd:documentation>This structure provides two methods for presenting summary data. The first uses repeating CREDIT SUMMARY DATA SET elements, each with Credit Summary Data Set Name and Credit Summary Data Set Value element pairs. The second method uses a CREDIT SUMMARY DETAIL element to hold the summary data within a Credit Summary Text element.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SUMMARY_DATA_SETS" type="CREDIT_SUMMARY_DATA_SETS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_SUMMARY_DATA_SET. Holds all occurrences of CREDIT_SUMMARY_DATA_SET.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_SUMMARY_DETAIL" type="CREDIT_SUMMARY_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information that identifies and describes a set of credit summary data within a Credit Summary Text element.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SUMMARY_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SUMMARY_DATA_SET">
+        <xsd:annotation>
+            <xsd:documentation>The Credit Summary Data Set Name-Value pair data provides a standard method of providing a set of summary data. The Data Set Name identifies the type of summary data. The Data Set Value contains the actual data described by the Data Set Name.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditSummaryDataSetName" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The Credit Summary Data Set Name-Value pair data provides a standard method of providing a set of summary data. The Data Set Name identifies the type of summary data. The Data Set Value contains the actual data described by the Data Set Name.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditSummaryDataSetValue" type="MISMOValue" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This element holds the actual data value described by the Credit Summary Data Set Name attribute.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SUMMARY_DATA_SET_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SUMMARY_DATA_SETS">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_SUMMARY_DATA_SET. Holds all occurrences of CREDIT_SUMMARY_DATA_SET.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_SUMMARY_DATA_SET" type="CREDIT_SUMMARY_DATA_SET" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>The Credit Summary Data Set Name-Value pair data provides a standard method of providing a set of summary data. The Data Set Name identifies the type of summary data. The Data Set Value contains the actual data described by the Data Set Name.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SUMMARY_DATA_SETS_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_SUMMARY_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>Information that identifies and describes a set of credit summary data within a Credit Summary Text element.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CreditSummaryName" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>This is the name used to label or describe an individual group of summary data elements. It is useful when there are multiple groups of summary data elements within a credit report.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CreditSummaryText" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Any type of additional summary data that is provided by the credit bureau.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_SUMMARY_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_TRADE_REFERENCE">
+        <xsd:annotation>
+            <xsd:documentation>Contains a list of the names, addresses and contact information for the creditors listed in the credit liabilities and credit inquiry sections of the credit report.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="ADDRESS" type="ADDRESS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Address is based upon USPS publication 28. Publication 28 has two sections, format of an address on a piece of mail and data points that MAY compose an address. The data point children of ADDRESS are the union components of an address on a piece of mail or a package.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CONTACTS" type="CONTACTS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CONTACT. Holds all occurrences of CONTACT.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CREDIT_REPOSITORIES" type="CREDIT_REPOSITORIES" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CREDIT_REPOSITORY. Holds all occurrences of CREDIT_REPOSITORY.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="NAME" type="NAME" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Parent container for name that allows for choice group between parsed and unparsed containers.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_TRADE_REFERENCE_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CREDIT_TRADE_REFERENCES">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CREDIT_TRADE_REFERENCE. Holds all occurrences of CREDIT_TRADE_REFERENCE.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CREDIT_TRADE_REFERENCE" type="CREDIT_TRADE_REFERENCE" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>Contains a list of the names, addresses and contact information for the creditors listed in the credit liabilities and credit inquiry sections of the credit report.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CREDIT_TRADE_REFERENCES_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CURRENT_INCOME">
+        <xsd:annotation>
+            <xsd:documentation>Information about the borrower's current income, including type, amount, and taxing status.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CURRENT_INCOME_DETAIL" type="CURRENT_INCOME_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Additional information about the current income.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CURRENT_INCOME_ITEM_SUMMARY" type="CURRENT_INCOME_ITEM_SUMMARY" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Summary information regarding totals of a defined group of Income Types.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="CURRENT_INCOME_ITEMS" type="CURRENT_INCOME_ITEMS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more CURRENT_INCOME_ITEM. Holds all occurrences of CURRENT_INCOME_ITEM.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CURRENT_INCOME_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CURRENT_INCOME_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>Additional information about the current income.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="IncomeReportedType" type="IncomeReportedEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Specifies whether the total monthly income is either Pre-tax or Post-tax.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="URLABorrowerTotalMonthlyIncomeAmount" type="MISMOAmount" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The total of the borrower’s individual gross monthly income amounts from all sources that are on the URLA.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="URLABorrowerTotalOtherIncomeAmount" type="MISMOAmount" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The total monthly amount of the borrower's gross income from non-employment sources.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CURRENT_INCOME_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CURRENT_INCOME_ITEM">
+        <xsd:annotation>
+            <xsd:documentation>Information about cash flow from a particular category or income type that is immediately available.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CURRENT_INCOME_ITEM_DETAIL" type="CURRENT_INCOME_ITEM_DETAIL" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about cash flow from a particular category or type income that is immediately available.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="INCOME_DOCUMENTATIONS" type="INCOME_DOCUMENTATIONS" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information about one or more INCOME_DOCUMENTATION. Holds all occurrences of INCOME_DOCUMENTATION.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="VERIFICATION" type="VERIFICATION" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Information around the verification of a particular item (e.g. asset, income, employment, rent, etc).</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CURRENT_INCOME_ITEM_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+            <xsd:annotation>
+                <xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attribute>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CURRENT_INCOME_ITEM_DETAIL">
+        <xsd:annotation>
+            <xsd:documentation>Information about cash flow from a particular category or type income that is immediately available.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CurrentIncomeMonthlyTotalAmount" type="MISMOAmount" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The monthly total amount for the specified Income Item.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EmploymentIncomeIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When true, indicates that the Income Type is from an employment source. When false, indicates that the Income Type is from a non employment source.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="ForeignIncomeIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When true, indicates that the amount of income is earned through a foreign corporation/government and is paid in foreign currency.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="IncomeFederalTaxExemptIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>Indicates that the income is legally exempt from federal tax.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="IncomeType" type="IncomeEnum" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A value from a MISMO prescribed list that specifies borrower income items on a mortgage loan application.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="IncomeTypeOtherDescription" type="MISMOString" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>A free-form text field used to collect additional information when Other is selected for Income Type.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="SeasonalIncomeIndicator" type="MISMOIndicator" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>When true, indicates that the amount of income is only earned during portion of the calendar year.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CURRENT_INCOME_ITEM_DETAIL_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CURRENT_INCOME_ITEM_SUMMARY">
+        <xsd:annotation>
+            <xsd:documentation>Summary information regarding totals of a defined group of Income Types.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="MonthlyMilitaryEntitlementsAmount" type="MISMOAmount" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The total monthly amount of funds provided or credited to military personnel for specific needs, such as food or housing, over and above base pay.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="MonthlyRetirementAmount" type="MISMOAmount" nillable="true" minOccurs="0">
+                <xsd:annotation>
+                    <xsd:documentation>The total monthly amount of retirement funds provided to an individual that can include pension, 401K, IRA, etc.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CURRENT_INCOME_ITEM_SUMMARY_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+    <xsd:complexType name="CURRENT_INCOME_ITEMS">
+        <xsd:annotation>
+            <xsd:documentation>Information about one or more CURRENT_INCOME_ITEM. Holds all occurrences of CURRENT_INCOME_ITEM.</xsd:documentation>
+        </xsd:annotation>
+        <xsd:sequence>
+            <xsd:element name="CURRENT_INCOME_ITEM" type="CURRENT_INCOME_ITEM" minOccurs="0" maxOccurs="unbounded">
+                <xsd:annotation>
+                    <xsd:documentation>Information about cash flow from a particular category or income type that is immediately available.</xsd:documentation>
+                </xsd:annotation>
+            </xsd:element>
+            <xsd:element name="EXTENSION" type="CURRENT_INCOME_ITEMS_EXTENSION" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attributeGroup ref="xlink:MISMOresourceLink">
+            <xsd:annotation>
+                <xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+        <xsd:attributeGroup ref="AttributeExtension">
+            <xsd:annotation>
+                <xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+            </xsd:annotation>
+        </xsd:attributeGroup>
+    </xsd:complexType>
+  </MISMO CREDIT>  
