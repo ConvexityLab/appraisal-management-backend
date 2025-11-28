@@ -16,9 +16,14 @@ param tags object
 @description('App Service managed identity principal ID')
 param appServicePrincipalId string
 
+// Generate a valid Key Vault name (3-24 characters, alphanumeric, no consecutive hyphens)
+var keyVaultName = length('${replace(namingPrefix, '--', '-')}-kv') > 24 
+  ? 'kv${replace(replace(namingPrefix, '-', ''), 'appraisalmgmt', 'appr')}${environment}' 
+  : '${replace(namingPrefix, '--', '-')}-kv'
+
 // Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: '${namingPrefix}-kv'
+  name: keyVaultName
   location: location
   tags: tags
   properties: {

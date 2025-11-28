@@ -74,7 +74,7 @@ resource propertyIntelligenceQueue 'Microsoft.ServiceBus/namespaces/queues@2023-
   properties: {
     maxSizeInMegabytes: 2048
     maxDeliveryCount: 3
-    lockDuration: 'PT10M'
+    lockDuration: 'PT5M'
     defaultMessageTimeToLive: 'P7D'
     deadLetteringOnMessageExpiration: true
     duplicateDetectionHistoryTimeWindow: 'PT10M'
@@ -104,7 +104,7 @@ resource notificationsQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-p
   parent: serviceBusNamespace
   name: 'notifications'
   properties: {
-    maxSizeInMegabytes: 512
+    maxSizeInMegabytes: 1024
     maxDeliveryCount: 10
     lockDuration: 'PT1M'
     defaultMessageTimeToLive: 'P1D'
@@ -171,7 +171,7 @@ resource complianceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscrip
   name: 'compliance'
   properties: {
     maxDeliveryCount: 3
-    lockDuration: 'PT10M'
+    lockDuration: 'PT5M'
     defaultMessageTimeToLive: 'P90D'
     deadLetteringOnMessageExpiration: true
   }
