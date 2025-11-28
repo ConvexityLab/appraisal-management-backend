@@ -79,6 +79,7 @@ module keyVault 'modules/key-vault.bicep' = {
     environment: environment
     tags: tags
     appServicePrincipalId: '00000000-0000-0000-0000-000000000000' // Temporary placeholder
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 

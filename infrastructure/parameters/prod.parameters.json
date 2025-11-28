@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "prod"
+    },
+    "location": {
+      "value": "eastus2"
+    },
+    "appName": {
+      "value": "appraisal-mgmt"
+    },
+    "tags": {
+      "value": {
+        "Environment": "prod",
+        "Application": "appraisal-mgmt",
+        "ManagedBy": "Bicep",
+        "DeployedBy": "GitHub-Actions",
+        "CostCenter": "Production",
+        "Owner": "Platform-Team",
+        "Criticality": "High",
+        "DataClassification": "Confidential"
+      }
+    }
+  }
+}

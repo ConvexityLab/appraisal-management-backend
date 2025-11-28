@@ -16,6 +16,9 @@ param tags object
 @description('App Service managed identity principal ID')
 param appServicePrincipalId string
 
+@description('Log Analytics workspace ID for diagnostic settings')
+param logAnalyticsWorkspaceId string = ''
+
 // Generate a valid Key Vault name (3-24 alphanumeric characters, start with letter)
 var cleanPrefix = replace(replace(replace(namingPrefix, '-', ''), 'appraisal', 'appr'), 'mgmt', 'm')
 var keyVaultName = length('${cleanPrefix}${environment}kv') > 24 
@@ -59,11 +62,12 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// Diagnostic settings for Key Vault
-resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+// Diagnostic settings for Key Vault (only if Log Analytics workspace is provided)
+resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
   scope: keyVault
   name: 'default'
   properties: {
+    workspaceId: logAnalyticsWorkspaceId
     logs: [
       {
         categoryGroup: 'allLogs'

@@ -17,7 +17,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   location: location
   tags: tags
   sku: {
-    name: environment == 'prod' ? 'Premium' : 'Standard'
+    name: environment == 'prod' ? 'Standard' : 'Basic'
   }
   properties: {
     adminUserEnabled: true
