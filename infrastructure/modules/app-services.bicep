@@ -117,7 +117,7 @@ var containerApps = [
 ]
 
 resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for app in containerApps: {
-  name: 'ca-${app.name}-${environment}-${suffix}'
+  name: 'ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
   location: location
   tags: tags
   identity: {
