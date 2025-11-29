@@ -17,11 +17,13 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   location: location
   tags: tags
   sku: {
-    name: environment == 'prod' ? 'Standard' : 'Basic'
+    name: environment == 'prod' ? 'Premium' : 'Basic'
   }
   properties: {
     adminUserEnabled: true
-    policies: {
+    publicNetworkAccess: 'Enabled'
+    // Basic SKU only supports basic properties, advanced policies only for Standard/Premium
+    policies: environment == 'prod' ? {
       quarantinePolicy: {
         status: 'disabled'
       }
@@ -36,12 +38,15 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
       exportPolicy: {
         status: 'enabled'
       }
+    } : {
+      exportPolicy: {
+        status: 'enabled'
+      }
     }
     encryption: {
       status: 'disabled'
     }
     dataEndpointEnabled: false
-    publicNetworkAccess: 'Enabled'
     networkRuleBypassOptions: 'AzureServices'
     zoneRedundancy: environment == 'prod' ? 'Enabled' : 'Disabled'
   }

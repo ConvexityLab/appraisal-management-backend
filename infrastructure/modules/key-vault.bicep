@@ -72,20 +72,12 @@ resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-p
       {
         categoryGroup: 'allLogs'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: environment == 'prod' ? 365 : 30
-        }
       }
     ]
     metrics: [
       {
         category: 'AllMetrics'
         enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: environment == 'prod' ? 365 : 30
-        }
       }
     ]
   }
