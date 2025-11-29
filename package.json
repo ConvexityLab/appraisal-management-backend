@@ -4,8 +4,8 @@
   "description": "Enterprise Appraisal Management System Backend",
   "main": "dist/server.js",
   "scripts": {
-    "build": "npx tsc --project tsconfig.production.json",
-    "build:production": "npx tsc --project tsconfig.production.json",
+    "build": "npx tsc --project ./tsconfig.production.json",
+    "build:production": "npx tsc --project ./tsconfig.production.json",
     "start": "node dist/app-production.js",
     "start:dev": "node dist/server.js",
     "start:minimal": "node dist/minimal-server.js",
