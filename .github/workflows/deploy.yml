@@ -388,14 +388,14 @@ jobs:
     if: always() && (needs.run-ci-pipeline.result == 'failure' || needs.deploy-infrastructure.result == 'failure' || needs.deploy-application.result == 'failure')
     
     steps:
-    - name: Notify Teams on deployment failure
-      uses: jdcargile/ms-teams-notification@v1.3
-      with:
-        github-token: ${{ github.token }}
-        ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
-        notification-summary: " Deployment failed for ${{ github.repository }}"
-        notification-color: danger
-        timezone: America/New_York
+    # - name: Notify Teams on deployment failure
+    #   uses: jdcargile/ms-teams-notification@v1.3
+    #   with:
+    #     github-token: ${{ github.token }}
+    #     ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+    #     notification-summary: " Deployment failed for ${{ github.repository }}"
+    #     notification-color: danger
+    #     timezone: America/New_York
         
     - name: Create incident issue
       uses: actions/github-script@v7

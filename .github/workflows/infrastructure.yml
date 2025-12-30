@@ -174,22 +174,22 @@ jobs:
     if: always()
     
     steps:
-    - name: Notify Teams on Success
-      if: needs.deploy-infrastructure.result == 'success'
-      uses: jdcargile/ms-teams-notification@v1.3
-      with:
-        github-token: ${{ github.token }}
-        ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
-        notification-summary: "✅ Infrastructure deployed successfully to ${{ inputs.environment }}"
-        notification-color: good
-        timezone: America/New_York
-        
-    - name: Notify Teams on Failure
-      if: needs.deploy-infrastructure.result == 'failure'
-      uses: jdcargile/ms-teams-notification@v1.3
-      with:
-        github-token: ${{ github.token }}
-        ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
-        notification-summary: "❌ Infrastructure deployment failed for ${{ inputs.environment }}"
-        notification-color: danger
-        timezone: America/New_York
+    # - name: Notify Teams on Success
+    #   if: needs.deploy-infrastructure.result == 'success'
+    #   uses: jdcargile/ms-teams-notification@v1.3
+    #   with:
+    #     github-token: ${{ github.token }}
+    #     ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+    #     notification-summary: "Infrastructure deployed successfully to ${{ inputs.environment }}"
+    #     notification-color: good
+    #     timezone: America/New_York
+    #     
+    # - name: Notify Teams on Failure
+    #   if: needs.deploy-infrastructure.result == 'failure'
+    #   uses: jdcargile/ms-teams-notification@v1.3
+    #   with:
+    #     github-token: ${{ github.token }}
+    #     ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
+    #     notification-summary: "Infrastructure deployment failed for ${{ inputs.environment }}"
+    #     notification-color: danger
+    #     timezone: America/New_York
