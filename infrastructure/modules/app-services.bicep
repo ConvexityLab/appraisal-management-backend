@@ -73,12 +73,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
 var containerApps = [
   {
     name: 'appraisal-api'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' // Placeholder - will be replaced with actual image
+    image: 'nginx:alpine' // Lightweight placeholder - will be replaced with actual app image
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
     minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 5
-    targetPort: 8080 // Node.js app port
+    targetPort: 80 // nginx default port, will be updated to 8080 when real image deploys
   }
 ]
 
