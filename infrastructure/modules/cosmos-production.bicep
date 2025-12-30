@@ -192,9 +192,7 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-04-15
     resource: {
       id: databaseName
     }
-    options: {
-      throughput: 2000
-    }
+    // No throughput option for serverless
   }
 }
 
@@ -215,71 +213,9 @@ resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
         uniqueKeys: []
       }
     }
-    options: {
-      throughput: container.throughput
-    }
+    // No throughput option for serverless
   }
 }]
-
-// Diagnostic settings for comprehensive monitoring
-resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  scope: cosmosAccount
-  name: '${cosmosAccountName}-diagnostics'
-  properties: {
-    logs: [
-      {
-        category: 'DataPlaneRequests'
-        enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 90
-        }
-      }
-      {
-        category: 'QueryRuntimeStatistics'
-        enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 90
-        }
-      }
-      {
-        category: 'PartitionKeyStatistics'
-        enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
-      }
-      {
-        category: 'PartitionKeyRUConsumption'
-        enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 30
-        }
-      }
-      {
-        category: 'ControlPlaneRequests'
-        enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 90
-        }
-      }
-    ]
-    metrics: [
-      {
-        category: 'Requests'
-        enabled: true
-        retentionPolicy: {
-          enabled: true
-          days: 90
-        }
-      }
-    ]
-  }
-}
 
 // Role assignments - Cosmos DB Built-in Data Reader for container apps
 resource cosmosDbDataReaderRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
