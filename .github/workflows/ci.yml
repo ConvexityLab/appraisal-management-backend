@@ -108,7 +108,7 @@ jobs:
         # Skip deployment validation if no Azure credentials
         if [ ! -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
           az deployment sub validate \
-            --location eastus2 \
+            --location eastus \
             --template-file infrastructure/main.bicep \
             --parameters environment=dev
         fi

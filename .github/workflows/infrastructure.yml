@@ -31,7 +31,7 @@ on:
       location:
         required: false
         type: string
-        default: 'eastus2'
+        default: 'eastus'
         description: 'Azure region for deployment'
 
 env:
