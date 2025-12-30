@@ -114,10 +114,164 @@ jobs:
       AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-  deploy-application:
-    name: Deploy Application
+  build-and-push-container:
+    name: Build and Push Container Image
     needs: [determine-environment, run-ci-pipeline, deploy-infrastructure]
-    if: always() && needs.run-ci-pipeline.result == 'success' && (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
+    if: needs.deploy-infrastructure.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      container-registry: ${{ steps.get-acr.outputs.registry }}
+      image-full-name: ${{ steps.meta.outputs.full-image-name }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Get ACR name from deployment
+      id: get-acr
+      run: |
+        RG_NAME="rg-appraisal-mgmt-${{ needs.determine-environment.outputs.environment }}-eastus2"
+        ACR_NAME=$(az acr list --resource-group $RG_NAME --query '[0].name' -o tsv)
+        ACR_LOGIN_SERVER=$(az acr list --resource-group $RG_NAME --query '[0].loginServer' -o tsv)
+        
+        echo "registry=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
+        echo "name=$ACR_NAME" >> $GITHUB_OUTPUT
+        
+        echo "📦 Container Registry: $ACR_LOGIN_SERVER"
+        
+    - name: Login to Azure Container Registry
+      run: |
+        az acr login --name ${{ steps.get-acr.outputs.name }}
+        
+    - name: Generate image metadata
+      id: meta
+      run: |
+        # Create unique tag using git SHA and timestamp
+        IMAGE_TAG="${GITHUB_SHA:0:7}-$(date +%Y%m%d%H%M%S)"
+        FULL_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-api:${IMAGE_TAG}"
+        LATEST_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-api:latest"
+        
+        echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "full-image-name=$FULL_IMAGE_NAME" >> $GITHUB_OUTPUT
+        echo "latest-image-name=$LATEST_IMAGE_NAME" >> $GITHUB_OUTPUT
+        
+        echo "🏷️ Image tag: $IMAGE_TAG"
+        echo "📦 Full image: $FULL_IMAGE_NAME"
+        
+    - name: Build Docker image
+      run: |
+        echo "🔨 Building Docker image..."
+        docker build \
+          --tag ${{ steps.meta.outputs.full-image-name }} \
+          --tag ${{ steps.meta.outputs.latest-image-name }} \
+          --label "git-commit=${{ github.sha }}" \
+          --label "build-date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+          --label "environment=${{ needs.determine-environment.outputs.environment }}" \
+          .
+        
+    - name: Push Docker image
+      run: |
+        echo "⬆️ Pushing Docker image..."
+        docker push ${{ steps.meta.outputs.full-image-name }}
+        docker push ${{ steps.meta.outputs.latest-image-name }}
+        echo "✅ Image pushed successfully"
+
+  deploy-container-app:
+    name: Deploy Container to Container App
+    needs: [determine-environment, deploy-infrastructure, build-and-push-container]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    
+    steps:
+    - name: Azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Get Container App name
+      id: get-app
+      run: |
+        RG_NAME="rg-appraisal-mgmt-${{ needs.determine-environment.outputs.environment }}-eastus2"
+        
+        # Get the container app name (it will match our naming pattern)
+        CONTAINER_APP_NAME=$(az containerapp list --resource-group $RG_NAME --query '[0].name' -o tsv)
+        
+        echo "name=$CONTAINER_APP_NAME" >> $GITHUB_OUTPUT
+        echo "resource-group=$RG_NAME" >> $GITHUB_OUTPUT
+        
+        echo "🎯 Container App: $CONTAINER_APP_NAME"
+        echo "📁 Resource Group: $RG_NAME"
+        
+    - name: Update Container App with new image
+      run: |
+        echo "🚀 Updating Container App with new image..."
+        
+        az containerapp update \
+          --name ${{ steps.get-app.outputs.name }} \
+          --resource-group ${{ steps.get-app.outputs.resource-group }} \
+          --image ${{ needs.build-and-push-container.outputs.image-full-name }}
+        
+        echo "✅ Container App updated successfully"
+        
+    - name: Restart Container App
+      run: |
+        echo "🔄 Restarting Container App to ensure new image is pulled..."
+        
+        az containerapp revision restart \
+          --name ${{ steps.get-app.outputs.name }} \
+          --resource-group ${{ steps.get-app.outputs.resource-group }}
+        
+        echo "✅ Container App restarted"
+        
+    - name: Verify deployment
+      run: |
+        echo "🔍 Verifying container deployment..."
+        
+        # Get the container app URL
+        APP_URL=$(az containerapp show \
+          --name ${{ steps.get-app.outputs.name }} \
+          --resource-group ${{ steps.get-app.outputs.resource-group }} \
+          --query 'properties.configuration.ingress.fqdn' -o tsv)
+        
+        echo "🌐 Application URL: https://$APP_URL"
+        
+        # Wait for deployment to stabilize
+        echo "⏳ Waiting for deployment to stabilize (30s)..."
+        sleep 30
+        
+        # Test health endpoint
+        max_attempts=10
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+          echo "Attempt $attempt/$max_attempts: Testing https://$APP_URL/health"
+          
+          if curl -f -s "https://$APP_URL/health" > /dev/null; then
+            echo "✅ Health check passed!"
+            echo "🎉 Deployment verified successfully"
+            break
+          elif [ $attempt -eq $max_attempts ]; then
+            echo "⚠️ Health check failed after $max_attempts attempts"
+            echo "Container may still be starting up - check logs"
+          else
+            echo "⏳ Not ready, waiting 10s..."
+            sleep 10
+            ((attempt++))
+          fi
+        done
+
+  deploy-application:
+    name: Deploy Application (Legacy)
+    needs: [determine-environment, run-ci-pipeline, deploy-container-app]
+    if: false # Disabled - replaced by deploy-container-app
     uses: ./.github/workflows/application.yml
     with:
       environment: ${{ needs.determine-environment.outputs.environment }}
@@ -129,8 +283,8 @@ jobs:
   production-promotion:
     name: Production Promotion
     runs-on: ubuntu-latest
-    needs: [determine-environment, deploy-application]
-    if: needs.determine-environment.outputs.environment == 'staging' && needs.deploy-application.result == 'success'
+    needs: [determine-environment, deploy-container-app]
+    if: needs.determine-environment.outputs.environment == 'staging' && needs.deploy-container-app.result == 'success'
     environment: production-approval
     
     steps:
@@ -158,8 +312,8 @@ jobs:
   post-deployment:
     name: Post-Deployment Tasks
     runs-on: ubuntu-latest
-    needs: [determine-environment, deploy-application]
-    if: always() && needs.deploy-application.result == 'success'
+    needs: [determine-environment, deploy-container-app]
+    if: always() && needs.deploy-container-app.result == 'success'
     
     steps:
     - name: Update README badges
