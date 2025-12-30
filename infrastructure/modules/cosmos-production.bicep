@@ -143,24 +143,14 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
   tags: tags
   kind: 'GlobalDocumentDB'
   properties: {
-    enableAutomaticFailover: true
-    enableMultipleWriteLocations: true
+    enableAutomaticFailover: false
+    enableMultipleWriteLocations: false
     databaseAccountOfferType: 'Standard'
     locations: [
       {
         locationName: location
         failoverPriority: 0
         isZoneRedundant: true
-      }
-      {
-        locationName: 'West US 2'
-        failoverPriority: 1
-        isZoneRedundant: true
-      }
-      {
-        locationName: 'Central US'
-        failoverPriority: 2
-        isZoneRedundant: false
       }
     ]
     consistencyPolicy: {
