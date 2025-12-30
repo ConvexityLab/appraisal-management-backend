@@ -56,20 +56,7 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
-// Container Apps and Container Registry (deployed second to get principal IDs)
-module appServices 'modules/app-services.bicep' = {
-  name: 'app-services-deployment'
-  scope: resourceGroup
-  params: {
-    location: location
-    environment: environment
-    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
-    tags: tags
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-  }
-}
-
-// Cosmos DB with Container App role assignments (deployed after Container Apps exist)
+// Cosmos DB (deployed early for local testing - doesn't depend on Container Apps)
 module cosmosDb 'modules/cosmos-production.bicep' = {
   name: 'cosmos-db-deployment'
   scope: resourceGroup
@@ -78,11 +65,11 @@ module cosmosDb 'modules/cosmos-production.bicep' = {
     environment: environment
     cosmosAccountName: '${namingPrefix}-cosmos'
     databaseName: 'appraisal-management'
-    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    containerAppPrincipalIds: [] // Will grant access later via separate role assignments
   }
 }
 
-// Service Bus
+// Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
   scope: resourceGroup
@@ -91,6 +78,40 @@ module serviceBus 'modules/service-bus.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
+  }
+}
+
+// Storage Account (deployed early for local testing)
+module storage 'modules/storage.bicep' = {
+  name: 'storage-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+  }
+}
+
+// Container Apps and Container Registry (deployed after data services)
+module appServices 'modules/app-services.bicep' = {
+  name: 'app-safter Container Apps for principal IDs)
+module keyVault 'modules/key-vault.bicep' = {
+  name: 'key-vault-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    namingPrefix: namingPrefix
+    environment: environment
+    tags: tags
+    appServicePrincipalId: appServices.outputs.containerAppPrincipalIds[0]
+
+// Cosmos DB role assignments for Container Apps (after apps exist)
+module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
+  name: 'cosmos-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
 

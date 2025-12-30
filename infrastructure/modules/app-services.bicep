@@ -82,7 +82,7 @@ var containerApps = [
   }
 ]
 
-resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for app in containerApps: {
+resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (app, i) in containerApps: {
   name: 'ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
   location: location
   tags: tags
@@ -155,19 +155,19 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for a
   }
 }]
 
-// ACR Pull role assignments for container apps to pull images
+// ACR Pull role assignments - created AFTER container apps exist
 resource acrPullRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (app, i) in containerApps: {
-  name: guid(containerRegistry.id, containerAppInstances[i].id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  name: guid(containerAppInstances[i].id, containerRegistry.id, 'acrpull')
   scope: containerRegistry
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
     principalId: containerAppInstances[i].identity.principalId
     principalType: 'ServicePrincipal'
-    description: 'Allows ${containerAppInstances[i].name} to pull container images from ACR'
   }
+  dependsOn: [
+    containerAppInstances[i]
+  ]
 }]
-
-
 
 // Outputs
 output containerAppEnvironmentName string = containerAppEnvironment.name
