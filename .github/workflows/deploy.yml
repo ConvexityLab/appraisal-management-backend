@@ -1,4 +1,4 @@
-name: Deploy Appraisal Management Platform
+﻿name: Deploy Appraisal Management Platform
 
 on:
   push:
@@ -41,8 +41,8 @@ jobs:
           echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
         fi
         
-        echo "🎯 Deployment Target: $(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)"
-        echo "🏗️ Deploy Infrastructure: $(cat $GITHUB_OUTPUT | grep deploy-infrastructure | cut -d'=' -f2)"
+        echo " Deployment Target: $(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)"
+        echo " Deploy Infrastructure: $(cat $GITHUB_OUTPUT | grep deploy-infrastructure | cut -d'=' -f2)"
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -145,7 +145,7 @@ jobs:
         echo "registry=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
         echo "name=$ACR_NAME" >> $GITHUB_OUTPUT
         
-        echo "📦 Container Registry: $ACR_LOGIN_SERVER"
+        echo " Container Registry: $ACR_LOGIN_SERVER"
         
     - name: Login to Azure Container Registry
       run: |
@@ -163,12 +163,12 @@ jobs:
         echo "full-image-name=$FULL_IMAGE_NAME" >> $GITHUB_OUTPUT
         echo "latest-image-name=$LATEST_IMAGE_NAME" >> $GITHUB_OUTPUT
         
-        echo "🏷️ Image tag: $IMAGE_TAG"
-        echo "📦 Full image: $FULL_IMAGE_NAME"
+        echo " Image tag: $IMAGE_TAG"
+        echo " Full image: $FULL_IMAGE_NAME"
         
     - name: Build Docker image
       run: |
-        echo "🔨 Building Docker image..."
+        echo " Building Docker image..."
         docker build \
           --tag ${{ steps.meta.outputs.full-image-name }} \
           --tag ${{ steps.meta.outputs.latest-image-name }} \
@@ -179,10 +179,10 @@ jobs:
         
     - name: Push Docker image
       run: |
-        echo "⬆️ Pushing Docker image..."
+        echo " Pushing Docker image..."
         docker push ${{ steps.meta.outputs.full-image-name }}
         docker push ${{ steps.meta.outputs.latest-image-name }}
-        echo "✅ Image pushed successfully"
+        echo " Image pushed successfully"
 
   deploy-container-app:
     name: Deploy Container to Container App
@@ -207,12 +207,12 @@ jobs:
         echo "name=$CONTAINER_APP_NAME" >> $GITHUB_OUTPUT
         echo "resource-group=$RG_NAME" >> $GITHUB_OUTPUT
         
-        echo "🎯 Container App: $CONTAINER_APP_NAME"
-        echo "📁 Resource Group: $RG_NAME"
+        echo " Container App: $CONTAINER_APP_NAME"
+        echo " Resource Group: $RG_NAME"
         
     - name: Update Container App with new image
       run: |
-        echo "🚀 Updating Container App with new image..."
+        echo " Updating Container App with new image..."
         
         # Determine scaling based on environment
         if [[ "${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
@@ -230,13 +230,13 @@ jobs:
           --min-replicas $MIN_REPLICAS \
           --max-replicas $MAX_REPLICAS
         
-        echo "✅ Container App updated successfully"
+        echo " Container App updated successfully"
         echo "   - Image: ${{ needs.build-and-push-container.outputs.image-full-name }}"
         echo "   - Scale: $MIN_REPLICAS-$MAX_REPLICAS replicas"
         
     - name: Wait for Container App to scale up
       run: |
-        echo "⏳ Waiting for container app to scale up and become ready..."
+        echo " Waiting for container app to scale up and become ready..."
         
         max_wait=180  # 3 minutes
         elapsed=0
@@ -248,18 +248,18 @@ jobs:
             --query 'length(@)' -o tsv || echo "0")
           
           if [ "$replica_count" -gt 0 ]; then
-            echo "✅ Container app has $replica_count replica(s) running"
+            echo " Container app has $replica_count replica(s) running"
             break
           fi
           
-          echo "⏳ Waiting for replicas to start... ($elapsed/$max_wait seconds)"
+          echo " Waiting for replicas to start... ($elapsed/$max_wait seconds)"
           sleep 10
           elapsed=$((elapsed + 10))
         done
         
     - name: Verify deployment
       run: |
-        echo "🔍 Verifying container deployment..."
+        echo " Verifying container deployment..."
         
         # Get the container app URL
         APP_URL=$(az containerapp show \
@@ -267,10 +267,10 @@ jobs:
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
           --query 'properties.configuration.ingress.fqdn' -o tsv)
         
-        echo "🌐 Application URL: https://$APP_URL"
+        echo " Application URL: https://$APP_URL"
         
         # Wait for deployment to stabilize
-        echo "⏳ Waiting for deployment to stabilize (30s)..."
+        echo " Waiting for deployment to stabilize (30s)..."
         sleep 30
         
         # Test health endpoint
@@ -281,14 +281,14 @@ jobs:
           echo "Attempt $attempt/$max_attempts: Testing https://$APP_URL/health"
           
           if curl -f -s "https://$APP_URL/health" > /dev/null; then
-            echo "✅ Health check passed!"
-            echo "🎉 Deployment verified successfully"
+            echo " Health check passed!"
+            echo " Deployment verified successfully"
             break
           elif [ $attempt -eq $max_attempts ]; then
-            echo "⚠️ Health check failed after $max_attempts attempts"
+            echo " Health check failed after $max_attempts attempts"
             echo "Container may still be starting up - check logs"
           else
-            echo "⏳ Not ready, waiting 10s..."
+            echo " Not ready, waiting 10s..."
             sleep 10
             ((attempt++))
           fi
@@ -316,7 +316,7 @@ jobs:
     steps:
     - name: Manual approval for production
       run: |
-        echo "🚨 Production deployment requires manual approval"
+        echo " Production deployment requires manual approval"
         echo "Staging deployment completed successfully"
         echo "Ready to promote to production?"
         
@@ -344,12 +344,12 @@ jobs:
     steps:
     - name: Update README badges
       run: |
-        echo "📝 Updating deployment status badges..."
+        echo " Updating deployment status badges..."
         # This would update badges in README.md or create deployment artifacts
         
     - name: Notify stakeholders
       run: |
-        echo "📢 Notifying stakeholders of successful deployment..."
+        echo " Notifying stakeholders of successful deployment..."
         echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
         echo "Status: SUCCESS"
         
@@ -362,7 +362,7 @@ jobs:
         tag_name: "v1.0.0-${{ github.sha }}"
         release_name: "Production Release v1.0.0-${{ github.sha }}"
         body: |
-          ## 🚀 Production Deployment
+          ##  Production Deployment
           
           Successfully deployed to production environment.
           
@@ -371,9 +371,9 @@ jobs:
           - Infrastructure and application updates
           
           ### Verification
-          - ✅ Health checks passed
-          - ✅ Integration tests passed
-          - ✅ Performance tests passed
+          -  Health checks passed
+          -  Integration tests passed
+          -  Performance tests passed
           
           ### Links
           - [Application URL](https://appraisal-mgmt-prod-app.azurewebsites.net)
@@ -393,7 +393,7 @@ jobs:
       with:
         github-token: ${{ github.token }}
         ms-teams-webhook-uri: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
-        notification-summary: "❌ Deployment failed for ${{ github.repository }}"
+        notification-summary: " Deployment failed for ${{ github.repository }}"
         notification-color: danger
         timezone: America/New_York
         
@@ -401,7 +401,7 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const title = `🚨 Deployment Failure - ${new Date().toISOString()}`;
+          const title = ` Deployment Failure - ${new Date().toISOString()}`;
           const body = `
           ## Deployment Failure Report
           
