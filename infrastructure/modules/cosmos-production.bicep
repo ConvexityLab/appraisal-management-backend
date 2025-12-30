@@ -115,6 +115,7 @@ var containers = [
       indexingMode: 'consistent'
       automatic: true
       includedPaths: [
+        { path: '/*' }
         { path: '/address/*' }
         { path: '/assessment/*' }
         { path: '/valuation/*' }
