@@ -1,4 +1,4 @@
-﻿name: Deploy Appraisal Management Platform
+name: Deploy Appraisal Management Platform
 
 on:
   push:
