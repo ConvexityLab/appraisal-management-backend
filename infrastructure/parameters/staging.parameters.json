@@ -6,7 +6,7 @@
 "value": "staging"
 },
 "location": {
-"value": "eastus2"
+"value": "eastus"
 },
 "appName": {
 "value": "appraisal-mgmt"
@@ -21,7 +21,7 @@
 "value": "{appName}-{environment}"
 },
 "customResourceGroupName": {
-"value": "rg-appraisal-mgmt-staging-eastus2"
+"value": "rg-appraisal-mgmt-staging-eastus"
 },
 "tags": {
 "value": {

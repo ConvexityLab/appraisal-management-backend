@@ -29,7 +29,9 @@ interface AIRequest {
   temperature?: number;
   maxTokens?: number;
   model?: string;
-  provider?: 'azure-openai' | 'google-gemini' | 'auto';
+  provider?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+  responseFormat?: 'json' | 'text';
+  jsonSchema?: any;
 }
 
 interface AIResponse {
@@ -45,7 +47,7 @@ interface AIResponse {
 interface EmbeddingRequest {
   text: string;
   model?: string;
-  provider?: 'azure-openai' | 'google-gemini' | 'auto';
+  provider?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
 }
 
 interface EmbeddingResponse {
@@ -61,7 +63,24 @@ interface VisionRequest {
   imageUrl: string;
   prompt: string;
   model?: string;
-  provider?: 'azure-openai' | 'google-gemini' | 'auto';
+  provider?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+  responseFormat?: 'json' | 'text';
+  jsonSchema?: any;
+}
+
+interface DocumentProcessingRequest {
+  documentUrl: string;
+  mimeType: string;
+  prompt: string;
+  jsonSchema?: any;
+  provider?: 'google-gemini' | 'azure-openai' | 'auto';
+}
+
+interface MultiImageAnalysisRequest {
+  imageUrls: string[];
+  prompt: string;
+  jsonSchema?: any;
+  provider?: 'google-gemini' | 'azure-openai' | 'sambanova' | 'certo' | 'auto';
 }
 
 interface QCAnalysisRequest {
@@ -106,6 +125,16 @@ interface ProviderConfig {
   latency: number; // average ms
 }
 
+interface ProviderRoutingConfig {
+  textGeneration?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+  vision?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+  embeddings?: 'azure-openai' | 'google-gemini' | 'certo' | 'auto';
+  qcAnalysis?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+  documentProcessing?: 'google-gemini' | 'azure-openai' | 'auto';
+  propertyDescription?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+  marketInsights?: 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | 'auto';
+}
+
 export class UniversalAIService {
   private logger: Logger;
   private cache: GenericCacheService;
@@ -121,6 +150,7 @@ export class UniversalAIService {
     lastFailure: Date;
     isOpen: boolean;
   }>;
+  private routingConfig: ProviderRoutingConfig;
 
   constructor() {
     this.logger = new Logger();
@@ -128,9 +158,11 @@ export class UniversalAIService {
     this.providers = new Map();
     this.usage = new Map();
     this.circuitBreaker = new Map();
+    this.routingConfig = this.loadRoutingConfig();
     
     this.initializeProviders();
     this.setupUsageTracking();
+    this.logRoutingConfiguration();
   }
 
   // ===========================
@@ -186,8 +218,58 @@ export class UniversalAIService {
       latency: 800 // ms
     };
 
+    // SambaNova Configuration
+    const sambaNovaConfig: ProviderConfig = {
+      name: 'SambaNova',
+      enabled: !!(process.env.SAMBANOVA_API_KEY && process.env.SAMBANOVA_ENDPOINT),
+      endpoint: process.env.SAMBANOVA_ENDPOINT || 'https://api.sambanova.ai/v1',
+      apiKey: process.env.SAMBANOVA_API_KEY || '',
+      models: {
+        text: ['Meta-Llama-3.1-8B-Instruct', 'Meta-Llama-3.1-70B-Instruct', 'Meta-Llama-3.1-405B-Instruct'],
+        embedding: [],
+        vision: ['Llama-3.2-11B-Vision-Instruct', 'Llama-3.2-90B-Vision-Instruct']
+      },
+      costPerToken: {
+        input: 0.0000006, // $0.60 per 1M tokens
+        output: 0.0000006
+      },
+      rateLimit: {
+        requestsPerMinute: parseInt(process.env.SAMBANOVA_RPM || '100'),
+        tokensPerMinute: parseInt(process.env.SAMBANOVA_TPM || '100000')
+      },
+      capabilities: ['text-generation', 'vision', 'structured-output'],
+      reliability: 0.95,
+      latency: 600
+    };
+
+    // Certo (Custom vLLM) Configuration
+    const certoConfig: ProviderConfig = {
+      name: 'Certo AI',
+      enabled: !!(process.env.CERTO_ENDPOINT && process.env.CERTO_API_KEY),
+      endpoint: process.env.CERTO_ENDPOINT || 'http://localhost:8000/v1',
+      apiKey: process.env.CERTO_API_KEY || '',
+      models: {
+        text: ['default'], // Will use whatever model is deployed
+        embedding: [],
+        vision: ['default']
+      },
+      costPerToken: {
+        input: 0.0000001, // Negligible for self-hosted
+        output: 0.0000001
+      },
+      rateLimit: {
+        requestsPerMinute: parseInt(process.env.CERTO_RPM || '1000'),
+        tokensPerMinute: parseInt(process.env.CERTO_TPM || '500000')
+      },
+      capabilities: ['text-generation', 'vision', 'embeddings', 'structured-output', 'function-calling'],
+      reliability: 0.98,
+      latency: 300
+    };
+
     this.providers.set('azure-openai', azureConfig);
     this.providers.set('google-gemini', geminiConfig);
+    this.providers.set('sambanova', sambaNovaConfig);
+    this.providers.set('certo', certoConfig);
 
     // Initialize circuit breakers
     for (const [key] of Array.from(this.providers.entries())) {
@@ -222,6 +304,44 @@ export class UniversalAIService {
     }, 60 * 60 * 1000); // Every hour
   }
 
+  /**
+   * Load provider routing configuration from environment variables
+   * 
+   * Environment Variables:
+   * - AI_PROVIDER_TEXT_GENERATION: Provider for text generation tasks
+   * - AI_PROVIDER_VISION: Provider for image/vision analysis
+   * - AI_PROVIDER_EMBEDDINGS: Provider for embeddings generation
+   * - AI_PROVIDER_QC_ANALYSIS: Provider for QC analysis
+   * - AI_PROVIDER_DOCUMENT_PROCESSING: Provider for PDF/document processing
+   * - AI_PROVIDER_PROPERTY_DESCRIPTION: Provider for property descriptions
+   * - AI_PROVIDER_MARKET_INSIGHTS: Provider for market insights
+   * 
+   * Values: 'azure-openai', 'google-gemini', 'sambanova', 'certo', 'auto'
+   */
+  private loadRoutingConfig(): ProviderRoutingConfig {
+    return {
+      textGeneration: (process.env.AI_PROVIDER_TEXT_GENERATION as any) || 'auto',
+      vision: (process.env.AI_PROVIDER_VISION as any) || 'google-gemini', // Default to Gemini for vision
+      embeddings: (process.env.AI_PROVIDER_EMBEDDINGS as any) || 'azure-openai', // Default to Azure for embeddings
+      qcAnalysis: (process.env.AI_PROVIDER_QC_ANALYSIS as any) || 'auto',
+      documentProcessing: (process.env.AI_PROVIDER_DOCUMENT_PROCESSING as any) || 'google-gemini', // Gemini excels at docs
+      propertyDescription: (process.env.AI_PROVIDER_PROPERTY_DESCRIPTION as any) || 'auto',
+      marketInsights: (process.env.AI_PROVIDER_MARKET_INSIGHTS as any) || 'auto'
+    };
+  }
+
+  private logRoutingConfiguration(): void {
+    this.logger.info('AI Provider Routing Configuration', {
+      textGeneration: this.routingConfig.textGeneration,
+      vision: this.routingConfig.vision,
+      embeddings: this.routingConfig.embeddings,
+      qcAnalysis: this.routingConfig.qcAnalysis,
+      documentProcessing: this.routingConfig.documentProcessing,
+      propertyDescription: this.routingConfig.propertyDescription,
+      marketInsights: this.routingConfig.marketInsights
+    });
+  }
+
   // ===========================
   // MAIN AI OPERATIONS
   // ===========================
@@ -242,6 +362,12 @@ export class UniversalAIService {
           break;
         case 'google-gemini':
           response = await this.generateWithGemini(request);
+          break;
+        case 'sambanova':
+          response = await this.generateWithSambaNova(request);
+          break;
+        case 'certo':
+          response = await this.generateWithCerto(request);
           break;
         default:
           throw new Error(`Unsupported provider: ${provider}`);
@@ -290,6 +416,9 @@ export class UniversalAIService {
         case 'google-gemini':
           response = await this.generateEmbeddingWithGemini(request);
           break;
+        case 'certo':
+          response = await this.generateEmbeddingWithCerto(request);
+          break;
         default:
           throw new Error(`Unsupported provider: ${provider}`);
       }
@@ -325,6 +454,12 @@ export class UniversalAIService {
         case 'google-gemini':
           response = await this.analyzeImageWithGemini(request);
           break;
+        case 'sambanova':
+          response = await this.analyzeImageWithSambaNova(request);
+          break;
+        case 'certo':
+          response = await this.analyzeImageWithCerto(request);
+          break;
         default:
           throw new Error(`Unsupported provider: ${provider}`);
       }
@@ -340,6 +475,70 @@ export class UniversalAIService {
         return this.analyzeImage({ ...request, provider: fallbackProvider });
       }
       
+      throw error;
+    }
+  }
+
+  /**
+   * Analyze multiple images with structured output
+   */
+  async analyzeMultipleImages(request: MultiImageAnalysisRequest): Promise<AIResponse> {
+    const provider = await this.selectProvider(request.provider, 'vision');
+    
+    try {
+      let response: AIResponse;
+
+      switch (provider) {
+        case 'google-gemini':
+          response = await this.analyzeMultipleImagesWithGemini(request);
+          break;
+        case 'azure-openai':
+          response = await this.analyzeMultipleImagesWithAzureOpenAI(request);
+          break;
+        case 'sambanova':
+          response = await this.analyzeMultipleImagesWithSambaNova(request);
+          break;
+        case 'certo':
+          response = await this.analyzeMultipleImagesWithCerto(request);
+          break;
+        default:
+          throw new Error(`Unsupported provider: ${provider}`);
+      }
+
+      await this.trackUsage(provider, response.tokensUsed, response.cost);
+      return response;
+
+    } catch (error) {
+      await this.handleProviderError(provider, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process PDF or document with structured output
+   */
+  async processDocument(request: DocumentProcessingRequest): Promise<AIResponse> {
+    const provider = await this.selectProvider(request.provider, 'document-processing');
+    
+    try {
+      let response: AIResponse;
+
+      switch (provider) {
+        case 'google-gemini':
+          response = await this.processDocumentWithGemini(request);
+          break;
+        case 'azure-openai':
+          response = await this.processDocumentWithAzureOpenAI(request);
+          break;
+        default:
+          throw new Error(`Document processing not supported for provider: ${provider}`);
+      }
+
+      await this.trackUsage(provider, response.tokensUsed, response.cost);
+      return response;
+
+    } catch (error) {
+      await this.handleProviderError(provider, error);
       throw error;
     }
   }
@@ -373,7 +572,7 @@ Analyze the provided appraisal report and return findings in JSON format with sp
       ],
       temperature: 0.1, // Low temperature for consistent analysis
       maxTokens: 4000,
-      provider: 'auto' // Let system choose best provider for analysis
+      provider: this.routingConfig.qcAnalysis || 'auto'
     };
 
     const response = await this.generateCompletion(aiRequest);
@@ -425,7 +624,8 @@ Analyze the provided appraisal report and return findings in JSON format with sp
         }
       ],
       temperature: 0.3,
-      maxTokens: 3000
+      maxTokens: 3000,
+      provider: this.routingConfig.marketInsights || 'auto'
     });
   }
 
@@ -447,7 +647,7 @@ Analyze the provided appraisal report and return findings in JSON format with sp
         return this.analyzeImage({
           imageUrl: imageUrls[0],
           prompt: basePrompt + '\n\nAnalyze the property images to enhance the description with visual details.',
-          provider: 'auto'
+          provider: this.routingConfig.vision || 'auto'
         });
       }
     }
@@ -464,7 +664,8 @@ Analyze the provided appraisal report and return findings in JSON format with sp
         }
       ],
       temperature: 0.7,
-      maxTokens: 1000
+      maxTokens: 1000,
+      provider: this.routingConfig.propertyDescription || 'auto'
     });
   }
 
@@ -676,7 +877,7 @@ Analyze the provided appraisal report and return findings in JSON format with sp
 
   private async analyzeImageWithGemini(request: VisionRequest): Promise<AIResponse> {
     const config = this.providers.get('google-gemini')!;
-    const model = request.model || config.models.vision[0];
+    const model = request.model || 'gemini-2.0-flash-exp';
     
     // Download and encode image to base64
     const imageResponse = await fetch(request.imageUrl);
@@ -684,26 +885,34 @@ Analyze the provided appraisal report and return findings in JSON format with sp
     const base64Image = Buffer.from(imageBuffer).toString('base64');
     const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
 
+    const requestBody: any = {
+      contents: [{
+        parts: [
+          { text: request.prompt },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: base64Image
+            }
+          }
+        ]
+      }]
+    };
+
+    // Add structured output if jsonSchema provided
+    if (request.jsonSchema) {
+      requestBody.generationConfig = {
+        response_mime_type: 'application/json',
+        response_schema: request.jsonSchema
+      };
+    }
+
     const response = await fetch(`${config.endpoint}/models/${model}:generateContent?key=${config.apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            {
-              text: request.prompt
-            },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Image
-              }
-            }
-          ]
-        }]
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -712,12 +921,141 @@ Analyze the provided appraisal report and return findings in JSON format with sp
 
     const data = await response.json();
     const content = data.candidates[0].content.parts[0].text;
-    const tokensUsed = 1500; // Estimate for vision requests
+    const tokensUsed = data.usageMetadata?.totalTokenCount || 1500;
 
     return {
       content,
       provider: 'google-gemini',
-      model: model || 'gemini-pro-vision',
+      model,
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async analyzeImageWithSambaNova(request: VisionRequest): Promise<AIResponse> {
+    const config = this.providers.get('sambanova')!;
+    const model = request.model || config.models.vision[0];
+    
+    // SambaNova uses OpenAI-compatible format
+    const imageResponse = await fetch(request.imageUrl);
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const base64Image = Buffer.from(imageBuffer).toString('base64');
+    const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
+
+    const requestBody: any = {
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: request.prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 2000
+    };
+
+    if (request.responseFormat === 'json' && request.jsonSchema) {
+      requestBody.response_format = {
+        type: 'json_schema',
+        json_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`SambaNova API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 1500;
+
+    return {
+      content,
+      provider: 'sambanova',
+      model: model || 'Llama-3.2-11B-Vision-Instruct',
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async analyzeImageWithCerto(request: VisionRequest): Promise<AIResponse> {
+    const config = this.providers.get('certo')!;
+    const model = request.model || 'default';
+    
+    // Certo uses OpenAI-compatible format
+    const imageResponse = await fetch(request.imageUrl);
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const base64Image = Buffer.from(imageBuffer).toString('base64');
+    const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
+
+    const requestBody: any = {
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: request.prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 2000
+    };
+
+    if (request.responseFormat === 'json' && request.jsonSchema) {
+      requestBody.response_format = {
+        type: 'json_schema',
+        json_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+        'X-Client-ID': process.env.CERTO_CLIENT_ID || '',
+        'X-Tenant-ID': process.env.CERTO_TENANT_ID || '',
+        'X-User-ID': process.env.CERTO_USER_ID || ''
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Certo AI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 1500;
+
+    return {
+      content,
+      provider: 'certo',
+      model,
       tokensUsed,
       cost: tokensUsed * config.costPerToken.input,
       responseTime: 0
@@ -728,7 +1066,439 @@ Analyze the provided appraisal report and return findings in JSON format with sp
   // PROVIDER SELECTION & MANAGEMENT
   // ===========================
 
-  private async selectProvider(preferredProvider?: string, capability?: string): Promise<'azure-openai' | 'google-gemini'> {
+  private async generateWithSambaNova(request: AIRequest): Promise<AIResponse> {
+    const config = this.providers.get('sambanova')!;
+    const model = request.model || config.models.text[0];
+    
+    const requestBody: any = {
+      model,
+      messages: request.messages,
+      temperature: request.temperature || 0.7,
+      max_tokens: request.maxTokens || 2000
+    };
+
+    if (request.responseFormat === 'json' && request.jsonSchema) {
+      requestBody.response_format = {
+        type: 'json_schema',
+        json_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`SambaNova API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 1000;
+
+    return {
+      content,
+      provider: 'sambanova',
+      model: model || 'Meta-Llama-3.1-8B-Instruct',
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async generateWithCerto(request: AIRequest): Promise<AIResponse> {
+    const config = this.providers.get('certo')!;
+    const model = request.model || 'default';
+    
+    const requestBody: any = {
+      model,
+      messages: request.messages,
+      temperature: request.temperature || 0.7,
+      max_tokens: request.maxTokens || 2000
+    };
+
+    if (request.responseFormat === 'json' && request.jsonSchema) {
+      requestBody.response_format = {
+        type: 'json_schema',
+        json_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+        'X-Client-ID': process.env.CERTO_CLIENT_ID || '',
+        'X-Tenant-ID': process.env.CERTO_TENANT_ID || '',
+        'X-User-ID': process.env.CERTO_USER_ID || ''
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Certo AI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 1000;
+
+    return {
+      content,
+      provider: 'certo',
+      model,
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async generateEmbeddingWithCerto(request: EmbeddingRequest): Promise<EmbeddingResponse> {
+    const config = this.providers.get('certo')!;
+    const model = request.model || 'default';
+    
+    const response = await fetch(`${config.endpoint}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+        'X-Client-ID': process.env.CERTO_CLIENT_ID || '',
+        'X-Tenant-ID': process.env.CERTO_TENANT_ID || '',
+        'X-User-ID': process.env.CERTO_USER_ID || ''
+      },
+      body: JSON.stringify({
+        input: request.text,
+        model
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Certo AI Embedding API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const embedding = data.data[0].embedding;
+    const tokensUsed = data.usage?.total_tokens || Math.ceil(request.text.length / 4);
+
+    return {
+      embedding,
+      provider: 'certo',
+      model,
+      dimensions: embedding.length,
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input
+    };
+  }
+
+  private async analyzeMultipleImagesWithGemini(request: MultiImageAnalysisRequest): Promise<AIResponse> {
+    const config = this.providers.get('google-gemini')!;
+    const model = 'gemini-2.0-flash-exp';
+    
+    // Download and encode all images
+    const imageParts = await Promise.all(
+      request.imageUrls.map(async (url) => {
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        const mimeType = response.headers.get('content-type') || 'image/jpeg';
+        return {
+          inline_data: {
+            mime_type: mimeType,
+            data: base64
+          }
+        };
+      })
+    );
+
+    const requestBody: any = {
+      contents: [{
+        parts: [
+          { text: request.prompt },
+          ...imageParts
+        ]
+      }]
+    };
+
+    if (request.jsonSchema) {
+      requestBody.generationConfig = {
+        response_mime_type: 'application/json',
+        response_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/models/${model}:generateContent?key=${config.apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini Multi-Image API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.candidates[0].content.parts[0].text;
+    const tokensUsed = data.usageMetadata?.totalTokenCount || 2000;
+
+    return {
+      content,
+      provider: 'google-gemini',
+      model,
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async analyzeMultipleImagesWithAzureOpenAI(request: MultiImageAnalysisRequest): Promise<AIResponse> {
+    const config = this.providers.get('azure-openai')!;
+    const model = config.models.vision[0];
+    
+    // Azure OpenAI supports multiple images in content array
+    const imageContents = await Promise.all(
+      request.imageUrls.map(async (url) => ({
+        type: 'image_url',
+        image_url: { url }
+      }))
+    );
+
+    const requestBody: any = {
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: request.prompt },
+            ...imageContents
+          ]
+        }
+      ],
+      max_tokens: 4000
+    };
+
+    if (request.jsonSchema) {
+      requestBody.response_format = {
+        type: 'json_schema',
+        json_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/openai/deployments/${model}/chat/completions?api-version=2024-02-15-preview`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': config.apiKey
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Azure OpenAI Multi-Image API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage.total_tokens;
+
+    return {
+      content,
+      provider: 'azure-openai',
+      model: model || 'gpt-4-vision-preview',
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async analyzeMultipleImagesWithSambaNova(request: MultiImageAnalysisRequest): Promise<AIResponse> {
+    const config = this.providers.get('sambanova')!;
+    const model = config.models.vision[0];
+    
+    const imageContents = await Promise.all(
+      request.imageUrls.map(async (url) => {
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        const mimeType = response.headers.get('content-type') || 'image/jpeg';
+        return {
+          type: 'image_url',
+          image_url: {
+            url: `data:${mimeType};base64,${base64}`
+          }
+        };
+      })
+    );
+
+    const response = await fetch(`${config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: request.prompt },
+              ...imageContents
+            ]
+          }
+        ],
+        max_tokens: 4000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`SambaNova Multi-Image API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 2000;
+
+    return {
+      content,
+      provider: 'sambanova',
+      model: model || 'Llama-3.2-11B-Vision-Instruct',
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async analyzeMultipleImagesWithCerto(request: MultiImageAnalysisRequest): Promise<AIResponse> {
+    const config = this.providers.get('certo')!;
+    const model = 'default';
+    
+    const imageContents = await Promise.all(
+      request.imageUrls.map(async (url) => {
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        const mimeType = response.headers.get('content-type') || 'image/jpeg';
+        return {
+          type: 'image_url',
+          image_url: {
+            url: `data:${mimeType};base64,${base64}`
+          }
+        };
+      })
+    );
+
+    const response = await fetch(`${config.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+        'X-Client-ID': process.env.CERTO_CLIENT_ID || '',
+        'X-Tenant-ID': process.env.CERTO_TENANT_ID || '',
+        'X-User-ID': process.env.CERTO_USER_ID || ''
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: request.prompt },
+              ...imageContents
+            ]
+          }
+        ],
+        max_tokens: 4000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Certo AI Multi-Image API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 2000;
+
+    return {
+      content,
+      provider: 'certo',
+      model,
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async processDocumentWithGemini(request: DocumentProcessingRequest): Promise<AIResponse> {
+    const config = this.providers.get('google-gemini')!;
+    const model = 'gemini-2.0-flash-exp';
+    
+    // Fetch and encode document
+    const docResponse = await fetch(request.documentUrl);
+    const docBuffer = await docResponse.arrayBuffer();
+    const base64Doc = Buffer.from(docBuffer).toString('base64');
+
+    const requestBody: any = {
+      contents: [{
+        parts: [
+          { text: request.prompt },
+          {
+            inline_data: {
+              mime_type: request.mimeType,
+              data: base64Doc
+            }
+          }
+        ]
+      }]
+    };
+
+    if (request.jsonSchema) {
+      requestBody.generationConfig = {
+        response_mime_type: 'application/json',
+        response_schema: request.jsonSchema
+      };
+    }
+
+    const response = await fetch(`${config.endpoint}/models/${model}:generateContent?key=${config.apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini Document Processing API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.candidates[0].content.parts[0].text;
+    const tokensUsed = data.usageMetadata?.totalTokenCount || 3000;
+
+    return {
+      content,
+      provider: 'google-gemini',
+      model,
+      tokensUsed,
+      cost: tokensUsed * config.costPerToken.input,
+      responseTime: 0
+    };
+  }
+
+  private async processDocumentWithAzureOpenAI(request: DocumentProcessingRequest): Promise<AIResponse> {
+    // Azure OpenAI requires document to be accessible via URL or converted to images
+    // For PDFs, we'd need to convert to images first
+    throw new Error('Azure OpenAI document processing requires document-to-image conversion (not implemented)');
+  }
+
+  private async selectProvider(preferredProvider?: string, capability?: string): Promise<'azure-openai' | 'google-gemini' | 'sambanova' | 'certo'> {
     // Return preferred provider if specified and available
     if (preferredProvider && preferredProvider !== 'auto') {
       const config = this.providers.get(preferredProvider);
@@ -760,7 +1530,7 @@ Analyze the provided appraisal report and return findings in JSON format with sp
       throw new Error(`No available providers for capability: ${capability}`);
     }
     
-    return selectedProvider[0] as 'azure-openai' | 'google-gemini';
+    return selectedProvider[0] as 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo';
   }
 
   private isProviderAvailable(provider: string): boolean {
@@ -793,7 +1563,7 @@ Analyze the provided appraisal report and return findings in JSON format with sp
     return true;
   }
 
-  private async getFallbackProvider(failedProvider: string, capability?: string): Promise<'azure-openai' | 'google-gemini' | null> {
+  private async getFallbackProvider(failedProvider: string, capability?: string): Promise<'azure-openai' | 'google-gemini' | 'sambanova' | 'certo' | null> {
     const alternativeProviders = Array.from(this.providers.keys())
       .filter(key => key !== failedProvider && this.isProviderAvailable(key));
     
@@ -801,7 +1571,7 @@ Analyze the provided appraisal report and return findings in JSON format with sp
       return null;
     }
 
-    return alternativeProviders[0] as 'azure-openai' | 'google-gemini';
+    return alternativeProviders[0] as 'azure-openai' | 'google-gemini' | 'sambanova' | 'certo';
   }
 
   private async handleProviderError(provider: string, error: any): Promise<void> {
@@ -955,5 +1725,24 @@ Analyze the provided appraisal report and return findings in JSON format with sp
     }
     
     this.logger.info('All circuit breakers reset');
+  }
+
+  /**
+   * Get current routing configuration
+   */
+  public getRoutingConfig(): ProviderRoutingConfig {
+    return { ...this.routingConfig };
+  }
+
+  /**
+   * Update routing configuration dynamically
+   */
+  public updateRoutingConfig(config: Partial<ProviderRoutingConfig>): void {
+    this.routingConfig = {
+      ...this.routingConfig,
+      ...config
+    };
+    
+    this.logger.info('Routing configuration updated', config);
   }
 }

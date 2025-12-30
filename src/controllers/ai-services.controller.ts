@@ -324,7 +324,173 @@ export class AIServicesController {
       });
     }
   };
+  /**
+   * Analyze multiple property images with structured output
+   */
+  public analyzePropertyConditionStructured = async (req: AuthenticatedRequest, res: express.Response): Promise<void> => {
+    try {
+      const { imageUrls, focusAreas, provider } = req.body;
 
+      if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Image URLs are required',
+          code: 'MISSING_IMAGES'
+        });
+        return;
+      }
+
+      // Structured output schema for property condition
+      const conditionSchema = {
+        type: 'object',
+        properties: {
+          overallCondition: {
+            type: 'string',
+            enum: ['Excellent', 'Good', 'Fair', 'Poor', 'Severe Distress']
+          },
+          conditionScore: { type: 'number', minimum: 1, maximum: 10 },
+          issues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                category: { type: 'string' },
+                severity: { type: 'string', enum: ['Critical', 'Major', 'Minor', 'Cosmetic'] },
+                description: { type: 'string' },
+                location: { type: 'string' },
+                estimatedRepairCost: { type: 'number' }
+              }
+            }
+          },
+          maintenanceNeeds: { type: 'array', items: { type: 'string' } },
+          safetyHazards: { type: 'array', items: { type: 'string' } },
+          recommendations: { type: 'array', items: { type: 'string' } }
+        }
+      };
+
+      const prompt = `Analyze these property images for comprehensive condition assessment. 
+      Focus on: ${focusAreas?.join(', ') || 'overall condition, structural integrity, maintenance needs, safety concerns'}.
+      Provide detailed structured output.`;
+
+      const result = await this.aiService.analyzeMultipleImages({
+        imageUrls,
+        prompt,
+        jsonSchema: conditionSchema,
+        provider: provider || 'auto'
+      });
+
+      res.json({
+        success: true,
+        conditionAnalysis: JSON.parse(result.content),
+        metadata: {
+          imagesAnalyzed: imageUrls.length,
+          provider: result.provider,
+          model: result.model
+        },
+        performance: {
+          tokensUsed: result.tokensUsed,
+          cost: result.cost,
+          responseTime: result.responseTime
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Structured condition analysis failed', { error, userId: req.user?.id });
+      res.status(500).json({
+        success: false,
+        error: 'Structured condition analysis failed',
+        code: 'STRUCTURED_CONDITION_ERROR'
+      });
+    }
+  };
+
+  /**
+   * Process appraisal document (PDF) and extract structured data
+   */
+  public processAppraisalDocument = async (req: AuthenticatedRequest, res: express.Response): Promise<void> => {
+    try {
+      const { documentUrl, mimeType, extractionSchema, provider } = req.body;
+
+      if (!documentUrl) {
+        res.status(400).json({
+          success: false,
+          error: 'Document URL is required',
+          code: 'MISSING_DOCUMENT'
+        });
+        return;
+      }
+
+      const defaultSchema = {
+        type: 'object',
+        properties: {
+          propertyDetails: {
+            type: 'object',
+            properties: {
+              address: { type: 'string' },
+              propertyType: { type: 'string' },
+              yearBuilt: { type: 'number' },
+              squareFootage: { type: 'number' },
+              lotSize: { type: 'number' },
+              bedrooms: { type: 'number' },
+              bathrooms: { type: 'number' }
+            }
+          },
+          valuation: {
+            type: 'object',
+            properties: {
+              appraisedValue: { type: 'number' },
+              effectiveDate: { type: 'string' },
+              approach: { type: 'string' }
+            }
+          },
+          comparables: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                address: { type: 'string' },
+                salePrice: { type: 'number' },
+                adjustedPrice: { type: 'number' }
+              }
+            }
+          }
+        }
+      };
+
+      const prompt = `Extract structured data from this appraisal document. Include property details, valuation, comparables, condition, and appraiser information.`;
+
+      const result = await this.aiService.processDocument({
+        documentUrl,
+        mimeType: mimeType || 'application/pdf',
+        prompt,
+        jsonSchema: extractionSchema || defaultSchema,
+        provider: provider || 'auto'
+      });
+
+      res.json({
+        success: true,
+        extractedData: JSON.parse(result.content),
+        metadata: {
+          provider: result.provider,
+          model: result.model,
+          documentUrl
+        },
+        performance: {
+          tokensUsed: result.tokensUsed,
+          cost: result.cost,
+          responseTime: result.responseTime
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Document processing failed', { error, userId: req.user?.id });
+      res.status(500).json({
+        success: false,
+        error: 'Document processing failed',
+        code: 'DOCUMENT_PROCESSING_ERROR'
+      });
+    }
+  };
   // ===========================
   // TEXT AND EMBEDDING ENDPOINTS
   // ===========================

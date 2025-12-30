@@ -25,6 +25,9 @@ import { Logger } from '../utils/logger';
 import { qcChecklistRouter } from '../controllers/qc-checklist.controller';
 import { qcExecutionRouter } from '../controllers/qc-execution.controller';
 import { qcResultsRouter } from '../controllers/qc-results.controller';
+
+// Import Places API (New) controller
+import enhancedPropertyIntelligenceV2Router from '../controllers/enhanced-property-intelligence-v2.controller';
 import { 
   authenticateJWT, 
   requireRole, 
@@ -298,6 +301,12 @@ export class AppraisalManagementAPIServer {
 
     this.app.get('/api/property-intelligence/health',
       this.propertyIntelligenceController.healthCheck
+    );
+
+    // Property Intelligence V2 routes (Places API New)
+    this.app.use('/api/property-intelligence-v2', 
+      authenticateJWT, 
+      enhancedPropertyIntelligenceV2Router
     );
 
     // Dynamic Code Execution routes
