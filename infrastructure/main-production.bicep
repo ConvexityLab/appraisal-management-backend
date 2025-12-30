@@ -94,16 +94,16 @@ module storage 'modules/storage.bicep' = {
 
 // Container Apps and Container Registry (deployed after data services)
 module appServices 'modules/app-services.bicep' = {
-  name: 'app-safter Container Apps for principal IDs)
-module keyVault 'modules/key-vault.bicep' = {
-  name: 'key-vault-deployment'
+  name: 'app-services-deployment'
   scope: resourceGroup
   params: {
     location: location
-    namingPrefix: namingPrefix
     environment: environment
+    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
     tags: tags
-    appServicePrincipalId: appServices.outputs.containerAppPrincipalIds[0]
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
 
 // Cosmos DB role assignments for Container Apps (after apps exist)
 module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
@@ -115,7 +115,7 @@ module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
   }
 }
 
-// Key Vault (no principal IDs initially)
+// Key Vault (after Container Apps for principal IDs)
 module keyVault 'modules/key-vault.bicep' = {
   name: 'key-vault-deployment'
   scope: resourceGroup
@@ -124,19 +124,8 @@ module keyVault 'modules/key-vault.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    appServicePrincipalId: '00000000-0000-0000-0000-000000000000' // Temporary placeholder
+    appServicePrincipalId: appServices.outputs.containerAppPrincipalIds[0]
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-  }
-}
-
-// Storage Account
-module storage 'modules/storage.bicep' = {
-  name: 'storage-deployment'
-  scope: resourceGroup
-  params: {
-    location: location
-    environment: environment
-    tags: tags
   }
 }
 
