@@ -18,7 +18,6 @@ var containers = [
   {
     name: 'orders'
     partitionKey: '/status'
-    throughput: 1000
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -48,7 +47,6 @@ var containers = [
   {
     name: 'vendors'
     partitionKey: '/status'
-    throughput: 800
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -75,7 +73,6 @@ var containers = [
   {
     name: 'property-summaries'
     partitionKey: '/propertyType'
-    throughput: 2000
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -114,12 +111,10 @@ var containers = [
   {
     name: 'properties'
     partitionKey: '/address/state'
-    throughput: 1500
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
       includedPaths: [
-        { path: '/id/?' }
         { path: '/address/*' }
         { path: '/assessment/*' }
         { path: '/valuation/*' }
