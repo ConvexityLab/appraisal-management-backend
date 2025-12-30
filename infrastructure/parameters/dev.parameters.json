@@ -2,19 +2,19 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "environment": {
-      "value": "dev"
-    },
     "location": {
       "value": "eastus"
+    },
+    "environment": {
+      "value": "dev"
     },
     "appName": {
       "value": "appraisal-mgmt"
     },
     "tags": {
       "value": {
-        "Environment": "dev",
-        "Application": "appraisal-mgmt",
+        "Environment": "Development",
+        "Application": "Appraisal Management",
         "ManagedBy": "Bicep",
         "DeployedBy": "GitHub-Actions",
         "CostCenter": "Development",

@@ -30,9 +30,6 @@ param customResourceGroupName string = ''
 @description('Tags to apply to all resources')
 param tags object
 
-@description('Azure API version for resource groups')
-param resourceGroupApiVersion string = '2023-07-01'
-
 // === APP SERVICE PARAMETERS ===
 @description('App Service Plan SKU configuration by environment')
 param appServicePlanSkus object = {
@@ -252,10 +249,6 @@ module appService 'modules/app-service.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    appServicePlanSku: currentAppServicePlan
-    nodeVersion: nodeVersion
-    enableAutoScaling: enableAutoScaling && environment == 'prod'
-    autoScalingConfig: autoScalingConfig
   }
 }
 
@@ -268,11 +261,6 @@ module cosmosDb 'modules/cosmos-db.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    databaseName: cosmosDatabaseName
-    cosmosConfig: currentCosmosConfig
-    secondaryRegion: cosmosSecondaryRegion
-    containers: cosmosContainers
-    backupConfig: backupConfig
   }
 }
 
@@ -285,8 +273,6 @@ module serviceBus 'modules/service-bus.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    serviceBusSku: serviceBusSkus[environment]
-    serviceBusConfig: serviceBusConfig
   }
 }
 
@@ -299,10 +285,8 @@ module keyVault 'modules/key-vault.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    keyVaultSku: keyVaultSku
     appServicePrincipalId: appService.outputs.appServiceManagedIdentityId
-    retentionSettings: currentKeyVaultRetention
-    enablePurgeProtection: enablePurgeProtection && environment == 'prod'
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -315,8 +299,6 @@ module monitoring 'modules/monitoring.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    logRetentionDays: logRetentionDays[environment]
-    appInsightsDataCap: appInsightsDataCap[environment]
   }
 }
 
@@ -326,11 +308,8 @@ module storage 'modules/storage.bicep' = {
   scope: resourceGroup
   params: {
     location: location
-    namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    storageSku: storageSkus[environment]
-    containers: storageContainers
   }
 }
 
@@ -340,8 +319,6 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   scope: resourceGroup
   params: {
     keyVaultName: keyVault.outputs.keyVaultName
-    cosmosAccountName: cosmosDb.outputs.accountName
-    serviceBusNamespaceName: serviceBus.outputs.namespaceName
     storageAccountName: storage.outputs.storageAccountName
     applicationInsightsKey: monitoring.outputs.instrumentationKey
   }
@@ -355,8 +332,8 @@ module appServiceConfiguration 'modules/app-service-config.bicep' = {
     appServiceName: appService.outputs.appServiceName
     keyVaultName: keyVault.outputs.keyVaultName
     applicationInsightsConnectionString: monitoring.outputs.connectionString
-    cosmosDatabaseName: cosmosDatabaseName
-    environment: environment
+    cosmosEndpoint: cosmosDb.outputs.endpoint
+    serviceBusNamespace: serviceBus.outputs.namespaceName
   }
   dependsOn: [
     keyVaultSecrets
