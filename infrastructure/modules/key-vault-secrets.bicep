@@ -33,7 +33,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
 }
 
-// Cosmos DB Connection String
+// Cosmos DB Connection String (DEPRECATED - Using Managed Identity)
+// Kept only for emergency break-glass access
+/*
 resource cosmosConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'cosmos-connection-string'
@@ -45,8 +47,11 @@ resource cosmosConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07
     }
   }
 }
+*/
 
-// Cosmos DB Primary Key
+// Cosmos DB Primary Key (DEPRECATED - Using Managed Identity)
+// Kept only for emergency break-glass access
+/*
 resource cosmosPrimaryKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'cosmos-primary-key'
@@ -58,8 +63,11 @@ resource cosmosPrimaryKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
     }
   }
 }
+*/
 
-// Service Bus Connection String
+// Service Bus Connection String (DEPRECATED - Using Managed Identity)
+// Kept only for emergency break-glass access
+/*
 resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'servicebus-connection-string'
@@ -71,6 +79,7 @@ resource serviceBusConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@202
     }
   }
 }
+*/
 
 // Storage Account Connection String
 resource storageConnectionStringSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
@@ -150,9 +159,10 @@ resource azureOpenAiEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01
 
 // Outputs
 output secretNames array = [
-  cosmosConnectionStringSecret.name
-  cosmosPrimaryKeySecret.name
-  serviceBusConnectionStringSecret.name
+  // Removed deprecated secrets that are replaced by managed identity:
+  // - cosmosConnectionStringSecret (using managed identity)
+  // - cosmosPrimaryKeySecret (using managed identity)
+  // - serviceBusConnectionStringSecret (using managed identity)
   storageConnectionStringSecret.name
   appInsightsKeySecret.name
   jwtSecretSecret.name

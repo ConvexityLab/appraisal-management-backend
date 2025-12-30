@@ -1,4 +1,5 @@
 import { CosmosClient, Database, Container, ItemResponse, FeedResponse } from '@azure/cosmos';
+import { DefaultAzureCredential } from '@azure/identity';
 import { 
   AppraisalOrder, 
   Vendor, 
@@ -54,19 +55,17 @@ export class CosmosDbService {
   };
 
   constructor(
-    private endpoint: string = process.env.COSMOS_ENDPOINT || '',
-    private key: string = process.env.COSMOS_KEY || ''
+    private endpoint: string = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT || ''
   ) {
     this.logger = new Logger();
     
     // Validate required configuration
-    if (!this.endpoint || !this.key) {
-      const error = 'Cosmos DB configuration is required. Set AZURE_COSMOS_ENDPOINT and AZURE_COSMOS_KEY environment variables.';
+    if (!this.endpoint) {
+      const error = 'Cosmos DB endpoint is required. Set AZURE_COSMOS_ENDPOINT environment variable.';
       this.logger.error(error);
       
       if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
         this.endpoint = 'https://localhost:8081';
-        this.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
         this.logger.warn('Using Cosmos DB Emulator - set COSMOS_USE_EMULATOR=true only for local development');
       } else {
         throw new Error(error);
@@ -79,22 +78,22 @@ export class CosmosDbService {
    */
   async initialize(): Promise<void> {
     try {
-      this.logger.info('Initializing Azure Cosmos DB connection');
+      this.logger.info('Initializing Azure Cosmos DB connection with Managed Identity');
 
-      if (!this.endpoint || !this.key) {
-        throw new Error('Cosmos DB endpoint and key must be provided');
+      if (!this.endpoint) {
+        throw new Error('Cosmos DB endpoint must be provided');
       }
 
-      // Initialize Cosmos client with emulator support
+      // Initialize Cosmos client with managed identity support
       const isEmulator = this.endpoint.includes('localhost') || this.endpoint.includes('127.0.0.1');
       const clientOptions: any = {
-        endpoint: this.endpoint,
-        key: this.key
+        endpoint: this.endpoint
       };
 
       if (isEmulator) {
-        // Configure for local emulator
+        // Configure for local emulator (uses emulator key)
         const https = require('https');
+        clientOptions.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
         clientOptions.agent = new https.Agent({
           rejectUnauthorized: false
         });
@@ -102,14 +101,17 @@ export class CosmosDbService {
           requestTimeout: 30000,
           enableEndpointDiscovery: false
         };
-        this.logger.info('Detected Cosmos DB Emulator - using local configuration');
+        this.logger.info('Detected Cosmos DB Emulator - using local configuration with emulator key');
       } else {
-        // Configure for production
+        // Configure for production with Managed Identity
+        const credential = new DefaultAzureCredential();
+        clientOptions.aadCredentials = credential;
         clientOptions.connectionPolicy = {
           requestTimeout: 30000,
           enableEndpointDiscovery: true,
           preferredLocations: ['East US', 'West US', 'Central US']
         };
+        this.logger.info('Using Managed Identity for Cosmos DB authentication');
       }
 
       this.client = new CosmosClient(clientOptions);

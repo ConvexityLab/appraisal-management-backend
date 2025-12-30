@@ -76,6 +76,7 @@ temp/
 
 # Security - Never commit credentials or secrets
 github-secrets.md
+DEPLOYMENT_QUICKSTART.md
 *secrets*.md
 .credentials
 *.key

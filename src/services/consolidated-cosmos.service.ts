@@ -1,4 +1,5 @@
 import { CosmosClient, Database, Container, ItemResponse, FeedResponse } from '@azure/cosmos';
+import { DefaultAzureCredential } from '@azure/identity';
 import { 
   AppraisalOrder, 
   Vendor, 
@@ -45,12 +46,7 @@ export class ConsolidatedCosmosDbService {
       }
       throw new Error('COSMOS_ENDPOINT environment variable is required');
     })(),
-    key: process.env.COSMOS_KEY || (() => {
-      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
-        return 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
-      }
-      throw new Error('COSMOS_KEY environment variable is required');
-    })(),
+    useDefaultCredential: !(process.env.COSMOS_ENDPOINT?.includes('localhost') || process.env.COSMOS_ENDPOINT?.includes('127.0.0.1')),
     databaseName: process.env.COSMOS_DATABASE_NAME || 'appraisal-management',
     containers: {
       orders: process.env.COSMOS_CONTAINER_ORDERS || 'orders',
@@ -95,10 +91,10 @@ export class ConsolidatedCosmosDbService {
         database: this.config.databaseName 
       });
 
-      // Initialize client
-      this.client = new CosmosClient({
+      // Initialize client with managed identity or emulator key
+      const isEmulator = this.config.endpoint.includes('localhost') || this.config.endpoint.includes('127.0.0.1');
+      const clientConfig: any = {
         endpoint: this.config.endpoint,
-        key: this.config.key,
         connectionPolicy: {
           requestTimeout: 30000,
           retryOptions: {
@@ -107,7 +103,20 @@ export class ConsolidatedCosmosDbService {
             maxWaitTimeInSeconds: 60
           }
         }
-      });
+      };
+
+      if (isEmulator) {
+        // Use emulator key for local development
+        clientConfig.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
+        this.logger.info('Using Cosmos DB Emulator with key authentication');
+      } else {
+        // Use managed identity for production
+        const credential = new DefaultAzureCredential();
+        clientConfig.aadCredentials = credential;
+        this.logger.info('Using Managed Identity for Cosmos DB authentication');
+      }
+
+      this.client = new CosmosClient(clientConfig);
 
       // Get database reference
       this.database = this.client.database(this.config.databaseName);

@@ -4,32 +4,38 @@
  */
 
 import { ServiceBusClient, ServiceBusSender, ServiceBusMessage } from '@azure/service-bus';
+import { DefaultAzureCredential } from '@azure/identity';
 import { AppEvent, EventPublisher } from '../types/events';
 import { Logger } from '../utils/logger';
 
 export class ServiceBusEventPublisher implements EventPublisher {
   private client: ServiceBusClient;
   private senders: Map<string, ServiceBusSender> = new Map();
-  private readonly connectionString: string;
+  private readonly serviceBusNamespace: string;
   private readonly topicName: string;
   private readonly logger: Logger;
 
-  constructor(connectionString?: string, topicName: string = 'appraisal-events') {
-    this.connectionString = connectionString || process.env.AZURE_SERVICE_BUS_CONNECTION_STRING || (() => {
-      if (process.env.NODE_ENV === 'development' && process.env.SERVICE_BUS_USE_EMULATOR === 'true') {
+  constructor(serviceBusNamespace?: string, topicName: string = 'appraisal-events') {
+    // For production, use managed identity with namespace
+    // For local dev, use emulator
+    this.serviceBusNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE || (() => {
+      if (process.env.NODE_ENV === 'development') {
         return 'local-emulator';
       }
-      throw new Error('AZURE_SERVICE_BUS_CONNECTION_STRING environment variable is required');
+      throw new Error('AZURE_SERVICE_BUS_NAMESPACE environment variable is required (e.g., myservicebus.servicebus.windows.net)');
     })();
     this.topicName = topicName;
     this.logger = new Logger('ServiceBusEventPublisher');
     
     // For local development, we'll use a mock client
-    if (this.connectionString === 'local-emulator') {
+    if (this.serviceBusNamespace === 'local-emulator') {
       this.logger.info('Using local emulator mode for Service Bus');
       this.client = this.createMockClient();
     } else {
-      this.client = new ServiceBusClient(this.connectionString);
+      // Use managed identity in production
+      const credential = new DefaultAzureCredential();
+      this.client = new ServiceBusClient(this.serviceBusNamespace, credential);
+      this.logger.info('Using Managed Identity for Service Bus authentication');
     }
   }
 

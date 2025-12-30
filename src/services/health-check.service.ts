@@ -4,6 +4,7 @@
  */
 
 import { CosmosClient } from '@azure/cosmos';
+import { DefaultAzureCredential } from '@azure/identity';
 import { ServiceBusClient } from '@azure/service-bus';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { AzureConfigService } from './azure-config.service';
@@ -109,13 +110,13 @@ export class HealthCheckService {
     const checks: Promise<[string, DependencyHealthStatus]>[] = [];
 
     // Cosmos DB (critical)
-    if (config.cosmosEndpoint && config.cosmosKey) {
-      checks.push(this.checkCosmosDb(config.cosmosEndpoint, config.cosmosKey));
+    if (config.cosmosEndpoint) {
+      checks.push(this.checkCosmosDb(config.cosmosEndpoint));
     }
 
     // Service Bus (non-critical)
-    if (config.serviceBusConnectionString) {
-      checks.push(this.checkServiceBus(config.serviceBusConnectionString));
+    if (config.serviceBusNamespace) {
+      checks.push(this.checkServiceBus(config.serviceBusNamespace));
     }
 
     // Storage (non-critical)
@@ -194,9 +195,9 @@ export class HealthCheckService {
         message: validationErrors.length > 0 ? `Configuration issues: ${validationErrors.join(', ')}` : 'Configuration valid',
         details: {
           configuredServices: {
-            cosmos: !!(config.cosmosEndpoint && config.cosmosKey),
+            cosmos: !!config.cosmosEndpoint,
             googleMaps: !!config.googleMapsApiKey,
-            serviceBus: !!config.serviceBusConnectionString,
+            serviceBus: !!config.serviceBusNamespace,
             storage: !!config.storageConnectionString
           }
         }
@@ -213,10 +214,20 @@ export class HealthCheckService {
   /**
    * Check Cosmos DB connectivity
    */
-  private async checkCosmosDb(endpoint: string, key: string): Promise<[string, DependencyHealthStatus]> {
+  private async checkCosmosDb(endpoint: string): Promise<[string, DependencyHealthStatus]> {
     const startTime = Date.now();
     try {
-      const client = new CosmosClient({ endpoint, key });
+      const isEmulator = endpoint.includes('localhost') || endpoint.includes('127.0.0.1');
+      const clientConfig: any = { endpoint };
+      
+      if (isEmulator) {
+        clientConfig.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
+      } else {
+        const credential = new DefaultAzureCredential();
+        clientConfig.aadCredentials = credential;
+      }
+      
+      const client = new CosmosClient(clientConfig);
       await client.getDatabaseAccount();
       const responseTime = Date.now() - startTime;
 
@@ -240,10 +251,25 @@ export class HealthCheckService {
   /**
    * Check Service Bus connectivity
    */
-  private async checkServiceBus(connectionString: string): Promise<[string, DependencyHealthStatus]> {
+  private async checkServiceBus(serviceBusNamespace: string): Promise<[string, DependencyHealthStatus]> {
     const startTime = Date.now();
     try {
-      const client = new ServiceBusClient(connectionString);
+      const isEmulator = serviceBusNamespace === 'local-emulator';
+      let client: ServiceBusClient;
+      
+      if (isEmulator) {
+        // Skip check for emulator
+        return ['servicebus', {
+          status: 'healthy',
+          critical: false,
+          lastChecked: new Date().toISOString(),
+          message: 'Local emulator mode'
+        }];
+      } else {
+        const credential = new DefaultAzureCredential();
+        client = new ServiceBusClient(serviceBusNamespace, credential);
+      }
+      
       // Simple connection test
       await client.close();
       const responseTime = Date.now() - startTime;

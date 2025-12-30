@@ -1,3 +1,4 @@
+import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -35,12 +36,15 @@ export class CosmosDbConfig {
       throw new Error('COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT environment variable is required');
     })();
     
-    this.key = process.env.COSMOS_KEY || process.env.AZURE_COSMOS_KEY || (() => {
-      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
-        return 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
-      }
-      throw new Error('COSMOS_KEY or AZURE_COSMOS_KEY environment variable is required');
-    })();
+    // Key only needed for emulator
+    const isEmulator = this.endpoint.includes('localhost') || this.endpoint.includes('127.0.0.1');
+    if (isEmulator) {
+      this.key = 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==';
+      this.logger.info('Using Cosmos DB Emulator with default key');
+    } else {
+      this.key = ''; // Not used with managed identity
+      this.logger.info('Using Managed Identity for Cosmos DB authentication');
+    }
     
     this.databaseName = process.env.COSMOS_DATABASE_NAME || 'appraisal-management';
     this.environment = process.env.NODE_ENV || 'development';

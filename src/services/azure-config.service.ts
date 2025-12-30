@@ -24,8 +24,8 @@ export interface AzureConfig {
   jwtSecret: string;
   allowedOrigins: string[];
 
-  // Service Bus Configuration
-  serviceBusConnectionString: string;
+  // Service Bus Configuration (using namespace for managed identity)
+  serviceBusNamespace: string;
 
   // Storage Configuration
   storageConnectionString: string;
@@ -83,7 +83,7 @@ export class AzureConfigService {
       allowedOrigins: this.parseAllowedOrigins(process.env.ALLOWED_ORIGINS || '*'),
 
       // Service Bus Configuration
-      serviceBusConnectionString: await this.getSecret('SERVICE-BUS-CONNECTION-STRING') || process.env.SERVICE_BUS_CONNECTION_STRING || '',
+      serviceBusNamespace: await this.getSecret('SERVICE-BUS-NAMESPACE') || process.env.AZURE_SERVICE_BUS_NAMESPACE || '',
 
       // Storage Configuration
       storageConnectionString: await this.getSecret('STORAGE-CONNECTION-STRING') || process.env.AZURE_STORAGE_CONNECTION_STRING || '',
@@ -151,12 +151,12 @@ export class AzureConfigService {
    */
   private logConfigurationStatus(): void {
     const status = {
-      cosmos: !!(this.config.cosmosEndpoint && this.config.cosmosKey),
+      cosmos: !!this.config.cosmosEndpoint,
       googleMaps: !!this.config.googleMapsApiKey,
       azureMaps: !!this.config.azureMapsApiKey,
       census: !!this.config.censusApiKey,
       smartyStreets: !!(this.config.smartyStreetsAuthId && this.config.smartyStreetsAuthToken),
-      serviceBus: !!this.config.serviceBusConnectionString,
+      serviceBus: !!this.config.serviceBusNamespace,
       storage: !!this.config.storageConnectionString,
       applicationInsights: !!this.config.applicationInsightsConnectionString
     };

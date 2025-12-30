@@ -10,6 +10,12 @@ param keyVaultName string
 @description('Application Insights connection string')
 param applicationInsightsConnectionString string
 
+@description('Cosmos DB endpoint')
+param cosmosEndpoint string
+
+@description('Service Bus namespace (e.g., myservicebus.servicebus.windows.net)')
+param serviceBusNamespace string
+
 // Reference existing App Service
 resource appService 'Microsoft.Web/sites@2023-12-01' existing = {
   name: appServiceName
@@ -35,11 +41,13 @@ resource appServiceConfig 'Microsoft.Web/sites/config@2023-12-01' = {
     PORT: '8080'
     API_VERSION: '1.0.0'
     
-    // Key Vault References
-    COSMOS_CONNECTION_STRING: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=cosmos-connection-string)'
-    COSMOS_PRIMARY_KEY: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=cosmos-primary-key)'
-    SERVICEBUS_CONNECTION_STRING: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=servicebus-connection-string)'
+    // Azure Resource Configuration (Using Managed Identity - No Keys!)
+    AZURE_COSMOS_ENDPOINT: cosmosEndpoint
+    COSMOS_ENDPOINT: cosmosEndpoint
+    AZURE_SERVICE_BUS_NAMESPACE: serviceBusNamespace
     STORAGE_CONNECTION_STRING: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=storage-connection-string)'
+    
+    // Secrets from Key Vault
     JWT_SECRET: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=jwt-secret)'
     
     // External API Keys
