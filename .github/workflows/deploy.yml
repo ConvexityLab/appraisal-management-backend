@@ -117,7 +117,7 @@ jobs:
   build-and-push-container:
     name: Build and Push Container Image
     needs: [determine-environment, run-ci-pipeline, deploy-infrastructure]
-    if: needs.deploy-infrastructure.result == 'success'
+    if: always() && needs.run-ci-pipeline.result == 'success' && (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
     runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     
@@ -132,7 +132,7 @@ jobs:
       
     - name: Azure login
       uses: azure/login@v1
-      with:
+      wineeds.deploy-infrastructure.result == 'success'
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
     - name: Get ACR name from deployment

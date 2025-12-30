@@ -76,7 +76,7 @@ var containerApps = [
     image: 'nginx:alpine' // Lightweight placeholder - will be replaced with actual app image
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
-    minReplicas: environment == 'prod' ? 2 : 1
+    minReplicas: 0 // Start with 0 replicas - will scale up when real app image is deployed
     maxReplicas: environment == 'prod' ? 10 : 5
     targetPort: 80 // nginx default port, will be updated to 8080 when real image deploys
   }
