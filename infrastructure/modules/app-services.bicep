@@ -74,9 +74,6 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
 var containerApps = [
   {
     name: 'appraisal-api'
-    image: useBootstrapImage 
-      ? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' 
-      : '${containerRegistry.properties.loginServer}/appraisal-api:latest'
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
     minReplicas: environment == 'prod' ? 2 : 1
@@ -84,6 +81,9 @@ var containerApps = [
     targetPort: 8080 // Node.js app port
   }
 ]
+
+// Separate image selection to avoid BCP178 error
+var bootstrapImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (app, i) in containerApps: {
   name: 'ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
@@ -119,7 +119,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
       containers: [
         {
           name: app.name
-          image: app.image
+          image: useBootstrapImage ? bootstrapImage : '${containerRegistry.properties.loginServer}/appraisal-api:latest'
           resources: {
             cpu: json(app.cpu)
             memory: app.memory
