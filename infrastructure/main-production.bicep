@@ -102,6 +102,7 @@ module appServices 'modules/app-services.bicep' = {
     suffix: substring(uniqueString(resourceGroup.id), 0, 6)
     tags: tags
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    useBootstrapImage: true // Set to false after infrastructure is established
   }
 }
 

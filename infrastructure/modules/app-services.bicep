@@ -6,6 +6,7 @@ param environment string
 param suffix string
 param tags object
 param logAnalyticsWorkspaceId string
+param useBootstrapImage bool = true // Set to false after first deployment
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -73,7 +74,9 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
 var containerApps = [
   {
     name: 'appraisal-api'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' // Placeholder - will be replaced with actual image
+    image: useBootstrapImage 
+      ? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' 
+      : '${containerRegistry.properties.loginServer}/appraisal-api:latest'
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
     minReplicas: environment == 'prod' ? 2 : 1
@@ -105,7 +108,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
           }
         ]
       }
-      registries: [
+      registries: useBootstrapImage ? [] : [
         {
           server: containerRegistry.properties.loginServer
           identity: 'system'
