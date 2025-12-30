@@ -69,55 +69,16 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   }
 }
 
-// Container Apps for microservices
+// Single monolithic API container app
 var containerApps = [
   {
-    name: 'order-management'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' // Placeholder image
-    cpu: environment == 'prod' ? '1.0' : '0.5'
-    memory: environment == 'prod' ? '2Gi' : '1Gi'
-    minReplicas: environment == 'prod' ? 2 : 1
-    maxReplicas: environment == 'prod' ? 10 : 3
-  }
-  {
-    name: 'vendor-management'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
-    cpu: environment == 'prod' ? '1.0' : '0.5'
-    memory: environment == 'prod' ? '2Gi' : '1Gi'
-    minReplicas: environment == 'prod' ? 2 : 1
-    maxReplicas: environment == 'prod' ? 10 : 3
-  }
-  {
-    name: 'valuation-engine'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+    name: 'appraisal-api'
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' // Placeholder - will be replaced with actual image
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
     minReplicas: environment == 'prod' ? 2 : 1
-    maxReplicas: environment == 'prod' ? 20 : 5
-  }
-  {
-    name: 'qc-automation'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
-    cpu: environment == 'prod' ? '1.0' : '0.5'
-    memory: environment == 'prod' ? '2Gi' : '1Gi'
-    minReplicas: environment == 'prod' ? 2 : 1
-    maxReplicas: environment == 'prod' ? 10 : 3
-  }
-  {
-    name: 'payment-processing'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
-    cpu: environment == 'prod' ? '1.0' : '0.5'
-    memory: environment == 'prod' ? '2Gi' : '1Gi'
-    minReplicas: environment == 'prod' ? 2 : 1
-    maxReplicas: environment == 'prod' ? 10 : 3
-  }
-  {
-    name: 'notification-service'
-    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'  
-    cpu: environment == 'prod' ? '0.5' : '0.25'
-    memory: environment == 'prod' ? '1Gi' : '0.5Gi'
-    minReplicas: environment == 'prod' ? 1 : 1
-    maxReplicas: environment == 'prod' ? 5 : 2
+    maxReplicas: environment == 'prod' ? 10 : 5
+    targetPort: 8080 // Node.js app port
   }
 ]
 
@@ -134,8 +95,9 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for a
       activeRevisionsMode: 'Single'
       ingress: {
         external: true
-        targetPort: 80
+        targetPort: app.targetPort
         allowInsecure: false
+        transport: 'http'
         traffic: [
           {
             weight: 100
@@ -161,12 +123,16 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for a
           }
           env: [
             {
-              name: 'ENVIRONMENT'
-              value: environment
+              name: 'NODE_ENV'
+              value: environment == 'prod' ? 'production' : 'development'
             }
             {
-              name: 'ASPNETCORE_ENVIRONMENT'
-              value: environment == 'prod' ? 'Production' : 'Development'
+              name: 'PORT'
+              value: '8080'
+            }
+            {
+              name: 'ENVIRONMENT'
+              value: environment
             }
           ]
         }
