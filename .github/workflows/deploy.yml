@@ -132,7 +132,7 @@ jobs:
       
     - name: Azure login
       uses: azure/login@v1
-      wineeds.deploy-infrastructure.result == 'success'
+      with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
     - name: Get ACR name from deployment
