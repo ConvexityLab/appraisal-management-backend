@@ -78,12 +78,13 @@ var containerApps = [
     memory: environment == 'prod' ? '4Gi' : '2Gi'
     minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 5
-    targetPort: 8080 // Node.js app port
   }
 ]
 
 // Separate image selection to avoid BCP178 error
 var bootstrapImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+var bootstrapPort = 80 // Hello world image listens on port 80
+var appPort = 8080 // Node.js app port
 
 resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (app, i) in containerApps: {
   name: 'ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
@@ -98,7 +99,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
       activeRevisionsMode: 'Single'
       ingress: {
         external: true
-        targetPort: app.targetPort
+        targetPort: useBootstrapImage ? bootstrapPort : appPort
         allowInsecure: false
         transport: 'http'
         traffic: [
