@@ -73,12 +73,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
 var containerApps = [
   {
     name: 'appraisal-api'
-    image: 'nginx:alpine' // Lightweight placeholder - will be replaced with actual app image
+    image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest' // Placeholder - will be replaced with actual image
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
-    minReplicas: 0 // Start with 0 replicas - will scale up when real app image is deployed
+    minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 5
-    targetPort: 80 // nginx default port, will be updated to 8080 when real image deploys
+    targetPort: 8080 // Node.js app port
   }
 ]
 
@@ -169,25 +169,6 @@ resource acrPullRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04
 
 
 
-// Logic Apps for workflow automation  
-resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
-  name: 'logic-appraisal-${environment}-${suffix}'
-  location: location
-  tags: tags
-  properties: {
-    state: 'Enabled'
-    definition: {
-      '$schema': 'https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#'
-      contentVersion: '1.0.0.0'
-      parameters: {}
-      triggers: {}
-      actions: {}
-      outputs: {}
-    }
-    parameters: {}
-  }
-}
-
 // Outputs
 output containerAppEnvironmentName string = containerAppEnvironment.name
 output containerAppEnvironmentId string = containerAppEnvironment.id
@@ -196,5 +177,3 @@ output containerAppPrincipalIds array = [for (app, i) in containerApps: containe
 output containerRegistryName string = containerRegistry.name
 output containerRegistryId string = containerRegistry.id
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
-output logicAppName string = logicApp.name
-output logicAppId string = logicApp.id

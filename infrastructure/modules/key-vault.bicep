@@ -20,10 +20,10 @@ param appServicePrincipalId string
 param logAnalyticsWorkspaceId string = ''
 
 // Generate a valid Key Vault name (3-24 alphanumeric characters, start with letter)
+// Use stable seed (namingPrefix + environment + location) so name stays same across deployments
 var cleanPrefix = replace(replace(replace(namingPrefix, '-', ''), 'appraisal', 'appr'), 'mgmt', 'm')
-var keyVaultName = length('${cleanPrefix}${environment}kv') > 24 
-  ? 'kv${take(cleanPrefix, 10)}${take(environment, 3)}' 
-  : '${cleanPrefix}${environment}kv'
+var uniqueSuffix = uniqueString(namingPrefix, environment, location)
+var keyVaultName = 'kv${take(cleanPrefix, 8)}${take(environment, 3)}${take(uniqueSuffix, 6)}'
 
 // Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
