@@ -80,9 +80,6 @@ module cosmosDb 'modules/cosmos-production.bicep' = {
     databaseName: 'appraisal-management'
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
-  dependsOn: [
-    appServices
-  ]
 }
 
 // Service Bus
@@ -128,8 +125,6 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   scope: resourceGroup
   params: {
     keyVaultName: keyVault.outputs.keyVaultName
-    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
-    serviceBusNamespaceName: serviceBus.outputs.namespaceName
     storageAccountName: storage.outputs.storageAccountName
     applicationInsightsKey: monitoring.outputs.instrumentationKey
   }

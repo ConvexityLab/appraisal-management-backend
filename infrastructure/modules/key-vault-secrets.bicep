@@ -4,12 +4,6 @@
 @description('Key Vault name')
 param keyVaultName string
 
-@description('Cosmos DB account name for building connection string')
-param cosmosAccountName string
-
-@description('Service Bus namespace name for building connection string')
-param serviceBusNamespaceName string
-
 @description('Storage account name for building connection string')
 param storageAccountName string
 
