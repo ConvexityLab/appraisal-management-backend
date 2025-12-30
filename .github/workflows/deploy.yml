@@ -214,22 +214,48 @@ jobs:
       run: |
         echo "🚀 Updating Container App with new image..."
         
+        # Determine scaling based on environment
+        if [[ "${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
+          MIN_REPLICAS=2
+          MAX_REPLICAS=10
+        else
+          MIN_REPLICAS=1
+          MAX_REPLICAS=5
+        fi
+        
         az containerapp update \
           --name ${{ steps.get-app.outputs.name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
-          --image ${{ needs.build-and-push-container.outputs.image-full-name }}
+          --image ${{ needs.build-and-push-container.outputs.image-full-name }} \
+          --min-replicas $MIN_REPLICAS \
+          --max-replicas $MAX_REPLICAS
         
         echo "✅ Container App updated successfully"
+        echo "   - Image: ${{ needs.build-and-push-container.outputs.image-full-name }}"
+        echo "   - Scale: $MIN_REPLICAS-$MAX_REPLICAS replicas"
         
-    - name: Restart Container App
+    - name: Wait for Container App to scale up
       run: |
-        echo "🔄 Restarting Container App to ensure new image is pulled..."
+        echo "⏳ Waiting for container app to scale up and become ready..."
         
-        az containerapp revision restart \
-          --name ${{ steps.get-app.outputs.name }} \
-          --resource-group ${{ steps.get-app.outputs.resource-group }}
+        max_wait=180  # 3 minutes
+        elapsed=0
         
-        echo "✅ Container App restarted"
+        while [ $elapsed -lt $max_wait ]; do
+          replica_count=$(az containerapp replica list \
+            --name ${{ steps.get-app.outputs.name }} \
+            --resource-group ${{ steps.get-app.outputs.resource-group }} \
+            --query 'length(@)' -o tsv || echo "0")
+          
+          if [ "$replica_count" -gt 0 ]; then
+            echo "✅ Container app has $replica_count replica(s) running"
+            break
+          fi
+          
+          echo "⏳ Waiting for replicas to start... ($elapsed/$max_wait seconds)"
+          sleep 10
+          elapsed=$((elapsed + 10))
+        done
         
     - name: Verify deployment
       run: |
