@@ -17,13 +17,7 @@ param storageAccountName string
 param applicationInsightsKey string
 
 // Reference existing resources to get their secrets
-resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' existing = {
-  name: cosmosAccountName
-}
-
-resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2023-01-01-preview' existing = {
-  name: serviceBusNamespaceName
-}
+// cosmosAccount and serviceBusNamespace removed - using managed identity instead of keys
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' existing = {
   name: storageAccountName

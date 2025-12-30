@@ -15,10 +15,10 @@ describe('Cosmos DB Real Integration Tests', () => {
     console.log('🚀 Initializing Cosmos DB Integration Tests...')
     
     // Use local emulator by default, or Azure if configured
-    const endpoint = process.env.COSMOS_ENDPOINT || 'https://localhost:8081'
-    const key = process.env.COSMOS_KEY || 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=='
+    const endpoint = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT || 'https://localhost:8081'
     
-    dbService = new CosmosDbService(endpoint, key)
+    // CosmosDbService now uses managed identity in production, emulator key automatically in dev
+    dbService = new CosmosDbService(endpoint)
     
     console.log(`📡 Connecting to: ${endpoint.includes('localhost') ? 'Local Emulator' : 'Azure Cosmos DB'}`)
     

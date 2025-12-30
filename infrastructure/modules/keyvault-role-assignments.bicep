@@ -1,5 +1,5 @@
 // Key Vault Role Assignments Module
-// Assigns Key Vault Secrets User role to container apps
+// Assigns Key Vault Secrets Officer role to container apps (includes get AND list permissions)
 
 param keyVaultName string
 param containerAppPrincipalIds array
@@ -9,15 +9,16 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
 }
 
-// Key Vault Secrets User role assignments for container apps
-resource keyVaultSecretsUserRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
-  name: guid(keyVault.id, principalId, '4633458b-17de-408a-b874-0445c86b69e6')
+// Key Vault Secrets Officer role assignments for container apps
+// This role allows: get, list, set, delete secrets (but not purge)
+resource keyVaultSecretsOfficerRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(keyVault.id, principalId, 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
   scope: keyVault
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7') // Key Vault Secrets Officer
     principalId: principalId
     principalType: 'ServicePrincipal'
-    description: 'Allows container app ${i} to read secrets from Key Vault'
+    description: 'Allows container app ${i} to get and list secrets from Key Vault'
   }
 }]
 

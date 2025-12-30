@@ -44,7 +44,32 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   tags: tags
 }
 
-// Cosmos DB with Container App role assignments
+// Application Insights and Log Analytics (deployed first - required by other modules)
+module monitoring 'modules/monitoring.bicep' = {
+  name: 'monitoring-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    namingPrefix: namingPrefix
+    environment: environment
+    tags: tags
+  }
+}
+
+// Container Apps and Container Registry (deployed second to get principal IDs)
+module appServices 'modules/app-services.bicep' = {
+  name: 'app-services-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
+    tags: tags
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+// Cosmos DB with Container App role assignments (deployed after Container Apps exist)
 module cosmosDb 'modules/cosmos-production.bicep' = {
   name: 'cosmos-db-deployment'
   scope: resourceGroup
@@ -55,6 +80,9 @@ module cosmosDb 'modules/cosmos-production.bicep' = {
     databaseName: 'appraisal-management'
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
+  dependsOn: [
+    appServices
+  ]
 }
 
 // Service Bus
@@ -80,31 +108,6 @@ module keyVault 'modules/key-vault.bicep' = {
     tags: tags
     appServicePrincipalId: '00000000-0000-0000-0000-000000000000' // Temporary placeholder
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-  }
-}
-
-// Container Apps and Container Registry (deployed first to get principal IDs)
-module appServices 'modules/app-services.bicep' = {
-  name: 'app-services-deployment'
-  scope: resourceGroup
-  params: {
-    location: location
-    environment: environment
-    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
-    tags: tags
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-  }
-}
-
-// Application Insights and Log Analytics
-module monitoring 'modules/monitoring.bicep' = {
-  name: 'monitoring-deployment'
-  scope: resourceGroup
-  params: {
-    location: location
-    namingPrefix: namingPrefix
-    environment: environment
-    tags: tags
   }
 }
 
