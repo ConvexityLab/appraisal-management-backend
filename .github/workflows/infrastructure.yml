@@ -10,7 +10,7 @@ on:
       location:
         required: false
         type: string
-        default: 'westus2'
+        default: 'eastus'
         description: 'Azure region for deployment'
     secrets:
       AZURE_CREDENTIALS:
@@ -31,7 +31,7 @@ on:
       location:
         required: false
         type: string
-        default: 'westus2'
+        default: 'eastus'
         description: 'Azure region for deployment'
 
 env:
