@@ -236,12 +236,32 @@ var bootstrapPort = 80 // Hello world image listens on port 80
 var appPort = 8080 // Node.js app port
 var functionsPort = 80 // Azure Functions custom container defaults to port 80
 
+// Dedicated user-assigned identities ensure ACR pull access is granted before provisioning
+resource containerAppIdentities 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = [for (app, i) in containerApps: {
+  name: 'id-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
+  location: location
+  tags: tags
+}]
+
+resource acrPullRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (app, i) in containerApps: {
+  name: guid(containerAppIdentities[i].id, containerRegistry.id, 'acrpull')
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
+    principalId: containerAppIdentities[i].properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}]
+
 resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (app, i) in containerApps: {
   name: 'ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${containerAppIdentities[i].id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: containerAppEnvironment.id
@@ -262,7 +282,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
       registries: useBootstrapImage ? [] : [
         {
           server: containerRegistry.properties.loginServer
-          identity: 'system'
+          identity: containerAppIdentities[i].id
         }
       ]
       secrets: containerAppSecrets
@@ -288,19 +308,8 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
       }
     }
   }
-}]
-
-// ACR Pull role assignments - created AFTER container apps exist
-resource acrPullRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (app, i) in containerApps: {
-  name: guid(containerAppInstances[i].id, containerRegistry.id, 'acrpull')
-  scope: containerRegistry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
-    principalId: containerAppInstances[i].identity.principalId
-    principalType: 'ServicePrincipal'
-  }
   dependsOn: [
-    containerAppInstances[i]
+    acrPullRoleAssignments[i]
   ]
 }]
 
