@@ -8,6 +8,7 @@ on:
 
 env:
   NODE_VERSION: '22.x'
+  ENABLE_CODE_SCANNING_UPLOAD: 'false'
 
 jobs:
   code-quality:
@@ -135,6 +136,7 @@ jobs:
         output: 'trivy-results.sarif'
         
     - name: Upload Trivy scan results
+      if: ${{ env.ENABLE_CODE_SCANNING_UPLOAD == 'true' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'trivy-results.sarif'
