@@ -7,7 +7,7 @@ param suffix string
 param tags object
 param logAnalyticsWorkspaceId string
 param useBootstrapImage bool = true // Set to false after first deployment
-param storageAccountConnectionString string
+param storageAccountName string
 param applicationInsightsConnectionString string
 param applicationInsightsInstrumentationKey string
 param cosmosEndpoint string
@@ -18,10 +18,16 @@ param batchDataApiKey string = ''
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' existing = {
+  name: storageAccountName
+}
+
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id, '2023-04-01').keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
+
 var baseContainerSecrets = [
   {
     name: 'azurewebjobsstorage'
-    value: storageAccountConnectionString
+    value: storageConnectionString
   }
   {
     name: 'appinsights-connection-string'

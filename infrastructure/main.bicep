@@ -109,7 +109,7 @@ module appServices 'modules/app-services.bicep' = {
     tags: tags
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     useBootstrapImage: false
-    storageAccountConnectionString: storage.outputs.primaryConnectionString
+    storageAccountName: storage.outputs.storageAccountName
     applicationInsightsInstrumentationKey: monitoring.outputs.instrumentationKey
     applicationInsightsConnectionString: monitoring.outputs.connectionString
     cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
