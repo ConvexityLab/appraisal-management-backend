@@ -328,7 +328,7 @@ jobs:
             owner: context.repo.owner,
             repo: context.repo.repo,
             workflow_id: 'deploy.yml',
-            ref: 'main',
+            ref: 'master',
             inputs: {
               environment: 'prod',
               deploy_infrastructure: 'true'
