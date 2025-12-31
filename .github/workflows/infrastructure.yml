@@ -66,7 +66,7 @@ jobs:
         echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
         az deployment sub validate \
           --location ${{ inputs.location }} \
-          --template-file infrastructure/main-production.bicep \
+          --template-file infrastructure/main.bicep \
           --parameters infrastructure/parameters/${{ inputs.environment }}.parameters.json
           
     - name: Deploy infrastructure
@@ -76,7 +76,7 @@ jobs:
         
         deployment_output=$(az deployment sub create \
           --location ${{ inputs.location }} \
-          --template-file infrastructure/main-production.bicep \
+          --template-file infrastructure/main.bicep \
           --parameters infrastructure/parameters/${{ inputs.environment }}.parameters.json \
           --query 'properties.outputs' \
           --output json)

@@ -116,7 +116,7 @@ jobs:
           
     - name: Run Bicep linter
       run: |
-        az bicep build --file infrastructure/main-production.bicep --stdout > /dev/null
+        az bicep build --file infrastructure/main.bicep --stdout > /dev/null
 
   security-scan:
     name: Security Scanning

@@ -1,177 +1,176 @@
-// Main Bicep template for Enterprise Appraisal Management System
-// This template orchestrates all Azure resources needed for the platform
+// Appraisal Management Platform - Main Infrastructure Template
+// Fully parameterized deployment for production-ready API server
 
 targetScope = 'subscription'
 
 @description('The primary Azure region for resource deployment')
-param location string = 'East US'
-
-@description('The secondary Azure region for disaster recovery')
-param drLocation string = 'West US 2'
+param location string
 
 @description('Environment name (dev, staging, prod)')
 @allowed(['dev', 'staging', 'prod'])
-param environment string = 'dev'
+param environment string
 
-@description('Unique suffix for resource naming')
-param suffix string = uniqueString(subscription().subscriptionId, location)
+@description('Application name for resource naming')
+param appName string
 
-// Note: SQL Server parameters removed - using Cosmos DB only
+@description('Organization or project identifier')
+param organizationPrefix string = ''
+
+@description('Resource group naming pattern')
+param resourceGroupNamingPattern string = 'rg-{appName}-{environment}-{location}'
+
+@description('Resource naming pattern')
+param resourceNamingPattern string = '{appName}-{environment}'
 
 @description('Tags to apply to all resources')
-param tags object = {
-  Environment: environment
-  Project: 'Enterprise-Appraisal-Management'
-  Owner: 'Platform-Team'
-}
+param tags object
 
-// Variables
-var resourceGroupName = 'rg-appraisal-mgmt-${environment}-${suffix}'
-var drResourceGroupName = 'rg-appraisal-mgmt-dr-${environment}-${suffix}'
+@description('Custom resource group name override (optional)')
+param customResourceGroupName string = ''
 
-// Resource Groups
-resource primaryResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+// Variables - all derived from parameters, no hardcoded values
+var resourceGroupName = empty(customResourceGroupName) 
+  ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
+  : customResourceGroupName
+
+var namingPrefix = empty(organizationPrefix) 
+  ? replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)
+  : '${organizationPrefix}-${replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)}'
+
+// Resource Group
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   name: resourceGroupName
   location: location
   tags: tags
 }
 
-resource drResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: drResourceGroupName
-  location: drLocation
-  tags: union(tags, { Purpose: 'Disaster-Recovery' })
-}
-
-// Core Infrastructure Module
-module coreInfrastructure 'modules/core-infrastructure.bicep' = {
-  name: 'core-infrastructure-deployment'
-  scope: primaryResourceGroup
+// Application Insights and Log Analytics (deployed first - required by other modules)
+module monitoring 'modules/monitoring.bicep' = {
+  name: 'monitoring-deployment'
+  scope: resourceGroup
   params: {
     location: location
+    namingPrefix: namingPrefix
     environment: environment
-    suffix: suffix
     tags: tags
   }
 }
 
-// Data Services Module (Storage and Cache only)
-module dataServices 'modules/data-services.bicep' = {
-  name: 'data-services-deployment'
-  scope: primaryResourceGroup
-  params: {
-    location: location
-    environment: environment
-    suffix: suffix
-    tags: tags
-    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
-  }
-}
-
-// Cosmos DB Module (Single consolidated database)
+// Cosmos DB (deployed early for local testing - doesn't depend on Container Apps)
 module cosmosDb 'modules/cosmos-production.bicep' = {
-  name: 'cosmosdb-deployment'
-  scope: primaryResourceGroup
+  name: 'cosmos-db-deployment'
+  scope: resourceGroup
   params: {
     location: location
     environment: environment
-    cosmosAccountName: 'appraisal-cosmos-${environment}-${suffix}'
+    cosmosAccountName: '${namingPrefix}-cosmos'
     databaseName: 'appraisal-management'
-    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    containerAppPrincipalIds: [] // Will grant access later via separate role assignments
   }
 }
 
-// AI/ML Services Module
-module aimlServices 'modules/aiml-services.bicep' = {
-  name: 'aiml-services-deployment'
-  scope: primaryResourceGroup
+// Service Bus (deployed early for local testing)
+module serviceBus 'modules/service-bus.bicep' = {
+  name: 'service-bus-deployment'
+  scope: resourceGroup
   params: {
     location: location
+    namingPrefix: namingPrefix
     environment: environment
-    suffix: suffix
     tags: tags
   }
 }
 
-// Application Services Module
+// Storage Account (deployed early for local testing)
+module storage 'modules/storage.bicep' = {
+  name: 'storage-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+  }
+}
+
+// Container Apps and Container Registry (deployed after data services)
 module appServices 'modules/app-services.bicep' = {
   name: 'app-services-deployment'
-  scope: primaryResourceGroup
+  scope: resourceGroup
   params: {
     location: location
     environment: environment
-    suffix: suffix
+    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
     tags: tags
-    logAnalyticsWorkspaceId: coreInfrastructure.outputs.logAnalyticsWorkspaceId
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    useBootstrapImage: false
   }
-
 }
 
-// Security Services Module
-module securityServices 'modules/security-services.bicep' = {
-  name: 'security-services-deployment'
-  scope: primaryResourceGroup
+// Cosmos DB role assignments for Container Apps (after apps exist)
+module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
+  name: 'cosmos-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
+// Key Vault (after Container Apps for principal IDs)
+module keyVault 'modules/key-vault.bicep' = {
+  name: 'key-vault-deployment'
+  scope: resourceGroup
   params: {
     location: location
+    namingPrefix: namingPrefix
     environment: environment
-    suffix: suffix
     tags: tags
-    logAnalyticsWorkspaceId: coreInfrastructure.outputs.logAnalyticsWorkspaceId
+    appServicePrincipalId: appServices.outputs.containerAppPrincipalIds[0]
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
-// Disaster Recovery Module - Disabled (Cosmos DB has built-in geo-replication)
-// module disasterRecovery 'modules/disaster-recovery.bicep' = {
-//   name: 'disaster-recovery-deployment'
-//   scope: drResourceGroup
-//   params: {
-//     location: drLocation
-//     primaryLocation: location
-//     environment: environment
-//     suffix: suffix
-//     tags: union(tags, { Purpose: 'Disaster-Recovery' })
-//     primaryStorageAccountName: dataServices.outputs.primaryStorageAccountName
-//   }
-// }
-
-// Integration Services Module
-module integrationServices 'modules/integration-services.bicep' = {
-  name: 'integration-services-deployment'
-  scope: primaryResourceGroup
+// Key Vault Secrets
+module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
+  name: 'key-vault-secrets-deployment'
+  scope: resourceGroup
   params: {
-    location: location
-    environment: environment
-    suffix: suffix
-    tags: tags
-    keyVaultName: coreInfrastructure.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.keyVaultName
+    storageAccountName: storage.outputs.storageAccountName
+    applicationInsightsKey: monitoring.outputs.instrumentationKey
   }
 }
 
-// Key Vault Role Assignments (after container apps are deployed)
+// Key Vault Role Assignments for Container Apps
 module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
   name: 'keyvault-role-assignments-deployment'
-  scope: primaryResourceGroup
+  scope: resourceGroup
   params: {
-    keyVaultName: coreInfrastructure.outputs.keyVaultName
+    keyVaultName: keyVault.outputs.keyVaultName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
 
 // Outputs
-output resourceGroupName string = primaryResourceGroup.name
-output drResourceGroupName string = drResourceGroup.name
-output keyVaultName string = coreInfrastructure.outputs.keyVaultName
+output resourceGroupName string = resourceGroup.name
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
 output containerAppNames array = appServices.outputs.containerAppNames
-output containerAppPrincipalIds array = appServices.outputs.containerAppPrincipalIds
-output applicationInsightsName string = coreInfrastructure.outputs.applicationInsightsName
-output storageAccountName string = dataServices.outputs.primaryStorageAccountName
-output redisCacheName string = dataServices.outputs.redisCacheName
-output apiManagementName string = integrationServices.outputs.apiManagementName
-
-// Cosmos DB Outputs
+output containerRegistryName string = appServices.outputs.containerRegistryName
+output containerRegistryLoginServer string = appServices.outputs.containerRegistryLoginServer
+output keyVaultName string = keyVault.outputs.keyVaultName
 output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
-output cosmosEndpoint string = cosmosDb.outputs.cosmosEndpoint
-output cosmosDatabaseName string = cosmosDb.outputs.databaseName
-output cosmosContainerNames array = cosmosDb.outputs.containerNames
-
-
+output applicationInsightsName string = monitoring.outputs.applicationInsightsName
+output appServiceName string = appServices.outputs.containerAppNames[0]
+output appServiceUrl string = 'https://${appServices.outputs.containerAppNames[0]}.azurewebsites.net'
+output deploymentSummary object = {
+  resourceGroup: resourceGroup.name
+  location: location
+  environment: environment
+  containerAppEnvironment: appServices.outputs.containerAppEnvironmentName
+  containerRegistry: appServices.outputs.containerRegistryName
+  containerApps: appServices.outputs.containerAppNames
+  containerAppFqdns: appServices.outputs.containerAppFqdns
+  cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
+  keyVaultUri: keyVault.outputs.keyVaultUri
+  monitoringWorkspace: monitoring.outputs.logAnalyticsWorkspaceName
+}

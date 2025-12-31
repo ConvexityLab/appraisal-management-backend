@@ -102,22 +102,10 @@ jobs:
     - name: Build application
       run: npm run build || npm run build:production || echo "Build completed"
 
-  deploy-infrastructure:
-    name: Deploy Infrastructure
-    needs: [determine-environment, run-ci-pipeline]
-    if: needs.determine-environment.outputs.deploy-infrastructure == 'true'
-    uses: ./.github/workflows/infrastructure.yml
-    with:
-      environment: ${{ needs.determine-environment.outputs.environment }}
-      location: 'eastus'
-    secrets:
-      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
   build-and-push-container:
     name: Build and Push Container Image
-    needs: [determine-environment, run-ci-pipeline, deploy-infrastructure]
-    if: always() && needs.run-ci-pipeline.result == 'success' && (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
+    needs: [determine-environment, run-ci-pipeline]
+    if: needs.run-ci-pipeline.result == 'success'
     runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     
@@ -183,6 +171,18 @@ jobs:
         docker push ${{ steps.meta.outputs.full-image-name }}
         docker push ${{ steps.meta.outputs.latest-image-name }}
         echo " Image pushed successfully"
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    needs: [determine-environment, run-ci-pipeline, build-and-push-container]
+    if: needs.determine-environment.outputs.deploy-infrastructure == 'true'
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: ${{ needs.determine-environment.outputs.environment }}
+      location: 'eastus'
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
   deploy-container-app:
     name: Deploy Container to Container App
