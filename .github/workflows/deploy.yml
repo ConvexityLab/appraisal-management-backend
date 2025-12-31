@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment to deploy (dev, staging, prod)'
+        required: false
+        default: 'staging'
+      deploy_infrastructure:
+        description: 'Set to true to run the infrastructure workflow'
+        required: false
+        default: 'true'
 
 env:
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -26,6 +35,9 @@ jobs:
     steps:
     - name: Determine environment
       id: env
+      env:
+        ENVIRONMENT_INPUT: ${{ github.event.inputs.environment }}
+        DEPLOY_INFRA_INPUT: ${{ github.event.inputs.deploy_infrastructure }}
       run: |
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           echo "environment=dev" >> $GITHUB_OUTPUT
@@ -34,8 +46,19 @@ jobs:
           echo "environment=staging" >> $GITHUB_OUTPUT
           echo "deploy-infrastructure=true" >> $GITHUB_OUTPUT
         elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          echo "environment=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=true" >> $GITHUB_OUTPUT
+          DISPATCH_ENV="${ENVIRONMENT_INPUT}"
+          DISPATCH_DEPLOY="${DEPLOY_INFRA_INPUT}"
+
+          if [[ -z "$DISPATCH_ENV" ]]; then
+            DISPATCH_ENV="staging"
+          fi
+
+          if [[ -z "$DISPATCH_DEPLOY" ]]; then
+            DISPATCH_DEPLOY="true"
+          fi
+
+          echo "environment=$DISPATCH_ENV" >> $GITHUB_OUTPUT
+          echo "deploy-infrastructure=$DISPATCH_DEPLOY" >> $GITHUB_OUTPUT
         else
           echo "environment=dev" >> $GITHUB_OUTPUT
           echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
