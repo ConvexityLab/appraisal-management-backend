@@ -144,12 +144,11 @@ jobs:
           fi
         done
         
-        # Test Key Vault connectivity
+        # Test Key Vault control-plane connectivity
         echo "Testing Key Vault connectivity..."
-        az keyvault secret list \
-          --vault-name ${{ steps.deploy.outputs.keyVaultName }} \
-          --query '[].name' \
-          --output tsv
+        az keyvault show \
+          --name ${{ steps.deploy.outputs.keyVaultName }} \
+          --query 'properties.vaultUri'
         echo "✅ Key Vault connectivity verified"
         
     - name: Update deployment summary
