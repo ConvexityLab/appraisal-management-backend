@@ -1,6 +1,6 @@
 # Multi-stage build for Azure Container Apps
 # Stage 1: Build
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /usr/src/app
 
@@ -18,7 +18,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # Stage 2: Production
-FROM node:18-alpine AS production
+FROM node:22-alpine AS production
 
 # Install security updates
 RUN apk update && apk upgrade && apk add --no-cache dumb-init

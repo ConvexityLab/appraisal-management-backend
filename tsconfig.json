@@ -44,6 +44,7 @@
     "**/*.test.ts",
     "**/*.spec.ts",
     "src/demos/**/*",
+    "src/demo/**/*",
     "src/components/**/*",
     "src/services/condition-builder.service.ts",
     "src/services/vendor-management.service.ts",
