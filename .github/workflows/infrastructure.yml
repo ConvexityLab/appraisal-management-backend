@@ -17,6 +17,8 @@ on:
         required: true
       AZURE_SUBSCRIPTION_ID:
         required: true
+      BATCHDATA_KEY:
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -42,6 +44,8 @@ jobs:
     name: Deploy Infrastructure (${{ inputs.environment }})
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+      BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
     
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
@@ -64,20 +68,30 @@ jobs:
     - name: Validate Bicep template
       run: |
         echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
+        PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
+        PARAM_ARGS=(--parameters "@${PARAM_FILE}")
+        if [ -n "$BATCHDATA_KEY" ]; then
+          PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
+        fi
         az deployment sub validate \
           --location ${{ inputs.location }} \
           --template-file infrastructure/main.bicep \
-          --parameters infrastructure/parameters/${{ inputs.environment }}.parameters.json
+          "${PARAM_ARGS[@]}"
           
     - name: Deploy infrastructure
       id: deploy
       run: |
         echo "🚀 Deploying infrastructure to ${{ inputs.environment }}..."
+        PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
+        PARAM_ARGS=(--parameters "@${PARAM_FILE}")
+        if [ -n "$BATCHDATA_KEY" ]; then
+          PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
+        fi
         
         deployment_output=$(az deployment sub create \
           --location ${{ inputs.location }} \
           --template-file infrastructure/main.bicep \
-          --parameters infrastructure/parameters/${{ inputs.environment }}.parameters.json \
+          "${PARAM_ARGS[@]}" \
           --query 'properties.outputs' \
           --output json)
         

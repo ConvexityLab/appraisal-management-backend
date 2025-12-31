@@ -20,6 +20,12 @@
         "CostCenter": "Staging",
         "Owner": "Platform-Team"
       }
+    },
+    "batchDataEndpoint": {
+      "value": "https://api.batchdata.com/api/v1/"
+    },
+    "batchDataApiKey": {
+      "value": ""
     }
   }
 }

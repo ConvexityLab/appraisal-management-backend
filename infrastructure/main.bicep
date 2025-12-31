@@ -28,6 +28,12 @@ param tags object
 @description('Custom resource group name override (optional)')
 param customResourceGroupName string = ''
 
+@description('BatchData API endpoint for Azure Functions workloads')
+param batchDataEndpoint string = ''
+
+@description('BatchData API key used by Azure Functions workloads')
+param batchDataApiKey string = ''
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -103,6 +109,13 @@ module appServices 'modules/app-services.bicep' = {
     tags: tags
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     useBootstrapImage: false
+    storageAccountConnectionString: storage.outputs.primaryConnectionString
+    applicationInsightsInstrumentationKey: monitoring.outputs.instrumentationKey
+    applicationInsightsConnectionString: monitoring.outputs.connectionString
+    cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
+    cosmosDatabaseName: cosmosDb.outputs.databaseName
+    batchDataEndpoint: batchDataEndpoint
+    batchDataApiKey: batchDataApiKey
   }
 }
 

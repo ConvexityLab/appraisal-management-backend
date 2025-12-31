@@ -7,10 +7,37 @@ param suffix string
 param tags object
 param logAnalyticsWorkspaceId string
 param useBootstrapImage bool = true // Set to false after first deployment
+param storageAccountConnectionString string
+param applicationInsightsConnectionString string
+param applicationInsightsInstrumentationKey string
+param cosmosEndpoint string
+param cosmosDatabaseName string
+param batchDataEndpoint string = ''
+param batchDataApiKey string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
+var baseContainerSecrets = [
+  {
+    name: 'azurewebjobsstorage'
+    value: storageAccountConnectionString
+  }
+  {
+    name: 'appinsights-connection-string'
+    value: applicationInsightsConnectionString
+  }
+  {
+    name: 'appinsights-instrumentation-key'
+    value: applicationInsightsInstrumentationKey
+  }
+]
+var containerAppSecrets = useBootstrapImage ? [] : concat(baseContainerSecrets, empty(batchDataApiKey) ? [] : [
+  {
+    name: 'batchdata-key'
+    value: batchDataApiKey
+  }
+])
 
 // Container Registry for application images
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -70,14 +97,126 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   }
 }
 
-// Single monolithic API container app
+// API container and the new functions container app definition set
 var containerApps = [
   {
     name: 'appraisal-api'
+    imageName: 'appraisal-api'
     cpu: environment == 'prod' ? '2.0' : '1.0'
     memory: environment == 'prod' ? '4Gi' : '2Gi'
     minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 5
+    targetPort: appPort
+    env: [
+      {
+        name: 'NODE_ENV'
+        value: environment == 'prod' ? 'production' : 'development'
+      }
+      {
+        name: 'PORT'
+        value: string(appPort)
+      }
+      {
+        name: 'ENVIRONMENT'
+        value: environment
+      }
+    ]
+    scaleRule: {
+      name: 'api-http-scaling'
+      http: {
+        metadata: {
+          concurrentRequests: '100'
+        }
+      }
+    }
+  }
+  {
+    name: 'appraisal-functions'
+    imageName: 'appraisal-functions'
+    cpu: environment == 'prod' ? '1.0' : '0.5'
+    memory: environment == 'prod' ? '2Gi' : '1Gi'
+    minReplicas: environment == 'prod' ? 2 : 1
+    maxReplicas: environment == 'prod' ? 10 : 3
+    targetPort: 7071
+    env: concat([
+      {
+        name: 'AzureWebJobsStorage'
+        secretRef: 'azurewebjobsstorage'
+      }
+      {
+        name: 'AzureWebJobsStorage__connectionString'
+        secretRef: 'azurewebjobsstorage'
+      }
+      {
+        name: 'AzureWebJobsMyStorageConnectionAppSetting'
+        secretRef: 'azurewebjobsstorage'
+      }
+      {
+        name: 'AZURE_STORAGE_CONNECTION_STRING'
+        secretRef: 'azurewebjobsstorage'
+      }
+      {
+        name: 'FUNCTIONS_EXTENSION_VERSION'
+        value: '~4'
+      }
+      {
+        name: 'FUNCTIONS_WORKER_RUNTIME'
+        value: 'node'
+      }
+      {
+        name: 'FUNCTIONS_ENVIRONMENT'
+        value: environment
+      }
+      {
+        name: 'AzureWebJobsFeatureFlags'
+        value: 'EnableWorkerIndexing'
+      }
+      {
+        name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+        secretRef: 'appinsights-instrumentation-key'
+      }
+      {
+        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+        secretRef: 'appinsights-connection-string'
+      }
+      {
+        name: 'AzureFunctionsJobHost__Logging__Console__IsEnabled'
+        value: 'true'
+      }
+      {
+        name: 'WEBSITE_RUN_FROM_PACKAGE'
+        value: '0'
+      }
+      {
+        name: 'PORT'
+        value: '7071'
+      }
+      {
+        name: 'COSMOSDB_ENDPOINT'
+        value: cosmosEndpoint
+      }
+      {
+        name: 'DATABASE_NAME'
+        value: cosmosDatabaseName
+      }
+      {
+        name: 'BATCHDATA_ENDPOINT'
+        value: empty(batchDataEndpoint) ? '' : batchDataEndpoint
+      }
+    ], empty(batchDataApiKey) ? [] : [
+      {
+        name: 'BATCHDATA_KEY'
+        secretRef: 'batchdata-key'
+      }
+    ])
+    scaleRule: {
+      name: 'functions-http-scaling'
+      http: {
+        metadata: {
+          concurrentRequests: '50'
+        }
+      }
+    }
   }
 ]
 
@@ -99,7 +238,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
       activeRevisionsMode: 'Single'
       ingress: {
         external: true
-        targetPort: useBootstrapImage ? bootstrapPort : appPort
+        targetPort: useBootstrapImage ? bootstrapPort : app.targetPort
         allowInsecure: false
         transport: 'http'
         traffic: [
@@ -115,44 +254,25 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
           identity: 'system'
         }
       ]
+      secrets: containerAppSecrets
     }
     template: {
       containers: [
         {
           name: app.name
-          image: useBootstrapImage ? bootstrapImage : '${containerRegistry.properties.loginServer}/appraisal-api:latest'
+          image: useBootstrapImage ? bootstrapImage : '${containerRegistry.properties.loginServer}/${app.imageName}:latest'
           resources: {
             cpu: json(app.cpu)
             memory: app.memory
           }
-          env: [
-            {
-              name: 'NODE_ENV'
-              value: environment == 'prod' ? 'production' : 'development'
-            }
-            {
-              name: 'PORT'
-              value: '8080'
-            }
-            {
-              name: 'ENVIRONMENT'
-              value: environment
-            }
-          ]
+          env: [for envVar in app.env: envVar]
         }
       ]
       scale: {
         minReplicas: app.minReplicas
         maxReplicas: app.maxReplicas
         rules: [
-          {
-            name: 'http-scaling'
-            http: {
-              metadata: {
-                concurrentRequests: '100'
-              }
-            }
-          }
+          app.scaleRule
         ]
       }
     }

@@ -258,3 +258,4 @@ output queueNames array = [
   documentProcessingQueue.name
   imageResizeQueue.name
 ]
+output primaryConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id, '2023-04-01').keys[0].value};EndpointSuffix=${environment().suffixes.storage}'

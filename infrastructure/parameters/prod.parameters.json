@@ -22,6 +22,12 @@
         "Criticality": "High",
         "DataClassification": "Confidential"
       }
+    },
+    "batchDataEndpoint": {
+      "value": "https://api.batchdata.com/api/v1/"
+    },
+    "batchDataApiKey": {
+      "value": ""
     }
   }
 }

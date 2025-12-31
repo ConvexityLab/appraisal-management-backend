@@ -135,7 +135,8 @@ jobs:
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       container-registry: ${{ steps.get-acr.outputs.registry }}
-      image-full-name: ${{ steps.meta.outputs.full-image-name }}
+      api-image-full-name: ${{ steps.meta.outputs.api-full-image-name }}
+      functions-image-full-name: ${{ steps.meta.outputs.functions-full-image-name }}
     
     steps:
     - name: Checkout code
@@ -167,33 +168,52 @@ jobs:
       run: |
         # Create unique tag using git SHA and timestamp
         IMAGE_TAG="${GITHUB_SHA:0:7}-$(date +%Y%m%d%H%M%S)"
-        FULL_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-api:${IMAGE_TAG}"
-        LATEST_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-api:latest"
+        API_FULL_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-api:${IMAGE_TAG}"
+        API_LATEST_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-api:latest"
+        FUNCTIONS_FULL_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-functions:${IMAGE_TAG}"
+        FUNCTIONS_LATEST_IMAGE_NAME="${{ steps.get-acr.outputs.registry }}/appraisal-functions:latest"
         
         echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
-        echo "full-image-name=$FULL_IMAGE_NAME" >> $GITHUB_OUTPUT
-        echo "latest-image-name=$LATEST_IMAGE_NAME" >> $GITHUB_OUTPUT
+        echo "api-full-image-name=$API_FULL_IMAGE_NAME" >> $GITHUB_OUTPUT
+        echo "api-latest-image-name=$API_LATEST_IMAGE_NAME" >> $GITHUB_OUTPUT
+        echo "functions-full-image-name=$FUNCTIONS_FULL_IMAGE_NAME" >> $GITHUB_OUTPUT
+        echo "functions-latest-image-name=$FUNCTIONS_LATEST_IMAGE_NAME" >> $GITHUB_OUTPUT
         
         echo " Image tag: $IMAGE_TAG"
-        echo " Full image: $FULL_IMAGE_NAME"
+        echo " API image: $API_FULL_IMAGE_NAME"
+        echo " Functions image: $FUNCTIONS_FULL_IMAGE_NAME"
         
-    - name: Build Docker image
+    - name: Build API Docker image
       run: |
-        echo " Building Docker image..."
+        echo " Building API Docker image..."
         docker build \
-          --tag ${{ steps.meta.outputs.full-image-name }} \
-          --tag ${{ steps.meta.outputs.latest-image-name }} \
+          --tag ${{ steps.meta.outputs.api-full-image-name }} \
+          --tag ${{ steps.meta.outputs.api-latest-image-name }} \
           --label "git-commit=${{ github.sha }}" \
           --label "build-date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
           --label "environment=${{ needs.determine-environment.outputs.environment }}" \
           .
-        
-    - name: Push Docker image
+
+    - name: Build Functions Docker image
       run: |
-        echo " Pushing Docker image..."
-        docker push ${{ steps.meta.outputs.full-image-name }}
-        docker push ${{ steps.meta.outputs.latest-image-name }}
-        echo " Image pushed successfully"
+        echo " Building Functions Docker image..."
+        docker build \
+          --file src/functions/Dockerfile \
+          --tag ${{ steps.meta.outputs.functions-full-image-name }} \
+          --tag ${{ steps.meta.outputs.functions-latest-image-name }} \
+          --label "git-commit=${{ github.sha }}" \
+          --label "build-date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+          --label "environment=${{ needs.determine-environment.outputs.environment }}" \
+          src/functions
+        
+    - name: Push Docker images
+      run: |
+        echo " Pushing Docker images..."
+        docker push ${{ steps.meta.outputs.api-full-image-name }}
+        docker push ${{ steps.meta.outputs.api-latest-image-name }}
+        docker push ${{ steps.meta.outputs.functions-full-image-name }}
+        docker push ${{ steps.meta.outputs.functions-latest-image-name }}
+        echo " Images pushed successfully"
 
   deploy-infrastructure:
     name: Deploy Infrastructure
@@ -206,6 +226,7 @@ jobs:
     secrets:
       AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
 
   deploy-container-app:
     name: Deploy Container to Container App
@@ -219,21 +240,28 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
-    - name: Get Container App name
+    - name: Get Container App names
       id: get-app
       run: |
         RG_NAME="rg-appraisal-mgmt-${{ needs.determine-environment.outputs.environment }}-eastus"
         
-        # Get the container app name (it will match our naming pattern)
-        CONTAINER_APP_NAME=$(az containerapp list --resource-group $RG_NAME --query '[0].name' -o tsv)
+        API_APP_NAME=$(az containerapp list --resource-group $RG_NAME --query "[?contains(name, 'appraisalapi')].name | [0]" -o tsv)
+        FUNCTIONS_APP_NAME=$(az containerapp list --resource-group $RG_NAME --query "[?contains(name, 'appraisalfunctions')].name | [0]" -o tsv)
         
-        echo "name=$CONTAINER_APP_NAME" >> $GITHUB_OUTPUT
+        if [[ -z "$API_APP_NAME" ]] || [[ -z "$FUNCTIONS_APP_NAME" ]]; then
+          echo "Unable to locate container apps in $RG_NAME"
+          exit 1
+        fi
+        
+        echo "api-name=$API_APP_NAME" >> $GITHUB_OUTPUT
+        echo "functions-name=$FUNCTIONS_APP_NAME" >> $GITHUB_OUTPUT
         echo "resource-group=$RG_NAME" >> $GITHUB_OUTPUT
         
-        echo " Container App: $CONTAINER_APP_NAME"
+        echo " API Container App: $API_APP_NAME"
+        echo " Functions Container App: $FUNCTIONS_APP_NAME"
         echo " Resource Group: $RG_NAME"
         
-    - name: Update Container App with new image
+    - name: Update API Container App with new image
       run: |
         echo " Updating Container App with new image..."
         
@@ -247,15 +275,38 @@ jobs:
         fi
         
         az containerapp update \
-          --name ${{ steps.get-app.outputs.name }} \
+          --name ${{ steps.get-app.outputs.api-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
-          --image ${{ needs.build-and-push-container.outputs.image-full-name }} \
+          --image ${{ needs.build-and-push-container.outputs.api-image-full-name }} \
           --min-replicas $MIN_REPLICAS \
           --max-replicas $MAX_REPLICAS
         
         echo " Container App updated successfully"
-        echo "   - Image: ${{ needs.build-and-push-container.outputs.image-full-name }}"
+        echo "   - Image: ${{ needs.build-and-push-container.outputs.api-image-full-name }}"
         echo "   - Scale: $MIN_REPLICAS-$MAX_REPLICAS replicas"
+
+    - name: Update Functions Container App with new image
+      run: |
+        echo " Updating Functions Container App with new image..."
+        
+        if [[ "${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
+          FUNC_MIN_REPLICAS=2
+          FUNC_MAX_REPLICAS=8
+        else
+          FUNC_MIN_REPLICAS=1
+          FUNC_MAX_REPLICAS=4
+        fi
+        
+        az containerapp update \
+          --name ${{ steps.get-app.outputs.functions-name }} \
+          --resource-group ${{ steps.get-app.outputs.resource-group }} \
+          --image ${{ needs.build-and-push-container.outputs.functions-image-full-name }} \
+          --min-replicas $FUNC_MIN_REPLICAS \
+          --max-replicas $FUNC_MAX_REPLICAS
+        
+        echo " Functions Container App updated successfully"
+        echo "   - Image: ${{ needs.build-and-push-container.outputs.functions-image-full-name }}"
+        echo "   - Scale: $FUNC_MIN_REPLICAS-$FUNC_MAX_REPLICAS replicas"
         
     - name: Wait for Container App to scale up
       run: |
@@ -266,7 +317,7 @@ jobs:
         
         while [ $elapsed -lt $max_wait ]; do
           replica_count=$(az containerapp replica list \
-            --name ${{ steps.get-app.outputs.name }} \
+            --name ${{ steps.get-app.outputs.api-name }} \
             --resource-group ${{ steps.get-app.outputs.resource-group }} \
             --query 'length(@)' -o tsv || echo "0")
           
@@ -286,7 +337,7 @@ jobs:
         
         # Get the container app URL
         APP_URL=$(az containerapp show \
-          --name ${{ steps.get-app.outputs.name }} \
+          --name ${{ steps.get-app.outputs.api-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
           --query 'properties.configuration.ingress.fqdn' -o tsv)
         
