@@ -143,7 +143,7 @@ var containerApps = [
     memory: environment == 'prod' ? '2Gi' : '1Gi'
     minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 3
-    targetPort: 7071
+    targetPort: functionsPort
     env: concat([
       {
         name: 'AzureWebJobsStorage'
@@ -195,7 +195,11 @@ var containerApps = [
       }
       {
         name: 'PORT'
-        value: '7071'
+        value: string(functionsPort)
+      }
+      {
+        name: 'WEBSITES_PORT'
+        value: string(functionsPort)
       }
       {
         name: 'COSMOSDB_ENDPOINT'
@@ -230,6 +234,7 @@ var containerApps = [
 var bootstrapImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 var bootstrapPort = 80 // Hello world image listens on port 80
 var appPort = 8080 // Node.js app port
+var functionsPort = 80 // Azure Functions custom container defaults to port 80
 
 resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (app, i) in containerApps: {
   name: 'ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}'
