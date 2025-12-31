@@ -177,6 +177,7 @@ resource acrPullRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04
 output containerAppEnvironmentName string = containerAppEnvironment.name
 output containerAppEnvironmentId string = containerAppEnvironment.id
 output containerAppNames array = [for (app, i) in containerApps: containerAppInstances[i].name]
+output containerAppFqdns array = [for (app, i) in containerApps: containerAppInstances[i].properties.configuration.ingress.fqdn]
 output containerAppPrincipalIds array = [for (app, i) in containerApps: containerAppInstances[i].identity.principalId]
 output containerRegistryName string = containerRegistry.name
 output containerRegistryId string = containerRegistry.id

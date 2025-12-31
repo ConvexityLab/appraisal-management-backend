@@ -155,13 +155,14 @@ module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
 output resourceGroupName string = resourceGroup.name
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
 output containerAppNames array = appServices.outputs.containerAppNames
+output containerAppFqdns array = appServices.outputs.containerAppFqdns
 output containerRegistryName string = appServices.outputs.containerRegistryName
 output containerRegistryLoginServer string = appServices.outputs.containerRegistryLoginServer
 output keyVaultName string = keyVault.outputs.keyVaultName
 output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
 output applicationInsightsName string = monitoring.outputs.applicationInsightsName
 output appServiceName string = appServices.outputs.containerAppNames[0]
-output appServiceUrl string = 'https://${appServices.outputs.containerAppNames[0]}.azurewebsites.net'
+output appServiceUrl string = 'https://${appServices.outputs.containerAppFqdns[0]}'
 output deploymentSummary object = {
   resourceGroup: resourceGroup.name
   location: location
