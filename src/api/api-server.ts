@@ -22,9 +22,9 @@ import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.
 import { Logger } from '../utils/logger';
 
 // Import QC controllers and middleware
-import { qcChecklistRouter } from '../controllers/qc-checklist.controller';
-import { qcExecutionRouter } from '../controllers/qc-execution.controller';
-import { qcResultsRouter } from '../controllers/qc-results.controller';
+import { qcChecklistRouter } from '../controllers/criteria.controller';
+import { qcExecutionRouter } from '../controllers/reviews.controller';
+import { qcResultsRouter } from '../controllers/results.controller';
 
 // Import Places API (New) controller
 import enhancedPropertyIntelligenceV2Router from '../controllers/enhanced-property-intelligence-v2.controller';

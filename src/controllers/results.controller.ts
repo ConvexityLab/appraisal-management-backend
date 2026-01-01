@@ -254,7 +254,7 @@ export class QCResultsController {
         userId: req.user?.id
       });
 
-      const result = await this.cosmosService.getItem('qc-results', resultId);
+      const result = await this.cosmosService.getItem('results', resultId);
 
       if (!result) {
         res.status(404).json({
@@ -896,7 +896,7 @@ export class QCResultsController {
       }
 
       const results = await Promise.all(
-        resultIds.map((id: string) => this.cosmosService.getItem('qc-results', id))
+        resultIds.map((id: string) => this.cosmosService.getItem('results', id))
       );
 
       // Filter out null results and check access
@@ -1190,7 +1190,7 @@ export class QCResultsController {
 
     const sql = `SELECT * FROM c ${whereClause} ${orderBy} OFFSET ${offset} LIMIT ${limit}`;
 
-    const results = await this.cosmosService.queryItems('qc-results', sql, parameters);
+    const results = await this.cosmosService.queryItems('results', sql, parameters);
 
     return {
       data: results.data || [],

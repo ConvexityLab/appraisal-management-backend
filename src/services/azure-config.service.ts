@@ -10,7 +10,6 @@ import { Logger } from '../utils/logger';
 export interface AzureConfig {
   // Cosmos DB Configuration
   cosmosEndpoint: string;
-  cosmosKey: string;
   cosmosDatabaseName: string;
 
   // External API Keys
@@ -68,7 +67,6 @@ export class AzureConfigService {
     this.config = {
       // Cosmos DB Configuration
       cosmosEndpoint: await this.getSecret('COSMOS-ENDPOINT') || process.env.AZURE_COSMOS_ENDPOINT || '',
-      cosmosKey: await this.getSecret('COSMOS-KEY') || process.env.AZURE_COSMOS_KEY || '',
       cosmosDatabaseName: process.env.COSMOS_DATABASE_NAME || 'appraisal-management',
 
       // External API Keys
@@ -151,7 +149,8 @@ export class AzureConfigService {
    */
   private logConfigurationStatus(): void {
     const status = {
-      cosmos: !!this.config.cosmosEndpoint,
+      cosmosEndpoint: !!this.config.cosmosEndpoint,
+      cosmosDatabase: !!this.config.cosmosDatabaseName,
       googleMaps: !!this.config.googleMapsApiKey,
       azureMaps: !!this.config.azureMapsApiKey,
       census: !!this.config.censusApiKey,
@@ -162,7 +161,8 @@ export class AzureConfigService {
     };
 
     this.logger.info('Configuration Status:', {
-      cosmos: status.cosmos ? 'Configured' : 'Missing',
+      cosmosEndpoint: status.cosmosEndpoint ? 'Configured' : 'Missing',
+      cosmosDatabase: status.cosmosDatabase ? 'Configured' : 'Missing',
       googleMaps: status.googleMaps ? 'Configured' : 'Missing - API functionality limited',
       azureMaps: status.azureMaps ? 'Configured' : 'Missing (optional)',
       census: status.census ? 'Configured' : 'Missing - API functionality limited',
@@ -172,8 +172,10 @@ export class AzureConfigService {
       applicationInsights: status.applicationInsights ? 'Configured' : 'Missing - no telemetry'
     });
 
-    if (!status.cosmos) {
+    if (!status.cosmosEndpoint || !status.cosmosDatabase) {
       console.warn('⚠️  Cosmos DB configuration missing. Application may not function properly.');
+    } else {
+      this.logger.info('Cosmos DB access configured for Managed Identity authentication.');
     }
   }
 
@@ -182,9 +184,12 @@ export class AzureConfigService {
    */
   validateRequiredConfig(): string[] {
     const errors: string[] = [];
+    if (!this.config.cosmosEndpoint) {
+      errors.push('Cosmos DB endpoint must be configured for Managed Identity access');
+    }
 
-    if (!this.config.cosmosEndpoint || !this.config.cosmosKey) {
-      errors.push('Cosmos DB configuration is required');
+    if (!this.config.cosmosDatabaseName) {
+      errors.push('Cosmos DB database name is required');
     }
 
     if (!this.config.jwtSecret || this.config.jwtSecret === '') {

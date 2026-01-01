@@ -3,6 +3,7 @@
 /**
  * QC API Test Runner
  * Executes comprehensive tests for QC system integration
+ * NOTE: This script is intended for Cosmos DB Emulator scenarios only.
  */
 
 const { execSync } = require('child_process');

@@ -17,7 +17,7 @@ var tags = {
 var containers = [
   {
     name: 'orders'
-    partitionKey: '/status'
+    partitionKey: '/clientId'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -46,7 +46,7 @@ var containers = [
   }
   {
     name: 'vendors'
-    partitionKey: '/status'
+    partitionKey: '/licenseState'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -127,6 +127,167 @@ var containers = [
         { path: '/demographics/*' }
         { path: '/mortgageHistory/*' }
         { path: '/propertyOwnerProfile/documents/*' }
+      ]
+    }
+  }
+  {
+    name: 'analytics'
+    partitionKey: '/reportType'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/reportType', order: 'ascending' }
+          { path: '/timestamp', order: 'descending' }
+        ]
+        [
+          { path: '/dateRange/from', order: 'ascending' }
+          { path: '/dateRange/to', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'users'
+    partitionKey: '/organizationId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/passwordHash' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/role', order: 'ascending' }
+          { path: '/isActive', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'results'
+    partitionKey: '/orderId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/validatedAt', order: 'descending' }
+        ]
+        [
+          { path: '/qcScore', order: 'descending' }
+          { path: '/validatedAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'criteria'
+    partitionKey: '/clientId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/category', order: 'ascending' }
+        ]
+        [
+          { path: '/clientId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'reviews'
+    partitionKey: '/checklistId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/executedAt', order: 'descending' }
+        ]
+        [
+          { path: '/checklistId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'sessions'
+    partitionKey: '/userId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/startedAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'templates'
+    partitionKey: '/category'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/category', order: 'ascending' }
+          { path: '/version', order: 'descending' }
+        ]
+        [
+          { path: '/isActive', order: 'ascending' }
+          { path: '/priority', order: 'ascending' }
+        ]
       ]
     }
   }

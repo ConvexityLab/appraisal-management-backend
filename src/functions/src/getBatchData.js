@@ -10,7 +10,7 @@ const { CosmosClient, PatchOperation } = require("@azure/cosmos");
 const { DefaultAzureCredential } = require("@azure/identity");
 const { postRequest } = require("../utils/sendApiRequests.js");
 const { getMaxId } = require("../utils/getIds.js");
-const { lookupBatchData, searchBatchData } = require("../utils/batchDataApis");
+const { lookupBatchData, searchBatchData } = require("../utils/batchDataApis.js");
 // const { ordersCreate } = require("./ordersUtils/ordersCreate.js");
 const uuid = require("uuid");
 

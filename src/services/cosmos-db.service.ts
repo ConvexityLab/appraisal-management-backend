@@ -46,11 +46,11 @@ export class CosmosDbService {
     users: 'users',
     properties: 'properties',
     propertySummaries: 'property-summaries',
-    qcResults: 'qc-results',
-    qcChecklists: 'qc-checklists',
-    qcExecutions: 'qc-executions',
-    qcSessions: 'qc-sessions',
-    qcTemplates: 'qc-templates',
+    qcResults: 'results',
+    qcChecklists: 'criteria',
+    qcExecutions: 'reviews',
+    qcSessions: 'sessions',
+    qcTemplates: 'templates',
     analytics: 'analytics'
   };
 
@@ -116,15 +116,21 @@ export class CosmosDbService {
 
       this.client = new CosmosClient(clientOptions);
 
-      // Create database if it doesn't exist
-      const { database } = await this.client.databases.createIfNotExists({
-        id: this.databaseId,
-        throughput: 1000 // Shared throughput across containers
-      });
-      this.database = database;
+      // Connect to existing database (provisioned via Bicep)
+      this.database = this.client.database(this.databaseId);
 
-      // Initialize containers
-      await this.initializeContainers();
+      // Connect to existing containers (provisioned via Bicep)
+      this.ordersContainer = this.database.container(this.containers.orders);
+      this.vendorsContainer = this.database.container(this.containers.vendors);
+      this.usersContainer = this.database.container(this.containers.users);
+      this.propertiesContainer = this.database.container(this.containers.properties);
+      this.propertySummariesContainer = this.database.container(this.containers.propertySummaries);
+      this.qcResultsContainer = this.database.container(this.containers.qcResults);
+      this.qcChecklistsContainer = this.database.container(this.containers.qcChecklists);
+      this.qcExecutionsContainer = this.database.container(this.containers.qcExecutions);
+      this.qcSessionsContainer = this.database.container(this.containers.qcSessions);
+      this.qcTemplatesContainer = this.database.container(this.containers.qcTemplates);
+      this.analyticsContainer = this.database.container(this.containers.analytics);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
@@ -134,362 +140,6 @@ export class CosmosDbService {
 
     } catch (error) {
       this.logger.error('Failed to initialize Cosmos DB', { error });
-      throw error;
-    }
-  }
-
-  /**
-   * Create containers with optimal partition keys and indexing policies
-   * Uses simplified indexing for emulator, complex for production
-   */
-  private async initializeContainers(): Promise<void> {
-    if (!this.database) {
-      throw new Error('Database not initialized');
-    }
-
-    try {
-      const isEmulator = this.endpoint.includes('localhost') || this.endpoint.includes('127.0.0.1');
-      
-      // Orders container with environment-specific configuration
-      const ordersContainerDef: any = {
-        id: this.containers.orders,
-        partitionKey: '/clientId' // Partition by clientId for better distribution
-      };
-
-      if (isEmulator) {
-        // Simple indexing for emulator compatibility
-        ordersContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }]
-        };
-        this.logger.info('Using simplified indexing for emulator');
-      } else {
-        // Production indexing with composite indexes
-        ordersContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/status', order: 'ascending' },
-              { path: '/dueDate', order: 'ascending' }
-            ],
-            [
-              { path: '/priority', order: 'ascending' },
-              { path: '/createdAt', order: 'descending' }
-            ],
-            [
-              { path: '/clientId', order: 'ascending' },
-              { path: '/status', order: 'ascending' }
-            ]
-          ]
-        };
-        this.logger.info('Using production indexing with composite indexes');
-      }
-
-      const { container: ordersContainer } = await this.database.containers.createIfNotExists(ordersContainerDef);
-      this.ordersContainer = ordersContainer;
-
-      // Vendors container with environment-specific configuration
-      const vendorsContainerDef: any = {
-        id: this.containers.vendors,
-        partitionKey: '/licenseState'
-      };
-
-      if (isEmulator) {
-        vendorsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }]
-        };
-      } else {
-        vendorsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          excludedPaths: [
-            { path: '/bankingInfo/*' },
-            { path: '/insuranceInfo/documents/*' }
-          ],
-          compositeIndexes: [
-            [
-              { path: '/status', order: 'ascending' },
-              { path: '/performance/rating', order: 'descending' }
-            ],
-            [
-              { path: '/licenseState', order: 'ascending' },
-              { path: '/serviceTypes', order: 'ascending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: vendorsContainer } = await this.database.containers.createIfNotExists(vendorsContainerDef);
-      this.vendorsContainer = vendorsContainer;
-
-      // Property Summaries container with environment-specific configuration
-      const propertySummariesContainerDef: any = {
-        id: this.containers.propertySummaries,
-        partitionKey: '/address/state'
-      };
-
-      if (isEmulator) {
-        propertySummariesContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }]
-        };
-      } else {
-        propertySummariesContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/address/state', order: 'ascending' },
-              { path: '/propertyType', order: 'ascending' }
-            ],
-            [
-              { path: '/propertyType', order: 'ascending' },
-              { path: '/valuation/estimatedValue', order: 'descending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: propertySummariesContainer } = await this.database.containers.createIfNotExists(propertySummariesContainerDef);
-      this.propertySummariesContainer = propertySummariesContainer;
-
-      // Properties container with environment-specific configuration
-      const propertiesContainerDef: any = {
-        id: this.containers.properties,
-        partitionKey: '/address/state'
-      };
-
-      if (isEmulator) {
-        propertiesContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }]
-        };
-      } else {
-        propertiesContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          excludedPaths: [
-            { path: '/deedHistory/*' },
-            { path: '/demographics/*' },
-            { path: '/mortgageHistory/*' }
-          ]
-        };
-      }
-
-      const { container: propertiesContainer } = await this.database.containers.createIfNotExists(propertiesContainerDef);
-      this.propertiesContainer = propertiesContainer;
-
-      // QC Results container with environment-specific configuration
-      const qcResultsContainerDef: any = {
-        id: this.containers.qcResults,
-        partitionKey: '/orderId'
-      };
-
-      if (isEmulator) {
-        qcResultsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }]
-        };
-      } else {
-        qcResultsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/orderId', order: 'ascending' },
-              { path: '/validatedAt', order: 'descending' }
-            ],
-            [
-              { path: '/qcScore', order: 'descending' },
-              { path: '/validatedAt', order: 'descending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: qcResultsContainer } = await this.database.containers.createIfNotExists(qcResultsContainerDef);
-      this.qcResultsContainer = qcResultsContainer;
-
-      // Analytics container with environment-specific configuration
-      const analyticsContainerDef: any = {
-        id: this.containers.analytics,
-        partitionKey: '/reportType'
-      };
-
-      if (isEmulator) {
-        analyticsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }]
-        };
-      } else {
-        analyticsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/reportType', order: 'ascending' },
-              { path: '/timestamp', order: 'descending' }
-            ],
-            [
-              { path: '/dateRange/from', order: 'ascending' },
-              { path: '/dateRange/to', order: 'descending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: analyticsContainer } = await this.database.containers.createIfNotExists(analyticsContainerDef);
-      this.analyticsContainer = analyticsContainer;
-
-      // Users container
-      const usersContainerDef: any = {
-        id: this.containers.users,
-        partitionKey: '/organizationId'
-      };
-
-      if (!isEmulator) {
-        usersContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          excludedPaths: [{ path: '/passwordHash' }],
-          compositeIndexes: [
-            [
-              { path: '/role', order: 'ascending' },
-              { path: '/isActive', order: 'ascending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: usersContainer } = await this.database.containers.createIfNotExists(usersContainerDef);
-      this.usersContainer = usersContainer;
-
-      // QC Checklists container
-      const qcChecklistsContainerDef: any = {
-        id: this.containers.qcChecklists,
-        partitionKey: '/clientId'
-      };
-
-      if (!isEmulator) {
-        qcChecklistsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/status', order: 'ascending' },
-              { path: '/category', order: 'ascending' }
-            ],
-            [
-              { path: '/clientId', order: 'ascending' },
-              { path: '/createdAt', order: 'descending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: qcChecklistsContainer } = await this.database.containers.createIfNotExists(qcChecklistsContainerDef);
-      this.qcChecklistsContainer = qcChecklistsContainer;
-
-      // QC Executions container
-      const qcExecutionsContainerDef: any = {
-        id: this.containers.qcExecutions,
-        partitionKey: '/checklistId'
-      };
-
-      if (!isEmulator) {
-        qcExecutionsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/status', order: 'ascending' },
-              { path: '/executedAt', order: 'descending' }
-            ],
-            [
-              { path: '/checklistId', order: 'ascending' },
-              { path: '/status', order: 'ascending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: qcExecutionsContainer } = await this.database.containers.createIfNotExists(qcExecutionsContainerDef);
-      this.qcExecutionsContainer = qcExecutionsContainer;
-
-      // QC Sessions container
-      const qcSessionsContainerDef: any = {
-        id: this.containers.qcSessions,
-        partitionKey: '/userId'
-      };
-
-      if (!isEmulator) {
-        qcSessionsContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/status', order: 'ascending' },
-              { path: '/startedAt', order: 'descending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: qcSessionsContainer } = await this.database.containers.createIfNotExists(qcSessionsContainerDef);
-      this.qcSessionsContainer = qcSessionsContainer;
-
-      // QC Templates container
-      const qcTemplatesContainerDef: any = {
-        id: this.containers.qcTemplates,
-        partitionKey: '/category'
-      };
-
-      if (!isEmulator) {
-        qcTemplatesContainerDef.indexingPolicy = {
-          indexingMode: 'consistent',
-          automatic: true,
-          includedPaths: [{ path: '/*' }],
-          compositeIndexes: [
-            [
-              { path: '/category', order: 'ascending' },
-              { path: '/version', order: 'descending' }
-            ],
-            [
-              { path: '/isActive', order: 'ascending' },
-              { path: '/priority', order: 'ascending' }
-            ]
-          ]
-        };
-      }
-
-      const { container: qcTemplatesContainer } = await this.database.containers.createIfNotExists(qcTemplatesContainerDef);
-      this.qcTemplatesContainer = qcTemplatesContainer;
-
-      this.logger.info('Cosmos DB containers initialized successfully', {
-        containers: Object.keys(this.containers).length,
-        qcContainers: ['qc-checklists', 'qc-executions', 'qc-sessions', 'qc-templates']
-      });
-
-    } catch (error) {
-      this.logger.error('Failed to initialize containers', { error });
       throw error;
     }
   }
