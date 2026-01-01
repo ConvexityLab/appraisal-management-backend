@@ -21,6 +21,9 @@ import { AIServicesController } from '../controllers/ai-services.controller';
 import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
 import { Logger } from '../utils/logger';
 
+// Import Azure Entra ID authentication
+import { createAzureEntraAuth, AuthenticatedRequest as EntraAuthRequest } from '../middleware/azure-entra-auth.middleware';
+
 // Import QC controllers and middleware
 import { qcChecklistRouter } from '../controllers/criteria.controller';
 import { qcExecutionRouter } from '../controllers/reviews.controller';
@@ -45,14 +48,8 @@ import {
   errorHandler
 } from '../middleware/qc-api-validation.middleware';
 
-interface AuthenticatedRequest extends express.Request {
-  user?: {
-    id: string;
-    email: string;
-    role: string;
-    permissions: string[];
-  };
-}
+// Use Azure Entra auth request type
+type AuthenticatedRequest = EntraAuthRequest;
 
 export class AppraisalManagementAPIServer {
   private app: express.Application;
@@ -62,6 +59,7 @@ export class AppraisalManagementAPIServer {
   private dynamicCodeService: DynamicCodeExecutionService;
   private logger: Logger;
   private port: number;
+  private azureAuth: ReturnType<typeof createAzureEntraAuth>;
   
   // QC routers
   private qcChecklistRouter: express.Router;
@@ -77,6 +75,10 @@ export class AppraisalManagementAPIServer {
     this.aiServicesController = new AIServicesController();
     this.dynamicCodeService = new DynamicCodeExecutionService();
     
+    // Initialize Azure Entra ID authentication
+    this.azureAuth = createAzureEntraAuth();
+    this.configureAzureRoles();
+    
     // Initialize QC routers
     this.qcChecklistRouter = qcChecklistRouter;
     this.qcExecutionRouter = qcExecutionRouter;
@@ -89,6 +91,32 @@ export class AppraisalManagementAPIServer {
 
   private async initializeDatabase(): Promise<void> {
     await this.dbService.initialize();
+  }
+
+  /**
+   * Configure Azure AD group/role mappings
+   * Replace these IDs with your actual Azure AD group Object IDs
+   */
+  private configureAzureRoles(): void {
+    // Get group IDs from environment or use defaults
+    const adminGroupId = process.env.AZURE_ADMIN_GROUP_ID || 'admin-group-id';
+    const managerGroupId = process.env.AZURE_MANAGER_GROUP_ID || 'manager-group-id';
+    const qcAnalystGroupId = process.env.AZURE_QC_ANALYST_GROUP_ID || 'qc-analyst-group-id';
+    const appraiserGroupId = process.env.AZURE_APPRAISER_GROUP_ID || 'appraiser-group-id';
+
+    this.azureAuth.setRoleMapping(adminGroupId, 'admin', ['*']);
+    this.azureAuth.setRoleMapping(managerGroupId, 'manager', [
+      'order_manage', 'vendor_manage', 'vendor_assign', 'analytics_view', 
+      'qc_metrics', 'qc_validate'
+    ]);
+    this.azureAuth.setRoleMapping(qcAnalystGroupId, 'qc_analyst', [
+      'qc_validate', 'qc_execute', 'qc_metrics'
+    ]);
+    this.azureAuth.setRoleMapping(appraiserGroupId, 'appraiser', [
+      'order_view', 'order_update'
+    ]);
+
+    this.logger.info('Azure AD role mappings configured');
   }
 
   private setupMiddleware(): void {
@@ -449,58 +477,13 @@ export class AppraisalManagementAPIServer {
     );
   }
 
-  // Authentication middleware
-  private authenticateToken(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction): void {
-    // DEV MODE: Bypass authentication in development
-    if (process.env.NODE_ENV === 'development' || process.env.BYPASS_AUTH === 'true') {
-      req.user = {
-        id: 'dev-user-001',
-        email: 'dev@example.com',
-        role: 'admin',
-        permissions: ['*']
-      };
-      next();
-      return;
-    }
-
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-      res.status(401).json({ error: 'Access token required', code: 'TOKEN_REQUIRED' });
-      return;
-    }
-
-    try {
-      const jwtSecret = process.env.JWT_SECRET;
-      if (!jwtSecret) {
-        this.logger.error('JWT_SECRET environment variable is not configured');
-        res.status(500).json({ 
-          error: 'Authentication service misconfigured', 
-          code: 'AUTH_MISCONFIGURED' 
-        });
-        return;
-      }
-
-      const decoded = jwt.verify(token, jwtSecret) as any;
-      req.user = decoded;
-      next();
-    } catch (error) {
-      res.status(403).json({ error: 'Invalid or expired token', code: 'TOKEN_INVALID' });
-    }
-  }
+  // Authentication middleware - now using Azure Entra ID
+  private authenticateToken = (req: AuthenticatedRequest, res: express.Response, next: express.NextFunction): Promise<void> => {
+    return this.azureAuth.authenticate(req, res, next);
+  };
 
   private requirePermission(permission: string) {
-    return (req: AuthenticatedRequest, res: express.Response, next: express.NextFunction): void => {
-      if (!req.user?.permissions.includes(permission)) {
-        res.status(403).json({ 
-          error: `Permission required: ${permission}`, 
-          code: 'PERMISSION_DENIED' 
-        });
-        return;
-      }
-      next();
-    };
+    return this.azureAuth.requirePermission(permission);
   }
 
   // Validation middleware
