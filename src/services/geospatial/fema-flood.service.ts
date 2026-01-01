@@ -1,4 +1,4 @@
-import { Logger } from '../../utils/logger.js';
+import { Logger } from '../../utils/logger';
 import { 
   Coordinates, 
   FloodRiskData, 
@@ -6,7 +6,7 @@ import {
   FloodEvent, 
   DamRisk,
   FemaDisaster
-} from '../../types/geospatial.js';
+} from '../../types/geospatial';
 
 /**
  * FEMA Flood Risk Assessment Service

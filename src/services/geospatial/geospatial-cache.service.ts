@@ -1,5 +1,5 @@
-import { Logger } from '../../utils/logger.js';
-import { PropertyRiskAssessment } from '../../types/geospatial.js';
+import { Logger } from '../../utils/logger';
+import { PropertyRiskAssessment } from '../../types/geospatial';
 
 /**
  * Geospatial Cache Service

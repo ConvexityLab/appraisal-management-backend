@@ -1,11 +1,11 @@
-import { Logger } from '../../utils/logger.js';
+import { Logger } from '../../utils/logger';
 import { 
   Coordinates, 
   TribalLandData, 
   CensusData, 
   TribalJurisdiction,
   HistoricalDesignations 
-} from '../../types/geospatial.js';
+} from '../../types/geospatial';
 
 /**
  * TigerWeb Census Data Service

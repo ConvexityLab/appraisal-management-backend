@@ -1,4 +1,4 @@
-import { Logger } from '../utils/logger.js';
+import { Logger } from '../utils/logger';
 import { 
   PropertyRiskAssessment, 
   Coordinates, 
@@ -15,14 +15,14 @@ import {
   InsuranceRequirement,
   RegulatoryRequirement,
   DataQualityMetrics
-} from '../types/geospatial.js';
+} from '../types/geospatial';
 
 // Import individual service clients
-import { FemaFloodService } from './geospatial/fema-flood.service.js';
-import { TigerWebService } from './geospatial/tigerweb.service.js';
-import { EsriArcGISService } from './geospatial/esri-arcgis.service.js';
-import { NoaaEnvironmentalService } from './geospatial/noaa-environmental.service.js';
-import { GeospatialCacheService } from './geospatial/geospatial-cache.service.js';
+import { FemaFloodService } from './geospatial/fema-flood.service';
+import { TigerWebService } from './geospatial/tigerweb.service';
+import { EsriArcGISService } from './geospatial/esri-arcgis.service';
+import { NoaaEnvironmentalService } from './geospatial/noaa-environmental.service';
+import { GeospatialCacheService } from './geospatial/geospatial-cache.service';
 
 /**
  * Comprehensive Geospatial Risk Assessment Service

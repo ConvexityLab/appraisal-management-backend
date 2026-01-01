@@ -164,6 +164,20 @@ export class QCApiValidationMiddleware {
   public authenticateJWT() {
     return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
       try {
+        // Dev bypass for local testing
+        if (process.env.NODE_ENV === 'development' || process.env.BYPASS_AUTH === 'true') {
+          this.logger.warn('⚠️  Authentication bypassed for development');
+          req.user = {
+            id: 'dev-user-123',
+            email: 'dev@localhost',
+            role: 'admin',
+            permissions: ['*'],
+            organizationId: 'dev-org',
+            clientId: 'dev-client'
+          };
+          return next();
+        }
+
         const authHeader = req.headers.authorization;
         const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 

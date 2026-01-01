@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div id="map" style="height: 600px;"></div>
+  <div id="flood-info"></div>
+
+  <script>
+    // Fetch flood data
+    fetch('http://localhost:3000/api/geospatial/flood-zone?lat=38.9072&lng=-77.0369')
+      .then(res => res.json())
+      .then(data => {
+        const { latitude, longitude } = data.data.coordinates;
+        const floodRisk = data.data.floodRisk;
+
+        // Display info
+        document.getElementById('flood-info').innerHTML = `
+          <h3>Flood Zone: ${floodRisk.zone}</h3>
+          <p>Risk Level: ${floodRisk.riskLevel}</p>
+        `;
+
+        // Create interactive map
+        const map = L.map('map').setView([latitude, longitude], 15);
+
+        // Base layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // FEMA flood layer
+        L.tileLayer.wms('https://hazards.fema.gov/gis/nfhl/services/public/NFHL/MapServer/WMSServer', {
+          layers: '28',
+          format: 'image/png',
+          transparent: true,
+          opacity: 0.6
+        }).addTo(map);
+
+        // Property marker
+        L.marker([latitude, longitude]).addTo(map);
+      });
+  </script>
+</body>
+</html>

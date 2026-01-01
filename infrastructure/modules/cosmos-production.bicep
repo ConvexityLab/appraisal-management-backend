@@ -291,6 +291,143 @@ var containers = [
       ]
     }
   }
+  // QC Workflow Automation Containers
+  {
+    name: 'qc-review-queue'
+    partitionKey: '/orderId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/priorityScore', order: 'descending' }
+        ]
+        [
+          { path: '/assignedAnalystId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/priorityLevel', order: 'ascending' }
+          { path: '/createdAt', order: 'ascending' }
+        ]
+        [
+          { path: '/slaBreached', order: 'ascending' }
+          { path: '/priorityScore', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'revisions'
+    partitionKey: '/orderId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/requestedAt', order: 'descending' }
+        ]
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/dueDate', order: 'ascending' }
+        ]
+        [
+          { path: '/severity', order: 'ascending' }
+          { path: '/requestedAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'escalations'
+    partitionKey: '/orderId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/priority', order: 'descending' }
+        ]
+        [
+          { path: '/escalationType', order: 'ascending' }
+          { path: '/raisedAt', order: 'descending' }
+        ]
+        [
+          { path: '/assignedTo', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'sla-tracking'
+    partitionKey: '/orderId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/percentComplete', order: 'descending' }
+        ]
+        [
+          { path: '/entityType', order: 'ascending' }
+          { path: '/startTime', order: 'ascending' }
+        ]
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/entityType', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  {
+    name: 'sla-configurations'
+    partitionKey: '/clientId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/clientId', order: 'ascending' }
+          { path: '/entityType', order: 'ascending' }
+        ]
+      ]
+    }
+  }
 ]
 
 // Cosmos DB Account with enterprise settings

@@ -261,7 +261,11 @@ export class EnhancedPropertyIntelligenceV2Service {
       return analysis;
 
     } catch (error) {
-      this.logger.error('Failed to analyze property', { error, coordinates });
+      this.logger.error('Failed to analyze property', { 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        coordinates 
+      });
       throw error;
     }
   }
@@ -346,7 +350,7 @@ export class EnhancedPropertyIntelligenceV2Service {
       ] = await Promise.all([
         this.findAndAnalyzePlaces(coordinates, ['grocery_store', 'supermarket'], 2000),
         this.findAndAnalyzePlaces(coordinates, ['school', 'primary_school', 'secondary_school'], 3000),
-        this.findAndAnalyzePlaces(coordinates, ['hospital', 'doctor', 'clinic'], 5000),
+        this.findAndAnalyzePlaces(coordinates, ['hospital', 'doctor'], 5000),
         this.findAndAnalyzePlaces(coordinates, ['pharmacy', 'drugstore'], 2000),
         this.findAndAnalyzePlaces(coordinates, ['restaurant'], 1000, 10),
         this.findAndAnalyzePlaces(coordinates, ['cafe', 'coffee_shop'], 1000, 10),
@@ -465,8 +469,7 @@ export class EnhancedPropertyIntelligenceV2Service {
             includedTypes: ['transit_station', 'subway_station', 'train_station'],
             maxResultCount: 10,
             locationRestriction: { circle: { center: coordinates, radius: 1000 } }
-          },
-          { essentials: true, pro: true }
+          }
         )
       ]);
 
@@ -535,8 +538,7 @@ export class EnhancedPropertyIntelligenceV2Service {
           locationRestriction: {
             circle: { center: coordinates, radius: 1000 }
           }
-        },
-        { basic: true, essentials: true, pro: true }
+        }
       );
 
       const relocated: PropertyIntelligenceAnalysis['relocatedBusinesses'] = [];
@@ -588,12 +590,6 @@ export class EnhancedPropertyIntelligenceV2Service {
           locationRestriction: {
             circle: { center: coordinates, radius: radiusMeters }
           }
-        },
-        {
-          essentials: true,
-          pro: true,
-          enterprise: true,
-          atmosphere: true
         }
       );
 
@@ -965,19 +961,19 @@ export class EnhancedPropertyIntelligenceV2Service {
     const features: string[] = [];
 
     // Check for unique amenities or characteristics
-    if (data.amenitiesAnalysis.transportation.evChargingStations.length > 5) {
+    if (data.amenitiesAnalysis?.transportation?.evChargingStations?.length > 5) {
       features.push('Exceptional EV charging infrastructure');
     }
 
-    if (data.locationContext.neighborhoodSummary) {
+    if (data.locationContext?.neighborhoodSummary) {
       features.push(`Distinctive neighborhood: ${data.locationContext.neighborhoodSummary}`);
     }
 
-    if (data.qualityIndicators.premiumEstablishments > 5) {
+    if (data.qualityIndicators?.premiumEstablishments > 5) {
       features.push('Premium retail and dining district');
     }
 
-    if (data.relocatedBusinesses.length > 0) {
+    if (data.relocatedBusinesses?.length > 0) {
       features.push('Active business relocation activity in area');
     }
 
@@ -1022,8 +1018,7 @@ export class EnhancedPropertyIntelligenceV2Service {
         locationRestriction: {
           circle: { center: coordinates, radius: 800 }
         }
-      },
-      { essentials: true }
+      }
     );
 
     return Math.min(100, (nearbyPlaces.length / 15) * 100);

@@ -1,12 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { Logger } from '../utils/logger.js';
-import { GeospatialRiskService } from '../services/geospatial-risk.service.js';
+import { Logger } from '../utils/logger';
+import { GeospatialRiskService } from '../services/geospatial-risk.service';
 import { 
   Coordinates,
   PropertyRiskAssessment,
   BatchRiskAssessmentRequest,
   GeospatialApiResponse 
-} from '../types/geospatial.js';
+} from '../types/geospatial';
 
 /**
  * Geospatial Risk Assessment API Controller
@@ -34,6 +34,7 @@ export class GeospatialController {
     this.getTribalLandInfo = this.getTribalLandInfo.bind(this);
     this.getEnvironmentalRisk = this.getEnvironmentalRisk.bind(this);
     this.getCensusData = this.getCensusData.bind(this);
+    this.getHistoricPlaces = this.getHistoricPlaces.bind(this);
   }
 
   /**
@@ -427,6 +428,72 @@ export class GeospatialController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/geospatial/historic-places?lat=...&lng=...&radius=... - Get nearby historic places
+   */
+  async getHistoricPlaces(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { lat, lng, radius } = req.query;
+
+      if (!lat || !lng) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_COORDINATES',
+            message: 'Both lat and lng query parameters are required',
+            timestamp: new Date()
+          }
+        });
+        return;
+      }
+
+      const coordinates: Coordinates = {
+        latitude: parseFloat(lat as string),
+        longitude: parseFloat(lng as string)
+      };
+
+      if (isNaN(coordinates.latitude) || isNaN(coordinates.longitude)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_COORDINATE_FORMAT',
+            message: 'Coordinates must be valid numbers',
+            timestamp: new Date()
+          }
+        });
+        return;
+      }
+
+      const radiusMiles = radius ? parseFloat(radius as string) : 0.25;
+
+      this.logger.info('Fetching historic places data', { coordinates, radiusMiles });
+
+      // Import NPS service dynamically
+      const { NpsHistoricService } = await import('../services/geospatial/nps-historic.service');
+      const npsService = new NpsHistoricService();
+      const historicData = await npsService.getHistoricPlacesNearby(coordinates, radiusMiles);
+
+      res.json({
+        success: true,
+        data: {
+          coordinates,
+          radius: radiusMiles,
+          ...historicData,
+          lastAssessed: new Date()
+        },
+        metadata: {
+          source: 'National Park Service API',
+          timestamp: new Date(),
+          radius: `${radiusMiles} miles`
+        }
+      });
+
+    } catch (error) {
+      this.logger.error('Error in historic places endpoint', { error, query: req.query });
+      next(error);
+    }
+  }
 }
 
 /**
@@ -445,6 +512,7 @@ export function createGeospatialRouter(): express.Router {
   router.get('/tribal-land', controller.getTribalLandInfo);
   router.get('/environmental-risk', controller.getEnvironmentalRisk);
   router.get('/census-data', controller.getCensusData);
+  router.get('/historic-places', controller.getHistoricPlaces);
 
   return router;
 }

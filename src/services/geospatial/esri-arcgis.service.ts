@@ -1,5 +1,5 @@
-import { Logger } from '../../utils/logger.js';
-import { Coordinates, EnvironmentalRisk } from '../../types/geospatial.js';
+import { Logger } from '../../utils/logger';
+import { Coordinates, EnvironmentalRisk } from '../../types/geospatial';
 
 /**
  * ESRI ArcGIS Services Integration

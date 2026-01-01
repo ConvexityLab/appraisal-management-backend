@@ -458,7 +458,7 @@ export class GooglePlacesNewService {
   async searchNearby(
     location: Coordinates,
     options: PlacesNewSearchOptions = {},
-    fieldMask: PlaceDetailsFieldMask = { essentials: true, pro: true }
+    fieldMask: PlaceDetailsFieldMask = { basic: true }
   ): Promise<PlaceDetails[]> {
     try {
       const cacheKey = `places-new:nearby:${location.latitude},${location.longitude}:${JSON.stringify(options)}`;
@@ -515,10 +515,13 @@ export class GooglePlacesNewService {
       });
 
       if (!response.ok) {
+        const errorBody = await response.text();
         this.logger.error('Nearby search request failed', {
           status: response.status,
           statusText: response.statusText,
-          location
+          errorBody: errorBody.substring(0, 500),
+          location,
+          requestBody
         });
         return [];
       }
@@ -759,8 +762,7 @@ export class GooglePlacesNewService {
               radius: 50 // Very tight radius
             }
           }
-        },
-        { essentials: true, pro: true, customFields: ['addressDescriptor'] }
+        }
       );
 
       const addressDescriptor = places[0]?.addressDescriptor || null;
@@ -771,31 +773,31 @@ export class GooglePlacesNewService {
           includedTypes: ['school', 'primary_school', 'secondary_school'],
           maxResultCount: 3,
           rankPreference: 'DISTANCE'
-        }, { essentials: true, pro: true, enterprise: true }),
+        }),
         
         this.searchNearby(coordinates, {
           includedTypes: ['grocery_store', 'supermarket'],
           maxResultCount: 3,
           rankPreference: 'DISTANCE'
-        }, { essentials: true, pro: true, enterprise: true }),
+        }),
         
         this.searchNearby(coordinates, {
           includedTypes: ['transit_station', 'subway_station', 'train_station', 'bus_station'],
           maxResultCount: 3,
           rankPreference: 'DISTANCE'
-        }, { essentials: true, pro: true }),
+        }),
         
         this.searchNearby(coordinates, {
           includedTypes: ['park'],
           maxResultCount: 3,
           rankPreference: 'DISTANCE'
-        }, { essentials: true, pro: true, atmosphere: true }),
+        }),
         
         this.searchNearby(coordinates, {
           includedTypes: ['hospital', 'doctor'],
           maxResultCount: 3,
           rankPreference: 'DISTANCE'
-        }, { essentials: true, pro: true, enterprise: true })
+        })
       ]);
 
       const calculateDistance = (place: PlaceDetails): number => {

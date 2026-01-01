@@ -1536,6 +1536,97 @@ export class CosmosDbService {
     return error;
   }
 
+  // ===============================
+  // Generic Document Operations (for QC Workflow and other services)
+  // ===============================
+
+  /**
+   * Get container by name
+   */
+  getContainer(containerName: string): Container {
+    if (!this.database) {
+      throw new Error('Database not initialized');
+    }
+    return this.database.container(containerName);
+  }
+
+  /**
+   * Create a document in specified container
+   */
+  async createDocument<T>(containerName: string, document: T): Promise<T> {
+    try {
+      const container = this.getContainer(containerName);
+      const { resource } = await container.items.create(document as any);
+      return resource as T;
+    } catch (error) {
+      this.logger.error(`Failed to create document in ${containerName}`, { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Upsert a document in specified container
+   */
+  async upsertDocument<T>(containerName: string, document: T): Promise<T> {
+    try {
+      const container = this.getContainer(containerName);
+      const { resource } = await container.items.upsert(document);
+      return resource as T;
+    } catch (error) {
+      this.logger.error(`Failed to upsert document in ${containerName}`, { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get a document by ID from specified container
+   */
+  async getDocument<T>(containerName: string, documentId: string, partitionKey?: string): Promise<T | null> {
+    try {
+      const container = this.getContainer(containerName);
+      const { resource } = await container.item(documentId, partitionKey).read();
+      return (resource as T) || null;
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null;
+      }
+      this.logger.error(`Failed to get document from ${containerName}`, { error, documentId });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a document from specified container
+   */
+  async deleteDocument(containerName: string, documentId: string, partitionKey: string): Promise<void> {
+    try {
+      const container = this.getContainer(containerName);
+      await container.item(documentId, partitionKey).delete();
+      this.logger.info(`Document deleted from ${containerName}`, { documentId });
+    } catch (error) {
+      this.logger.error(`Failed to delete document from ${containerName}`, { error, documentId });
+      throw error;
+    }
+  }
+
+  /**
+   * Query documents from specified container
+   */
+  async queryDocuments<T>(containerName: string, query: string, parameters?: { name: string; value: any }[]): Promise<T[]> {
+    try {
+      const container = this.getContainer(containerName);
+      const querySpec = {
+        query,
+        parameters: parameters || []
+      };
+      const { resources } = await container.items.query<T>(querySpec).fetchAll();
+      return resources;
+    } catch (error) {
+      this.logger.error(`Failed to query documents in ${containerName}`, { error });
+      throw error;
+    }
+  }
+
   /**
    * Disconnect from Cosmos DB
    */
