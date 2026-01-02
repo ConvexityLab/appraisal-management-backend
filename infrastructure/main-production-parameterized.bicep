@@ -264,6 +264,21 @@ module cosmosDb 'modules/cosmos-db.bicep' = {
   }
 }
 
+// === VENDOR MARKETPLACE CONTAINERS ===
+module vendorMarketplace 'modules/vendor-marketplace-containers.bicep' = {
+  name: 'vendor-marketplace-containers'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.accountName
+    databaseName: cosmosDatabaseName
+    location: location
+    tags: tags
+  }
+  dependsOn: [
+    cosmosDb
+  ]
+}
+
 // === SERVICE BUS DEPLOYMENT ===
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

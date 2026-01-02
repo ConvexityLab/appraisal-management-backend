@@ -61,6 +61,9 @@ import { createTemplateRouter } from '../controllers/template.controller';
 // Import Review controller
 import { createReviewRouter } from '../controllers/review.controller';
 
+// Import Vendor Performance controller
+import { createVendorPerformanceRouter } from '../controllers/vendor-performance.controller';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -243,6 +246,13 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
       createTemplateRouter()
+    );
+
+    // Vendor Performance Management (authenticated users with proper permissions)
+    this.app.use('/api/vendor-performance',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createVendorPerformanceRouter()
     );
 
     this.logger.info('✅ Authorization routes registered successfully');
