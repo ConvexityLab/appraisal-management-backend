@@ -44,6 +44,7 @@ export interface VendorPerformanceMetrics {
   certifications: string[];       // License types
   coverageAreas: GeographicArea[];
   propertyTypes: string[];        // Residential, Commercial, etc.
+  propertyTypeExpertise?: Record<string, number>;  // Score by property type
   
   // Financial
   avgFeeQuoted: number;
@@ -71,6 +72,8 @@ export interface VendorAvailability {
   currentCapacity: number;        // Max concurrent orders
   currentLoad: number;            // Current active orders
   availableSlots: number;         // Calculated field
+  isAcceptingOrders: boolean;     // Whether accepting new work
+  maxCapacity: number;            // Maximum capacity limit
   
   // Schedule
   availability: {
@@ -149,25 +152,18 @@ export interface VendorBid {
 }
 
 export interface VendorMatchRequest {
-  orderId: string;
-  propertyAddress: {
-    streetAddress: string;
-    city: string;
-    state: string;
-    zipCode: string;
-    county: string;
-    lat?: number;
-    lng?: number;
-  };
+  orderId?: string;
+  tenantId: string;
+  propertyAddress: string;  // Simplified - just full address string
   propertyType: string;
-  loanAmount: number;
-  dueDate: Date;
-  urgency: 'STANDARD' | 'RUSH' | 'SUPER_RUSH';
-  specialRequirements?: string[];
+  dueDate?: Date;
+  urgency?: 'STANDARD' | 'RUSH' | 'SUPER_RUSH';
+  budget?: number;
   clientPreferences?: {
     preferredVendors?: string[];
-    blacklistedVendors?: string[];
-    minQualityScore?: number;
+    excludedVendors?: string[];
+    minTier?: VendorTier;
+    maxDistance?: number;
     maxFee?: number;
   };
 }
@@ -178,21 +174,40 @@ export interface VendorMatchResult {
   
   // Score Breakdown
   scoreBreakdown: {
-    qualityScore: number;          // 30%
-    availabilityScore: number;     // 25%
-    proximityScore: number;        // 20%
-    experienceScore: number;       // 15%
-    costScore: number;             // 10%
+    performance: number;           // 30%
+    availability: number;          // 25%
+    proximity: number;             // 20%
+    experience: number;            // 15%
+    cost: number;                  // 10%
   };
   
   // Predictions
-  estimatedFee: number;
+  estimatedFee: number | null;
   estimatedTurnaround: number;      // hours
-  completionProbability: number;    // %
+  completionProbability?: number;   // %
+  
+  // Geographic
+  distance: number | null;          // miles
+  
+  // Vendor Details
+  vendor: {
+    id: string;
+    name: string;
+    tier: VendorTier;
+    overallScore: number;
+  };
   
   // Reasoning
   matchReasons: string[];           // Why this vendor was selected
   warnings?: string[];              // Potential concerns
+}
+
+export interface VendorMatchCriteria {
+  minMatchScore?: number;           // Minimum acceptable match score (0-100)
+  maxDistance?: number;             // Maximum distance in miles
+  requiredTier?: VendorTier;        // Minimum vendor tier
+  requireAvailability?: boolean;    // Must have available capacity
+  excludedVendors?: string[];       // Vendor IDs to exclude
 }
 
 export type NegotiationStatus = 

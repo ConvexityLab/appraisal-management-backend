@@ -64,6 +64,9 @@ import { createReviewRouter } from '../controllers/review.controller';
 // Import Vendor Performance controller
 import { createVendorPerformanceRouter } from '../controllers/vendor-performance.controller';
 
+// Import Auto-Assignment controller
+import { createAutoAssignmentRouter } from '../controllers/auto-assignment.controller';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -253,6 +256,13 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
       createVendorPerformanceRouter()
+    );
+
+    // Auto-Assignment & Vendor Matching (authenticated users with proper permissions)
+    this.app.use('/api/auto-assignment',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createAutoAssignmentRouter()
     );
 
     this.logger.info('✅ Authorization routes registered successfully');

@@ -297,13 +297,15 @@ async function getVendorAvailability(vendorId: string) {
   }
 }
 
-function getDefaultAvailability(vendorId: string) {
+function getDefaultAvailability(vendorId: string): VendorAvailability {
   return {
     id: `availability-${vendorId}`,
     vendorId,
     currentCapacity: 10,
     currentLoad: 0,
     availableSlots: 10,
+    isAcceptingOrders: true,
+    maxCapacity: 20,
     availability: [],
     blackoutDates: [],
     serviceAreas: {
