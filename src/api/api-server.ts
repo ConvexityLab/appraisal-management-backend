@@ -67,6 +67,9 @@ import { createVendorPerformanceRouter } from '../controllers/vendor-performance
 // Import Auto-Assignment controller
 import { createAutoAssignmentRouter } from '../controllers/auto-assignment.controller';
 
+// Import Order Negotiation controller
+import { createOrderNegotiationRouter } from '../controllers/order-negotiation.controller';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -263,6 +266,13 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
       createAutoAssignmentRouter()
+    );
+
+    // Order Negotiation & Acceptance Workflow (authenticated users with proper permissions)
+    this.app.use('/api/negotiations',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createOrderNegotiationRouter()
     );
 
     this.logger.info('✅ Authorization routes registered successfully');
