@@ -38,6 +38,10 @@ export class CosmosDbService {
   private qcSessionsContainer: Container | null = null;
   private qcTemplatesContainer: Container | null = null;
   private analyticsContainer: Container | null = null;
+  private rovRequestsContainer: Container | null = null;
+  private templatesContainer: Container | null = null;
+  private reviewsContainer: Container | null = null;
+  private comparableAnalysesContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -51,7 +55,11 @@ export class CosmosDbService {
     qcExecutions: 'reviews',
     qcSessions: 'sessions',
     qcTemplates: 'templates',
-    analytics: 'analytics'
+    analytics: 'analytics',
+    rovRequests: 'rov-requests',
+    documentTemplates: 'document-templates',
+    reviews: 'appraisal-reviews',
+    comparableAnalyses: 'comparable-analyses'
   };
 
   constructor(
@@ -131,6 +139,10 @@ export class CosmosDbService {
       this.qcSessionsContainer = this.database.container(this.containers.qcSessions);
       this.qcTemplatesContainer = this.database.container(this.containers.qcTemplates);
       this.analyticsContainer = this.database.container(this.containers.analytics);
+      this.rovRequestsContainer = this.database.container(this.containers.rovRequests);
+      this.templatesContainer = this.database.container(this.containers.documentTemplates);
+      this.reviewsContainer = this.database.container(this.containers.reviews);
+      this.comparableAnalysesContainer = this.database.container(this.containers.comparableAnalyses);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
@@ -1623,6 +1635,830 @@ export class CosmosDbService {
       return resources;
     } catch (error) {
       this.logger.error(`Failed to query documents in ${containerName}`, { error });
+      throw error;
+    }
+  }
+
+  // ===============================
+  // ROV (Reconsideration of Value) Operations
+  // ===============================
+
+  /**
+   * Create a new ROV request
+   */
+  async createROVRequest(rovRequest: any): Promise<any> {
+    try {
+      if (!this.rovRequestsContainer) {
+        throw new Error('ROV requests container not initialized');
+      }
+
+      const { resource } = await this.rovRequestsContainer.items.create(rovRequest);
+      this.logger.info('ROV request created', { rovId: resource?.id, rovNumber: resource?.rovNumber });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to create ROV request', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing ROV request
+   */
+  async updateROVRequest(rovId: string, updates: any): Promise<any> {
+    try {
+      if (!this.rovRequestsContainer) {
+        throw new Error('ROV requests container not initialized');
+      }
+
+      // Read existing document
+      const { resource: existing } = await this.rovRequestsContainer.item(rovId, rovId).read();
+      
+      if (!existing) {
+        throw new Error(`ROV request not found: ${rovId}`);
+      }
+
+      // Merge updates
+      const updated = {
+        ...existing,
+        ...updates,
+        updatedAt: new Date()
+      };
+
+      // Replace document
+      const { resource } = await this.rovRequestsContainer.item(rovId, rovId).replace(updated);
+      this.logger.info('ROV request updated', { rovId, status: resource?.status });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to update ROV request', { error, rovId });
+      throw error;
+    }
+  }
+
+  /**
+   * Find ROV request by ID
+   */
+  async findROVRequestById(rovId: string): Promise<any | null> {
+    try {
+      if (!this.rovRequestsContainer) {
+        throw new Error('ROV requests container not initialized');
+      }
+
+      const { resource } = await this.rovRequestsContainer.item(rovId, rovId).read();
+      return resource || null;
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null;
+      }
+      this.logger.error('Failed to find ROV request', { error, rovId });
+      throw error;
+    }
+  }
+
+  /**
+   * Find ROV requests with filters
+   */
+  async findROVRequests(filters: any, offset: number = 0, limit: number = 50): Promise<any[]> {
+    try {
+      if (!this.rovRequestsContainer) {
+        throw new Error('ROV requests container not initialized');
+      }
+
+      // Build dynamic query
+      let query = 'SELECT * FROM c WHERE 1=1';
+      const parameters: any[] = [];
+
+      // Add filters
+      if (filters.status && filters.status.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@statuses, c.status)';
+        parameters.push({ name: '@statuses', value: filters.status });
+      }
+
+      if (filters.requestorType && filters.requestorType.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@requestorTypes, c.requestorType)';
+        parameters.push({ name: '@requestorTypes', value: filters.requestorType });
+      }
+
+      if (filters.challengeReason && filters.challengeReason.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@challengeReasons, c.challengeReason)';
+        parameters.push({ name: '@challengeReasons', value: filters.challengeReason });
+      }
+
+      if (filters.decision && filters.decision.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@decisions, c.response.decision)';
+        parameters.push({ name: '@decisions', value: filters.decision });
+      }
+
+      if (filters.priority && filters.priority.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@priorities, c.priority)';
+        parameters.push({ name: '@priorities', value: filters.priority });
+      }
+
+      if (filters.assignedTo) {
+        query += ' AND c.assignedTo = @assignedTo';
+        parameters.push({ name: '@assignedTo', value: filters.assignedTo });
+      }
+
+      if (filters.orderId) {
+        query += ' AND c.orderId = @orderId';
+        parameters.push({ name: '@orderId', value: filters.orderId });
+      }
+
+      if (filters.isOverdue) {
+        query += ' AND c.slaTracking.isOverdue = true';
+      }
+
+      if (filters.hasComplianceFlags) {
+        query += ' AND (c.compliance.possibleBias = true OR c.compliance.discriminationClaim = true OR c.compliance.regulatoryEscalation = true)';
+      }
+
+      // Add ordering and pagination
+      query += ' ORDER BY c.submittedAt DESC OFFSET @offset LIMIT @limit';
+      parameters.push({ name: '@offset', value: offset });
+      parameters.push({ name: '@limit', value: limit });
+
+      const querySpec = { query, parameters };
+      const { resources } = await this.rovRequestsContainer.items.query(querySpec).fetchAll();
+
+      return resources;
+    } catch (error) {
+      this.logger.error('Failed to find ROV requests', { error, filters });
+      throw error;
+    }
+  }
+
+  /**
+   * Get ROV metrics for reporting
+   */
+  async getROVMetrics(startDate: Date, endDate: Date, filters?: any): Promise<any> {
+    try {
+      if (!this.rovRequestsContainer) {
+        throw new Error('ROV requests container not initialized');
+      }
+
+      // Query all ROVs in date range
+      let query = 'SELECT * FROM c WHERE c.submittedAt >= @startDate AND c.submittedAt <= @endDate';
+      const parameters: any[] = [
+        { name: '@startDate', value: startDate.toISOString() },
+        { name: '@endDate', value: endDate.toISOString() }
+      ];
+
+      if (filters?.status && filters.status.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@statuses, c.status)';
+        parameters.push({ name: '@statuses', value: filters.status });
+      }
+
+      const querySpec = { query, parameters };
+      const { resources } = await this.rovRequestsContainer.items.query(querySpec).fetchAll();
+
+      // Calculate metrics
+      const metrics = {
+        totalRequests: resources.length,
+        byStatus: {} as any,
+        byDecision: {} as any,
+        byRequestorType: {} as any,
+        byChallengeReason: {} as any,
+        averageResolutionTime: 0,
+        averageValueChange: 0,
+        valueIncreaseRate: 0,
+        slaCompliance: 0,
+        overdueCount: 0
+      };
+
+      let totalResolutionTime = 0;
+      let totalValueChange = 0;
+      let valueIncreaseCount = 0;
+      let completedCount = 0;
+      let slaCompliantCount = 0;
+
+      resources.forEach((rov: any) => {
+        // Count by status
+        metrics.byStatus[rov.status] = (metrics.byStatus[rov.status] || 0) + 1;
+
+        // Count by requestor type
+        metrics.byRequestorType[rov.requestorType] = (metrics.byRequestorType[rov.requestorType] || 0) + 1;
+
+        // Count by challenge reason
+        metrics.byChallengeReason[rov.challengeReason] = (metrics.byChallengeReason[rov.challengeReason] || 0) + 1;
+
+        // Count by decision
+        if (rov.response?.decision) {
+          metrics.byDecision[rov.response.decision] = (metrics.byDecision[rov.response.decision] || 0) + 1;
+        }
+
+        // Calculate resolution time for completed
+        if (rov.completedAt) {
+          completedCount++;
+          const submittedAt = new Date(rov.submittedAt);
+          const completedAt = new Date(rov.completedAt);
+          totalResolutionTime += (completedAt.getTime() - submittedAt.getTime()) / (1000 * 60 * 60 * 24); // days
+          
+          // SLA compliance
+          if (!rov.slaTracking.isOverdue) {
+            slaCompliantCount++;
+          }
+        }
+
+        // Calculate value changes
+        if (rov.response?.valueChangeAmount) {
+          totalValueChange += Math.abs(rov.response.valueChangeAmount);
+          
+          if (rov.response.valueChangeAmount > 0) {
+            valueIncreaseCount++;
+          }
+        }
+
+        // Count overdue
+        if (rov.slaTracking?.isOverdue) {
+          metrics.overdueCount++;
+        }
+      });
+
+      // Calculate averages
+      if (completedCount > 0) {
+        metrics.averageResolutionTime = totalResolutionTime / completedCount;
+        metrics.slaCompliance = (slaCompliantCount / completedCount) * 100;
+      }
+
+      if (metrics.totalRequests > 0) {
+        metrics.averageValueChange = totalValueChange / metrics.totalRequests;
+        metrics.valueIncreaseRate = (valueIncreaseCount / metrics.totalRequests) * 100;
+      }
+
+      return metrics;
+    } catch (error) {
+      this.logger.error('Failed to get ROV metrics', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get ROV count for a specific year (for ROV number generation)
+   */
+  async getROVCountForYear(year: number): Promise<number> {
+    try {
+      if (!this.rovRequestsContainer) {
+        throw new Error('ROV requests container not initialized');
+      }
+
+      const query = 'SELECT VALUE COUNT(1) FROM c WHERE STARTSWITH(c.rovNumber, @prefix)';
+      const parameters = [{ name: '@prefix', value: `ROV-${year}-` }];
+      
+      const querySpec = { query, parameters };
+      const { resources } = await this.rovRequestsContainer.items.query(querySpec).fetchAll();
+
+      return resources[0] || 0;
+    } catch (error) {
+      this.logger.error('Failed to get ROV count for year', { error, year });
+      throw error;
+    }
+  }
+
+  // ===============================
+  // Template Operations
+  // ===============================
+
+  /**
+   * Create a new template
+   */
+  async createTemplate(template: any): Promise<any> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      const { resource } = await this.templatesContainer.items.create(template);
+      this.logger.info('Template created', { templateId: resource?.id, name: resource?.name });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to create template', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing template
+   */
+  async updateTemplate(templateId: string, updates: any): Promise<any> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      // Read existing document
+      const { resource: existing } = await this.templatesContainer.item(templateId, templateId).read();
+      
+      if (!existing) {
+        throw new Error(`Template not found: ${templateId}`);
+      }
+
+      // Merge updates
+      const updated = {
+        ...existing,
+        ...updates,
+        updatedAt: new Date()
+      };
+
+      // Replace document
+      const { resource } = await this.templatesContainer.item(templateId, templateId).replace(updated);
+      this.logger.info('Template updated', { templateId, name: resource?.name });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to update template', { error, templateId });
+      throw error;
+    }
+  }
+
+  /**
+   * Find template by ID
+   */
+  async findTemplateById(templateId: string): Promise<any | null> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      const { resource } = await this.templatesContainer.item(templateId, templateId).read();
+      return resource || null;
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null;
+      }
+      this.logger.error('Failed to find template', { error, templateId });
+      throw error;
+    }
+  }
+
+  /**
+   * Find templates with filters
+   */
+  async findTemplates(filters: any, offset: number = 0, limit: number = 50): Promise<any[]> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      // Build dynamic query
+      let query = 'SELECT * FROM c WHERE 1=1';
+      const parameters: any[] = [];
+
+      // Add filters
+      if (filters.category && filters.category.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@categories, c.category)';
+        parameters.push({ name: '@categories', value: filters.category });
+      }
+
+      if (filters.formType && filters.formType.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@formTypes, c.formType)';
+        parameters.push({ name: '@formTypes', value: filters.formType });
+      }
+
+      if (filters.format && filters.format.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@formats, c.format)';
+        parameters.push({ name: '@formats', value: filters.format });
+      }
+
+      if (filters.status && filters.status.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@statuses, c.status)';
+        parameters.push({ name: '@statuses', value: filters.status });
+      }
+
+      if (filters.isDefault !== undefined) {
+        query += ' AND c.isDefault = @isDefault';
+        parameters.push({ name: '@isDefault', value: filters.isDefault });
+      }
+
+      if (filters.createdBy) {
+        query += ' AND c.createdBy = @createdBy';
+        parameters.push({ name: '@createdBy', value: filters.createdBy });
+      }
+
+      if (filters.search) {
+        query += ' AND (CONTAINS(LOWER(c.name), LOWER(@search)) OR CONTAINS(LOWER(c.description), LOWER(@search)))';
+        parameters.push({ name: '@search', value: filters.search });
+      }
+
+      if (filters.tags && filters.tags.length > 0) {
+        query += ' AND ARRAY_CONTAINS_ANY(c.tags, @tags)';
+        parameters.push({ name: '@tags', value: filters.tags });
+      }
+
+      // Add ordering and pagination
+      query += ' ORDER BY c.updatedAt DESC OFFSET @offset LIMIT @limit';
+      parameters.push({ name: '@offset', value: offset });
+      parameters.push({ name: '@limit', value: limit });
+
+      const querySpec = { query, parameters };
+      const { resources } = await this.templatesContainer.items.query(querySpec).fetchAll();
+
+      return resources;
+    } catch (error) {
+      this.logger.error('Failed to find templates', { error, filters });
+      throw error;
+    }
+  }
+
+  /**
+   * Count templates matching filters
+   */
+  async countTemplates(filters: any): Promise<number> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      // Build dynamic query (similar to findTemplates but COUNT only)
+      let query = 'SELECT VALUE COUNT(1) FROM c WHERE 1=1';
+      const parameters: any[] = [];
+
+      // Add same filters as findTemplates
+      if (filters.category && filters.category.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@categories, c.category)';
+        parameters.push({ name: '@categories', value: filters.category });
+      }
+
+      if (filters.formType && filters.formType.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@formTypes, c.formType)';
+        parameters.push({ name: '@formTypes', value: filters.formType });
+      }
+
+      if (filters.status && filters.status.length > 0) {
+        query += ' AND ARRAY_CONTAINS(@statuses, c.status)';
+        parameters.push({ name: '@statuses', value: filters.status });
+      }
+
+      if (filters.search) {
+        query += ' AND (CONTAINS(LOWER(c.name), LOWER(@search)) OR CONTAINS(LOWER(c.description), LOWER(@search)))';
+        parameters.push({ name: '@search', value: filters.search });
+      }
+
+      const querySpec = { query, parameters };
+      const { resources } = await this.templatesContainer.items.query(querySpec).fetchAll();
+
+      return resources[0] || 0;
+    } catch (error) {
+      this.logger.error('Failed to count templates', { error, filters });
+      throw error;
+    }
+  }
+
+  /**
+   * Unset default templates for a category
+   */
+  async unsetDefaultTemplates(category: string): Promise<void> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      // Query current default templates for this category
+      const query = 'SELECT * FROM c WHERE c.category = @category AND c.isDefault = true';
+      const parameters = [{ name: '@category', value: category }];
+      
+      const querySpec = { query, parameters };
+      const { resources } = await this.templatesContainer.items.query(querySpec).fetchAll();
+
+      // Update each to not be default
+      for (const template of resources) {
+        await this.templatesContainer.item(template.id, template.id).replace({
+          ...template,
+          isDefault: false
+        });
+      }
+
+      this.logger.info('Unset default templates', { category, count: resources.length });
+    } catch (error) {
+      this.logger.error('Failed to unset default templates', { error, category });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete template
+   */
+  async deleteTemplate(templateId: string): Promise<void> {
+    try {
+      if (!this.templatesContainer) {
+        throw new Error('Templates container not initialized');
+      }
+
+      await this.templatesContainer.item(templateId, templateId).delete();
+      this.logger.info('Template deleted', { templateId });
+    } catch (error) {
+      this.logger.error('Failed to delete template', { error, templateId });
+      throw error;
+    }
+  }
+
+  // ===============================
+  // Appraisal Review Operations
+  // ===============================
+
+  /**
+   * Create a new appraisal review
+   */
+  async createReview(review: any): Promise<any> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      const { resource } = await this.reviewsContainer.items.create(review);
+      this.logger.info('Appraisal review created', { reviewId: resource?.id, reviewType: resource?.reviewType });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to create appraisal review', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing appraisal review
+   */
+  async updateReview(reviewId: string, updates: any): Promise<any> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      // Read existing document
+      const { resource: existing } = await this.reviewsContainer.item(reviewId, reviewId).read();
+      
+      if (!existing) {
+        throw new Error(`Review not found: ${reviewId}`);
+      }
+
+      // Merge updates
+      const updated = {
+        ...existing,
+        ...updates,
+        metadata: {
+          ...existing.metadata,
+          updatedAt: new Date(),
+          updatedBy: updates.metadata?.updatedBy || existing.metadata?.updatedBy
+        }
+      };
+
+      // Replace document
+      const { resource } = await this.reviewsContainer.item(reviewId, reviewId).replace(updated);
+      this.logger.info('Appraisal review updated', { reviewId, status: resource?.status });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to update appraisal review', { error, reviewId });
+      throw error;
+    }
+  }
+
+  /**
+   * Find appraisal review by ID
+   */
+  async findReviewById(reviewId: string): Promise<any | null> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      const { resource } = await this.reviewsContainer.item(reviewId, reviewId).read();
+      return resource || null;
+    } catch (error: any) {
+      if (error.code === 404) {
+        return null;
+      }
+      this.logger.error('Failed to find appraisal review', { error, reviewId });
+      throw error;
+    }
+  }
+
+  /**
+   * Find appraisal reviews with filters
+   */
+  async findReviews(filters: any, offset: number = 0, limit: number = 20): Promise<any[]> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      let query = 'SELECT * FROM c WHERE 1=1';
+      const parameters: any[] = [];
+
+      // Add filter conditions
+      if (filters.tenantId) {
+        query += ' AND c.tenantId = @tenantId';
+        parameters.push({ name: '@tenantId', value: filters.tenantId });
+      }
+
+      if (filters.orderId) {
+        query += ' AND c.orderId = @orderId';
+        parameters.push({ name: '@orderId', value: filters.orderId });
+      }
+
+      if (filters.reviewType) {
+        query += ' AND c.reviewType = @reviewType';
+        parameters.push({ name: '@reviewType', value: filters.reviewType });
+      }
+
+      if (filters.status) {
+        query += ' AND c.status = @status';
+        parameters.push({ name: '@status', value: filters.status });
+      }
+
+      if (filters.priority) {
+        query += ' AND c.priority = @priority';
+        parameters.push({ name: '@priority', value: filters.priority });
+      }
+
+      if (filters.assignedTo) {
+        query += ' AND c.assignedTo = @assignedTo';
+        parameters.push({ name: '@assignedTo', value: filters.assignedTo });
+      }
+
+      if (filters.requestedBy) {
+        query += ' AND c.requestedBy = @requestedBy';
+        parameters.push({ name: '@requestedBy', value: filters.requestedBy });
+      }
+
+      if (filters.dateFrom) {
+        query += ' AND c.requestedAt >= @dateFrom';
+        parameters.push({ name: '@dateFrom', value: filters.dateFrom });
+      }
+
+      if (filters.dateTo) {
+        query += ' AND c.requestedAt <= @dateTo';
+        parameters.push({ name: '@dateTo', value: filters.dateTo });
+      }
+
+      // Add ordering and pagination
+      query += ' ORDER BY c.requestedAt DESC';
+      query += ` OFFSET ${offset} LIMIT ${limit}`;
+
+      const querySpec = { query, parameters };
+      const { resources } = await this.reviewsContainer.items.query(querySpec).fetchAll();
+      
+      return resources;
+    } catch (error) {
+      this.logger.error('Failed to find appraisal reviews', { error, filters });
+      throw error;
+    }
+  }
+
+  /**
+   * Count appraisal reviews with filters
+   */
+  async countReviews(filters: any): Promise<number> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      let query = 'SELECT VALUE COUNT(1) FROM c WHERE 1=1';
+      const parameters: any[] = [];
+
+      // Add same filter conditions as findReviews
+      if (filters.tenantId) {
+        query += ' AND c.tenantId = @tenantId';
+        parameters.push({ name: '@tenantId', value: filters.tenantId });
+      }
+
+      if (filters.orderId) {
+        query += ' AND c.orderId = @orderId';
+        parameters.push({ name: '@orderId', value: filters.orderId });
+      }
+
+      if (filters.reviewType) {
+        query += ' AND c.reviewType = @reviewType';
+        parameters.push({ name: '@reviewType', value: filters.reviewType });
+      }
+
+      if (filters.status) {
+        query += ' AND c.status = @status';
+        parameters.push({ name: '@status', value: filters.status });
+      }
+
+      if (filters.priority) {
+        query += ' AND c.priority = @priority';
+        parameters.push({ name: '@priority', value: filters.priority });
+      }
+
+      if (filters.assignedTo) {
+        query += ' AND c.assignedTo = @assignedTo';
+        parameters.push({ name: '@assignedTo', value: filters.assignedTo });
+      }
+
+      if (filters.requestedBy) {
+        query += ' AND c.requestedBy = @requestedBy';
+        parameters.push({ name: '@requestedBy', value: filters.requestedBy });
+      }
+
+      if (filters.dateFrom) {
+        query += ' AND c.requestedAt >= @dateFrom';
+        parameters.push({ name: '@dateFrom', value: filters.dateFrom });
+      }
+
+      if (filters.dateTo) {
+        query += ' AND c.requestedAt <= @dateTo';
+        parameters.push({ name: '@dateTo', value: filters.dateTo });
+      }
+
+      const querySpec = { query, parameters };
+      const { resources } = await this.reviewsContainer.items.query<number>(querySpec).fetchAll();
+      
+      return resources[0] || 0;
+    } catch (error) {
+      this.logger.error('Failed to count appraisal reviews', { error, filters });
+      throw error;
+    }
+  }
+
+  // ===============================
+  // Comparable Analysis Operations
+  // ===============================
+
+  /**
+   * Save comparable analysis
+   */
+  async saveComparableAnalysis(analysis: any): Promise<any> {
+    try {
+      if (!this.comparableAnalysesContainer) {
+        throw new Error('Comparable analyses container not initialized');
+      }
+
+      const { resource } = await this.comparableAnalysesContainer.items.upsert(analysis);
+      this.logger.info('Comparable analysis saved', { reviewId: resource?.reviewId });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to save comparable analysis', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Find comparable analysis by review ID
+   */
+  async findComparableAnalysisByReviewId(reviewId: string): Promise<any | null> {
+    try {
+      if (!this.comparableAnalysesContainer) {
+        throw new Error('Comparable analyses container not initialized');
+      }
+
+      const query = 'SELECT * FROM c WHERE c.reviewId = @reviewId';
+      const parameters = [{ name: '@reviewId', value: reviewId }];
+      
+      const querySpec = { query, parameters };
+      const { resources } = await this.comparableAnalysesContainer.items.query(querySpec).fetchAll();
+      
+      return resources[0] || null;
+    } catch (error) {
+      this.logger.error('Failed to find comparable analysis', { error, reviewId });
+      throw error;
+    }
+  }
+
+  // ===============================
+  // Review Report Operations
+  // ===============================
+
+  /**
+   * Save review report
+   */
+  async saveReviewReport(report: any): Promise<any> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      // Store reports as subdocuments in reviews container with report type
+      const { resource } = await this.reviewsContainer.items.create({
+        ...report,
+        docType: 'review-report' // Discriminator for querying
+      });
+      this.logger.info('Review report saved', { reportId: resource?.id, reviewId: resource?.reviewId });
+      return resource;
+    } catch (error) {
+      this.logger.error('Failed to save review report', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Find review reports by review ID
+   */
+  async findReviewReportsByReviewId(reviewId: string): Promise<any[]> {
+    try {
+      if (!this.reviewsContainer) {
+        throw new Error('Reviews container not initialized');
+      }
+
+      const query = 'SELECT * FROM c WHERE c.docType = @docType AND c.reviewId = @reviewId ORDER BY c.preparedDate DESC';
+      const parameters = [
+        { name: '@docType', value: 'review-report' },
+        { name: '@reviewId', value: reviewId }
+      ];
+      
+      const querySpec = { query, parameters };
+      const { resources } = await this.reviewsContainer.items.query(querySpec).fetchAll();
+      
+      return resources;
+    } catch (error) {
+      this.logger.error('Failed to find review reports', { error, reviewId });
       throw error;
     }
   }

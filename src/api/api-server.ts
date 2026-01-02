@@ -24,6 +24,12 @@ import { Logger } from '../utils/logger';
 // Import Azure Entra ID authentication
 import { createAzureEntraAuth, AuthenticatedRequest as EntraAuthRequest } from '../middleware/azure-entra-auth.middleware';
 
+// Import Unified Authentication (Azure AD + Test Tokens)
+import { createUnifiedAuth, UnifiedAuthRequest } from '../middleware/unified-auth.middleware';
+
+// Import Authorization middleware
+import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middleware/authorization.middleware';
+
 // Import QC controllers and middleware
 import { qcChecklistRouter } from '../controllers/criteria.controller';
 import { qcExecutionRouter } from '../controllers/reviews.controller';
@@ -41,6 +47,20 @@ import fraudDetectionRouter from '../controllers/fraud-detection.controller';
 // Import QC Workflow controller
 import qcWorkflowRouter from '../controllers/qc-workflow.controller';
 
+// Import Authorization controllers
+import { createUserProfileRouter } from '../controllers/user-profile.controller';
+import { createAccessGraphRouter } from '../controllers/access-graph.controller';
+import { createAuthorizationTestRouter } from '../controllers/authorization-test.controller';
+
+// Import ROV controller
+import { createROVRouter } from '../controllers/rov.controller';
+
+// Import Template controller
+import { createTemplateRouter } from '../controllers/template.controller';
+
+// Import Review controller
+import { createReviewRouter } from '../controllers/review.controller';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -48,8 +68,8 @@ import {
   errorHandler
 } from '../middleware/qc-api-validation.middleware';
 
-// Use Azure Entra auth request type
-type AuthenticatedRequest = EntraAuthRequest;
+// Use unified auth request type (supports both Azure AD and test tokens)
+type AuthenticatedRequest = UnifiedAuthRequest;
 
 export class AppraisalManagementAPIServer {
   private app: express.Application;
@@ -60,6 +80,8 @@ export class AppraisalManagementAPIServer {
   private logger: Logger;
   private port: number;
   private azureAuth: ReturnType<typeof createAzureEntraAuth>;
+  private unifiedAuth: ReturnType<typeof createUnifiedAuth>;
+  private authzMiddleware?: AuthorizationMiddleware;
   
   // QC routers
   private qcChecklistRouter: express.Router;
@@ -79,6 +101,9 @@ export class AppraisalManagementAPIServer {
     this.azureAuth = createAzureEntraAuth();
     this.configureAzureRoles();
     
+    // Initialize Unified Authentication (Azure AD + Test Tokens)
+    this.unifiedAuth = createUnifiedAuth();
+    
     // Initialize QC routers
     this.qcChecklistRouter = qcChecklistRouter;
     this.qcExecutionRouter = qcExecutionRouter;
@@ -86,10 +111,21 @@ export class AppraisalManagementAPIServer {
     
     this.setupMiddleware();
     this.setupRoutes();
-    this.setupErrorHandling();
+    // NOTE: Error handling moved to after authorization routes are registered
   }
 
   private async initializeDatabase(): Promise<void> {
+    
+    // Initialize authorization middleware after database is ready
+    this.authzMiddleware = await createAuthorizationMiddleware();
+    this.logger.info('Authorization middleware initialized');
+    
+    // Register authorization routes AFTER middleware is initialized
+    this.setupAuthorizationRoutes();
+    
+    // Register error handlers LAST (after all routes)
+    this.setupErrorHandling();
+    
     await this.dbService.initialize();
   }
 
@@ -161,6 +197,57 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(this.getSwaggerSpec()));
   }
 
+  /**
+   * Setup authorization-related routes
+   * Called AFTER authzMiddleware is initialized
+   */
+  private setupAuthorizationRoutes(): void {
+    if (!this.authzMiddleware) {
+      this.logger.warn('Authorization middleware not initialized - skipping authorization routes');
+      return;
+    }
+
+    this.logger.info('Registering authorization routes...');
+
+    // User profile management (admin/manager only)
+    this.app.use('/api/users',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.unifiedAuth.requireRole('admin', 'manager'),
+      createUserProfileRouter()
+    );
+
+    // Access graph management (admin only)
+    this.app.use('/api/access-graph',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.unifiedAuth.requireRole('admin'),
+      createAccessGraphRouter()
+    );
+
+    // Authorization testing endpoint (authenticated users only)
+    this.app.use('/api/authz-test',
+      this.unifiedAuth.authenticate(),
+      createAuthorizationTestRouter()
+    );
+
+    // ROV Management (authenticated users with proper permissions)
+    this.app.use('/api/rov',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createROVRouter()
+    );
+
+    // Template Management (authenticated users with proper permissions)
+    this.app.use('/api/templates',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createTemplateRouter()
+    );
+
+    this.logger.info('✅ Authorization routes registered successfully');
+  }
+
   private setupRoutes(): void {
     // Health check
     this.app.get('/health', this.getHealthCheck.bind(this));
@@ -168,81 +255,86 @@ export class AppraisalManagementAPIServer {
     // Authentication routes
     this.app.post('/api/auth/login', this.validateLogin(), this.login.bind(this));
     this.app.post('/api/auth/register', this.validateRegister(), this.register.bind(this));
-    this.app.post('/api/auth/refresh', this.authenticateToken.bind(this), this.refreshToken.bind(this));
+    this.app.post('/api/auth/refresh', this.unifiedAuth.authenticate(), this.refreshToken.bind(this));
 
-    // Order Management routes
+    // NOTE: Authorization routes registered separately after authzMiddleware initialization
+
+    // Order Management routes (with authorization)
     this.app.post('/api/orders', 
-      this.authenticateToken.bind(this), 
+      this.unifiedAuth.authenticate(), 
       this.validateOrderCreation(), 
       this.createOrder.bind(this)
     );
     
+    // TEST: Authorization on GET /api/orders (audit mode)
     this.app.get('/api/orders', 
-      this.authenticateToken.bind(this), 
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware ? this.authzMiddleware.loadUserProfile() : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
+      this.authzMiddleware ? this.authzMiddleware.authorizeQuery('order', 'read') : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
       this.validateOrderQuery(),
       this.getOrders.bind(this)
     );
     
     this.app.get('/api/orders/:orderId', 
-      this.authenticateToken.bind(this), 
+      this.unifiedAuth.authenticate(), 
       this.validateOrderId(),
       this.getOrder.bind(this)
     );
     
     this.app.put('/api/orders/:orderId/status', 
-      this.authenticateToken.bind(this), 
+      this.unifiedAuth.authenticate(), 
       this.validateOrderId(),
       this.validateStatusUpdate(),
       this.updateOrderStatus.bind(this)
     );
 
     this.app.post('/api/orders/:orderId/deliver',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.validateOrderId(),
       this.validateDelivery(),
       this.deliverOrder.bind(this)
     );
 
     this.app.get('/api/orders/dashboard',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.getOrderDashboard.bind(this)
     );
 
     // QC Validation routes
     this.app.post('/api/qc/validate/:orderId',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('qc_validate'),
       this.validateOrderId(),
       this.performQCValidation.bind(this)
     );
 
     this.app.get('/api/qc/results/:orderId',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.validateOrderId(),
       this.getQCResults.bind(this)
     );
 
     this.app.get('/api/qc/metrics',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('qc_metrics'),
       this.getQCMetrics.bind(this)
     );
 
     // Vendor Management routes
     this.app.get('/api/vendors',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.getVendors.bind(this)
     );
 
     this.app.post('/api/vendors',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('vendor_manage'),
       this.validateVendorCreation(),
       this.createVendor.bind(this)
     );
 
     this.app.put('/api/vendors/:vendorId',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('vendor_manage'),
       this.validateVendorId(),
       this.validateVendorUpdate(),
@@ -250,27 +342,27 @@ export class AppraisalManagementAPIServer {
     );
 
     this.app.post('/api/vendors/assign/:orderId',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('vendor_assign'),
       this.validateOrderId(),
       this.assignVendor.bind(this)
     );
 
     this.app.get('/api/vendors/performance/:vendorId',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.validateVendorId(),
       this.getVendorPerformance.bind(this)
     );
 
     // Analytics routes
     this.app.get('/api/analytics/overview',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('analytics_view'),
       this.getAnalyticsOverview.bind(this)
     );
 
     this.app.get('/api/analytics/performance',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('analytics_view'),
       this.validateAnalyticsQuery(),
       this.getPerformanceAnalytics.bind(this)
@@ -278,62 +370,62 @@ export class AppraisalManagementAPIServer {
 
     // Property Intelligence routes
     this.app.post('/api/property-intelligence/address/geocode',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.geocodeAddress
     );
 
     this.app.post('/api/property-intelligence/address/validate',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.validateAddress
     );
 
     this.app.post('/api/property-intelligence/analyze/comprehensive',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.comprehensiveAnalysis
     );
 
     this.app.post('/api/property-intelligence/analyze/creative',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.creativeFeatureAnalysis
     );
 
     this.app.post('/api/property-intelligence/analyze/view',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.viewAnalysis
     );
 
     this.app.post('/api/property-intelligence/analyze/transportation',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.transportationAnalysis
     );
 
     this.app.post('/api/property-intelligence/analyze/neighborhood',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.neighborhoodAnalysis
     );
 
     this.app.post('/api/property-intelligence/analyze/batch',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.batchAnalysis
     );
 
     this.app.get('/api/property-intelligence/census/demographics',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.getCensusDemographics
     );
 
     this.app.get('/api/property-intelligence/census/economics',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.getCensusEconomics
     );
 
     this.app.get('/api/property-intelligence/census/housing',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.getCensusHousing
     );
 
     this.app.get('/api/property-intelligence/census/comprehensive',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.getComprehensiveCensusIntelligence
     );
 
@@ -353,19 +445,19 @@ export class AppraisalManagementAPIServer {
 
     // Geospatial Risk Assessment routes (FEMA, Census, Tribal, Environmental)
     this.app.use('/api/geospatial',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       createGeospatialRouter()
     );
 
     // Bridge Interactive MLS routes
     this.app.use('/api/bridge-mls',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       createBridgeMlsRouter()
     );
 
     // Dynamic Code Execution routes
     this.app.post('/api/code/execute',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('code_execute'),
       this.validateCodeExecution(),
       this.executeCode.bind(this)
@@ -373,58 +465,58 @@ export class AppraisalManagementAPIServer {
 
     // AI Services routes
     this.app.post('/api/ai/qc/analyze',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('qc_validate'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performQCAnalysis
     );
 
     this.app.post('/api/ai/qc/technical',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('qc_validate'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performTechnicalQC
     );
 
     this.app.post('/api/ai/qc/compliance',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('qc_validate'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performComplianceQC
     );
 
     this.app.post('/api/ai/market/insights',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.aiServicesController.validateMarketInsights(),
       this.aiServicesController.generateMarketInsights
     );
 
     this.app.post('/api/ai/property/description',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.aiServicesController.validateMarketInsights(),
       this.aiServicesController.generatePropertyDescription
     );
 
     this.app.post('/api/ai/vision/analyze',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.aiServicesController.validateImageAnalysis(),
       this.aiServicesController.analyzePropertyImages
     );
 
     this.app.post('/api/ai/vision/condition',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.aiServicesController.validateImageAnalysis(),
       this.aiServicesController.analyzePropertyCondition
     );
 
     this.app.post('/api/ai/embeddings',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.aiServicesController.validateEmbeddingGeneration(),
       this.aiServicesController.generateEmbeddings
     );
 
     this.app.post('/api/ai/completion',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('ai_generate'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletion
@@ -436,18 +528,18 @@ export class AppraisalManagementAPIServer {
 
     // AVM (Automated Valuation Model) routes
     this.app.use('/api/avm',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       avmRouter
     );
 
     // Fraud Detection routes
     this.app.use('/api/fraud-detection',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       fraudDetectionRouter
     );
 
     this.app.get('/api/ai/usage',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('analytics_view'),
       this.aiServicesController.getUsageStats
     );
@@ -455,25 +547,32 @@ export class AppraisalManagementAPIServer {
     // QC Management routes - comprehensive quality control system
     // Mount QC router modules with authentication
     this.app.use('/api/qc/checklists', 
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.qcChecklistRouter
     );
     
     this.app.use('/api/qc/execution', 
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.requirePermission('qc_execute'),
       this.qcExecutionRouter
     );
     
     this.app.use('/api/qc/results', 
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       this.qcResultsRouter
     );
 
     // QC Workflow Automation routes - review queue, revisions, escalations, SLA tracking
     this.app.use('/api/qc-workflow',
-      this.authenticateToken.bind(this),
+      this.unifiedAuth.authenticate(),
       qcWorkflowRouter
+    );
+
+    // Appraisal Review routes - review assignment, workflow, comparable analysis, reports
+    this.app.use('/api/reviews',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createReviewRouter()
     );
   }
 

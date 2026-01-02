@@ -1,0 +1,87 @@
+# Appraisal Management Platform - Authorization Policies
+# Format: p, subject_pattern, object_pattern, action, effect
+
+# ============================================
+# ADMIN ROLE - Full Access (using regex patterns)
+# ============================================
+p, admin:.*, .*, read, allow
+p, admin:.*, .*, create, allow
+p, admin:.*, .*, update, allow
+p, admin:.*, .*, delete, allow
+p, admin:.*, .*, execute, allow
+p, admin:.*, .*, approve, allow
+p, admin:.*, .*, reject, allow
+
+# ============================================
+# MANAGER ROLE - Broad Access
+# ============================================
+p, manager:.*, order:.*, read, allow
+p, manager:.*, order:.*, create, allow
+p, manager:.*, order:.*, update, allow
+p, manager:.*, vendor:.*, read, allow
+p, manager:.*, vendor:.*, update, allow
+p, manager:.*, analytics:.*, read, allow
+p, manager:.*, qc_review:.*, read, allow
+p, manager:.*, user:.*, read, allow
+
+# ============================================
+# QC ANALYST ROLE - QC Operations
+# ============================================
+p, qc_analyst:.*, order:.*, read, allow
+p, qc_analyst:.*, qc_review:.*, read, allow
+p, qc_analyst:.*, qc_review:.*, create, allow
+p, qc_analyst:.*, qc_review:.*, update, allow
+p, qc_analyst:.*, qc_review:.*, execute, allow
+p, qc_analyst:.*, qc_review:.*, approve, allow
+p, qc_analyst:.*, qc_review:.*, reject, allow
+p, qc_analyst:.*, qc_queue:.*, read, allow
+
+# ============================================
+# APPRAISER ROLE - Own Orders Only
+# ============================================
+p, appraiser:.*, order:.*, read, allow
+p, appraiser:.*, order:.*, update, allow
+p, appraiser:.*, revision:.*, create, allow
+p, appraiser:.*, escalation:.*, create, allow
+p, r.sub.role == "qc_analyst", r.obj.type == "qc_queue", read, allow
+
+# Revision management
+p, r.sub.role == "qc_analyst" && r.obj.assignedUserIds && r.obj.assignedUserIds.includes(r.sub.id), r.obj.type == "revision", read, allow
+p, r.sub.role == "qc_analyst" && r.obj.assignedUserIds && r.obj.assignedUserIds.includes(r.sub.id), r.obj.type == "revision", create, allow
+
+# Escalation creation
+p, r.sub.role == "qc_analyst" && r.obj.assignedUserIds && r.obj.assignedUserIds.includes(r.sub.id), r.obj.type == "escalation", create, allow
+p, r.sub.role == "qc_analyst" && r.obj.assignedUserIds && r.obj.assignedUserIds.includes(r.sub.id), r.obj.type == "escalation", read, allow
+
+# ============================================
+# APPRAISER ROLE - Owned and Assigned Items
+# ============================================
+# Read owned orders
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "order", read, allow
+
+# Read assigned orders
+p, r.sub.role == "appraiser" && r.obj.assignedUserIds && r.obj.assignedUserIds.includes(r.sub.id), r.obj.type == "order", read, allow
+
+# Update owned orders
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "order", update, allow
+
+# Submit revisions for owned orders
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "revision", create, allow
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "revision", read, allow
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "revision", update, allow
+
+# Read QC reviews for owned orders
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "qc_review", read, allow
+
+# Create escalations
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "escalation", create, allow
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "escalation", read, allow
+
+# ============================================
+# SPECIAL PERMISSIONS
+# ============================================
+# Users with canViewAllOrders flag
+p, r.sub.canViewAllOrders == true, r.obj.type == "order", read, allow
+
+# Users with canViewAllVendors flag
+p, r.sub.canViewAllVendors == true, r.obj.type == "vendor", read, allow
