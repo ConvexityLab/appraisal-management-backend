@@ -46,6 +46,7 @@ export class ROVController {
         requestorPhone: req.body.requestorPhone,
         challengeReason: req.body.challengeReason,
         challengeDescription: req.body.challengeDescription,
+        originalAppraisalValue: req.body.originalAppraisalValue,
         requestedValue: req.body.requestedValue,
         supportingEvidence: req.body.supportingEvidence,
         priority: req.body.priority

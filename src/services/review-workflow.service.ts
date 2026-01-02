@@ -55,7 +55,7 @@ export class ReviewWorkflowService {
       requestReason: request.requestReason,
       assignmentMethod: request.assignToReviewer ? 'MANUAL' : 'AUTOMATIC',
       status: ReviewStatus.REQUESTED,
-      currentStage: stages[0],
+      currentStage: stages[0]!,
       stages,
       findings: [],
       originalValue: 0, // Will be populated from appraisal document
@@ -63,7 +63,7 @@ export class ReviewWorkflowService {
       reviewerNotes: [],
       escalations: [],
       supplementalRequests: [],
-      dueDate: request.dueDate,
+      ...(request.dueDate ? { dueDate: request.dueDate } : {}),
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: requestedBy,
@@ -120,7 +120,7 @@ export class ReviewWorkflowService {
         createdBy: assignedBy,
         createdAt: new Date()
       };
-      updates['reviewerNotes'] = [...review.reviewerNotes, note];
+      (updates as any).reviewerNotes = [...review.reviewerNotes, note];
     }
 
     await this.dbService.updateReview(reviewId, updates);
@@ -278,7 +278,7 @@ export class ReviewWorkflowService {
       throw new Error('Review not found');
     }
 
-    const currentStageIndex = review.stages.findIndex(s => s.order === review.currentStage.order);
+    const currentStageIndex = review.stages.findIndex((s: ReviewStage) => s.order === review.currentStage.order);
     if (currentStageIndex === -1 || currentStageIndex === review.stages.length - 1) {
       throw new Error('No next stage available');
     }
@@ -399,7 +399,7 @@ export class ReviewWorkflowService {
     const escalation: ReviewEscalation = {
       id: this.generateId(),
       reason,
-      escalatedTo,
+      escalatedTo: escalateTo,
       escalatedBy,
       escalatedAt: new Date()
     };
@@ -433,7 +433,7 @@ export class ReviewWorkflowService {
     }
 
     // Complete all remaining stages
-    const stages = review.stages.map(stage => ({
+    const stages = review.stages.map((stage: ReviewStage) => ({
       ...stage,
       status: stage.status === 'PENDING' ? 'SKIPPED' as const : 
               stage.status === 'IN_PROGRESS' ? 'COMPLETED' as const : 
@@ -485,8 +485,9 @@ export class ReviewWorkflowService {
   ): Promise<{ reviews: AppraisalReview[]; total: number; page: number; totalPages: number }> {
     const offset = (page - 1) * limit;
     
-    const reviews = await this.dbService.findReviews(tenantId, filters, offset, limit);
-    const total = await this.dbService.countReviews(tenantId, filters);
+    const reviewFilters = { tenantId, ...filters };
+    const reviews = await this.dbService.findReviews(reviewFilters, offset, limit);
+    const total = await this.dbService.countReviews(reviewFilters);
 
     return {
       reviews,
@@ -500,7 +501,7 @@ export class ReviewWorkflowService {
    * Get review metrics
    */
   async getReviewMetrics(tenantId: string, dateFrom?: Date, dateTo?: Date): Promise<ReviewMetrics> {
-    const reviews = await this.dbService.findReviews(tenantId, { dateFrom, dateTo });
+    const reviews = await this.dbService.findReviews({ tenantId, dateFrom, dateTo });
 
     const metrics: ReviewMetrics = {
       totalReviews: reviews.length,
@@ -520,7 +521,7 @@ export class ReviewWorkflowService {
    * Get reviewer performance
    */
   async getReviewerPerformance(tenantId: string, reviewerId: string): Promise<ReviewerPerformance> {
-    const reviews = await this.dbService.findReviews(tenantId, { assignedTo: reviewerId });
+    const reviews = await this.dbService.findReviews({ tenantId, assignedTo: reviewerId });
     const completed = reviews.filter(r => r.status === ReviewStatus.COMPLETED);
 
     return {

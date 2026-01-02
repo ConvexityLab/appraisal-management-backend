@@ -47,6 +47,11 @@ export const createUserProfileRouter = (): Router => {
   router.get('/:userId', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId } = req.params;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+      
       const tenantId = req.userProfile?.tenantId || 'default';
 
       const profile = await userProfileService.getUserProfile(userId, tenantId);
@@ -58,13 +63,13 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile
       });
     } catch (error) {
       logger.error('Failed to get user', { error, userId: req.params.userId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to get user',
         code: 'INTERNAL_ERROR'
       });
@@ -87,14 +92,14 @@ export const createUserProfileRouter = (): Router => {
 
       const users = await userProfileService.listUsers(tenantId, filters);
 
-      res.json({
+      return res.json({
         success: true,
         data: users,
         count: users.length
       });
     } catch (error) {
       logger.error('Failed to list users', { error });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to list users',
         code: 'INTERNAL_ERROR'
       });
@@ -108,6 +113,11 @@ export const createUserProfileRouter = (): Router => {
   router.put('/:userId/access-scope', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId } = req.params;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+      
       const tenantId = req.userProfile?.tenantId || 'default';
       const updates = req.body;
 
@@ -120,13 +130,13 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile
       });
     } catch (error) {
       logger.error('Failed to update access scope', { error, userId: req.params.userId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to update access scope',
         code: 'INTERNAL_ERROR'
       });
@@ -140,6 +150,11 @@ export const createUserProfileRouter = (): Router => {
   router.post('/:userId/teams/:teamId', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId, teamId } = req.params;
+      
+      if (!userId || !teamId) {
+        return res.status(400).json({ error: 'User ID and Team ID are required', code: 'INVALID_REQUEST' });
+      }
+      
       const tenantId = req.userProfile?.tenantId || 'default';
 
       const profile = await userProfileService.addToTeam(userId, teamId, tenantId);
@@ -151,14 +166,14 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile,
         message: `User added to team ${teamId}`
       });
     } catch (error) {
       logger.error('Failed to add user to team', { error, userId: req.params.userId, teamId: req.params.teamId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to add user to team',
         code: 'INTERNAL_ERROR'
       });
@@ -172,6 +187,11 @@ export const createUserProfileRouter = (): Router => {
   router.delete('/:userId/teams/:teamId', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId, teamId } = req.params;
+      
+      if (!userId || !teamId) {
+        return res.status(400).json({ error: 'User ID and Team ID are required', code: 'INVALID_REQUEST' });
+      }
+      
       const tenantId = req.userProfile?.tenantId || 'default';
 
       const profile = await userProfileService.removeFromTeam(userId, teamId, tenantId);
@@ -183,14 +203,14 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile,
         message: `User removed from team ${teamId}`
       });
     } catch (error) {
       logger.error('Failed to remove user from team', { error, userId: req.params.userId, teamId: req.params.teamId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to remove user from team',
         code: 'INTERNAL_ERROR'
       });
@@ -204,6 +224,11 @@ export const createUserProfileRouter = (): Router => {
   router.post('/:userId/client-management', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId } = req.params;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+      
       const { clientIds } = req.body;
       const tenantId = req.userProfile?.tenantId || 'default';
 
@@ -223,14 +248,14 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile,
         message: `Assigned ${clientIds.length} client(s) to user`
       });
     } catch (error) {
       logger.error('Failed to assign client management', { error, userId: req.params.userId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to assign client management',
         code: 'INTERNAL_ERROR'
       });
@@ -244,6 +269,11 @@ export const createUserProfileRouter = (): Router => {
   router.post('/:userId/deactivate', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId } = req.params;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+      
       const tenantId = req.userProfile?.tenantId || 'default';
 
       const profile = await userProfileService.deactivateUser(userId, tenantId);
@@ -255,14 +285,14 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile,
         message: 'User deactivated'
       });
     } catch (error) {
       logger.error('Failed to deactivate user', { error, userId: req.params.userId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to deactivate user',
         code: 'INTERNAL_ERROR'
       });
@@ -276,6 +306,11 @@ export const createUserProfileRouter = (): Router => {
   router.post('/:userId/reactivate', async (req: AuthorizedRequest, res: Response) => {
     try {
       const { userId } = req.params;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+      
       const tenantId = req.userProfile?.tenantId || 'default';
 
       const profile = await userProfileService.reactivateUser(userId, tenantId);
@@ -287,14 +322,14 @@ export const createUserProfileRouter = (): Router => {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: profile,
         message: 'User reactivated'
       });
     } catch (error) {
       logger.error('Failed to reactivate user', { error, userId: req.params.userId });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to reactivate user',
         code: 'INTERNAL_ERROR'
       });

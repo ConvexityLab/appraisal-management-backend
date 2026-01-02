@@ -320,6 +320,7 @@ export interface CreateROVRequestInput {
   requestorPhone?: string;
   challengeReason: ROVChallengeReason;
   challengeDescription: string;
+  originalAppraisalValue: number;
   requestedValue?: number;
   supportingEvidence?: Omit<ROVEvidence, 'id' | 'uploadedAt'>[];
   priority?: 'NORMAL' | 'HIGH' | 'URGENT';

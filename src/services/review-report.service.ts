@@ -67,7 +67,7 @@ export class ReviewReportService {
       version: '1.0',
       certificationStatement: this.getCertificationStatement(request.reportType),
       certifiedBy: request.certify ? review.assignedTo || review.createdBy : '',
-      certifiedAt: request.certify ? new Date() : undefined,
+      ...(request.certify ? { certifiedAt: new Date() } : {}),
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -503,21 +503,32 @@ ${analysis.summary.valueIndicationRange ? `
     review: AppraisalReview,
     comparableAnalysis?: ComparableAnalysis
   ): Promise<Buffer> {
-    // Use template service to render HTML to PDF
-    const result = await this.templateService.renderAsPdf(
-      report.content,
-      {
-        id: report.id,
-        name: this.getReportTitle(report.reportType),
-        styles: {
-          pageSize: 'LETTER',
-          margins: { top: 72, bottom: 72, left: 72, right: 72 }
-        }
-      } as any,
-      {}
-    );
+    // Create a temporary template for rendering
+    const template = {
+      id: 'temp-review-report',
+      name: this.getReportTitle(report.reportType),
+      format: 'PDF' as any,
+      content: report.content,
+      styles: {
+        pageSize: 'LETTER',
+        margins: { top: 72, bottom: 72, left: 72, right: 72 }
+      }
+    };
 
-    return result;
+    const result = await this.templateService.renderTemplate({
+      templateId: template.id,
+      data: {},
+      format: 'PDF' as any
+    });
+
+    if (!result.success || !result.content) {
+      throw new Error('Failed to generate PDF');
+    }
+
+    // result.content could be string or Buffer, ensure it's a Buffer
+    return typeof result.content === 'string' 
+      ? Buffer.from(result.content, 'base64')
+      : result.content;
   }
 
   // ============================================================================

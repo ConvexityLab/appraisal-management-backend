@@ -32,12 +32,12 @@ export class AccessControlHelper {
   createAccessControl(options: AddAccessControlOptions): AccessControl {
     return {
       ownerId: options.ownerId,
-      ownerEmail: options.ownerEmail,
+      ...(options.ownerEmail ? { ownerEmail: options.ownerEmail } : {}),
       assignedUserIds: options.assignedUserIds || [],
-      teamId: options.teamId || undefined,
-      departmentId: options.departmentId || undefined,
-      clientId: options.clientId || undefined,
-      vendorId: options.vendorId || undefined,
+      ...(options.teamId ? { teamId: options.teamId } : {}),
+      ...(options.departmentId ? { departmentId: options.departmentId } : {}),
+      ...(options.clientId ? { clientId: options.clientId } : {}),
+      ...(options.vendorId ? { vendorId: options.vendorId } : {}),
       visibilityScope: options.visibilityScope || 'PRIVATE',
       tenantId: options.tenantId
     };
@@ -108,7 +108,7 @@ export class AccessControlHelper {
     return {
       ...accessControl,
       ownerId: newOwnerId,
-      ownerEmail: newOwnerEmail || accessControl.ownerEmail
+      ...(newOwnerEmail ? { ownerEmail: newOwnerEmail } : (accessControl.ownerEmail ? { ownerEmail: accessControl.ownerEmail } : {}))
     };
   }
 
@@ -208,8 +208,8 @@ export class AccessControlHelper {
       ownerEmail,
       clientId,
       tenantId,
-      teamId: options?.teamId || undefined,
-      departmentId: options?.departmentId || undefined,
+      ...(options?.teamId ? { teamId: options.teamId } : {}),
+      ...(options?.departmentId ? { departmentId: options.departmentId } : {}),
       assignedUserIds: options?.assignedUserIds || [],
       visibilityScope: 'TEAM'
     });
@@ -251,8 +251,8 @@ export class AccessControlHelper {
       ownerEmail: managerEmail,
       vendorId,
       tenantId,
-      teamId: options?.teamId || undefined,
-      departmentId: options?.departmentId || undefined,
+      ...(options?.teamId ? { teamId: options.teamId } : {}),
+      ...(options?.departmentId ? { departmentId: options.departmentId } : {}),
       visibilityScope: 'TEAM'
     });
   }

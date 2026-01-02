@@ -57,7 +57,8 @@ export class TemplateController {
         teamId: (req as any).user?.teamId,
         clientId: (req as any).user?.clientId,
         ownerId: userId,
-        assignedUserIds: [userId]
+        assignedUserIds: [userId],
+        visibilityScope: 'TEAM' as const
       };
 
       const result = await this.templateService.createTemplate(input, userId, tenantId, accessControl);

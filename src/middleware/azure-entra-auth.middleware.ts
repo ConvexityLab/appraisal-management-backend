@@ -26,7 +26,7 @@ export interface AuthenticatedUser {
   email: string;
   name: string;
   role: string;
-  permissions: string[];
+  permissions?: string[];
   groups?: string[];
   appRoles?: string[];
   tenantId?: string;
@@ -273,12 +273,12 @@ export class AzureEntraAuthMiddleware {
       }
 
       // Admin has all permissions
-      if (req.user.permissions.includes('*')) {
+      if (req.user.permissions?.includes('*')) {
         next();
         return;
       }
 
-      if (!req.user.permissions.includes(permission)) {
+      if (!req.user.permissions?.includes(permission)) {
         res.status(403).json({
           error: `Permission required: ${permission}`,
           code: 'PERMISSION_DENIED',

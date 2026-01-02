@@ -82,20 +82,24 @@ export const createAccessGraphRouter = (): Router => {
       const { entityType, entityId } = req.params;
       const tenantId = req.userProfile?.tenantId || 'default';
 
+      if (!entityType || !entityId) {
+        return res.status(400).json({ error: 'Missing entityType or entityId' });
+      }
+
       const relationships = await graphService.getEntityRelationships(
         entityType,
         entityId,
         tenantId
       );
 
-      res.json({
+      return res.json({
         success: true,
         data: relationships,
         count: relationships.length
       });
     } catch (error) {
       logger.error('Failed to get entity relationships', { error });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to get entity relationships',
         code: 'INTERNAL_ERROR'
       });
@@ -111,20 +115,24 @@ export const createAccessGraphRouter = (): Router => {
       const { objectType, objectId } = req.params;
       const tenantId = req.userProfile?.tenantId || 'default';
 
+      if (!objectType || !objectId) {
+        return res.status(400).json({ error: 'Missing objectType or objectId' });
+      }
+
       const relationships = await graphService.getObjectRelationships(
         objectType,
         objectId,
         tenantId
       );
 
-      res.json({
+      return res.json({
         success: true,
         data: relationships,
         count: relationships.length
       });
     } catch (error) {
       logger.error('Failed to get object relationships', { error });
-      res.status(500).json({
+      return res.status(500).json({
         error: 'Failed to get object relationships',
         code: 'INTERNAL_ERROR'
       });

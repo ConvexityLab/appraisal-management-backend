@@ -70,7 +70,6 @@
     "@azure/storage-blob": "^12.15.0",
     "@azure/web-pubsub": "^1.2.0",
     "@azure/web-pubsub-express": "^1.0.6",
-    "@certo-ventures/loom": "^0.3.0",
     "@types/pdfkit": "^0.17.4",
     "axios": "^1.13.2",
     "bcrypt": "^5.1.1",

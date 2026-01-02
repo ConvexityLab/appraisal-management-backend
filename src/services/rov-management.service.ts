@@ -68,20 +68,20 @@ export class ROVManagementService {
         id: this.generateId(),
         rovNumber,
         orderId: input.orderId,
-        propertyAddress: order.propertyAddress || 'Unknown',
-        loanNumber: order.loanNumber,
-        borrowerName: order.borrowerInformation?.name,
+        propertyAddress: `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`,
+        ...(order.loanInformation?.loanAmount ? { loanNumber: order.loanInformation.loanAmount.toString() } : {}),
+        borrowerName: `${order.borrowerInformation.firstName} ${order.borrowerInformation.lastName}`,
         
         status: ROVStatus.SUBMITTED,
         requestorType: input.requestorType,
         requestorName: input.requestorName,
         requestorEmail: input.requestorEmail,
-        requestorPhone: input.requestorPhone,
+        ...(input.requestorPhone ? { requestorPhone: input.requestorPhone } : {}),
         
         challengeReason: input.challengeReason,
         challengeDescription: input.challengeDescription,
-        originalAppraisalValue: order.appraisedValue || 0,
-        requestedValue: input.requestedValue,
+        originalAppraisalValue: input.originalAppraisalValue || 0,
+        ...(input.requestedValue ? { requestedValue: input.requestedValue } : {}),
         supportingEvidence: (input.supportingEvidence || []).map(ev => ({
           ...ev,
           id: this.generateId(),
@@ -116,8 +116,7 @@ export class ROVManagementService {
         
         accessControl: this.accessControlHelper.createAccessControl({
           ownerId: createdBy,
-          teamId: order.accessControl?.teamId,
-          clientId: order.accessControl?.clientId,
+          ...(order.clientId ? { clientId: order.clientId } : {}),
           tenantId,
           visibilityScope: 'TEAM'
         }),
@@ -250,8 +249,9 @@ export class ROVManagementService {
 
       const response: ROVResponse = {
         decision: input.decision,
-        newValue: input.decision === ROVDecision.VALUE_INCREASED || 
-                  input.decision === ROVDecision.VALUE_DECREASED ? newValue : undefined,
+        ...(input.decision === ROVDecision.VALUE_INCREASED || input.decision === ROVDecision.VALUE_DECREASED
+          ? { newValue }
+          : {}),
         valueChangeAmount: input.decision !== ROVDecision.VALUE_UNCHANGED ? valueChangeAmount : 0,
         valueChangePercentage: input.decision !== ROVDecision.VALUE_UNCHANGED ? valueChangePercentage : 0,
         explanation: input.explanation,

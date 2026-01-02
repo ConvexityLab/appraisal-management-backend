@@ -1717,7 +1717,7 @@ export class CosmosDbService {
   /**
    * Find ROV requests with filters
    */
-  async findROVRequests(filters: any, offset: number = 0, limit: number = 50): Promise<any[]> {
+  async findROVRequests(filters: any, offset: number = 0, limit: number = 50): Promise<{ success: boolean; data: any[]; total: number }> {
     try {
       if (!this.rovRequestsContainer) {
         throw new Error('ROV requests container not initialized');
@@ -1779,10 +1779,16 @@ export class CosmosDbService {
       const querySpec = { query, parameters };
       const { resources } = await this.rovRequestsContainer.items.query(querySpec).fetchAll();
 
-      return resources;
+      // Get total count
+      const countQuery = query.replace('SELECT * FROM c', 'SELECT VALUE COUNT(1) FROM c').replace(/ORDER BY.*$/, '');
+      const countQuerySpec = { query: countQuery, parameters: parameters.filter(p => p.name !== '@offset' && p.name !== '@limit') };
+      const { resources: countResult } = await this.rovRequestsContainer.items.query(countQuerySpec).fetchAll();
+      const total = countResult[0] || 0;
+
+      return { success: true, data: resources, total };
     } catch (error) {
       this.logger.error('Failed to find ROV requests', { error, filters });
-      throw error;
+      return { success: false, data: [], total: 0 };
     }
   }
 

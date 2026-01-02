@@ -571,7 +571,7 @@ export class AppraisalManagementAPIServer {
     // Appraisal Review routes - review assignment, workflow, comparable analysis, reports
     this.app.use('/api/reviews',
       this.unifiedAuth.authenticate(),
-      this.authzMiddleware.loadUserProfile(),
+      this.authzMiddleware?.loadUserProfile() || ((req: any, res: any, next: any) => next()),
       createReviewRouter()
     );
   }

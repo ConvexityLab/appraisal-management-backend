@@ -6,7 +6,7 @@
  */
 
 import { Logger } from '../utils/logger';
-import { EnhancedPropertyIntelligenceService } from './enhanced-property-intelligence.service';
+import { EnhancedPropertyIntelligenceV2Service } from './enhanced-property-intelligence-v2.service';
 import { ROVComparable } from '../types/rov.types';
 
 /**
@@ -125,12 +125,12 @@ const DEFAULT_ADJUSTMENT_FACTORS: AdjustmentFactors = {
 
 export class ROVResearchService {
   private logger: Logger;
-  private propertyIntelligenceService: EnhancedPropertyIntelligenceService;
+  private propertyIntelligenceService: EnhancedPropertyIntelligenceV2Service;
   private adjustmentFactors: AdjustmentFactors;
 
   constructor(customAdjustmentFactors?: Partial<AdjustmentFactors>) {
     this.logger = new Logger();
-    this.propertyIntelligenceService = new EnhancedPropertyIntelligenceService();
+    this.propertyIntelligenceService = new EnhancedPropertyIntelligenceV2Service();
     this.adjustmentFactors = {
       ...DEFAULT_ADJUSTMENT_FACTORS,
       ...customAdjustmentFactors
@@ -491,7 +491,12 @@ export class ROVResearchService {
           report += `    Size: $${comp.adjustments.size?.toLocaleString() || 0}\n`;
           report += `    Condition: $${comp.adjustments.condition?.toLocaleString() || 0}\n`;
           report += `    Features: $${comp.adjustments.features?.toLocaleString() || 0}\n`;
-          report += `    Total Adjustment: $${(comp.adjustments.location + comp.adjustments.size + comp.adjustments.condition + comp.adjustments.features).toLocaleString()}\n`;
+          report += `    Total Adjustment: $${(
+            (comp.adjustments.location || 0) + 
+            (comp.adjustments.size || 0) + 
+            (comp.adjustments.condition || 0) + 
+            (comp.adjustments.features || 0)
+          ).toLocaleString()}\n`;
         }
         
         report += `  Adjusted Value: $${comp.adjustedValue.toLocaleString()}\n`;

@@ -68,15 +68,15 @@ export function createReviewRouter(): Router {
       const limit = parseInt(req.query.limit as string) || 20;
 
       const filters: ReviewListFilters = {
-        status: req.query.status ? (req.query.status as string).split(',') as ReviewStatus[] : undefined,
-        reviewType: req.query.reviewType ? (req.query.reviewType as string).split(',') as ReviewType[] : undefined,
-        assignedTo: req.query.assignedTo as string,
-        requestedBy: req.query.requestedBy as string,
-        priority: req.query.priority ? (req.query.priority as string).split(',') as ReviewPriority[] : undefined,
-        outcome: req.query.outcome ? (req.query.outcome as string).split(',') as ReviewOutcome[] : undefined,
-        dateFrom: req.query.dateFrom ? new Date(req.query.dateFrom as string) : undefined,
-        dateTo: req.query.dateTo ? new Date(req.query.dateTo as string) : undefined,
-        search: req.query.search as string
+        ...(req.query.status ? { status: (req.query.status as string).split(',') as ReviewStatus[] } : {}),
+        ...(req.query.reviewType ? { reviewType: (req.query.reviewType as string).split(',') as ReviewType[] } : {}),
+        ...(req.query.assignedTo ? { assignedTo: req.query.assignedTo as string } : {}),
+        ...(req.query.requestedBy ? { requestedBy: req.query.requestedBy as string } : {}),
+        ...(req.query.priority ? { priority: (req.query.priority as string).split(',') as ReviewPriority[] } : {}),
+        ...(req.query.outcome ? { outcome: (req.query.outcome as string).split(',') as ReviewOutcome[] } : {}),
+        ...(req.query.dateFrom ? { dateFrom: new Date(req.query.dateFrom as string) } : {}),
+        ...(req.query.dateTo ? { dateTo: new Date(req.query.dateTo as string) } : {}),
+        ...(req.query.search ? { search: req.query.search as string } : {})
       };
 
       const result = await workflowService.listReviews(tenantId, filters, page, limit);
@@ -103,6 +103,11 @@ export function createReviewRouter(): Router {
   router.get('/:id', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const review = await workflowService.getReviewById(reviewId);
 
       if (!review) {
@@ -112,12 +117,12 @@ export function createReviewRouter(): Router {
         });
       }
 
-      res.json({
+      return res.json({
         success: true,
         data: review
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -128,18 +133,22 @@ export function createReviewRouter(): Router {
   router.put('/:id', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const updates: UpdateReviewRequest = req.body;
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.updateReview(reviewId, updates, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review updated successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -150,18 +159,22 @@ export function createReviewRouter(): Router {
   router.post('/:id/assign', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const assignment: AssignReviewRequest = req.body;
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.assignReview(reviewId, assignment, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review assigned successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -172,15 +185,19 @@ export function createReviewRouter(): Router {
   router.post('/:id/auto-assign', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const review = await workflowService.autoAssignReview(reviewId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review auto-assigned successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -191,17 +208,21 @@ export function createReviewRouter(): Router {
   router.post('/:id/start', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.startReview(reviewId, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review started successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -212,17 +233,21 @@ export function createReviewRouter(): Router {
   router.post('/:id/advance', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.advanceStage(reviewId, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review advanced to next stage'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -233,18 +258,22 @@ export function createReviewRouter(): Router {
   router.post('/:id/findings', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const finding = req.body;
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.addFinding(reviewId, finding, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Finding added successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -255,18 +284,22 @@ export function createReviewRouter(): Router {
   router.post('/:id/supplemental-request', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const request = req.body;
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.requestSupplemental(reviewId, request, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Supplemental request created'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -277,18 +310,22 @@ export function createReviewRouter(): Router {
   router.post('/:id/escalate', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const { reason, escalateTo } = req.body;
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.escalateReview(reviewId, reason, escalateTo, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review escalated successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -299,18 +336,22 @@ export function createReviewRouter(): Router {
   router.post('/:id/complete', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const { outcome, reviewedValue } = req.body;
       const userId = req.user?.id || 'system';
 
       const review = await workflowService.completeReview(reviewId, outcome, reviewedValue, userId);
 
-      res.json({
+      return res.json({
         success: true,
         data: review,
         message: 'Review completed successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -321,6 +362,10 @@ export function createReviewRouter(): Router {
   router.post('/:id/comparable-analysis', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const { subjectProperty, comparables } = req.body;
 
       const analysis = await analysisService.analyzeComparables(
@@ -329,13 +374,13 @@ export function createReviewRouter(): Router {
         comparables
       );
 
-      res.json({
+      return res.json({
         success: true,
         data: analysis,
         message: 'Comparable analysis completed'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -349,12 +394,12 @@ export function createReviewRouter(): Router {
       const request: VerifyComparableRequest = req.body;
 
       // This would update the comparable analysis with verification info
-      res.json({
+      return res.json({
         success: true,
         message: 'Comparable verified'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -365,6 +410,10 @@ export function createReviewRouter(): Router {
   router.post('/:id/report', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const reviewId = req.params.id;
+      if (!reviewId) {
+        return res.status(400).json({ success: false, error: 'Review ID is required' });
+      }
+      
       const request: GenerateReviewReportRequest = req.body;
 
       const review = await workflowService.getReviewById(reviewId);
@@ -381,13 +430,13 @@ export function createReviewRouter(): Router {
         review.comparableAnalysis
       );
 
-      res.json({
+      return res.json({
         success: true,
         data: report,
         message: 'Report generated successfully'
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -403,12 +452,12 @@ export function createReviewRouter(): Router {
 
       const metrics = await workflowService.getReviewMetrics(tenantId, dateFrom, dateTo);
 
-      res.json({
+      return res.json({
         success: true,
         data: metrics
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
@@ -420,15 +469,19 @@ export function createReviewRouter(): Router {
     try {
       const tenantId = req.user?.tenantId || 'default';
       const reviewerId = req.params.reviewerId;
+      
+      if (!reviewerId) {
+        return res.status(400).json({ success: false, error: 'Reviewer ID is required' });
+      }
 
       const performance = await workflowService.getReviewerPerformance(tenantId, reviewerId);
 
-      res.json({
+      return res.json({
         success: true,
         data: performance
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   });
 
