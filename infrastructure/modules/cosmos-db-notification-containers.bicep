@@ -205,6 +205,35 @@ resource deviceRegistrationsContainer 'Microsoft.DocumentDB/databaseAccounts/sql
   }
 }
 
+resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'acsUserMappings'
+  properties: {
+    resource: {
+      id: 'acsUserMappings'
+      partitionKey: {
+        paths: ['/azureAdUserId']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+      }
+      uniqueKeyPolicy: {
+        uniqueKeys: [
+          { paths: ['/acsUserId'] }
+        ]
+      }
+    }
+    options: {
+      throughput: 400
+    }
+  }
+}
+
 output emailTemplatesContainerId string = emailTemplatesContainer.id
 output smsTemplatesContainerId string = smsTemplatesContainer.id
 output notificationHistoryContainerId string = notificationHistoryContainer.id
@@ -212,3 +241,4 @@ output notificationPreferencesContainerId string = notificationPreferencesContai
 output chatThreadsContainerId string = chatThreadsContainer.id
 output chatMessagesContainerId string = chatMessagesContainer.id
 output deviceRegistrationsContainerId string = deviceRegistrationsContainer.id
+output acsUserMappingsContainerId string = acsUserMappingsContainer.id

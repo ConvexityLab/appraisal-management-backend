@@ -112,7 +112,8 @@ export interface ChatThread {
 }
 
 export interface ChatParticipant {
-  id: string;
+  id: string;                    // Azure AD user ID
+  acsUserId?: string;            // ACS user ID (e.g., "8:acs:...")
   displayName: string;
   role: 'vendor' | 'amc' | 'client' | 'system';
   shareHistoryTime?: Date;

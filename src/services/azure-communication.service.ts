@@ -9,6 +9,12 @@ import { ChatClient } from '@azure/communication-chat';
 import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger';
 
+// Define CommunicationTokenCredential interface
+interface CommunicationTokenCredential {
+  getToken(): Promise<{ token: string; expiresOnTimestamp: number }>;
+  dispose(): void;
+}
+
 export class AzureCommunicationService {
   private logger: Logger;
   private emailClient?: EmailClient;
@@ -70,11 +76,42 @@ export class AzureCommunicationService {
   }
 
   /**
-   * Get or create Chat client
+   * Get or create Chat client (DEPRECATED - use getChatClientForUser instead)
+   * Chat requires user-level token credentials
    */
   getChatClient(): ChatClient {
-    // Chat requires CommunicationTokenCredential, not supported yet
-    throw new Error('Chat client not available - requires CommunicationTokenCredential implementation');
+    // Chat requires CommunicationTokenCredential, not supported with Managed Identity
+    throw new Error('Use getChatClientForUser() instead - chat requires user tokens');
+  }
+
+  /**
+   * Create Chat client for specific user with token
+   * This is the proper way to use ACS Chat SDK
+   * 
+   * @param acsUserId - ACS user ID (e.g., "8:acs:...")
+   * @param token - ACS access token for the user
+   * @param expiresOn - Token expiration date
+   * @returns ChatClient instance configured for the user
+   */
+  getChatClientForUser(acsUserId: string, token: string, expiresOn: Date): ChatClient {
+    if (!this.endpoint) {
+      throw new Error('Azure Communication Services endpoint not configured. Set AZURE_COMMUNICATION_ENDPOINT.');
+    }
+
+    this.logger.info('Creating Chat client for user', { acsUserId });
+
+    // Create token credential from user token
+    const tokenCredential: CommunicationTokenCredential = {
+      getToken: async () => ({
+        token,
+        expiresOnTimestamp: expiresOn.getTime()
+      }),
+      dispose: () => {
+        // Cleanup if needed
+      }
+    };
+
+    return new ChatClient(this.endpoint, tokenCredential);
   }
 
   /**

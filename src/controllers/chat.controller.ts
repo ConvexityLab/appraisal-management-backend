@@ -37,7 +37,8 @@ export const createChatRouter = () => {
 
       try {
         const { topic, orderId, participants, tenantId } = req.body;
-        const result = await chatService.createChatThread(topic, orderId, participants, tenantId);
+        const userId = (req as any).user?.id || 'system';
+        const result = await chatService.createChatThread(topic, orderId, participants, userId, tenantId);
         res.json(result);
         return;
       } catch (error) {
@@ -259,13 +260,14 @@ export const createChatRouter = () => {
       try {
         const { threadId } = req.params;
         const { participant, tenantId } = req.body;
+        const userId = (req as any).user?.id || 'system';
 
         if (!threadId) {
           res.status(400).json({ error: 'threadId is required' });
           return;
         }
 
-        await chatService.addParticipant(threadId, participant, tenantId);
+        await chatService.addParticipant(threadId, participant, userId, tenantId);
         res.json({ success: true });
         return;
       } catch (error) {

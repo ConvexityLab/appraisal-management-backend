@@ -76,6 +76,7 @@ import { createDeliveryWorkflowRouter } from '../controllers/delivery-workflow.c
 // Import Communication Services controllers
 import { createNotificationRouter } from '../controllers/notification.controller';
 import { createChatRouter } from '../controllers/chat.controller';
+import { createAcsTokenRouter } from '../controllers/acs-token.controller';
 
 import { 
   authenticateJWT, 
@@ -287,6 +288,13 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
       createDeliveryWorkflowRouter()
+    );
+
+    // ACS Token Exchange - Get chat tokens (authenticated users)
+    this.app.use('/api/acs',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createAcsTokenRouter()
     );
 
     // Notifications - Email, SMS, Templates, Preferences (authenticated users)

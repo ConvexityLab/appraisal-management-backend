@@ -1,38 +1,203 @@
 /**
- * Chat Service - Simplified (Cosmos DB only, no ACS real-time)
+ * Chat Service - Azure Communication Services Chat with Real-Time Support
+ * 
+ * Implements real-time chat using ACS Chat SDK with user token authentication.
+ * Each user gets their own ChatClient instance with WebSocket real-time notifications.
  */
 
 import { Logger } from '../utils/logger';
 import { CosmosDbService } from './cosmos-db.service';
+import { AzureCommunicationService } from './azure-communication.service';
+import { AcsIdentityService } from './acs-identity.service';
 import { ApiResponse } from '../types/index';
 import { ChatThread, ChatMessage, ChatParticipant } from '../types/communication.types';
+import { ChatClient, ChatThreadClient } from '@azure/communication-chat';
+
+/**
+ * User chat session - stores client and thread clients
+ */
+interface UserChatSession {
+  acsUserId: string;
+  chatClient: ChatClient;
+  token: string;
+  expiresOn: Date;
+  threadClients: Map<string, ChatThreadClient>;
+}
 
 export class ChatService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  private acsService: AzureCommunicationService;
+  private identityService: AcsIdentityService;
+  
+  // Active user sessions
+  private userSessions: Map<string, UserChatSession> = new Map();
 
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
+    this.acsService = new AzureCommunicationService();
+    this.identityService = new AcsIdentityService();
   }
 
   /**
-   * Create chat thread (stores in Cosmos DB only)
+   * Initialize chat for user - call once per user session
+   * Creates ChatClient with user's token and starts real-time notifications
    */
-  async createChatThread(topic: string, orderId: string, participants: ChatParticipant[], tenantId: string): Promise<ApiResponse<ChatThread>> {
+  async initializeUserChat(
+    azureAdUserId: string, 
+    acsUserId: string, 
+    token: string, 
+    expiresOn: Date
+  ): Promise<void> {
     try {
-      const threadId = `thread-${orderId}-${Date.now()}`;
+      this.logger.info('Initializing chat for user', { azureAdUserId, acsUserId });
 
+      // Create chat client for user
+      const chatClient = this.acsService.getChatClientForUser(acsUserId, token, expiresOn);
+
+      // Start real-time notifications (WebSocket connection)
+      await chatClient.startRealtimeNotifications();
+
+      // Store session
+      const session: UserChatSession = {
+        acsUserId,
+        chatClient,
+        token,
+        expiresOn,
+        threadClients: new Map()
+      };
+
+      this.userSessions.set(azureAdUserId, session);
+
+      // Subscribe to global events
+      chatClient.on('chatMessageReceived', async (e: any) => {
+        await this.handleMessageReceived(e);
+      });
+
+      chatClient.on('typingIndicatorReceived', (e: any) => {
+        this.logger.info('Typing indicator received', { 
+          threadId: e.threadId, 
+          sender: e.sender 
+        });
+      });
+
+      chatClient.on('readReceiptReceived', (e: any) => {
+        this.logger.info('Read receipt received', { 
+          threadId: e.threadId, 
+          messageId: e.chatMessageId,
+          reader: e.sender 
+        });
+      });
+
+      this.logger.info('Chat initialized successfully', { azureAdUserId, acsUserId });
+    } catch (error) {
+      this.logger.error('Error initializing user chat', { error, azureAdUserId });
+      throw error;
+    }
+  }
+
+  /**
+   * Handle incoming real-time messages
+   */
+  private async handleMessageReceived(event: any): Promise<void> {
+    try {
+      this.logger.info('Real-time message received', { 
+        threadId: event.threadId, 
+        messageId: event.id 
+      });
+
+      // Save message to Cosmos DB
+      const message: ChatMessage = {
+        id: event.id,
+        threadId: event.threadId,
+        senderId: event.sender?.communicationUserId || 'unknown',
+        senderDisplayName: event.senderDisplayName || 'Unknown',
+        content: event.message || '',
+        type: 'text',
+        createdAt: event.createdOn ? new Date(event.createdOn) : new Date()
+      };
+
+      await this.dbService.upsertItem('chatMessages', message);
+
+      this.logger.info('Message saved to Cosmos DB', { messageId: event.id });
+    } catch (error) {
+      this.logger.error('Error handling received message', { error, event });
+    }
+  }
+
+  /**
+   * Create ACS chat thread
+   */
+  async createChatThread(
+    topic: string, 
+    orderId: string, 
+    participants: ChatParticipant[], 
+    azureAdUserId: string,
+    tenantId: string
+  ): Promise<ApiResponse<ChatThread>> {
+    try {
+      const session = this.userSessions.get(azureAdUserId);
+      if (!session) {
+        return {
+          success: false,
+          data: null as any,
+          error: { 
+            code: 'SESSION_NOT_INITIALIZED', 
+            message: 'Chat session not initialized. Call initializeUserChat first.', 
+            timestamp: new Date() 
+          }
+        };
+      }
+
+      // Ensure all participants have ACS user IDs
+      const participantsWithAcs = await Promise.all(
+        participants.map(async (p) => {
+          if (!p.acsUserId) {
+            // Get or create ACS user ID for participant
+            let acsUserId = await this.identityService.getAcsUserId(p.id, tenantId);
+            if (!acsUserId) {
+              // Create new ACS user for participant
+              const tokenResult = await this.identityService.exchangeUserToken(p.id, tenantId);
+              acsUserId = tokenResult.data?.acsUserId || '';
+            }
+            return { ...p, acsUserId };
+          }
+          return p;
+        })
+      );
+
+      // Create thread in ACS
+      const createResult = await session.chatClient.createChatThread(
+        { topic },
+        {
+          participants: participantsWithAcs.map(p => ({
+            id: { communicationUserId: p.acsUserId! },
+            displayName: p.displayName
+          }))
+        }
+      );
+
+      const threadId = createResult.chatThread?.id;
+      if (!threadId) {
+        throw new Error('Failed to create ACS chat thread');
+      }
+
+      // Save to Cosmos DB
       const thread: ChatThread = {
         id: threadId,
         topic,
         orderId,
-        participants,
+        participants: participantsWithAcs,
         createdAt: new Date(),
-        createdBy: participants[0]?.id || 'system'
+        createdBy: azureAdUserId
       };
 
       await this.dbService.createItem('chatThreads', thread);
+
+      // Get thread client for this user
+      const threadClient = session.chatClient.getChatThreadClient(threadId);
+      session.threadClients.set(threadId, threadClient);
 
       this.logger.info('Chat thread created', { threadId, orderId });
       return { success: true, data: thread };
@@ -43,22 +208,49 @@ export class ChatService {
   }
 
   /**
-   * Send message (stores in Cosmos DB only)
+   * Send message to thread (broadcasts to all participants automatically via ACS)
    */
   async sendMessage(
-    threadId: string, 
-    senderId: string, 
-    senderDisplayName: string, 
-    content: string, 
+    threadId: string,
+    senderId: string,
+    senderDisplayName: string,
+    content: string,
     tenantId: string
   ): Promise<ApiResponse<ChatMessage>> {
     try {
-      const messageId = `msg-${Date.now()}`;
+      const session = this.userSessions.get(senderId);
+      if (!session) {
+        return {
+          success: false,
+          data: null as any,
+          error: { 
+            code: 'SESSION_NOT_INITIALIZED', 
+            message: 'Chat session not initialized', 
+            timestamp: new Date() 
+          }
+        };
+      }
 
+      // Get or create thread client
+      let threadClient = session.threadClients.get(threadId);
+      if (!threadClient) {
+        threadClient = session.chatClient.getChatThreadClient(threadId);
+        session.threadClients.set(threadId, threadClient);
+      }
+
+      // Send via ACS - this automatically broadcasts to all participants via WebSocket
+      const sendResult = await threadClient.sendMessage(
+        { content },
+        { senderDisplayName }
+      );
+
+      const messageId = sendResult.id;
+
+      // Save to Cosmos DB
       const message: ChatMessage = {
         id: messageId,
         threadId,
-        senderId,
+        senderId: session.acsUserId,
         senderDisplayName,
         content,
         type: 'text',
@@ -70,7 +262,7 @@ export class ChatService {
       this.logger.info('Message sent', { threadId, messageId });
       return { success: true, data: message };
     } catch (error) {
-      this.logger.error('Error sending chat message', { error });
+      this.logger.error('Error sending message', { error });
       throw error;
     }
   }
@@ -131,27 +323,60 @@ export class ChatService {
   /**
    * Add participant to thread
    */
-  async addParticipant(threadId: string, participant: ChatParticipant, tenantId: string): Promise<void> {
+  async addParticipant(
+    threadId: string, 
+    participant: ChatParticipant, 
+    azureAdUserId: string,
+    tenantId: string
+  ): Promise<void> {
     try {
-      // Get existing thread
+      const session = this.userSessions.get(azureAdUserId);
+      if (!session) {
+        throw new Error('Chat session not initialized');
+      }
+
+      // Ensure participant has ACS user ID
+      let acsUserId = participant.acsUserId;
+      if (!acsUserId) {
+        const existingId = await this.identityService.getAcsUserId(participant.id, tenantId);
+        if (existingId) {
+          acsUserId = existingId;
+        } else {
+          const tokenResult = await this.identityService.exchangeUserToken(participant.id, tenantId);
+          acsUserId = tokenResult.data?.acsUserId || '';
+        }
+        participant.acsUserId = acsUserId;
+      }
+
+      // Get thread client
+      let threadClient = session.threadClients.get(threadId);
+      if (!threadClient) {
+        threadClient = session.chatClient.getChatThreadClient(threadId);
+        session.threadClients.set(threadId, threadClient);
+      }
+
+      // Add to ACS thread
+      await threadClient.addParticipants({
+        participants: [{
+          id: { communicationUserId: acsUserId },
+          displayName: participant.displayName
+        }]
+      });
+
+      // Update Cosmos DB
       const query = `SELECT * FROM c WHERE c.id = @threadId`;
       const parameters = [{ name: '@threadId', value: threadId }];
       const result = await this.dbService.queryItems<ChatThread>('chatThreads', query, parameters);
 
-      if (!result.success || !result.data || result.data.length === 0) {
-        throw new Error('Thread not found');
-      }
-
-      const thread = result.data[0];
-      if (!thread) {
-        throw new Error('Thread not found');
-      }
-      
-      // Add participant if not already present
-      const existingParticipant = thread.participants.find(p => p.id === participant.id);
-      if (!existingParticipant) {
-        thread.participants.push(participant);
-        await this.dbService.upsertItem('chatThreads', thread);
+      if (result.success && result.data && result.data.length > 0) {
+        const thread = result.data[0];
+        if (thread) {
+          const existingParticipant = thread.participants.find(p => p.id === participant.id);
+          if (!existingParticipant) {
+            thread.participants.push(participant);
+            await this.dbService.upsertItem('chatThreads', thread);
+          }
+        }
       }
 
       this.logger.info('Participant added', { threadId, participantId: participant.id });
@@ -162,29 +387,66 @@ export class ChatService {
   }
 
   /**
-   * Placeholder methods for future ACS integration
+   * Send typing indicator
    */
-  async sendTypingIndicator(threadId: string, senderId: string): Promise<void> {
-    // TODO: Implement when ACS Chat is ready
-    this.logger.info('Typing indicator (not yet implemented)', { threadId, senderId });
+  async sendTypingIndicator(threadId: string, azureAdUserId: string): Promise<void> {
+    try {
+      const session = this.userSessions.get(azureAdUserId);
+      if (!session) return;
+
+      let threadClient = session.threadClients.get(threadId);
+      if (!threadClient) {
+        threadClient = session.chatClient.getChatThreadClient(threadId);
+        session.threadClients.set(threadId, threadClient);
+      }
+
+      await threadClient.sendTypingNotification();
+    } catch (error) {
+      this.logger.error('Error sending typing indicator', { error, threadId });
+    }
   }
 
-  async markMessageRead(threadId: string, messageId: string, userId: string): Promise<void> {
-    // TODO: Implement when ACS Chat is ready
-    this.logger.info('Read receipt (not yet implemented)', { threadId, messageId, userId });
+  /**
+   * Mark message as read
+   */
+  async markMessageRead(threadId: string, messageId: string, azureAdUserId: string): Promise<void> {
+    try {
+      const session = this.userSessions.get(azureAdUserId);
+      if (!session) return;
+
+      let threadClient = session.threadClients.get(threadId);
+      if (!threadClient) {
+        threadClient = session.chatClient.getChatThreadClient(threadId);
+        session.threadClients.set(threadId, threadClient);
+      }
+
+      await threadClient.sendReadReceipt({ chatMessageId: messageId });
+      this.logger.info('Read receipt sent', { threadId, messageId });
+    } catch (error) {
+      this.logger.error('Error sending read receipt', { error, threadId, messageId });
+    }
   }
 
-  async subscribeToThread(
-    threadId: string,
-    onMessageReceived: (message: ChatMessage) => void,
-    onTypingIndicator?: (senderId: string, isTyping: boolean) => void
-  ): Promise<void> {
-    // TODO: Implement when ACS Chat is ready
-    this.logger.info('Subscribe (not yet implemented)', { threadId });
-  }
-
-  async unsubscribeFromThread(threadId: string): Promise<void> {
-    // TODO: Implement when ACS Chat is ready
-    this.logger.info('Unsubscribe (not yet implemented)', { threadId });
+  /**
+   * Cleanup user session (call on logout)
+   */
+  async cleanupUserSession(azureAdUserId: string): Promise<void> {
+    try {
+      const session = this.userSessions.get(azureAdUserId);
+      if (session) {
+        // Stop real-time notifications
+        await session.chatClient.stopRealtimeNotifications();
+        
+        // Clear thread clients
+        session.threadClients.clear();
+        
+        // Remove session
+        this.userSessions.delete(azureAdUserId);
+        
+        this.logger.info('User session cleaned up', { azureAdUserId });
+      }
+    } catch (error) {
+      this.logger.error('Error cleaning up session', { error, azureAdUserId });
+    }
   }
 }
