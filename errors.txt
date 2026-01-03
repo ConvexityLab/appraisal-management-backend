@@ -1,0 +1,94 @@
+﻿
+> appraisal-management-backend@1.0.0 build
+> npx tsc
+
+src/controllers/chat.controller.ts(34,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/chat.controller.ts(62,55): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/chat.controller.ts(85,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/chat.controller.ts(93,11): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/chat.controller.ts(121,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/chat.controller.ts(129,11): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/chat.controller.ts(154,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/chat.controller.ts(161,47): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/chat.controller.ts(183,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/chat.controller.ts(190,53): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/chat.controller.ts(214,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/chat.controller.ts(221,42): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/notification.controller.ts(71,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(108,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(137,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(140,53): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/notification.controller.ts(165,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(193,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(201,11): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/notification.controller.ts(227,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(230,62): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/notification.controller.ts(250,9): error TS2322: Type 'Response<any, Record<string, any>>' is not assignable to type 'void'.
+src/controllers/notification.controller.ts(257,67): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/services/azure-communication.service.ts(82,55): error TS2345: Argument of type 'DefaultAzureCredential' is not assignable to parameter of type 'CommunicationTokenCredential'.
+  Property 'dispose' is missing in type 'DefaultAzureCredential' but required in type 'CommunicationTokenCredential'.
+src/services/chat.service.ts(143,26): error TS2339: Property 'startRealtimeNotifications' does not exist on type 'ChatThreadClient'.
+src/services/chat.service.ts(146,20): error TS2339: Property 'on' does not exist on type 'ChatThreadClient'.
+src/services/chat.service.ts(146,53): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/services/chat.service.ts(169,22): error TS2339: Property 'on' does not exist on type 'ChatThreadClient'.
+src/services/chat.service.ts(169,53): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/services/chat.service.ts(179,20): error TS2339: Property 'on' does not exist on type 'ChatThreadClient'.
+src/services/chat.service.ts(179,47): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/services/chat.service.ts(203,22): error TS2339: Property 'off' does not exist on type 'ChatThreadClient'.
+src/services/chat.service.ts(204,22): error TS2339: Property 'off' does not exist on type 'ChatThreadClient'.
+src/services/chat.service.ts(205,22): error TS2339: Property 'off' does not exist on type 'ChatThreadClient'.
+src/services/email-notification.service.ts(111,13): error TS2375: Type '{ senderAddress: string; recipients: { bcc?: { address: string; }[]; cc?: { address: string; }[]; to: { address: string; }[]; }; subject: string; htmlBody: string | undefined; textBody: string | undefined; priority: "low" | ... 2 more ... | undefined; replyTo: { ...; }[] | undefined; }' is not assignable to type 'EmailMessage' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'htmlBody' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/services/email-notification.service.ts(130,13): error TS2375: Type '{ messageId: string; status: "failed" | "sent"; error: string | undefined; }' is not assignable to type 'EmailSendResult' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'error' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/services/email-notification.service.ts(138,9): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/services/email-notification.service.ts(182,7): error TS2375: Type '{ success: true; data: EmailTemplate | undefined; }' is not assignable to type 'ApiResponse<EmailTemplate>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'data' are incompatible.
+    Type 'EmailTemplate | undefined' is not assignable to type 'EmailTemplate'.
+      Type 'undefined' is not assignable to type 'EmailTemplate'.
+src/services/email-notification.service.ts(248,13): error TS2375: Type '{ id: string; tenantId: string; userId: string; type: "email"; category: string; subject: string; content: string; status: "failed" | "sent"; sentAt: Date | undefined; failedAt: Date | undefined; metadata: { ...; }; createdAt: Date; updatedAt: Date; }' is not assignable to type 'NotificationHistory' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'sentAt' are incompatible.
+    Type 'Date | undefined' is not assignable to type 'Date'.
+      Type 'undefined' is not assignable to type 'Date'.
+src/services/notification-preferences.service.ts(34,9): error TS2375: Type '{ success: true; data: NotificationPreferences | undefined; }' is not assignable to type 'ApiResponse<NotificationPreferences>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'data' are incompatible.
+    Type 'NotificationPreferences | undefined' is not assignable to type 'NotificationPreferences'.
+      Type 'undefined' is not assignable to type 'NotificationPreferences'.
+src/services/notification-preferences.service.ts(53,13): error TS2322: Type '{ userId: string; tenantId: string; updatedAt: Date; id?: string; email?: { enabled: boolean; address: string; verified: boolean; frequency: "immediate" | "digest_hourly" | "digest_daily"; categories: { orderUpdates: boolean; milestones: boolean; revisions: boolean; messages: boolean; systemAlerts: boolean; }; }; .....' is not assignable to type 'NotificationPreferences'.
+  Property 'id' is optional in type '{ userId: string; tenantId: string; updatedAt: Date; id?: string; email?: { enabled: boolean; address: string; verified: boolean; frequency: "immediate" | "digest_hourly" | "digest_daily"; categories: { ...; }; }; ... 6 more ...; createdAt?: Date; }' but required in type 'NotificationPreferences'.
+src/services/notification-preferences.service.ts(83,12): error TS18048: 'prefs.data' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(88,73): error TS18048: 'prefs.data' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(93,37): error TS18048: 'prefs.data' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(94,33): error TS18048: 'prefs.data' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(95,28): error TS18048: 'startHour' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(95,45): error TS18048: 'startMin' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(96,26): error TS18048: 'endHour' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(96,41): error TS18048: 'endMin' is possibly 'undefined'.
+src/services/notification-preferences.service.ts(123,30): error TS18048: 'prefs.data' is possibly 'undefined'.
+src/services/sms-notification.service.ts(41,15): error TS2375: Type '{ messageId: string; to: string; httpStatusCode: number; successful: boolean; errorMessage: string | undefined; }' is not assignable to type 'SmsSendResult' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'errorMessage' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/services/sms-notification.service.ts(42,22): error TS2532: Object is possibly 'undefined'.
+src/services/sms-notification.service.ts(44,27): error TS2532: Object is possibly 'undefined'.
+src/services/sms-notification.service.ts(45,23): error TS2532: Object is possibly 'undefined'.
+src/services/sms-notification.service.ts(46,25): error TS2532: Object is possibly 'undefined'.
+src/services/sms-notification.service.ts(62,13): error TS2375: Type '{ id: string; tenantId: string; userId: string; type: "sms"; category: string; content: string; status: "failed" | "sent"; sentAt: Date | undefined; failedAt: Date | undefined; metadata: { ...; }; createdAt: Date; updatedAt: Date; }' is not assignable to type 'NotificationHistory' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'sentAt' are incompatible.
+    Type 'Date | undefined' is not assignable to type 'Date'.
+      Type 'undefined' is not assignable to type 'Date'.

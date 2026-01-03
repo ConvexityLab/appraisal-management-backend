@@ -73,6 +73,10 @@ import { createOrderNegotiationRouter } from '../controllers/order-negotiation.c
 // Import Delivery Workflow controller
 import { createDeliveryWorkflowRouter } from '../controllers/delivery-workflow.controller';
 
+// Import Communication Services controllers
+import { createNotificationRouter } from '../controllers/notification.controller';
+import { createChatRouter } from '../controllers/chat.controller';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -283,6 +287,20 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
       createDeliveryWorkflowRouter()
+    );
+
+    // Notifications - Email, SMS, Templates, Preferences (authenticated users)
+    this.app.use('/api/notifications',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createNotificationRouter()
+    );
+
+    // Chat - Real-time messaging with ACS Chat SDK (authenticated users)
+    this.app.use('/api/chat',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createChatRouter()
     );
 
     this.logger.info('✅ Authorization routes registered successfully');

@@ -1400,6 +1400,28 @@ export class CosmosDbService {
     }
   }
 
+  async upsertItem<T>(containerName: string, item: any): Promise<ApiResponse<T>> {
+    try {
+      if (!this.database) {
+        await this.initialize();
+      }
+
+      const container = this.database!.container(containerName);
+      const response = await container.items.upsert(item);
+
+      return {
+        success: true,
+        data: response.resource as T
+      };
+    } catch (error) {
+      this.logger.error('Failed to upsert item', { error: error instanceof Error ? error.message : 'Unknown error', containerName });
+      return {
+        success: false,
+        error: this.createApiError('UPSERT_ITEM_FAILED', 'Failed to upsert item')
+      };
+    }
+  }
+
   async getItem<T>(containerName: string, id: string, partitionKey?: string): Promise<ApiResponse<T>> {
     try {
       if (!this.database) {
