@@ -165,7 +165,7 @@ var containers = [
       ]
       excludedPaths: [
         { path: '/"_etag"/?' }
-        { path: '/passwordHash' }
+        { path: '/passwordHash/?' }
       ]
       compositeIndexes: [
         [
