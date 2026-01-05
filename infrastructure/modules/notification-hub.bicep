@@ -28,20 +28,7 @@ resource notificationHub 'Microsoft.NotificationHubs/namespaces/notificationHubs
   name: notificationHubName
   location: location
   tags: tags
-  properties: {
-    apnsCredential: {
-      properties: {
-        // Configure APNS credentials for iOS push notifications
-        // These will need to be set after deployment via Portal or CLI
-      }
-    }
-    gcmCredential: {
-      properties: {
-        // Configure FCM credentials for Android push notifications
-        // These will need to be set after deployment via Portal or CLI
-      }
-    }
-  }
+  properties: {}
 }
 
 output notificationHubNamespaceName string = notificationHubNamespace.name

@@ -18,8 +18,6 @@ param tags object = {
 }
 
 var communicationServicesName = 'acs-appraisal-${environmentName}'
-var notificationHubNamespaceName = 'nhns-appraisal-${environmentName}'
-var notificationHubName = 'nh-appraisal-${environmentName}'
 
 // Deploy Azure Communication Services
 module communicationServices './communication-services.bicep' = {
@@ -28,18 +26,6 @@ module communicationServices './communication-services.bicep' = {
     communicationServicesName: communicationServicesName
     location: location
     emailDomain: emailDomain
-    tags: tags
-  }
-}
-
-// Deploy Notification Hub
-module notificationHub './notification-hub.bicep' = {
-  name: 'deploy-notification-hub'
-  params: {
-    notificationHubNamespaceName: notificationHubNamespaceName
-    notificationHubName: notificationHubName
-    location: location
-    sku: environmentName == 'prod' ? 'Standard' : 'Free'
     tags: tags
   }
 }
@@ -56,14 +42,9 @@ module cosmosContainers './cosmos-db-notification-containers.bicep' = {
 output communicationServicesEndpoint string = communicationServices.outputs.communicationServicesEndpoint
 output emailDomain string = communicationServices.outputs.emailDomain
 output emailVerificationRecords object = communicationServices.outputs.emailDomainVerificationRecords
-output notificationHubNamespace string = notificationHub.outputs.notificationHubNamespaceName
-output notificationHubName string = notificationHub.outputs.notificationHubName
-output notificationHubConnectionString string = notificationHub.outputs.notificationHubConnectionString
 
 // Environment variables template for .env file
 output envVariables object = {
   AZURE_COMMUNICATION_ENDPOINT: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
   AZURE_COMMUNICATION_EMAIL_DOMAIN: communicationServices.outputs.emailDomain
-  AZURE_NOTIFICATION_HUB_NAME: notificationHub.outputs.notificationHubName
-  AZURE_NOTIFICATION_HUB_NAMESPACE: notificationHub.outputs.notificationHubNamespaceName
 }

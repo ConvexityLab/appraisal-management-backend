@@ -39,15 +39,6 @@ resource emailServicesDomain 'Microsoft.Communication/emailServices/domains@2023
   }
 }
 
-// Link email domain to Communication Services
-resource emailDomainLink 'Microsoft.Communication/communicationServices/domains@2023-04-01' = {
-  parent: communicationServices
-  name: emailDomain
-  properties: {
-    domainName: emailServicesDomain.name
-  }
-}
-
 output communicationServicesEndpoint string = communicationServices.properties.hostName
 output communicationServicesResourceId string = communicationServices.id
 output emailDomain string = emailServicesDomain.name

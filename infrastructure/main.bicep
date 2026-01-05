@@ -232,4 +232,3 @@ output staticWebAppUrl string = staticWebApp.outputs.staticWebAppUrl
 // Communication services outputs
 output communicationServicesEndpoint string = communicationServices.outputs.communicationServicesEndpoint
 output emailDomainVerificationRecords object = communicationServices.outputs.emailVerificationRecords
-output notificationHubConnectionString string = communicationServices.outputs.notificationHubConnectionString
