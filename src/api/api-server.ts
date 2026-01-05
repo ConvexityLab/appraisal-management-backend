@@ -77,6 +77,7 @@ import { createDeliveryWorkflowRouter } from '../controllers/delivery-workflow.c
 import { createNotificationRouter } from '../controllers/notification.controller';
 import { createChatRouter } from '../controllers/chat.controller';
 import { createAcsTokenRouter } from '../controllers/acs-token.controller';
+import { createTeamsRouter } from '../controllers/teams.controller';
 
 import { 
   authenticateJWT, 
@@ -295,6 +296,14 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
       createAcsTokenRouter()
+    );
+
+    // Teams Meetings - Teams interoperability (authenticated users)
+    // External users can join without Teams license
+    this.app.use('/api/teams',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createTeamsRouter()
     );
 
     // Notifications - Email, SMS, Templates, Preferences (authenticated users)

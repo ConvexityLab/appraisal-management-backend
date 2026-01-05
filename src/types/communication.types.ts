@@ -352,10 +352,69 @@ export type NotificationEventType =
   // Communication events
   | 'chat.message_received'
   | 'chat.thread_created'
+  | 'teams.meeting_created'
+  | 'teams.meeting_started'
+  | 'teams.meeting_ended'
+  | 'teams.participant_joined'
   
   // System events
   | 'system.maintenance'
   | 'system.alert';
+
+// ============================================================================
+// TEAMS INTEROPERABILITY TYPES
+// ============================================================================
+
+export interface TeamsMeetingParticipant {
+  userId: string;
+  acsUserId?: string;
+  displayName: string;
+  email?: string;
+  role: 'organizer' | 'presenter' | 'attendee';
+  isExternal: boolean;
+}
+
+export interface TeamsMeeting {
+  id: string;
+  meetingId: string; // Graph API meeting ID
+  orderId: string;
+  subject: string;
+  startDateTime: Date;
+  endDateTime: Date;
+  joinUrl: string; // Universal join link (works for all users)
+  joinWebUrl: string; // Web browser join link
+  organizerId: string;
+  participants: TeamsMeetingParticipant[];
+  chatThreadId?: string; // Associated chat thread ID
+  recordingEnabled: boolean;
+  transcriptionEnabled: boolean;
+  allowExternalParticipants: boolean;
+  createdAt: Date;
+  tenantId: string;
+}
+
+export interface TeamsJoinInfo {
+  joinUrl: string;
+  joinWebUrl: string;
+  displayName: string;
+  instructions: string;
+}
+
+export interface CreateTeamsMeetingRequest {
+  orderId: string;
+  subject: string;
+  startDateTime: Date | string;
+  endDateTime: Date | string;
+  participants: TeamsMeetingParticipant[];
+  recordingEnabled?: boolean;
+  transcriptionEnabled?: boolean;
+}
+
+export interface UpdateTeamsMeetingRequest {
+  subject?: string;
+  startDateTime?: Date | string;
+  endDateTime?: Date | string;
+}
 
 // ============================================================================
 // TEMPLATE VARIABLES
@@ -389,6 +448,11 @@ export interface NotificationTemplateVariables {
   revisionReason?: string;
   revisionDueDate?: string;
   revisionSeverity?: string;
+  
+  // Teams meeting variables
+  meetingJoinUrl?: string;
+  meetingStartTime?: string;
+  meetingSubject?: string;
   
   // System variables
   platformName?: string;

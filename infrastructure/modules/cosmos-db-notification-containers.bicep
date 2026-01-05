@@ -234,6 +234,44 @@ resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
   }
 }
 
+// Teams meetings container for Teams interoperability
+resource teamsMeetingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'teamsMeetings'
+  properties: {
+    resource: {
+      id: 'teamsMeetings'
+      partitionKey: {
+        paths: ['/tenantId']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/_etag/?' }
+        ]
+      }
+      // Index by orderId and meetingId for fast lookups
+      compositeIndexes: [
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/startDateTime', order: 'descending' }
+        ]
+        [
+          { path: '/meetingId', order: 'ascending' }
+        ]
+      ]
+    }
+    options: {
+      throughput: 400
+    }
+  }
+}
+
 output emailTemplatesContainerId string = emailTemplatesContainer.id
 output smsTemplatesContainerId string = smsTemplatesContainer.id
 output notificationHistoryContainerId string = notificationHistoryContainer.id
@@ -242,3 +280,5 @@ output chatThreadsContainerId string = chatThreadsContainer.id
 output chatMessagesContainerId string = chatMessagesContainer.id
 output deviceRegistrationsContainerId string = deviceRegistrationsContainer.id
 output acsUserMappingsContainerId string = acsUserMappingsContainer.id
+output teamsMeetingsContainerId string = teamsMeetingsContainer.id
+

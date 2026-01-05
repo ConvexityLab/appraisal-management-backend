@@ -3,12 +3,14 @@
  * 
  * Implements real-time chat using ACS Chat SDK with user token authentication.
  * Each user gets their own ChatClient instance with WebSocket real-time notifications.
+ * Supports Teams interoperability - ACS users can join Teams meetings and chat.
  */
 
 import { Logger } from '../utils/logger';
 import { CosmosDbService } from './cosmos-db.service';
 import { AzureCommunicationService } from './azure-communication.service';
 import { AcsIdentityService } from './acs-identity.service';
+import { TeamsService } from './teams.service';
 import { ApiResponse } from '../types/index';
 import { ChatThread, ChatMessage, ChatParticipant } from '../types/communication.types';
 import { ChatClient, ChatThreadClient } from '@azure/communication-chat';
@@ -29,6 +31,7 @@ export class ChatService {
   private dbService: CosmosDbService;
   private acsService: AzureCommunicationService;
   private identityService: AcsIdentityService;
+  private teamsService: TeamsService;
   
   // Active user sessions
   private userSessions: Map<string, UserChatSession> = new Map();
@@ -38,6 +41,7 @@ export class ChatService {
     this.dbService = new CosmosDbService();
     this.acsService = new AzureCommunicationService();
     this.identityService = new AcsIdentityService();
+    this.teamsService = new TeamsService();
   }
 
   /**
@@ -447,6 +451,147 @@ export class ChatService {
       }
     } catch (error) {
       this.logger.error('Error cleaning up session', { error, azureAdUserId });
+    }
+  }
+
+  /**
+   * TEAMS INTEROPERABILITY METHODS
+   * External ACS users can join Teams meetings without Teams license
+   */
+
+  /**
+   * Join a Teams meeting chat as ACS user
+   * External users (vendors, borrowers) can participate without Teams license
+   */
+  async joinTeamsMeetingChat(
+    meetingId: string,
+    azureAdUserId: string,
+    tenantId: string
+  ): Promise<ApiResponse<{ threadId: string; joinUrl: string }>> {
+    try {
+      const session = this.userSessions.get(azureAdUserId);
+      if (!session) {
+        return {
+          success: false,
+          data: null as any,
+          error: { 
+            code: 'SESSION_NOT_INITIALIZED', 
+            message: 'Chat session not initialized', 
+            timestamp: new Date() 
+          }
+        };
+      }
+
+      // Get meeting details
+      const meeting = await this.teamsService.getMeetingById(meetingId, tenantId);
+      if (!meeting) {
+        return {
+          success: false,
+          data: null as any,
+          error: { 
+            code: 'MEETING_NOT_FOUND', 
+            message: 'Teams meeting not found', 
+            timestamp: new Date() 
+          }
+        };
+      }
+
+      // Get thread client for Teams meeting
+      // Teams meetings have an associated chat thread
+      const threadId = meeting.chatThreadId;
+      if (!threadId) {
+        return {
+          success: false,
+          data: null as any,
+          error: { 
+            code: 'MEETING_CHAT_NOT_AVAILABLE', 
+            message: 'Teams meeting chat not available', 
+            timestamp: new Date() 
+          }
+        };
+      }
+
+      // Join the Teams meeting chat thread
+      const threadClient = session.chatClient.getChatThreadClient(threadId);
+      session.threadClients.set(threadId, threadClient);
+
+      this.logger.info('Joined Teams meeting chat', { 
+        meetingId, 
+        threadId, 
+        azureAdUserId 
+      });
+
+      return {
+        success: true,
+        data: {
+          threadId,
+          joinUrl: meeting.joinUrl
+        }
+      };
+    } catch (error) {
+      this.logger.error('Error joining Teams meeting chat', { error, meetingId });
+      throw error;
+    }
+  }
+
+  /**
+   * Send message in Teams meeting chat
+   * Works seamlessly - ACS users chat alongside Teams users
+   */
+  async sendTeamsMeetingMessage(
+    meetingId: string,
+    content: string,
+    azureAdUserId: string,
+    senderDisplayName: string,
+    tenantId: string
+  ): Promise<ApiResponse<ChatMessage>> {
+    try {
+      const meeting = await this.teamsService.getMeetingById(meetingId, tenantId);
+      if (!meeting || !meeting.chatThreadId) {
+        return {
+          success: false,
+          data: null as any,
+          error: { 
+            code: 'MEETING_NOT_FOUND', 
+            message: 'Teams meeting or chat not found', 
+            timestamp: new Date() 
+          }
+        };
+      }
+
+      // Send message to Teams meeting chat thread
+      return await this.sendMessage(
+        meeting.chatThreadId,
+        azureAdUserId,
+        senderDisplayName,
+        content,
+        tenantId
+      );
+    } catch (error) {
+      this.logger.error('Error sending Teams meeting message', { error, meetingId });
+      throw error;
+    }
+  }
+
+  /**
+   * Get messages from Teams meeting chat
+   */
+  async getTeamsMeetingMessages(
+    meetingId: string,
+    tenantId: string,
+    limit: number = 50
+  ): Promise<ChatMessage[]> {
+    try {
+      const meeting = await this.teamsService.getMeetingById(meetingId, tenantId);
+      if (!meeting || !meeting.chatThreadId) {
+        this.logger.warn('Teams meeting or chat not found', { meetingId });
+        return [];
+      }
+
+      return await this.getThreadMessages(meeting.chatThreadId, tenantId, limit);
+    } catch (error) {
+      this.logger.error('Error getting Teams meeting messages', { error, meetingId });
+      return [];
     }
   }
 }
