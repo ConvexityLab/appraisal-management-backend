@@ -10,7 +10,7 @@
  * - Cost Competitiveness (10%): Fee alignment with budget
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { VendorPerformanceCalculatorService } from './vendor-performance-calculator.service';
 import {
@@ -20,7 +20,7 @@ import {
   VendorAvailability,
   VendorPerformanceMetrics,
   GeographicArea
-} from '../types/vendor-marketplace.types';
+} from '../types/vendor-marketplace.types.js';
 
 interface GeoCoordinates {
   latitude: number;

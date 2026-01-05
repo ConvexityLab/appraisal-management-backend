@@ -5,14 +5,14 @@
 
 import express, { Request, Response, NextFunction, Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { VendorMatchingEngine } from '../services/vendor-matching-engine.service';
-import { CosmosDbService } from '../services/cosmos-db.service';
+import { Logger } from '../utils/logger.js';
+import { VendorMatchingEngine } from '../services/vendor-matching-engine.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import {
   VendorMatchRequest,
   VendorMatchCriteria,
   VendorMatchResult
-} from '../types/vendor-marketplace.types';
+} from '../types/vendor-marketplace.types.js';
 
 const logger = new Logger();
 const matchingEngine = new VendorMatchingEngine();

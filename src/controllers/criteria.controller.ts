@@ -5,16 +5,16 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { QCChecklistManagementService } from '../services/qc-checklist-management.service';
-import { createApiError, createApiResponse } from '../utils/api-response.util';
+import { Logger } from '../utils/logger.js';
+import { QCChecklistManagementService } from '../services/qc-checklist-management.service.js';
+import { createApiError, createApiResponse } from '../utils/api-response.util.js';
 import {
   QCChecklist,
   QCChecklistAssignment,
   CreateQCChecklistRequest,
   QCTemplateConfig
-} from '../types/qc-checklist.types';
-import { ApiResponse } from '../types/index';
+} from '../types/qc-checklist.types.js';
+import { ApiResponse } from '../types/index.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {

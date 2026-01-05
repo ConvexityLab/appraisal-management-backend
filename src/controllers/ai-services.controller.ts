@@ -11,8 +11,8 @@
 
 import express from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { UniversalAIService } from '../services/universal-ai.service';
+import { Logger } from '../utils/logger.js';
+import { UniversalAIService } from '../services/universal-ai.service.js';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {

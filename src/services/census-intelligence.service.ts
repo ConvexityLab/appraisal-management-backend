@@ -5,9 +5,9 @@
  * Provides hyper-local insights at the block group level for property intelligence
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
-import { Coordinates } from '../types/geospatial';
+import { Coordinates } from '../types/geospatial.js';
 import {
   DemographicIntelligence,
   EconomicIntelligence,
@@ -16,7 +16,7 @@ import {
   MobilityIntelligence,
   CensusGeographicIdentifier,
   CensusDataRequest
-} from '../types/property-intelligence';
+} from '../types/property-intelligence.js';
 
 export class CensusIntelligenceService {
   private logger: Logger;

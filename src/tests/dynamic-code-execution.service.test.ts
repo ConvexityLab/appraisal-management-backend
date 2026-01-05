@@ -5,7 +5,7 @@
  * error handling, and edge cases of the Dynamic Code Execution Service.
  */
 
-import { DynamicCodeExecutionService, CodeExecutionContext, CodeExecutionOptions } from '../services/dynamic-code-execution.service';
+import { DynamicCodeExecutionService, CodeExecutionContext, CodeExecutionOptions } from '../services/dynamic-code-execution.service.js';
 
 describe('DynamicCodeExecutionService', () => {
   let service: DynamicCodeExecutionService;

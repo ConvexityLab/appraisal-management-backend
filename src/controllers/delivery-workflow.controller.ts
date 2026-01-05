@@ -5,15 +5,15 @@
 
 import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { OrderProgressService } from '../services/order-progress.service';
-import { DeliveryWorkflowService } from '../services/delivery-workflow.service';
+import { Logger } from '../utils/logger.js';
+import { OrderProgressService } from '../services/order-progress.service.js';
+import { DeliveryWorkflowService } from '../services/delivery-workflow.service.js';
 import {
   OrderStatus,
   MilestoneStatus,
   DocumentType,
   DocumentStatus
-} from '../types/order-progress.types';
+} from '../types/order-progress.types.js';
 
 const logger = new Logger();
 const progressService = new OrderProgressService();

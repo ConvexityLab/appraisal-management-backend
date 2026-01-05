@@ -11,12 +11,12 @@
  */
 
 import { Request, Response } from 'express';
-import { Logger } from '../utils/logger';
-import { MultiProviderPropertyIntelligenceService } from '../services/multi-provider-intelligence.service';
-import { AddressService } from '../services/address.service';
-import { CreativePropertyIntelligenceService } from '../services/creative-property-intelligence.service';
-import { GoogleMapsPropertyIntelligenceService } from '../services/google-maps-property-intelligence.service';
-import { Coordinates } from '../types/geospatial';
+import { Logger } from '../utils/logger.js';
+import { MultiProviderPropertyIntelligenceService } from '../services/multi-provider-intelligence.service.js';
+import { AddressService } from '../services/address.service.js';
+import { CreativePropertyIntelligenceService } from '../services/creative-property-intelligence.service.js';
+import { GoogleMapsPropertyIntelligenceService } from '../services/google-maps-property-intelligence.service.js';
+import { Coordinates } from '../types/geospatial.js';
 import {
   AddressComponents,
   GeocodingResult,
@@ -24,7 +24,7 @@ import {
   PropertyIntelligence,
   PropertyIntelligenceResponse,
   BatchPropertyIntelligenceResponse
-} from '../types/property-intelligence';
+} from '../types/property-intelligence.js';
 
 export class EnhancedPropertyIntelligenceController {
   private logger: Logger;

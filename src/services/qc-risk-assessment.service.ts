@@ -5,7 +5,7 @@
  * The final component of our QC validation suite
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import {
   RiskAssessmentReport,
@@ -24,7 +24,7 @@ import {
   AnomalySeverity,
   ActionPriority,
   ConfidenceLevel
-} from '../types/qc-validation';
+} from '../types/qc-validation.js';
 
 export class QCRiskAssessmentService {
   private logger: Logger;

@@ -3,13 +3,13 @@
  * Calculates vendor performance metrics and scoring
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { 
   VendorPerformanceMetrics, 
   VendorTier,
   GeographicArea 
-} from '../types/vendor-marketplace.types';
+} from '../types/vendor-marketplace.types.js';
 import { AppraisalOrder, OrderStatus } from '../types';
 
 export class VendorPerformanceCalculatorService {

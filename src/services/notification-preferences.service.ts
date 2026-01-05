@@ -2,10 +2,10 @@
  * Notification Preferences Service
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { ApiResponse } from '../types/index';
-import { NotificationPreferences } from '../types/communication.types';
+import { ApiResponse } from '../types/index.js';
+import { NotificationPreferences } from '../types/communication.types.js';
 
 export class NotificationPreferencesService {
   private logger: Logger;

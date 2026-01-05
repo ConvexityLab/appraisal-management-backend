@@ -5,7 +5,7 @@
  * Combines policy engine, ACL checks, and query filtering
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { IAuthorizationEngine } from '../interfaces/authorization-engine.interface';
 import { CasbinAuthorizationEngine } from './casbin-engine.service';
 import { AccessGraphService } from './access-graph.service';
@@ -18,7 +18,7 @@ import {
   AuthorizationAuditLog,
   ResourceType,
   Action
-} from '../types/authorization.types';
+} from '../types/authorization.types.js';
 import { CosmosDbService } from './cosmos-db.service';
 
 export interface AuthorizationOptions {

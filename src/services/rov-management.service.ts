@@ -8,7 +8,7 @@
  * - Compliance tracking and audit trail
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { AccessControlHelper } from './access-control-helper.service';
 import {
@@ -27,7 +27,7 @@ import {
   SubmitROVResponseInput,
   ROVListResponse,
   ROVSLATracking
-} from '../types/rov.types';
+} from '../types/rov.types.js';
 
 export class ROVManagementService {
   private logger: Logger;

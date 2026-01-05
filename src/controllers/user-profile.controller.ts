@@ -5,9 +5,9 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { Logger } from '../utils/logger';
-import { UserProfileService } from '../services/user-profile.service';
-import { AuthorizedRequest } from '../middleware/authorization.middleware';
+import { Logger } from '../utils/logger.js';
+import { UserProfileService } from '../services/user-profile.service.js';
+import { AuthorizedRequest } from '../middleware/authorization.middleware.js';
 
 export const createUserProfileRouter = (): Router => {
   const router = Router();

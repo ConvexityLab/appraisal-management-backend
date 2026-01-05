@@ -4,8 +4,8 @@
  */
 
 import { Request, Response } from 'express';
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { Logger } from '../utils/logger';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { Logger } from '../utils/logger.js';
 import { 
   AppraisalOrder, 
   OrderStatus, 
@@ -14,7 +14,7 @@ import {
   ProductType, 
   PropertyType,
   OccupancyType 
-} from '../types/index';
+} from '../types/index.js';
 
 export class ProductionOrderController {
   private dbService: CosmosDbService;

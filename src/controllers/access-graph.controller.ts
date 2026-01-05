@@ -5,9 +5,9 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { Logger } from '../utils/logger';
-import { AccessGraphService } from '../services/access-graph.service';
-import { AuthorizedRequest } from '../middleware/authorization.middleware';
+import { Logger } from '../utils/logger.js';
+import { AccessGraphService } from '../services/access-graph.service.js';
+import { AuthorizedRequest } from '../middleware/authorization.middleware.js';
 
 export const createAccessGraphRouter = (): Router => {
   const router = Router();

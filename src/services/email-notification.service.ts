@@ -3,17 +3,17 @@
  * Sends emails using Azure Communication Services Email
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { AzureCommunicationService } from './azure-communication.service';
-import { ApiResponse } from '../types/index';
+import { ApiResponse } from '../types/index.js';
 import {
   EmailMessage,
   EmailTemplate,
   EmailSendResult,
   NotificationHistory,
   NotificationTemplateVariables
-} from '../types/communication.types';
+} from '../types/communication.types.js';
 
 export class EmailNotificationService {
   private logger: Logger;

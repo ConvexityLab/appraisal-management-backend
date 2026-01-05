@@ -4,8 +4,8 @@
 
 import express, { Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
-import { ChatService } from '../services/chat.service';
-import { Logger } from '../utils/logger';
+import { ChatService } from '../services/chat.service.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 const chatService = new ChatService();

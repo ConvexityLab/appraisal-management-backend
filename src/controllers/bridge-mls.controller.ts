@@ -1,6 +1,6 @@
 import { Request, Response, Router } from 'express';
-import { BridgeInteractiveService } from '../services/bridge-interactive.service';
-import { Logger } from '../utils/logger';
+import { BridgeInteractiveService } from '../services/bridge-interactive.service.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 const bridgeService = new BridgeInteractiveService();

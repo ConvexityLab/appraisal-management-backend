@@ -8,7 +8,7 @@
  * demonstrate the core functionality.
  */
 
-import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
+import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service.js';
 
 class SimpleDynamicCodeDemo {
     private codeService: DynamicCodeExecutionService;

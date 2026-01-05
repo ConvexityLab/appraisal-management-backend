@@ -8,14 +8,14 @@
  * through vendor assignment using actual service classes.
  */
 
-import { OrderIntakeService } from '../services/order-intake.service';
-import { VendorAssignmentService } from '../services/vendor-assignment.service';
-import { ValuationProcessOrchestrator } from '../services/valuation-process-orchestrator.service';
-import { OrderManagementService } from '../services/order-management.service';
-import { VendorManagementService } from '../services/vendor-management.service';
-import { NotificationService } from '../services/notification.service';
-import { Logger } from '../utils/logger';
-import { AppraisalOrder, OrderType, ProductType, Priority } from '../types/index.js';
+import { OrderIntakeService } from '../services/order-intake.service.js';
+import { VendorAssignmentService } from '../services/vendor-assignment.service.js';
+import { ValuationProcessOrchestrator } from '../services/valuation-process-orchestrator.service.js';
+import { OrderManagementService } from '../services/order-management.service.js';
+import { VendorManagementService } from '../services/vendor-management.service.js';
+import { NotificationService } from '../services/notification.service.js';
+import { Logger } from '../utils/logger.js';
+import { AppraisalOrder, OrderType, ProductType, Priority } from '\';
 
 interface DemoOrderRequest {
   clientId: string;

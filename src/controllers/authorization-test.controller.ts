@@ -5,10 +5,10 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { AuthorizationService } from '../services/authorization.service';
-import { AccessGraphService } from '../services/access-graph.service';
-import { UserProfile } from '../types/authorization.types';
-import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware';
+import { AuthorizationService } from '../services/authorization.service.js';
+import { AccessGraphService } from '../services/access-graph.service.js';
+import { UserProfile } from '../types/authorization.types.js';
+import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
 export const createAuthorizationTestRouter = (): Router => {
   const router = Router();

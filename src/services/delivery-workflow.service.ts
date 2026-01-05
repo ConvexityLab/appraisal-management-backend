@@ -3,16 +3,16 @@
  * Manages document uploads, delivery packages, and revision workflows
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { ApiResponse } from '../types/index';
+import { ApiResponse } from '../types/index.js';
 import {
   OrderDocument,
   DocumentType,
   DocumentStatus,
   DeliveryPackage,
   RevisionRequest
-} from '../types/order-progress.types';
+} from '../types/order-progress.types.js';
 
 export class DeliveryWorkflowService {
   private logger: Logger;

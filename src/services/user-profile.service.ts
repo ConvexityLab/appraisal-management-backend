@@ -4,9 +4,9 @@
  * Syncs Azure AD users to Cosmos DB and manages access scope attributes
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { UserProfile, AccessScope } from '../types/authorization.types';
+import { UserProfile, AccessScope } from '../types/authorization.types.js';
 
 export interface CreateUserProfileRequest {
   email: string;

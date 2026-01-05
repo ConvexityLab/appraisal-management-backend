@@ -7,9 +7,9 @@
 
 import { Router } from 'express';
 import { EnhancedPropertyIntelligenceController } from '../controllers/enhanced-property-intelligence.controller';
-import { validateCoordinates, validateAddress, validateBatchRequest } from '../middleware/validation';
-import { rateLimiter } from '../middleware/rate-limiter';
-import { Logger } from '../utils/logger';
+import { validateCoordinates, validateAddress, validateBatchRequest } from '../middleware/validation.js';
+import { rateLimiter } from '../middleware/rate-limiter.js';
+import { Logger } from '../utils/logger.js';
 
 const router = Router();
 const controller = new EnhancedPropertyIntelligenceController();

@@ -3,7 +3,7 @@
  * Handles the execution of QC reviews using dynamic checklists and AI services
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { UniversalAIService } from './universal-ai.service';
 import {
   QCChecklist,
@@ -16,9 +16,9 @@ import {
   QCConditionalLogic,
   ExecuteQCReviewRequest,
   QCResultsSummaryResponse
-} from '../types/qc-checklist.types';
-import { ApiResponse } from '../types/index';
-import { createApiError } from '../utils/api-response.util';
+} from '../types/qc-checklist.types.js';
+import { ApiResponse } from '../types/index.js';
+import { createApiError } from '../utils/api-response.util.js';
 
 export interface QCPromptTemplate {
   systemPrompt: string;

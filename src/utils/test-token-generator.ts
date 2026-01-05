@@ -6,7 +6,7 @@
  */
 
 import jwt from 'jsonwebtoken';
-import { UserProfile, AccessScope } from '../types/authorization.types';
+import { UserProfile, AccessScope } from '../types/authorization.types.js';
 
 export interface TestUserProfile {
   id: string;

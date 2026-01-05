@@ -2,11 +2,11 @@
  * SMS Notification Service - Azure Communication Services
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { AzureCommunicationService } from './azure-communication.service';
-import { ApiResponse } from '../types/index';
-import { SmsMessage, SmsSendResult, SmsTemplate, NotificationHistory } from '../types/communication.types';
+import { ApiResponse } from '../types/index.js';
+import { SmsMessage, SmsSendResult, SmsTemplate, NotificationHistory } from '../types/communication.types.js';
 
 export class SmsNotificationService {
   private logger: Logger;

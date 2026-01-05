@@ -5,7 +5,7 @@
  * Combines existing functionality with our property intelligence and QC validation capabilities
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import { ComprehensiveQCValidationService } from './comprehensive-qc-validation.service';
 import { OrderManagementService as BaseOrderService } from './order-management.service';
@@ -22,8 +22,8 @@ import {
   OrderOperationResult,
   PropertyDetails,
   ClientInformation
-} from '../types/order-management';
-import { QCValidationReport, AppraisalData, QCDecision } from '../types/qc-validation';
+} from '../types/order-management.js';
+import { QCValidationReport, AppraisalData, QCDecision } from '../types/qc-validation.js';
 
 export class EnhancedOrderManagementService {
   private logger: Logger;

@@ -3,14 +3,14 @@
  * Creates AI prompts from QC checklists and available document data
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import {
   QCChecklist,
   QCQuestion,
   QCDataRequirement,
   DataSourceType,
   QCConditionalLogic
-} from '../types/qc-checklist.types';
+} from '../types/qc-checklist.types.js';
 
 export interface PromptTemplate {
   systemPrompt: string;

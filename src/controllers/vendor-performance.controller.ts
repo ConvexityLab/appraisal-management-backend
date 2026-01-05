@@ -5,9 +5,9 @@
 
 import express, { Request, Response, NextFunction, Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { VendorPerformanceCalculatorService } from '../services/vendor-performance-calculator.service';
-import { CosmosDbService } from '../services/cosmos-db.service';
+import { Logger } from '../utils/logger.js';
+import { VendorPerformanceCalculatorService } from '../services/vendor-performance-calculator.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { 
   GetVendorPerformanceResponse,
   SearchVendorsRequest,
@@ -15,7 +15,7 @@ import {
   VendorScorecardSummary,
   VendorPerformanceHistory,
   VendorAvailability
-} from '../types/vendor-marketplace.types';
+} from '../types/vendor-marketplace.types.js';
 
 const logger = new Logger();
 const performanceService = new VendorPerformanceCalculatorService();

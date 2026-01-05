@@ -4,7 +4,7 @@
  * Supports ROV responses, appraisal reports (1033, 1004), and custom documents
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import {
   Template,
@@ -19,8 +19,8 @@ import {
   TemplateListItem,
   TemplateValidationResult,
   TemplatePlaceholder
-} from '../types/template.types';
-import { AccessControl } from '../types/authorization.types';
+} from '../types/template.types.js';
+import { AccessControl } from '../types/authorization.types.js';
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 

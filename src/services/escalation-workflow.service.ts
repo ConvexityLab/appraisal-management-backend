@@ -9,7 +9,7 @@
  * - Action tracking and audit trail
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { NotificationService } from './notification.service';
 import {
@@ -22,7 +22,7 @@ import {
   DisputeResolution,
   CreateEscalationRequest,
   ResolveEscalationRequest
-} from '../types/qc-workflow';
+} from '../types/qc-workflow.js';
 
 export interface EscalationMetrics {
   totalEscalations: number;

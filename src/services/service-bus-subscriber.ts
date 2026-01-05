@@ -5,8 +5,8 @@
 
 import { ServiceBusClient, ServiceBusReceiver, ServiceBusReceivedMessage } from '@azure/service-bus';
 import { DefaultAzureCredential } from '@azure/identity';
-import { AppEvent, BaseEvent, EventHandler, EventSubscriber } from '../types/events';
-import { Logger } from '../utils/logger';
+import { AppEvent, BaseEvent, EventHandler, EventSubscriber } from '../types/events.js';
+import { Logger } from '../utils/logger.js';
 
 export class ServiceBusEventSubscriber implements EventSubscriber {
   private client: ServiceBusClient;

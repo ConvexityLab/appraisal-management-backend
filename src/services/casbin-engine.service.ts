@@ -6,9 +6,9 @@
 
 import { newEnforcer, Enforcer } from 'casbin';
 import * as path from 'path';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { IAuthorizationEngine } from '../interfaces/authorization-engine.interface';
-import { AuthorizationContext, PolicyDecision, QueryFilter } from '../types/authorization.types';
+import { AuthorizationContext, PolicyDecision, QueryFilter } from '../types/authorization.types.js';
 
 export class CasbinAuthorizationEngine implements IAuthorizationEngine {
   private enforcer?: Enforcer;

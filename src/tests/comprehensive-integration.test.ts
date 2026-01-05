@@ -9,25 +9,25 @@
  * 5. Order Completion and Performance Tracking
  */
 
-import { Logger } from '../utils/logger';
-import { EnhancedOrderManagementService } from '../services/enhanced-order-management.service';
-import { ComprehensiveQCValidationService } from '../services/comprehensive-qc-validation.service';
-import { CensusIntelligenceService } from '../services/census-intelligence.service';
-import { MultiProviderPropertyIntelligenceService } from '../services/multi-provider-intelligence.service';
+import { Logger } from '../utils/logger.js';
+import { EnhancedOrderManagementService } from '../services/enhanced-order-management.service.js';
+import { ComprehensiveQCValidationService } from '../services/comprehensive-qc-validation.service.js';
+import { CensusIntelligenceService } from '../services/census-intelligence.service.js';
+import { MultiProviderPropertyIntelligenceService } from '../services/multi-provider-intelligence.service.js';
 import {
   OrderType,
   OrderPriority,
   OrderStatus,
   ClientInformation,
   PropertyDetails
-} from '../types/order-management';
+} from '../types/order-management.js';
 import {
   AppraisalData,
   PropertyType,
   ConfidenceLevel,
   MarketConditions,
   AdjustmentType
-} from '../types/qc-validation';
+} from '../types/qc-validation.js';
 
 export class ComprehensiveIntegrationTest {
   private logger: Logger;

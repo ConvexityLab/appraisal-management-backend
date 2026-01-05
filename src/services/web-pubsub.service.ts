@@ -4,8 +4,8 @@
  */
 
 import { WebPubSubServiceClient } from '@azure/web-pubsub';
-import { NotificationMessage, NotificationChannel } from '../types/events';
-import { Logger } from '../utils/logger';
+import { NotificationMessage, NotificationChannel } from '../types/events.js';
+import { Logger } from '../utils/logger.js';
 
 export interface WebPubSubConfig {
   connectionString?: string;

@@ -1,5 +1,5 @@
 import { AppraisalOrder, Vendor } from '../types/index.js';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 interface EmailOptions {
   to: string;

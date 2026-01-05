@@ -9,7 +9,7 @@
  * - Integration with QC queue, revisions, and escalations
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { NotificationService } from './notification.service';
 import { EscalationWorkflowService } from './escalation-workflow.service';
@@ -21,8 +21,8 @@ import {
   SLAAlert,
   ExtendSLARequest,
   WaiveSLARequest
-} from '../types/qc-workflow';
-import { EscalationType, EscalationPriority } from '../types/qc-workflow';
+} from '../types/qc-workflow.js';
+import { EscalationType, EscalationPriority } from '../types/qc-workflow.js';
 
 export class SLATrackingService {
   private logger: Logger;

@@ -11,7 +11,7 @@
  * Pure service - can be called directly or wrapped in workflows later.
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { UniversalAIService } from './universal-ai.service';
 
 export interface FraudDetectionInput {

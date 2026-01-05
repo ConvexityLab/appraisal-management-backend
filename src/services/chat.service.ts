@@ -6,13 +6,13 @@
  * Supports Teams interoperability - ACS users can join Teams meetings and chat.
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { AzureCommunicationService } from './azure-communication.service';
 import { AcsIdentityService } from './acs-identity.service';
 import { TeamsService } from './teams.service';
-import { ApiResponse } from '../types/index';
-import { ChatThread, ChatMessage, ChatParticipant } from '../types/communication.types';
+import { ApiResponse } from '../types/index.js';
+import { ChatThread, ChatMessage, ChatParticipant } from '../types/communication.types.js';
 import { ChatClient, ChatThreadClient } from '@azure/communication-chat';
 
 /**

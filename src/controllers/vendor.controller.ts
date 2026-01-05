@@ -1,8 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { VendorManagementService } from '../services/vendor-management.service.js';
-import { DatabaseService } from '../services/database.service.js';
-import { AuditService } from '../services/audit.service.js';
-import { Logger } from '../utils/logger.js';
+import { VendorManagementService } from '\';
+import { DatabaseService } from '\';
+import { AuditService } from '\';
+import { Logger } from '\';
 import { 
   Vendor, 
   VendorStatus, 
@@ -12,7 +12,7 @@ import {
   ServiceArea,
   Certification,
   Specialty
-} from '../types/index.js';
+} from '\';
 
 /**
  * Vendor Management API Controller

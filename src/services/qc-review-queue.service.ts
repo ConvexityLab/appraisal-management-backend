@@ -8,7 +8,7 @@
  * - Real-time queue management
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import {
   QCReviewQueueItem,
@@ -17,7 +17,7 @@ import {
   QCAnalystWorkload,
   QCPriorityScoreFactors,
   QCReviewQueueSearchCriteria
-} from '../types/qc-workflow';
+} from '../types/qc-workflow.js';
 
 export interface QueueStatistics {
   total: number;

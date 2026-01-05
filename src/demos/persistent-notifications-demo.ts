@@ -3,13 +3,13 @@
  * Demonstrates the complete persistent notification system with rule-based processing
  */
 
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { NotificationRuleRepository } from '../services/notification-rule-repository.service';
-import { NotificationConditionBuilder } from '../services/condition-builder.service';
-import { NotificationService } from '../services/core-notification.service';
-import { PersistedNotificationRule, NotificationContext } from '../types/persistent-notifications';
-import { AppEvent, NotificationChannel, EventPriority } from '../types/events';
-import { Logger } from '../utils/logger';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { NotificationRuleRepository } from '../services/notification-rule-repository.service.js';
+import { NotificationConditionBuilder } from '../services/condition-builder.service.js';
+import { NotificationService } from '../services/core-notification.service.js';
+import { PersistedNotificationRule, NotificationContext } from '../types/persistent-notifications.js';
+import { AppEvent, NotificationChannel, EventPriority } from '../types/events.js';
+import { Logger } from '../utils/logger.js';
 
 export class PersistentNotificationDemo {
   private logger: Logger;

@@ -6,8 +6,8 @@
 
 import express, { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { AVMCascadeService } from '../services/avm-cascade.service';
-import { Logger } from '../utils/logger';
+import { AVMCascadeService } from '../services/avm-cascade.service.js';
+import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
 const logger = new Logger();

@@ -5,7 +5,7 @@
  * performance tracking, and availability management
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import {
   VendorProfile,
@@ -20,7 +20,7 @@ import {
   VendorSelectionStrategy,
   AssignmentCondition,
   AppraisalOrder
-} from '../types/order-management';
+} from '../types/order-management.js';
 
 export interface VendorSearchCriteria {
   serviceTypes?: OrderType[];

@@ -5,7 +5,7 @@
  * Leverages our extensive property intelligence infrastructure for superior validation
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import { QCMarketValidationService } from './qc-market-validation.service';
 import { QCRiskAssessmentService } from './qc-risk-assessment.service';
@@ -25,7 +25,7 @@ import {
   ActionPriority,
   QCActionType,
   ActionStatus
-} from '../types/qc-validation';
+} from '../types/qc-validation.js';
 
 export class ComprehensiveQCValidationService {
   private logger: Logger;

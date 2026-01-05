@@ -5,11 +5,11 @@
  * Provides comprehensive market validation for quality control processes
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import { CensusIntelligenceService } from './census-intelligence.service';
 import { MultiProviderPropertyIntelligenceService } from './multi-provider-intelligence.service';
-import { Coordinates } from '../types/geospatial';
+import { Coordinates } from '../types/geospatial.js';
 import {
   MarketValidationReport,
   IncomeValidationResult,
@@ -22,12 +22,12 @@ import {
   RiskLevel,
   MarketRiskFlag,
   RiskSeverity
-} from '../types/qc-validation';
+} from '../types/qc-validation.js';
 import {
   DemographicIntelligence,
   EconomicIntelligence,
   HousingIntelligence
-} from '../types/property-intelligence';
+} from '../types/property-intelligence.js';
 
 export class QCMarketValidationService {
   private logger: Logger;

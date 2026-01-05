@@ -3,8 +3,8 @@
  * Tests basic database connectivity and operations
  */
 
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { OrderStatus, OrderType, ProductType, Priority, PropertyType, OccupancyType, LoanType, LoanPurpose, ContactRole, ContactMethod } from '../types/index';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { OrderStatus, OrderType, ProductType, Priority, PropertyType, OccupancyType, LoanType, LoanPurpose, ContactRole, ContactMethod } from '../types/index.js';
 
 /**
  * Manual test runner for Cosmos DB functionality

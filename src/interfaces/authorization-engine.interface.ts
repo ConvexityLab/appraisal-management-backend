@@ -5,7 +5,7 @@
  * Allows swapping implementations without changing business logic
  */
 
-import { AuthorizationContext, PolicyDecision, QueryFilter } from '../types/authorization.types';
+import { AuthorizationContext, PolicyDecision, QueryFilter } from '../types/authorization.types.js';
 
 export interface IAuthorizationEngine {
   /**

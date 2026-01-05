@@ -10,11 +10,11 @@
 
 import express, { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { QCReviewQueueService } from '../services/qc-review-queue.service';
-import { RevisionManagementService } from '../services/revision-management.service';
-import { EscalationWorkflowService } from '../services/escalation-workflow.service';
-import { SLATrackingService } from '../services/sla-tracking.service';
-import { Logger } from '../utils/logger';
+import { QCReviewQueueService } from '../services/qc-review-queue.service.js';
+import { RevisionManagementService } from '../services/revision-management.service.js';
+import { EscalationWorkflowService } from '../services/escalation-workflow.service.js';
+import { SLATrackingService } from '../services/sla-tracking.service.js';
+import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
 const logger = new Logger();

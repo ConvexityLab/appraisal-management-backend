@@ -7,13 +7,13 @@ import {
   PropertyDetails,
   PropertyAddress,
   ApiResponse
-} from '../types/index';
+} from '../types/index.js';
 import { 
   PropertySummary, 
   CreatePropertySummaryRequest 
-} from '../types/property-enhanced';
-import { Logger } from '../utils/logger';
-import { createApiError, ErrorCodes } from '../utils/api-response.util';
+} from '../types/property-enhanced.js';
+import { Logger } from '../utils/logger.js';
+import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
 
 /**
  * Comprehensive Azure Cosmos DB Service for Appraisal Management Platform

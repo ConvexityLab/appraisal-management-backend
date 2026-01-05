@@ -6,8 +6,8 @@
 
 import express, { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { FraudDetectionService } from '../services/fraud-detection.service';
-import { Logger } from '../utils/logger';
+import { FraudDetectionService } from '../services/fraud-detection.service.js';
+import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
 const logger = new Logger();

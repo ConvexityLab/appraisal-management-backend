@@ -5,14 +5,14 @@
  * Models relationships as: Entity -> [Actions] -> Object
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import {
   AccessRelationship,
   AccessEntity,
   AccessPath,
   AccessGraph
-} from '../types/authorization.types';
+} from '../types/authorization.types.js';
 
 export interface GrantAccessRequest {
   entityType: 'user' | 'role' | 'group' | 'team';

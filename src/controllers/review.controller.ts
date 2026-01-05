@@ -4,9 +4,9 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { ReviewWorkflowService } from '../services/review-workflow.service';
-import { ComparableAnalysisService } from '../services/comparable-analysis.service';
-import { ReviewReportService } from '../services/review-report.service';
+import { ReviewWorkflowService } from '../services/review-workflow.service.js';
+import { ComparableAnalysisService } from '../services/comparable-analysis.service.js';
+import { ReviewReportService } from '../services/review-report.service.js';
 import {
   ReviewType,
   ReviewPriority,
@@ -18,7 +18,7 @@ import {
   VerifyComparableRequest,
   GenerateReviewReportRequest,
   ReviewListFilters
-} from '../types/review.types';
+} from '../types/review.types.js';
 
 interface AuthenticatedRequest extends Request {
   user?: {

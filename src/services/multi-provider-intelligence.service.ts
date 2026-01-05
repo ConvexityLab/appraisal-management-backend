@@ -11,10 +11,10 @@
  * Features intelligent provider selection, failover, cost optimization, and data quality scoring
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import { CensusIntelligenceService } from './census-intelligence.service';
-import { Coordinates } from '../types/geospatial';
+import { Coordinates } from '../types/geospatial.js';
 import {
   ViewAnalysis,
   LocationCharacteristics,
@@ -26,7 +26,7 @@ import {
   DemographicIntelligence,
   EconomicIntelligence,
   HousingIntelligence
-} from '../types/property-intelligence';
+} from '../types/property-intelligence.js';
 
 export interface DataProvider {
   name: string;

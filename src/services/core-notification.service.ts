@@ -11,11 +11,11 @@ import {
   NotificationChannel, 
   EventPriority,
   EventCategory
-} from '../types/events';
+} from '../types/events.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber';
 import { ServiceBusEventPublisher } from './service-bus-publisher';
 import { WebPubSubService, WebSocketConnectionManager } from './web-pubsub.service';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 export interface NotificationRule {
   id: string;

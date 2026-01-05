@@ -3,9 +3,9 @@
  * Tracks order progress through milestones and lifecycle stages
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { ApiResponse } from '../types/index';
+import { ApiResponse } from '../types/index.js';
 import {
   OrderStatus,
   MilestoneType,
@@ -14,7 +14,7 @@ import {
   OrderProgressUpdate,
   OrderTimeline,
   ProgressMetrics
-} from '../types/order-progress.types';
+} from '../types/order-progress.types.js';
 
 export class OrderProgressService {
   private logger: Logger;

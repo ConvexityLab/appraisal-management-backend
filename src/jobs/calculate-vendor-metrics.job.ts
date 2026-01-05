@@ -14,9 +14,9 @@
  * 4. GitHub Actions scheduled workflow
  */
 
-import { VendorPerformanceCalculatorService } from '../services/vendor-performance-calculator.service';
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { Logger } from '../utils/logger';
+import { VendorPerformanceCalculatorService } from '../services/vendor-performance-calculator.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 

@@ -1,12 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { Logger } from '../utils/logger';
-import { GeospatialRiskService } from '../services/geospatial-risk.service';
+import { Logger } from '../utils/logger.js';
+import { GeospatialRiskService } from '../services/geospatial-risk.service.js';
 import { 
   Coordinates,
   PropertyRiskAssessment,
   BatchRiskAssessmentRequest,
   GeospatialApiResponse 
-} from '../types/geospatial';
+} from '../types/geospatial.js';
 
 /**
  * Geospatial Risk Assessment API Controller

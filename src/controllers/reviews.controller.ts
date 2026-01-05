@@ -5,10 +5,10 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { QCExecutionEngine } from '../services/qc-execution.engine';
-import { QCChecklistManagementService } from '../services/qc-checklist-management.service';
-import { createApiError, createApiResponse } from '../utils/api-response.util';
+import { Logger } from '../utils/logger.js';
+import { QCExecutionEngine } from '../services/qc-execution.engine.js';
+import { QCChecklistManagementService } from '../services/qc-checklist-management.service.js';
+import { createApiError, createApiResponse } from '../utils/api-response.util.js';
 import {
   QCExecutionStatus,
   QCExecutionMode,
@@ -16,9 +16,9 @@ import {
   QCExecutionRequest,
   QCBatchExecutionRequest,
   QCExecutionResult
-} from '../types/qc-management';
-import { QCExecutionContext, QCChecklist } from '../types/qc-checklist.types';
-import { ApiResponse } from '../types/index';
+} from '../types/qc-management.js';
+import { QCExecutionContext, QCChecklist } from '../types/qc-checklist.types.js';
+import { ApiResponse } from '../types/index.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {

@@ -7,9 +7,9 @@
 
 import { Router, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { TeamsService } from '../services/teams.service';
-import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware';
-import { Logger } from '../utils/logger';
+import { TeamsService } from '../services/teams.service.js';
+import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 const teamsService = new TeamsService();

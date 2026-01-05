@@ -1,10 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { OrderManagementService } from '../services/order-management.service.js';
-import { DatabaseService } from '../services/database.service.js';
-import { VendorManagementService } from '../services/vendor-management.service.js';
-import { NotificationService } from '../services/notification.service.js';
-import { AuditService } from '../services/audit.service.js';
-import { Logger } from '../utils/logger.js';
+import { OrderManagementService } from '\';
+import { DatabaseService } from '\';
+import { VendorManagementService } from '\';
+import { NotificationService } from '\';
+import { AuditService } from '\';
+import { Logger } from '\';
 import { 
   AppraisalOrder, 
   ProductType, 
@@ -15,7 +15,7 @@ import {
   OrderFilters,
   OrderUpdateData,
   ApiResponse 
-} from '../types/index.js';
+} from '\';
 
 /**
  * Order Management API Controller

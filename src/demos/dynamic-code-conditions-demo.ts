@@ -3,13 +3,13 @@
  * Demonstrates JavaScript/Node.js code execution in notification conditions
  */
 
-import { NotificationConditionBuilder } from '../services/condition-builder.service';
-import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
-import { NotificationRuleRepository } from '../services/notification-rule-repository.service';
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { PersistedNotificationRule, NotificationContext } from '../types/persistent-notifications';
-import { AppEvent } from '../types/events';
-import { Logger } from '../utils/logger';
+import { NotificationConditionBuilder } from '../services/condition-builder.service.js';
+import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service.js';
+import { NotificationRuleRepository } from '../services/notification-rule-repository.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { PersistedNotificationRule, NotificationContext } from '../types/persistent-notifications.js';
+import { AppEvent } from '../types/events.js';
+import { Logger } from '../utils/logger.js';
 
 export class DynamicCodeConditionsDemo {
   private logger: Logger;

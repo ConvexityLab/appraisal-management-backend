@@ -3,11 +3,11 @@
  * Handles CRUD operations, assignments, templates, and version control for QC checklists
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { Container } from '@azure/cosmos';
-import { createApiError } from '../utils/api-response.util';
-import { ApiResponse } from '../types/index';
+import { createApiError } from '../utils/api-response.util.js';
+import { ApiResponse } from '../types/index.js';
 import {
   QCChecklist,
   QCChecklistAssignment,
@@ -18,7 +18,7 @@ import {
   QCConditionalLogic,
   QCConditionalRule,
   ConditionalOperator
-} from '../types/qc-checklist.types';
+} from '../types/qc-checklist.types.js';
 
 export interface QCChecklistSearchFilters {
   documentType?: string;

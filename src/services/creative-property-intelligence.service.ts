@@ -5,11 +5,11 @@
  * Focus on unique, creative insights that add significant value to property appraisals
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import { GoogleMapsPropertyIntelligenceService } from './google-maps-property-intelligence.service';
-import { Coordinates } from '../types/geospatial';
-import { POISearchResult } from '../types/property-intelligence';
+import { Coordinates } from '../types/geospatial.js';
+import { POISearchResult } from '../types/property-intelligence.js';
 
 export interface CreativePropertyFeatures {
   // Lifestyle & Convenience

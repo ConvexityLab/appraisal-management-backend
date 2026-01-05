@@ -4,10 +4,10 @@
 
 import express, { Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
-import { EmailNotificationService } from '../services/email-notification.service';
-import { SmsNotificationService } from '../services/sms-notification.service';
-import { NotificationPreferencesService } from '../services/notification-preferences.service';
-import { Logger } from '../utils/logger';
+import { EmailNotificationService } from '../services/email-notification.service.js';
+import { SmsNotificationService } from '../services/sms-notification.service.js';
+import { NotificationPreferencesService } from '../services/notification-preferences.service.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 const emailService = new EmailNotificationService();

@@ -3,11 +3,11 @@
  * Shows the core functionality without complex type issues
  */
 
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { NotificationRuleRepository } from '../services/notification-rule-repository.service';
-import { NotificationConditionBuilder } from '../services/condition-builder.service';
-import { PersistedNotificationRule, NotificationContext } from '../types/persistent-notifications';
-import { Logger } from '../utils/logger';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { NotificationRuleRepository } from '../services/notification-rule-repository.service.js';
+import { NotificationConditionBuilder } from '../services/condition-builder.service.js';
+import { PersistedNotificationRule, NotificationContext } from '../types/persistent-notifications.js';
+import { Logger } from '../utils/logger.js';
 
 export async function runSimpleNotificationDemo(): Promise<void> {
   const logger = new Logger('SimpleNotificationDemo');

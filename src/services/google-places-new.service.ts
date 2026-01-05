@@ -10,9 +10,9 @@
  * - Enhanced search with natural language understanding
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
-import { Coordinates } from '../types/geospatial';
+import { Coordinates } from '../types/geospatial.js';
 
 // ===========================
 // TYPE DEFINITIONS

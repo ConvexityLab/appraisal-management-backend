@@ -5,7 +5,7 @@
  */
 
 import * as vm from 'vm';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 export interface CodeExecutionContext {
   event: any;

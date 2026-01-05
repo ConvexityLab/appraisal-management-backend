@@ -7,7 +7,7 @@ import { EmailClient } from '@azure/communication-email';
 import { SmsClient } from '@azure/communication-sms';
 import { ChatClient } from '@azure/communication-chat';
 import { DefaultAzureCredential } from '@azure/identity';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 // Define CommunicationTokenCredential interface
 interface CommunicationTokenCredential {

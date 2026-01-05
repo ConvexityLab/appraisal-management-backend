@@ -9,7 +9,7 @@
  * - Revision history and analytics
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { NotificationService } from './notification.service';
 import { QCReviewQueueService } from './qc-review-queue.service';
@@ -23,8 +23,8 @@ import {
   RevisionHistory,
   CreateRevisionRequest,
   SubmitRevisionRequest
-} from '../types/qc-workflow';
-import { AppraisalData } from '../types/qc-validation';
+} from '../types/qc-workflow.js';
+import { AppraisalData } from '../types/qc-validation.js';
 
 export interface RevisionAnalytics {
   totalRevisions: number;

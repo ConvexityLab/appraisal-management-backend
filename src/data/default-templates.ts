@@ -10,7 +10,7 @@ import {
   TemplateFormat,
   TemplateStatus,
   TemplatePlaceholder
-} from '../types/template.types';
+} from '../types/template.types.js';
 
 /**
  * ROV Response Templates

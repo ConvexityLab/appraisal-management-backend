@@ -3,7 +3,7 @@
  * Handles intelligent vendor selection, conflict checking, and assignment management
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { DynamicCodeExecutionService } from './dynamic-code-execution.service';
 
 export interface VendorProfile {

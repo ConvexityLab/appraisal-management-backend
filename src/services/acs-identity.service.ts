@@ -8,9 +8,9 @@
 
 import { CommunicationIdentityClient } from '@azure/communication-identity';
 import { DefaultAzureCredential } from '@azure/identity';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { ApiResponse } from '../types/index';
+import { ApiResponse } from '../types/index.js';
 
 interface AcsUserMapping {
   id: string;

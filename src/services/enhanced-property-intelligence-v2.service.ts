@@ -11,9 +11,9 @@
  * - Pure service area business detection
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
-import { Coordinates } from '../types/geospatial';
+import { Coordinates } from '../types/geospatial.js';
 import { GooglePlacesNewService, PlaceDetails, AddressDescriptor } from './google-places-new.service';
 
 // ===========================

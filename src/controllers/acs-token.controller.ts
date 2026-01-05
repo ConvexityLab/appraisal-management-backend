@@ -6,9 +6,9 @@
  */
 
 import express, { Response, Router } from 'express';
-import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware';
-import { AcsIdentityService } from '../services/acs-identity.service';
-import { Logger } from '../utils/logger';
+import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import { AcsIdentityService } from '../services/acs-identity.service.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 const identityService = new AcsIdentityService();

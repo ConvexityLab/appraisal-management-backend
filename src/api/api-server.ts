@@ -15,20 +15,20 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 
 // Import our services
-import { CosmosDbService } from '../services/cosmos-db.service';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { EnhancedPropertyIntelligenceController } from '../controllers/enhanced-property-intelligence.controller';
 import { AIServicesController } from '../controllers/ai-services.controller';
-import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
-import { Logger } from '../utils/logger';
+import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service.js';
+import { Logger } from '../utils/logger.js';
 
 // Import Azure Entra ID authentication
-import { createAzureEntraAuth, AuthenticatedRequest as EntraAuthRequest } from '../middleware/azure-entra-auth.middleware';
+import { createAzureEntraAuth, AuthenticatedRequest as EntraAuthRequest } from '../middleware/azure-entra-auth.middleware.js';
 
 // Import Unified Authentication (Azure AD + Test Tokens)
-import { createUnifiedAuth, UnifiedAuthRequest } from '../middleware/unified-auth.middleware';
+import { createUnifiedAuth, UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
 // Import Authorization middleware
-import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middleware/authorization.middleware';
+import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 // Import QC controllers and middleware
 import { qcChecklistRouter } from '../controllers/criteria.controller';
@@ -84,7 +84,7 @@ import {
   requireRole, 
   sanitizeInput, 
   errorHandler
-} from '../middleware/qc-api-validation.middleware';
+} from '../middleware/qc-api-validation.middleware.js';
 
 // Use unified auth request type (supports both Azure AD and test tokens)
 type AuthenticatedRequest = UnifiedAuthRequest;

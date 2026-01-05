@@ -3,7 +3,7 @@
  * Coordinates the complete valuation and appraisal management process flow
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { OrderIntakeService, OrderIntakeRequest, ClientConfiguration, OrderValidationResult, PaymentCalculation } from './order-intake.service';
 import { VendorAssignmentService, VendorProfile, VendorAssignmentRequest, VendorAssignmentResult } from './vendor-assignment.service';
 import { NotificationService } from './notification.service';

@@ -9,7 +9,7 @@
  * Pure service - can be called directly or wrapped in workflows later.
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { BridgeInteractiveService } from './bridge-interactive.service';
 
 export interface AVMCascadeInput {

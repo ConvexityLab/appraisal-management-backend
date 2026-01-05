@@ -2,10 +2,10 @@
  * Chat Service - Simplified (Cosmos DB only, no ACS real-time)
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { ApiResponse } from '../types/index';
-import { ChatThread, ChatMessage, ChatParticipant } from '../types/communication.types';
+import { ApiResponse } from '../types/index.js';
+import { ChatThread, ChatMessage, ChatParticipant } from '../types/communication.types.js';
 
 export class ChatService {
   private logger: Logger;

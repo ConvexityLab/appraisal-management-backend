@@ -5,9 +5,9 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { createApiError, createApiResponse } from '../utils/api-response.util';
+import { Logger } from '../utils/logger.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { createApiError, createApiResponse } from '../utils/api-response.util.js';
 import {
   QCExecutionResult,
   QCExecutionStatus,
@@ -15,8 +15,8 @@ import {
   RiskLevel,
   ComplianceStatus,
   QCDecision
-} from '../types/qc-management';
-import { ApiResponse } from '../types/index';
+} from '../types/qc-management.js';
+import { ApiResponse } from '../types/index.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {

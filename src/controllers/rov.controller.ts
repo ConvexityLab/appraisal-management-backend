@@ -5,8 +5,8 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { ROVManagementService } from '../services/rov-management.service';
-import { Logger } from '../utils/logger';
+import { ROVManagementService } from '../services/rov-management.service.js';
+import { Logger } from '../utils/logger.js';
 import {
   CreateROVRequestInput,
   UpdateROVResearchInput,
@@ -16,7 +16,7 @@ import {
   ROVRequestorType,
   ROVChallengeReason,
   ROVDecision
-} from '../types/rov.types';
+} from '../types/rov.types.js';
 
 export class ROVController {
   private rovService: ROVManagementService;

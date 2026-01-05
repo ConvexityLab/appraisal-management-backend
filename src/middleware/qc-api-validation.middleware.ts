@@ -8,15 +8,15 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
 import { body, param, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { createApiError } from '../utils/api-response.util';
+import { Logger } from '../utils/logger.js';
+import { createApiError } from '../utils/api-response.util.js';
 import {
   QCExecutionMode,
   QCExecutionStatus,
   RiskLevel,
   ComplianceStatus,
   QCDecision
-} from '../types/qc-management';
+} from '../types/qc-management.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {

@@ -7,8 +7,8 @@
  * without relying on complex service dependencies that have compilation issues.
  */
 
-import { NotificationService } from '../services/notification.service';
-import { Logger } from '../utils/logger';
+import { NotificationService } from '../services/notification.service.js';
+import { Logger } from '../utils/logger.js';
 
 class WorkingValuationDemo {
   private notificationService: NotificationService;

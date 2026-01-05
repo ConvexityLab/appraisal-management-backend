@@ -3,14 +3,14 @@
  * Multi-provider address lookup, verification, geocoding, and standardization
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 import { 
   AddressComponents, 
   GeocodingResult, 
   AddressValidationResult
-} from '../types/property-intelligence';
-import { Coordinates } from '../types/geospatial';
+} from '../types/property-intelligence.js';
+import { Coordinates } from '../types/geospatial.js';
 
 export class AddressService {
   private logger: Logger;

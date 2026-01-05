@@ -4,7 +4,7 @@
  * compliance checks, and payment processing
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { DynamicCodeExecutionService } from './dynamic-code-execution.service';
 
 export interface OrderIntakeRequest {

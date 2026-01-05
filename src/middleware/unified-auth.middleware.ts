@@ -6,10 +6,10 @@
 
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { createAzureEntraAuth } from './azure-entra-auth.middleware';
-import { TestTokenGenerator } from '../utils/test-token-generator';
-import { UserProfileService } from '../services/user-profile.service';
+import { TestTokenGenerator } from '../utils/test-token-generator.js';
+import { UserProfileService } from '../services/user-profile.service.js';
 
 export interface UnifiedAuthRequest extends Request {
   user?: {

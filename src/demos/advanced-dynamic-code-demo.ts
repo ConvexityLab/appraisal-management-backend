@@ -11,7 +11,7 @@
  * - Report generation
  */
 
-import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service';
+import { DynamicCodeExecutionService } from '../services/dynamic-code-execution.service.js';
 
 class AdvancedDynamicCodeDemo {
     private codeService: DynamicCodeExecutionService;

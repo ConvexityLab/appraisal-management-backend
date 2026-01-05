@@ -1,4 +1,4 @@
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { 
   PropertyRiskAssessment, 
   Coordinates, 
@@ -15,7 +15,7 @@ import {
   InsuranceRequirement,
   RegulatoryRequirement,
   DataQualityMetrics
-} from '../types/geospatial';
+} from '../types/geospatial.js';
 
 // Import individual service clients
 import { FemaFloodService } from './geospatial/fema-flood.service';

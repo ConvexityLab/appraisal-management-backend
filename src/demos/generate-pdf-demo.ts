@@ -5,7 +5,7 @@
  */
 
 import { ROV_VALUE_INCREASED_TEMPLATE } from '../data/default-templates';
-import { TemplateFormat, Template, TemplatePlaceholder } from '../types/template.types';
+import { TemplateFormat, Template, TemplatePlaceholder } from '../types/template.types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument from 'pdfkit';

@@ -5,9 +5,9 @@
  * and market trend analysis for ROV responses.
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { EnhancedPropertyIntelligenceV2Service } from './enhanced-property-intelligence-v2.service';
-import { ROVComparable } from '../types/rov.types';
+import { ROVComparable } from '../types/rov.types.js';
 
 /**
  * Criteria for comparable property search

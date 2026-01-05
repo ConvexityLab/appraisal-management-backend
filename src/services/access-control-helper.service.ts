@@ -4,8 +4,8 @@
  * Utilities for managing access control metadata on documents
  */
 
-import { Logger } from '../utils/logger';
-import { AccessControl } from '../types/authorization.types';
+import { Logger } from '../utils/logger.js';
+import { AccessControl } from '../types/authorization.types.js';
 
 export interface AddAccessControlOptions {
   ownerId: string;

@@ -17,7 +17,7 @@
  * - Quality control and analysis capabilities
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
 
 // Types for AI operations

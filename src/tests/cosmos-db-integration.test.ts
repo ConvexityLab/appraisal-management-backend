@@ -3,8 +3,8 @@
  * Tests all database operations with local Cosmos DB Emulator
  */
 
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { OrderStatus, OrderPriority, OrderType, VendorStatus } from '../types/order-management';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { OrderStatus, OrderPriority, OrderType, VendorStatus } from '../types/order-management.js';
 
 describe('Cosmos DB Integration Tests', () => {
   let dbService: CosmosDbService;

@@ -5,8 +5,8 @@
  */
 
 import { CosmosDbService } from './cosmos-db.service';
-import { PersistedNotificationRule, NotificationContext, RuleMetrics, RuleExecutionLog } from '../types/persistent-notifications';
-import { Logger } from '../utils/logger';
+import { PersistedNotificationRule, NotificationContext, RuleMetrics, RuleExecutionLog } from '../types/persistent-notifications.js';
+import { Logger } from '../utils/logger.js';
 
 export class NotificationRuleRepository {
   private cosmosDb: CosmosDbService;

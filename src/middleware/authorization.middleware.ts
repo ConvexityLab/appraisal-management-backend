@@ -5,9 +5,9 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { Logger } from '../utils/logger';
-import { AuthorizationService } from '../services/authorization.service';
-import { ResourceType, Action, UserProfile, AccessControl } from '../types/authorization.types';
+import { Logger } from '../utils/logger.js';
+import { AuthorizationService } from '../services/authorization.service.js';
+import { ResourceType, Action, UserProfile, AccessControl } from '../types/authorization.types.js';
 
 /**
  * Extended Express Request with authorization context

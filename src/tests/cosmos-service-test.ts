@@ -3,7 +3,7 @@
  * Tests our actual CosmosDbService implementation
  */
 
-import { CosmosDbService } from '../services/cosmos-db.service';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 
 async function testCosmosDbService(): Promise<void> {
   console.log('🚀 Testing CosmosDbService Implementation...\n');

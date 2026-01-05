@@ -5,7 +5,7 @@
 
 import { DefaultAzureCredential } from '@azure/identity';
 import { SecretClient } from '@azure/keyvault-secrets';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 export interface AzureConfig {
   // Cosmos DB Configuration

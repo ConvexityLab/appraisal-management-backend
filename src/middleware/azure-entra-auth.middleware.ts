@@ -8,7 +8,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 

@@ -5,9 +5,9 @@
  * Tests demographic, economic, and housing analysis capabilities
  */
 
-import { CensusIntelligenceService } from '../services/census-intelligence.service';
-import { MultiProviderPropertyIntelligenceService } from '../services/multi-provider-intelligence.service';
-import { Coordinates } from '../types/geospatial';
+import { CensusIntelligenceService } from '../services/census-intelligence.service.js';
+import { MultiProviderPropertyIntelligenceService } from '../services/multi-provider-intelligence.service.js';
+import { Coordinates } from '../types/geospatial.js';
 
 // Test coordinates (Manhattan, NYC)
 const testCoordinates: Coordinates = {

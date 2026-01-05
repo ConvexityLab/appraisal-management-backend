@@ -7,10 +7,10 @@
  * simplified service calls to show the workflow without complex interfaces.
  */
 
-import { OrderManagementService } from '../services/order-management.service';
-import { VendorManagementService } from '../services/vendor-management.service';
-import { NotificationService } from '../services/notification.service';
-import { Logger } from '../utils/logger';
+import { OrderManagementService } from '../services/order-management.service.js';
+import { VendorManagementService } from '../services/vendor-management.service.js';
+import { NotificationService } from '../services/notification.service.js';
+import { Logger } from '../utils/logger.js';
 
 class SimpleValuationDemo {
   private orderService?: OrderManagementService;

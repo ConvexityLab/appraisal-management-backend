@@ -4,8 +4,8 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { TemplateService } from '../services/template.service';
-import { Logger } from '../utils/logger';
+import { TemplateService } from '../services/template.service.js';
+import { Logger } from '../utils/logger.js';
 import {
   CreateTemplateInput,
   UpdateTemplateInput,
@@ -15,7 +15,7 @@ import {
   AppraisalFormType,
   TemplateFormat,
   TemplateStatus
-} from '../types/template.types';
+} from '../types/template.types.js';
 
 export class TemplateController {
   private templateService: TemplateService;

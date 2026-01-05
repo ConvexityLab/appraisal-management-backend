@@ -4,13 +4,13 @@
  */
 
 import { Request, Response } from 'express';
-import { CosmosDbService } from '../services/cosmos-db.service';
-import { Logger } from '../utils/logger';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { Logger } from '../utils/logger.js';
 import { 
   Vendor, 
   VendorStatus,
   VendorPerformance 
-} from '../types/index';
+} from '../types/index.js';
 
 export class ProductionVendorController {
   private dbService: CosmosDbService;

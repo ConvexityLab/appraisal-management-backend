@@ -15,7 +15,7 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { DefaultAzureCredential } from '@azure/identity';
 import { CosmosDbService } from './cosmos-db.service';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 
 interface TeamsMeetingParticipant {
   userId: string;

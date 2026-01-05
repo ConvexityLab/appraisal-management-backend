@@ -5,7 +5,7 @@
  * Showcases our Census intelligence and property intelligence capabilities
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/logger.js';
 import { ComprehensiveIntegrationTest } from '../tests/comprehensive-integration.test';
 
 export class AppraisalManagementDemo {

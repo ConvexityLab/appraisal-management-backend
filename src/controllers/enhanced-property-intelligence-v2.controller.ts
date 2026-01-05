@@ -14,10 +14,10 @@
 
 import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
-import { Logger } from '../utils/logger';
-import { EnhancedPropertyIntelligenceV2Service } from '../services/enhanced-property-intelligence-v2.service';
-import { GooglePlacesNewService } from '../services/google-places-new.service';
-import { Coordinates } from '../types/geospatial';
+import { Logger } from '../utils/logger.js';
+import { EnhancedPropertyIntelligenceV2Service } from '../services/enhanced-property-intelligence-v2.service.js';
+import { GooglePlacesNewService } from '../services/google-places-new.service.js';
+import { Coordinates } from '../types/geospatial.js';
 
 const router = Router();
 const logger = new Logger();
