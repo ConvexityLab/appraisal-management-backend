@@ -126,6 +126,18 @@ var containerApps = [
         name: 'ENVIRONMENT'
         value: environment
       }
+      {
+        name: 'AZURE_COSMOS_ENDPOINT'
+        value: cosmosEndpoint
+      }
+      {
+        name: 'AZURE_COSMOS_DATABASE_NAME'
+        value: cosmosDatabaseName
+      }
+      {
+        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+        value: applicationInsightsConnectionString
+      }
     ]
     scaleRule: {
       name: 'api-http-scaling'
