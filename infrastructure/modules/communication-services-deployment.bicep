@@ -22,7 +22,7 @@ var notificationHubNamespaceName = 'nhns-appraisal-${environmentName}'
 var notificationHubName = 'nh-appraisal-${environmentName}'
 
 // Deploy Azure Communication Services
-module communicationServices './modules/communication-services.bicep' = {
+module communicationServices './communication-services.bicep' = {
   name: 'deploy-communication-services'
   params: {
     communicationServicesName: communicationServicesName
@@ -33,7 +33,7 @@ module communicationServices './modules/communication-services.bicep' = {
 }
 
 // Deploy Notification Hub
-module notificationHub './modules/notification-hub.bicep' = {
+module notificationHub './notification-hub.bicep' = {
   name: 'deploy-notification-hub'
   params: {
     notificationHubNamespaceName: notificationHubNamespaceName
@@ -45,7 +45,7 @@ module notificationHub './modules/notification-hub.bicep' = {
 }
 
 // Deploy Cosmos DB containers for notifications
-module cosmosContainers './modules/cosmos-db-notification-containers.bicep' = {
+module cosmosContainers './cosmos-db-notification-containers.bicep' = {
   name: 'deploy-cosmos-notification-containers'
   params: {
     cosmosDbAccountName: cosmosDbAccountName
