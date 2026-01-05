@@ -34,6 +34,9 @@ param batchDataEndpoint string = ''
 @description('BatchData API key used by Azure Functions workloads')
 param batchDataApiKey string = ''
 
+@description('Email domain for Azure Communication Services')
+param emailDomain string = ''
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -164,6 +167,33 @@ module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
   }
 }
 
+// Static Web App for Frontend (deployed from separate repository)
+module staticWebApp 'modules/static-web-app.bicep' = {
+  name: 'static-web-app-deployment'
+  scope: resourceGroup
+  params: {
+    environment: environment
+    location: 'eastus2' // Static Web Apps have limited region availability
+    staticWebAppName: '${namingPrefix}-swa'
+    backendApiUrl: 'https://${appServices.outputs.containerAppFqdns[0]}'
+    sku: environment == 'prod' ? 'Standard' : 'Free'
+    tags: tags
+  }
+}
+
+// Azure Communication Services (ACS, Teams Interop, Notifications)
+module communicationServices 'modules/communication-services-deployment.bicep' = {
+  name: 'communication-services-deployment'
+  scope: resourceGroup
+  params: {
+    environmentName: environment
+    location: location
+    cosmosDbAccountName: cosmosDb.outputs.cosmosAccountName
+    emailDomain: emailDomain
+    tags: tags
+  }
+}
+
 // Outputs
 output resourceGroupName string = resourceGroup.name
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
@@ -187,4 +217,19 @@ output deploymentSummary object = {
   cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
   keyVaultUri: keyVault.outputs.keyVaultUri
   monitoringWorkspace: monitoring.outputs.logAnalyticsWorkspaceName
+  staticWebApp: {
+    name: staticWebApp.outputs.staticWebAppName
+    url: staticWebApp.outputs.staticWebAppUrl
+    hostname: staticWebApp.outputs.staticWebAppHostname
+  }
 }
+
+// Critical outputs for frontend repository configuration
+output frontendDeploymentToken string = staticWebApp.outputs.staticWebAppDeploymentToken
+output frontendRepoSecrets object = staticWebApp.outputs.frontendRepoSecrets
+output staticWebAppUrl string = staticWebApp.outputs.staticWebAppUrl
+
+// Communication services outputs
+output communicationServicesEndpoint string = communicationServices.outputs.communicationServicesEndpoint
+output emailDomainVerificationRecords object = communicationServices.outputs.emailVerificationRecords
+output notificationHubConnectionString string = communicationServices.outputs.notificationHubConnectionString

@@ -28,6 +28,9 @@
     },
     "batchDataApiKey": {
       "value": ""
+    },
+    "emailDomain": {
+      "value": "noreply.appraisal.platform"
     }
   }
 }
