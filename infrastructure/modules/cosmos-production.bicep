@@ -17,7 +17,7 @@ var tags = {
 var containers = [
   {
     name: 'orders'
-    partitionKey: '/clientId'
+    partitionKey: '/status'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -46,7 +46,7 @@ var containers = [
   }
   {
     name: 'vendors'
-    partitionKey: '/licenseState'
+    partitionKey: '/status'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
