@@ -428,6 +428,76 @@ var containers = [
       ]
     }
   }
+  {
+    name: 'transactions'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {
+    name: 'batchData'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {
+    name: 'comps'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {
+    name: 'reporting'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {
+    name: 'appraisalData'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
 ]
 
 // Cosmos DB Account with enterprise settings
