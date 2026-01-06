@@ -368,18 +368,6 @@ jobs:
           fi
         done
 
-  deploy-application:
-    name: Deploy Application (Legacy)
-    needs: [determine-environment, run-ci-pipeline, deploy-container-app]
-    if: false # Disabled - replaced by deploy-container-app
-    uses: ./.github/workflows/application.yml
-    with:
-      environment: ${{ needs.determine-environment.outputs.environment }}
-      app-service-name: ${{ needs.deploy-infrastructure.outputs.app-service-name || format('appraisal-mgmt-{0}-app', needs.determine-environment.outputs.environment) }}
-      app-service-url: ${{ needs.deploy-infrastructure.outputs.app-service-url || format('https://appraisal-mgmt-{0}-app.azurewebsites.net', needs.determine-environment.outputs.environment) }}
-    secrets:
-      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-
   production-promotion:
     name: Production Promotion
     runs-on: ubuntu-latest
@@ -458,8 +446,8 @@ jobs:
   failure-notification:
     name: Failure Notification
     runs-on: ubuntu-latest
-    needs: [run-ci-pipeline, deploy-infrastructure, deploy-application]
-    if: always() && (needs.run-ci-pipeline.result == 'failure' || needs.deploy-infrastructure.result == 'failure' || needs.deploy-application.result == 'failure')
+    needs: [run-ci-pipeline, deploy-infrastructure, deploy-container-app]
+    if: always() && (needs.run-ci-pipeline.result == 'failure' || needs.deploy-infrastructure.result == 'failure' || needs.deploy-container-app.result == 'failure')
     
     steps:
     # - name: Notify Teams on deployment failure
@@ -487,7 +475,7 @@ jobs:
           ### Failed Jobs
           - CI: ${{ needs.run-ci-pipeline.result }}
           - Infrastructure: ${{ needs.deploy-infrastructure.result }}
-          - Application: ${{ needs.deploy-application.result }}
+          - Container App: ${{ needs.deploy-container-app.result }}
           
           ### Next Steps
           1. Check workflow logs for detailed error information
