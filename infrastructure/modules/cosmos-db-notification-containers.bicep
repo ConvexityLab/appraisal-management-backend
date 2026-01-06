@@ -31,10 +31,7 @@ resource emailTemplatesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatab
         ]
       }
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource smsTemplatesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -55,10 +52,7 @@ resource smsTemplatesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
         ]
       }
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource notificationHistoryContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -86,10 +80,7 @@ resource notificationHistoryContainer 'Microsoft.DocumentDB/databaseAccounts/sql
       }
       defaultTtl: 7776000 // 90 days
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource notificationPreferencesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -115,10 +106,7 @@ resource notificationPreferencesContainer 'Microsoft.DocumentDB/databaseAccounts
         ]
       }
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource chatThreadsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -139,10 +127,7 @@ resource chatThreadsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
         ]
       }
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource chatMessagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -170,10 +155,7 @@ resource chatMessagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
       }
       defaultTtl: 15552000 // 180 days
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource deviceRegistrationsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -199,10 +181,7 @@ resource deviceRegistrationsContainer 'Microsoft.DocumentDB/databaseAccounts/sql
         ]
       }
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
@@ -228,10 +207,7 @@ resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
         ]
       }
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 // Teams meetings container for Teams interoperability
@@ -266,10 +242,7 @@ resource teamsMeetingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDataba
         ]
       ]
     }
-    options: {
-      throughput: 400
     }
-  }
 }
 
 output emailTemplatesContainerId string = emailTemplatesContainer.id
