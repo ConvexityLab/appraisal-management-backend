@@ -37,6 +37,43 @@ param batchDataApiKey string = ''
 @description('Email domain for Azure Communication Services')
 param emailDomain string = ''
 
+// External API Keys (secure parameters from GitHub Secrets)
+@secure()
+@description('Google Maps API key')
+param googleMapsApiKey string = ''
+
+@secure()
+@description('Azure OpenAI API key')
+param azureOpenAiApiKey string = ''
+
+@secure()
+@description('Azure OpenAI endpoint')
+param azureOpenAiEndpoint string = ''
+
+@secure()
+@description('Google Gemini API key')
+param googleGeminiApiKey string = ''
+
+@secure()
+@description('Census Bureau API key')
+param censusApiKey string = ''
+
+@secure()
+@description('Bridge Interactive MLS token')
+param bridgeServerToken string = ''
+
+@secure()
+@description('National Park Service API key')
+param npsApiKey string = ''
+
+@secure()
+@description('SambaNova API key')
+param sambanovaApiKey string = ''
+
+@secure()
+@description('Azure Communication Services API key for local dev')
+param azureCommunicationApiKey string = ''
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -156,6 +193,16 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     keyVaultName: keyVault.outputs.keyVaultName
     storageAccountName: storage.outputs.storageAccountName
     applicationInsightsKey: monitoring.outputs.instrumentationKey
+    googleMapsApiKey: googleMapsApiKey
+    azureOpenAiApiKey: azureOpenAiApiKey
+    azureOpenAiEndpoint: azureOpenAiEndpoint
+    googleGeminiApiKey: googleGeminiApiKey
+    censusApiKey: censusApiKey
+    bridgeServerToken: bridgeServerToken
+    npsApiKey: npsApiKey
+    sambanovaApiKey: sambanovaApiKey
+    azureCommunicationApiKey: azureCommunicationApiKey
+    azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
   }
 }
 

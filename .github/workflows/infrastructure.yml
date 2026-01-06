@@ -19,6 +19,24 @@ on:
         required: true
       BATCHDATA_KEY:
         required: false
+      GOOGLE_MAPS_API_KEY:
+        required: false
+      AZURE_OPENAI_API_KEY:
+        required: false
+      AZURE_OPENAI_ENDPOINT:
+        required: false
+      GOOGLE_GEMINI_API_KEY:
+        required: false
+      CENSUS_API_KEY:
+        required: false
+      BRIDGE_SERVER_TOKEN:
+        required: false
+      NPS_API_KEY:
+        required: false
+      SAMBANOVA_API_KEY:
+        required: false
+      AZURE_COMMUNICATION_API_KEY:
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -46,6 +64,15 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+      CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+      BRIDGE_SERVER_TOKEN: ${{ secrets.BRIDGE_SERVER_TOKEN }}
+      NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
+      SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
+      AZURE_COMMUNICATION_API_KEY: ${{ secrets.AZURE_COMMUNICATION_API_KEY }}
     
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
@@ -70,9 +97,19 @@ jobs:
         echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
         PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
         PARAM_ARGS=(--parameters "@${PARAM_FILE}")
-        if [ -n "$BATCHDATA_KEY" ]; then
-          PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
-        fi
+        
+        # Add secret parameters if they exist
+        [ -n "$BATCHDATA_KEY" ] && PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
+        [ -n "$GOOGLE_MAPS_API_KEY" ] && PARAM_ARGS+=("googleMapsApiKey=$GOOGLE_MAPS_API_KEY")
+        [ -n "$AZURE_OPENAI_API_KEY" ] && PARAM_ARGS+=("azureOpenAiApiKey=$AZURE_OPENAI_API_KEY")
+        [ -n "$AZURE_OPENAI_ENDPOINT" ] && PARAM_ARGS+=("azureOpenAiEndpoint=$AZURE_OPENAI_ENDPOINT")
+        [ -n "$GOOGLE_GEMINI_API_KEY" ] && PARAM_ARGS+=("googleGeminiApiKey=$GOOGLE_GEMINI_API_KEY")
+        [ -n "$CENSUS_API_KEY" ] && PARAM_ARGS+=("censusApiKey=$CENSUS_API_KEY")
+        [ -n "$BRIDGE_SERVER_TOKEN" ] && PARAM_ARGS+=("bridgeServerToken=$BRIDGE_SERVER_TOKEN")
+        [ -n "$NPS_API_KEY" ] && PARAM_ARGS+=("npsApiKey=$NPS_API_KEY")
+        [ -n "$SAMBANOVA_API_KEY" ] && PARAM_ARGS+=("sambanovaApiKey=$SAMBANOVA_API_KEY")
+        [ -n "$AZURE_COMMUNICATION_API_KEY" ] && PARAM_ARGS+=("azureCommunicationApiKey=$AZURE_COMMUNICATION_API_KEY")
+        
         az deployment sub validate \
           --location ${{ inputs.location }} \
           --template-file infrastructure/main.bicep \
@@ -84,9 +121,18 @@ jobs:
         echo "🚀 Deploying infrastructure to ${{ inputs.environment }}..."
         PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
         PARAM_ARGS=(--parameters "@${PARAM_FILE}")
-        if [ -n "$BATCHDATA_KEY" ]; then
-          PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
-        fi
+        
+        # Add secret parameters if they exist
+        [ -n "$BATCHDATA_KEY" ] && PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
+        [ -n "$GOOGLE_MAPS_API_KEY" ] && PARAM_ARGS+=("googleMapsApiKey=$GOOGLE_MAPS_API_KEY")
+        [ -n "$AZURE_OPENAI_API_KEY" ] && PARAM_ARGS+=("azureOpenAiApiKey=$AZURE_OPENAI_API_KEY")
+        [ -n "$AZURE_OPENAI_ENDPOINT" ] && PARAM_ARGS+=("azureOpenAiEndpoint=$AZURE_OPENAI_ENDPOINT")
+        [ -n "$GOOGLE_GEMINI_API_KEY" ] && PARAM_ARGS+=("googleGeminiApiKey=$GOOGLE_GEMINI_API_KEY")
+        [ -n "$CENSUS_API_KEY" ] && PARAM_ARGS+=("censusApiKey=$CENSUS_API_KEY")
+        [ -n "$BRIDGE_SERVER_TOKEN" ] && PARAM_ARGS+=("bridgeServerToken=$BRIDGE_SERVER_TOKEN")
+        [ -n "$NPS_API_KEY" ] && PARAM_ARGS+=("npsApiKey=$NPS_API_KEY")
+        [ -n "$SAMBANOVA_API_KEY" ] && PARAM_ARGS+=("sambanovaApiKey=$SAMBANOVA_API_KEY")
+        [ -n "$AZURE_COMMUNICATION_API_KEY" ] && PARAM_ARGS+=("azureCommunicationApiKey=$AZURE_COMMUNICATION_API_KEY")
         
         deployment_output=$(az deployment sub create \
           --location ${{ inputs.location }} \

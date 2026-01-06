@@ -10,6 +10,45 @@ param storageAccountName string
 @description('Application Insights instrumentation key')
 param applicationInsightsKey string
 
+@secure()
+@description('Google Maps API key')
+param googleMapsApiKey string = ''
+
+@secure()
+@description('Azure OpenAI API key')
+param azureOpenAiApiKey string = ''
+
+@secure()
+@description('Azure OpenAI endpoint')
+param azureOpenAiEndpoint string = ''
+
+@secure()
+@description('Google Gemini API key')
+param googleGeminiApiKey string = ''
+
+@secure()
+@description('Census Bureau API key')
+param censusApiKey string = ''
+
+@secure()
+@description('Bridge Interactive MLS token')
+param bridgeServerToken string = ''
+
+@secure()
+@description('National Park Service API key')
+param npsApiKey string = ''
+
+@secure()
+@description('SambaNova API key')
+param sambanovaApiKey string = ''
+
+@secure()
+@description('Azure Communication Services API key')
+param azureCommunicationApiKey string = ''
+
+@description('Azure Communication Services endpoint')
+param azureCommunicationEndpoint string = ''
+
 // Reference existing resources to get their secrets
 // cosmosAccount and serviceBusNamespace removed - using managed identity instead of keys
 
@@ -108,12 +147,12 @@ resource jwtSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   }
 }
 
-// External API Keys (placeholder values)
-resource googleMapsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+// External API Keys (from secure parameters)
+resource googleMapsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(googleMapsApiKey)) {
   parent: keyVault
   name: 'google-maps-api-key'
   properties: {
-    value: 'REPLACE_WITH_ACTUAL_GOOGLE_MAPS_API_KEY'
+    value: googleMapsApiKey
     contentType: 'api-key'
     attributes: {
       enabled: true
@@ -121,11 +160,11 @@ resource googleMapsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
   }
 }
 
-resource azureOpenAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource azureOpenAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureOpenAiApiKey)) {
   parent: keyVault
   name: 'azure-openai-api-key'
   properties: {
-    value: 'REPLACE_WITH_ACTUAL_AZURE_OPENAI_API_KEY'
+    value: azureOpenAiApiKey
     contentType: 'api-key'
     attributes: {
       enabled: true
@@ -133,11 +172,95 @@ resource azureOpenAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' 
   }
 }
 
-resource azureOpenAiEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource azureOpenAiEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureOpenAiEndpoint)) {
   parent: keyVault
   name: 'azure-openai-endpoint'
   properties: {
-    value: 'REPLACE_WITH_ACTUAL_AZURE_OPENAI_ENDPOINT'
+    value: azureOpenAiEndpoint
+    contentType: 'url'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource googleGeminiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(googleGeminiApiKey)) {
+  parent: keyVault
+  name: 'google-gemini-api-key'
+  properties: {
+    value: googleGeminiApiKey
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource censusApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(censusApiKey)) {
+  parent: keyVault
+  name: 'census-api-key'
+  properties: {
+    value: censusApiKey
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource bridgeServerTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(bridgeServerToken)) {
+  parent: keyVault
+  name: 'bridge-server-token'
+  properties: {
+    value: bridgeServerToken
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource npsApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(npsApiKey)) {
+  parent: keyVault
+  name: 'nps-api-key'
+  properties: {
+    value: npsApiKey
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource sambanovaApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(sambanovaApiKey)) {
+  parent: keyVault
+  name: 'sambanova-api-key'
+  properties: {
+    value: sambanovaApiKey
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource azureCommunicationApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureCommunicationApiKey)) {
+  parent: keyVault
+  name: 'azure-communication-api-key'
+  properties: {
+    value: azureCommunicationApiKey
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource azureCommunicationEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureCommunicationEndpoint)) {
+  parent: keyVault
+  name: 'azure-communication-endpoint'
+  properties: {
+    value: azureCommunicationEndpoint
     contentType: 'url'
     attributes: {
       enabled: true
@@ -146,15 +269,22 @@ resource azureOpenAiEndpointSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01
 }
 
 // Outputs
-output secretNames array = [
-  // Removed deprecated secrets that are replaced by managed identity:
-  // - cosmosConnectionStringSecret (using managed identity)
-  // - cosmosPrimaryKeySecret (using managed identity)
-  // - serviceBusConnectionStringSecret (using managed identity)
-  storageConnectionStringSecret.name
-  appInsightsKeySecret.name
-  jwtSecretSecret.name
-  googleMapsApiKeySecret.name
-  azureOpenAiApiKeySecret.name
-  azureOpenAiEndpointSecret.name
-]
+output secretNames array = concat(
+  [
+    // Core secrets (always created)
+    storageConnectionStringSecret.name
+    appInsightsKeySecret.name
+    jwtSecretSecret.name
+  ],
+  // API keys (conditionally created)
+  !empty(googleMapsApiKey) ? [googleMapsApiKeySecret.name] : [],
+  !empty(azureOpenAiApiKey) ? [azureOpenAiApiKeySecret.name] : [],
+  !empty(azureOpenAiEndpoint) ? [azureOpenAiEndpointSecret.name] : [],
+  !empty(googleGeminiApiKey) ? [googleGeminiApiKeySecret.name] : [],
+  !empty(censusApiKey) ? [censusApiKeySecret.name] : [],
+  !empty(bridgeServerToken) ? [bridgeServerTokenSecret.name] : [],
+  !empty(npsApiKey) ? [npsApiKeySecret.name] : [],
+  !empty(sambanovaApiKey) ? [sambanovaApiKeySecret.name] : [],
+  !empty(azureCommunicationApiKey) ? [azureCommunicationApiKeySecret.name] : [],
+  !empty(azureCommunicationEndpoint) ? [azureCommunicationEndpointSecret.name] : []
+)
