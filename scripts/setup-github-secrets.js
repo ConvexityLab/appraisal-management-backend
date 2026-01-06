@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * Setup GitHub Secrets from .env file
+ * Setup GitHub Environment Secrets from .env file
  * 
- * This script reads your local .env file and sets GitHub repository secrets
- * for use in CI/CD pipelines.
+ * This script reads your local .env file and sets GitHub environment-specific secrets
+ * for use in CI/CD pipelines. Supports dev, staging, and prod environments.
  * 
- * Usage: node scripts/setup-github-secrets.js
+ * Usage: 
+ *   node scripts/setup-github-secrets.js --environment dev
+ *   node scripts/setup-github-secrets.js --environment staging
+ *   node scripts/setup-github-secrets.js --environment prod
  */
 
 import fs from 'fs';
@@ -64,9 +67,10 @@ function checkGhCli() {
   }
 }
 
-function setGitHubSecret(name, value, repo = 'ConvexityLab/appraisal-management-backend') {
+function setGitHubSecret(name, value, environment, repo = 'ConvexityLab/appraisal-management-backend') {
   try {
-    execSync(`gh secret set ${name} --repo ${repo}`, {
+    const command = `gh secret set ${name} --repo ${repo} --env ${environment}`;
+    execSync(command, {
       input: value,
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -85,7 +89,26 @@ function isPlaceholderValue(value) {
 }
 
 async function main() {
-  log('🔐 Setting up GitHub Secrets from .env file...', colors.cyan);
+  // Parse command line arguments
+  const args = process.argv.slice(2);
+  const envIndex = args.indexOf('--environment');
+  
+  if (envIndex === -1 || !args[envIndex + 1]) {
+    log('❌ Missing required --environment argument', colors.red);
+    log('Usage: node scripts/setup-github-secrets.js --environment <dev|staging|prod>', colors.yellow);
+    process.exit(1);
+  }
+  
+  const targetEnvironment = args[envIndex + 1];
+  const validEnvironments = ['dev', 'staging', 'prod'];
+  
+  if (!validEnvironments.includes(targetEnvironment)) {
+    log(`❌ Invalid environment: ${targetEnvironment}`, colors.red);
+    log(`Valid environments: ${validEnvironments.join(', ')}`, colors.yellow);
+    process.exit(1);
+  }
+  
+  log(`🔐 Setting up GitHub Secrets for ${targetEnvironment} environment...`, colors.cyan);
   
   // Check if .env exists
   const envPath = path.join(process.cwd(), '.env');
@@ -101,24 +124,24 @@ async function main() {
   
   // Parse .env file
   log('\n📖 Reading .env file...', colors.cyan);
-  const envVars = parseEnvFile(envPath);
-  log(`✅ Found ${Object.keys(envVars).length} environment variables`, colors.green);
+  cons`\n🔑 Setting GitHub Secrets for ${targetEnvironment} environment...`, colors.cyan);
   
-  // Map of .env keys to GitHub Secret names
-  const secretMap = {
-    'GOOGLE_MAPS_API_KEY': 'GOOGLE_MAPS_API_KEY',
-    'AZURE_OPENAI_API_KEY': 'AZURE_OPENAI_API_KEY',
-    'AZURE_OPENAI_ENDPOINT': 'AZURE_OPENAI_ENDPOINT',
-    'GOOGLE_GEMINI_API_KEY': 'GOOGLE_GEMINI_API_KEY',
-    'CENSUS_API_KEY': 'CENSUS_API_KEY',
-    'BRIDGE_SERVER_TOKEN': 'BRIDGE_SERVER_TOKEN',
-    'NPS_API_KEY': 'NPS_API_KEY',
-    'SAMBANOVA_API_KEY': 'SAMBANOVA_API_KEY',
-    'AZURE_COMMUNICATION_API_KEY': 'AZURE_COMMUNICATION_API_KEY',
-    'AZURE_TENANT_ID': 'AZURE_TENANT_ID',
-    'AZURE_CLIENT_ID': 'AZURE_CLIENT_ID',
-    'AZURE_CLIENT_SECRET': 'AZURE_CLIENT_SECRET'
-  };
+  let successCount = 0;
+  let skipCount = 0;
+  let errorCount = 0;
+  
+  for (const [envKey, secretName] of Object.entries(secretMap)) {
+    const secretValue = envVars[envKey];
+    
+    if (isPlaceholderValue(secretValue)) {
+      log(`⏭️  Skipping ${secretName} (no value or placeholder)`, colors.yellow);
+      skipCount++;
+      continue;
+    }
+    
+    try {
+      setGitHubSecret(secretName, secretValue, targetEnvironment);
+      log(`✅ Set ${secretName} for ${targetEnvironment
   
   log('\n🔑 Setting GitHub Secrets...', colors.cyan);
   
@@ -152,8 +175,12 @@ async function main() {
   log(`  ❌ Errors: ${errorCount}`, colors.red);
   
   if (successCount > 0) {
-    log('\n🎉 GitHub Secrets configured successfully!', colors.green);
-    log('Next: Push changes and deploy will automatically use these secrets.', colors.cyan);
+    log(`\n🎉 GitHub Secrets configured successfully for ${targetEnvironment}!`, colors.green);
+    log(`Next: Deploy to ${targetEnvironment} and it will automatically use these secrets.`, colors.cyan);
+    log('\n💡 Tip: Run this script for each environment with different .env values:', colors.cyan);
+    log('  node scripts/setup-github-secrets.js --environment dev', colors.yellow);
+    log('  node scripts/setup-github-secrets.js --environment staging', colors.yellow);
+    log('  node scripts/setup-github-secrets.js --environment prod', colors.yellow);
   } else {
     log('\n⚠️  No secrets were set. Check your .env file.', colors.yellow);
   }

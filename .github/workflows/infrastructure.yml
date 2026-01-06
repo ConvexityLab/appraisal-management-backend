@@ -17,32 +17,6 @@ on:
         required: true
       AZURE_SUBSCRIPTION_ID:
         required: true
-      BATCHDATA_KEY:
-        required: false
-      GOOGLE_MAPS_API_KEY:
-        required: false
-      AZURE_OPENAI_API_KEY:
-        required: false
-      AZURE_OPENAI_ENDPOINT:
-        required: false
-      GOOGLE_GEMINI_API_KEY:
-        required: false
-      CENSUS_API_KEY:
-        required: false
-      BRIDGE_SERVER_TOKEN:
-        required: false
-      NPS_API_KEY:
-        required: false
-      SAMBANOVA_API_KEY:
-        required: false
-      AZURE_COMMUNICATION_API_KEY:
-        required: false
-      AZURE_TENANT_ID:
-        required: false
-      AZURE_CLIENT_ID:
-        required: false
-      AZURE_CLIENT_SECRET:
-        required: false
 
   workflow_dispatch:
     inputs:
@@ -68,6 +42,8 @@ jobs:
     name: Deploy Infrastructure (${{ inputs.environment }})
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    # All secrets below are pulled from the GitHub environment (dev/staging/prod)
+    # Configure these in: GitHub → Settings → Environments → [environment] → Secrets
     env:
       BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
