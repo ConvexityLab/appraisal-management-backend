@@ -169,6 +169,9 @@ module appServices 'modules/app-services.bicep' = {
     batchDataApiKey: batchDataApiKey
     azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
     azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
+    keyVaultUrl: keyVault.outputs.keyVaultUri
+    azureTenantId: azureTenantId
+    azureClientId: azureClientId
   }
 }
 

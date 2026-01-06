@@ -16,6 +16,9 @@ param batchDataEndpoint string = ''
 param batchDataApiKey string = ''
 param azureCommunicationEndpoint string = ''
 param azureCommunicationEmailDomain string = ''
+param keyVaultUrl string = ''
+param azureTenantId string = ''
+param azureClientId string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -147,6 +150,18 @@ var containerApps = [
       {
         name: 'AZURE_COMMUNICATION_EMAIL_DOMAIN'
         value: azureCommunicationEmailDomain
+      }
+      {
+        name: 'KEY_VAULT_URL'
+        value: keyVaultUrl
+      }
+      {
+        name: 'AZURE_TENANT_ID'
+        value: azureTenantId
+      }
+      {
+        name: 'AZURE_CLIENT_ID'
+        value: azureClientId
       }
     ]
     scaleRule: {
