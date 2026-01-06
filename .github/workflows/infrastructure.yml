@@ -37,6 +37,12 @@ on:
         required: false
       AZURE_COMMUNICATION_API_KEY:
         required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -73,6 +79,9 @@ jobs:
       NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
       SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
       AZURE_COMMUNICATION_API_KEY: ${{ secrets.AZURE_COMMUNICATION_API_KEY }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
@@ -109,6 +118,9 @@ jobs:
         [ -n "$NPS_API_KEY" ] && PARAM_ARGS+=("npsApiKey=$NPS_API_KEY")
         [ -n "$SAMBANOVA_API_KEY" ] && PARAM_ARGS+=("sambanovaApiKey=$SAMBANOVA_API_KEY")
         [ -n "$AZURE_COMMUNICATION_API_KEY" ] && PARAM_ARGS+=("azureCommunicationApiKey=$AZURE_COMMUNICATION_API_KEY")
+        [ -n "$AZURE_TENANT_ID" ] && PARAM_ARGS+=("azureTenantId=$AZURE_TENANT_ID")
+        [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
+        [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         
         az deployment sub validate \
           --location ${{ inputs.location }} \
@@ -133,6 +145,9 @@ jobs:
         [ -n "$NPS_API_KEY" ] && PARAM_ARGS+=("npsApiKey=$NPS_API_KEY")
         [ -n "$SAMBANOVA_API_KEY" ] && PARAM_ARGS+=("sambanovaApiKey=$SAMBANOVA_API_KEY")
         [ -n "$AZURE_COMMUNICATION_API_KEY" ] && PARAM_ARGS+=("azureCommunicationApiKey=$AZURE_COMMUNICATION_API_KEY")
+        [ -n "$AZURE_TENANT_ID" ] && PARAM_ARGS+=("azureTenantId=$AZURE_TENANT_ID")
+        [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
+        [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         
         deployment_output=$(az deployment sub create \
           --location ${{ inputs.location }} \

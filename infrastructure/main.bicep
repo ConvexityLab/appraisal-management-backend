@@ -74,6 +74,17 @@ param sambanovaApiKey string = ''
 @description('Azure Communication Services API key for local dev')
 param azureCommunicationApiKey string = ''
 
+// Azure Entra (Azure AD) Configuration
+@description('Azure Tenant ID for Entra authentication')
+param azureTenantId string = ''
+
+@description('Azure Client ID (Application ID) for service authentication')
+param azureClientId string = ''
+
+@secure()
+@description('Azure Client Secret for service authentication')
+param azureClientSecret string = ''
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -203,6 +214,9 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     sambanovaApiKey: sambanovaApiKey
     azureCommunicationApiKey: azureCommunicationApiKey
     azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
+    azureTenantId: azureTenantId
+    azureClientId: azureClientId
+    azureClientSecret: azureClientSecret
   }
 }
 

@@ -49,6 +49,16 @@ param azureCommunicationApiKey string = ''
 @description('Azure Communication Services endpoint')
 param azureCommunicationEndpoint string = ''
 
+@description('Azure Tenant ID for Entra authentication')
+param azureTenantId string = ''
+
+@description('Azure Client ID (Application ID)')
+param azureClientId string = ''
+
+@secure()
+@description('Azure Client Secret')
+param azureClientSecret string = ''
+
 // Reference existing resources to get their secrets
 // cosmosAccount and serviceBusNamespace removed - using managed identity instead of keys
 
@@ -268,6 +278,42 @@ resource azureCommunicationEndpointSecret 'Microsoft.KeyVault/vaults/secrets@202
   }
 }
 
+resource azureTenantIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureTenantId)) {
+  parent: keyVault
+  name: 'azure-tenant-id'
+  properties: {
+    value: azureTenantId
+    contentType: 'guid'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource azureClientIdSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureClientId)) {
+  parent: keyVault
+  name: 'azure-client-id'
+  properties: {
+    value: azureClientId
+    contentType: 'guid'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+resource azureClientSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(azureClientSecret)) {
+  parent: keyVault
+  name: 'azure-client-secret'
+  properties: {
+    value: azureClientSecret
+    contentType: 'password'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
 // Outputs
 output secretNames array = concat(
   [
@@ -286,5 +332,8 @@ output secretNames array = concat(
   !empty(npsApiKey) ? [npsApiKeySecret.name] : [],
   !empty(sambanovaApiKey) ? [sambanovaApiKeySecret.name] : [],
   !empty(azureCommunicationApiKey) ? [azureCommunicationApiKeySecret.name] : [],
-  !empty(azureCommunicationEndpoint) ? [azureCommunicationEndpointSecret.name] : []
+  !empty(azureCommunicationEndpoint) ? [azureCommunicationEndpointSecret.name] : [],
+  !empty(azureTenantId) ? [azureTenantIdSecret.name] : [],
+  !empty(azureClientId) ? [azureClientIdSecret.name] : [],
+  !empty(azureClientSecret) ? [azureClientSecretSecret.name] : []
 )
