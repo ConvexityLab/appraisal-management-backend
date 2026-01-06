@@ -3,11 +3,13 @@
  * Clean entry point for Azure deployment
  */
 
+// Load environment variables FIRST, before any other imports
+// This ensures env vars are available when modules are loaded
 import dotenv from 'dotenv';
-import { AppraisalManagementAPIServer } from './api/api-server';
+dotenv.config(); // Loads from .env in current working directory (project root)
 
-// Load environment variables
-dotenv.config();
+// Now safe to import modules that need env vars
+import { AppraisalManagementAPIServer } from './api/api-server.js';
 
 // Environment validation
 const requiredEnvVars: string[] = [];

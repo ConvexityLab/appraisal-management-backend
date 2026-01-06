@@ -14,6 +14,8 @@ param cosmosEndpoint string
 param cosmosDatabaseName string
 param batchDataEndpoint string = ''
 param batchDataApiKey string = ''
+param azureCommunicationEndpoint string = ''
+param azureCommunicationEmailDomain string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -137,6 +139,14 @@ var containerApps = [
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
         value: applicationInsightsConnectionString
+      }
+      {
+        name: 'AZURE_COMMUNICATION_ENDPOINT'
+        value: azureCommunicationEndpoint
+      }
+      {
+        name: 'AZURE_COMMUNICATION_EMAIL_DOMAIN'
+        value: azureCommunicationEmailDomain
       }
     ]
     scaleRule: {

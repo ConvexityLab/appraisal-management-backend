@@ -119,6 +119,8 @@ module appServices 'modules/app-services.bicep' = {
     cosmosDatabaseName: cosmosDb.outputs.databaseName
     batchDataEndpoint: batchDataEndpoint
     batchDataApiKey: batchDataApiKey
+    azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
+    azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
   }
 }
 
@@ -221,6 +223,10 @@ output deploymentSummary object = {
     name: staticWebApp.outputs.staticWebAppName
     url: staticWebApp.outputs.staticWebAppUrl
     hostname: staticWebApp.outputs.staticWebAppHostname
+  }
+  communicationServices: {
+    endpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
+    emailDomain: communicationServices.outputs.emailDomain
   }
 }
 
