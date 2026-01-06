@@ -94,6 +94,13 @@ var namingPrefix = empty(organizationPrefix)
   ? replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)
   : '${organizationPrefix}-${replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)}'
 
+// Key Vault URL (construct predictably to avoid circular dependency)
+// Must match the naming pattern in modules/key-vault.bicep
+var cleanPrefix = replace(replace(replace(namingPrefix, '-', ''), 'appraisal', 'appr'), 'mgmt', 'm')
+var uniqueSuffix = uniqueString(namingPrefix, environment, location)
+var keyVaultName = 'kv${take(cleanPrefix, 8)}${take(environment, 3)}${take(uniqueSuffix, 6)}'
+var keyVaultUrl = 'https://${keyVaultName}.vault.azure.net/'
+
 // Resource Group
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   name: resourceGroupName
@@ -169,7 +176,7 @@ module appServices 'modules/app-services.bicep' = {
     batchDataApiKey: batchDataApiKey
     azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
     azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
-    keyVaultUrl: keyVault.outputs.keyVaultUri
+    keyVaultUrl: keyVaultUrl
     azureTenantId: azureTenantId
     azureClientId: azureClientId
   }
