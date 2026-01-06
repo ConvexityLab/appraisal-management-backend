@@ -1,7 +1,7 @@
 import express, { Request, Response, Router } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import { OrderNegotiationService } from '@/services/order-negotiation.service';
-import { Logger } from '@/utils/logger';
+import { OrderNegotiationService } from '../services/order-negotiation.service.js';
+import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
 const negotiationService = new OrderNegotiationService();

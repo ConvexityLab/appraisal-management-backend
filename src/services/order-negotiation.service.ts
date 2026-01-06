@@ -1,11 +1,11 @@
-import { Logger } from '@/utils/logger';
-import { CosmosDbService } from './cosmos-db.service';
+import { Logger } from '../utils/logger.js';
+import { CosmosDbService } from './cosmos-db.service.js';
 import { 
   OrderNegotiation, 
   NegotiationStatus, 
   ProposedTerms 
-} from '@/types/vendor-marketplace.types';
-import { ApiResponse } from '@/types/index';
+} from '../types/vendor-marketplace.types.js';
+import { ApiResponse } from '../types/index.js';
 
 interface NegotiationRound {
   roundNumber: number;
