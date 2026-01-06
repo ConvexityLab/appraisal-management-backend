@@ -526,7 +526,12 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
       { name: 'EnableAggregationPipeline' }
       { name: 'EnableServerless' }
     ]
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
+    ipRules: [
+      // Allow all Azure services (includes Container Apps)
+      { ipAddressOrRange: '0.0.0.0' }
+    ]
+    isVirtualNetworkFilterEnabled: false
     enableAnalyticalStorage: true
     analyticalStorageConfiguration: {
       schemaType: 'WellDefined'
