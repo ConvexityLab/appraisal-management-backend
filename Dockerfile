@@ -38,8 +38,8 @@ RUN npm ci --only=production && \
 # Copy built application from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
-# Copy any additional runtime files if needed
-# COPY ./config ./config
+# Copy Casbin authorization configuration files
+COPY ./config ./config
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /usr/src/app
