@@ -124,7 +124,26 @@ async function main() {
   
   // Parse .env file
   log('\n📖 Reading .env file...', colors.cyan);
-  cons`\n🔑 Setting GitHub Secrets for ${targetEnvironment} environment...`, colors.cyan);
+  const envVars = parseEnvFile(envPath);
+  log(`✅ Found ${Object.keys(envVars).length} environment variables`, colors.green);
+  
+  // Map of .env keys to GitHub Secret names
+  const secretMap = {
+    'GOOGLE_MAPS_API_KEY': 'GOOGLE_MAPS_API_KEY',
+    'AZURE_OPENAI_API_KEY': 'AZURE_OPENAI_API_KEY',
+    'AZURE_OPENAI_ENDPOINT': 'AZURE_OPENAI_ENDPOINT',
+    'GOOGLE_GEMINI_API_KEY': 'GOOGLE_GEMINI_API_KEY',
+    'CENSUS_API_KEY': 'CENSUS_API_KEY',
+    'BRIDGE_SERVER_TOKEN': 'BRIDGE_SERVER_TOKEN',
+    'NPS_API_KEY': 'NPS_API_KEY',
+    'SAMBANOVA_API_KEY': 'SAMBANOVA_API_KEY',
+    'AZURE_COMMUNICATION_API_KEY': 'AZURE_COMMUNICATION_API_KEY',
+    'AZURE_TENANT_ID': 'AZURE_TENANT_ID',
+    'AZURE_CLIENT_ID': 'AZURE_CLIENT_ID',
+    'AZURE_CLIENT_SECRET': 'AZURE_CLIENT_SECRET'
+  };
+  
+  log(`\n🔑 Setting GitHub Secrets for ${targetEnvironment} environment...`, colors.cyan);
   
   let successCount = 0;
   let skipCount = 0;
@@ -141,26 +160,7 @@ async function main() {
     
     try {
       setGitHubSecret(secretName, secretValue, targetEnvironment);
-      log(`✅ Set ${secretName} for ${targetEnvironment
-  
-  log('\n🔑 Setting GitHub Secrets...', colors.cyan);
-  
-  let successCount = 0;
-  let skipCount = 0;
-  let errorCount = 0;
-  
-  for (const [envKey, secretName] of Object.entries(secretMap)) {
-    const secretValue = envVars[envKey];
-    
-    if (isPlaceholderValue(secretValue)) {
-      log(`⏭️  Skipping ${secretName} (no value or placeholder)`, colors.yellow);
-      skipCount++;
-      continue;
-    }
-    
-    try {
-      setGitHubSecret(secretName, secretValue);
-      log(`✅ Set ${secretName}`, colors.green);
+      log(`✅ Set ${secretName} for ${targetEnvironment}`, colors.green);
       successCount++;
     } catch (error) {
       log(`❌ Failed to set ${secretName}: ${error.message}`, colors.red);
