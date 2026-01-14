@@ -10,13 +10,9 @@ param dnsZoneName string
 @description('Email domain verification records from ACS')
 param verificationRecords object
 
-@description('Resource group containing the DNS zone')
-param dnsZoneResourceGroup string = resourceGroup().name
-
-// Reference existing DNS zone
+// Reference existing DNS zone (in same resource group as this deployment)
 resource dnsZone 'Microsoft.Network/dnsZones@2018-05-01' existing = {
   name: dnsZoneName
-  scope: resourceGroup(dnsZoneResourceGroup)
 }
 
 // Domain verification TXT record

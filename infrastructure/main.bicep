@@ -41,7 +41,7 @@ param emailDomain string = ''
 param autoConfigureDns bool = false
 
 @description('DNS zone resource group (if different from deployment resource group)')
-param dnsZoneResourceGroup string = resourceGroup().name
+param dnsZoneResourceGroup string = ''
 
 // External API Keys (secure parameters from GitHub Secrets)
 @secure()
@@ -211,9 +211,6 @@ module acsRoleAssignments 'modules/acs-role-assignments.bicep' = {
     developerPrincipalIds: developerPrincipalIds
     tags: tags
   }
-  dependsOn: [
-    communicationServices
-  ]
 }
 
 // Key Vault (after Container Apps for principal IDs)

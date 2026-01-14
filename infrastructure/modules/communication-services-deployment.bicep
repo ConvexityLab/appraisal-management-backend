@@ -51,11 +51,9 @@ module emailDns './acs-email-dns.bicep' = if (autoConfigureDns && !empty(emailDo
   scope: resourceGroup(dnsZoneResourceGroup)
   dependsOn: [
     dnsZone
-    communicationServices
   ]
   params: {
     dnsZoneName: emailDomain
-    dnsZoneResourceGroup: dnsZoneResourceGroup
     verificationRecords: communicationServices.outputs.emailDomainVerificationRecords
   }
 }
@@ -73,9 +71,9 @@ output communicationServicesEndpoint string = communicationServices.outputs.comm
 output communicationServicesName string = communicationServicesName
 output emailDomain string = communicationServices.outputs.emailDomain
 output emailVerificationRecords object = communicationServices.outputs.emailDomainVerificationRecords
-output dnsZoneNameServers array = autoConfigureDns ? dnsZone.outputs.nameServers : []
-output dnsZoneCreated bool = autoConfigureDns
-output dnsConfigurationInstructions string = autoConfigureDns ? dnsZone.outputs.registrarInstructions : 'DNS zone not created - set autoConfigureDns=true'
+output dnsZoneNameServers array = (autoConfigureDns && !empty(emailDomain) && dnsZone != null) ? dnsZone.outputs.nameServers : []
+output dnsZoneCreated bool = autoConfigureDns && !empty(emailDomain)
+output dnsConfigurationInstructions string = (autoConfigureDns && !empty(emailDomain) && dnsZone != null) ? dnsZone.outputs.registrarInstructions : 'DNS zone not created - set autoConfigureDns=true and provide emailDomain'
 
 // Environment variables template for .env file
 output envVariables object = {
