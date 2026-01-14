@@ -23,13 +23,39 @@ export class EsriArcGISService {
    */
   async getNationalRegisterData(coordinates: Coordinates): Promise<any> {
     try {
-      // Mock NRHP data for now
+      const { latitude, longitude } = coordinates;
+      
+      // National Register of Historic Places API
+      // Public API: https://www.nps.gov/maps/tools/data-resources/
+      const radiusMeters = 100; // 100 meter radius
+      const url = `https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/NRHP_Public/FeatureServer/0/query?geometry=${longitude},${latitude}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&distance=${radiusMeters}&units=esriSRUnit_Meter&outFields=*&f=json`;
+      
+      this.logger.debug('Querying NRHP database', { url });
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.logger.warn('NRHP API request failed', { status: response.status });
+        return { onRegister: false, restrictions: [] };
+      }
+      
+      const data = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        const feature = data.features[0].attributes;
+        return {
+          onRegister: true,
+          id: feature.REFNUM,
+          name: feature.RESNAME,
+          listingDate: feature.LISTING_DATE ? new Date(feature.LISTING_DATE) : undefined,
+          restrictions: ['Historic preservation review required', 'Potential restrictions on modifications']
+        };
+      }
+      
       return {
         onRegister: false,
-        id: undefined,
-        listingDate: undefined,
         restrictions: []
       };
+      
     } catch (error) {
       this.logger.error('Failed to fetch NRHP data', { error, coordinates });
       return {

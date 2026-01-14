@@ -28,7 +28,13 @@
       "value": ""
     },
     "emailDomain": {
-      "value": "noreply-staging.appraisal.platform"
+      "value": "loneanalytics.com"
+    },
+    "autoConfigureDns": {
+      "value": true
+    },
+    "dnsZoneResourceGroup": {
+      "value": "appraisal-management-staging"
     }
   }
 }

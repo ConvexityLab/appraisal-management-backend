@@ -52,9 +52,9 @@ export class AddressService {
     
     this.providers = {
       google: {
-        apiKey: process.env.GOOGLE_GEOCODING_API_KEY || '',
+        apiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_GEOCODING_API_KEY || '',
         baseUrl: 'https://maps.googleapis.com/maps/api/geocode/json',
-        enabled: !!process.env.GOOGLE_GEOCODING_API_KEY
+        enabled: !!(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_GEOCODING_API_KEY)
       },
       mapbox: {
         apiKey: process.env.MAPBOX_ACCESS_TOKEN || '',
@@ -603,9 +603,36 @@ export class AddressService {
   }
 
   private async suggestWithGoogle(partial: string, limit: number): Promise<string[]> {
-    // Implementation would use Google Places Autocomplete API
-    // Placeholder for now
-    return [];
+    try {
+      if (!this.providers.google.apiKey) {
+        return [];
+      }
+
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(partial)}&key=${this.providers.google.apiKey}&types=address`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.predictions) {
+        return data.predictions
+          .slice(0, limit)
+          .map((prediction: any) => prediction.description);
+      }
+      
+      if (data.status === 'ZERO_RESULTS') {
+        return [];
+      }
+      
+      this.logger.warn('Google Places Autocomplete returned non-OK status', { 
+        status: data.status, 
+        errorMessage: data.error_message 
+      });
+      return [];
+      
+    } catch (error) {
+      this.logger.error('Google Places Autocomplete failed', { error, partial });
+      return [];
+    }
   }
 
   private async suggestWithMapbox(partial: string, limit: number): Promise<string[]> {

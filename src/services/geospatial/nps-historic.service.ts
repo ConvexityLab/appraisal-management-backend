@@ -25,6 +25,11 @@ export class NpsHistoricService {
 
     if (!this.apiKey) {
       this.logger.warn('NPS_API_KEY not configured, historic places data will be limited');
+    } else {
+      this.logger.info('NPS Historic Service initialized', { 
+        apiKeyPresent: !!this.apiKey, 
+        apiKeyLength: this.apiKey?.length 
+      });
     }
   }
 
@@ -34,20 +39,32 @@ export class NpsHistoricService {
   async getHistoricPlacesNearby(coordinates: Coordinates, radiusMiles: number = 0.25): Promise<any> {
     try {
       if (!this.apiKey) {
-        return this.getMockHistoricData(coordinates);
+        return this.getMockHistoricData(coordinates, 'NPS API key not configured');
       }
 
       const { latitude, longitude } = coordinates;
 
-      // Search for places within radius
-      // Note: NPS API uses state code primarily, but we can search by coordinates via places endpoint
-      const url = `${this.baseUrl}/places?limit=50&api_key=${this.apiKey}`;
+      // Try NPS Parks API first
+      const url = `${this.baseUrl}/parks?limit=50&api_key=${this.apiKey}`;
       
+      this.logger.debug('Calling NPS API', { url: url.replace(this.apiKey, '***') });
       const response = await fetch(url);
       
       if (!response.ok) {
-        this.logger.warn('NPS API returned error', { status: response.status });
-        return this.getMockHistoricData(coordinates);
+        const errorText = await response.text().catch(() => '');
+        this.logger.error('NPS API returned error', { 
+          status: response.status, 
+          statusText: response.statusText,
+          error: errorText 
+        });
+        
+        if (response.status === 403) {
+          return this.getMockHistoricData(coordinates, 'NPS API key is invalid or expired (403 Forbidden)');
+        } else if (response.status === 429) {
+          return this.getMockHistoricData(coordinates, 'NPS API rate limit exceeded');
+        } else {
+          return this.getMockHistoricData(coordinates, `NPS API error: ${response.status} ${response.statusText}`);
+        }
       }
 
       const data = await response.json();
@@ -352,7 +369,7 @@ export class NpsHistoricService {
   /**
    * Get mock historic data when API is not available
    */
-  private getMockHistoricData(coordinates: Coordinates): any {
+  private getMockHistoricData(coordinates: Coordinates, reason?: string): any {
     return {
       hasHistoricDesignation: false,
       nearbyHistoricPlaces: [],
@@ -360,7 +377,7 @@ export class NpsHistoricService {
       restrictions: [],
       valuationImpact: {
         impact: 'unknown',
-        factors: ['NPS API key not configured - unable to verify historic status'],
+        factors: [reason || 'NPS API not available - unable to verify historic status'],
       },
     };
   }

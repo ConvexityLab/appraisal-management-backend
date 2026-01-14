@@ -685,38 +685,56 @@ export class CosmosDbService {
         throw new Error('QC results container not initialized');
       }
 
-      // Get overall QC metrics
-      const metricsQuery = `
-        SELECT 
-          AVG(c.qcScore) as averageScore,
-          COUNT(c) as totalValidations,
-          SUM(CASE WHEN c.qcScore >= 90 THEN 1 ELSE 0 END) as highScoreCount,
-          SUM(CASE WHEN c.qcScore < 70 THEN 1 ELSE 0 END) as lowScoreCount
-        FROM c
-        WHERE c.validatedAt >= @fromDate
-      `;
-
+      // Get overall QC metrics using separate queries
       const fromDate = new Date();
       fromDate.setMonth(fromDate.getMonth() - 3); // Last 3 months
 
-      const { resources } = await this.qcResultsContainer.items.query({
-        query: metricsQuery,
-        parameters: [{ name: '@fromDate', value: fromDate.toISOString() }]
-      }).fetchAll();
+      const avgScoreQuery = `
+        SELECT AVG(c.qcScore) as averageScore, COUNT(1) as totalValidations
+        FROM c
+        WHERE c.validatedAt >= @fromDate
+      `;
+      const highScoreQuery = `
+        SELECT VALUE COUNT(1)
+        FROM c
+        WHERE c.validatedAt >= @fromDate AND c.qcScore >= 90
+      `;
+      const lowScoreQuery = `
+        SELECT VALUE COUNT(1)
+        FROM c
+        WHERE c.validatedAt >= @fromDate AND c.qcScore < 70
+      `;
 
-      const metrics = resources[0] || {};
+      const [avgScoreResult, highScoreResult, lowScoreResult] = await Promise.all([
+        this.qcResultsContainer.items.query({
+          query: avgScoreQuery,
+          parameters: [{ name: '@fromDate', value: fromDate.toISOString() }]
+        }).fetchAll(),
+        this.qcResultsContainer.items.query({
+          query: highScoreQuery,
+          parameters: [{ name: '@fromDate', value: fromDate.toISOString() }]
+        }).fetchAll(),
+        this.qcResultsContainer.items.query({
+          query: lowScoreQuery,
+          parameters: [{ name: '@fromDate', value: fromDate.toISOString() }]
+        }).fetchAll()
+      ]);
+
+      const metrics = avgScoreResult.resources[0] || { averageScore: 0, totalValidations: 0 };
+      const highScoreCount = highScoreResult.resources[0] || 0;
+      const lowScoreCount = lowScoreResult.resources[0] || 0;
 
       return {
         success: true,
         data: {
           overallQCScore: metrics.averageScore || 0,
           totalValidations: metrics.totalValidations || 0,
-          highScoreRate: metrics.totalValidations > 0 ? (metrics.highScoreCount / metrics.totalValidations) * 100 : 0,
-          lowScoreRate: metrics.totalValidations > 0 ? (metrics.lowScoreCount / metrics.totalValidations) * 100 : 0,
+          highScoreRate: metrics.totalValidations > 0 ? (highScoreCount / metrics.totalValidations) * 100 : 0,
+          lowScoreRate: metrics.totalValidations > 0 ? (lowScoreCount / metrics.totalValidations) * 100 : 0,
           validationCounts: {
             total: metrics.totalValidations || 0,
-            highScore: metrics.highScoreCount || 0,
-            lowScore: metrics.lowScoreCount || 0
+            highScore: highScoreCount || 0,
+            lowScore: lowScoreCount || 0
           },
           trendAnalysis: {
             period: '3 months',
@@ -774,31 +792,39 @@ export class CosmosDbService {
         throw new Error('Required containers not initialized');
       }
 
-      // Get order statistics
-      const orderStatsQuery = `
-        SELECT 
-          COUNT(c) as totalOrders,
-          SUM(CASE WHEN c.status = 'completed' THEN 1 ELSE 0 END) as completedOrders,
-          AVG(DateDiff('day', c.createdAt, c.completedAt)) as avgCompletionDays
-        FROM c
+      // Get order statistics using separate queries
+      const totalOrdersQuery = 'SELECT VALUE COUNT(1) FROM c';
+      const completedOrdersQuery = 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "completed"';
+      const avgCompletionQuery = `
+        SELECT AVG(DateDiff('day', c.createdAt, c.completedAt)) as avgCompletionDays
+        FROM c 
+        WHERE c.status = 'completed' AND c.completedAt != null
       `;
 
-      const { resources: orderStats } = await this.ordersContainer.items.query({
-        query: orderStatsQuery
-      }).fetchAll();
+      const [totalOrdersResult, completedOrdersResult, avgCompletionResult] = await Promise.all([
+        this.ordersContainer.items.query(totalOrdersQuery).fetchAll(),
+        this.ordersContainer.items.query(completedOrdersQuery).fetchAll(),
+        this.ordersContainer.items.query(avgCompletionQuery).fetchAll()
+      ]);
 
-      // Get QC pass rate
-      const qcStatsQuery = `
-        SELECT 
-          AVG(c.qcScore) as avgQcScore,
-          SUM(CASE WHEN c.qcScore >= 85 THEN 1 ELSE 0 END) as passCount,
-          COUNT(c) as totalQc
-        FROM c
-      `;
+      const totalOrders = totalOrdersResult.resources[0] || 0;
+      const completedOrders = completedOrdersResult.resources[0] || 0;
+      const avgCompletionDays = avgCompletionResult.resources[0]?.avgCompletionDays || 0;
 
-      const { resources: qcStats } = await this.qcResultsContainer.items.query({
-        query: qcStatsQuery
-      }).fetchAll();
+      // Get QC pass rate using separate queries
+      const totalQcQuery = 'SELECT VALUE COUNT(1) FROM c';
+      const passCountQuery = 'SELECT VALUE COUNT(1) FROM c WHERE c.qcScore >= 85';
+      const avgQcQuery = 'SELECT AVG(c.qcScore) as avgQcScore FROM c';
+
+      const [totalQcResult, passCountResult, avgQcResult] = await Promise.all([
+        this.qcResultsContainer.items.query(totalQcQuery).fetchAll(),
+        this.qcResultsContainer.items.query(passCountQuery).fetchAll(),
+        this.qcResultsContainer.items.query(avgQcQuery).fetchAll()
+      ]);
+
+      const totalQc = totalQcResult.resources[0] || 0;
+      const passCount = passCountResult.resources[0] || 0;
+      const avgQcScore = avgQcResult.resources[0]?.avgQcScore || 0;
 
       // Get top vendors
       const topVendorsQuery = `
@@ -815,16 +841,13 @@ export class CosmosDbService {
         query: topVendorsQuery
       }).fetchAll();
 
-      const orderMetrics = orderStats[0] || {};
-      const qcMetrics = qcStats[0] || {};
-
       return {
         success: true,
         data: {
-          totalOrders: orderMetrics.totalOrders || 0,
-          completedOrders: orderMetrics.completedOrders || 0,
-          averageCompletionTime: orderMetrics.avgCompletionDays || 0,
-          qcPassRate: qcMetrics.totalQc > 0 ? (qcMetrics.passCount / qcMetrics.totalQc) * 100 : 0,
+          totalOrders: totalOrders,
+          completedOrders: completedOrders,
+          averageCompletionTime: avgCompletionDays,
+          qcPassRate: totalQc > 0 ? (passCount / totalQc) * 100 : 0,
           topVendors: await this.calculateTopVendorRatings(topVendors),
           monthlyTrends: await this.calculateMonthlyTrends()
         }
@@ -955,20 +978,47 @@ export class CosmosDbService {
         throw new Error('Required containers not initialized');
       }
 
-      // Get vendor order statistics
-      const orderStatsQuery = `
-        SELECT 
-          COUNT(c) as totalOrders,
-          SUM(CASE WHEN c.status = 'completed' THEN 1 ELSE 0 END) as completedOrders,
-          AVG(DateDiff('day', c.assignedAt, c.completedAt)) as avgCompletionDays
+      // Get vendor order statistics using separate queries
+      const totalOrdersQuery = `
+        SELECT VALUE COUNT(1)
         FROM c
         WHERE c.assignedVendorId = @vendorId
       `;
+      const completedOrdersQuery = `
+        SELECT VALUE COUNT(1)
+        FROM c
+        WHERE c.assignedVendorId = @vendorId AND c.status = 'completed'
+      `;
+      const avgCompletionQuery = `
+        SELECT AVG(DateDiff('day', c.assignedAt, c.completedAt)) as avgCompletionDays
+        FROM c
+        WHERE c.assignedVendorId = @vendorId AND c.status = 'completed' AND c.completedAt != null
+      `;
 
-      const { resources: orderStats } = await this.ordersContainer.items.query({
-        query: orderStatsQuery,
-        parameters: [{ name: '@vendorId', value: vendorId }]
-      }).fetchAll();
+      const [totalOrdersResult, completedOrdersResult, avgCompletionResult] = await Promise.all([
+        this.ordersContainer.items.query({
+          query: totalOrdersQuery,
+          parameters: [{ name: '@vendorId', value: vendorId }]
+        }).fetchAll(),
+        this.ordersContainer.items.query({
+          query: completedOrdersQuery,
+          parameters: [{ name: '@vendorId', value: vendorId }]
+        }).fetchAll(),
+        this.ordersContainer.items.query({
+          query: avgCompletionQuery,
+          parameters: [{ name: '@vendorId', value: vendorId }]
+        }).fetchAll()
+      ]);
+
+      const totalOrders = totalOrdersResult.resources[0] || 0;
+      const completedOrders = completedOrdersResult.resources[0] || 0;
+      const avgCompletionDays = avgCompletionResult.resources[0]?.avgCompletionDays || 0;
+
+      const orderStats = [{
+        totalOrders,
+        completedOrders,
+        avgCompletionDays
+      }];
 
       // Get QC performance for this vendor
       const qcStatsQuery = `
@@ -992,12 +1042,12 @@ export class CosmosDbService {
         success: true,
         data: {
           vendorId,
-          totalOrders: orderMetrics.totalOrders || 0,
-          completedOrders: orderMetrics.completedOrders || 0,
-          completionRate: orderMetrics.totalOrders > 0 ? (orderMetrics.completedOrders / orderMetrics.totalOrders) * 100 : 0,
-          averageCompletionTime: orderMetrics.avgCompletionDays || 0,
-          averageQcScore: qcMetrics.avgQcScore || 0,
-          totalQcResults: qcMetrics.totalQcResults || 0,
+          totalOrders: (orderMetrics as any).totalOrders || 0,
+          completedOrders: (orderMetrics as any).completedOrders || 0,
+          completionRate: (orderMetrics as any).totalOrders > 0 ? ((orderMetrics as any).completedOrders / (orderMetrics as any).totalOrders) * 100 : 0,
+          averageCompletionTime: (orderMetrics as any).avgCompletionDays || 0,
+          averageQcScore: (qcMetrics as any).avgQcScore || 0,
+          totalQcResults: (qcMetrics as any).totalQcResults || 0,
           performanceRating: this.calculatePerformanceRating(orderMetrics, qcMetrics)
         }
       };
@@ -1618,13 +1668,27 @@ export class CosmosDbService {
   async getDocument<T>(containerName: string, documentId: string, partitionKey?: string): Promise<T | null> {
     try {
       const container = this.getContainer(containerName);
+      this.logger.info(`Reading document from ${containerName}`, { documentId, partitionKey });
       const { resource } = await container.item(documentId, partitionKey).read();
+      this.logger.info(`Document read result`, { documentId, hasResource: !!resource });
       return (resource as T) || null;
     } catch (error: any) {
       if (error.code === 404) {
+        this.logger.warn(`Document not found in ${containerName}`, { documentId, partitionKey });
         return null;
       }
-      this.logger.error(`Failed to get document from ${containerName}`, { error, documentId });
+      this.logger.error(`Failed to get document from ${containerName}`, { 
+        error: {
+          message: error?.message,
+          code: error?.code,
+          statusCode: error?.statusCode,
+          body: error?.body,
+          name: error?.name,
+          stack: error?.stack
+        }, 
+        documentId,
+        partitionKey 
+      });
       throw error;
     }
   }
@@ -1653,10 +1717,23 @@ export class CosmosDbService {
         query,
         parameters: parameters || []
       };
+      this.logger.info(`Executing query on ${containerName}`, { query, parameters });
       const { resources } = await container.items.query<T>(querySpec).fetchAll();
+      this.logger.info(`Query returned ${resources.length} results`);
       return resources;
-    } catch (error) {
-      this.logger.error(`Failed to query documents in ${containerName}`, { error });
+    } catch (error: any) {
+      this.logger.error(`Failed to query documents in ${containerName}`, { 
+        error: {
+          message: error?.message,
+          code: error?.code,
+          statusCode: error?.statusCode,
+          body: error?.body,
+          name: error?.name,
+          stack: error?.stack
+        },
+        query,
+        parameters
+      });
       throw error;
     }
   }

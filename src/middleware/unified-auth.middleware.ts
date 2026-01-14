@@ -59,79 +59,103 @@ export class UnifiedAuthMiddleware {
       try {
         const authHeader = req.headers.authorization;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (!authHeader) {
           return res.status(401).json({
-            error: 'Authorization header required',
-            code: 'NO_AUTH_HEADER'
+            error: 'Authentication required',
+            code: 'NO_AUTH_TOKEN'
           });
         }
 
-        const token = authHeader.substring(7);
+        const token = authHeader.replace('Bearer ', '');
 
-        // Try to decode to check if it's a test token
-        let decoded: any;
-        try {
-          decoded = jwt.decode(token);
-        } catch (error) {
-          return res.status(401).json({
-            error: 'Invalid token format',
-            code: 'INVALID_TOKEN_FORMAT'
-          });
-        }
-
+        // Decode token to check if it's a test token
+        const decoded: any = jwt.decode(token);
+        
         // Check if it's a test token
-        if (decoded?.isTestToken === true) {
+        if (decoded?.isTestToken) {
           if (!this.allowTestTokens) {
-            this.logger.error('Test token used in production environment');
             return res.status(401).json({
-              error: 'Test tokens not allowed in this environment',
-              code: 'TEST_TOKEN_NOT_ALLOWED'
+              error: 'Test tokens are not allowed in this environment',
+              code: 'TEST_TOKEN_DISABLED'
             });
           }
-
-          // Verify and use test token
-          try {
-            const verified = this.testTokenGen.verifyToken(token);
-            
-            req.user = {
-              id: verified.sub,
-              email: verified.email,
-              name: verified.name,
-              role: verified.role,
-              permissions: verified.permissions,
-              tenantId: verified.tenantId,
-              accessScope: verified.accessScope,
-              isTestUser: true
-            };
-
-            req.tenantId = verified.tenantId;
-
-            // Sync test user profile to database
-            await this.syncTestUserProfile(req.user);
-
-            this.logger.debug('Test token authenticated', {
-              userId: req.user.id,
-              role: req.user.role
-            });
-
-            next();
-          } catch (error) {
-            this.logger.error('Test token verification failed', { error });
+          
+          const validation = this.testTokenGen.verifyToken(token);
+          
+          if (validation.valid && validation.user) {
+            req.user = validation.user;
+            req.tenantId = validation.user.tenantId; // Set tenantId for profile loading
+            return next();
+          } else {
             return res.status(401).json({
-              error: 'Invalid test token',
+              error: validation.error || 'Invalid test token',
               code: 'INVALID_TEST_TOKEN'
             });
           }
-        } else {
-          // Use Azure AD authentication
-          await this.azureAuth.authenticate(req as any, res, next);
         }
-      } catch (error) {
-        this.logger.error('Authentication error', { error });
-        res.status(500).json({
-          error: 'Authentication failed',
-          code: 'AUTH_ERROR'
+
+        // Not a test token, try Azure AD authentication
+        return this.azureAuth.authenticate(req as any, res, next);
+
+      } catch (error: any) {
+        this.logger.error('Authentication failed', { 
+          errorMessage: error?.message,
+          errorName: error?.name,
+          errorStack: error?.stack,
+          fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
         });
+        return res.status(401).json({
+          error: 'Authentication failed',
+          code: 'AUTH_FAILED'
+        });
+      }
+    };
+  };
+
+  /**
+   * Optional authentication middleware
+   * Allows requests through with or without authentication
+   * Sets req.user if token is valid, but doesn't reject if missing/invalid
+   */
+  optionalAuth = () => {
+    return async (req: UnifiedAuthRequest, res: Response, next: NextFunction): Promise<any> => {
+      try {
+        const authHeader = req.headers.authorization;
+
+        // If no auth header, just continue without user
+        if (!authHeader) {
+          return next();
+        }
+
+        const token = authHeader.replace('Bearer ', '');
+
+        // Decode token to check if it's a test token
+        const decoded: any = jwt.decode(token);
+        
+        // Check if it's a test token
+        if (decoded?.isTestToken && this.allowTestTokens) {
+          const validation = this.testTokenGen.verifyToken(token);
+          
+          if (validation.valid && validation.user) {
+            req.user = validation.user;
+            req.tenantId = validation.user.tenantId;
+          }
+          
+          return next();
+        }
+
+        // Try Azure AD authentication (but don't fail if invalid)
+        try {
+          return this.azureAuth.authenticate(req as any, res, next);
+        } catch {
+          // If Azure AD fails, just continue without user
+          return next();
+        }
+
+      } catch (error) {
+        // If any error, just continue without authentication
+        this.logger.debug('Optional auth failed, continuing without user', { error });
+        return next();
       }
     };
   };

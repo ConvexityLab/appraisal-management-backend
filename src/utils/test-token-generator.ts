@@ -53,11 +53,28 @@ export class TestTokenGenerator {
   /**
    * Verify a test token
    */
-  verifyToken(token: string): any {
+  verifyToken(token: string): { valid: boolean; user?: any; error?: string } {
     try {
-      return jwt.verify(token, this.secret);
+      const decoded = jwt.verify(token, this.secret) as any;
+      
+      // Return validation result with user data
+      return {
+        valid: true,
+        user: {
+          id: decoded.sub,
+          email: decoded.email,
+          name: decoded.name,
+          role: decoded.role,
+          tenantId: decoded.tenantId,
+          permissions: decoded.permissions,
+          accessScope: decoded.accessScope
+        }
+      };
     } catch (error) {
-      throw new Error(`Invalid test token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return {
+        valid: false,
+        error: `Invalid test token: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
     }
   }
 

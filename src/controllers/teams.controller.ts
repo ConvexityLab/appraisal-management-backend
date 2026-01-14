@@ -261,6 +261,41 @@ export const createTeamsRouter = (): Router => {
   );
 
   /**
+   * GET /api/teams/list-teams
+   * List all Teams with their channels (for finding IDs)
+   * TODO: Implement listTeamsAndChannels method
+   */
+  router.get(
+    '/list-teams',
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured. Please set AZURE_TENANT_ID.'
+          });
+        }
+
+        // const teams = await teamsService.listTeamsAndChannels();
+        
+        return res.status(501).json({
+          success: false,
+          error: 'NOT_IMPLEMENTED',
+          message: 'Team listing not yet implemented. Use Graph Explorer or Teams URLs to find IDs.'
+        });
+      } catch (error: any) {
+        logger.error('Failed to list teams:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'TEAMS_LIST_FAILED',
+          message: error.message || 'Failed to list teams'
+        });
+      }
+    }
+  );
+
+  /**
    * GET /api/teams/meetings/:meetingId/join-info
    * Get join information for external ACS user
    */
@@ -431,6 +466,310 @@ export const createTeamsRouter = (): Router => {
           success: false,
           error: 'CANCEL_MEETING_FAILED',
           message: error.message || 'Failed to cancel meeting'
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/teams/messages/channel
+   * Send a message to a Teams channel (works with application permissions)
+   */
+  router.post(
+    '/messages/channel',
+    [
+      body('teamId').notEmpty().withMessage('Team ID is required'),
+      body('channelId').notEmpty().withMessage('Channel ID is required'),
+      body('message').notEmpty().withMessage('Message is required'),
+      body('subject').optional()
+    ],
+    handleValidationErrors,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured. Please set AZURE_TENANT_ID.'
+          });
+        }
+
+        const { teamId, channelId, message, subject } = req.body;
+
+        const result = await teamsService.sendChannelMessage(
+          teamId,
+          channelId,
+          message,
+          subject
+        );
+
+        return res.json({
+          success: true,
+          data: result
+        });
+      } catch (error: any) {
+        logger.error('Failed to send channel message:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'MESSAGE_SEND_FAILED',
+          message: error.message || 'Failed to send message'
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/teams/channels/:teamId/:channelId/notify
+   * Send notification to Teams channel via email
+   */
+  router.post(
+    '/channels/:teamId/:channelId/notify',
+    [
+      body('subject').notEmpty().withMessage('Subject is required'),
+      body('message').notEmpty().withMessage('Message is required')
+    ],
+    handleValidationErrors,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured. Please set AZURE_TENANT_ID.'
+          });
+        }
+
+        const { teamId, channelId } = req.params;
+        const { subject, message } = req.body;
+        
+        if (!teamId || !channelId) {
+          return res.status(400).json({
+            success: false,
+            error: 'INVALID_PARAMETERS',
+            message: 'teamId and channelId are required'
+          });
+        }
+
+        const result = await teamsService.sendChannelEmailNotification(
+          teamId,
+          channelId,
+          subject,
+          message
+        );
+
+        return res.json({
+          success: true,
+          data: result
+        });
+      } catch (error: any) {
+        logger.error('Failed to send channel notification:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'NOTIFICATION_SEND_FAILED',
+          message: error.message || 'Failed to send notification'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/teams/channels/:teamId/:channelId/email
+   * Get channel email address for email-based notifications
+   */
+  router.get(
+    '/channels/:teamId/:channelId/email',
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured. Please set AZURE_TENANT_ID.'
+          });
+        }
+
+        const { teamId, channelId } = req.params;
+        
+        if (!teamId || !channelId) {
+          return res.status(400).json({
+            success: false,
+            error: 'INVALID_PARAMETERS',
+            message: 'teamId and channelId are required'
+          });
+        }
+
+        const email = await teamsService.getChannelEmail(teamId, channelId);
+
+        if (!email) {
+          return res.status(404).json({
+            success: false,
+            error: 'EMAIL_NOT_FOUND',
+            message: 'Channel does not have an email address configured'
+          });
+        }
+
+        return res.json({
+          success: true,
+          data: { 
+            email,
+            teamId,
+            channelId
+          }
+        });
+      } catch (error: any) {
+        logger.error('Failed to get channel email:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'CHANNEL_EMAIL_FAILED',
+          message: error.message || 'Failed to get channel email'
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/teams/messages/channel
+   * Send a message to a Teams channel
+   */
+  router.post(
+    '/messages/channel',
+    [
+      body('teamId').notEmpty().withMessage('Team ID is required'),
+      body('channelId').notEmpty().withMessage('Channel ID is required'),
+      body('message').notEmpty().withMessage('Message is required')
+    ],
+    handleValidationErrors,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured. Please set AZURE_TENANT_ID.'
+          });
+        }
+
+        const { teamId, channelId, message } = req.body;
+
+        const result = await teamsService.sendChannelMessage(
+          teamId,
+          channelId,
+          message
+        );
+
+        return res.json({
+          success: true,
+          data: result
+        });
+      } catch (error: any) {
+        logger.error('Failed to send channel message:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'MESSAGE_SEND_FAILED',
+          message: error.message || 'Failed to send message'
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/teams/messages/direct
+   * Send a direct 1-on-1 Teams message
+   */
+  router.post(
+    '/messages/direct',
+    [
+      body('recipientUserId').notEmpty().withMessage('Recipient user ID is required'),
+      body('message').notEmpty().withMessage('Message is required'),
+      body('senderUserId').optional() // Optional - can override from token
+    ],
+    handleValidationErrors,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured. Please set AZURE_TENANT_ID.'
+          });
+        }
+
+        const { recipientUserId, message, senderUserId: bodySenderId } = req.body;
+        
+        // Get sender's Azure AD user ID - prefer body param, then profile, then user
+        const senderUserId = bodySenderId || req.userProfile?.azureAdObjectId || req.user?.azureAdObjectId || req.user?.id;
+        
+        if (!senderUserId) {
+          return res.status(400).json({
+            success: false,
+            error: 'SENDER_ID_MISSING',
+            message: 'Sender user ID could not be determined'
+          });
+        }
+
+        const result = await teamsService.sendDirectMessage(
+          recipientUserId,
+          message,
+          senderUserId
+        );
+
+        return res.json({
+          success: true,
+          data: result
+        });
+      } catch (error: any) {
+        logger.error('Failed to send direct Teams message:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'MESSAGE_SEND_FAILED',
+          message: error.message || 'Failed to send message'
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/teams/messages/order-notification
+   * Send an order notification via Teams
+   */
+  router.post(
+    '/messages/order-notification',
+    [
+      body('recipientUserId').notEmpty().withMessage('Recipient user ID is required'),
+      body('orderId').notEmpty().withMessage('Order ID is required'),
+      body('subject').notEmpty().withMessage('Subject is required'),
+      body('message').notEmpty().withMessage('Message is required')
+    ],
+    handleValidationErrors,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        if (!teamsService.isServiceConfigured()) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_NOT_CONFIGURED',
+            message: 'Teams service is not configured.'
+          });
+        }
+
+        const { recipientUserId, orderId, subject, message } = req.body;
+
+        const result = await teamsService.sendOrderNotification(
+          recipientUserId,
+          orderId,
+          subject,
+          message
+        );
+
+        return res.json({
+          success: true,
+          data: result
+        });
+      } catch (error: any) {
+        logger.error('Failed to send order notification:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'NOTIFICATION_SEND_FAILED',
+          message: error.message || 'Failed to send notification'
         });
       }
     }

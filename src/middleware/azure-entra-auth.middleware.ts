@@ -77,11 +77,19 @@ export class AzureEntraAuthMiddleware {
    */
   private getSigningKey = async (kid: string): Promise<string> => {
     return new Promise((resolve, reject) => {
+      logger.info('Fetching signing key from JWKS', { kid });
       this.jwksClient.getSigningKey(kid, (err, key) => {
         if (err) {
+          logger.error('Failed to get signing key', { 
+            kid, 
+            errorMessage: err?.message,
+            errorName: err?.name,
+            errorStack: err?.stack
+          });
           reject(err);
         } else {
           const signingKey = key?.getPublicKey();
+          logger.info('Successfully retrieved signing key', { kid, hasKey: !!signingKey });
           resolve(signingKey || '');
         }
       });
@@ -96,12 +104,24 @@ export class AzureEntraAuthMiddleware {
     const decoded = jwt.decode(token, { complete: true });
     
     if (!decoded || typeof decoded === 'string') {
+      logger.error('Invalid token format - could not decode');
       throw new Error('Invalid token format');
     }
 
     const { header, payload } = decoded;
+    const payloadData = payload as any;
+    logger.info('Token decoded successfully', { 
+      kid: header.kid, 
+      alg: header.alg,
+      aud: payloadData.aud,
+      iss: payloadData.iss,
+      exp: payloadData.exp,
+      hasGroups: !!payloadData.groups,
+      hasRoles: !!payloadData.roles
+    });
 
     if (!header.kid) {
+      logger.error('Token missing key ID (kid)');
       throw new Error('Token missing key ID (kid)');
     }
 
@@ -109,16 +129,26 @@ export class AzureEntraAuthMiddleware {
     const signingKey = await this.getSigningKey(header.kid);
 
     // Verify token signature and claims
+    const expectedAudience = this.config.audience || this.config.clientId;
+    const expectedIssuer = this.config.issuer || 
+      `https://login.microsoftonline.com/${this.config.tenantId}/v2.0`;
+    
     const verifyOptions: jwt.VerifyOptions = {
       algorithms: ['RS256'],
-      audience: this.config.audience || this.config.clientId,
+      audience: expectedAudience,
       clockTolerance: this.config.clockTolerance
     };
 
     if (this.config.validateIssuer) {
-      verifyOptions.issuer = this.config.issuer || 
-        `https://login.microsoftonline.com/${this.config.tenantId}/v2.0`;
+      verifyOptions.issuer = expectedIssuer;
     }
+
+    logger.info('Verifying token with options', { 
+      expectedAudience, 
+      expectedIssuer,
+      validateIssuer: this.config.validateIssuer,
+      algorithms: verifyOptions.algorithms
+    });
 
     return jwt.verify(token, signingKey, verifyOptions);
   };
@@ -160,20 +190,6 @@ export class AzureEntraAuthMiddleware {
     next: NextFunction
   ): Promise<void> => {
     try {
-      // DEV MODE: Bypass authentication in development
-      if (process.env.NODE_ENV === 'development' || process.env.BYPASS_AUTH === 'true') {
-        req.user = {
-          id: 'dev-user-001',
-          email: 'dev@example.com',
-          name: 'Dev User',
-          role: 'admin',
-          permissions: ['*'],
-          oid: 'dev-oid-001'
-        };
-        next();
-        return;
-      }
-
       // Extract token from Authorization header
       const authHeader = req.headers['authorization'];
       if (!authHeader) {
@@ -231,7 +247,13 @@ export class AzureEntraAuthMiddleware {
       next();
 
     } catch (error: any) {
-      logger.error('Azure Entra ID authentication failed', { error: error.message });
+      logger.error('Azure Entra ID authentication failed', { 
+        errorMessage: error?.message,
+        errorName: error?.name,
+        errorCode: error?.code,
+        errorStack: error?.stack,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+      });
 
       if (error.name === 'TokenExpiredError') {
         res.status(401).json({

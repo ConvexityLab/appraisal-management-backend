@@ -444,6 +444,11 @@ export class AppraisalManagementAPIServer {
     );
 
     // Property Intelligence routes
+    this.app.get('/api/property-intelligence/address/suggest',
+      this.unifiedAuth.optionalAuth(),
+      this.propertyIntelligenceController.suggestAddresses
+    );
+
     this.app.post('/api/property-intelligence/address/geocode',
       this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.geocodeAddress
@@ -509,12 +514,8 @@ export class AppraisalManagementAPIServer {
     );
 
     // Property Intelligence V2 routes (Places API New)
-    // Remove auth for debugging
     this.app.use('/api/property-intelligence-v2', 
-      (req, res, next) => {
-        console.log('✅ V2 Route hit:', req.method, req.url);
-        next();
-      },
+      this.unifiedAuth.authenticate(),
       enhancedPropertyIntelligenceV2Router
     );
 

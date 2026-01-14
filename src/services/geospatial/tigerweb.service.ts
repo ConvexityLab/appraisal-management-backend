@@ -213,41 +213,147 @@ export class TigerWebService {
    * Get geographic identifiers (FIPS, tract, block, etc.)
    */
   private async getGeographicIdentifiers(longitude: number, latitude: number): Promise<any> {
-    // Query multiple layers for comprehensive geographic data
-    const [countyData, tractData, congressionalData] = await Promise.allSettled([
-      this.queryTigerWebLayer('tigerWMS_Current/MapServer', 'Counties', longitude, latitude),
-      this.queryTigerWebLayer('tigerWMS_ACS2022/MapServer', 'Census Tracts', longitude, latitude),
-      this.queryTigerWebLayer('tigerWMS_Current/MapServer', 'Congressional Districts', longitude, latitude)
-    ]);
-
-    const county = this.extractResult(countyData);
-    const tract = this.extractResult(tractData);
-    const congressional = this.extractResult(congressionalData);
-
-    return {
-      fipsCode: county?.results?.[0]?.attributes?.GEOID || tract?.results?.[0]?.attributes?.GEOID?.substring(0, 5),
-      censusTract: tract?.results?.[0]?.attributes?.GEOID,
-      county: county?.results?.[0]?.attributes?.NAMELSAD,
-      congressionalDistrict: congressional?.results?.[0]?.attributes?.CD118FP
-    };
+    try {
+      // Use Census Geocoding API which is more reliable
+      const geoUrl = `https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${longitude}&y=${latitude}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
+      
+      this.logger.debug('Calling Census Geocoding API for geographic identifiers', { url: geoUrl });
+      const response = await fetch(geoUrl);
+      
+      if (!response.ok) {
+        this.logger.warn('Census Geocoding API failed', { status: response.status });
+        return {};
+      }
+      
+      const data = await response.json();
+      this.logger.debug('Census geocoding response for identifiers', { data });
+      
+      const block = data.result?.geographies?.['2020 Census Blocks']?.[0];
+      const tract = data.result?.geographies?.['Census Tracts']?.[0];
+      const county = data.result?.geographies?.['Counties']?.[0];
+      const congressional = data.result?.geographies?.['118th Congressional Districts']?.[0];
+      
+      const result = {
+        fipsCode: county?.GEOID || (tract?.GEOID ? tract.GEOID.substring(0, 5) : null),
+        censusTract: tract?.GEOID,
+        censusBlock: block?.GEOID,
+        county: county?.NAME,
+        congressionalDistrict: congressional?.BASENAME
+      };
+      
+      this.logger.info('Parsed geographic identifiers', { result });
+      return result;
+      
+    } catch (error) {
+      this.logger.error('Failed to fetch geographic identifiers', { error, longitude, latitude });
+      return {};
+    }
   }
 
   /**
    * Get demographic data for the area
    */
   private async getDemographicData(coordinates: Coordinates): Promise<any> {
-    // In a real implementation, this would use Census Data API
-    // For now, return representative demographic data
-    
+    try {
+      // First get census tract for this location
+      const geoUrl = `https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${coordinates.longitude}&y=${coordinates.latitude}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
+      
+      this.logger.debug('Calling Census Geocoding API', { url: geoUrl });
+      const geoResponse = await fetch(geoUrl);
+      if (!geoResponse.ok) {
+        this.logger.warn('Census Geocoding API failed', { status: geoResponse.status });
+        return this.getDefaultDemographics();
+      }
+      
+      const geoData = await geoResponse.json();
+      this.logger.debug('Census geocoding response', { geoData });
+      
+      const tract = geoData.result?.geographies?.['Census Tracts']?.[0];
+      
+      if (!tract) {
+        this.logger.warn('No census tract found for coordinates', { coordinates });
+        return this.getDefaultDemographics();
+      }
+      
+      const { STATE, COUNTY, TRACT } = tract;
+      this.logger.info('Found census tract', { STATE, COUNTY, TRACT, tractName: tract.NAME });
+      
+      // Use Census Data API to get ACS 5-Year estimates
+      // Variables: B01003_001E (population), B19013_001E (median income), B25077_001E (median home value)
+      const apiKey = this.censusApiKey || '';
+      const variables = 'B01003_001E,B11001_001E,B19013_001E,B17001_002E,B17001_001E,B25077_001E,B25003_002E,B25003_001E,B25001_001E';
+      const dataUrl = `https://api.census.gov/data/2022/acs/acs5?get=NAME,${variables}&for=tract:${TRACT}&in=state:${STATE}+county:${COUNTY}${apiKey ? `&key=${apiKey}` : ''}`;
+      
+      this.logger.debug('Calling Census Data API', { url: dataUrl });
+      const dataResponse = await fetch(dataUrl);
+      if (!dataResponse.ok) {
+        this.logger.warn('Census Data API failed', { status: dataResponse.status, statusText: dataResponse.statusText });
+        return this.getDefaultDemographics();
+      }
+      
+      const censusData = await dataResponse.json();
+      this.logger.debug('Census Data API raw response', { censusData });
+      
+      if (censusData.length < 2) {
+        this.logger.warn('Census Data API returned no data', { censusData });
+        return this.getDefaultDemographics();
+      }
+      
+      const [headers, values] = censusData;
+      const data: any = {};
+      headers.forEach((header: string, index: number) => {
+        data[header] = values[index];
+      });
+      
+      this.logger.info('Census Data API parsed values', { data });
+      
+      // Census API returns -666666666 for null/missing values - need to filter these out
+      const parseValidNumber = (val: string, defaultVal: number = 0): number => {
+        const num = parseInt(val);
+        if (isNaN(num) || num < -999999) return defaultVal; // Treat -666666666 as null
+        return num;
+      };
+      
+      const population = parseValidNumber(data.B01003_001E);
+      const householdCount = parseValidNumber(data.B11001_001E);
+      const medianIncome = parseValidNumber(data.B19013_001E);
+      const povertyCount = parseValidNumber(data.B17001_002E);
+      const povertyTotal = parseValidNumber(data.B17001_001E, 1);
+      const medianHomeValue = parseValidNumber(data.B25077_001E);
+      const ownerOccupied = parseValidNumber(data.B25003_002E);
+      const totalOccupied = parseValidNumber(data.B25003_001E, 1);
+      const housingUnits = parseValidNumber(data.B25001_001E);
+      
+      const result = {
+        population,
+        householdCount,
+        medianIncome,
+        povertyRate: povertyTotal > 0 ? (povertyCount / povertyTotal) * 100 : 0,
+        medianHomeValue,
+        ownerOccupancyRate: totalOccupied > 0 ? (ownerOccupied / totalOccupied) * 100 : 0,
+        rentVsOwnRatio: totalOccupied > 0 ? ((totalOccupied - ownerOccupied) / totalOccupied) * 100 : 0,
+        housingUnitsCount: housingUnits
+      };
+      
+      this.logger.info('Parsed demographic data', { result });
+      return result;
+      
+    } catch (error) {
+      this.logger.error('Failed to fetch Census demographic data', { error, coordinates });
+      return this.getDefaultDemographics();
+    }
+  }
+  
+  private getDefaultDemographics() {
     return {
-      population: 25000 + Math.floor(Math.random() * 50000),
-      householdCount: 8500 + Math.floor(Math.random() * 15000),
-      medianIncome: 45000 + Math.floor(Math.random() * 80000),
-      povertyRate: 8 + Math.random() * 15,
-      medianHomeValue: 180000 + Math.floor(Math.random() * 400000),
-      ownerOccupancyRate: 55 + Math.random() * 25,
-      rentVsOwnRatio: 30 + Math.random() * 20,
-      housingUnitsCount: 9000 + Math.floor(Math.random() * 18000)
+      population: 0,
+      householdCount: 0,
+      medianIncome: 0,
+      povertyRate: 0,
+      medianHomeValue: 0,
+      ownerOccupancyRate: 0,
+      rentVsOwnRatio: 0,
+      housingUnitsCount: 0
     };
   }
 

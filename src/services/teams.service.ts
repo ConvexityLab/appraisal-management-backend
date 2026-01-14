@@ -15,6 +15,7 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { DefaultAzureCredential } from '@azure/identity';
 import { CosmosDbService } from './cosmos-db.service';
+import { EmailService } from './email.service';
 import { Logger } from '../utils/logger.js';
 
 interface TeamsMeetingParticipant {
@@ -60,11 +61,13 @@ interface CreateMeetingOptions {
 export class TeamsService {
   private graphClient: Client | null = null;
   private cosmosDbService: CosmosDbService;
+  private emailService: EmailService;
   private logger: Logger;
   private isConfigured: boolean = false;
 
   constructor() {
     this.cosmosDbService = new CosmosDbService();
+    this.emailService = new EmailService();
     this.logger = new Logger();
     this.initialize();
   }
@@ -408,6 +411,265 @@ export class TeamsService {
       this.logger.error('Failed to update meeting:', { error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Get channel email address for email-based notifications
+   */
+  async getChannelEmail(
+    teamId: string,
+    channelId: string
+  ): Promise<string | null> {
+    if (!this.isConfigured || !this.graphClient) {
+      throw new Error('Teams service not configured');
+    }
+
+    try {
+      this.logger.info('Getting channel email address', { teamId, channelId });
+
+      const channel = await this.graphClient
+        .api(`/teams/${teamId}/channels/${channelId}`)
+        .get();
+
+      const email = channel.email || null;
+      this.logger.info('Channel email retrieved', { teamId, channelId, hasEmail: !!email });
+
+      return email;
+    } catch (error: any) {
+      this.logger.error('Failed to get channel email:', { 
+        error: error.message,
+        teamId,
+        channelId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Send notification to Teams channel via email
+   * This is the recommended approach for system notifications without a bot
+   */
+  async sendChannelEmailNotification(
+    teamId: string,
+    channelId: string,
+    subject: string,
+    htmlContent: string
+  ): Promise<{ success: boolean; channelEmail: string; messageId?: string; error?: string }> {
+    if (!this.isConfigured || !this.graphClient) {
+      throw new Error('Teams service not configured');
+    }
+
+    try {
+      // Get channel email address
+      const channelEmail = await this.getChannelEmail(teamId, channelId);
+      
+      if (!channelEmail) {
+        throw new Error('Channel does not have an email address configured');
+      }
+
+      this.logger.info('Sending email notification to Teams channel', { 
+        teamId, 
+        channelId, 
+        channelEmail,
+        subject,
+        emailServiceConfigured: this.emailService.isConfigured()
+      });
+
+      // Use the email service (SMTP/SendGrid)
+      const result = await this.emailService.sendEmail({
+        to: channelEmail,
+        subject: subject,
+        html: htmlContent,
+        text: htmlContent.replace(/<[^>]*>/g, '') // Strip HTML tags for plain text fallback
+      });
+
+      if (!result.success) {
+        this.logger.error('Email service failed to send notification', {
+          error: result.error,
+          channelEmail
+        });
+
+        return {
+          success: false,
+          channelEmail,
+          error: result.error || 'Email service not configured. Set SMTP_HOST or SENDGRID_API_KEY in environment variables.'
+        };
+      }
+
+      this.logger.info('Email notification sent to Teams channel', { 
+        teamId, 
+        channelId,
+        channelEmail,
+        messageId: result.messageId
+      });
+
+      return {
+        success: true,
+        channelEmail,
+        ...(result.messageId && { messageId: result.messageId })
+      };
+    } catch (error: any) {
+      this.logger.error('Failed to send email notification to channel:', { 
+        error: error.message,
+        teamId,
+        channelId
+      });
+      
+      return {
+        success: false,
+        channelEmail: '',
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Send a message to a Teams channel
+   * Works with application permissions - no user context needed
+   */
+  async sendChannelMessage(
+    teamId: string,
+    channelId: string,
+    message: string,
+    subject?: string
+  ): Promise<{ messageId: string }> {
+    if (!this.isConfigured || !this.graphClient) {
+      throw new Error('Teams service not configured');
+    }
+
+    try {
+      this.logger.info('Sending Teams channel message', { teamId, channelId, subject });
+
+      const messageBody: any = {
+        body: {
+          contentType: 'html',
+          content: message
+        }
+      };
+
+      if (subject) {
+        messageBody.subject = subject;
+      }
+
+      const messageResponse = await this.graphClient
+        .api(`/teams/${teamId}/channels/${channelId}/messages`)
+        .post(messageBody);
+
+      this.logger.info('Channel message sent', { 
+        messageId: messageResponse.id,
+        teamId,
+        channelId
+      });
+
+      return {
+        messageId: messageResponse.id
+      };
+    } catch (error: any) {
+      this.logger.error('Failed to send channel message:', { 
+        error: error.message,
+        teamId,
+        channelId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Send a direct 1-on-1 message to a Teams user
+   * Note: Requires user delegation or Teams Bot for application-only context
+   * For system notifications, use sendChannelMessage instead
+   * Creates a chat if it doesn't exist, then sends the message
+   */
+  async sendDirectMessage(
+    recipientUserId: string,
+    message: string,
+    senderUserId?: string
+  ): Promise<{ chatId: string; messageId: string }> {
+    if (!this.isConfigured || !this.graphClient) {
+      throw new Error('Teams service not configured');
+    }
+
+    try {
+      this.logger.info('Sending direct Teams message', { recipientUserId, senderUserId });
+
+      // For oneOnOne chats with application permissions, we need both users
+      // If sender is same as recipient, or no sender, use system notification approach
+      if (!senderUserId || senderUserId === recipientUserId) {
+        // Get all chats for the recipient and find or create a system notification chat
+        // For now, throw error requiring different users
+        throw new Error('Sender and recipient must be different users for oneOnOne chats. Consider using Channel messages or group chats for system notifications.');
+      }
+
+      // Step 1: Create or get existing 1-on-1 chat between two users
+      // Microsoft Graph will return existing chat if it already exists
+      // Note: Can use either user ID or email (UPN) in the users endpoint
+      const chatResponse = await this.graphClient
+        .api('/chats')
+        .post({
+          chatType: 'oneOnOne',
+          members: [
+            {
+              '@odata.type': '#microsoft.graph.aadUserConversationMember',
+              roles: ['owner'],
+              'user@odata.bind': `https://graph.microsoft.com/v1.0/users/${senderUserId}` // Accepts ID or email
+            },
+            {
+              '@odata.type': '#microsoft.graph.aadUserConversationMember',
+              roles: ['owner'],
+              'user@odata.bind': `https://graph.microsoft.com/v1.0/users/${recipientUserId}` // Accepts ID or email
+            }
+          ]
+        });
+
+      const chatId = chatResponse.id;
+
+      // Step 2: Send message in the chat
+      const messageResponse = await this.graphClient
+        .api(`/chats/${chatId}/messages`)
+        .post({
+          body: {
+            contentType: 'html',
+            content: message
+          }
+        });
+
+      this.logger.info('Direct Teams message sent', { 
+        chatId, 
+        messageId: messageResponse.id,
+        recipientUserId 
+      });
+
+      return {
+        chatId,
+        messageId: messageResponse.id
+      };
+    } catch (error: any) {
+      this.logger.error('Failed to send direct Teams message:', { 
+        error: error.message,
+        recipientUserId 
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Send a notification message to a user about an order
+   * Convenience wrapper with order context
+   */
+  async sendOrderNotification(
+    recipientUserId: string,
+    orderId: string,
+    subject: string,
+    message: string
+  ): Promise<{ chatId: string; messageId: string }> {
+    const formattedMessage = `
+      <h3>${subject}</h3>
+      <p><strong>Order:</strong> #${orderId}</p>
+      <p>${message}</p>
+      <p><a href="https://appraisal.l1-analytics.com/orders/${orderId}">View Order</a></p>
+    `;
+
+    return this.sendDirectMessage(recipientUserId, formattedMessage);
   }
 
   /**

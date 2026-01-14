@@ -27,22 +27,29 @@ export class NoaaEnvironmentalService {
    */
   async getClimateRisk(coordinates: Coordinates): Promise<any> {
     try {
-      // Mock climate risk data
+      // Climate risk requires multiple specialized APIs:
+      // - NOAA Storm Events Database for historical data
+      // - USGS for earthquake data
+      // - NIFC for wildfire history
+      // Return empty/unknown structures until implemented
+      
+      this.logger.debug('Climate risk assessment requires specialized API keys');
+      
       return {
-        hurricaneRisk: { riskLevel: 'low', historicalHurricanes: [] },
-        earthquakeRisk: { riskLevel: 'minimal', historicalEarthquakes: [] },
-        wildfireRisk: { riskLevel: 'moderate', historicalFires: [] },
-        tornadoRisk: { riskLevel: 'low', historicalTornadoes: [] },
-        winterStormRisk: { riskLevel: 'moderate', historicalStorms: [] }
+        hurricaneRisk: { riskLevel: 'unknown', historicalHurricanes: [] },
+        earthquakeRisk: { riskLevel: 'unknown', historicalEarthquakes: [] },
+        wildfireRisk: { riskLevel: 'unknown', historicalFires: [] },
+        tornadoRisk: { riskLevel: 'unknown', historicalTornadoes: [] },
+        winterStormRisk: { riskLevel: 'unknown', historicalStorms: [] }
       };
     } catch (error) {
       this.logger.error('Failed to fetch climate risk', { error, coordinates });
       return {
-        hurricaneRisk: { riskLevel: 'low', historicalHurricanes: [] },
-        earthquakeRisk: { riskLevel: 'minimal', historicalEarthquakes: [] },
-        wildfireRisk: { riskLevel: 'moderate', historicalFires: [] },
-        tornadoRisk: { riskLevel: 'low', historicalTornadoes: [] },
-        winterStormRisk: { riskLevel: 'moderate', historicalStorms: [] }
+        hurricaneRisk: { riskLevel: 'unknown', historicalHurricanes: [] },
+        earthquakeRisk: { riskLevel: 'unknown', historicalEarthquakes: [] },
+        wildfireRisk: { riskLevel: 'unknown', historicalFires: [] },
+        tornadoRisk: { riskLevel: 'unknown', historicalTornadoes: [] },
+        winterStormRisk: { riskLevel: 'unknown', historicalStorms: [] }
       };
     }
   }

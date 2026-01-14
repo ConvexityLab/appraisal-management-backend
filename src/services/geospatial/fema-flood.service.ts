@@ -186,60 +186,75 @@ export class FemaFloodService {
    * Get historical flood events for the area
    */
   private async getHistoricalFloodEvents(coordinates: Coordinates): Promise<FloodEvent[]> {
-    // In a real implementation, this would query NOAA/NWS historical flood data
-    // For now, return mock data based on flood zone severity
+    // Get FEMA disaster declarations for this county that were flood-related
+    const disasters = await this.getDisasterHistory(coordinates);
     
-    const mockEvents: FloodEvent[] = [
-      {
-        date: new Date('2019-09-15'),
-        severity: 'moderate',
-        waterLevel: 3.2,
-        femaDeclaration: 'DR-4468',
-        damageEstimate: 2500000
-      },
-      {
-        date: new Date('2016-04-10'),
-        severity: 'minor',
-        waterLevel: 1.8,
-        damageEstimate: 850000
-      }
-    ];
+    const floodEvents: FloodEvent[] = disasters
+      .filter(d => d.disasterType === 'Flood' || d.disasterType === 'Hurricane')
+      .map(d => ({
+        date: new Date(d.declarationDate),
+        severity: ((d.declarationType as any) === 'DR' ? 'major' : (d.declarationType as any) === 'EM' ? 'moderate' : 'minor') as 'minor' | 'moderate' | 'major' | 'catastrophic',
+        femaDeclaration: d.disasterNumber?.toString(),
+        damageEstimate: d.federalFunding,
+        waterLevel: 0 // Not available from FEMA API
+      }))
+      .slice(0, 10); // Limit to 10 most recent
 
-    return mockEvents;
+    return floodEvents;
   }
 
   /**
    * Get nearby dam risk information
    */
   private async getNearbyDamRisk(coordinates: Coordinates): Promise<DamRisk | undefined> {
-    // In a real implementation, this would query the National Inventory of Dams
-    // Mock implementation for now
-    
-    // Simulate dam proximity check
-    const hasNearbyDam = Math.random() > 0.7; // 30% chance of nearby dam
-    
-    if (hasNearbyDam) {
-      return {
-        distanceMiles: 2.3,
-        damName: 'Example Dam',
-        hazardClassification: 'significant',
-        lastInspection: new Date('2023-06-15')
-      };
+    try {
+      const { latitude, longitude } = coordinates;
+      
+      // National Inventory of Dams API
+      // Note: This is a federal dataset, often accessed via state APIs or USACE
+      // For now, return undefined to indicate no dam data (better than fake random data)
+      // TODO: Implement state-specific dam inventory APIs when available
+      
+      this.logger.debug('Dam inventory API not yet implemented - returning no data instead of mock');
+      return undefined;
+      
+    } catch (error) {
+      this.logger.error('Failed to query dam inventory', { error, coordinates });
+      return undefined;
     }
-
-    return undefined;
   }
 
   /**
    * Get county information from coordinates for disaster lookup
    */
   private async getCountyFromCoordinates(coordinates: Coordinates): Promise<{stateFips: string, countyFips: string} | null> {
-    // This would typically use Census Geocoding API or similar
-    // Mock implementation for now
-    return {
-      stateFips: '06', // California example
-      countyFips: '037' // Los Angeles County example
-    };
+    try {
+      const { latitude, longitude } = coordinates;
+      
+      // Use Census Geocoding API to get county FIPS
+      const url = `https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${longitude}&y=${latitude}&benchmark=Public_AR_Current&vintage=Current_Current&format=json`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.logger.warn('Census geocoding API failed', { status: response.status });
+        return null;
+      }
+      
+      const data = await response.json();
+      
+      if (data.result?.geographies?.['2020 Census Blocks']?.[0]) {
+        const block = data.result.geographies['2020 Census Blocks'][0];
+        return {
+          stateFips: block.STATE,
+          countyFips: block.COUNTY
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.error('Failed to get county from coordinates', { error, coordinates });
+      return null;
+    }
   }
 
   /**

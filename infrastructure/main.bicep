@@ -37,6 +37,12 @@ param batchDataApiKey string = ''
 @description('Email domain for Azure Communication Services')
 param emailDomain string = ''
 
+@description('Automatically configure DNS records for email domain (requires Azure DNS zone)')
+param autoConfigureDns bool = false
+
+@description('DNS zone resource group (if different from deployment resource group)')
+param dnsZoneResourceGroup string = resourceGroup().name
+
 // External API Keys (secure parameters from GitHub Secrets)
 @secure()
 @description('Google Maps API key')
@@ -84,6 +90,9 @@ param azureClientId string = ''
 @secure()
 @description('Azure Client Secret for service authentication')
 param azureClientSecret string = ''
+
+@description('Optional: Array of developer user principal IDs for local testing (get via: az ad signed-in-user show --query id -o tsv)')
+param developerPrincipalIds array = []
 
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
@@ -192,6 +201,21 @@ module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
   }
 }
 
+// ACS role assignments for Container Apps (after apps exist)
+module acsRoleAssignments 'modules/acs-role-assignments.bicep' = {
+  name: 'acs-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    communicationServicesName: communicationServices.outputs.communicationServicesName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    developerPrincipalIds: developerPrincipalIds
+    tags: tags
+  }
+  dependsOn: [
+    communicationServices
+  ]
+}
+
 // Key Vault (after Container Apps for principal IDs)
 module keyVault 'modules/key-vault.bicep' = {
   name: 'key-vault-deployment'
@@ -263,6 +287,8 @@ module communicationServices 'modules/communication-services-deployment.bicep' =
     location: location
     cosmosDbAccountName: cosmosDb.outputs.cosmosAccountName
     emailDomain: emailDomain
+    autoConfigureDns: autoConfigureDns
+    dnsZoneResourceGroup: dnsZoneResourceGroup
     tags: tags
   }
 }
@@ -298,6 +324,12 @@ output deploymentSummary object = {
   communicationServices: {
     endpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
     emailDomain: communicationServices.outputs.emailDomain
+    managedIdentityAccess: 'Granted to all Container Apps'
+  }
+  rbacAssignments: {
+    cosmosDb: 'Granted to all Container Apps'
+    acs: 'Contributor role granted to all Container Apps'
+    keyVault: 'Secrets access granted to all Container Apps'
   }
 }
 

@@ -48,6 +48,7 @@ export class AuthorizationService {
    */
   async initialize(): Promise<void> {
     this.logger.info('Initializing authorization service');
+    await this.dbService.initialize();
     await this.engine.initialize();
     this.logger.info('Authorization service initialized');
   }
@@ -231,12 +232,26 @@ export class AuthorizationService {
    */
   async getUserProfile(userId: string, tenantId: string): Promise<UserProfile | null> {
     try {
-      const user = await this.dbService.getDocument<any>('users', userId, tenantId);
+      this.logger.info('Getting user profile', { userId, tenantId });
+      
+      // Use query instead of point read (Managed Identity permission issue)
+      const users = await this.dbService.queryDocuments<any>(
+        'users',
+        'SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
+        [
+          { name: '@id', value: userId },
+          { name: '@tenantId', value: tenantId }
+        ]
+      );
+      
+      const user = users[0];
       
       if (!user) {
+        this.logger.warn('User not found in database', { userId, tenantId });
         return null;
       }
 
+      this.logger.info('User profile found', { userId, email: user.email });
       return {
         id: user.id,
         email: user.email,

@@ -40,11 +40,22 @@ export class AcsIdentityService {
       throw new Error('AZURE_COMMUNICATION_ENDPOINT not configured');
     }
 
-    // Use Managed Identity to access ACS Identity API
-    const credential = new DefaultAzureCredential();
-    this.identityClient = new CommunicationIdentityClient(endpoint, credential);
-    
-    this.logger.info('ACS Identity Service initialized with Managed Identity');
+    // Try Managed Identity first (works for Container Apps AND local if logged in via 'az login')
+    // Falls back to API key if Managed Identity unavailable
+    try {
+      const credential = new DefaultAzureCredential();
+      this.identityClient = new CommunicationIdentityClient(endpoint, credential);
+      this.logger.info('ACS Identity Service initialized with Managed Identity (production or local with az login)');
+    } catch (error) {
+      // Fall back to API key for local development without az login
+      const apiKey = process.env.AZURE_COMMUNICATION_API_KEY;
+      if (!apiKey) {
+        throw new Error('ACS authentication failed: No Managed Identity available and AZURE_COMMUNICATION_API_KEY not configured');
+      }
+      const connectionString = `endpoint=${endpoint};accesskey=${apiKey}`;
+      this.identityClient = new CommunicationIdentityClient(connectionString);
+      this.logger.info('ACS Identity Service initialized with API key (fallback for local development)');
+    }
   }
 
   /**
