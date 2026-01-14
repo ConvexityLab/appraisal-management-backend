@@ -25,6 +25,15 @@ param tags object = {
 
 var communicationServicesName = 'acs-appraisal-${environmentName}'
 
+// Create DNS zone if auto-configuration is enabled
+module dnsZone './dns-zone.bicep' = if (autoConfigureDns && !empty(emailDomain)) {
+  name: 'create-dns-zone'
+  params: {
+    dnsZoneName: emailDomain
+    tags: tags
+  }
+}
+
 // Deploy Azure Communication Services
 module communicationServices './communication-services.bicep' = {
   name: 'deploy-communication-services'
@@ -36,10 +45,14 @@ module communicationServices './communication-services.bicep' = {
   }
 }
 
-// Optionally configure DNS records for email domain verification
+// Configure DNS records for email domain verification (depends on DNS zone)
 module emailDns './acs-email-dns.bicep' = if (autoConfigureDns && !empty(emailDomain)) {
   name: 'configure-email-dns'
   scope: resourceGroup(dnsZoneResourceGroup)
+  dependsOn: [
+    dnsZone
+    communicationServices
+  ]
   params: {
     dnsZoneName: emailDomain
     dnsZoneResourceGroup: dnsZoneResourceGroup
@@ -60,6 +73,9 @@ output communicationServicesEndpoint string = communicationServices.outputs.comm
 output communicationServicesName string = communicationServicesName
 output emailDomain string = communicationServices.outputs.emailDomain
 output emailVerificationRecords object = communicationServices.outputs.emailDomainVerificationRecords
+output dnsZoneNameServers array = autoConfigureDns ? dnsZone.outputs.nameServers : []
+output dnsZoneCreated bool = autoConfigureDns
+output dnsConfigurationInstructions string = autoConfigureDns ? dnsZone.outputs.registrarInstructions : 'DNS zone not created - set autoConfigureDns=true'
 
 // Environment variables template for .env file
 output envVariables object = {

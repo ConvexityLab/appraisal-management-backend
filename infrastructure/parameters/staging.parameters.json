@@ -28,13 +28,13 @@
       "value": ""
     },
     "emailDomain": {
-      "value": "loneanalytics.com"
+      "value": "appraisal.platform"
     },
     "autoConfigureDns": {
       "value": true
     },
     "dnsZoneResourceGroup": {
-      "value": "appraisal-management-staging"
+      "value": "rg-appraisal-mgmt-staging-eastus"
     }
   }
 }

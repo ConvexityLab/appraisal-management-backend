@@ -22,12 +22,26 @@ resource dnsZone 'Microsoft.Network/dnsZones@2018-05-01' existing = {
 // Domain verification TXT record
 resource domainVerificationTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
   parent: dnsZone
-  name: '@'
+  name: verificationRecords.Domain.name
   properties: {
-    TTL: 3600
+    TTL: verificationRecords.Domain.ttl
     TXTRecords: [
       {
-        value: [verificationRecords.txt]
+        value: [verificationRecords.Domain.value]
+      }
+    ]
+  }
+}
+
+// SPF TXT record
+resource spfTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: dnsZone
+  name: verificationRecords.SPF.name
+  properties: {
+    TTL: verificationRecords.SPF.ttl
+    TXTRecords: [
+      {
+        value: [verificationRecords.SPF.value]
       }
     ]
   }
@@ -36,11 +50,11 @@ resource domainVerificationTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
 // DKIM1 CNAME record
 resource dkim1Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
   parent: dnsZone
-  name: 'selector1-azurecomm-prod-net._domainkey'
+  name: verificationRecords.DKIM.name
   properties: {
-    TTL: 3600
+    TTL: verificationRecords.DKIM.ttl
     CNAMERecord: {
-      cname: verificationRecords.dkim1
+      cname: verificationRecords.DKIM.value
     }
   }
 }
@@ -48,11 +62,11 @@ resource dkim1Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
 // DKIM2 CNAME record
 resource dkim2Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
   parent: dnsZone
-  name: 'selector2-azurecomm-prod-net._domainkey'
+  name: verificationRecords.DKIM2.name
   properties: {
-    TTL: 3600
+    TTL: verificationRecords.DKIM2.ttl
     CNAMERecord: {
-      cname: verificationRecords.dkim2
+      cname: verificationRecords.DKIM2.value
     }
   }
 }
@@ -60,6 +74,7 @@ resource dkim2Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
 output domainVerified bool = true
 output dnsRecordsCreated array = [
   domainVerificationTxt.name
+  spfTxt.name
   dkim1Cname.name
   dkim2Cname.name
 ]

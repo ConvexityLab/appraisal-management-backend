@@ -42,8 +42,4 @@ resource emailServicesDomain 'Microsoft.Communication/emailServices/domains@2023
 output communicationServicesEndpoint string = communicationServices.properties.hostName
 output communicationServicesResourceId string = communicationServices.id
 output emailDomain string = emailServicesDomain.name
-output emailDomainVerificationRecords object = {
-  txt: emailServicesDomain.properties.verificationRecords.Domain.type
-  dkim1: emailServicesDomain.properties.verificationRecords.DKIM.type
-  dkim2: emailServicesDomain.properties.verificationRecords.DKIM2.type
-}
+output emailDomainVerificationRecords object = emailServicesDomain.properties.verificationRecords
