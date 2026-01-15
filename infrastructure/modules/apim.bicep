@@ -1,0 +1,340 @@
+// ============================================================================
+// Azure API Management (APIM)
+// ============================================================================
+// Gateway for API Container App and Function App Container App backends
+
+@description('Environment name (dev, staging, prod)')
+param environment string
+
+@description('Azure region')
+param location string = resourceGroup().location
+
+@description('Resource name suffix for uniqueness')
+param suffix string
+
+@description('Tags for all resources')
+param tags object = {}
+
+@description('API Container App FQDN')
+param apiContainerAppFqdn string
+
+@description('Function Container App FQDN')
+param functionContainerAppFqdn string
+
+@description('Publisher email for APIM')
+param publisherEmail string = 'admin@appraisal.platform'
+
+@description('Publisher name for APIM')
+param publisherName string = 'Appraisal Management Platform'
+
+@description('APIM SKU name')
+@allowed(['Consumption', 'Developer', 'Basic', 'Standard', 'Premium'])
+param skuName string = 'Consumption'
+
+@description('APIM SKU capacity (units)')
+param skuCapacity int = 0 // 0 for Consumption tier
+
+// Variables
+var apimName = 'apim-appraisal-${environment}-${suffix}'
+var apiBackendName = 'appraisal-api-backend'
+var functionBackendName = 'appraisal-functions-backend'
+var apiName = 'appraisal-management-api'
+var functionApiName = 'appraisal-functions-api'
+
+// APIM Service
+resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = {
+  name: apimName
+  location: location
+  tags: tags
+  sku: {
+    name: skuName
+    capacity: skuCapacity
+  }
+  properties: {
+    publisherEmail: publisherEmail
+    publisherName: publisherName
+    customProperties: {
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Ssl30': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30': 'False'
+    }
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+}
+
+// Backend: API Container App
+resource apiBackend 'Microsoft.ApiManagement/service/backends@2023-05-01-preview' = {
+  parent: apim
+  name: apiBackendName
+  properties: {
+    title: 'Appraisal API Backend'
+    description: 'Main API Container App backend'
+    url: 'https://${apiContainerAppFqdn}'
+    protocol: 'http'
+    tls: {
+      validateCertificateChain: true
+      validateCertificateName: true
+    }
+  }
+}
+
+// Backend: Function Container App
+resource functionBackend 'Microsoft.ApiManagement/service/backends@2023-05-01-preview' = {
+  parent: apim
+  name: functionBackendName
+  properties: {
+    title: 'Appraisal Functions Backend'
+    description: 'Function App Container App backend'
+    url: 'https://${functionContainerAppFqdn}'
+    protocol: 'http'
+    tls: {
+      validateCertificateChain: true
+      validateCertificateName: true
+    }
+  }
+}
+
+// API: Main API
+resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
+  parent: apim
+  name: apiName
+  properties: {
+    displayName: 'Appraisal Management API'
+    description: 'Main REST API for appraisal management operations'
+    path: ''  // No path prefix - routes come through as-is
+    protocols: ['https']
+    subscriptionRequired: false
+    serviceUrl: 'https://${apiContainerAppFqdn}'
+    type: 'http'
+  }
+}
+
+// API Policy: Route /api/* to API Container App backend
+resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
+  parent: api
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
+// API Operations: Auth endpoints
+resource authOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'auth-operations'
+  properties: {
+    displayName: 'Authentication Operations'
+    method: '*'
+    urlTemplate: '/api/auth/*'
+    description: 'Login, register, token refresh'
+  }
+}
+
+// API Operations: Orders
+resource ordersOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'orders-operations'
+  properties: {
+    displayName: 'Order Management'
+    method: '*'
+    urlTemplate: '/api/orders*'
+    description: 'CRUD operations for appraisal orders'
+  }
+}
+
+// API Operations: QC
+resource qcOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'qc-operations'
+  properties: {
+    displayName: 'Quality Control'
+    method: '*'
+    urlTemplate: '/api/qc/*'
+    description: 'QC validation and metrics'
+  }
+}
+
+// API Operations: Vendors
+resource vendorsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'vendors-operations'
+  properties: {
+    displayName: 'Vendor Management'
+    method: '*'
+    urlTemplate: '/api/vendors*'
+    description: 'Vendor CRUD and assignment'
+  }
+}
+
+// API Operations: Analytics
+resource analyticsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'analytics-operations'
+  properties: {
+    displayName: 'Analytics'
+    method: '*'
+    urlTemplate: '/api/analytics/*'
+    description: 'Performance and overview analytics'
+  }
+}
+
+// API Operations: Property Intelligence
+resource propertyOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'property-operations'
+  properties: {
+    displayName: 'Property Intelligence'
+    method: '*'
+    urlTemplate: '/api/property-intelligence/*'
+    description: 'Property analysis, geocoding, census data'
+  }
+}
+
+// API Operations: AI/ML Services
+resource aiOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'ai-operations'
+  properties: {
+    displayName: 'AI/ML Services'
+    method: '*'
+    urlTemplate: '/api/ai/*'
+    description: 'AI-powered QC, market insights, vision analysis'
+  }
+}
+
+// API Operations: Dynamic Code Execution
+resource codeOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'code-operations'
+  properties: {
+    displayName: 'Code Execution'
+    method: '*'
+    urlTemplate: '/api/code/*'
+    description: 'Sandboxed code execution'
+  }
+}
+
+// API Operations: Teams Integration
+resource teamsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'teams-operations'
+  properties: {
+    displayName: 'Teams Integration'
+    method: '*'
+    urlTemplate: '/api/teams/*'
+    description: 'Microsoft Teams notifications and integration'
+  }
+}
+
+// API Operations: Health check
+resource healthOperation 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'health-operation'
+  properties: {
+    displayName: 'Health Check'
+    method: 'GET'
+    urlTemplate: '/health'
+    description: 'Service health status'
+  }
+}
+
+// API Operations: API Documentation
+resource apiDocsOperation 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'api-docs-operation'
+  properties: {
+    displayName: 'API Documentation'
+    method: 'GET'
+    urlTemplate: '/api-docs*'
+    description: 'Swagger/OpenAPI documentation'
+  }
+}
+
+// API: Functions
+resource functionApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
+  parent: apim
+  name: functionApiName
+  properties: {
+    displayName: 'Appraisal Functions API'
+    description: 'Serverless functions for background processing'
+    path: ''  // No path prefix - routes come through as-is
+    protocols: ['https']
+    subscriptionRequired: false
+    serviceUrl: 'https://${functionContainerAppFqdn}'
+    type: 'http'
+  }
+}
+
+// Function API Policy: Route /api/functions/* to Function Container App backend
+resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
+  parent: functionApi
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors allow-credentials="true"><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
+// Function Operations: Background jobs
+resource functionsBackgroundOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: functionApi
+  name: 'functions-background'
+  properties: {
+    displayName: 'Background Processing'
+    method: '*'
+    urlTemplate: '/api/functions/background/*'
+    description: 'Async background job processing'
+  }
+}
+
+// Function Operations: Scheduled tasks
+resource functionsScheduledOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: functionApi
+  name: 'functions-scheduled'
+  properties: {
+    displayName: 'Scheduled Tasks'
+    method: '*'
+    urlTemplate: '/api/functions/scheduled/*'
+    description: 'Timer-triggered functions'
+  }
+}
+
+// Function Operations: Event processing
+resource functionsEventOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: functionApi
+  name: 'functions-events'
+  properties: {
+    displayName: 'Event Processing'
+    method: '*'
+    urlTemplate: '/api/functions/events/*'
+    description: 'Event-driven function handlers'
+  }
+}
+
+// Function Operations: Webhooks
+resource functionsWebhookOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: functionApi
+  name: 'functions-webhooks'
+  properties: {
+    displayName: 'Webhooks'
+    method: 'POST'
+    urlTemplate: '/api/functions/webhooks/*'
+    description: 'External webhook handlers'
+  }
+}
+
+// Outputs
+output apimName string = apim.name
+output apimId string = apim.id
+output apimGatewayUrl string = apim.properties.gatewayUrl
+output apimPrincipalId string = apim.identity.principalId
+output apiUrl string = '${apim.properties.gatewayUrl}/api'
+output functionUrl string = '${apim.properties.gatewayUrl}/functions'
+output developerPortalUrl string = apim.properties.developerPortalUrl
+output managementApiUrl string = apim.properties.managementApiUrl
