@@ -17,8 +17,7 @@ resource dnsZone 'Microsoft.Network/dnsZones@2018-05-01' existing = {
 
 // Domain verification TXT record
 resource domainVerificationTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
-  parent: dnsZone
-  name: verificationRecords.Domain.name
+  name: '${dnsZoneName}/${verificationRecords.Domain.name}'
   properties: {
     TTL: verificationRecords.Domain.ttl
     TXTRecords: [
@@ -31,8 +30,7 @@ resource domainVerificationTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
 
 // SPF TXT record
 resource spfTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
-  parent: dnsZone
-  name: verificationRecords.SPF.name
+  name: '${dnsZoneName}/${verificationRecords.SPF.name}'
   properties: {
     TTL: verificationRecords.SPF.ttl
     TXTRecords: [
@@ -45,8 +43,7 @@ resource spfTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
 
 // DKIM1 CNAME record
 resource dkim1Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
-  parent: dnsZone
-  name: verificationRecords.DKIM.name
+  name: '${dnsZoneName}/${verificationRecords.DKIM.name}'
   properties: {
     TTL: verificationRecords.DKIM.ttl
     CNAMERecord: {
@@ -57,8 +54,7 @@ resource dkim1Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
 
 // DKIM2 CNAME record
 resource dkim2Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
-  parent: dnsZone
-  name: verificationRecords.DKIM2.name
+  name: '${dnsZoneName}/${verificationRecords.DKIM2.name}'
   properties: {
     TTL: verificationRecords.DKIM2.ttl
     CNAMERecord: {

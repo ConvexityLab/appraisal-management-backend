@@ -48,7 +48,6 @@ module communicationServices './communication-services.bicep' = {
 // Configure DNS records for email domain verification (depends on DNS zone)
 module emailDns './acs-email-dns.bicep' = if (autoConfigureDns && !empty(emailDomain)) {
   name: 'configure-email-dns'
-  scope: resourceGroup(dnsZoneResourceGroup)
   dependsOn: [
     dnsZone
   ]
