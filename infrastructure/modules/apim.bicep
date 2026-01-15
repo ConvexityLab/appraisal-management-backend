@@ -128,7 +128,7 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-pre
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><rewrite-uri template="@(&quot;/api&quot; + context.Operation.UrlTemplate)" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
