@@ -349,87 +349,30 @@ resource functionApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' =
   }
 }
 
-// Function API Policy: Route /api/functions/* to Function Container App backend
+// Function API Policy: Route /api/functions/* to Function Container App backend, strip /functions prefix
 resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
   parent: functionApi
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><rewrite-uri template="/api/{path}" copy-unmatched-params="true" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
-// Function Operations: Background jobs
-resource functionsBackgroundOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+// Function Operations: All Azure Functions (getOrder, createOrder, etc.)
+resource functionsAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
   parent: functionApi
-  name: 'functions-background'
+  name: 'functions-all'
   properties: {
-    displayName: 'Background Processing'
+    displayName: 'Azure Functions'
     method: '*'
-    urlTemplate: '/background/{*path}'
-    description: 'Async background job processing'
+    urlTemplate: '/{*path}'
+    description: 'All Azure Functions (getOrder, createOrder, geocodeAddress, etc.)'
     templateParameters: [
       {
         name: 'path'
         type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// Function Operations: Scheduled tasks
-resource functionsScheduledOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: functionApi
-  name: 'functions-scheduled'
-  properties: {
-    displayName: 'Scheduled Tasks'
-    method: '*'
-    urlTemplate: '/scheduled/{*path}'
-    description: 'Timer-triggered functions'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// Function Operations: Event processing
-resource functionsEventOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: functionApi
-  name: 'functions-events'
-  properties: {
-    displayName: 'Event Processing'
-    method: '*'
-    urlTemplate: '/events/{*path}'
-    description: 'Event-driven function handlers'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// Function Operations: Webhooks
-resource functionsWebhookOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: functionApi
-  name: 'functions-webhooks'
-  properties: {
-    displayName: 'Webhooks'
-    method: 'POST'
-    urlTemplate: '/webhooks/{*path}'
-    description: 'External webhook handlers'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
+        required: true
       }
     ]
   }
