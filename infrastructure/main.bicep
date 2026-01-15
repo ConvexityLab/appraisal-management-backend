@@ -342,7 +342,6 @@ output deploymentSummary object = {
     gatewayUrl: apim.outputs.apimGatewayUrl
     apiUrl: apim.outputs.apiUrl
     functionUrl: apim.outputs.functionUrl
-    developerPortal: apim.outputs.developerPortalUrl
   }
   staticWebApp: {
     name: staticWebApp.outputs.staticWebAppName
