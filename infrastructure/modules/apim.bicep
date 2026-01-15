@@ -134,6 +134,13 @@ resource authOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05
     method: '*'
     urlTemplate: '/auth/{*path}'
     description: 'Login, register, token refresh'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -146,6 +153,13 @@ resource ordersOperations 'Microsoft.ApiManagement/service/apis/operations@2023-
     method: '*'
     urlTemplate: '/orders/{*path}'
     description: 'CRUD operations for appraisal orders'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -158,6 +172,13 @@ resource qcOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-0
     method: '*'
     urlTemplate: '/qc/{*path}'
     description: 'QC validation and metrics'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -170,6 +191,13 @@ resource vendorsOperations 'Microsoft.ApiManagement/service/apis/operations@2023
     method: '*'
     urlTemplate: '/vendors/{*path}'
     description: 'Vendor CRUD and assignment'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -182,6 +210,13 @@ resource analyticsOperations 'Microsoft.ApiManagement/service/apis/operations@20
     method: '*'
     urlTemplate: '/analytics/{*path}'
     description: 'Performance and overview analytics'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -194,6 +229,13 @@ resource propertyOperations 'Microsoft.ApiManagement/service/apis/operations@202
     method: '*'
     urlTemplate: '/property-intelligence/{*path}'
     description: 'Property analysis, geocoding, census data'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -206,6 +248,13 @@ resource aiOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-0
     method: '*'
     urlTemplate: '/ai/{*path}'
     description: 'AI-powered QC, market insights, vision analysis'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -218,6 +267,13 @@ resource codeOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05
     method: '*'
     urlTemplate: '/code/{*path}'
     description: 'Sandboxed code execution'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -230,6 +286,13 @@ resource teamsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-0
     method: '*'
     urlTemplate: '/teams/{*path}'
     description: 'Microsoft Teams notifications and integration'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -254,6 +317,13 @@ resource apiDocsOperation 'Microsoft.ApiManagement/service/apis/operations@2023-
     method: 'GET'
     urlTemplate: '/-docs/{*path}'
     description: 'Swagger/OpenAPI documentation'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -291,6 +361,13 @@ resource functionsBackgroundOps 'Microsoft.ApiManagement/service/apis/operations
     method: '*'
     urlTemplate: '/background/{*path}'
     description: 'Async background job processing'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -303,6 +380,13 @@ resource functionsScheduledOps 'Microsoft.ApiManagement/service/apis/operations@
     method: '*'
     urlTemplate: '/scheduled/{*path}'
     description: 'Timer-triggered functions'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -315,6 +399,13 @@ resource functionsEventOps 'Microsoft.ApiManagement/service/apis/operations@2023
     method: '*'
     urlTemplate: '/events/{*path}'
     description: 'Event-driven function handlers'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
@@ -327,6 +418,13 @@ resource functionsWebhookOps 'Microsoft.ApiManagement/service/apis/operations@20
     method: 'POST'
     urlTemplate: '/webhooks/{*path}'
     description: 'External webhook handlers'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
   }
 }
 
