@@ -21,14 +21,23 @@ var cosmosRoles = [
 ]
 
 // Grant BOTH Reader and Contributor roles to each Container App
-resource cosmosRoleAssignments 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2023-04-15' = [for principalId in containerAppPrincipalIds: [for role in cosmosRoles: {
-  name: guid(cosmosAccount.id, principalId, role.id)
+// Flatten: Create array of all principal+role combinations
+var roleAssignmentsFlat = flatten([for principalId in containerAppPrincipalIds: [
+  for role in cosmosRoles: {
+    principalId: principalId
+    roleId: role.id
+    uniqueName: guid(cosmosAccount.id, principalId, role.id)
+  }
+]])
+
+resource cosmosRoleAssignments 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2023-04-15' = [for assignment in roleAssignmentsFlat: {
+  name: assignment.uniqueName
   parent: cosmosAccount
   properties: {
-    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${role.id}'
-    principalId: principalId
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${assignment.roleId}'
+    principalId: assignment.principalId
     scope: cosmosAccount.id
   }
-}]]
+}]
 
-output roleAssignmentIds array = [for (principalId, i) in containerAppPrincipalIds: [for (role, j) in cosmosRoles: cosmosRoleAssignments[i][j].id]]
+output roleAssignmentIds array = [for assignment in roleAssignmentsFlat: cosmosRoleAssignments[indexOf(roleAssignmentsFlat, assignment)].id]

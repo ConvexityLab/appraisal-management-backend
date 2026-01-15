@@ -159,10 +159,6 @@ var containerApps = [
         name: 'AZURE_TENANT_ID'
         value: azureTenantId
       }
-      {
-        name: 'AZURE_CLIENT_ID'
-        value: containerAppIdentities[i].properties.clientId
-      }
     ]
     scaleRule: {
       name: 'api-http-scaling'
