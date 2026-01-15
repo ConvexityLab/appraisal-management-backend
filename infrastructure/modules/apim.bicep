@@ -355,7 +355,7 @@ resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-0
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><rewrite-uri template="@(context.Request.Url.Path.Replace(&quot;/api/functions&quot;, &quot;/api&quot;))" copy-unmatched-params="true" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><rewrite-uri template="/api/{path}" copy-unmatched-params="true" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -372,7 +372,7 @@ resource functionsAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-0
       {
         name: 'path'
         type: 'string'
-        required: true
+        required: false
       }
     ]
   }
