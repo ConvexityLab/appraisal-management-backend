@@ -53,14 +53,15 @@ resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = {
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
-    customProperties: {
+    // TLS/SSL customProperties only supported in Developer, Standard, Premium tiers (not Consumption)
+    customProperties: skuName != 'Consumption' ? {
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10': 'False'
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11': 'False'
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Ssl30': 'False'
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10': 'False'
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11': 'False'
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30': 'False'
-    }
+    } : {}
   }
   identity: {
     type: 'SystemAssigned'
