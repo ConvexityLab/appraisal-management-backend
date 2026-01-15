@@ -107,7 +107,7 @@ resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
   properties: {
     displayName: 'Appraisal Management API'
     description: 'Main REST API for appraisal management operations'
-    path: ''  // No path prefix - routes come through as-is
+    path: 'api'  // Base path for all API routes
     protocols: ['https']
     subscriptionRequired: false
     serviceUrl: 'https://${apiContainerAppFqdn}'
@@ -121,7 +121,7 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-pre
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -132,7 +132,7 @@ resource authOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05
   properties: {
     displayName: 'Authentication Operations'
     method: '*'
-    urlTemplate: '/api/auth/*'
+    urlTemplate: '/auth/{*path}'
     description: 'Login, register, token refresh'
   }
 }
@@ -144,7 +144,7 @@ resource ordersOperations 'Microsoft.ApiManagement/service/apis/operations@2023-
   properties: {
     displayName: 'Order Management'
     method: '*'
-    urlTemplate: '/api/orders*'
+    urlTemplate: '/orders/{*path}'
     description: 'CRUD operations for appraisal orders'
   }
 }
@@ -156,7 +156,7 @@ resource qcOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-0
   properties: {
     displayName: 'Quality Control'
     method: '*'
-    urlTemplate: '/api/qc/*'
+    urlTemplate: '/qc/{*path}'
     description: 'QC validation and metrics'
   }
 }
@@ -168,7 +168,7 @@ resource vendorsOperations 'Microsoft.ApiManagement/service/apis/operations@2023
   properties: {
     displayName: 'Vendor Management'
     method: '*'
-    urlTemplate: '/api/vendors*'
+    urlTemplate: '/vendors/{*path}'
     description: 'Vendor CRUD and assignment'
   }
 }
@@ -180,7 +180,7 @@ resource analyticsOperations 'Microsoft.ApiManagement/service/apis/operations@20
   properties: {
     displayName: 'Analytics'
     method: '*'
-    urlTemplate: '/api/analytics/*'
+    urlTemplate: '/analytics/{*path}'
     description: 'Performance and overview analytics'
   }
 }
@@ -192,7 +192,7 @@ resource propertyOperations 'Microsoft.ApiManagement/service/apis/operations@202
   properties: {
     displayName: 'Property Intelligence'
     method: '*'
-    urlTemplate: '/api/property-intelligence/*'
+    urlTemplate: '/property-intelligence/{*path}'
     description: 'Property analysis, geocoding, census data'
   }
 }
@@ -204,7 +204,7 @@ resource aiOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-0
   properties: {
     displayName: 'AI/ML Services'
     method: '*'
-    urlTemplate: '/api/ai/*'
+    urlTemplate: '/ai/{*path}'
     description: 'AI-powered QC, market insights, vision analysis'
   }
 }
@@ -216,7 +216,7 @@ resource codeOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05
   properties: {
     displayName: 'Code Execution'
     method: '*'
-    urlTemplate: '/api/code/*'
+    urlTemplate: '/code/{*path}'
     description: 'Sandboxed code execution'
   }
 }
@@ -228,7 +228,7 @@ resource teamsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-0
   properties: {
     displayName: 'Teams Integration'
     method: '*'
-    urlTemplate: '/api/teams/*'
+    urlTemplate: '/teams/{*path}'
     description: 'Microsoft Teams notifications and integration'
   }
 }
@@ -252,7 +252,7 @@ resource apiDocsOperation 'Microsoft.ApiManagement/service/apis/operations@2023-
   properties: {
     displayName: 'API Documentation'
     method: 'GET'
-    urlTemplate: '/api-docs*'
+    urlTemplate: '/-docs/{*path}'
     description: 'Swagger/OpenAPI documentation'
   }
 }
@@ -264,7 +264,7 @@ resource functionApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' =
   properties: {
     displayName: 'Appraisal Functions API'
     description: 'Serverless functions for background processing'
-    path: ''  // No path prefix - routes come through as-is
+    path: 'api/functions'  // Distinct path to avoid conflict with main API
     protocols: ['https']
     subscriptionRequired: false
     serviceUrl: 'https://${functionContainerAppFqdn}'
@@ -278,7 +278,7 @@ resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-0
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors allow-credentials="true"><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -289,7 +289,7 @@ resource functionsBackgroundOps 'Microsoft.ApiManagement/service/apis/operations
   properties: {
     displayName: 'Background Processing'
     method: '*'
-    urlTemplate: '/api/functions/background/*'
+    urlTemplate: '/background/{*path}'
     description: 'Async background job processing'
   }
 }
@@ -301,7 +301,7 @@ resource functionsScheduledOps 'Microsoft.ApiManagement/service/apis/operations@
   properties: {
     displayName: 'Scheduled Tasks'
     method: '*'
-    urlTemplate: '/api/functions/scheduled/*'
+    urlTemplate: '/scheduled/{*path}'
     description: 'Timer-triggered functions'
   }
 }
@@ -313,7 +313,7 @@ resource functionsEventOps 'Microsoft.ApiManagement/service/apis/operations@2023
   properties: {
     displayName: 'Event Processing'
     method: '*'
-    urlTemplate: '/api/functions/events/*'
+    urlTemplate: '/events/{*path}'
     description: 'Event-driven function handlers'
   }
 }
@@ -325,7 +325,7 @@ resource functionsWebhookOps 'Microsoft.ApiManagement/service/apis/operations@20
   properties: {
     displayName: 'Webhooks'
     method: 'POST'
-    urlTemplate: '/api/functions/webhooks/*'
+    urlTemplate: '/webhooks/{*path}'
     description: 'External webhook handlers'
   }
 }
