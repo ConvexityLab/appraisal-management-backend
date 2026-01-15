@@ -329,7 +329,12 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
             cpu: json(app.cpu)
             memory: app.memory
           }
-          env: [for envVar in app.env: envVar]
+          env: concat(app.env, [
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: containerAppIdentities[i].properties.clientId
+            }
+          ])
         }
       ]
       scale: {
