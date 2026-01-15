@@ -435,5 +435,3 @@ output apimGatewayUrl string = apim.properties.gatewayUrl
 output apimPrincipalId string = apim.identity.principalId
 output apiUrl string = '${apim.properties.gatewayUrl}/api'
 output functionUrl string = '${apim.properties.gatewayUrl}/functions'
-output developerPortalUrl string = apim.properties.developerPortalUrl
-output managementApiUrl string = apim.properties.managementApiUrl
