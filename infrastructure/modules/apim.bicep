@@ -34,6 +34,13 @@ param skuName string = 'Consumption'
 @description('APIM SKU capacity (units)')
 param skuCapacity int = 0 // 0 for Consumption tier
 
+@description('Allowed CORS origins')
+param allowedOrigins array = [
+  'http://localhost:3000'
+  'http://localhost:4200'
+  'http://localhost:5173'
+]
+
 // Variables
 var apimName = 'apim-appraisal-${environment}-${suffix}'
 var apiBackendName = 'appraisal-api-backend'
@@ -121,7 +128,7 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-pre
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -348,7 +355,7 @@ resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-0
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>*</method></allowed-methods><allowed-headers><header>*</header></allowed-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 

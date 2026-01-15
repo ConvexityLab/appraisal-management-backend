@@ -305,9 +305,16 @@ module apim 'modules/apim.bicep' = {
     publisherName: 'Appraisal Management Platform'
     skuName: environment == 'prod' ? 'Standard' : 'Consumption'
     skuCapacity: environment == 'prod' ? 1 : 0
+    allowedOrigins: [
+      'http://localhost:3000'
+      'http://localhost:4200'
+      'http://localhost:5173'
+      'https://${staticWebApp.outputs.staticWebAppHostname}'
+    ]
   }
   dependsOn: [
     appServices
+    staticWebApp
   ]
 }
 
