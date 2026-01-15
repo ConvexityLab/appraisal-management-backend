@@ -161,7 +161,7 @@ var containerApps = [
       }
       {
         name: 'AZURE_CLIENT_ID'
-        value: azureClientId
+        value: containerAppIdentities[i].properties.clientId
       }
     ]
     scaleRule: {
@@ -295,7 +295,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned, UserAssigned'
+    type: 'UserAssigned'
     userAssignedIdentities: {
       '${containerAppIdentities[i].id}': {}
     }
