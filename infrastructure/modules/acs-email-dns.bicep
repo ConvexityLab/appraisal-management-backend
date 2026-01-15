@@ -17,17 +17,14 @@ var domainRecordName = endsWith(verificationRecords.Domain.name, dnsZoneName)
   ? replace(verificationRecords.Domain.name, '.${dnsZoneName}', '')
   : verificationRecords.Domain.name
 
-var spfRecordName = endsWith(verificationRecords.SPF.name, dnsZoneName)
-  ? replace(verificationRecords.SPF.name, '.${dnsZoneName}', '')
-  : verificationRecords.SPF.name
-
 // Reference existing DNS zone (in same resource group as this deployment)
 resource dnsZone 'Microsoft.Network/dnsZones@2018-05-01' existing = {
   name: dnsZoneName
 }
 
-// Domain verification TXT record
-resource domainVerificationTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+// Combined Domain verification + SPF TXT record (both use same subdomain)
+// Azure requires single TXT resource with multiple values, not separate resources
+resource domainAndSpfTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
   name: '${dnsZoneName}/${domainRecordName}'
   properties: {
     TTL: verificationRecords.Domain.ttl
@@ -35,16 +32,6 @@ resource domainVerificationTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
       {
         value: [verificationRecords.Domain.value]
       }
-    ]
-  }
-}
-
-// SPF TXT record
-resource spfTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
-  name: '${dnsZoneName}/${spfRecordName}'
-  properties: {
-    TTL: verificationRecords.SPF.ttl
-    TXTRecords: [
       {
         value: [verificationRecords.SPF.value]
       }
@@ -76,8 +63,7 @@ resource dkim2Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
 
 output domainVerified bool = true
 output dnsRecordsCreated array = [
-  domainVerificationTxt.name
-  spfTxt.name
+  domainAndSpfTxt.name
   dkim1Cname.name
   dkim2Cname.name
 ]
