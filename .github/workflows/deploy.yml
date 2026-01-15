@@ -4,7 +4,6 @@ on:
   push:
     branches: [ main, master ]
     paths-ignore:
-      - 'infrastructure/**'
       - '.github/workflows/**'
       - '*.md'
       - 'docs/**'
@@ -72,7 +71,30 @@ jobs:
         echo " Deployment Target: $(cat $GITHUB_OUTPUT | grep environment | cut -d'=' -f2)"
         echo " Deploy Infrastructure: $(cat $GITHUB_OUTPUT | grep deploy-infrastructure | cut -d'=' -f2)"
 
+  detect-changes:
+    name: Detect What Changed
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure: ${{ steps.filter.outputs.infrastructure }}
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          infrastructure:
+            - 'infrastructure/**'
+          code:
+            - 'src/**'
+            - 'package.json'
+            - 'package-lock.json'
+            - 'Dockerfile'
+            - 'tsconfig*.json'
+
   build-and-test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     
     steps:
@@ -105,7 +127,8 @@ jobs:
 
   run-ci-pipeline:
     name: Run CI Pipeline
-    needs: determine-environment
+    needs: [determine-environment, detect-changes]
+    if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     
     steps:
@@ -132,8 +155,10 @@ jobs:
 
   build-and-push-container:
     name: Build and Push Container Image
-    needs: [determine-environment, run-ci-pipeline]
-    if: needs.run-ci-pipeline.result == 'success'
+    needs: [determine-environment, run-ci-pipeline, detect-changes]
+    if: |
+      needs.detect-changes.outputs.code == 'true' &&
+      needs.run-ci-pipeline.result == 'success'
     runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     
@@ -222,8 +247,10 @@ jobs:
 
   deploy-infrastructure:
     name: Deploy Infrastructure
-    needs: [determine-environment, run-ci-pipeline, build-and-push-container]
-    if: needs.determine-environment.outputs.deploy-infrastructure == 'true'
+    needs: [determine-environment, detect-changes]
+    if: |
+      needs.detect-changes.outputs.infrastructure == 'true' ||
+      needs.determine-environment.outputs.deploy-infrastructure == 'true'
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: ${{ needs.determine-environment.outputs.environment }}
@@ -234,7 +261,8 @@ jobs:
 
   deploy-container-app:
     name: Deploy Container to Container App
-    needs: [determine-environment, deploy-infrastructure, build-and-push-container]
+    needs: [determine-environment, deploy-infrastructure, build-and-push-container, detect-changes]
+    if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     
