@@ -349,13 +349,13 @@ resource functionApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' =
   }
 }
 
-// Function API Policy: CORS with backend routing
-resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+// Function API Policy: Extract function name from path and rewrite
+resource functionApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
   parent: functionApi
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><cors allow-credentials="false"><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outward><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${functionBackendName}" /><rewrite-uri template="@{ string incomingPath = context.Request.Url.Path; string functionName = incomingPath.Split(\'/\').Last(); return $"/{functionName}"; }" /><cors allow-credentials="false"><allowed-origins><origin>*</origin></allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
