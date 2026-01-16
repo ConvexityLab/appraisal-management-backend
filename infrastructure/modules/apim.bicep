@@ -189,6 +189,25 @@ resource qcOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-0
   }
 }
 
+// API Operations: QC Workflow  
+resource qcWorkflowOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'qc-workflow-operations'
+  properties: {
+    displayName: 'QC Workflow'
+    method: '*'
+    urlTemplate: '/qc-workflow/{*path}'
+    description: 'QC workflow queue, revisions, and escalations'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: false
+      }
+    ]
+  }
+}
+
 // API Operations: Vendors
 resource vendorsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
   parent: api
