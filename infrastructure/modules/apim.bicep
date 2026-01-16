@@ -98,7 +98,7 @@ resource functionBackend 'Microsoft.ApiManagement/service/backends@2023-05-01-pr
   properties: {
     title: 'Appraisal Functions Backend'
     description: 'Function App Container App backend'
-    url: 'https://${functionContainerAppFqdn}'
+    url: 'https://${functionContainerAppFqdn}/api'
     protocol: 'http'
     tls: {
       validateCertificateChain: true
@@ -344,7 +344,7 @@ resource functionApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' =
     path: 'api/functions'
     protocols: ['https']
     subscriptionRequired: false
-    serviceUrl: 'https://${functionContainerAppFqdn}/api'
+    serviceUrl: 'https://${functionContainerAppFqdn}'
     type: 'http'
   }
 }
