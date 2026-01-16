@@ -107,249 +107,30 @@ resource functionBackend 'Microsoft.ApiManagement/service/backends@2023-05-01-pr
   }
 }
 
-// API: Main API
+// API: Main API - Import from OpenAPI spec
 resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
   parent: apim
   name: apiName
   properties: {
     displayName: 'Appraisal Management API'
     description: 'Main REST API for appraisal management operations'
-    path: 'api'  // Base path for all API routes
+    path: 'api'  // Base path: client calls https://apim-gateway/api/* -> routes to backend /api/*
     protocols: ['https']
     subscriptionRequired: false
-    serviceUrl: 'https://${apiContainerAppFqdn}'
+    serviceUrl: 'https://${apiContainerAppFqdn}'  // Backend expects /api/* paths
     type: 'http'
+    format: 'openapi+json'
+    value: loadTextContent('../api-swagger.json')
   }
 }
 
-// API Policy: Route /api/* to API Container App backend
+// API Policy: No rewrite needed - paths in swagger already have /api prefix
 resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
   parent: api
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><rewrite-uri template="@(context.Request.Url.Path)" copy-unmatched-params="true" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
-  }
-}
-
-// API Operations: Auth endpoints
-resource authOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'auth-operations'
-  properties: {
-    displayName: 'Authentication Operations'
-    method: '*'
-    urlTemplate: '/auth/{*path}'
-    description: 'Login, register, token refresh'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Orders
-resource ordersOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'orders-operations'
-  properties: {
-    displayName: 'Order Management'
-    method: '*'
-    urlTemplate: '/orders/{*path}'
-    description: 'CRUD operations for appraisal orders'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: QC
-resource qcOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'qc-operations'
-  properties: {
-    displayName: 'Quality Control'
-    method: '*'
-    urlTemplate: '/qc/{*path}'
-    description: 'QC validation and metrics'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: QC Workflow  
-resource qcWorkflowOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'qc-workflow-operations'
-  properties: {
-    displayName: 'QC Workflow'
-    method: '*'
-    urlTemplate: '/qc-workflow/{*path}'
-    description: 'QC workflow queue, revisions, and escalations'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Vendors
-resource vendorsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'vendors-operations'
-  properties: {
-    displayName: 'Vendor Management'
-    method: '*'
-    urlTemplate: '/vendors/{*path}'
-    description: 'Vendor CRUD and assignment'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Analytics
-resource analyticsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'analytics-operations'
-  properties: {
-    displayName: 'Analytics'
-    method: '*'
-    urlTemplate: '/analytics/{*path}'
-    description: 'Performance and overview analytics'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Property Intelligence
-resource propertyOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'property-operations'
-  properties: {
-    displayName: 'Property Intelligence'
-    method: '*'
-    urlTemplate: '/property-intelligence/{*path}'
-    description: 'Property analysis, geocoding, census data'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: AI/ML Services
-resource aiOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'ai-operations'
-  properties: {
-    displayName: 'AI/ML Services'
-    method: '*'
-    urlTemplate: '/ai/{*path}'
-    description: 'AI-powered QC, market insights, vision analysis'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Dynamic Code Execution
-resource codeOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'code-operations'
-  properties: {
-    displayName: 'Code Execution'
-    method: '*'
-    urlTemplate: '/code/{*path}'
-    description: 'Sandboxed code execution'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Teams Integration
-resource teamsOperations 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'teams-operations'
-  properties: {
-    displayName: 'Teams Integration'
-    method: '*'
-    urlTemplate: '/teams/{*path}'
-    description: 'Microsoft Teams notifications and integration'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
-  }
-}
-
-// API Operations: Health check
-resource healthOperation 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'health-operation'
-  properties: {
-    displayName: 'Health Check'
-    method: 'GET'
-    urlTemplate: '/health'
-    description: 'Service health status'
-  }
-}
-
-// API Operations: API Documentation
-resource apiDocsOperation 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
-  parent: api
-  name: 'api-docs-operation'
-  properties: {
-    displayName: 'API Documentation'
-    method: 'GET'
-    urlTemplate: '/-docs/{*path}'
-    description: 'Swagger/OpenAPI documentation'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: false
-      }
-    ]
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 

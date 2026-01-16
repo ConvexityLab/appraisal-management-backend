@@ -1,0 +1,37 @@
+<policies>
+  <inbound>
+    <base />
+    <set-backend-service backend-id="appraisal-api-backend" />
+    <rewrite-uri template="/api/{context.Request.Url.Path}" copy-unmatched-params="true" />
+    <cors allow-credentials="true">
+      <allowed-origins>
+        <origin>http://localhost:3000</origin>
+        <origin>http://localhost:4200</origin>
+        <origin>http://localhost:5173</origin>
+      </allowed-origins>
+      <allowed-methods>
+        <method>GET</method>
+        <method>POST</method>
+        <method>PUT</method>
+        <method>DELETE</method>
+        <method>PATCH</method>
+        <method>OPTIONS</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>*</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>*</header>
+      </expose-headers>
+    </cors>
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

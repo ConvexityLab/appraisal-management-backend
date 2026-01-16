@@ -1,0 +1,1363 @@
+{
+    "openapi":  "3.0.0",
+    "info":  {
+                 "title":  "Appraisal Management API",
+                 "version":  "1.0.0",
+                 "description":  "Complete API for appraisal management platform"
+             },
+    "servers":  [
+                    {
+                        "url":  "https://ca-appraisalapi-sta-lqxl.jollysand-19372da7.eastus.azurecontainerapps.io/api",
+                        "description":  "Backend API Container App"
+                    }
+                ],
+    "paths":  {
+                  "/orders/{orderId}/deliver":  {
+                                                    "post":  {
+                                                                 "operationId":  "deliverOrder",
+                                                                 "summary":  "Deliver order",
+                                                                 "tags":  [
+                                                                              "Orders"
+                                                                          ],
+                                                                 "parameters":  [
+                                                                                    {
+                                                                                        "name":  "orderId",
+                                                                                        "in":  "path",
+                                                                                        "required":  true,
+                                                                                        "schema":  {
+                                                                                                       "type":  "string"
+                                                                                                   }
+                                                                                    }
+                                                                                ],
+                                                                 "responses":  {
+                                                                                   "200":  {
+                                                                                               "description":  "Order delivered"
+                                                                                           }
+                                                                               }
+                                                             }
+                                                },
+                  "/auth/login":  {
+                                      "post":  {
+                                                   "operationId":  "authLogin",
+                                                   "summary":  "User login",
+                                                   "tags":  [
+                                                                "Authentication"
+                                                            ],
+                                                   "responses":  {
+                                                                     "200":  {
+                                                                                 "description":  "Login successful"
+                                                                             }
+                                                                 }
+                                               }
+                                  },
+                  "/property-intelligence/analyze/transportation":  {
+                                                                        "post":  {
+                                                                                     "operationId":  "analyzeTransportation",
+                                                                                     "summary":  "Transportation analysis",
+                                                                                     "tags":  [
+                                                                                                  "Property Intelligence"
+                                                                                              ],
+                                                                                     "responses":  {
+                                                                                                       "200":  {
+                                                                                                                   "description":  "Analysis complete"
+                                                                                                               }
+                                                                                                   }
+                                                                                 }
+                                                                    },
+                  "/fraud-detection/{path}":  {
+                                                  "x-ms-paths":  "/{*path}",
+                                                  "get":  {
+                                                              "operationId":  "fraudDetectionAll",
+                                                              "summary":  "Fraud detection",
+                                                              "tags":  [
+                                                                           "Fraud Detection"
+                                                                       ],
+                                                              "parameters":  [
+                                                                                 {
+                                                                                     "name":  "path",
+                                                                                     "in":  "path",
+                                                                                     "required":  true,
+                                                                                     "schema":  {
+                                                                                                    "type":  "string"
+                                                                                                }
+                                                                                 }
+                                                                             ],
+                                                              "responses":  {
+                                                                                "200":  {
+                                                                                            "description":  "Success"
+                                                                                        }
+                                                                            }
+                                                          }
+                                              },
+                  "/orders/{orderId}":  {
+                                            "get":  {
+                                                        "operationId":  "getOrder",
+                                                        "summary":  "Get order by ID",
+                                                        "tags":  [
+                                                                     "Orders"
+                                                                 ],
+                                                        "parameters":  [
+                                                                           {
+                                                                               "name":  "orderId",
+                                                                               "in":  "path",
+                                                                               "required":  true,
+                                                                               "schema":  {
+                                                                                              "type":  "string"
+                                                                                          }
+                                                                           }
+                                                                       ],
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Order retrieved"
+                                                                                  }
+                                                                      }
+                                                    }
+                                        },
+                  "/property-intelligence/census/demographics":  {
+                                                                     "get":  {
+                                                                                 "operationId":  "censusDemographics",
+                                                                                 "summary":  "Census demographics",
+                                                                                 "tags":  [
+                                                                                              "Property Intelligence"
+                                                                                          ],
+                                                                                 "responses":  {
+                                                                                                   "200":  {
+                                                                                                               "description":  "Demographics data"
+                                                                                                           }
+                                                                                               }
+                                                                             }
+                                                                 },
+                  "/ai/qc/compliance":  {
+                                            "post":  {
+                                                         "operationId":  "aiQcCompliance",
+                                                         "summary":  "AI compliance QC",
+                                                         "tags":  [
+                                                                      "AI Services"
+                                                                  ],
+                                                         "responses":  {
+                                                                           "200":  {
+                                                                                       "description":  "Analysis complete"
+                                                                                   }
+                                                                       }
+                                                     }
+                                        },
+                  "/property-intelligence/analyze/batch":  {
+                                                               "post":  {
+                                                                            "operationId":  "analyzeBatch",
+                                                                            "summary":  "Batch analysis",
+                                                                            "tags":  [
+                                                                                         "Property Intelligence"
+                                                                                     ],
+                                                                            "responses":  {
+                                                                                              "200":  {
+                                                                                                          "description":  "Analysis complete"
+                                                                                                      }
+                                                                                          }
+                                                                        }
+                                                           },
+                  "/geospatial/{path}":  {
+                                             "x-ms-paths":  "/{*path}",
+                                             "get":  {
+                                                         "operationId":  "geospatialAll",
+                                                         "summary":  "Geospatial risk assessment",
+                                                         "tags":  [
+                                                                      "Geospatial"
+                                                                  ],
+                                                         "parameters":  [
+                                                                            {
+                                                                                "name":  "path",
+                                                                                "in":  "path",
+                                                                                "required":  true,
+                                                                                "schema":  {
+                                                                                               "type":  "string"
+                                                                                           }
+                                                                            }
+                                                                        ],
+                                                         "responses":  {
+                                                                           "200":  {
+                                                                                       "description":  "Success"
+                                                                                   }
+                                                                       }
+                                                     }
+                                         },
+                  "/authz-test/{path}":  {
+                                             "x-ms-paths":  "/{*path}",
+                                             "get":  {
+                                                         "operationId":  "authzTestAll",
+                                                         "summary":  "Authorization testing",
+                                                         "tags":  [
+                                                                      "Authorization"
+                                                                  ],
+                                                         "parameters":  [
+                                                                            {
+                                                                                "name":  "path",
+                                                                                "in":  "path",
+                                                                                "required":  true,
+                                                                                "schema":  {
+                                                                                               "type":  "string"
+                                                                                           }
+                                                                            }
+                                                                        ],
+                                                         "responses":  {
+                                                                           "200":  {
+                                                                                       "description":  "Success"
+                                                                                   }
+                                                                       }
+                                                     }
+                                         },
+                  "/property-intelligence/address/suggest":  {
+                                                                 "get":  {
+                                                                             "operationId":  "addressSuggest",
+                                                                             "summary":  "Address suggestions",
+                                                                             "tags":  [
+                                                                                          "Property Intelligence"
+                                                                                      ],
+                                                                             "responses":  {
+                                                                                               "200":  {
+                                                                                                           "description":  "Suggestions"
+                                                                                                       }
+                                                                                           }
+                                                                         }
+                                                             },
+                  "/ai/property/description":  {
+                                                   "post":  {
+                                                                "operationId":  "aiPropertyDescription",
+                                                                "summary":  "Property description",
+                                                                "tags":  [
+                                                                             "AI Services"
+                                                                         ],
+                                                                "responses":  {
+                                                                                  "200":  {
+                                                                                              "description":  "Description generated"
+                                                                                          }
+                                                                              }
+                                                            }
+                                               },
+                  "/orders/{orderId}/status":  {
+                                                   "put":  {
+                                                               "operationId":  "updateOrderStatus",
+                                                               "summary":  "Update order status",
+                                                               "tags":  [
+                                                                            "Orders"
+                                                                        ],
+                                                               "parameters":  [
+                                                                                  {
+                                                                                      "name":  "orderId",
+                                                                                      "in":  "path",
+                                                                                      "required":  true,
+                                                                                      "schema":  {
+                                                                                                     "type":  "string"
+                                                                                                 }
+                                                                                  }
+                                                                              ],
+                                                               "responses":  {
+                                                                                 "200":  {
+                                                                                             "description":  "Status updated"
+                                                                                         }
+                                                                             }
+                                                           }
+                                               },
+                  "/qc/checklists/{path}":  {
+                                                "x-ms-paths":  "/{*path}",
+                                                "get":  {
+                                                            "operationId":  "qcChecklistsGet",
+                                                            "summary":  "QC checklists operations (GET)",
+                                                            "tags":  [
+                                                                         "Quality Control"
+                                                                     ],
+                                                            "parameters":  [
+                                                                               {
+                                                                                   "name":  "path",
+                                                                                   "in":  "path",
+                                                                                   "required":  true,
+                                                                                   "schema":  {
+                                                                                                  "type":  "string"
+                                                                                              }
+                                                                               }
+                                                                           ],
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "Success"
+                                                                                      }
+                                                                          }
+                                                        },
+                                                "post":  {
+                                                             "operationId":  "qcChecklistsPost",
+                                                             "summary":  "QC checklists operations (POST)",
+                                                             "tags":  [
+                                                                          "Quality Control"
+                                                                      ],
+                                                             "parameters":  [
+                                                                                {
+                                                                                    "name":  "path",
+                                                                                    "in":  "path",
+                                                                                    "required":  true,
+                                                                                    "schema":  {
+                                                                                                   "type":  "string"
+                                                                                               }
+                                                                                }
+                                                                            ],
+                                                             "responses":  {
+                                                                               "200":  {
+                                                                                           "description":  "Success"
+                                                                                       }
+                                                                           }
+                                                         },
+                                                "put":  {
+                                                            "operationId":  "qcChecklistsPut",
+                                                            "summary":  "QC checklists operations (PUT)",
+                                                            "tags":  [
+                                                                         "Quality Control"
+                                                                     ],
+                                                            "parameters":  [
+                                                                               {
+                                                                                   "name":  "path",
+                                                                                   "in":  "path",
+                                                                                   "required":  true,
+                                                                                   "schema":  {
+                                                                                                  "type":  "string"
+                                                                                              }
+                                                                               }
+                                                                           ],
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "Success"
+                                                                                      }
+                                                                          }
+                                                        },
+                                                "delete":  {
+                                                               "operationId":  "qcChecklistsDelete",
+                                                               "summary":  "QC checklists operations (DELETE)",
+                                                               "tags":  [
+                                                                            "Quality Control"
+                                                                        ],
+                                                               "parameters":  [
+                                                                                  {
+                                                                                      "name":  "path",
+                                                                                      "in":  "path",
+                                                                                      "required":  true,
+                                                                                      "schema":  {
+                                                                                                     "type":  "string"
+                                                                                                 }
+                                                                                  }
+                                                                              ],
+                                                               "responses":  {
+                                                                                 "200":  {
+                                                                                             "description":  "Success"
+                                                                                         }
+                                                                             }
+                                                           }
+                                            },
+                  "/qc/results/{orderId}":  {
+                                                "get":  {
+                                                            "operationId":  "qcResults",
+                                                            "summary":  "Get QC results",
+                                                            "tags":  [
+                                                                         "Quality Control"
+                                                                     ],
+                                                            "parameters":  [
+                                                                               {
+                                                                                   "name":  "orderId",
+                                                                                   "in":  "path",
+                                                                                   "required":  true,
+                                                                                   "schema":  {
+                                                                                                  "type":  "string"
+                                                                                              }
+                                                                               }
+                                                                           ],
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "QC results"
+                                                                                      }
+                                                                          }
+                                                        }
+                                            },
+                  "/property-intelligence/analyze/comprehensive":  {
+                                                                       "post":  {
+                                                                                    "operationId":  "analyzeComprehensive",
+                                                                                    "summary":  "Comprehensive analysis",
+                                                                                    "tags":  [
+                                                                                                 "Property Intelligence"
+                                                                                             ],
+                                                                                    "responses":  {
+                                                                                                      "200":  {
+                                                                                                                  "description":  "Analysis complete"
+                                                                                                              }
+                                                                                                  }
+                                                                                }
+                                                                   },
+                  "/property-intelligence/analyze/creative":  {
+                                                                  "post":  {
+                                                                               "operationId":  "analyzeCreative",
+                                                                               "summary":  "Creative feature analysis",
+                                                                               "tags":  [
+                                                                                            "Property Intelligence"
+                                                                                        ],
+                                                                               "responses":  {
+                                                                                                 "200":  {
+                                                                                                             "description":  "Analysis complete"
+                                                                                                         }
+                                                                                             }
+                                                                           }
+                                                              },
+                  "/analytics/overview":  {
+                                              "get":  {
+                                                          "operationId":  "analyticsOverview",
+                                                          "summary":  "Analytics overview",
+                                                          "tags":  [
+                                                                       "Analytics"
+                                                                   ],
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "Analytics data"
+                                                                                    }
+                                                                        }
+                                                      }
+                                          },
+                  "/orders/dashboard":  {
+                                            "get":  {
+                                                        "operationId":  "getOrderDashboard",
+                                                        "summary":  "Get order dashboard",
+                                                        "tags":  [
+                                                                     "Orders"
+                                                                 ],
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Dashboard data"
+                                                                                  }
+                                                                      }
+                                                    }
+                                        },
+                  "/ai/usage":  {
+                                    "get":  {
+                                                "operationId":  "aiUsage",
+                                                "summary":  "AI usage stats",
+                                                "tags":  [
+                                                             "AI Services"
+                                                         ],
+                                                "responses":  {
+                                                                  "200":  {
+                                                                              "description":  "Usage statistics"
+                                                                          }
+                                                              }
+                                            }
+                                },
+                  "/vendors/performance/{vendorId}":  {
+                                                          "get":  {
+                                                                      "operationId":  "getVendorPerformance",
+                                                                      "summary":  "Get vendor performance",
+                                                                      "tags":  [
+                                                                                   "Vendors"
+                                                                               ],
+                                                                      "parameters":  [
+                                                                                         {
+                                                                                             "name":  "vendorId",
+                                                                                             "in":  "path",
+                                                                                             "required":  true,
+                                                                                             "schema":  {
+                                                                                                            "type":  "string"
+                                                                                                        }
+                                                                                         }
+                                                                                     ],
+                                                                      "responses":  {
+                                                                                        "200":  {
+                                                                                                    "description":  "Performance data"
+                                                                                                }
+                                                                                    }
+                                                                  }
+                                                      },
+                  "/property-intelligence/address/geocode":  {
+                                                                 "post":  {
+                                                                              "operationId":  "addressGeocode",
+                                                                              "summary":  "Geocode address",
+                                                                              "tags":  [
+                                                                                           "Property Intelligence"
+                                                                                       ],
+                                                                              "responses":  {
+                                                                                                "200":  {
+                                                                                                            "description":  "Geocoded"
+                                                                                                        }
+                                                                                            }
+                                                                          }
+                                                             },
+                  "/ai/market/insights":  {
+                                              "post":  {
+                                                           "operationId":  "aiMarketInsights",
+                                                           "summary":  "Market insights",
+                                                           "tags":  [
+                                                                        "AI Services"
+                                                                    ],
+                                                           "responses":  {
+                                                                             "200":  {
+                                                                                         "description":  "Insights generated"
+                                                                                     }
+                                                                         }
+                                                       }
+                                          },
+                  "/property-intelligence/analyze/neighborhood":  {
+                                                                      "post":  {
+                                                                                   "operationId":  "analyzeNeighborhood",
+                                                                                   "summary":  "Neighborhood analysis",
+                                                                                   "tags":  [
+                                                                                                "Property Intelligence"
+                                                                                            ],
+                                                                                   "responses":  {
+                                                                                                     "200":  {
+                                                                                                                 "description":  "Analysis complete"
+                                                                                                             }
+                                                                                                 }
+                                                                               }
+                                                                  },
+                  "/auth/refresh":  {
+                                        "post":  {
+                                                     "operationId":  "authRefresh",
+                                                     "summary":  "Refresh token",
+                                                     "tags":  [
+                                                                  "Authentication"
+                                                              ],
+                                                     "responses":  {
+                                                                       "200":  {
+                                                                                   "description":  "Token refreshed"
+                                                                               }
+                                                                   }
+                                                 }
+                                    },
+                  "/ai/qc/technical":  {
+                                           "post":  {
+                                                        "operationId":  "aiQcTechnical",
+                                                        "summary":  "AI technical QC",
+                                                        "tags":  [
+                                                                     "AI Services"
+                                                                 ],
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Analysis complete"
+                                                                                  }
+                                                                      }
+                                                    }
+                                       },
+                  "/analytics/performance":  {
+                                                 "get":  {
+                                                             "operationId":  "analyticsPerformance",
+                                                             "summary":  "Performance analytics",
+                                                             "tags":  [
+                                                                          "Analytics"
+                                                                      ],
+                                                             "responses":  {
+                                                                               "200":  {
+                                                                                           "description":  "Performance data"
+                                                                                       }
+                                                                           }
+                                                         }
+                                             },
+                  "/notifications/{path}":  {
+                                                "x-ms-paths":  "/{*path}",
+                                                "get":  {
+                                                            "operationId":  "notificationsAll",
+                                                            "summary":  "Notifications",
+                                                            "tags":  [
+                                                                         "Communication"
+                                                                     ],
+                                                            "parameters":  [
+                                                                               {
+                                                                                   "name":  "path",
+                                                                                   "in":  "path",
+                                                                                   "required":  true,
+                                                                                   "schema":  {
+                                                                                                  "type":  "string"
+                                                                                              }
+                                                                               }
+                                                                           ],
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "Success"
+                                                                                      }
+                                                                          }
+                                                        }
+                                            },
+                  "/acs/{path}":  {
+                                      "x-ms-paths":  "/{*path}",
+                                      "get":  {
+                                                  "operationId":  "acsAll",
+                                                  "summary":  "ACS token exchange",
+                                                  "tags":  [
+                                                               "Communication"
+                                                           ],
+                                                  "parameters":  [
+                                                                     {
+                                                                         "name":  "path",
+                                                                         "in":  "path",
+                                                                         "required":  true,
+                                                                         "schema":  {
+                                                                                        "type":  "string"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                  "responses":  {
+                                                                    "200":  {
+                                                                                "description":  "Success"
+                                                                            }
+                                                                }
+                                              }
+                                  },
+                  "/ai/embeddings":  {
+                                         "post":  {
+                                                      "operationId":  "aiEmbeddings",
+                                                      "summary":  "Generate embeddings",
+                                                      "tags":  [
+                                                                   "AI Services"
+                                                               ],
+                                                      "responses":  {
+                                                                        "200":  {
+                                                                                    "description":  "Embeddings generated"
+                                                                                }
+                                                                    }
+                                                  }
+                                     },
+                  "/access-graph/{path}":  {
+                                               "x-ms-paths":  "/{*path}",
+                                               "get":  {
+                                                           "operationId":  "accessGraphAll",
+                                                           "summary":  "Access graph",
+                                                           "tags":  [
+                                                                        "Authorization"
+                                                                    ],
+                                                           "parameters":  [
+                                                                              {
+                                                                                  "name":  "path",
+                                                                                  "in":  "path",
+                                                                                  "required":  true,
+                                                                                  "schema":  {
+                                                                                                 "type":  "string"
+                                                                                             }
+                                                                              }
+                                                                          ],
+                                                           "responses":  {
+                                                                             "200":  {
+                                                                                         "description":  "Success"
+                                                                                     }
+                                                                         }
+                                                       }
+                                           },
+                  "/property-intelligence/census/housing":  {
+                                                                "get":  {
+                                                                            "operationId":  "censusHousing",
+                                                                            "summary":  "Census housing",
+                                                                            "tags":  [
+                                                                                         "Property Intelligence"
+                                                                                     ],
+                                                                            "responses":  {
+                                                                                              "200":  {
+                                                                                                          "description":  "Housing data"
+                                                                                                      }
+                                                                                          }
+                                                                        }
+                                                            },
+                  "/vendors/{vendorId}":  {
+                                              "put":  {
+                                                          "operationId":  "updateVendor",
+                                                          "summary":  "Update vendor",
+                                                          "tags":  [
+                                                                       "Vendors"
+                                                                   ],
+                                                          "parameters":  [
+                                                                             {
+                                                                                 "name":  "vendorId",
+                                                                                 "in":  "path",
+                                                                                 "required":  true,
+                                                                                 "schema":  {
+                                                                                                "type":  "string"
+                                                                                            }
+                                                                             }
+                                                                         ],
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "Vendor updated"
+                                                                                    }
+                                                                        }
+                                                      }
+                                          },
+                  "/property-intelligence/address/validate":  {
+                                                                  "post":  {
+                                                                               "operationId":  "addressValidate",
+                                                                               "summary":  "Validate address",
+                                                                               "tags":  [
+                                                                                            "Property Intelligence"
+                                                                                        ],
+                                                                               "responses":  {
+                                                                                                 "200":  {
+                                                                                                             "description":  "Validated"
+                                                                                                         }
+                                                                                             }
+                                                                           }
+                                                              },
+                  "/bridge-mls/{path}":  {
+                                             "x-ms-paths":  "/{*path}",
+                                             "get":  {
+                                                         "operationId":  "bridgeMlsAll",
+                                                         "summary":  "Bridge MLS integration",
+                                                         "tags":  [
+                                                                      "MLS"
+                                                                  ],
+                                                         "parameters":  [
+                                                                            {
+                                                                                "name":  "path",
+                                                                                "in":  "path",
+                                                                                "required":  true,
+                                                                                "schema":  {
+                                                                                               "type":  "string"
+                                                                                           }
+                                                                            }
+                                                                        ],
+                                                         "responses":  {
+                                                                           "200":  {
+                                                                                       "description":  "Success"
+                                                                                   }
+                                                                       }
+                                                     }
+                                         },
+                  "/qc-workflow/{path}":  {
+                                              "x-ms-paths":  "/{*path}",
+                                              "get":  {
+                                                          "operationId":  "qcWorkflowAll",
+                                                          "summary":  "QC workflow operations",
+                                                          "tags":  [
+                                                                       "QC Workflow"
+                                                                   ],
+                                                          "parameters":  [
+                                                                             {
+                                                                                 "name":  "path",
+                                                                                 "in":  "path",
+                                                                                 "required":  true,
+                                                                                 "schema":  {
+                                                                                                "type":  "string"
+                                                                                            }
+                                                                             }
+                                                                         ],
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "Success"
+                                                                                    }
+                                                                        }
+                                                      }
+                                          },
+                  "/ai/vision/condition":  {
+                                               "post":  {
+                                                            "operationId":  "aiVisionCondition",
+                                                            "summary":  "Condition assessment",
+                                                            "tags":  [
+                                                                         "AI Services"
+                                                                     ],
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "Assessment complete"
+                                                                                      }
+                                                                          }
+                                                        }
+                                           },
+                  "/qc/results/{path}":  {
+                                             "x-ms-paths":  "/{*path}",
+                                             "get":  {
+                                                         "operationId":  "qcResultsAll",
+                                                         "summary":  "QC results operations",
+                                                         "tags":  [
+                                                                      "Quality Control"
+                                                                  ],
+                                                         "parameters":  [
+                                                                            {
+                                                                                "name":  "path",
+                                                                                "in":  "path",
+                                                                                "required":  true,
+                                                                                "schema":  {
+                                                                                               "type":  "string"
+                                                                                           }
+                                                                            }
+                                                                        ],
+                                                         "responses":  {
+                                                                           "200":  {
+                                                                                       "description":  "Success"
+                                                                                   }
+                                                                       }
+                                                     }
+                                         },
+                  "/vendor-performance/{path}":  {
+                                                     "x-ms-paths":  "/{*path}",
+                                                     "get":  {
+                                                                 "operationId":  "vendorPerformanceAll",
+                                                                 "summary":  "Vendor performance analytics",
+                                                                 "tags":  [
+                                                                              "Vendors"
+                                                                          ],
+                                                                 "parameters":  [
+                                                                                    {
+                                                                                        "name":  "path",
+                                                                                        "in":  "path",
+                                                                                        "required":  true,
+                                                                                        "schema":  {
+                                                                                                       "type":  "string"
+                                                                                                   }
+                                                                                    }
+                                                                                ],
+                                                                 "responses":  {
+                                                                                   "200":  {
+                                                                                               "description":  "Success"
+                                                                                           }
+                                                                               }
+                                                             }
+                                                 },
+                  "/templates/{path}":  {
+                                            "x-ms-paths":  "/{*path}",
+                                            "get":  {
+                                                        "operationId":  "templatesAll",
+                                                        "summary":  "Template management",
+                                                        "tags":  [
+                                                                     "Templates"
+                                                                 ],
+                                                        "parameters":  [
+                                                                           {
+                                                                               "name":  "path",
+                                                                               "in":  "path",
+                                                                               "required":  true,
+                                                                               "schema":  {
+                                                                                              "type":  "string"
+                                                                                          }
+                                                                           }
+                                                                       ],
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Success"
+                                                                                  }
+                                                                      }
+                                                    }
+                                        },
+                  "/property-intelligence/analyze/view":  {
+                                                              "post":  {
+                                                                           "operationId":  "analyzeView",
+                                                                           "summary":  "View analysis",
+                                                                           "tags":  [
+                                                                                        "Property Intelligence"
+                                                                                    ],
+                                                                           "responses":  {
+                                                                                             "200":  {
+                                                                                                         "description":  "Analysis complete"
+                                                                                                     }
+                                                                                         }
+                                                                       }
+                                                          },
+                  "/vendors/assign/{orderId}":  {
+                                                    "post":  {
+                                                                 "operationId":  "assignVendor",
+                                                                 "summary":  "Assign vendor to order",
+                                                                 "tags":  [
+                                                                              "Vendors"
+                                                                          ],
+                                                                 "parameters":  [
+                                                                                    {
+                                                                                        "name":  "orderId",
+                                                                                        "in":  "path",
+                                                                                        "required":  true,
+                                                                                        "schema":  {
+                                                                                                       "type":  "string"
+                                                                                                   }
+                                                                                    }
+                                                                                ],
+                                                                 "responses":  {
+                                                                                   "200":  {
+                                                                                               "description":  "Vendor assigned"
+                                                                                           }
+                                                                               }
+                                                             }
+                                                },
+                  "/users/{path}":  {
+                                        "x-ms-paths":  "/{*path}",
+                                        "get":  {
+                                                    "operationId":  "usersAll",
+                                                    "summary":  "User management",
+                                                    "tags":  [
+                                                                 "Authorization"
+                                                             ],
+                                                    "parameters":  [
+                                                                       {
+                                                                           "name":  "path",
+                                                                           "in":  "path",
+                                                                           "required":  true,
+                                                                           "schema":  {
+                                                                                          "type":  "string"
+                                                                                      }
+                                                                       }
+                                                                   ],
+                                                    "responses":  {
+                                                                      "200":  {
+                                                                                  "description":  "Success"
+                                                                              }
+                                                                  }
+                                                }
+                                    },
+                  "/code/execute":  {
+                                        "post":  {
+                                                     "operationId":  "codeExecute",
+                                                     "summary":  "Execute code",
+                                                     "tags":  [
+                                                                  "Code Execution"
+                                                              ],
+                                                     "responses":  {
+                                                                       "200":  {
+                                                                                   "description":  "Executed"
+                                                                               }
+                                                                   }
+                                                 }
+                                    },
+                  "/reviews/{path}":  {
+                                          "x-ms-paths":  "/{*path}",
+                                          "get":  {
+                                                      "operationId":  "reviewsAll",
+                                                      "summary":  "Appraisal reviews",
+                                                      "tags":  [
+                                                                   "Reviews"
+                                                               ],
+                                                      "parameters":  [
+                                                                         {
+                                                                             "name":  "path",
+                                                                             "in":  "path",
+                                                                             "required":  true,
+                                                                             "schema":  {
+                                                                                            "type":  "string"
+                                                                                        }
+                                                                         }
+                                                                     ],
+                                                      "responses":  {
+                                                                        "200":  {
+                                                                                    "description":  "Success"
+                                                                                }
+                                                                    }
+                                                  }
+                                      },
+                  "/auto-assignment/{path}":  {
+                                                  "x-ms-paths":  "/{*path}",
+                                                  "get":  {
+                                                              "operationId":  "autoAssignmentAll",
+                                                              "summary":  "Auto-assignment engine",
+                                                              "tags":  [
+                                                                           "Assignment"
+                                                                       ],
+                                                              "parameters":  [
+                                                                                 {
+                                                                                     "name":  "path",
+                                                                                     "in":  "path",
+                                                                                     "required":  true,
+                                                                                     "schema":  {
+                                                                                                    "type":  "string"
+                                                                                                }
+                                                                                 }
+                                                                             ],
+                                                              "responses":  {
+                                                                                "200":  {
+                                                                                            "description":  "Success"
+                                                                                        }
+                                                                            }
+                                                          }
+                                              },
+                  "/delivery/{path}":  {
+                                           "x-ms-paths":  "/{*path}",
+                                           "get":  {
+                                                       "operationId":  "deliveryAll",
+                                                       "summary":  "Delivery workflow",
+                                                       "tags":  [
+                                                                    "Delivery"
+                                                                ],
+                                                       "parameters":  [
+                                                                          {
+                                                                              "name":  "path",
+                                                                              "in":  "path",
+                                                                              "required":  true,
+                                                                              "schema":  {
+                                                                                             "type":  "string"
+                                                                                         }
+                                                                          }
+                                                                      ],
+                                                       "responses":  {
+                                                                         "200":  {
+                                                                                     "description":  "Success"
+                                                                                 }
+                                                                     }
+                                                   }
+                                       },
+                  "/ai/health":  {
+                                     "get":  {
+                                                 "operationId":  "aiHealth",
+                                                 "summary":  "AI health check",
+                                                 "tags":  [
+                                                              "AI Services"
+                                                          ],
+                                                 "responses":  {
+                                                                   "200":  {
+                                                                               "description":  "Health status"
+                                                                           }
+                                                               }
+                                             }
+                                 },
+                  "/property-intelligence-v2/{path}":  {
+                                                           "x-ms-paths":  "/{*path}",
+                                                           "get":  {
+                                                                       "operationId":  "propertyIntelV2All",
+                                                                       "summary":  "Property Intelligence V2 (Places API)",
+                                                                       "tags":  [
+                                                                                    "Property Intelligence"
+                                                                                ],
+                                                                       "parameters":  [
+                                                                                          {
+                                                                                              "name":  "path",
+                                                                                              "in":  "path",
+                                                                                              "required":  true,
+                                                                                              "schema":  {
+                                                                                                             "type":  "string"
+                                                                                                         }
+                                                                                          }
+                                                                                      ],
+                                                                       "responses":  {
+                                                                                         "200":  {
+                                                                                                     "description":  "Success"
+                                                                                                 }
+                                                                                     }
+                                                                   }
+                                                       },
+                  "/avm/{path}":  {
+                                      "x-ms-paths":  "/{*path}",
+                                      "get":  {
+                                                  "operationId":  "avmAll",
+                                                  "summary":  "Automated Valuation Model",
+                                                  "tags":  [
+                                                               "AVM"
+                                                           ],
+                                                  "parameters":  [
+                                                                     {
+                                                                         "name":  "path",
+                                                                         "in":  "path",
+                                                                         "required":  true,
+                                                                         "schema":  {
+                                                                                        "type":  "string"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                  "responses":  {
+                                                                    "200":  {
+                                                                                "description":  "Success"
+                                                                            }
+                                                                }
+                                              }
+                                  },
+                  "/qc/validate/{orderId}":  {
+                                                 "post":  {
+                                                              "operationId":  "qcValidate",
+                                                              "summary":  "Validate QC for order",
+                                                              "tags":  [
+                                                                           "Quality Control"
+                                                                       ],
+                                                              "parameters":  [
+                                                                                 {
+                                                                                     "name":  "orderId",
+                                                                                     "in":  "path",
+                                                                                     "required":  true,
+                                                                                     "schema":  {
+                                                                                                    "type":  "string"
+                                                                                                }
+                                                                                 }
+                                                                             ],
+                                                              "responses":  {
+                                                                                "200":  {
+                                                                                            "description":  "QC validation complete"
+                                                                                        }
+                                                                            }
+                                                          }
+                                             },
+                  "/property-intelligence/health":  {
+                                                        "get":  {
+                                                                    "operationId":  "propertyIntelHealth",
+                                                                    "summary":  "Health check",
+                                                                    "tags":  [
+                                                                                 "Property Intelligence"
+                                                                             ],
+                                                                    "responses":  {
+                                                                                      "200":  {
+                                                                                                  "description":  "Health status"
+                                                                                              }
+                                                                                  }
+                                                                }
+                                                    },
+                  "/property-intelligence/census/economics":  {
+                                                                  "get":  {
+                                                                              "operationId":  "censusEconomics",
+                                                                              "summary":  "Census economics",
+                                                                              "tags":  [
+                                                                                           "Property Intelligence"
+                                                                                       ],
+                                                                              "responses":  {
+                                                                                                "200":  {
+                                                                                                            "description":  "Economics data"
+                                                                                                        }
+                                                                                            }
+                                                                          }
+                                                              },
+                  "/negotiations/{path}":  {
+                                               "x-ms-paths":  "/{*path}",
+                                               "get":  {
+                                                           "operationId":  "negotiationsAll",
+                                                           "summary":  "Order negotiation",
+                                                           "tags":  [
+                                                                        "Negotiations"
+                                                                    ],
+                                                           "parameters":  [
+                                                                              {
+                                                                                  "name":  "path",
+                                                                                  "in":  "path",
+                                                                                  "required":  true,
+                                                                                  "schema":  {
+                                                                                                 "type":  "string"
+                                                                                             }
+                                                                              }
+                                                                          ],
+                                                           "responses":  {
+                                                                             "200":  {
+                                                                                         "description":  "Success"
+                                                                                     }
+                                                                         }
+                                                       }
+                                           },
+                  "/property-intelligence/census/comprehensive":  {
+                                                                      "get":  {
+                                                                                  "operationId":  "censusComprehensive",
+                                                                                  "summary":  "Comprehensive census",
+                                                                                  "tags":  [
+                                                                                               "Property Intelligence"
+                                                                                           ],
+                                                                                  "responses":  {
+                                                                                                    "200":  {
+                                                                                                                "description":  "Census data"
+                                                                                                            }
+                                                                                                }
+                                                                              }
+                                                                  },
+                  "/ai/completion":  {
+                                         "post":  {
+                                                      "operationId":  "aiCompletion",
+                                                      "summary":  "Generate completion",
+                                                      "tags":  [
+                                                                   "AI Services"
+                                                               ],
+                                                      "responses":  {
+                                                                        "200":  {
+                                                                                    "description":  "Completion generated"
+                                                                                }
+                                                                    }
+                                                  }
+                                     },
+                  "/teams/{path}":  {
+                                        "x-ms-paths":  "/{*path}",
+                                        "get":  {
+                                                    "operationId":  "teamsAll",
+                                                    "summary":  "Teams integration",
+                                                    "tags":  [
+                                                                 "Communication"
+                                                             ],
+                                                    "parameters":  [
+                                                                       {
+                                                                           "name":  "path",
+                                                                           "in":  "path",
+                                                                           "required":  true,
+                                                                           "schema":  {
+                                                                                          "type":  "string"
+                                                                                      }
+                                                                       }
+                                                                   ],
+                                                    "responses":  {
+                                                                      "200":  {
+                                                                                  "description":  "Success"
+                                                                              }
+                                                                  }
+                                                }
+                                    },
+                  "/qc/metrics":  {
+                                      "get":  {
+                                                  "operationId":  "qcMetrics",
+                                                  "summary":  "Get QC metrics",
+                                                  "tags":  [
+                                                               "Quality Control"
+                                                           ],
+                                                  "responses":  {
+                                                                    "200":  {
+                                                                                "description":  "QC metrics"
+                                                                            }
+                                                                }
+                                              }
+                                  },
+                  "/ai/vision/analyze":  {
+                                             "post":  {
+                                                          "operationId":  "aiVisionAnalyze",
+                                                          "summary":  "Vision analysis",
+                                                          "tags":  [
+                                                                       "AI Services"
+                                                                   ],
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "Analysis complete"
+                                                                                    }
+                                                                        }
+                                                      }
+                                         },
+                  "/chat/{path}":  {
+                                       "x-ms-paths":  "/{*path}",
+                                       "get":  {
+                                                   "operationId":  "chatAll",
+                                                   "summary":  "Real-time chat",
+                                                   "tags":  [
+                                                                "Communication"
+                                                            ],
+                                                   "parameters":  [
+                                                                      {
+                                                                          "name":  "path",
+                                                                          "in":  "path",
+                                                                          "required":  true,
+                                                                          "schema":  {
+                                                                                         "type":  "string"
+                                                                                     }
+                                                                      }
+                                                                  ],
+                                                   "responses":  {
+                                                                     "200":  {
+                                                                                 "description":  "Success"
+                                                                             }
+                                                                 }
+                                               }
+                                   },
+                  "/auth/register":  {
+                                         "post":  {
+                                                      "operationId":  "authRegister",
+                                                      "summary":  "User registration",
+                                                      "tags":  [
+                                                                   "Authentication"
+                                                               ],
+                                                      "responses":  {
+                                                                        "201":  {
+                                                                                    "description":  "User created"
+                                                                                }
+                                                                    }
+                                                  }
+                                     },
+                  "/rov/{path}":  {
+                                      "x-ms-paths":  "/{*path}",
+                                      "get":  {
+                                                  "operationId":  "rovAll",
+                                                  "summary":  "Reconsideration of Value",
+                                                  "tags":  [
+                                                               "ROV"
+                                                           ],
+                                                  "parameters":  [
+                                                                     {
+                                                                         "name":  "path",
+                                                                         "in":  "path",
+                                                                         "required":  true,
+                                                                         "schema":  {
+                                                                                        "type":  "string"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                  "responses":  {
+                                                                    "200":  {
+                                                                                "description":  "Success"
+                                                                            }
+                                                                }
+                                              }
+                                  },
+                  "/ai/qc/analyze":  {
+                                         "post":  {
+                                                      "operationId":  "aiQcAnalyze",
+                                                      "summary":  "AI QC analysis",
+                                                      "tags":  [
+                                                                   "AI Services"
+                                                               ],
+                                                      "responses":  {
+                                                                        "200":  {
+                                                                                    "description":  "Analysis complete"
+                                                                                }
+                                                                    }
+                                                  }
+                                     },
+                  "/vendors":  {
+                                   "get":  {
+                                               "operationId":  "getVendors",
+                                               "summary":  "List vendors",
+                                               "tags":  [
+                                                            "Vendors"
+                                                        ],
+                                               "responses":  {
+                                                                 "200":  {
+                                                                             "description":  "Vendors retrieved"
+                                                                         }
+                                                             }
+                                           },
+                                   "post":  {
+                                                "operationId":  "createVendor",
+                                                "summary":  "Create vendor",
+                                                "tags":  [
+                                                             "Vendors"
+                                                         ],
+                                                "responses":  {
+                                                                  "201":  {
+                                                                              "description":  "Vendor created"
+                                                                          }
+                                                              }
+                                            }
+                               },
+                  "/orders":  {
+                                  "get":  {
+                                              "operationId":  "getOrders",
+                                              "summary":  "List orders",
+                                              "tags":  [
+                                                           "Orders"
+                                                       ],
+                                              "responses":  {
+                                                                "200":  {
+                                                                            "description":  "Orders retrieved"
+                                                                        }
+                                                            }
+                                          },
+                                  "post":  {
+                                               "operationId":  "createOrder",
+                                               "summary":  "Create order",
+                                               "tags":  [
+                                                            "Orders"
+                                                        ],
+                                               "responses":  {
+                                                                 "201":  {
+                                                                             "description":  "Order created"
+                                                                         }
+                                                             }
+                                           }
+                              },
+                  "/qc/execution/{path}":  {
+                                               "x-ms-paths":  "/{*path}",
+                                               "get":  {
+                                                           "operationId":  "qcExecutionAll",
+                                                           "summary":  "QC execution operations",
+                                                           "tags":  [
+                                                                        "Quality Control"
+                                                                    ],
+                                                           "parameters":  [
+                                                                              {
+                                                                                  "name":  "path",
+                                                                                  "in":  "path",
+                                                                                  "required":  true,
+                                                                                  "schema":  {
+                                                                                                 "type":  "string"
+                                                                                             }
+                                                                              }
+                                                                          ],
+                                                           "responses":  {
+                                                                             "200":  {
+                                                                                         "description":  "Success"
+                                                                                     }
+                                                                         }
+                                                       }
+                                           }
+              }
+}
