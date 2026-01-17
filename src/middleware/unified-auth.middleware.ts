@@ -144,17 +144,29 @@ export class UnifiedAuthMiddleware {
           return next();
         }
 
-        // Try Azure AD authentication (but don't fail if invalid)
+        // Try Azure AD authentication (but don't fail if token is just missing)
+        // Still reject malicious tokens
         try {
           return this.azureAuth.authenticate(req as any, res, next);
-        } catch {
-          // If Azure AD fails, just continue without user
-          return next();
+        } catch (error: any) {
+          // Only bypass auth for missing/expired tokens, not malformed ones
+          if (error?.code === 'TOKEN_EXPIRED' || error?.code === 'TOKEN_INVALID') {
+            this.logger.debug('Optional auth failed with expired/invalid token, continuing without user', { 
+              code: error.code 
+            });
+            return next();
+          }
+          // Reject malformed/malicious tokens
+          this.logger.warn('Malicious token attempt in optional auth', { error: error?.message });
+          return res.status(400).json({
+            error: 'Malformed authentication token',
+            code: 'MALFORMED_TOKEN'
+          });
         }
 
-      } catch (error) {
-        // If any error, just continue without authentication
-        this.logger.debug('Optional auth failed, continuing without user', { error });
+      } catch (error: any) {
+        // If any error in outer try, log and continue without authentication
+        this.logger.warn('Optional auth outer error', { error: error?.message });
         return next();
       }
     };

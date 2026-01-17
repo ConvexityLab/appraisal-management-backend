@@ -92,8 +92,13 @@ export class AzureEntraAuthMiddleware {
           reject(err);
         } else {
           const signingKey = key?.getPublicKey();
-          logger.info('Successfully retrieved signing key', { kid, hasKey: !!signingKey });
-          resolve(signingKey || '');
+          if (!signingKey || signingKey.length === 0) {
+            logger.error('Retrieved empty signing key from JWKS', { kid });
+            reject(new Error('Empty signing key received from JWKS'));
+            return;
+          }
+          logger.info('Successfully retrieved signing key', { kid, keyLength: signingKey.length });
+          resolve(signingKey);
         }
       });
     });
@@ -113,12 +118,22 @@ export class AzureEntraAuthMiddleware {
 
     const { header, payload } = decoded;
     const payloadData = payload as any;
+    
+    // Validate tenant ID matches (prevent cross-tenant attacks)
+    if (payloadData.tid && payloadData.tid !== this.config.tenantId) {
+      logger.error('Token tenant mismatch - possible cross-tenant attack', {
+        expectedTenant: this.config.tenantId,
+        tokenTenant: payloadData.tid
+      });
+      throw new Error('Token tenant validation failed');
+    }
     logger.info('Token decoded successfully', { 
       kid: header.kid, 
       alg: header.alg,
       aud: payloadData.aud,
       iss: payloadData.iss,
       exp: payloadData.exp,
+      tid: payloadData.tid,
       hasGroups: !!payloadData.groups,
       hasRoles: !!payloadData.roles
     });
@@ -139,7 +154,9 @@ export class AzureEntraAuthMiddleware {
     const verifyOptions: jwt.VerifyOptions = {
       algorithms: ['RS256'],
       audience: expectedAudience,
-      clockTolerance: this.config.clockTolerance
+      clockTolerance: this.config.clockTolerance,
+      // Enforce max age to prevent old token reuse
+      maxAge: '24h'
     };
 
     if (this.config.validateIssuer) {
@@ -224,6 +241,16 @@ export class AzureEntraAuthMiddleware {
       // Validate token
       const payload = await this.validateToken(token);
 
+      // Validate required claims exist
+      if (!payload.sub && !payload.oid) {
+        logger.error('Token missing required subject claim (sub or oid)');
+        throw new Error('Token missing required subject claim');
+      }
+      if (!payload.email && !payload.preferred_username && !payload.upn) {
+        logger.error('Token missing required email claim');
+        throw new Error('Token missing required email claim');
+      }
+
       // Extract user information from token claims
       const groups = payload.groups || [];
       const appRoles = payload.roles || [];
@@ -232,7 +259,7 @@ export class AzureEntraAuthMiddleware {
       req.user = {
         id: payload.sub || payload.oid,
         email: payload.email || payload.preferred_username || payload.upn,
-        name: payload.name || payload.given_name + ' ' + payload.family_name,
+        name: payload.name || (payload.given_name && payload.family_name ? payload.given_name + ' ' + payload.family_name : 'Unknown'),
         role,
         permissions,
         groups,

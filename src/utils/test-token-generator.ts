@@ -23,8 +23,19 @@ export class TestTokenGenerator {
   private readonly expiresIn: string;
 
   constructor() {
+    // Enforce test token secret in production
+    if (process.env.NODE_ENV === 'production' && !process.env.TEST_JWT_SECRET) {
+      throw new Error('TEST_JWT_SECRET must be set in production (even if test tokens disabled)');
+    }
+    
     // Use a test-specific secret (different from production)
     this.secret = process.env.TEST_JWT_SECRET || 'test-secret-key-DO-NOT-USE-IN-PRODUCTION';
+    
+    // Warn if using default secret
+    if (this.secret === 'test-secret-key-DO-NOT-USE-IN-PRODUCTION') {
+      console.warn('⚠️  WARNING: Using default test token secret - set TEST_JWT_SECRET env var');
+    }
+    
     this.expiresIn = process.env.TEST_JWT_EXPIRES_IN || '24h';
   }
 
@@ -56,6 +67,22 @@ export class TestTokenGenerator {
   verifyToken(token: string): { valid: boolean; user?: any; error?: string } {
     try {
       const decoded = jwt.verify(token, this.secret) as any;
+      
+      // Validate it's actually a test token
+      if (!decoded.isTestToken) {
+        return {
+          valid: false,
+          error: 'Token is not marked as test token'
+        };
+      }
+      
+      // Validate token hasn't expired (jwt.verify does this, but double-check)
+      if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+        return {
+          valid: false,
+          error: 'Test token has expired'
+        };
+      }
       
       // Return validation result with user data
       return {

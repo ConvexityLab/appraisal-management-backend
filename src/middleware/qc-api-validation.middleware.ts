@@ -164,9 +164,13 @@ export class QCApiValidationMiddleware {
   public authenticateJWT() {
     return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
       try {
-        // Dev bypass for local testing
-        if (process.env.NODE_ENV === 'development' || process.env.BYPASS_AUTH === 'true') {
-          this.logger.warn('⚠️  Authentication bypassed for development');
+        // Dev bypass ONLY in development with explicit flag
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        const bypassAuth = process.env.BYPASS_AUTH === 'true';
+        
+        // Prevent bypass in production even if flag is set
+        if (isDevelopment && bypassAuth) {
+          this.logger.warn('⚠️  Authentication bypassed for development - NEVER USE IN PRODUCTION');
           req.user = {
             id: 'dev-user-123',
             email: 'dev@localhost',
@@ -176,6 +180,15 @@ export class QCApiValidationMiddleware {
             clientId: 'dev-client'
           };
           return next();
+        }
+        
+        // Production: BYPASS_AUTH is ignored
+        if (bypassAuth && !isDevelopment) {
+          this.logger.error('🚨 SECURITY: Attempted to bypass auth in production - BLOCKED');
+          return res.status(403).json({
+            success: false,
+            error: createApiError('AUTH_BYPASS_BLOCKED', 'Authentication bypass not allowed in production')
+          });
         }
 
         const authHeader = req.headers.authorization;
