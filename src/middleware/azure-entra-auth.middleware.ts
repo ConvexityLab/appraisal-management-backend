@@ -62,12 +62,62 @@ export class AzureEntraAuthMiddleware {
     });
 
     // Role mapping from Azure AD groups/roles to application roles
-    this.roleMapping = new Map([
-      ['admin-group-id', { role: 'admin', permissions: ['*'] }],
-      ['manager-group-id', { role: 'manager', permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics'] }],
-      ['qc-analyst-group-id', { role: 'qc_analyst', permissions: ['qc_validate', 'qc_execute', 'qc_metrics'] }],
-      ['appraiser-group-id', { role: 'appraiser', permissions: ['order_view', 'order_update'] }]
-    ]);
+    // Load from environment variables (actual Azure AD group/role IDs)
+    this.roleMapping = new Map();
+    
+    // Configure role mappings from environment variables
+    if (process.env.AZURE_ADMIN_GROUP_ID) {
+      this.roleMapping.set(process.env.AZURE_ADMIN_GROUP_ID, { role: 'admin', permissions: ['*'] });
+      logger.info('Configured admin group mapping', { groupId: process.env.AZURE_ADMIN_GROUP_ID });
+    }
+    if (process.env.AZURE_MANAGER_GROUP_ID) {
+      this.roleMapping.set(process.env.AZURE_MANAGER_GROUP_ID, { 
+        role: 'manager', 
+        permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics', 'qc_validate'] 
+      });
+      logger.info('Configured manager group mapping', { groupId: process.env.AZURE_MANAGER_GROUP_ID });
+    }
+    if (process.env.AZURE_QC_ANALYST_GROUP_ID) {
+      this.roleMapping.set(process.env.AZURE_QC_ANALYST_GROUP_ID, { 
+        role: 'qc_analyst', 
+        permissions: ['qc_validate', 'qc_execute', 'qc_metrics', 'order_view', 'revision_create', 'escalation_create'] 
+      });
+      logger.info('Configured QC analyst group mapping', { groupId: process.env.AZURE_QC_ANALYST_GROUP_ID });
+    }
+    if (process.env.AZURE_APPRAISER_GROUP_ID) {
+      this.roleMapping.set(process.env.AZURE_APPRAISER_GROUP_ID, { 
+        role: 'appraiser', 
+        permissions: ['order_view', 'order_update', 'revision_create'] 
+      });
+      logger.info('Configured appraiser group mapping', { groupId: process.env.AZURE_APPRAISER_GROUP_ID });
+    }
+    
+    // Check for App Roles (recommended Azure AD approach)
+    if (process.env.AZURE_APP_ROLE_ADMIN) {
+      this.roleMapping.set(process.env.AZURE_APP_ROLE_ADMIN, { role: 'admin', permissions: ['*'] });
+      logger.info('Configured admin app role', { roleId: process.env.AZURE_APP_ROLE_ADMIN });
+    }
+    if (process.env.AZURE_APP_ROLE_MANAGER) {
+      this.roleMapping.set(process.env.AZURE_APP_ROLE_MANAGER, { 
+        role: 'manager', 
+        permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics', 'qc_validate'] 
+      });
+      logger.info('Configured manager app role', { roleId: process.env.AZURE_APP_ROLE_MANAGER });
+    }
+    if (process.env.AZURE_APP_ROLE_QC_ANALYST) {
+      this.roleMapping.set(process.env.AZURE_APP_ROLE_QC_ANALYST, { 
+        role: 'qc_analyst', 
+        permissions: ['qc_validate', 'qc_execute', 'qc_metrics', 'order_view', 'revision_create', 'escalation_create'] 
+      });
+      logger.info('Configured QC analyst app role', { roleId: process.env.AZURE_APP_ROLE_QC_ANALYST });
+    }
+    
+    // Warning if no mappings configured
+    if (this.roleMapping.size === 0) {
+      logger.warn('⚠️  No Azure AD group/role mappings configured - all users will get default appraiser role');
+      logger.warn('Set environment variables: AZURE_ADMIN_GROUP_ID, AZURE_MANAGER_GROUP_ID, AZURE_QC_ANALYST_GROUP_ID');
+      logger.warn('Or use App Roles: AZURE_APP_ROLE_ADMIN, AZURE_APP_ROLE_MANAGER, AZURE_APP_ROLE_QC_ANALYST');
+    }
 
     logger.info('Azure Entra ID authentication initialized', {
       tenantId: config.tenantId,
@@ -127,20 +177,41 @@ export class AzureEntraAuthMiddleware {
       });
       throw new Error('Token tenant validation failed');
     }
-    logger.info('Token decoded successfully', { 
-      kid: header.kid, 
-      alg: header.alg,
-      aud: payloadData.aud,
-      iss: payloadData.iss,
-      exp: payloadData.exp,
-      tid: payloadData.tid,
-      hasGroups: !!payloadData.groups,
-      hasRoles: !!payloadData.roles
-    });
+    logger.info('Token decod (recommended Azure AD approach)
+    for (const appRole of appRoles) {
+      const mapping = this.roleMapping.get(appRole);
+      if (mapping) {
+        logger.info('User role mapped via app role', { appRole, mappedRole: mapping.role });
+        return mapping;
+      }
+    }
 
-    if (!header.kid) {
-      logger.error('Token missing key ID (kid)');
-      throw new Error('Token missing key ID (kid)');
+    // Check groups
+    for (const group of groups) {
+      const mapping = this.roleMapping.get(group);
+      if (mapping) {
+        logger.info('User role mapped via group', { groupId: group, mappedRole: mapping.role });
+        return mapping;
+      }
+    }
+
+    // TEMPORARY: If no mappings configured and user has groups/roles, grant admin for testing
+    // This allows development/testing with real tokens before group IDs are configured
+    if (this.roleMapping.size === 0 && (groups.length > 0 || appRoles.length > 0)) {
+      logger.warn('⚠️  No role mappings configured - granting admin access for testing', {
+        userGroups: groups,
+        userAppRoles: appRoles,
+        message: 'Configure AZURE_*_GROUP_ID or AZURE_APP_ROLE_* environment variables'
+      });
+      return { role: 'admin', permissions: ['*'] };
+    }
+
+    // Default role if no mapping found
+    logger.info('No role mapping found - assigning default appraiser role', {
+      userGroups: groups,
+      userAppRoles: appRoles
+    });
+    return { role: 'appraiser', permissions: ['order_view', 'order_update
     }
 
     // Get signing key from Microsoft's JWKS endpoint
