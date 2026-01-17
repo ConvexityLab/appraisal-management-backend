@@ -114,10 +114,10 @@ resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
   properties: {
     displayName: 'Appraisal Management API'
     description: 'Main REST API for appraisal management operations'
-    path: 'api'  // Base path: client calls https://apim-gateway/api/* -> routes to backend /api/*
+    path: ''  // No base path - swagger paths include /api
     protocols: ['https']
     subscriptionRequired: false
-    serviceUrl: 'https://${apiContainerAppFqdn}'  // Backend expects /api/* paths
+    serviceUrl: 'https://${apiContainerAppFqdn}'  // Swagger paths include /api
     type: 'http'
     format: 'openapi+json'
     value: loadTextContent('../api-swagger.json')
