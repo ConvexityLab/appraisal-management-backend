@@ -16,12 +16,13 @@ export interface UnifiedAuthRequest extends Request {
     id: string;
     email: string;
     name: string;
-    role: string;
-    permissions?: string[];
-    azureAdObjectId?: string;
     tenantId: string;
+    azureAdObjectId?: string;
     accessScope?: any;
     isTestUser?: boolean;
+    // groups and appRoles for Casbin
+    groups?: string[];
+    appRoles?: string[];
   };
   userProfile?: any;
   tenantId?: string;
@@ -172,84 +173,9 @@ export class UnifiedAuthMiddleware {
     };
   };
 
-  /**
-   * Require specific role
-   */
-  requireRole = (...roles: string[]) => {
-    return (req: UnifiedAuthRequest, res: Response, next: NextFunction) => {
-      if (!req.user) {
-        return res.status(401).json({
-          error: 'Authentication required',
-          code: 'AUTH_REQUIRED'
-        });
-      }
-
-      if (req.user.role === 'admin') {
-        return next(); // Admin has all roles
-      }
-
-      if (!roles.includes(req.user.role)) {
-        return res.status(403).json({
-          error: `Access denied. Required roles: ${roles.join(', ')}`,
-          code: 'INSUFFICIENT_ROLE'
-        });
-      }
-
-      next();
-    };
-  };
-
-  /**
-   * Require specific permission
-   */
-  requirePermission = (...permissions: string[]) => {
-    return (req: UnifiedAuthRequest, res: Response, next: NextFunction) => {
-      if (!req.user) {
-        return res.status(401).json({
-          error: 'Authentication required',
-          code: 'AUTH_REQUIRED'
-        });
-      }
-
-      const userPermissions = req.user.permissions || [];
-
-      // Check for wildcard permission (admin)
-      if (userPermissions.includes('*')) {
-        return next();
-      }
-
-      // Check if user has any of the required permissions
-      const hasPermission = permissions.some(perm => userPermissions.includes(perm));
-
-      if (!hasPermission) {
-        return res.status(403).json({
-          error: `Access denied. Required permissions: ${permissions.join(', ')}`,
-          code: 'INSUFFICIENT_PERMISSIONS'
-        });
-      }
-
-      next();
-    };
-  };
-
-  /**
-   * Sync test user profile to database
-   */
-  private async syncTestUserProfile(user: NonNullable<UnifiedAuthRequest['user']>): Promise<any> {
-    try {
-      await this.userProfileService.syncUserProfile({
-        email: user.email,
-        name: user.name,
-        azureAdObjectId: `test-${user.id}`,
-        role: user.role,
-        tenantId: user.tenantId,
-        accessScope: user.accessScope
-      });
-    } catch (error) {
-      // Don't fail auth if profile sync fails
-      this.logger.warn('Failed to sync test user profile', { error, userId: user.id });
-    }
-  }
+  // Authorization methods removed - use Casbin middleware instead:
+  // - authzMiddleware.loadUserProfile()  
+  // - authzMiddleware.authorize(resourceType, action)
 }
 
 /**

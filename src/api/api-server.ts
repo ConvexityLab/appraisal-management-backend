@@ -231,7 +231,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/users',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.unifiedAuth.requireRole('admin', 'manager'),
+      this.authorize('user', 'manage'),
       createUserProfileRouter()
     );
 
@@ -239,7 +239,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/access-graph',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.unifiedAuth.requireRole('admin'),
+      this.authorize('access_graph', 'manage'),
       createAccessGraphRouter()
     );
 
@@ -378,7 +378,8 @@ export class AppraisalManagementAPIServer {
     // QC Validation routes
     this.app.post('/api/qc/validate/:orderId',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('qc_validate'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('order', 'qc_validate'),
       this.validateOrderId(),
       this.performQCValidation.bind(this)
     );
@@ -391,7 +392,8 @@ export class AppraisalManagementAPIServer {
 
     this.app.get('/api/qc/metrics',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('qc_metrics'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('order', 'view'),
       this.getQCMetrics.bind(this)
     );
 
@@ -403,14 +405,16 @@ export class AppraisalManagementAPIServer {
 
     this.app.post('/api/vendors',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('vendor_manage'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('vendor', 'create'),
       this.validateVendorCreation(),
       this.createVendor.bind(this)
     );
 
     this.app.put('/api/vendors/:vendorId',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('vendor_manage'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('vendor', 'update'),
       this.validateVendorId(),
       this.validateVendorUpdate(),
       this.updateVendor.bind(this)
@@ -418,7 +422,8 @@ export class AppraisalManagementAPIServer {
 
     this.app.post('/api/vendors/assign/:orderId',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('vendor_assign'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('order', 'assign_vendor'),
       this.validateOrderId(),
       this.assignVendor.bind(this)
     );
@@ -432,13 +437,15 @@ export class AppraisalManagementAPIServer {
     // Analytics routes
     this.app.get('/api/analytics/overview',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('analytics_view'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('analytics', 'view'),
       this.getAnalyticsOverview.bind(this)
     );
 
     this.app.get('/api/analytics/performance',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('analytics_view'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('analytics', 'view'),
       this.validateAnalyticsQuery(),
       this.getPerformanceAnalytics.bind(this)
     );
@@ -534,7 +541,8 @@ export class AppraisalManagementAPIServer {
     // Dynamic Code Execution routes
     this.app.post('/api/code/execute',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('code_execute'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('code', 'execute'),
       this.validateCodeExecution(),
       this.executeCode.bind(this)
     );
@@ -542,21 +550,24 @@ export class AppraisalManagementAPIServer {
     // AI Services routes
     this.app.post('/api/ai/qc/analyze',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('qc_validate'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('ai', 'qc_analyze'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performQCAnalysis
     );
 
     this.app.post('/api/ai/qc/technical',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('qc_validate'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('ai', 'qc_analyze'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performTechnicalQC
     );
 
     this.app.post('/api/ai/qc/compliance',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('qc_validate'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('ai', 'qc_analyze'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performComplianceQC
     );
@@ -616,7 +627,8 @@ export class AppraisalManagementAPIServer {
 
     this.app.get('/api/ai/usage',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('analytics_view'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('analytics', 'view'),
       this.aiServicesController.getUsageStats
     );
 
@@ -629,7 +641,8 @@ export class AppraisalManagementAPIServer {
     
     this.app.use('/api/qc/execution', 
       this.unifiedAuth.authenticate(),
-      this.requirePermission('qc_execute'),
+      this.authzMiddleware!.loadUserProfile(),
+      this.authorize('order', 'qc_execute'),
       this.qcExecutionRouter
     );
     
@@ -657,8 +670,14 @@ export class AppraisalManagementAPIServer {
     return this.azureAuth.authenticate(req, res, next);
   };
 
-  private requirePermission(permission: string) {
-    return this.azureAuth.requirePermission(permission);
+  // Authorization middleware - now using Casbin
+  private authorize(resourceType: string, action: string) {
+    if (!this.authzMiddleware) {
+      this.logger.warn('Authorization middleware not initialized - allowing request');
+      return (req: any, res: any, next: any) => next();
+    }
+    // Cast to proper types since we know these match Casbin's ResourceType and Action
+    return this.authzMiddleware.authorize(resourceType as any, action as any);
   }
 
   // Validation middleware

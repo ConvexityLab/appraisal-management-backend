@@ -35,11 +35,14 @@ export class AuthorizationMiddleware {
   constructor(authzService?: AuthorizationService) {
     this.logger = new Logger();
     this.authzService = authzService || new AuthorizationService();
-    // Read from environment - defaults to false (audit mode)
-    this.enforceAuthorization = process.env.ENFORCE_AUTHORIZATION === 'true';
+    // Default to ENFORCING authorization (can be disabled with ENFORCE_AUTHORIZATION=false)
+    this.enforceAuthorization = process.env.ENFORCE_AUTHORIZATION !== 'false';
     
     if (!this.enforceAuthorization) {
       this.logger.warn('⚠️  Authorization in AUDIT MODE - decisions logged but not enforced');
+      this.logger.warn('Set ENFORCE_AUTHORIZATION=true (or remove variable) to enable enforcement');
+    } else {
+      this.logger.info('✅ Authorization ENFORCEMENT ENABLED - Casbin policies will be enforced');
     }
   }
 

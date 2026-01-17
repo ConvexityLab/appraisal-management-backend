@@ -25,12 +25,11 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string;
-  role: string;
-  permissions?: string[];
+  tenantId: string;
+  oid: string; // Azure AD Object ID
+  // groups and appRoles preserved for Casbin to use
   groups?: string[];
   appRoles?: string[];
-  tenantId?: string;
-  oid?: string; // Azure AD Object ID
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -40,7 +39,6 @@ export interface AuthenticatedRequest extends Request {
 export class AzureEntraAuthMiddleware {
   private jwksClient: jwksClient.JwksClient;
   private config: EntraAuthConfig;
-  private roleMapping: Map<string, { role: string; permissions: string[] }>;
 
   constructor(config: EntraAuthConfig) {
     this.config = {
@@ -61,63 +59,8 @@ export class AzureEntraAuthMiddleware {
       timeout: 30000 // 30 second timeout for JWKS requests
     });
 
-    // Role mapping from Azure AD groups/roles to application roles
-    // Load from environment variables (actual Azure AD group/role IDs)
-    this.roleMapping = new Map();
-    
-    // Configure role mappings from environment variables
-    if (process.env.AZURE_ADMIN_GROUP_ID) {
-      this.roleMapping.set(process.env.AZURE_ADMIN_GROUP_ID, { role: 'admin', permissions: ['*'] });
-      logger.info('Configured admin group mapping', { groupId: process.env.AZURE_ADMIN_GROUP_ID });
-    }
-    if (process.env.AZURE_MANAGER_GROUP_ID) {
-      this.roleMapping.set(process.env.AZURE_MANAGER_GROUP_ID, { 
-        role: 'manager', 
-        permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics', 'qc_validate'] 
-      });
-      logger.info('Configured manager group mapping', { groupId: process.env.AZURE_MANAGER_GROUP_ID });
-    }
-    if (process.env.AZURE_QC_ANALYST_GROUP_ID) {
-      this.roleMapping.set(process.env.AZURE_QC_ANALYST_GROUP_ID, { 
-        role: 'qc_analyst', 
-        permissions: ['qc_validate', 'qc_execute', 'qc_metrics', 'order_view', 'revision_create', 'escalation_create'] 
-      });
-      logger.info('Configured QC analyst group mapping', { groupId: process.env.AZURE_QC_ANALYST_GROUP_ID });
-    }
-    if (process.env.AZURE_APPRAISER_GROUP_ID) {
-      this.roleMapping.set(process.env.AZURE_APPRAISER_GROUP_ID, { 
-        role: 'appraiser', 
-        permissions: ['order_view', 'order_update', 'revision_create'] 
-      });
-      logger.info('Configured appraiser group mapping', { groupId: process.env.AZURE_APPRAISER_GROUP_ID });
-    }
-    
-    // Check for App Roles (recommended Azure AD approach)
-    if (process.env.AZURE_APP_ROLE_ADMIN) {
-      this.roleMapping.set(process.env.AZURE_APP_ROLE_ADMIN, { role: 'admin', permissions: ['*'] });
-      logger.info('Configured admin app role', { roleId: process.env.AZURE_APP_ROLE_ADMIN });
-    }
-    if (process.env.AZURE_APP_ROLE_MANAGER) {
-      this.roleMapping.set(process.env.AZURE_APP_ROLE_MANAGER, { 
-        role: 'manager', 
-        permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics', 'qc_validate'] 
-      });
-      logger.info('Configured manager app role', { roleId: process.env.AZURE_APP_ROLE_MANAGER });
-    }
-    if (process.env.AZURE_APP_ROLE_QC_ANALYST) {
-      this.roleMapping.set(process.env.AZURE_APP_ROLE_QC_ANALYST, { 
-        role: 'qc_analyst', 
-        permissions: ['qc_validate', 'qc_execute', 'qc_metrics', 'order_view', 'revision_create', 'escalation_create'] 
-      });
-      logger.info('Configured QC analyst app role', { roleId: process.env.AZURE_APP_ROLE_QC_ANALYST });
-    }
-    
-    // Warning if no mappings configured
-    if (this.roleMapping.size === 0) {
-      logger.warn('⚠️  No Azure AD group/role mappings configured - all users will get default appraiser role');
-      logger.warn('Set environment variables: AZURE_ADMIN_GROUP_ID, AZURE_MANAGER_GROUP_ID, AZURE_QC_ANALYST_GROUP_ID');
-      logger.warn('Or use App Roles: AZURE_APP_ROLE_ADMIN, AZURE_APP_ROLE_MANAGER, AZURE_APP_ROLE_QC_ANALYST');
-    }
+    // Authentication middleware only extracts identity - authorization handled by Casbin
+    logger.info('Authentication middleware configured - authorization delegated to Casbin');
 
     logger.info('Azure Entra ID authentication initialized', {
       tenantId: config.tenantId,
@@ -245,34 +188,6 @@ export class AzureEntraAuthMiddleware {
   };
 
   /**
-   * Map Azure AD groups/roles to application role
-   */
-  private mapUserRole(groups: string[] = [], appRoles: string[] = []): { role: string; permissions: string[] } {
-    // Check app roles first
-    for (const appRole of appRoles) {
-      const mapping = this.roleMapping.get(appRole);
-      if (mapping) return mapping;
-    }
-
-    // Check groups
-    for (const group of groups) {
-      const mapping = this.roleMapping.get(group);
-      if (mapping) return mapping;
-    }
-
-    // Default role if no mapping found
-    return { role: 'appraiser', permissions: ['order_view'] };
-  }
-
-  /**
-   * Configure role mappings from Azure AD groups to application roles
-   */
-  public setRoleMapping(groupId: string, role: string, permissions: string[]): void {
-    this.roleMapping.set(groupId, { role, permissions });
-    logger.info('Role mapping configured', { groupId, role, permissions });
-  }
-
-  /**
    * Main authentication middleware
    */
   public authenticate = async (
@@ -322,27 +237,24 @@ export class AzureEntraAuthMiddleware {
         throw new Error('Token missing required email claim');
       }
 
-      // Extract user information from token claims
-      const groups = payload.groups || [];
-      const appRoles = payload.roles || [];
-      const { role, permissions } = this.mapUserRole(groups, appRoles);
-
+      // Extract IDENTITY ONLY - authorization handled by Casbin
       req.user = {
         id: payload.sub || payload.oid,
         email: payload.email || payload.preferred_username || payload.upn,
         name: payload.name || (payload.given_name && payload.family_name ? payload.given_name + ' ' + payload.family_name : 'Unknown'),
-        role,
-        permissions,
-        groups,
-        appRoles,
         tenantId: payload.tid,
-        oid: payload.oid
+        oid: payload.oid,
+        // Preserve groups/appRoles for Casbin to query if needed
+        groups: payload.groups || [],
+        appRoles: payload.roles || []
       };
 
       logger.info('User authenticated via Azure Entra ID', {
         userId: req.user.id,
         email: req.user.email,
-        role: req.user.role
+        tenantId: req.user.tenantId,
+        groupCount: req.user.groups?.length || 0,
+        appRoleCount: req.user.appRoles?.length || 0
       });
 
       next();
@@ -382,65 +294,9 @@ export class AzureEntraAuthMiddleware {
     }
   };
 
-  /**
-   * Require specific permission middleware
-   */
-  public requirePermission = (permission: string) => {
-    return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
-      if (!req.user) {
-        res.status(401).json({
-          error: 'Authentication required',
-          code: 'NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      // Admin has all permissions
-      if (req.user.permissions?.includes('*')) {
-        next();
-        return;
-      }
-
-      if (!req.user.permissions?.includes(permission)) {
-        res.status(403).json({
-          error: `Permission required: ${permission}`,
-          code: 'PERMISSION_DENIED',
-          requiredPermission: permission,
-          userPermissions: req.user.permissions
-        });
-        return;
-      }
-
-      next();
-    };
-  };
-
-  /**
-   * Require specific role middleware
-   */
-  public requireRole = (...roles: string[]) => {
-    return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
-      if (!req.user) {
-        res.status(401).json({
-          error: 'Authentication required',
-          code: 'NOT_AUTHENTICATED'
-        });
-        return;
-      }
-
-      if (!roles.includes(req.user.role)) {
-        res.status(403).json({
-          error: 'Insufficient role',
-          code: 'ROLE_DENIED',
-          requiredRoles: roles,
-          userRole: req.user.role
-        });
-        return;
-      }
-
-      next();
-    };
-  };
+  // Authorization methods removed - use Casbin middleware instead:
+  // - authzMiddleware.loadUserProfile()
+  // - authzMiddleware.authorize(resourceType, action)
 }
 
 /**
