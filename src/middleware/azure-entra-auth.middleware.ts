@@ -49,13 +49,16 @@ export class AzureEntraAuthMiddleware {
       ...config
     };
 
-    // Initialize JWKS client to fetch Microsoft's public keys
+    // Initialize JWKS client to fetch Microsoft's public keys with aggressive caching
+    // This prevents rate limiting by caching keys for 24 hours and allowing burst traffic
     this.jwksClient = jwksClient({
       jwksUri: `https://login.microsoftonline.com/${config.tenantId}/discovery/v2.0/keys`,
       cache: true,
-      cacheMaxAge: 86400000, // 24 hours
+      cacheMaxAge: 86400000, // 24 hours - keys are rotated infrequently
+      cacheMaxEntries: 5, // Cache multiple keys
       rateLimit: true,
-      jwksRequestsPerMinute: 10
+      jwksRequestsPerMinute: 100, // Increased from 10 to handle high traffic bursts
+      timeout: 30000 // 30 second timeout for JWKS requests
     });
 
     // Role mapping from Azure AD groups/roles to application roles
@@ -343,9 +346,21 @@ export class AzureEntraAuthMiddleware {
 }
 
 /**
- * Factory function to create Azure Entra auth middleware
+ * Singleton instance of Azure Entra auth middleware
+ * This ensures JWKS cache is shared across all requests
+ */
+let azureEntraAuthInstance: AzureEntraAuthMiddleware | null = null;
+
+/**
+ * Factory function to create Azure Entra auth middleware (singleton)
  */
 export function createAzureEntraAuth(): AzureEntraAuthMiddleware {
+  // Return existing instance if already created (singleton pattern)
+  if (azureEntraAuthInstance) {
+    logger.info('Reusing existing Azure Entra auth instance (JWKS cache preserved)');
+    return azureEntraAuthInstance;
+  }
+
   const config: EntraAuthConfig = {
     tenantId: process.env.AZURE_TENANT_ID || '',
     clientId: process.env.AZURE_CLIENT_ID || ''
@@ -363,5 +378,7 @@ export function createAzureEntraAuth(): AzureEntraAuthMiddleware {
     logger.warn('Required environment variables: AZURE_TENANT_ID, AZURE_CLIENT_ID');
   }
 
-  return new AzureEntraAuthMiddleware(config);
+  logger.info('Creating NEW Azure Entra auth instance with JWKS cache');
+  azureEntraAuthInstance = new AzureEntraAuthMiddleware(config);
+  return azureEntraAuthInstance;
 }
