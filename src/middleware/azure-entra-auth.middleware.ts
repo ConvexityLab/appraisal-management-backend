@@ -120,45 +120,53 @@ export class AzureEntraAuthMiddleware {
       });
       throw new Error('Token tenant validation failed');
     }
-    logger.info('Token decod (recommended Azure AD approach)
-    for (const appRole of appRoles) {
-      const mapping = this.roleMapping.get(appRole);
-      if (mapping) {
-        logger.info('User role mapped via app role', { appRole, mappedRole: mapping.role });
-        return mapping;
-      }
+
+    // Extract user identity from token claims
+    const userId = payloadData.sub || payloadData.oid;
+    const email = payloadData.email || payloadData.preferred_username || payloadData.upn;
+    const name = payloadData.name || 'Unknown User';
+    const tenantId = payloadData.tid;
+    const oid = payloadData.oid;
+    const groups = payloadData.groups || [];
+    const appRoles = payloadData.roles || [];
+
+    if (!userId) {
+      throw new Error('Token missing required user identifier (sub/oid)');
+    }
+    if (!email) {
+      throw new Error('Token missing required email claim');
+    }
+    if (!tenantId) {
+      throw new Error('Token missing required tenant ID');
     }
 
-    // Check groups
-    for (const group of groups) {
-      const mapping = this.roleMapping.get(group);
-      if (mapping) {
-        logger.info('User role mapped via group', { groupId: group, mappedRole: mapping.role });
-        return mapping;
-      }
-    }
+    // Set identity-only user object (no authorization)
+    req.user = {
+      id: userId,
+      email: email,
+      name: name,
+      tenantId: tenantId,
+      oid: oid,
+      groups: groups,
+      appRoles: appRoles
+    };
 
-    // TEMPORARY: If no mappings configured and user has groups/roles, grant admin for testing
-    // This allows development/testing with real tokens before group IDs are configured
-    if (this.roleMapping.size === 0 && (groups.length > 0 || appRoles.length > 0)) {
-      logger.warn('⚠️  No role mappings configured - granting admin access for testing', {
-        userGroups: groups,
-        userAppRoles: appRoles,
-        message: 'Configure AZURE_*_GROUP_ID or AZURE_APP_ROLE_* environment variables'
-      });
-      return { role: 'admin', permissions: ['*'] };
-    }
-
-    // Default role if no mapping found
-    logger.info('No role mapping found - assigning default appraiser role', {
-      userGroups: groups,
-      userAppRoles: appRoles
+    logger.info('Azure AD authentication successful (identity extraction)', { 
+      userId, 
+      email,
+      groupCount: groups.length,
+      appRoleCount: appRoles.length
     });
-    return { role: 'appraiser', permissions: ['order_view', 'order_update
-    }
 
-    // Get signing key from Microsoft's JWKS endpoint
-    const signingKey = await this.getSigningKey(header.kid);
+    next();
+  }
+
+  // Authorization methods removed - use Casbin middleware instead
+
+  private async getSigningKey(kid: string | undefined): Promise<string> {
+    if (!kid) {
+      throw new Error('Token header missing key ID (kid)');
+    }
 
     // Verify token signature and claims
     const expectedAudience = this.config.audience || this.config.clientId;
