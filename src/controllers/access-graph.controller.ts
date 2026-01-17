@@ -15,6 +15,27 @@ export const createAccessGraphRouter = (): Router => {
   const graphService = new AccessGraphService();
 
   /**
+   * GET /api/access-graph
+   * Get all access grants
+   */
+  router.get('/', async (req: Request, res: Response) => {
+    try {
+      // Return empty list for now - would query access grants from database
+      res.json({
+        success: true,
+        data: [],
+        message: 'Access graph query endpoint - returns list of access grants'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve access graph',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  /**
    * POST /api/access-graph/grant
    * Grant access relationship (admin only)
    */
