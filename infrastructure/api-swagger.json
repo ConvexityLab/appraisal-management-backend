@@ -65,7 +65,6 @@
                                                                                  }
                                                                     },
                   "/fraud-detection/{path}":  {
-                                                  "x-ms-paths":  "/{*path}",
                                                   "get":  {
                                                               "operationId":  "fraudDetectionAll",
                                                               "summary":  "Fraud detection",
@@ -156,7 +155,6 @@
                                                                         }
                                                            },
                   "/geospatial/{path}":  {
-                                             "x-ms-paths":  "/{*path}",
                                              "get":  {
                                                          "operationId":  "geospatialAll",
                                                          "summary":  "Geospatial risk assessment",
@@ -181,7 +179,6 @@
                                                      }
                                          },
                   "/authz-test/{path}":  {
-                                             "x-ms-paths":  "/{*path}",
                                              "get":  {
                                                          "operationId":  "authzTestAll",
                                                          "summary":  "Authorization testing",
@@ -258,7 +255,6 @@
                                                            }
                                                },
                   "/qc/checklists/{path}":  {
-                                                "x-ms-paths":  "/{*path}",
                                                 "get":  {
                                                             "operationId":  "qcChecklistsGet",
                                                             "summary":  "QC checklists operations (GET)",
@@ -551,7 +547,6 @@
                                                          }
                                              },
                   "/notifications/{path}":  {
-                                                "x-ms-paths":  "/{*path}",
                                                 "get":  {
                                                             "operationId":  "notificationsAll",
                                                             "summary":  "Notifications",
@@ -576,7 +571,6 @@
                                                         }
                                             },
                   "/acs/{path}":  {
-                                      "x-ms-paths":  "/{*path}",
                                       "get":  {
                                                   "operationId":  "acsAll",
                                                   "summary":  "ACS token exchange",
@@ -615,7 +609,6 @@
                                                   }
                                      },
                   "/access-graph/{path}":  {
-                                               "x-ms-paths":  "/{*path}",
                                                "get":  {
                                                            "operationId":  "accessGraphAll",
                                                            "summary":  "Access graph",
@@ -692,7 +685,6 @@
                                                                            }
                                                               },
                   "/bridge-mls/{path}":  {
-                                             "x-ms-paths":  "/{*path}",
                                              "get":  {
                                                          "operationId":  "bridgeMlsAll",
                                                          "summary":  "Bridge MLS integration",
@@ -717,7 +709,6 @@
                                                      }
                                          },
                   "/qc-workflow/{path}":  {
-                                              "x-ms-paths":  "/{*path}",
                                               "get":  {
                                                           "operationId":  "qcWorkflowAll",
                                                           "summary":  "QC workflow operations",
@@ -756,7 +747,6 @@
                                                         }
                                            },
                   "/qc/results/{path}":  {
-                                             "x-ms-paths":  "/{*path}",
                                              "get":  {
                                                          "operationId":  "qcResultsAll",
                                                          "summary":  "QC results operations",
@@ -781,7 +771,6 @@
                                                      }
                                          },
                   "/vendor-performance/{path}":  {
-                                                     "x-ms-paths":  "/{*path}",
                                                      "get":  {
                                                                  "operationId":  "vendorPerformanceAll",
                                                                  "summary":  "Vendor performance analytics",
@@ -806,7 +795,6 @@
                                                              }
                                                  },
                   "/templates/{path}":  {
-                                            "x-ms-paths":  "/{*path}",
                                             "get":  {
                                                         "operationId":  "templatesAll",
                                                         "summary":  "Template management",
@@ -869,7 +857,6 @@
                                                              }
                                                 },
                   "/users/{path}":  {
-                                        "x-ms-paths":  "/{*path}",
                                         "get":  {
                                                     "operationId":  "usersAll",
                                                     "summary":  "User management",
@@ -908,7 +895,6 @@
                                                  }
                                     },
                   "/reviews/{path}":  {
-                                          "x-ms-paths":  "/{*path}",
                                           "get":  {
                                                       "operationId":  "reviewsAll",
                                                       "summary":  "Appraisal reviews",
@@ -933,7 +919,6 @@
                                                   }
                                       },
                   "/auto-assignment/{path}":  {
-                                                  "x-ms-paths":  "/{*path}",
                                                   "get":  {
                                                               "operationId":  "autoAssignmentAll",
                                                               "summary":  "Auto-assignment engine",
@@ -958,7 +943,6 @@
                                                           }
                                               },
                   "/delivery/{path}":  {
-                                           "x-ms-paths":  "/{*path}",
                                            "get":  {
                                                        "operationId":  "deliveryAll",
                                                        "summary":  "Delivery workflow",
@@ -997,7 +981,6 @@
                                              }
                                  },
                   "/property-intelligence-v2/{path}":  {
-                                                           "x-ms-paths":  "/{*path}",
                                                            "get":  {
                                                                        "operationId":  "propertyIntelV2All",
                                                                        "summary":  "Property Intelligence V2 (Places API)",
@@ -1022,7 +1005,6 @@
                                                                    }
                                                        },
                   "/avm/{path}":  {
-                                      "x-ms-paths":  "/{*path}",
                                       "get":  {
                                                   "operationId":  "avmAll",
                                                   "summary":  "Automated Valuation Model",
@@ -1099,7 +1081,6 @@
                                                                           }
                                                               },
                   "/negotiations/{path}":  {
-                                               "x-ms-paths":  "/{*path}",
                                                "get":  {
                                                            "operationId":  "negotiationsAll",
                                                            "summary":  "Order negotiation",
@@ -1152,7 +1133,6 @@
                                                   }
                                      },
                   "/teams/{path}":  {
-                                        "x-ms-paths":  "/{*path}",
                                         "get":  {
                                                     "operationId":  "teamsAll",
                                                     "summary":  "Teams integration",
@@ -1205,7 +1185,6 @@
                                                       }
                                          },
                   "/chat/{path}":  {
-                                       "x-ms-paths":  "/{*path}",
                                        "get":  {
                                                    "operationId":  "chatAll",
                                                    "summary":  "Real-time chat",
@@ -1244,7 +1223,6 @@
                                                   }
                                      },
                   "/rov/{path}":  {
-                                      "x-ms-paths":  "/{*path}",
                                       "get":  {
                                                   "operationId":  "rovAll",
                                                   "summary":  "Reconsideration of Value",
@@ -1335,7 +1313,6 @@
                                            }
                               },
                   "/qc/execution/{path}":  {
-                                               "x-ms-paths":  "/{*path}",
                                                "get":  {
                                                            "operationId":  "qcExecutionAll",
                                                            "summary":  "QC execution operations",
