@@ -694,7 +694,7 @@ export class AppraisalManagementAPIServer {
 
   private validateOrderId() {
     return [
-      param('orderId').isUUID(),
+      param('orderId').matches(/^\d+-[a-z0-9]+$/).withMessage('Order ID must be in format: timestamp-randomstring'),
       this.handleValidationErrors
     ];
   }
