@@ -628,7 +628,8 @@ export class AppraisalManagementAPIServer {
 
     this.app.post('/api/ai/completion',
       this.unifiedAuth.authenticate(),
-      this.requirePermission('ai_generate'),
+      ...(this.authzMiddleware ? [this.authzMiddleware.loadUserProfile()] : []),
+      this.authorize('ai', 'generate'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletion
     );
@@ -689,9 +690,9 @@ export class AppraisalManagementAPIServer {
     );
   }
 
-  // Authentication middleware - now using Azure Entra ID
-  private authenticateToken = (req: AuthenticatedRequest, res: express.Response, next: express.NextFunction): Promise<void> => {
-    return this.azureAuth.authenticate(req, res, next);
+  // Authentication middleware - unified auth (test tokens + Azure AD)
+  private authenticateToken = (req: UnifiedAuthRequest, res: express.Response, next: express.NextFunction): void => {
+    this.unifiedAuth.authenticate()(req, res, next);
   };
 
   // Authorization middleware - now using Casbin
@@ -993,9 +994,9 @@ export class AppraisalManagementAPIServer {
       const newToken = jwt.sign(
         { 
           id: req.user.id, 
-          email: req.user.email, 
-          role: req.user.role,
-          permissions: req.user.permissions 
+          email: req.user.email,
+          name: req.user.name,
+          tenantId: req.user.tenantId
         },
         jwtSecret,
         { expiresIn: '24h' }

@@ -36,8 +36,6 @@ export const createAuthorizationTestRouter = (): Router => {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role,
-          permissions: user.permissions,
           accessScope: user.accessScope,
           isTestUser: user.isTestUser
         },
@@ -72,7 +70,7 @@ export const createAuthorizationTestRouter = (): Router => {
         email: user.email!,
         name: user.name || '',
         ...(user.azureAdObjectId ? { azureAdObjectId: user.azureAdObjectId } : {}),
-        role: user.role!,
+        role: user.accessScope?.role || 'user',
         tenantId: user.tenantId!,
         accessScope: user.accessScope!,
         isActive: true,
@@ -96,8 +94,7 @@ export const createAuthorizationTestRouter = (): Router => {
         },
         user: {
           id: user.id,
-          email: user.email,
-          role: user.role
+          email: user.email
         },
         request: {
           resourceType,
@@ -130,7 +127,7 @@ export const createAuthorizationTestRouter = (): Router => {
         email: user.email!,
         name: user.name || '',
         ...(user.azureAdObjectId ? { azureAdObjectId: user.azureAdObjectId } : {}),
-        role: user.role!,
+        role: user.accessScope?.role || 'user',
         tenantId: user.tenantId!,
         accessScope: user.accessScope!,
         isActive: true,
@@ -148,8 +145,7 @@ export const createAuthorizationTestRouter = (): Router => {
         filter,
         user: {
           id: user.id,
-          email: user.email,
-          role: user.role
+          email: user.email
         },
         interpretation: {
           message: 'Query filter for data access',
@@ -177,7 +173,7 @@ export const createAuthorizationTestRouter = (): Router => {
       }
 
       // Only admins can grant access
-      if (user.role !== 'admin') {
+      if (user.accessScope?.role !== 'admin') {
         res.status(403).json({ error: 'Only admins can grant access' });
         return;
       }

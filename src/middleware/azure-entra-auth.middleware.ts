@@ -25,11 +25,12 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string;
-  tenantId: string;
-  oid: string; // Azure AD Object ID
-  // groups and appRoles preserved for Casbin to use
+  role: string;
+  permissions?: string[];
   groups?: string[];
   appRoles?: string[];
+  tenantId?: string;
+  oid?: string; // Azure AD Object ID
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -39,6 +40,7 @@ export interface AuthenticatedRequest extends Request {
 export class AzureEntraAuthMiddleware {
   private jwksClient: jwksClient.JwksClient;
   private config: EntraAuthConfig;
+  private roleMapping: Map<string, { role: string; permissions: string[] }>;
 
   constructor(config: EntraAuthConfig) {
     this.config = {
@@ -59,8 +61,13 @@ export class AzureEntraAuthMiddleware {
       timeout: 30000 // 30 second timeout for JWKS requests
     });
 
-    // Authentication middleware only extracts identity - authorization handled by Casbin
-    logger.info('Authentication middleware configured - authorization delegated to Casbin');
+    // Role mapping from Azure AD groups/roles to application roles
+    this.roleMapping = new Map([
+      ['admin-group-id', { role: 'admin', permissions: ['*'] }],
+      ['manager-group-id', { role: 'manager', permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics'] }],
+      ['qc-analyst-group-id', { role: 'qc_analyst', permissions: ['qc_validate', 'qc_execute', 'qc_metrics'] }],
+      ['appraiser-group-id', { role: 'appraiser', permissions: ['order_view', 'order_update'] }]
+    ]);
 
     logger.info('Azure Entra ID authentication initialized', {
       tenantId: config.tenantId,
@@ -120,53 +127,24 @@ export class AzureEntraAuthMiddleware {
       });
       throw new Error('Token tenant validation failed');
     }
-
-    // Extract user identity from token claims
-    const userId = payloadData.sub || payloadData.oid;
-    const email = payloadData.email || payloadData.preferred_username || payloadData.upn;
-    const name = payloadData.name || 'Unknown User';
-    const tenantId = payloadData.tid;
-    const oid = payloadData.oid;
-    const groups = payloadData.groups || [];
-    const appRoles = payloadData.roles || [];
-
-    if (!userId) {
-      throw new Error('Token missing required user identifier (sub/oid)');
-    }
-    if (!email) {
-      throw new Error('Token missing required email claim');
-    }
-    if (!tenantId) {
-      throw new Error('Token missing required tenant ID');
-    }
-
-    // Set identity-only user object (no authorization)
-    req.user = {
-      id: userId,
-      email: email,
-      name: name,
-      tenantId: tenantId,
-      oid: oid,
-      groups: groups,
-      appRoles: appRoles
-    };
-
-    logger.info('Azure AD authentication successful (identity extraction)', { 
-      userId, 
-      email,
-      groupCount: groups.length,
-      appRoleCount: appRoles.length
+    logger.info('Token decoded successfully', { 
+      kid: header.kid, 
+      alg: header.alg,
+      aud: payloadData.aud,
+      iss: payloadData.iss,
+      exp: payloadData.exp,
+      tid: payloadData.tid,
+      hasGroups: !!payloadData.groups,
+      hasRoles: !!payloadData.roles
     });
 
-    next();
-  }
-
-  // Authorization methods removed - use Casbin middleware instead
-
-  private async getSigningKey(kid: string | undefined): Promise<string> {
-    if (!kid) {
-      throw new Error('Token header missing key ID (kid)');
+    if (!header.kid) {
+      logger.error('Token missing key ID (kid)');
+      throw new Error('Token missing key ID (kid)');
     }
+
+    // Get signing key from Microsoft's JWKS endpoint
+    const signingKey = await this.getSigningKey(header.kid);
 
     // Verify token signature and claims
     const expectedAudience = this.config.audience || this.config.clientId;
@@ -194,6 +172,34 @@ export class AzureEntraAuthMiddleware {
 
     return jwt.verify(token, signingKey, verifyOptions);
   };
+
+  /**
+   * Map Azure AD groups/roles to application role
+   */
+  private mapUserRole(groups: string[] = [], appRoles: string[] = []): { role: string; permissions: string[] } {
+    // Check app roles first
+    for (const appRole of appRoles) {
+      const mapping = this.roleMapping.get(appRole);
+      if (mapping) return mapping;
+    }
+
+    // Check groups
+    for (const group of groups) {
+      const mapping = this.roleMapping.get(group);
+      if (mapping) return mapping;
+    }
+
+    // Default role if no mapping found
+    return { role: 'appraiser', permissions: ['order_view'] };
+  }
+
+  /**
+   * Configure role mappings from Azure AD groups to application roles
+   */
+  public setRoleMapping(groupId: string, role: string, permissions: string[]): void {
+    this.roleMapping.set(groupId, { role, permissions });
+    logger.info('Role mapping configured', { groupId, role, permissions });
+  }
 
   /**
    * Main authentication middleware
@@ -245,24 +251,27 @@ export class AzureEntraAuthMiddleware {
         throw new Error('Token missing required email claim');
       }
 
-      // Extract IDENTITY ONLY - authorization handled by Casbin
+      // Extract user information from token claims
+      const groups = payload.groups || [];
+      const appRoles = payload.roles || [];
+      const { role, permissions } = this.mapUserRole(groups, appRoles);
+
       req.user = {
         id: payload.sub || payload.oid,
         email: payload.email || payload.preferred_username || payload.upn,
         name: payload.name || (payload.given_name && payload.family_name ? payload.given_name + ' ' + payload.family_name : 'Unknown'),
+        role,
+        permissions,
+        groups,
+        appRoles,
         tenantId: payload.tid,
-        oid: payload.oid,
-        // Preserve groups/appRoles for Casbin to query if needed
-        groups: payload.groups || [],
-        appRoles: payload.roles || []
+        oid: payload.oid
       };
 
       logger.info('User authenticated via Azure Entra ID', {
         userId: req.user.id,
         email: req.user.email,
-        tenantId: req.user.tenantId,
-        groupCount: req.user.groups?.length || 0,
-        appRoleCount: req.user.appRoles?.length || 0
+        role: req.user.role
       });
 
       next();
@@ -302,9 +311,65 @@ export class AzureEntraAuthMiddleware {
     }
   };
 
-  // Authorization methods removed - use Casbin middleware instead:
-  // - authzMiddleware.loadUserProfile()
-  // - authzMiddleware.authorize(resourceType, action)
+  /**
+   * Require specific permission middleware
+   */
+  public requirePermission = (permission: string) => {
+    return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+      if (!req.user) {
+        res.status(401).json({
+          error: 'Authentication required',
+          code: 'NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      // Admin has all permissions
+      if (req.user.permissions?.includes('*')) {
+        next();
+        return;
+      }
+
+      if (!req.user.permissions?.includes(permission)) {
+        res.status(403).json({
+          error: `Permission required: ${permission}`,
+          code: 'PERMISSION_DENIED',
+          requiredPermission: permission,
+          userPermissions: req.user.permissions
+        });
+        return;
+      }
+
+      next();
+    };
+  };
+
+  /**
+   * Require specific role middleware
+   */
+  public requireRole = (...roles: string[]) => {
+    return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+      if (!req.user) {
+        res.status(401).json({
+          error: 'Authentication required',
+          code: 'NOT_AUTHENTICATED'
+        });
+        return;
+      }
+
+      if (!roles.includes(req.user.role)) {
+        res.status(403).json({
+          error: 'Insufficient role',
+          code: 'ROLE_DENIED',
+          requiredRoles: roles,
+          userRole: req.user.role
+        });
+        return;
+      }
+
+      next();
+    };
+  };
 }
 
 /**
