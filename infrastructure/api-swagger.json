@@ -119,6 +119,35 @@
                                                                                      "tags":  [
                                                                                                   "Property Intelligence"
                                                                                               ],
+                                                                                     "parameters":  [
+                                                                                                        {
+                                                                                                            "name":  "latitude",
+                                                                                                            "in":  "query",
+                                                                                                            "required":  true,
+                                                                                                            "schema":  {
+                                                                                                                           "type":  "number"
+                                                                                                                       },
+                                                                                                            "description":  "Property latitude"
+                                                                                                        },
+                                                                                                        {
+                                                                                                            "name":  "longitude",
+                                                                                                            "in":  "query",
+                                                                                                            "required":  true,
+                                                                                                            "schema":  {
+                                                                                                                           "type":  "number"
+                                                                                                                       },
+                                                                                                            "description":  "Property longitude"
+                                                                                                        },
+                                                                                                        {
+                                                                                                            "name":  "propertyId",
+                                                                                                            "in":  "query",
+                                                                                                            "required":  false,
+                                                                                                            "schema":  {
+                                                                                                                           "type":  "string"
+                                                                                                                       },
+                                                                                                            "description":  "Optional property ID"
+                                                                                                        }
+                                                                                                    ],
                                                                                      "responses":  {
                                                                                                        "200":  {
                                                                                                                    "description":  "Demographics data"
@@ -615,6 +644,29 @@
                                                                                 "tags":  [
                                                                                              "Property Intelligence"
                                                                                          ],
+                                                                                "parameters":  [
+                                                                                                    {
+                                                                                                        "name":  "latitude",
+                                                                                                        "in":  "query",
+                                                                                                        "required":  true,
+                                                                                                        "schema":  {"type":  "number"},
+                                                                                                        "description":  "Property latitude"
+                                                                                                    },
+                                                                                                    {
+                                                                                                        "name":  "longitude",
+                                                                                                        "in":  "query",
+                                                                                                        "required":  true,
+                                                                                                        "schema":  {"type":  "number"},
+                                                                                                        "description":  "Property longitude"
+                                                                                                    },
+                                                                                                    {
+                                                                                                        "name":  "propertyId",
+                                                                                                        "in":  "query",
+                                                                                                        "required":  false,
+                                                                                                        "schema":  {"type":  "string"},
+                                                                                                        "description":  "Optional property ID"
+                                                                                                    }
+                                                                                                ],
                                                                                 "responses":  {
                                                                                                   "200":  {
                                                                                                               "description":  "Housing data"
@@ -1049,6 +1101,29 @@
                                                                                   "tags":  [
                                                                                                "Property Intelligence"
                                                                                            ],
+                                                                                  "parameters":  [
+                                                                                                      {
+                                                                                                          "name":  "latitude",
+                                                                                                          "in":  "query",
+                                                                                                          "required":  true,
+                                                                                                          "schema":  {"type":  "number"},
+                                                                                                          "description":  "Property latitude"
+                                                                                                      },
+                                                                                                      {
+                                                                                                          "name":  "longitude",
+                                                                                                          "in":  "query",
+                                                                                                          "required":  true,
+                                                                                                          "schema":  {"type":  "number"},
+                                                                                                          "description":  "Property longitude"
+                                                                                                      },
+                                                                                                      {
+                                                                                                          "name":  "propertyId",
+                                                                                                          "in":  "query",
+                                                                                                          "required":  false,
+                                                                                                          "schema":  {"type":  "string"},
+                                                                                                          "description":  "Optional property ID"
+                                                                                                      }
+                                                                                                  ],
                                                                                   "responses":  {
                                                                                                     "200":  {
                                                                                                                 "description":  "Economics data"
@@ -1087,6 +1162,29 @@
                                                                                       "tags":  [
                                                                                                    "Property Intelligence"
                                                                                                ],
+                                                                                      "parameters":  [
+                                                                                                          {
+                                                                                                              "name":  "latitude",
+                                                                                                              "in":  "query",
+                                                                                                              "required":  true,
+                                                                                                              "schema":  {"type":  "number"},
+                                                                                                              "description":  "Property latitude"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "longitude",
+                                                                                                              "in":  "query",
+                                                                                                              "required":  true,
+                                                                                                              "schema":  {"type":  "number"},
+                                                                                                              "description":  "Property longitude"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "propertyId",
+                                                                                                              "in":  "query",
+                                                                                                              "required":  false,
+                                                                                                              "schema":  {"type":  "string"},
+                                                                                                              "description":  "Optional property ID"
+                                                                                                          }
+                                                                                                      ],
                                                                                       "responses":  {
                                                                                                         "200":  {
                                                                                                                     "description":  "Census data"

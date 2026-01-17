@@ -681,12 +681,14 @@ export class EnhancedPropertyIntelligenceController {
    */
   getCensusDemographics = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { latitude, longitude, propertyId } = req.body;
+      const latitude = parseFloat(req.query.latitude as string);
+      const longitude = parseFloat(req.query.longitude as string);
+      const propertyId = req.query.propertyId as string;
 
-      if (!latitude || !longitude) {
+      if (!latitude || !longitude || isNaN(latitude) || isNaN(longitude)) {
         res.status(400).json({
           success: false,
-          error: 'Latitude and longitude are required'
+          error: 'Valid latitude and longitude query parameters are required'
         });
         return;
       }
@@ -725,12 +727,14 @@ export class EnhancedPropertyIntelligenceController {
    */
   getCensusEconomics = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { latitude, longitude, propertyId } = req.body;
+      const latitude = parseFloat(req.query.latitude as string);
+      const longitude = parseFloat(req.query.longitude as string);
+      const propertyId = req.query.propertyId as string;
 
-      if (!latitude || !longitude) {
+      if (!latitude || !longitude || isNaN(latitude) || isNaN(longitude)) {
         res.status(400).json({
           success: false,
-          error: 'Latitude and longitude are required'
+          error: 'Valid latitude and longitude query parameters are required'
         });
         return;
       }
@@ -769,12 +773,14 @@ export class EnhancedPropertyIntelligenceController {
    */
   getCensusHousing = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { latitude, longitude, propertyId } = req.body;
+      const latitude = parseFloat(req.query.latitude as string);
+      const longitude = parseFloat(req.query.longitude as string);
+      const propertyId = req.query.propertyId as string;
 
-      if (!latitude || !longitude) {
+      if (!latitude || !longitude || isNaN(latitude) || isNaN(longitude)) {
         res.status(400).json({
           success: false,
-          error: 'Latitude and longitude are required'
+          error: 'Valid latitude and longitude query parameters are required'
         });
         return;
       }
@@ -813,12 +819,14 @@ export class EnhancedPropertyIntelligenceController {
    */
   getComprehensiveCensusIntelligence = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { latitude, longitude, propertyId } = req.body;
+      const latitude = parseFloat(req.query.latitude as string);
+      const longitude = parseFloat(req.query.longitude as string);
+      const propertyId = req.query.propertyId as string;
 
-      if (!latitude || !longitude) {
+      if (!latitude || !longitude || isNaN(latitude) || isNaN(longitude)) {
         res.status(400).json({
           success: false,
-          error: 'Latitude and longitude are required'
+          error: 'Valid latitude and longitude query parameters are required'
         });
         return;
       }
