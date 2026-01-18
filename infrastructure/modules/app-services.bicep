@@ -332,7 +332,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
           env: concat(app.env, [
             {
               name: 'AZURE_CLIENT_ID'
-              value: containerAppIdentities[i].properties.clientId
+              value: azureClientId
             }
           ])
         }

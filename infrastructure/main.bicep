@@ -84,8 +84,9 @@ param azureCommunicationApiKey string = ''
 @description('Azure Tenant ID for Entra authentication - defaults to current subscription tenant')
 param azureTenantId string = tenant().tenantId
 
-@description('Azure Client ID (Application ID) for service authentication')
-param azureClientId string = ''
+// Azure Entra (Azure AD) Configuration
+@description('Azure Client ID (Application ID) for JWT authentication - backend app registration')
+param azureClientId string = 'dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a'
 
 @secure()
 @description('Azure Client Secret for service authentication')
