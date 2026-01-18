@@ -404,7 +404,8 @@ jobs:
     name: Production Promotion
     runs-on: ubuntu-latest
     needs: [determine-environment, deploy-container-app]
-    if: needs.determine-environment.outputs.environment == 'staging' && needs.deploy-container-app.result == 'success'
+    if: false  # DISABLED - was causing infinite deployment loop
+    # if: needs.determine-environment.outputs.environment == 'staging' && needs.deploy-container-app.result == 'success'
     environment: production-approval
     
     steps:
