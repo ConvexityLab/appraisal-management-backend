@@ -1,5 +1,10 @@
 name: Deploy Appraisal Management Platform
 
+# Prevent duplicate deployments - cancel in-progress runs when new deployment starts
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, master ]
