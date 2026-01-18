@@ -81,8 +81,8 @@ param sambanovaApiKey string = ''
 param azureCommunicationApiKey string = ''
 
 // Azure Entra (Azure AD) Configuration
-@description('Azure Tenant ID for Entra authentication')
-param azureTenantId string = ''
+@description('Azure Tenant ID for Entra authentication - defaults to current subscription tenant')
+param azureTenantId string = tenant().tenantId
 
 @description('Azure Client ID (Application ID) for service authentication')
 param azureClientId string = ''
