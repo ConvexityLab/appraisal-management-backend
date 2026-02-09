@@ -5,7 +5,7 @@
  */
 
 // ===========================
-// QC REVIEW QUEUE TYPES
+// QC REVIEW MASTER RECORD
 // ===========================
 
 export enum QCReviewStatus {
@@ -23,6 +23,144 @@ export enum QCPriorityLevel {
   HIGH = 'HIGH',
   CRITICAL = 'CRITICAL'
 }
+
+export enum QCChecklistStatus {
+  NOT_STARTED = 'NOT_STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED'
+}
+
+export enum ReviewerRole {
+  PRIMARY = 'PRIMARY',
+  SECONDARY = 'SECONDARY',
+  SUPERVISOR = 'SUPERVISOR'
+}
+
+export enum RiskLevel {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  CRITICAL = 'CRITICAL'
+}
+
+export enum QCDecision {
+  APPROVED = 'APPROVED',
+  APPROVED_WITH_CONDITIONS = 'APPROVED_WITH_CONDITIONS',
+  REJECTED = 'REJECTED',
+  REVISION_REQUIRED = 'REVISION_REQUIRED'
+}
+
+/**
+ * Master QC Review Record
+ * Stored in qc-reviews container
+ */
+export interface QCReview {
+  id: string;
+  orderId: string;
+  orderNumber?: string;
+  appraisalId?: string;
+  
+  // Status & Priority
+  status: QCReviewStatus;
+  priorityLevel: QCPriorityLevel;
+  priorityScore?: number; // Calculated 0-100
+  
+  // Checklists - references to criteria container
+  checklists: QCReviewChecklist[];
+  
+  // Reviewers - assigned analysts
+  reviewers: QCReviewer[];
+  
+  // Results summary (detailed results in results container)
+  results?: QCReviewResults;
+  
+  // SLA Tracking
+  sla: QCReviewSLA;
+  
+  // Revisions
+  revisions?: QCRevision[];
+  
+  // Workload tracking
+  startedAt?: string; // ISO date
+  completedAt?: string; // ISO date
+  timeSpentMinutes?: number;
+  
+  // Order context
+  propertyAddress?: string;
+  appraisedValue?: number;
+  clientId?: string;
+  clientName?: string;
+  vendorId?: string;
+  vendorName?: string;
+  
+  // Audit
+  createdAt: string; // ISO date
+  updatedAt: string; // ISO date
+  createdBy?: string;
+}
+
+export interface QCReviewChecklist {
+  checklistId: string; // Reference to criteria container
+  checklistName: string;
+  checklistType?: string;
+  status: QCChecklistStatus;
+  score?: number;
+  maxScore?: number;
+  completedAt?: string; // ISO date
+  completedBy?: string;
+}
+
+export interface QCReviewer {
+  userId: string; // Reference to users/personnel
+  userName?: string;
+  userEmail?: string;
+  role: ReviewerRole;
+  assignedAt: string; // ISO date
+  assignedBy?: string;
+  startedAt?: string; // ISO date
+  completedAt?: string; // ISO date
+  timeSpentMinutes?: number;
+}
+
+export interface QCReviewResults {
+  resultId?: string; // Optional reference to results container for detailed results
+  overallScore: number;
+  maxScore: number;
+  percentScore: number;
+  riskLevel: RiskLevel;
+  decision: QCDecision;
+  summary?: string;
+  issuesCount?: number;
+  criticalIssuesCount?: number;
+  completedAt?: string; // ISO date
+}
+
+export interface QCReviewSLA {
+  dueDate: string; // ISO date
+  targetResponseTime?: number; // minutes
+  actualResponseTime?: number; // minutes
+  breached: boolean;
+  breachedAt?: string; // ISO date
+  escalated: boolean;
+  escalatedAt?: string; // ISO date
+  escalationReason?: string;
+}
+
+export interface QCRevision {
+  revisionId: string;
+  requestedAt: string; // ISO date
+  requestedBy: string;
+  reason: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED';
+  submittedAt?: string; // ISO date
+  reviewedAt?: string; // ISO date
+  reviewedBy?: string;
+  notes?: string;
+}
+
+// ===========================
+// QC REVIEW QUEUE TYPES (Legacy - for compatibility)
+// ===========================
 
 export interface QCReviewQueueItem {
   id: string;

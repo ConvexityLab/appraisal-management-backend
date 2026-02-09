@@ -293,7 +293,7 @@ var containers = [
   }
   // QC Workflow Automation Containers
   {
-    name: 'qc-review-queue'
+    name: 'qc-reviews'
     partitionKey: '/orderId'
     indexingPolicy: {
       indexingMode: 'consistent'

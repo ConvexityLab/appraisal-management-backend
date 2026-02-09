@@ -50,9 +50,10 @@ export class CosmosDbService {
     users: 'users',
     properties: 'properties',
     propertySummaries: 'property-summaries',
-    qcResults: 'results',
-    qcChecklists: 'criteria',
-    qcExecutions: 'reviews',
+    qcReviews: 'qc-reviews',           // Master QC Review records
+    qcResults: 'results',              // QC execution results (legacy/detailed)
+    qcChecklists: 'criteria',          // QC checklist templates
+    qcExecutions: 'reviews',           // QC executions (legacy)
     qcSessions: 'sessions',
     qcTemplates: 'templates',
     analytics: 'analytics',
@@ -233,9 +234,13 @@ export class CosmosDbService {
         throw new Error('Orders container not initialized');
       }
 
+      // Try to find by orderId field first (numeric), then fall back to id field (UUID string)
       const querySpec = {
-        query: 'SELECT * FROM c WHERE c.id = @id',
-        parameters: [{ name: '@id', value: id }]
+        query: 'SELECT * FROM c WHERE c.orderId = @orderId OR c.id = @id',
+        parameters: [
+          { name: '@orderId', value: isNaN(Number(id)) ? null : Number(id) },
+          { name: '@id', value: id }
+        ]
       };
 
       const { resources } = await this.ordersContainer.items.query<AppraisalOrder>(querySpec).fetchAll();

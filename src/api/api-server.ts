@@ -362,6 +362,11 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/auth/login', this.validateLogin(), this.login.bind(this));
     this.app.post('/api/auth/register', this.validateRegister(), this.register.bind(this));
     this.app.post('/api/auth/refresh', this.unifiedAuth.authenticate(), this.refreshToken.bind(this));
+    
+    // Test token generation endpoint (dev/test only)
+    if (process.env.ALLOW_TEST_TOKENS === 'true') {
+      this.app.post('/api/auth/test-token', this.generateTestToken.bind(this));
+    }
 
     // NOTE: Authorization routes registered separately after authzMiddleware initialization
 
@@ -379,6 +384,12 @@ export class AppraisalManagementAPIServer {
       this.authzMiddleware ? this.authzMiddleware.authorizeQuery('order', 'read') : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
       this.validateOrderQuery(),
       this.getOrders.bind(this)
+    );
+    
+    // IMPORTANT: Specific routes MUST come before parameterized routes to avoid matching issues
+    this.app.get('/api/orders/dashboard',
+      this.unifiedAuth.authenticate(),
+      this.getOrderDashboard.bind(this)
     );
     
     this.app.get('/api/orders/:orderId', 
@@ -399,11 +410,6 @@ export class AppraisalManagementAPIServer {
       this.validateOrderId(),
       this.validateDelivery(),
       this.deliverOrder.bind(this)
-    );
-
-    this.app.get('/api/orders/dashboard',
-      this.unifiedAuth.authenticate(),
-      this.getOrderDashboard.bind(this)
     );
 
     // QC Validation routes
@@ -695,6 +701,60 @@ export class AppraisalManagementAPIServer {
       this.authzMiddleware?.loadUserProfile() || ((req: any, res: any, next: any) => next()),
       createReviewRouter()
     );
+
+    // Legacy Azure Functions proxy routes
+    this.setupFunctionsRoutes();
+  }
+
+  // Setup legacy /functions/* routes as proxies to new REST API
+  private setupFunctionsRoutes(): void {
+    // POST /functions/getOrder -> GET /api/orders/:orderId
+    this.app.post('/functions/getOrder',
+      this.unifiedAuth.authenticate(),
+      async (req: express.Request, res: express.Response) => {
+        this.logger.info('Functions getOrder called', { 
+          body: req.body, 
+          orderId: req.body?.orderId,
+          headers: req.headers['content-type'],
+          user: (req as AuthenticatedRequest).user?.id
+        });
+        const { orderId } = req.body;
+        if (!orderId) {
+          this.logger.warn('Missing orderId in request body', { body: req.body });
+          return res.status(400).json({ error: 'orderId is required' });
+        }
+        // Forward to existing getOrder handler
+        req.params.orderId = orderId;
+        return this.getOrder(req as AuthenticatedRequest, res);
+      }
+    );
+
+    // POST /functions/createOrder -> POST /api/orders
+    this.app.post('/functions/createOrder',
+      this.unifiedAuth.authenticate(),
+      async (req: express.Request, res: express.Response) => {
+        // Forward to existing createOrder handler
+        return this.createOrder(req as AuthenticatedRequest, res);
+      }
+    );
+
+    // POST /functions/runInteractiveAvm -> POST /api/avm/valuation
+    this.app.post('/functions/runInteractiveAvm',
+      this.unifiedAuth.authenticate(),
+      async (req: express.Request, res: express.Response) => {
+        // Forward to AVM controller
+        try {
+          const result = await this.avmService.getValuation(req.body);
+          return res.json(result);
+        } catch (error) {
+          this.logger.error('AVM valuation failed', { error });
+          return res.status(500).json({ 
+            error: 'AVM valuation failed',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+    );
   }
 
   // Authentication middleware - unified auth (test tokens + Azure AD)
@@ -745,7 +805,16 @@ export class AppraisalManagementAPIServer {
 
   private validateOrderId() {
     return [
-      param('orderId').matches(/^\d+-[a-z0-9]+$/).withMessage('Order ID must be in format: timestamp-randomstring'),
+      // Accept multiple formats: UUID, timestamp-randomstring, or numeric string
+      param('orderId').custom((value) => {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+        const isTimestampFormat = /^\d+-[a-z0-9]+$/.test(value);
+        const isNumeric = /^\d+$/.test(value);
+        if (!isUUID && !isTimestampFormat && !isNumeric) {
+          throw new Error('Order ID must be a UUID, timestamp-randomstring format, or numeric ID');
+        }
+        return true;
+      }),
       this.handleValidationErrors
     ];
   }
@@ -914,6 +983,46 @@ export class AppraisalManagementAPIServer {
       res.status(500).json({
         error: 'Login failed',
         code: 'LOGIN_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  private async generateTestToken(req: express.Request, res: express.Response): Promise<void> {
+    try {
+      const { email, role, name } = req.body;
+      
+      if (!email || !role) {
+        res.status(400).json({ 
+          error: 'email and role are required',
+          code: 'MISSING_FIELDS' 
+        });
+        return;
+      }
+
+      const testUser = {
+        id: `test-${Date.now()}`,
+        email,
+        name: name || email.split('@')[0],
+        role,
+        tenantId: 'test-tenant',
+        permissions: ['*']
+      };
+
+      // Use TestTokenGenerator directly
+      const { TestTokenGenerator } = await import('../utils/test-token-generator.js');
+      const tokenGen = new TestTokenGenerator();
+      const token = tokenGen.generateToken(testUser);
+
+      res.json({
+        token,
+        user: testUser,
+        expiresIn: '24h'
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: 'Failed to generate test token',
+        code: 'TOKEN_GENERATION_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }

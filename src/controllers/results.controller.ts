@@ -144,6 +144,13 @@ export class QCResultsController {
       this.getIssuesAnalysis.bind(this)
     );
 
+    // Update verification status for a specific checklist item
+    this.router.patch('/:resultId/items/:itemId/verification',
+      this.validateUpdateVerification(),
+      this.handleValidation,
+      this.updateItemVerification.bind(this)
+    );
+
     // Reporting
     this.router.post('/reports/generate',
       this.validateGenerateReport(),
@@ -285,6 +292,85 @@ export class QCResultsController {
       res.status(500).json({
         success: false,
         error: createApiError('QC_RESULT_GET_FAILED', 'Failed to retrieve QC result')
+      });
+    }
+  }
+
+  /**
+   * Update verification status for a specific checklist item
+   */
+  private async updateItemVerification(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { resultId, itemId } = req.params;
+      const { verified, verifiedBy, verifiedAt, verificationNotes } = req.body;
+
+      this.logger.debug('Updating item verification', {
+        resultId,
+        itemId,
+        verified,
+        userId: req.user?.id
+      });
+
+      // Get the result
+      const result = await this.cosmosService.getItem('results', resultId);
+
+      if (!result) {
+        res.status(404).json({
+          success: false,
+          error: createApiError('QC_RESULT_NOT_FOUND', `QC result ${resultId} not found`)
+        });
+        return;
+      }
+
+      // Check access permissions
+      if (!this.hasResultAccess(req.user, result)) {
+        res.status(403).json({
+          success: false,
+          error: createApiError('QC_RESULT_ACCESS_DENIED', 'Access denied to this QC result')
+        });
+        return;
+      }
+
+      // Find and update the item
+      const itemIndex = result.items?.findIndex((item: any) => item.id === itemId);
+      if (itemIndex === -1 || itemIndex === undefined) {
+        res.status(404).json({
+          success: false,
+          error: createApiError('QC_ITEM_NOT_FOUND', `QC item ${itemId} not found in result`)
+        });
+        return;
+      }
+
+      // Update the verification status
+      result.items[itemIndex].verified = verified;
+      result.items[itemIndex].verifiedBy = verifiedBy || req.user?.id;
+      result.items[itemIndex].verifiedAt = verifiedAt || new Date().toISOString();
+      if (verificationNotes) {
+        result.items[itemIndex].verificationNotes = verificationNotes;
+      }
+
+      // Update the result in database
+      const updatedResult = await this.cosmosService.updateItem('results', resultId, result);
+
+      this.logger.info('QC item verification updated', {
+        resultId,
+        itemId,
+        verified,
+        userId: req.user?.id
+      });
+
+      res.json(createApiResponse(updatedResult));
+
+    } catch (error) {
+      this.logger.error('Failed to update item verification', {
+        error,
+        resultId: req.params.resultId,
+        itemId: req.params.itemId
+      });
+
+      res.status(500).json({
+        success: false,
+        error: createApiError('QC_VERIFICATION_UPDATE_FAILED', 'Failed to update item verification')
       });
     }
   }
@@ -1081,6 +1167,17 @@ export class QCResultsController {
     return [
       query('benchmarkType').optional().isIn(['industry', 'organization', 'user']),
       query('dimension').optional().isIn(['checklist', 'category', 'overall'])
+    ];
+  }
+
+  private validateUpdateVerification() {
+    return [
+      param('resultId').isString().notEmpty(),
+      param('itemId').isString().notEmpty(),
+      body('verified').isBoolean(),
+      body('verifiedBy').optional().isString(),
+      body('verifiedAt').optional().isISO8601(),
+      body('verificationNotes').optional().isString()
     ];
   }
 
