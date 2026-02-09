@@ -742,17 +742,14 @@ export class AppraisalManagementAPIServer {
     this.app.post('/functions/runInteractiveAvm',
       this.unifiedAuth.authenticate(),
       async (req: express.Request, res: express.Response) => {
-        // Forward to AVM controller
-        try {
-          const result = await this.avmService.getValuation(req.body);
-          return res.json(result);
-        } catch (error) {
-          this.logger.error('AVM valuation failed', { error });
-          return res.status(500).json({ 
-            error: 'AVM valuation failed',
-            message: error instanceof Error ? error.message : 'Unknown error'
-          });
-        }
+        // Forward to AVM controller - return placeholder response
+        // TODO: Implement AVM service integration
+        this.logger.info('AVM valuation requested', { body: req.body });
+        return res.json({
+          success: false,
+          error: 'AVM service not yet implemented',
+          message: 'This endpoint is a placeholder for AVM integration'
+        });
       }
     );
   }
