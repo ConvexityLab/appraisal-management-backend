@@ -304,6 +304,14 @@ export class QCResultsController {
       const { resultId, itemId } = req.params;
       const { verified, verifiedBy, verifiedAt, verificationNotes } = req.body;
 
+      if (!resultId || !itemId) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('INVALID_PARAMS', 'resultId and itemId are required')
+        });
+        return;
+      }
+
       this.logger.debug('Updating item verification', {
         resultId,
         itemId,
@@ -312,15 +320,17 @@ export class QCResultsController {
       });
 
       // Get the result
-      const result = await this.cosmosService.getItem('results', resultId);
+      const resultResponse = await this.cosmosService.getItem('results', resultId);
 
-      if (!result) {
+      if (!resultResponse || !resultResponse.data) {
         res.status(404).json({
           success: false,
           error: createApiError('QC_RESULT_NOT_FOUND', `QC result ${resultId} not found`)
         });
         return;
       }
+
+      const result: any = resultResponse.data;
 
       // Check access permissions
       if (!this.hasResultAccess(req.user, result)) {
@@ -332,8 +342,16 @@ export class QCResultsController {
       }
 
       // Find and update the item
-      const itemIndex = result.items?.findIndex((item: any) => item.id === itemId);
-      if (itemIndex === -1 || itemIndex === undefined) {
+      if (!result.items || !Array.isArray(result.items)) {
+        res.status(400).json({
+          success: false,
+          error: createApiError('INVALID_RESULT_FORMAT', 'Result does not contain items array')
+        });
+        return;
+      }
+
+      const itemIndex = result.items.findIndex((item: any) => item.id === itemId);
+      if (itemIndex === -1) {
         res.status(404).json({
           success: false,
           error: createApiError('QC_ITEM_NOT_FOUND', `QC item ${itemId} not found in result`)
