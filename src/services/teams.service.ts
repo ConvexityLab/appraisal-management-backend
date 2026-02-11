@@ -60,8 +60,8 @@ interface CreateMeetingOptions {
 
 export class TeamsService {
   private graphClient: Client | null = null;
-  private cosmosDbService: CosmosDbService;
-  private emailService: EmailService;
+  private cosmosDbService!: CosmosDbService;
+  private emailService!: EmailService;
   private logger: Logger;
   private isConfigured: boolean = false;
 

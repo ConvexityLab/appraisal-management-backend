@@ -231,12 +231,21 @@ export class AcsIdentityService {
       }
 
       // Revoke tokens for ACS user
+      if (!this.identityClient) {
+        throw new Error('Identity client not initialized');
+      }
       await this.identityClient.revokeTokens({ communicationUserId: mapping.acsUserId });
 
       // Delete user (optional - preserves chat history if you don't)
+      if (!this.identityClient) {
+        throw new Error('Identity client not initialized');
+      }
       await this.identityClient.deleteUser({ communicationUserId: mapping.acsUserId });
 
       // Remove mapping from DB
+      if (!this.dbService) {
+        throw new Error('Database service not initialized');
+      }
       await this.dbService.deleteItem('acsUserMappings', mapping.id, mapping.azureAdUserId);
 
       this.logger.info('User identity revoked', { azureAdUserId, acsUserId: mapping.acsUserId });

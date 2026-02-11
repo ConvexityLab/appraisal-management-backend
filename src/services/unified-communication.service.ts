@@ -115,17 +115,20 @@ export class UnifiedCommunicationService {
    */
   async getContextByEntity(type: string, entityId: string, tenantId: string): Promise<CommunicationContext | null> {
     try {
-      const query = {
-        query: 'SELECT * FROM c WHERE c.type = @type AND c.entityId = @entityId AND c.tenantId = @tenantId',
-        parameters: [
-          { name: '@type', value: type },
-          { name: '@entityId', value: entityId },
-          { name: '@tenantId', value: tenantId }
-        ]
-      };
+      const query = 'SELECT * FROM c WHERE c.type = @type AND c.entityId = @entityId AND c.tenantId = @tenantId';
+      const parameters = [
+        { name: '@type', value: type },
+        { name: '@entityId', value: entityId },
+        { name: '@tenantId', value: tenantId }
+      ];
 
-      const results = await this.dbService.queryItems<CommunicationContext>(this.containerName, query);
-      return results.length > 0 ? results[0] : null;
+      const response = await this.dbService.queryItems<CommunicationContext>(this.containerName, query, parameters);
+      
+      if (!response.success || !response.data || response.data.length === 0) {
+        return null;
+      }
+      
+      return response.data[0] || null;
     } catch (error: any) {
       this.logger.error('Failed to get context by entity', {
         error: error.message,
@@ -157,15 +160,14 @@ export class UnifiedCommunicationService {
    */
   async listUserContexts(userId: string, tenantId: string): Promise<CommunicationContext[]> {
     try {
-      const query = {
-        query: 'SELECT * FROM c WHERE c.tenantId = @tenantId AND ARRAY_CONTAINS(c.participants, {"userId": @userId}, true)',
-        parameters: [
-          { name: '@tenantId', value: tenantId },
-          { name: '@userId', value: userId }
-        ]
-      };
+      const query = 'SELECT * FROM c WHERE c.tenantId = @tenantId AND ARRAY_CONTAINS(c.participants, {"userId": @userId}, true)';
+      const parameters = [
+        { name: '@tenantId', value: tenantId },
+        { name: '@userId', value: userId }
+      ];
 
-      return await this.dbService.queryItems<CommunicationContext>(this.containerName, query);
+      const response = await this.dbService.queryItems<CommunicationContext>(this.containerName, query, parameters);
+      return response.success && response.data ? response.data : [];
     } catch (error: any) {
       this.logger.error('Failed to list user contexts', {
         error: error.message,
@@ -231,7 +233,10 @@ export class UnifiedCommunicationService {
     }));
 
     // Use first participant as creator
-    const creatorUserId = context.participants[0].userId;
+    const creatorUserId = context.participants[0]?.userId;
+    if (!creatorUserId) {
+      throw new Error('No participants in context');
+    }
 
     return await this.chatService.createThread(topic, chatParticipants, creatorUserId);
   }
@@ -310,14 +315,22 @@ export class UnifiedCommunicationService {
         throw new Error('Context not found');
       }
 
-      // Create Teams meeting
-      const meeting = await this.teamsService.createMeeting(
-        params.subject,
-        params.startTime,
-        params.endTime,
-        params.participants.map(p => ({ email: p, role: 'Attendee' })),
-        organizerUserId
-      );
+      // Create Teams meeting using createOrderMeeting
+      const meeting = await this.teamsService.createOrderMeeting({
+        orderId: context.entityId,
+        subject: params.subject,
+        startDateTime: params.startTime,
+        endDateTime: params.endTime,
+        organizerId: organizerUserId,
+        participants: params.participants.map(email => ({
+          userId: '', // Will be resolved by Teams service
+          displayName: email,
+          email,
+          role: 'attendee' as const,
+          isExternal: true
+        })),
+        tenantId: context.tenantId
+      });
 
       const callDetails: CallDetails = {
         id: uuidv4(),
@@ -336,8 +349,8 @@ export class UnifiedCommunicationService {
       this.logger.info('Meeting scheduled', {
         contextId,
         callId: callDetails.id,
-        meetingLink: meeting.joinUrl,
-        startTime: params.startTime
+        meetingId: meeting.meetingId,
+        subject: params.subject
       });
 
       return callDetails;
@@ -375,11 +388,14 @@ export class UnifiedCommunicationService {
       }
 
       // Get ACS user ID
-      const acsUser = await this.identityService.exchangeUserToken(participant.userId, context.tenantId);
+      const acsResponse = await this.identityService.exchangeUserToken(participant.userId, context.tenantId);
+      if (!acsResponse.success || !acsResponse.data) {
+        throw new Error('Failed to get ACS user ID');
+      }
 
       const newParticipant: CommunicationParticipant = {
         userId: participant.userId,
-        acsUserId: acsUser.acsUserId,
+        acsUserId: acsResponse.data.acsUserId,
         displayName: participant.displayName,
         email: participant.email,
         role: participant.role,
@@ -401,7 +417,7 @@ export class UnifiedCommunicationService {
         await this.chatService.addParticipant(
           context.chatThreadId,
           {
-            id: acsUser.acsUserId,
+            id: acsResponse.data.acsUserId,
             displayName: participant.displayName,
             shareHistoryTime: new Date()
           },

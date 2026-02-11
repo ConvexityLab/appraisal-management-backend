@@ -6,7 +6,15 @@
 
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
-import { QCReview } from '../types/qc-workflow.js';
+import { 
+  QCReview, 
+  QCReviewStatus, 
+  QCPriorityLevel, 
+  QCChecklistStatus, 
+  ReviewerRole, 
+  RiskLevel, 
+  QCDecision 
+} from '../types/qc-workflow.js';
 
 const logger = new Logger();
 const cosmosDb = new CosmosDbService();
@@ -23,21 +31,21 @@ async function seedEnhancedQCReview() {
       orderNumber: "ORD-2026-001",
       appraisalId: "appr-001",
       
-      status: "IN_PROGRESS",
+      status: QCReviewStatus.IN_PROGRESS,
       statusHistory: [
         {
-          status: "PENDING",
+          status: QCReviewStatus.PENDING,
           timestamp: "2026-02-08T09:15:00.000Z",
           changedBy: "system"
         },
         {
-          status: "IN_PROGRESS",
+          status: QCReviewStatus.IN_PROGRESS,
           timestamp: "2026-02-08T14:30:00.000Z",
           changedBy: "analyst-001"
         }
       ],
       
-      priorityLevel: "HIGH",
+      priorityLevel: QCPriorityLevel.HIGH,
       priorityScore: 85,
       riskFactors: [
         {
@@ -79,7 +87,7 @@ async function seedEnhancedQCReview() {
           userId: "analyst-001",
           userName: "Sarah Johnson",
           userEmail: "sarah.johnson@example.com",
-          role: "PRIMARY",
+          role: ReviewerRole.PRIMARY,
           assignedAt: "2026-02-08T14:30:00.000Z",
           assignedBy: "supervisor-001",
           status: "ACTIVE"
@@ -88,7 +96,7 @@ async function seedEnhancedQCReview() {
           userId: "analyst-002",
           userName: "Mike Chen",
           userEmail: "mike.chen@example.com",
-          role: "SECONDARY",
+          role: ReviewerRole.SECONDARY,
           assignedAt: "2026-02-08T15:00:00.000Z",
           assignedBy: "supervisor-001",
           status: "ACTIVE"
@@ -100,7 +108,7 @@ async function seedEnhancedQCReview() {
           checklistId: "checklist-uad-compliance",
           checklistName: "UAD Compliance Checklist",
           checklistType: "COMPLIANCE",
-          status: "IN_PROGRESS",
+          status: QCChecklistStatus.IN_PROGRESS,
           maxScore: 100,
           currentScore: 0,
           completedQuestions: 0,
@@ -111,7 +119,7 @@ async function seedEnhancedQCReview() {
           checklistId: "checklist-market-analysis",
           checklistName: "Market Analysis Review",
           checklistType: "TECHNICAL",
-          status: "NOT_STARTED",
+          status: QCChecklistStatus.NOT_STARTED,
           maxScore: 100,
           currentScore: 0,
           completedQuestions: 0,
@@ -121,7 +129,7 @@ async function seedEnhancedQCReview() {
           checklistId: "checklist-comparable-sales",
           checklistName: "Comparable Sales Verification",
           checklistType: "TECHNICAL",
-          status: "NOT_STARTED",
+          status: QCChecklistStatus.NOT_STARTED,
           maxScore: 100,
           currentScore: 0,
           completedQuestions: 0,
@@ -134,8 +142,8 @@ async function seedEnhancedQCReview() {
         overallStatus: "PASSED",
         maxScore: 100,
         percentScore: 87,
-        riskLevel: "LOW",
-        decision: "APPROVED",
+        riskLevel: RiskLevel.LOW,
+        decision: QCDecision.APPROVED,
         categoriesCompleted: 2,
         totalCategories: 4,
         questionsAnswered: 13,
@@ -344,17 +352,23 @@ async function seedEnhancedQCReview() {
     // Insert into qc-reviews container
     const result = await cosmosDb.createItem('qc-reviews', enhancedReview);
     
+    if (!result.success || !result.data) {
+      throw new Error('Failed to create QC review');
+    }
+    
+    const review = result.data as QCReview;
+    
     logger.info('✅ Enhanced QC review seeded successfully!');
-    logger.info(`   Review ID: ${result.id}`);
-    logger.info(`   Status: ${result.status}`);
-    logger.info(`   Priority: ${result.priorityLevel} (Score: ${result.priorityScore})`);
-    logger.info(`   Property: ${result.propertyAddress}`);
-    logger.info(`   Reviewers: ${result.reviewers.length}`);
-    logger.info(`   Documents: ${result.documents?.length || 0}`);
-    logger.info(`   Timeline Events: ${result.timeline?.length || 0}`);
-    logger.info(`   AI Risk Score: ${result.aiPreScreening?.riskScore}`);
+    logger.info(`   Review ID: ${review.id}`);
+    logger.info(`   Status: ${review.status}`);
+    logger.info(`   Priority: ${review.priorityLevel} (Score: ${review.priorityScore})`);
+    logger.info(`   Property: ${review.propertyAddress}`);
+    logger.info(`   Reviewers: ${review.reviewers.length}`);
+    logger.info(`   Documents: ${review.documents?.length || 0}`);
+    logger.info(`   Timeline Events: ${review.timeline?.length || 0}`);
+    logger.info(`   AI Risk Score: ${review.aiPreScreening?.riskScore}`);
 
-    return result;
+    return review;
 
   } catch (error) {
     logger.error('Failed to seed enhanced QC review', { error });
@@ -362,17 +376,15 @@ async function seedEnhancedQCReview() {
   }
 }
 
-// Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  seedEnhancedQCReview()
-    .then(() => {
-      logger.info('Seeding completed successfully');
-      process.exit(0);
-    })
-    .catch((error) => {
-      logger.error('Seeding failed', { error });
-      process.exit(1);
-    });
-}
+// Run if executed directly (Node.js 20+ ESM)
+seedEnhancedQCReview()
+  .then(() => {
+    logger.info('Seeding completed successfully');
+    process.exit(0);
+  })
+  .catch((error) => {
+    logger.error('Seeding failed', { error: error.message });
+    process.exit(1);
+  });
 
 export { seedEnhancedQCReview };

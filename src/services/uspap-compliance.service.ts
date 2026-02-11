@@ -94,7 +94,7 @@ export class USPAPComplianceService {
       }
 
       const result = await this.dbService.queryDocuments(this.containerName, query, parameters);
-      return result || [];
+      return Array.isArray(result) ? result as USPAPRule[] : [];
     } catch (error) {
       this.logger.error('Failed to get USPAP rules', { error });
       return [];

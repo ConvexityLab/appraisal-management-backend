@@ -42,6 +42,7 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const context = await communicationService.createContext(req.body);
@@ -88,14 +89,15 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { type, entityId } = req.params;
         const { tenantId } = req.query;
 
         const context = await communicationService.getContextByEntity(
-          type,
-          entityId,
+          type as string,
+          entityId as string,
           tenantId as string
         );
 
@@ -104,6 +106,7 @@ export const createUnifiedCommunicationRouter = () => {
             'CONTEXT_NOT_FOUND',
             'Communication context not found for this entity'
           ));
+          return;
         }
 
         res.json(createApiResponse(context));
@@ -139,16 +142,18 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid context ID',
             errors.array()
           ));
+          return;
         }
 
         const { contextId } = req.params;
-        const context = await communicationService.getContext(contextId);
+        const context = await communicationService.getContext(contextId as string);
 
         if (!context) {
           res.status(404).json(createApiError(
             'CONTEXT_NOT_FOUND',
             'Communication context not found'
           ));
+          return;
         }
 
         res.json(createApiResponse(context));
@@ -185,6 +190,7 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid query parameters',
             errors.array()
           ));
+          return;
         }
 
         const { userId, tenantId } = req.query;
@@ -231,6 +237,7 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { contextId } = req.params;
@@ -282,12 +289,13 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { contextId } = req.params;
         const { participants } = req.body;
 
-        const callDetails = await communicationService.startCall(contextId, participants);
+        const callDetails = await communicationService.startCall(contextId as string, participants);
 
         logger.info('Call started via API', {
           contextId,
@@ -337,13 +345,14 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { contextId } = req.params;
         const { subject, startTime, endTime, participants, organizerUserId, description } = req.body;
 
         const meetingDetails = await communicationService.scheduleMeeting(
-          contextId,
+          contextId as string,
           {
             subject,
             startTime: new Date(startTime),
@@ -401,10 +410,11 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { contextId } = req.params;
-        await communicationService.addParticipant(contextId, req.body);
+        await communicationService.addParticipant(contextId as string, req.body);
 
         logger.info('Participant added via API', {
           contextId,
@@ -447,10 +457,11 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { contextId, userId } = req.params;
-        await communicationService.removeParticipant(contextId, userId);
+        await communicationService.removeParticipant(contextId as string, userId as string);
 
         logger.info('Participant removed via API', {
           contextId,
@@ -494,10 +505,11 @@ export const createUnifiedCommunicationRouter = () => {
             'Invalid request parameters',
             errors.array()
           ));
+          return;
         }
 
         const { contextId, callId } = req.params;
-        await communicationService.endCall(contextId, callId);
+        await communicationService.endCall(contextId as string, callId as string);
 
         logger.info('Call ended via API', {
           contextId,

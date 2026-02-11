@@ -490,31 +490,40 @@ export class QCReviewQueueService {
       const { resources } = await container.items.readAll().fetchAll();
       
       // Map QCReview to QCReviewQueueItem
-      let queueItems: QCReviewQueueItem[] = resources.map((review: any) => ({
-        id: review.id,
-        orderId: review.orderId,
-        orderNumber: review.orderNumber || review.orderId,
-        appraisalId: review.appraisalId || review.orderId,
-        priorityLevel: review.priorityLevel,
-        priorityScore: review.priorityScore || 0,
-        assignedAnalystId: review.reviewers?.[0]?.analystId,
-        assignedAnalystName: review.reviewers?.[0]?.analystName,
-        assignedAt: review.reviewers?.[0]?.assignedAt ? new Date(review.reviewers[0].assignedAt) : undefined,
-        status: review.status,
-        submittedAt: review.createdAt ? new Date(review.createdAt) : new Date(),
-        startedAt: review.startedAt ? new Date(review.startedAt) : undefined,
-        completedAt: review.completedAt ? new Date(review.completedAt) : undefined,
-        propertyAddress: review.propertyAddress || 'N/A',
-        appraisedValue: review.appraisedValue || 0,
-        orderPriority: review.priorityLevel,
-        clientId: review.clientId || 'unknown',
-        clientName: review.clientName || 'Unknown Client',
-        vendorId: review.vendorId || 'unknown',
-        vendorName: review.vendorName || 'Unknown Vendor',
-        slaTargetDate: review.sla?.dueDate ? new Date(review.sla.dueDate) : new Date(),
-        slaBreached: review.sla?.breached || false,
-        createdAt: review.createdAt ? new Date(review.createdAt) : new Date()
-      }));
+      let queueItems = resources.map((review: any): QCReviewQueueItem => {
+        const assignedAnalystId = review.reviewers?.[0]?.analystId;
+        const assignedAnalystName = review.reviewers?.[0]?.analystName;
+        const assignedAt = review.reviewers?.[0]?.assignedAt ? new Date(review.reviewers[0].assignedAt) : undefined;
+        const startedAt = review.startedAt ? new Date(review.startedAt) : undefined;
+        const completedAt = review.completedAt ? new Date(review.completedAt) : undefined;
+        
+        return {
+          id: review.id,
+          orderId: review.orderId,
+          orderNumber: review.orderNumber || review.orderId,
+          appraisalId: review.appraisalId || review.orderId,
+          priorityLevel: review.priorityLevel,
+          priorityScore: review.priorityScore || 0,
+          ...(assignedAnalystId && { assignedAnalystId }),
+          ...(assignedAnalystName && { assignedAnalystName }),
+          ...(assignedAt && { assignedAt }),
+          status: review.status,
+          submittedAt: review.createdAt ? new Date(review.createdAt) : new Date(),
+          ...(startedAt && { startedAt }),
+          ...(completedAt && { completedAt }),
+          updatedAt: review.updatedAt ? new Date(review.updatedAt) : new Date(),
+          propertyAddress: review.propertyAddress || 'N/A',
+          appraisedValue: review.appraisedValue || 0,
+          orderPriority: review.priorityLevel,
+          clientId: review.clientId || 'unknown',
+          clientName: review.clientName || 'Unknown Client',
+          vendorId: review.vendorId || 'unknown',
+          vendorName: review.vendorName || 'Unknown Vendor',
+          slaTargetDate: review.sla?.dueDate ? new Date(review.sla.dueDate) : new Date(),
+          slaBreached: review.sla?.breached || false,
+          createdAt: review.createdAt ? new Date(review.createdAt) : new Date()
+        };
+      });
 
       // Apply filters
       if (criteria.status) {

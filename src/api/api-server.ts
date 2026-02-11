@@ -362,7 +362,7 @@ export class AppraisalManagementAPIServer {
     this.app.get('/ready', async (req: express.Request, res: express.Response) => {
       try {
         // Check database connectivity
-        await this.dbService.ensureDbInitialized();
+        await this.dbService.initialize();
         res.status(200).json({ ready: true, timestamp: new Date().toISOString() });
       } catch (error) {
         this.logger.error('Readiness check failed', { error });

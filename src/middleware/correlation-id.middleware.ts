@@ -6,8 +6,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { Logger } from '../utils/logger.js';
+import { AsyncLocalStorage } from 'async_hooks';
 
 const logger = new Logger();
+
+// Define global type augmentation
+declare global {
+  var asyncLocalStorage: AsyncLocalStorage<Map<string, string>> | undefined;
+}
 
 export interface CorrelationRequest extends Request {
   correlationId?: string;

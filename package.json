@@ -83,6 +83,7 @@
     "@azure/web-pubsub-express": "^1.0.6",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@types/pdfkit": "^0.17.4",
+    "applicationinsights": "^3.13.0",
     "axios": "^1.13.2",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",

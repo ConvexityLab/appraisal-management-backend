@@ -48,11 +48,12 @@ export class AuditTrailService {
    */
   async log(event: Omit<AuditEvent, 'id' | 'timestamp' | 'correlationId'>): Promise<void> {
     try {
+      const correlationId = getCorrelationId();
       const auditEvent: AuditEvent = {
         ...event,
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         timestamp: new Date(),
-        correlationId: getCorrelationId(),
+        ...(correlationId && { correlationId }),
       };
 
       // Write to Cosmos DB (append-only)
@@ -298,7 +299,7 @@ export class AuditTrailService {
       }
 
       const result = await this.dbService.queryDocuments(this.containerName, query, parameters);
-      return result.data || [];
+      return Array.isArray(result) ? result as AuditEvent[] : [];
     } catch (error) {
       this.logger.error('Failed to query audit trail', { error, resourceType, resourceId });
       return [];
@@ -336,7 +337,7 @@ export class AuditTrailService {
       }
 
       const result = await this.dbService.queryDocuments(this.containerName, query, parameters);
-      return result.data || [];
+      return Array.isArray(result) ? result as AuditEvent[] : [];
     } catch (error) {
       this.logger.error('Failed to query audit trail by actor', { error, userId });
       return [];

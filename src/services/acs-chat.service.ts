@@ -5,6 +5,7 @@
 
 import { ChatClient, ChatThreadClient } from '@azure/communication-chat';
 import { AzureCommunicationTokenCredential } from '@azure/communication-common';
+import { AzureKeyCredential } from '@azure/core-auth';
 import { CommunicationIdentityClient } from '@azure/communication-identity';
 import { Logger } from '../utils/logger';
 import { AcsIdentityService } from './acs-identity.service';
@@ -28,32 +29,22 @@ export class AcsChatService {
   private logger: Logger;
   private configured: boolean = false;
   private endpoint: string;
-  private apiKey: string;
 
   constructor() {
     this.logger = new Logger();
     this.identityService = new AcsIdentityService();
     
     this.endpoint = process.env.AZURE_COMMUNICATION_ENDPOINT || process.env.ACS_ENDPOINT || '';
-    this.apiKey = process.env.AZURE_COMMUNICATION_API_KEY || process.env.ACS_API_KEY || '';
+    const apiKey = process.env.AZURE_COMMUNICATION_API_KEY || process.env.ACS_API_KEY || '';
 
-    if (!this.endpoint || !this.apiKey) {
+    if (!this.endpoint || !apiKey) {
       this.logger.warn('ACS Chat Service: Missing AZURE_COMMUNICATION_ENDPOINT or AZURE_COMMUNICATION_API_KEY - service will not be available');
       return;
     }
 
-    try {
-      // Initialize chat client with service credential
-      this.chatClient = new ChatClient(
-        this.endpoint,
-        new AzureKeyCredential(this.apiKey)
-      );
-      
-      this.configured = true;
-      this.logger.info('ACS Chat Service initialized successfully');
-    } catch (error) {
-      this.logger.error('Failed to initialize ACS Chat Service', error);
-    }
+    // Service initializes per-request with user tokens, not a static client
+    this.configured = true;
+    this.logger.info('ACS Chat Service initialized successfully');
   }
 
   /**
@@ -70,10 +61,13 @@ export class AcsChatService {
 
     try {
       // Get or create ACS user for thread creator
-      const creatorAcsUser = await this.identityService.exchangeUserToken(creatorUserId, 'system');
+      const creatorAcsResponse = await this.identityService.exchangeUserToken(creatorUserId, 'system');
+      if (!creatorAcsResponse.success || !creatorAcsResponse.data) {
+        throw new Error('Failed to get ACS user token for thread creator');
+      }
 
       // Create chat client for the creator
-      const creatorToken = creatorAcsUser.token;
+      const creatorToken = creatorAcsResponse.data.token;
       const creatorChatClient = new ChatClient(
         this.endpoint,
         new AzureCommunicationTokenCredential(creatorToken)
@@ -141,8 +135,11 @@ export class AcsChatService {
 
     try {
       // Get operator's token
-      const operatorAcsUser = await this.identityService.exchangeUserToken(operatorUserId, 'system');
-      const threadClient = this.getThreadClient(threadId, operatorAcsUser.token);
+      const operatorAcsResponse = await this.identityService.exchangeUserToken(operatorUserId, 'system');
+      if (!operatorAcsResponse.success || !operatorAcsResponse.data) {
+        throw new Error('Failed to get ACS user token for operator');
+      }
+      const threadClient = this.getThreadClient(threadId, operatorAcsResponse.data.token);
 
       // Add participant
       await threadClient.addParticipants({
@@ -181,8 +178,11 @@ export class AcsChatService {
     }
 
     try {
-      const operatorAcsUser = await this.identityService.exchangeUserToken(operatorUserId, 'system');
-      const threadClient = this.getThreadClient(threadId, operatorAcsUser.token);
+      const operatorAcsResponse = await this.identityService.exchangeUserToken(operatorUserId, 'system');
+      if (!operatorAcsResponse.success || !operatorAcsResponse.data) {
+        throw new Error('Failed to get ACS user token for operator');
+      }
+      const threadClient = this.getThreadClient(threadId, operatorAcsResponse.data.token);
 
       await threadClient.removeParticipant({
         communicationUserId: participantAcsId
@@ -211,8 +211,11 @@ export class AcsChatService {
     }
 
     try {
-      const userAcsUser = await this.identityService.exchangeUserToken(userId, 'system');
-      const threadClient = this.getThreadClient(threadId, userAcsUser.token);
+      const userAcsResponse = await this.identityService.exchangeUserToken(userId, 'system');
+      if (!userAcsResponse.success || !userAcsResponse.data) {
+        throw new Error('Failed to get ACS user token');
+      }
+      const threadClient = this.getThreadClient(threadId, userAcsResponse.data.token);
 
       const properties = await threadClient.getProperties();
       
@@ -221,10 +224,12 @@ export class AcsChatService {
       const participantsIterator = threadClient.listParticipants();
       
       for await (const participant of participantsIterator) {
+        const communicationUser = participant.id as any;
+        const historyTime = participant.shareHistoryTime;
         participantsList.push({
-          id: participant.id.communicationUserId || '',
+          id: communicationUser.communicationUserId || '',
           displayName: participant.displayName || 'Unknown',
-          shareHistoryTime: participant.shareHistoryTime
+          ...(historyTime && { shareHistoryTime: historyTime })
         });
       }
 
@@ -252,10 +257,13 @@ export class AcsChatService {
     }
 
     try {
-      const userAcsUser = await this.identityService.exchangeUserToken(userId, 'system');
+      const userAcsResponse = await this.identityService.exchangeUserToken(userId, 'system');
+      if (!userAcsResponse.success || !userAcsResponse.data) {
+        throw new Error('Failed to get ACS user token');
+      }
       const chatClient = new ChatClient(
         this.endpoint,
-        new AzureCommunicationTokenCredential(userAcsUser.token)
+        new AzureCommunicationTokenCredential(userAcsResponse.data.token)
       );
 
       await chatClient.deleteChatThread(threadId);
@@ -283,8 +291,11 @@ export class AcsChatService {
     }
 
     try {
-      const userAcsUser = await this.identityService.exchangeUserToken(senderUserId, 'system');
-      const threadClient = this.getThreadClient(threadId, userAcsUser.token);
+      const userAcsResponse = await this.identityService.exchangeUserToken(senderUserId, 'system');
+      if (!userAcsResponse.success || !userAcsResponse.data) {
+        throw new Error('Failed to get ACS user token');
+      }
+      const threadClient = this.getThreadClient(threadId, userAcsResponse.data.token);
 
       const sendMessageResult = await threadClient.sendMessage({ content });
       
@@ -312,8 +323,11 @@ export class AcsChatService {
     }
 
     try {
-      const userAcsUser = await this.identityService.exchangeUserToken(userId, 'system');
-      const threadClient = this.getThreadClient(threadId, userAcsUser.token);
+      const userAcsResponse = await this.identityService.exchangeUserToken(userId, 'system');
+      if (!userAcsResponse.success || !userAcsResponse.data) {
+        throw new Error('Failed to get ACS user token');
+      }
+      const threadClient = this.getThreadClient(threadId, userAcsResponse.data.token);
 
       const messages: any[] = [];
       const messagesIterator = threadClient.listMessages({ maxPageSize: maxMessages });

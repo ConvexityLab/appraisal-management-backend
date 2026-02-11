@@ -214,7 +214,7 @@ export class AppInsightsMetricsService {
 
     this.client.trackException({
       exception: error,
-      properties: context
+      ...(context && { properties: context })
     });
   }
 
@@ -227,7 +227,7 @@ export class AppInsightsMetricsService {
 
     this.client.trackEvent({
       name,
-      properties
+      ...(properties && { properties })
     });
   }
 
