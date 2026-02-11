@@ -33,11 +33,11 @@ export const createUnifiedCommunicationRouter = () => {
       body('participants.*.role').notEmpty().withMessage('Participant role required'),
       body('autoCreateChat').optional().isBoolean()
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -60,7 +60,7 @@ export const createUnifiedCommunicationRouter = () => {
           body: req.body
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to create communication context',
           error.message
         ));
@@ -79,11 +79,11 @@ export const createUnifiedCommunicationRouter = () => {
       param('entityId').notEmpty(),
       query('tenantId').notEmpty().withMessage('Tenant ID query parameter required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -100,7 +100,7 @@ export const createUnifiedCommunicationRouter = () => {
         );
 
         if (!context) {
-          return res.status(404).json(createApiError(
+          res.status(404).json(createApiError(
             'CONTEXT_NOT_FOUND',
             'Communication context not found for this entity'
           ));
@@ -113,7 +113,7 @@ export const createUnifiedCommunicationRouter = () => {
           params: req.params
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to get communication context',
           error.message
         ));
@@ -130,11 +130,11 @@ export const createUnifiedCommunicationRouter = () => {
     [
       param('contextId').isUUID().withMessage('Invalid context ID')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid context ID',
             errors.array()
@@ -145,7 +145,7 @@ export const createUnifiedCommunicationRouter = () => {
         const context = await communicationService.getContext(contextId);
 
         if (!context) {
-          return res.status(404).json(createApiError(
+          res.status(404).json(createApiError(
             'CONTEXT_NOT_FOUND',
             'Communication context not found'
           ));
@@ -158,7 +158,7 @@ export const createUnifiedCommunicationRouter = () => {
           contextId: req.params.contextId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to get communication context',
           error.message
         ));
@@ -176,11 +176,11 @@ export const createUnifiedCommunicationRouter = () => {
       query('userId').notEmpty().withMessage('User ID query parameter required'),
       query('tenantId').notEmpty().withMessage('Tenant ID query parameter required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid query parameters',
             errors.array()
@@ -204,7 +204,7 @@ export const createUnifiedCommunicationRouter = () => {
           query: req.query
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to list user contexts',
           error.message
         ));
@@ -222,11 +222,11 @@ export const createUnifiedCommunicationRouter = () => {
       param('contextId').isUUID().withMessage('Invalid context ID'),
       body('userId').notEmpty().withMessage('User ID required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -236,7 +236,7 @@ export const createUnifiedCommunicationRouter = () => {
         const { contextId } = req.params;
         const { userId } = req.body;
 
-        const threadId = await communicationService.initializeChatThread(contextId, userId);
+        const threadId = await communicationService.initializeChatThread(contextId as string, userId);
 
         logger.info('Chat thread initialized via API', {
           contextId,
@@ -255,7 +255,7 @@ export const createUnifiedCommunicationRouter = () => {
           contextId: req.params.contextId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to initialize chat thread',
           error.message
         ));
@@ -273,11 +273,11 @@ export const createUnifiedCommunicationRouter = () => {
       param('contextId').isUUID().withMessage('Invalid context ID'),
       body('participants').isArray({ min: 1 }).withMessage('At least one participant required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -306,7 +306,7 @@ export const createUnifiedCommunicationRouter = () => {
           contextId: req.params.contextId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to start call',
           error.message
         ));
@@ -328,11 +328,11 @@ export const createUnifiedCommunicationRouter = () => {
       body('participants').isArray({ min: 1 }).withMessage('At least one participant required'),
       body('organizerUserId').notEmpty().withMessage('Organizer user ID required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -371,7 +371,7 @@ export const createUnifiedCommunicationRouter = () => {
           contextId: req.params.contextId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to schedule meeting',
           error.message
         ));
@@ -392,11 +392,11 @@ export const createUnifiedCommunicationRouter = () => {
       body('email').isEmail().withMessage('Valid email required'),
       body('role').notEmpty().withMessage('Role required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -420,7 +420,7 @@ export const createUnifiedCommunicationRouter = () => {
           contextId: req.params.contextId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to add participant',
           error.message
         ));
@@ -438,11 +438,11 @@ export const createUnifiedCommunicationRouter = () => {
       param('contextId').isUUID().withMessage('Invalid context ID'),
       param('userId').notEmpty().withMessage('User ID required')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -467,7 +467,7 @@ export const createUnifiedCommunicationRouter = () => {
           userId: req.params.userId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to remove participant',
           error.message
         ));
@@ -485,11 +485,11 @@ export const createUnifiedCommunicationRouter = () => {
       param('contextId').isUUID().withMessage('Invalid context ID'),
       param('callId').isUUID().withMessage('Invalid call ID')
     ],
-    async (req: Request, res: Response) => {
+    async (req: Request, res: Response): Promise<void> => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-          return res.status(400).json(createApiError(
+          res.status(400).json(createApiError(
             'VALIDATION_ERROR',
             'Invalid request parameters',
             errors.array()
@@ -514,7 +514,7 @@ export const createUnifiedCommunicationRouter = () => {
           callId: req.params.callId
         });
         res.status(500).json(createApiError(
-          ErrorCodes.INTERNAL_ERROR,
+          ErrorCodes.DATABASE_ERROR,
           'Failed to end call',
           error.message
         ));
