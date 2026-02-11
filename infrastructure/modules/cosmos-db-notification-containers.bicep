@@ -355,10 +355,4 @@ output communicationContextsContainerId string = communicationContextsContainer.
 output communicationTranscriptsContainerId string = communicationTranscriptsContainer.id
 output aiInsightsContainerId string = aiInsightsContainer.id
 
-output notificationPreferencesContainerId string = notificationPreferencesContainer.id
-output chatThreadsContainerId string = chatThreadsContainer.id
-output chatMessagesContainerId string = chatMessagesContainer.id
-output deviceRegistrationsContainerId string = deviceRegistrationsContainer.id
-output acsUserMappingsContainerId string = acsUserMappingsContainer.id
-output teamsMeetingsContainerId string = teamsMeetingsContainer.id
 
