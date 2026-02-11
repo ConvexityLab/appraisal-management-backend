@@ -143,6 +143,16 @@ module cosmosDb 'modules/cosmos-production.bicep' = {
   }
 }
 
+// Cosmos DB Notification Containers (chat, ACS, Teams)
+module cosmosNotificationContainers 'modules/cosmos-db-notification-containers.bicep' = {
+  name: 'cosmos-notification-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosDbAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
