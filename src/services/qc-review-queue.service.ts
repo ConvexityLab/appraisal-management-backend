@@ -35,6 +35,7 @@ export interface QueueStatistics {
 export class QCReviewQueueService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  private dbInitialized: boolean = false;
   
   // In-memory analyst cache (would be DB in production)
   private analysts: Map<string, QCAnalystWorkload> = new Map();
@@ -42,6 +43,16 @@ export class QCReviewQueueService {
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
+  }
+
+  /**
+   * Ensure database is initialized
+   */
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
   }
 
   // ===========================
@@ -104,7 +115,7 @@ export class QCReviewQueueService {
       };
 
       // Store in database
-      await this.dbService.createDocument('qc-review-queue', queueItem);
+      await this.dbService.createDocument('qc-reviews', queueItem);
 
       this.logger.info('Appraisal added to QC queue successfully', {
         queueItemId: queueItem.id,
@@ -195,7 +206,7 @@ export class QCReviewQueueService {
       queueItem.startedAt = new Date();
       queueItem.updatedAt = new Date();
 
-      await this.dbService.upsertDocument('qc-review-queue', queueItem);
+      await this.dbService.upsertDocument('qc-reviews', queueItem);
 
       this.logger.info('QC review assigned successfully', {
         queueItemId,
@@ -227,7 +238,7 @@ export class QCReviewQueueService {
       queueItem.completedAt = new Date();
       queueItem.updatedAt = new Date();
 
-      await this.dbService.upsertDocument('qc-review-queue', queueItem);
+      await this.dbService.upsertDocument('qc-reviews', queueItem);
 
       this.logger.info('QC review completed', {
         queueItemId,
@@ -472,45 +483,75 @@ export class QCReviewQueueService {
    */
   async searchQueue(criteria: QCReviewQueueSearchCriteria): Promise<QCReviewQueueItem[]> {
     try {
-      const container = this.dbService.getContainer('qc-review-queue');
+      await this.ensureDbInitialized();
+      const container = this.dbService.getContainer('qc-reviews');
       
-      // Build query (simplified - would use proper Cosmos DB query in production)
+      // Read all QC reviews and map to queue items
       const { resources } = await container.items.readAll().fetchAll();
       
-      let filtered = resources as QCReviewQueueItem[];
+      // Map QCReview to QCReviewQueueItem
+      let queueItems: QCReviewQueueItem[] = resources.map((review: any) => ({
+        id: review.id,
+        orderId: review.orderId,
+        orderNumber: review.orderNumber || review.orderId,
+        appraisalId: review.appraisalId || review.orderId,
+        priorityLevel: review.priorityLevel,
+        priorityScore: review.priorityScore || 0,
+        assignedAnalystId: review.reviewers?.[0]?.analystId,
+        assignedAnalystName: review.reviewers?.[0]?.analystName,
+        assignedAt: review.reviewers?.[0]?.assignedAt ? new Date(review.reviewers[0].assignedAt) : undefined,
+        status: review.status,
+        submittedAt: review.createdAt ? new Date(review.createdAt) : new Date(),
+        startedAt: review.startedAt ? new Date(review.startedAt) : undefined,
+        completedAt: review.completedAt ? new Date(review.completedAt) : undefined,
+        propertyAddress: review.propertyAddress || 'N/A',
+        appraisedValue: review.appraisedValue || 0,
+        orderPriority: review.priorityLevel,
+        clientId: review.clientId || 'unknown',
+        clientName: review.clientName || 'Unknown Client',
+        vendorId: review.vendorId || 'unknown',
+        vendorName: review.vendorName || 'Unknown Vendor',
+        slaTargetDate: review.sla?.dueDate ? new Date(review.sla.dueDate) : new Date(),
+        slaBreached: review.sla?.breached || false,
+        createdAt: review.createdAt ? new Date(review.createdAt) : new Date()
+      }));
 
       // Apply filters
       if (criteria.status) {
-        filtered = filtered.filter(item => criteria.status!.includes(item.status));
+        queueItems = queueItems.filter(item => criteria.status!.includes(item.status));
       }
 
       if (criteria.priorityLevel) {
-        filtered = filtered.filter(item => criteria.priorityLevel!.includes(item.priorityLevel));
+        queueItems = queueItems.filter(item => criteria.priorityLevel!.includes(item.priorityLevel));
       }
 
       if (criteria.assignedAnalystId) {
-        filtered = filtered.filter(item => item.assignedAnalystId === criteria.assignedAnalystId);
+        queueItems = queueItems.filter(item => item.assignedAnalystId === criteria.assignedAnalystId);
       }
 
       if (criteria.slaBreached !== undefined) {
-        filtered = filtered.filter(item => item.slaBreached === criteria.slaBreached);
+        queueItems = queueItems.filter(item => item.slaBreached === criteria.slaBreached);
       }
 
       if (criteria.minPriorityScore) {
-        filtered = filtered.filter(item => item.priorityScore >= criteria.minPriorityScore!);
+        queueItems = queueItems.filter(item => item.priorityScore >= criteria.minPriorityScore!);
       }
 
       // Sort by priority score
-      filtered.sort((a, b) => b.priorityScore - a.priorityScore);
+      queueItems.sort((a, b) => b.priorityScore - a.priorityScore);
 
       // Apply pagination
       const offset = criteria.offset || 0;
       const limit = criteria.limit || 50;
       
-      return filtered.slice(offset, offset + limit);
+      return queueItems.slice(offset, offset + limit);
 
     } catch (error) {
-      this.logger.error('Queue search failed', { error, criteria });
+      this.logger.error('Queue search failed', { 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        criteria 
+      });
       throw error;
     }
   }
@@ -552,7 +593,7 @@ export class QCReviewQueueService {
 
   private async getQueueItem(queueItemId: string): Promise<QCReviewQueueItem | null> {
     try {
-      const result = await this.dbService.getDocument('qc-review-queue', queueItemId);
+      const result = await this.dbService.getDocument('qc-reviews', queueItemId);
       return result as QCReviewQueueItem;
     } catch {
       return null;

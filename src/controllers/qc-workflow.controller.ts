@@ -67,17 +67,17 @@ router.get(
 
       const queueItems = await qcQueueService.searchQueue(criteria);
 
-      return res.json({
-        success: true,
-        data: queueItems,
-        count: queueItems.length
-      });
+      return res.json(queueItems);
 
     } catch (error) {
-      logger.error('Failed to get queue', { error });
+      logger.error('Failed to get queue', { 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       return res.status(500).json({
         success: false,
-        error: 'Failed to retrieve QC queue'
+        error: 'Failed to retrieve QC queue',
+        details: error instanceof Error ? error.message : String(error)
       });
     }
   }

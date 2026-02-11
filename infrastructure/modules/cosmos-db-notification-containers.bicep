@@ -245,9 +245,116 @@ resource teamsMeetingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDataba
     }
 }
 
+// Communication contexts container - unified chat/call/meeting orchestration
+resource communicationContextsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'communicationContexts'
+  properties: {
+    resource: {
+      id: 'communicationContexts'
+      partitionKey: {
+        paths: ['/tenantId']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/_etag/?' }
+        ]
+        compositeIndexes: [
+          [
+            { path: '/type', order: 'ascending' }
+            { path: '/entityId', order: 'ascending' }
+          ]
+          [
+            { path: '/tenantId', order: 'ascending' }
+            { path: '/createdAt', order: 'descending' }
+          ]
+        ]
+      }
+    }
+  }
+}
+
+// Communication transcripts container - AI analysis of conversations
+resource communicationTranscriptsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'communicationTranscripts'
+  properties: {
+    resource: {
+      id: 'communicationTranscripts'
+      partitionKey: {
+        paths: ['/contextId']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        compositeIndexes: [
+          [
+            { path: '/contextId', order: 'ascending' }
+            { path: '/startTime', order: 'ascending' }
+          ]
+        ]
+      }
+      defaultTtl: 31536000 // 365 days
+    }
+  }
+}
+
+// AI insights container - sentiment, action items, compliance
+resource aiInsightsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'aiInsights'
+  properties: {
+    resource: {
+      id: 'aiInsights'
+      partitionKey: {
+        paths: ['/contextId']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        compositeIndexes: [
+          [
+            { path: '/contextId', order: 'ascending' }
+            { path: '/timestamp', order: 'descending' }
+          ]
+          [
+            { path: '/type', order: 'ascending' }
+            { path: '/timestamp', order: 'descending' }
+          ]
+        ]
+      }
+      defaultTtl: 31536000 // 365 days
+    }
+  }
+}
+
 output emailTemplatesContainerId string = emailTemplatesContainer.id
 output smsTemplatesContainerId string = smsTemplatesContainer.id
 output notificationHistoryContainerId string = notificationHistoryContainer.id
+output notificationPreferencesContainerId string = notificationPreferencesContainer.id
+output chatThreadsContainerId string = chatThreadsContainer.id
+output chatMessagesContainerId string = chatMessagesContainer.id
+output deviceRegistrationsContainerId string = deviceRegistrationsContainer.id
+output acsUserMappingsContainerId string = acsUserMappingsContainer.id
+output teamsMeetingsContainerId string = teamsMeetingsContainer.id
+output communicationContextsContainerId string = communicationContextsContainer.id
+output communicationTranscriptsContainerId string = communicationTranscriptsContainer.id
+output aiInsightsContainerId string = aiInsightsContainer.id
+
 output notificationPreferencesContainerId string = notificationPreferencesContainer.id
 output chatThreadsContainerId string = chatThreadsContainer.id
 output chatMessagesContainerId string = chatMessagesContainer.id

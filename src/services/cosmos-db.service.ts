@@ -60,7 +60,10 @@ export class CosmosDbService {
     rovRequests: 'rov-requests',
     documentTemplates: 'document-templates',
     reviews: 'appraisal-reviews',
-    comparableAnalyses: 'comparable-analyses'
+    comparableAnalyses: 'comparable-analyses',
+    communicationContexts: 'communicationContexts',      // Unified communication platform
+    communicationTranscripts: 'communicationTranscripts',// Chat/call/meeting transcripts
+    aiInsights: 'aiInsights'                              // AI-generated insights
   };
 
   constructor(
@@ -1447,10 +1450,17 @@ export class CosmosDbService {
         data: response.resource as T
       };
     } catch (error) {
-      this.logger.error('Failed to create item', { error: error instanceof Error ? error.message : 'Unknown error', containerName });
+      this.logger.error('Failed to create item', { 
+        error: error instanceof Error ? error.message : 'Unknown error', 
+        errorCode: (error as any)?.code,
+        errorBody: (error as any)?.body,
+        containerName,
+        itemId: item?.id,
+        hasPartitionKey: !!item?.tenantId
+      });
       return {
         success: false,
-        error: this.createApiError('CREATE_ITEM_FAILED', 'Failed to create item')
+        error: this.createApiError('CREATE_ITEM_FAILED', `Failed to create item: ${error instanceof Error ? error.message : 'Unknown error'}`)
       };
     }
   }

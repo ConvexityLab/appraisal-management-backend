@@ -8,6 +8,7 @@
 
 import { CommunicationIdentityClient } from '@azure/communication-identity';
 import { DefaultAzureCredential } from '@azure/identity';
+import { AzureKeyCredential } from '@azure/core-auth';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { ApiResponse } from '../types/index.js';
@@ -28,33 +29,53 @@ interface AcsTokenResponse {
 
 export class AcsIdentityService {
   private logger: Logger;
-  private dbService: CosmosDbService;
-  private identityClient: CommunicationIdentityClient;
+  private dbService?: CosmosDbService;
+  private identityClient?: CommunicationIdentityClient;
+  private configured: boolean = false;
 
   constructor() {
     this.logger = new Logger();
-    this.dbService = new CosmosDbService();
-
+    
     const endpoint = process.env.AZURE_COMMUNICATION_ENDPOINT;
     if (!endpoint) {
-      throw new Error('AZURE_COMMUNICATION_ENDPOINT not configured');
+      this.logger.warn('AZURE_COMMUNICATION_ENDPOINT not configured - ACS Identity service unavailable');
+      return;
     }
 
-    // Try Managed Identity first (works for Container Apps AND local if logged in via 'az login')
-    // Falls back to API key if Managed Identity unavailable
+    // Initialize Cosmos DB service only if configured
     try {
-      const credential = new DefaultAzureCredential();
-      this.identityClient = new CommunicationIdentityClient(endpoint, credential);
-      this.logger.info('ACS Identity Service initialized with Managed Identity (production or local with az login)');
+      this.dbService = new CosmosDbService();
+      this.logger.info('Cosmos DB initialized successfully for ACS Identity mappings');
     } catch (error) {
-      // Fall back to API key for local development without az login
-      const apiKey = process.env.AZURE_COMMUNICATION_API_KEY;
-      if (!apiKey) {
-        throw new Error('ACS authentication failed: No Managed Identity available and AZURE_COMMUNICATION_API_KEY not configured');
+      this.logger.error('Failed to initialize Cosmos DB for ACS Identity service', { 
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
+      });
+    }
+
+    // For local development, prefer API key. For production, use Managed Identity.
+    const apiKey = process.env.AZURE_COMMUNICATION_API_KEY;
+    
+    if (apiKey) {
+      // Use API key if available (local development)
+      this.logger.info('Initializing ACS with API key authentication');
+      const keyCredential = new AzureKeyCredential(apiKey);
+      this.identityClient = new CommunicationIdentityClient(endpoint, keyCredential);
+      this.configured = true;
+      this.logger.info('ACS Identity Service initialized with API key');
+    } else {
+      // Fall back to Managed Identity (production)
+      try {
+        this.logger.info('No API key found, attempting Managed Identity authentication');
+        const credential = new DefaultAzureCredential();
+        this.identityClient = new CommunicationIdentityClient(endpoint, credential);
+        this.configured = true;
+        this.logger.info('ACS Identity Service initialized with Managed Identity');
+      } catch (error) {
+        this.logger.error('Failed to initialize ACS with Managed Identity', { error });
+        return;
       }
-      const connectionString = `endpoint=${endpoint};accesskey=${apiKey}`;
-      this.identityClient = new CommunicationIdentityClient(connectionString);
-      this.logger.info('ACS Identity Service initialized with API key (fallback for local development)');
     }
   }
 
@@ -64,6 +85,19 @@ export class AcsIdentityService {
    */
   async exchangeUserToken(azureAdUserId: string, tenantId: string): Promise<ApiResponse<AcsTokenResponse>> {
     try {
+      // Check if service is properly configured
+      if (!this.configured || !this.identityClient) {
+        return {
+          success: false,
+          data: null as any,
+          error: {
+            code: 'ACS_NOT_CONFIGURED',
+            message: 'Azure Communication Services not properly configured',
+            timestamp: new Date()
+          }
+        };
+      }
+
       // Check if user already has ACS identity mapping
       let mapping = await this.getUserMapping(azureAdUserId, tenantId);
 
@@ -84,10 +118,11 @@ export class AcsIdentityService {
       }
 
       // Generate fresh access token (24 hour expiry)
+      // Include all available scopes for maximum flexibility
       this.logger.info('Generating ACS token', { acsUserId: mapping.acsUserId });
       const tokenResponse = await this.identityClient.getToken(
         { communicationUserId: mapping.acsUserId },
-        ['chat'] // Scope: chat only
+        ['chat', 'voip'] // All supported scopes: chat (messaging), voip (voice/video calls)
       );
 
       // Update last token generation time
@@ -113,6 +148,9 @@ export class AcsIdentityService {
    */
   private async createAcsUser(): Promise<string> {
     try {
+      if (!this.identityClient) {
+        throw new Error('ACS Identity Client not initialized');
+      }
       const userResponse = await this.identityClient.createUser();
       this.logger.info('ACS user created', { userId: userResponse.communicationUserId });
       return userResponse.communicationUserId;
@@ -127,6 +165,11 @@ export class AcsIdentityService {
    */
   private async getUserMapping(azureAdUserId: string, tenantId: string): Promise<AcsUserMapping | null> {
     try {
+      if (!this.dbService) {
+        this.logger.warn('Cosmos DB not available - cannot retrieve user mapping');
+        return null;
+      }
+
       const query = `SELECT * FROM c WHERE c.azureAdUserId = @azureAdUserId`;
       const parameters = [{ name: '@azureAdUserId', value: azureAdUserId }];
 
@@ -153,6 +196,10 @@ export class AcsIdentityService {
    */
   private async saveUserMapping(mapping: AcsUserMapping, tenantId: string): Promise<void> {
     try {
+      if (!this.dbService) {
+        this.logger.warn('Cosmos DB not available - cannot save user mapping');
+        return;
+      }
       await this.dbService.upsertItem('acsUserMappings', mapping);
       this.logger.info('User mapping saved', { 
         azureAdUserId: mapping.azureAdUserId, 
@@ -160,7 +207,7 @@ export class AcsIdentityService {
       });
     } catch (error) {
       this.logger.error('Error saving user mapping', { error, mapping });
-      throw error;
+      // Don't throw - mapping save is not critical
     }
   }
 
@@ -213,6 +260,6 @@ export class AcsIdentityService {
    * Check if ACS Identity service is properly configured
    */
   isConfigured(): boolean {
-    return !!process.env.AZURE_COMMUNICATION_ENDPOINT;
+    return this.configured && !!this.identityClient;
   }
 }

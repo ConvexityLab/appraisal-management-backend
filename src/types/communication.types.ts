@@ -476,3 +476,212 @@ export interface DigestNotification {
   sentAt?: Date;
   createdAt: Date;
 }
+
+// ============================================================================
+// UNIFIED COMMUNICATION PLATFORM TYPES
+// ============================================================================
+
+export interface CommunicationParticipant {
+  userId: string;
+  acsUserId: string;
+  displayName: string;
+  email: string;
+  role: string;
+  joinedAt: Date;
+  permissions: {
+    canStartCall: boolean;
+    canScheduleMeeting: boolean;
+    canInviteOthers: boolean;
+    canViewTranscripts: boolean;
+  };
+}
+
+export interface CallDetails {
+  id: string;
+  type: 'adhoc_call' | 'scheduled_meeting';
+  meetingLink?: string;
+  groupCallId?: string;
+  startedAt: Date;
+  endedAt?: Date;
+  participants: string[];
+  recordingUrl?: string;
+  transcriptId?: string;
+  aiSummaryId?: string;
+  duration?: number;
+}
+
+export interface AIInsights {
+  lastAnalyzedAt?: Date;
+  overallSentiment?: 'positive' | 'neutral' | 'negative';
+  sentimentScore?: number;
+  riskFlags: Array<{
+    type: string;
+    severity: 'low' | 'medium' | 'high';
+    description: string;
+    detectedAt: Date;
+  }>;
+  actionItems: Array<{
+    id: string;
+    description: string;
+    assignee?: string;
+    dueDate?: Date;
+    status: 'open' | 'completed';
+    extractedAt: Date;
+    source: 'chat' | 'call' | 'meeting';
+  }>;
+  keyTopics: string[];
+  escalationSuggested?: boolean;
+  escalationReason?: string;
+}
+
+export interface CommunicationContext {
+  id: string;
+  type: 'order' | 'qc_review' | 'general';
+  entityId: string;
+  tenantId: string;
+  
+  // Chat Thread
+  chatThreadId?: string;
+  chatCreatedAt?: Date;
+  
+  // Call/Meeting History
+  calls: CallDetails[];
+  
+  // Participants
+  participants: CommunicationParticipant[];
+  
+  // AI Insights
+  aiInsights?: AIInsights;
+  
+  // Metadata
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  isActive: boolean;
+}
+
+export interface CreateContextParams {
+  type: 'order' | 'qc_review' | 'general';
+  entityId: string;
+  tenantId: string;
+  createdBy: string;
+  participants: Array<{
+    userId: string;
+    displayName: string;
+    email: string;
+    role: string;
+    permissions?: Partial<CommunicationParticipant['permissions']>;
+  }>;
+  autoCreateChat?: boolean;
+}
+
+export interface TranscriptSegment {
+  speaker: string;
+  speakerId: string;
+  startTime: number;
+  endTime: number;
+  text: string;
+  confidence: number;
+  sentiment?: number;
+}
+
+export interface CommunicationTranscript {
+  id: string;
+  contextId: string;
+  type: 'chat' | 'call' | 'meeting';
+  
+  // Chat transcript
+  messages?: Array<{
+    id: string;
+    senderId: string;
+    senderName: string;
+    content: string;
+    timestamp: Date;
+    sentiment?: number;
+    flags?: string[];
+  }>;
+  
+  // Call/Meeting transcript
+  segments?: TranscriptSegment[];
+  
+  // AI Analysis
+  summary?: string;
+  keyPoints?: string[];
+  actionItems?: string[];
+  riskAssessment?: {
+    level: 'low' | 'medium' | 'high';
+    concerns: string[];
+    recommendations: string[];
+  };
+  
+  generatedAt: Date;
+  tenantId: string;
+}
+
+export interface AIInsight {
+  id: string;
+  contextId: string;
+  type: 'sentiment' | 'action_item' | 'risk_flag' | 'summary' | 'recommendation';
+  
+  confidence: number;
+  content: string;
+  metadata: {
+    source: 'chat' | 'call' | 'meeting';
+    timestamp: Date;
+    participants?: string[];
+    relatedMessageIds?: string[];
+  };
+  
+  notified?: string[];
+  acknowledged?: boolean;
+  resolvedAt?: Date;
+  
+  createdAt: Date;
+  tenantId: string;
+}
+
+export interface MeetingParams {
+  subject: string;
+  startTime: Date;
+  endTime: Date;
+  participants: string[];
+  externalAttendees?: Array<{
+    email: string;
+    displayName: string;
+  }>;
+  description?: string;
+}
+
+export interface ChatAnalysis {
+  sentiment: {
+    overall: 'positive' | 'neutral' | 'negative';
+    score: number;
+    confidence: number;
+  };
+  actionItems: Array<{
+    description: string;
+    assignee?: string;
+    priority: 'low' | 'medium' | 'high';
+  }>;
+  riskFlags: Array<{
+    type: string;
+    severity: 'low' | 'medium' | 'high';
+    description: string;
+  }>;
+  keyTopics: string[];
+}
+
+export interface TranscriptAnalysis {
+  summary: string;
+  keyPoints: string[];
+  actionItems: string[];
+  participantEngagement: Record<string, {
+    speakTime: number;
+    messageCount: number;
+    sentiment: number;
+  }>;
+  riskAssessment: {
+    level: 'low' | 'medium' | 'high';
+    concerns: string[];
+  };
+}

@@ -50,14 +50,18 @@ export const createAcsTokenRouter = (): Router => {
       }
 
       const userId = req.user.id;
-      const tenantIdParam = req.headers['x-tenant-id'];
+      
+      // Accept tenant ID from header OR query parameter for flexibility
+      const tenantIdFromHeader = req.headers['x-tenant-id'];
+      const tenantIdFromQuery = req.query.tenantId;
+      const tenantIdParam = tenantIdFromHeader || tenantIdFromQuery;
 
       if (!tenantIdParam || typeof tenantIdParam !== 'string') {
         res.status(400).json({ 
           success: false,
           error: { 
             code: 'TENANT_ID_REQUIRED', 
-            message: 'x-tenant-id header is required', 
+            message: 'Tenant ID required (provide x-tenant-id header or tenantId query parameter)', 
             timestamp: new Date() 
           } 
         });
@@ -85,6 +89,11 @@ export const createAcsTokenRouter = (): Router => {
       const result = await identityService.exchangeUserToken(userId, tenantId);
 
       if (!result.success || !result.data) {
+        logger.error('ACS token generation failed', { 
+          userId, 
+          tenantId, 
+          error: result.error 
+        });
         res.status(500).json({ 
           success: false,
           error: result.error || { 
@@ -105,7 +114,11 @@ export const createAcsTokenRouter = (): Router => {
       res.json(result);
       return;
     } catch (error) {
-      logger.error('Error in token endpoint', { error });
+      logger.error('Error in token endpoint', { 
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
+      });
       res.status(500).json({ 
         success: false,
         error: { 

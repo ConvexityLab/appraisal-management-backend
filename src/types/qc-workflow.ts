@@ -10,6 +10,7 @@
 
 export enum QCReviewStatus {
   PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS', // Added to match frontend
   IN_REVIEW = 'IN_REVIEW',
   COMPLETED = 'COMPLETED',
   REVISION_REQUESTED = 'REVISION_REQUESTED',
@@ -53,6 +54,7 @@ export enum QCDecision {
 /**
  * Master QC Review Record
  * Stored in qc-reviews container
+ * Enhanced to match frontend schema requirements
  */
 export interface QCReview {
   id: string;
@@ -62,20 +64,58 @@ export interface QCReview {
   
   // Status & Priority
   status: QCReviewStatus;
+  statusHistory?: StatusHistoryEntry[];
   priorityLevel: QCPriorityLevel;
   priorityScore?: number; // Calculated 0-100
+  riskFactors?: RiskFactor[];
   
-  // Checklists - references to criteria container
+  // Property Information (Enhanced)
+  propertyAddress?: string;
+  propertyType?: string; // SINGLE_FAMILY, CONDO, etc.
+  appraisedValue?: number;
+  inspectionDate?: string; // ISO date
+  
+  // Client & Vendor (Enhanced)
+  clientId?: string;
+  clientName?: string;
+  vendorId?: string;
+  vendorName?: string;
+  loanNumber?: string;
+  borrowerName?: string;
+  loanAmount?: number;
+  loanToValue?: number;
+  
+  // Checklists - references to criteria container (Enhanced)
   checklists: QCReviewChecklist[];
   
   // Reviewers - assigned analysts
   reviewers: QCReviewer[];
   
-  // Results summary (detailed results in results container)
+  // Results summary (Enhanced with detailed findings)
   results?: QCReviewResults;
   
-  // SLA Tracking
+  // SLA Tracking (Enhanced)
   sla: QCReviewSLA;
+  
+  // Queue Management
+  queuePosition?: number;
+  estimatedReviewTime?: number; // minutes
+  turnaroundTime?: number; // days
+  
+  // Documents
+  documents?: QCDocument[];
+  
+  // AI Pre-screening
+  aiPreScreening?: AIPreScreening;
+  
+  // Vendor History
+  vendorHistory?: VendorHistory;
+  
+  // Notes & Comments
+  notes?: QCNote[];
+  
+  // Timeline/Activity Log
+  timeline?: TimelineEvent[];
   
   // Revisions
   revisions?: QCRevision[];
@@ -85,18 +125,15 @@ export interface QCReview {
   completedAt?: string; // ISO date
   timeSpentMinutes?: number;
   
-  // Order context
-  propertyAddress?: string;
-  appraisedValue?: number;
-  clientId?: string;
-  clientName?: string;
-  vendorId?: string;
-  vendorName?: string;
+  // Access Control
+  accessControl?: AccessControl;
   
   // Audit
   createdAt: string; // ISO date
   updatedAt: string; // ISO date
   createdBy?: string;
+  lastUpdatedBy?: string;
+  version?: number;
 }
 
 export interface QCReviewChecklist {
@@ -106,6 +143,10 @@ export interface QCReviewChecklist {
   status: QCChecklistStatus;
   score?: number;
   maxScore?: number;
+  currentScore?: number;
+  completedQuestions?: number;
+  totalQuestions?: number;
+  startedAt?: string; // ISO date
   completedAt?: string; // ISO date
   completedBy?: string;
 }
@@ -120,19 +161,53 @@ export interface QCReviewer {
   startedAt?: string; // ISO date
   completedAt?: string; // ISO date
   timeSpentMinutes?: number;
+  status?: string; // ACTIVE, INACTIVE, etc.
 }
 
 export interface QCReviewResults {
   resultId?: string; // Optional reference to results container for detailed results
   overallScore: number;
+  overallStatus?: string; // PASSED, FAILED, CONDITIONAL
   maxScore: number;
   percentScore: number;
   riskLevel: RiskLevel;
   decision: QCDecision;
   summary?: string;
+  categoriesCompleted?: number;
+  totalCategories?: number;
+  questionsAnswered?: number;
+  totalQuestions?: number;
   issuesCount?: number;
   criticalIssuesCount?: number;
+  majorIssuesCount?: number;
+  minorIssuesCount?: number;
+  categoriesResults?: CategoryResult[];
+  findings?: Finding[];
   completedAt?: string; // ISO date
+}
+
+export interface QCReviewSLA {
+  dueDate: string; // ISO date
+  targetResponseTime?: number; // minutes
+  actualResponseTime?: number; // minutes
+  breached: boolean;
+  breachedAt?: string; // ISO date
+  escalated: boolean;
+  escalatedAt?: string; // ISO date
+  escalationReason?: string;
+  elapsedTime?: number; // minutes
+  remainingTime?: number; // minutes
+  percentComplete?: number; // 0-100
+  atRiskThreshold?: number; // percentage (e.g., 80)
+  atRisk?: boolean;
+  extensions?: SLAExtension[];
+}
+
+export interface SLAExtension {
+  extensionMinutes: number;
+  reason: string;
+  extendedBy: string;
+  extendedAt: string; // ISO date
 }
 
 export interface QCReviewSLA {
@@ -579,6 +654,116 @@ export interface SLAAlert {
   
   notifiedUsers: string[];
   createdAt: Date;
+}
+
+// ===========================
+// ENHANCED QC REVIEW TYPES (Frontend Schema Additions)
+// ===========================
+
+export interface StatusHistoryEntry {
+  status: string;
+  timestamp: string; // ISO date
+  changedBy: string;
+}
+
+export interface RiskFactor {
+  factor: string;
+  description: string;
+  riskLevel: string; // LOW, MEDIUM, HIGH, CRITICAL
+  weight: number;
+}
+
+export interface CategoryResult {
+  categoryId: string;
+  categoryName: string;
+  categoryScore: number;
+  categoryStatus: string;
+  questionsAnswered: number;
+  totalQuestions: number;
+  completedAt?: string; // ISO date
+}
+
+export interface Finding {
+  findingId: string;
+  severity: string; // CRITICAL, MAJOR, MODERATE, MINOR
+  category: string;
+  title: string;
+  description: string;
+  recommendation?: string;
+  status: string; // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  verificationStatus?: string; // VERIFIED, DISPUTED, PENDING
+  raisedAt: string; // ISO date
+  raisedBy: string;
+  resolvedAt?: string; // ISO date
+  resolvedBy?: string;
+}
+
+export interface QCDocument {
+  documentId: string;
+  documentName: string;
+  documentType: string; // APPRAISAL_REPORT, COMPARABLE_SALES, PHOTOS, etc.
+  pageCount?: number;
+  fileSizeBytes?: number;
+  uploadedAt: string; // ISO date
+  uploadedBy: string;
+  url?: string;
+}
+
+export interface AIPreScreening {
+  completed: boolean;
+  completedAt?: string; // ISO date
+  riskScore: number; // 0-100
+  riskLevel: string; // LOW, MEDIUM, HIGH, CRITICAL
+  confidence: number; // 0-1
+  flaggedItems?: AIFlaggedItem[];
+  recommendedFocus?: string[];
+}
+
+export interface AIFlaggedItem {
+  itemId: string;
+  category: string;
+  severity: string;
+  description: string;
+  confidence: number;
+}
+
+export interface VendorHistory {
+  totalReviewsCompleted: number;
+  passRate: number; // percentage
+  averageScore: number;
+  lastReviewDate?: string; // ISO date
+  lastReviewStatus?: string;
+  lastReviewScore?: number;
+  criticalIssuesLast6Months: number;
+  majorIssuesLast6Months: number;
+  averageTurnaroundDays: number;
+}
+
+export interface QCNote {
+  noteId: string;
+  noteType: string; // SYSTEM, MANAGER, ANALYST, etc.
+  content: string;
+  createdAt: string; // ISO date
+  createdBy: string;
+  visibility: string; // INTERNAL, EXTERNAL
+}
+
+export interface TimelineEvent {
+  eventId: string;
+  eventType: string; // CREATED, ASSIGNED, STARTED, FINDING_RAISED, etc.
+  description: string;
+  timestamp: string; // ISO date
+  performedBy: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AccessControl {
+  ownerId: string;
+  ownerEmail?: string;
+  teamId?: string;
+  visibilityScope: string; // PRIVATE, TEAM, ORGANIZATION, PUBLIC
+  allowedUserIds?: string[];
+  allowedRoles?: string[];
 }
 
 // ===========================

@@ -77,9 +77,30 @@ router.post(
         propertyAddress
       );
 
+      // Flatten amenities for frontend compatibility
+      const allNearbyPlaces = [
+        ...analysis.amenitiesAnalysis.essential.groceryStores,
+        ...analysis.amenitiesAnalysis.essential.schools,
+        ...analysis.amenitiesAnalysis.essential.hospitals,
+        ...analysis.amenitiesAnalysis.essential.pharmacies,
+        ...analysis.amenitiesAnalysis.convenience.restaurants,
+        ...analysis.amenitiesAnalysis.convenience.cafes,
+        ...analysis.amenitiesAnalysis.convenience.banks,
+        ...analysis.amenitiesAnalysis.recreation.parks,
+        ...analysis.amenitiesAnalysis.recreation.gyms,
+        ...analysis.amenitiesAnalysis.recreation.entertainment,
+        ...analysis.amenitiesAnalysis.transportation.transitStations
+      ];
+
       res.json({
         success: true,
-        data: analysis,
+        data: {
+          ...analysis,
+          // Add flattened fields for frontend compatibility
+          nearbyPlaces: allNearbyPlaces,
+          evCharging: analysis.amenitiesAnalysis.transportation.evChargingStations,
+          gasStations: analysis.amenitiesAnalysis.convenience.gasStations
+        },
         metadata: {
           analyzedAt: new Date().toISOString(),
           apiVersion: 'v2',
@@ -293,6 +314,86 @@ router.post(
 
     } catch (error) {
       logger.error('Nearby search failed', { error });
+      res.status(500).json({
+        success: false,
+        error: 'Search failed',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/property-intelligence-v2/search/text (query params version)
+ * 
+ * Search for places using natural language query via GET with query parameters
+ */
+router.get(
+  '/search/text',
+  [
+    query('textQuery').isString().notEmpty(),
+    query('latitude').optional().isFloat({ min: -90, max: 90 }),
+    query('longitude').optional().isFloat({ min: -180, max: 180 }),
+    query('radiusMeters').optional().isInt({ min: 1, max: 50000 }),
+    query('maxResultCount').optional().isInt({ min: 1, max: 20 }),
+    query('minRating').optional().isFloat({ min: 0, max: 5 })
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const {
+        textQuery,
+        latitude,
+        longitude,
+        radiusMeters,
+        maxResultCount,
+        minRating,
+        openNow,
+        priceLevels,
+        includedType,
+        fields
+      } = req.query;
+
+      const fieldMask = fields ? parseFieldMask(fields as string) : {
+        essentials: true,
+        pro: true,
+        enterprise: true
+      };
+
+      const searchRequest: any = {
+        textQuery,
+        maxResultCount: maxResultCount ? Number(maxResultCount) : undefined,
+        minRating: minRating ? Number(minRating) : undefined,
+        openNow: openNow === 'true',
+        priceLevels: priceLevels ? String(priceLevels).split(',') : undefined,
+        includedType
+      };
+
+      if (latitude && longitude) {
+        searchRequest.locationBias = {
+          circle: {
+            center: { 
+              latitude: Number(latitude), 
+              longitude: Number(longitude) 
+            },
+            radius: radiusMeters ? Number(radiusMeters) : 5000
+          }
+        };
+      }
+
+      const places = await placesService.searchText(searchRequest, fieldMask);
+
+      res.json({
+        success: true,
+        data: places,
+        metadata: {
+          resultCount: places.length,
+          query: textQuery
+        }
+      });
+
+    } catch (error) {
+      logger.error('Text search (GET) failed', { error });
       res.status(500).json({
         success: false,
         error: 'Search failed',

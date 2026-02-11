@@ -43,9 +43,14 @@ import { createBridgeMlsRouter } from '../controllers/bridge-mls.controller';
 // Import AVM and Fraud Detection controllers
 import avmRouter from '../controllers/avm.controller';
 import fraudDetectionRouter from '../controllers/fraud-detection.controller';
+import { AVMCascadeService } from '../services/avm-cascade.service.js';
+import { validationResult as validateRequest } from 'express-validator';
 
 // Import QC Workflow controller
 import qcWorkflowRouter from '../controllers/qc-workflow.controller';
+
+// Import Correlation ID middleware
+import { correlationIdMiddleware, requestLoggingMiddleware } from '../middleware/correlation-id.middleware.js';
 
 // Import Authorization controllers
 import { createUserProfileRouter } from '../controllers/user-profile.controller';
@@ -78,6 +83,8 @@ import { createNotificationRouter } from '../controllers/notification.controller
 import { createChatRouter } from '../controllers/chat.controller';
 import { createAcsTokenRouter } from '../controllers/acs-token.controller';
 import { createTeamsRouter } from '../controllers/teams.controller';
+import { createServiceHealthRouter } from '../controllers/service-health.controller';
+import { createUnifiedCommunicationRouter } from '../controllers/unified-communication.controller';
 
 import { 
   authenticateJWT, 
@@ -198,8 +205,12 @@ export class AppraisalManagementAPIServer {
       origin: process.env.ALLOWED_ORIGINS?.split(',') || (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000']),
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id'],
     }));
+
+    // Correlation ID - must be early in middleware chain
+    this.app.use(correlationIdMiddleware);
+    this.app.use(requestLoggingMiddleware);
 
     // Rate limiting - configurable for different environments
     const limiter = rateLimit({
@@ -299,18 +310,26 @@ export class AppraisalManagementAPIServer {
     );
 
     // ACS Token Exchange - Get chat tokens (authenticated users)
+    // Note: No loadUserProfile() - ACS identities are auto-created on first use
     this.app.use('/api/acs',
       this.unifiedAuth.authenticate(),
-      this.authzMiddleware.loadUserProfile(),
       createAcsTokenRouter()
     );
 
     // Teams Meetings - Teams interoperability (authenticated users)
     // External users can join without Teams license
+    // Note: No loadUserProfile() - Teams meetings work with authentication only
     this.app.use('/api/teams',
       this.unifiedAuth.authenticate(),
-      this.authzMiddleware.loadUserProfile(),
       createTeamsRouter()
+    );
+
+    // Unified Communication Platform - Chat, Calls, Meetings with AI (authenticated users)
+    // Orchestrates all communication channels with intelligent insights
+    // Auto-creates ACS identities, manages contexts, provides real thread/meeting IDs
+    this.app.use('/api/communication',
+      this.unifiedAuth.authenticate(),
+      createUnifiedCommunicationRouter()
     );
 
     // Notifications - Email, SMS, Templates, Preferences (authenticated users)
@@ -327,12 +346,38 @@ export class AppraisalManagementAPIServer {
       createChatRouter()
     );
 
+    // Service Health - Diagnostics and health checks (no auth required for monitoring)
+    this.app.use('/api/health',
+      createServiceHealthRouter()
+    );
+
     this.logger.info('✅ Authorization routes registered successfully');
   }
 
   private setupRoutes(): void {
-    // Health check
+    // Health check - comprehensive status
     this.app.get('/health', this.getHealthCheck.bind(this));
+    
+    // Readiness check - is service ready to accept traffic?
+    this.app.get('/ready', async (req: express.Request, res: express.Response) => {
+      try {
+        // Check database connectivity
+        await this.dbService.ensureDbInitialized();
+        res.status(200).json({ ready: true, timestamp: new Date().toISOString() });
+      } catch (error) {
+        this.logger.error('Readiness check failed', { error });
+        res.status(503).json({ 
+          ready: false, 
+          error: error instanceof Error ? error.message : 'Service not ready',
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+    
+    // Liveness check - is service alive?
+    this.app.get('/live', (req: express.Request, res: express.Response) => {
+      res.status(200).json({ alive: true, timestamp: new Date().toISOString() });
+    });
     
     // Status endpoint
     this.app.get('/api/status', (_req, res) => {
@@ -487,8 +532,14 @@ export class AppraisalManagementAPIServer {
       this.getPerformanceAnalytics.bind(this)
     );
 
-    // Property Intelligence routes
+    // Property Intelligence routes (with /api prefix)
     this.app.get('/api/property-intelligence/address/suggest',
+      this.unifiedAuth.optionalAuth(),
+      this.propertyIntelligenceController.suggestAddresses
+    );
+
+    // Property Intelligence routes (backward compatibility - without /api prefix)
+    this.app.get('/property-intelligence/address/suggest',
       this.unifiedAuth.optionalAuth(),
       this.propertyIntelligenceController.suggestAddresses
     );
@@ -738,18 +789,65 @@ export class AppraisalManagementAPIServer {
       }
     );
 
-    // POST /functions/runInteractiveAvm -> POST /api/avm/valuation
+    // Backward compatibility: POST /functions/runInteractiveAvm
+    // Legacy endpoint that calls AVM service directly
     this.app.post('/functions/runInteractiveAvm',
       this.unifiedAuth.authenticate(),
       async (req: express.Request, res: express.Response) => {
-        // Forward to AVM controller - return placeholder response
-        // TODO: Implement AVM service integration
-        this.logger.info('AVM valuation requested', { body: req.body });
-        return res.json({
-          success: false,
-          error: 'AVM service not yet implemented',
-          message: 'This endpoint is a placeholder for AVM integration'
-        });
+        try {
+          this.logger.info('AVM valuation via legacy endpoint', { address: req.body?.address });
+          
+          // Validate required fields
+          if (!req.body?.address) {
+            return res.status(400).json({
+              success: false,
+              error: 'Address is required',
+              message: 'Please provide a property address for valuation'
+            });
+          }
+          
+          const avmService = new AVMCascadeService();
+          const result = await avmService.getValuation(req.body);
+          
+          if (!result.success) {
+            this.logger.warn('AVM valuation failed', { 
+              address: req.body.address, 
+              error: result.error,
+              attempts: result.attempts 
+            });
+            return res.status(422).json({
+              success: false,
+              error: 'Valuation failed',
+              message: result.error || 'Unable to generate valuation estimate',
+              attempts: result.attempts,
+              processingTime: result.processingTime,
+            });
+          }
+          
+          this.logger.info('AVM valuation successful', {
+            address: req.body.address,
+            method: result.result?.method,
+            value: result.result?.estimatedValue
+          });
+          
+          return res.json({
+            success: true,
+            valuation: result.result,
+            attempts: result.attempts,
+            processingTime: result.processingTime,
+          });
+        } catch (error) {
+          this.logger.error('Legacy AVM endpoint error', { 
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            address: req.body?.address 
+          });
+          return res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error instanceof Error ? error.message : 'Unknown error occurred during valuation'
+          });
+        }
       }
     );
   }
@@ -2770,6 +2868,9 @@ export class AppraisalManagementAPIServer {
 
   public async start(): Promise<void> {
     try {
+      // Run service health check on startup
+      await this.performStartupHealthCheck();
+      
       // Initialize database connection
       await this.initializeDatabase();
       
@@ -2777,11 +2878,53 @@ export class AppraisalManagementAPIServer {
         this.logger.info(`Appraisal Management API Server running on port ${this.port}`);
         this.logger.info(`API Documentation available at http://localhost:${this.port}/api-docs`);
         this.logger.info(`Health check available at http://localhost:${this.port}/health`);
+        this.logger.info(`Service diagnostics: http://localhost:${this.port}/api/health/services`);
         this.logger.info(`Database: Connected to Cosmos DB`);
       });
     } catch (error) {
       this.logger.error('Failed to start API server', { error: error instanceof Error ? error.message : String(error) });
       process.exit(1);
+    }
+  }
+
+  /**
+   * Perform health check on startup to identify configuration issues
+   */
+  private async performStartupHealthCheck(): Promise<void> {
+    try {
+      const { ServiceHealthCheckService } = await import('../services/service-health-check.service.js');
+      const healthService = new ServiceHealthCheckService();
+      const report = await healthService.performHealthCheck();
+      
+      this.logger.info('Startup Health Check', {
+        status: report.overallStatus,
+        healthyServices: report.summary.healthyServices,
+        unavailableServices: report.summary.unavailableServices
+      });
+      
+      // Log warnings but don't block startup
+      if (report.summary.criticalIssues.length > 0) {
+        this.logger.warn('Critical Issues Detected:', {
+          issues: report.summary.criticalIssues
+        });
+      }
+      
+      if (report.summary.warnings.length > 0) {
+        this.logger.warn('Configuration Warnings:', {
+          warnings: report.summary.warnings
+        });
+      }
+      
+      if (report.summary.recommendations.length > 0) {
+        this.logger.info('Configuration Recommendations:', {
+          recommendations: report.summary.recommendations
+        });
+      }
+    } catch (error) {
+      this.logger.warn('Health check failed during startup', { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+      // Don't block startup if health check fails
     }
   }
 

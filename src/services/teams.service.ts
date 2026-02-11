@@ -66,9 +66,26 @@ export class TeamsService {
   private isConfigured: boolean = false;
 
   constructor() {
-    this.cosmosDbService = new CosmosDbService();
-    this.emailService = new EmailService();
     this.logger = new Logger();
+    
+    // Only initialize Cosmos DB if we're going to use Teams service
+    const tenantId = process.env.AZURE_TENANT_ID;
+    if (!tenantId) {
+      this.logger.warn('Teams service not configured: AZURE_TENANT_ID missing');
+      this.isConfigured = false;
+      return;
+    }
+
+    // Initialize services only if Teams is configured
+    try {
+      this.cosmosDbService = new CosmosDbService();
+      this.emailService = new EmailService();
+    } catch (error) {
+      this.logger.warn('Failed to initialize Teams service dependencies', { error });
+      this.isConfigured = false;
+      return;
+    }
+
     this.initialize();
   }
 

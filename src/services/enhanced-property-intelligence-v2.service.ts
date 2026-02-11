@@ -590,6 +590,13 @@ export class EnhancedPropertyIntelligenceV2Service {
           locationRestriction: {
             circle: { center: coordinates, radius: radiusMeters }
           }
+        },
+        {
+          basic: true,
+          essentials: true,  // Needed for location, formattedAddress
+          pro: true,         // Needed for displayName, primaryType, businessStatus
+          enterprise: true,  // Needed for rating, hours, priceLevel
+          atmosphere: true   // Needed for amenities like delivery, takeout, etc.
         }
       );
 

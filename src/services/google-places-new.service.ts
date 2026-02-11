@@ -862,10 +862,11 @@ export class GooglePlacesNewService {
           }
         },
         {
+          basic: true,
           essentials: true,
           pro: true,
           enterprise: true,
-          customFields: ['evChargeOptions', 'evChargeAmenitySummary']
+          customFields: ['evChargeOptions']
         }
       );
 
@@ -980,10 +981,6 @@ export class GooglePlacesNewService {
     const prefix = forSearch ? 'places.' : '';
     const fields: string[] = [];
 
-    if (mask.customFields && mask.customFields.length > 0) {
-      return mask.customFields.map(f => `${prefix}${f}`).join(',');
-    }
-
     // ID Only SKU
     if (mask.basic) {
       fields.push('id', 'name', 'photos', 'attributions', 'moved_place', 'moved_place_id');
@@ -1040,49 +1037,12 @@ export class GooglePlacesNewService {
       );
     }
 
-    // Enterprise + Atmosphere SKU
-    if (mask.atmosphere) {
-      fields.push(
-        'allowsDogs',
-        'curbsidePickup',
-        'delivery',
-        'dineIn',
-        'editorialSummary',
-        'evChargeOptions',
-        'evChargeAmenitySummary',
-        'fuelOptions',
-        'generativeSummary',
-        'goodForChildren',
-        'goodForGroups',
-        'goodForWatchingSports',
-        'liveMusic',
-        'menuForChildren',
-        'neighborhoodSummary',
-        'outdoorSeating',
-        'parkingOptions',
-        'paymentOptions',
-        'reservable',
-        'restroom',
-        'reviews',
-        'reviewSummary',
-        'routingSummaries',
-        'servesBeer',
-        'servesBreakfast',
-        'servesBrunch',
-        'servesCocktails',
-        'servesCoffee',
-        'servesDessert',
-        'servesDinner',
-        'servesLunch',
-        'servesVegetarianFood',
-        'servesWine',
-        'takeout'
-      );
+    // Add custom fields at the end (don't replace, append)
+    if (mask.customFields && mask.customFields.length > 0) {
+      fields.push(...mask.customFields);
     }
 
-    // Remove duplicates and add prefix
-    const uniqueFields = [...new Set(fields)];
-    return uniqueFields.map(f => `${prefix}${f}`).join(',');
+    return fields.map(f => `${prefix}${f}`).join(',');
   }
 
   /**

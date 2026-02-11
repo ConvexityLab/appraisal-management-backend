@@ -184,12 +184,13 @@ export class EnhancedPropertyIntelligenceController {
   suggestAddresses = async (req: Request, res: Response): Promise<void> => {
     try {
       const startTime = Date.now();
-      const { q: partial, limit = 5 } = req.query;
+      const { q, query, limit = 5 } = req.query;
+      const partial = q || query; // Support both 'q' and 'query' parameters
 
       if (!partial || typeof partial !== 'string') {
         res.status(400).json({
           success: false,
-          error: 'Query parameter "q" is required'
+          error: 'Query parameter "q" or "query" is required'
         });
         return;
       }
