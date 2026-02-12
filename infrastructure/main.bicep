@@ -109,7 +109,7 @@ var namingPrefix = empty(organizationPrefix)
 var cleanPrefix = replace(replace(replace(namingPrefix, '-', ''), 'appraisal', 'appr'), 'mgmt', 'm')
 var uniqueSuffix = uniqueString(namingPrefix, environment, location)
 var keyVaultName = 'kv${take(cleanPrefix, 8)}${take(environment, 3)}${take(uniqueSuffix, 6)}'
-var keyVaultUrl = 'https://${keyVaultName}.vault.azure.net/'
+var keyVaultUrl = 'https://${keyVaultName}.${az.environment().suffixes.keyvaultDns}/'
 
 // Resource Group
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
@@ -323,10 +323,6 @@ module apim 'modules/apim.bicep' = {
       'https://${staticWebApp.outputs.staticWebAppHostname}'
     ]
   }
-  dependsOn: [
-    appServices
-    staticWebApp
-  ]
 }
 
 // Outputs
