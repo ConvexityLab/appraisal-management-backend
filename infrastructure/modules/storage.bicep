@@ -111,6 +111,19 @@ resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
+// Orders Container (for order-specific documents and workflow files)
+resource ordersContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
+  parent: blobService
+  name: 'orders'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Order documents organized by clientId/orderId path structure'
+      environment: environment
+    }
+  }
+}
+
 // Property Images Container
 resource imagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
   parent: blobService
@@ -132,6 +145,19 @@ resource credentialsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
     publicAccess: 'None'
     metadata: {
       purpose: 'Vendor certifications and credentials'
+      environment: environment
+    }
+  }
+}
+
+// Vendor Documents Container (for onboarding and certification documents)
+resource vendorDocumentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
+  parent: blobService
+  name: 'vendor-documents'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Vendor onboarding documents, certifications, licenses, insurance'
       environment: environment
     }
   }
