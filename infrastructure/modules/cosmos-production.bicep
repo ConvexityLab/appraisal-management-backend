@@ -16,6 +16,30 @@ var tags = {
 // Container configurations optimized for appraisal management workload
 var containers = [
   {
+    name: 'vendor-onboarding'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/submittedAt', order: 'descending' }
+        ]
+        [
+          { path: '/currentStep', order: 'ascending' }
+          { path: '/updatedAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
     name: 'orders'
     partitionKey: '/status'
     indexingPolicy: {

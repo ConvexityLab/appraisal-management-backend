@@ -13,6 +13,9 @@ param applicationInsightsConnectionString string
 @description('Cosmos DB endpoint')
 param cosmosEndpoint string
 
+@description('Storage Account name for Managed Identity access')
+param storageAccountName string
+
 @description('Service Bus namespace (e.g., myservicebus.servicebus.windows.net)')
 param serviceBusNamespace string
 
@@ -44,8 +47,8 @@ resource appServiceConfig 'Microsoft.Web/sites/config@2023-12-01' = {
     // Azure Resource Configuration (Using Managed Identity - No Keys!)
     AZURE_COSMOS_ENDPOINT: cosmosEndpoint
     COSMOS_ENDPOINT: cosmosEndpoint
+    AZURE_STORAGE_ACCOUNT_NAME: storageAccountName
     AZURE_SERVICE_BUS_NAMESPACE: serviceBusNamespace
-    STORAGE_CONNECTION_STRING: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=storage-connection-string)'
     
     // Secrets from Key Vault
     JWT_SECRET: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=jwt-secret)'

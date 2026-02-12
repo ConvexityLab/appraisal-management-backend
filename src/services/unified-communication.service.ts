@@ -144,12 +144,25 @@ export class UnifiedCommunicationService {
    */
   async getContext(contextId: string, tenantId?: string): Promise<CommunicationContext | null> {
     try {
-      const response = await this.dbService.getItem<CommunicationContext>(
-        this.containerName,
-        contextId,
-        tenantId // Partition key - if not provided, Cosmos will scan (slower)
-      );
-      return response.success && response.data ? response.data : null;
+      if (tenantId) {
+        // Fast path: direct read with partition key
+        const response = await this.dbService.getItem<CommunicationContext>(
+          this.containerName,
+          contextId,
+          tenantId
+        );
+        return response.success && response.data ? response.data : null;
+      } else {
+        // Slow path: query without partition key (cross-partition query)
+        const query = 'SELECT * FROM c WHERE c.id = @id';
+        const parameters = [{ name: '@id', value: contextId }];
+        const response = await this.dbService.queryItems<CommunicationContext>(
+          this.containerName,
+          query,
+          parameters
+        );
+        return response.success && response.data && response.data.length > 0 ? (response.data[0] || null) : null;
+      }
     } catch (error: any) {
       this.logger.error('Failed to get context', {
         error: error.message,
@@ -204,7 +217,12 @@ export class UnifiedCommunicationService {
       context.chatCreatedAt = new Date();
       context.updatedAt = new Date();
 
-      const updateResponse = await this.dbService.updateItem(this.containerName, context.id, context);
+      const updateResponse = await this.dbService.updateItem(
+        this.containerName,
+        context.id,
+        context,
+        context.tenantId // Partition key
+      );
       
       if (!updateResponse.success) {
         throw new Error(`Failed to update context: ${updateResponse.error?.message || 'Unknown error'}`);
@@ -287,7 +305,12 @@ export class UnifiedCommunicationService {
       context.calls.push(callDetails);
       context.updatedAt = new Date();
 
-      await this.dbService.updateItem(this.containerName, context.id, context);
+      await this.dbService.updateItem(
+        this.containerName,
+        context.id,
+        context,
+        context.tenantId // Partition key
+      );
 
       this.logger.info('Call started', {
         contextId,
@@ -349,7 +372,12 @@ export class UnifiedCommunicationService {
       context.calls.push(callDetails);
       context.updatedAt = new Date();
 
-      await this.dbService.updateItem(this.containerName, context.id, context);
+      await this.dbService.updateItem(
+        this.containerName,
+        context.id,
+        context,
+        context.tenantId // Partition key
+      );
 
       this.logger.info('Meeting scheduled', {
         contextId,
@@ -419,6 +447,9 @@ export class UnifiedCommunicationService {
 
       // If chat thread exists, add to thread
       if (context.chatThreadId) {
+        // Use first participant (thread creator) as operator for thread operations
+        const operatorUserId = context.participants[0]?.userId || context.createdBy;
+        
         await this.chatService.addParticipant(
           context.chatThreadId,
           {
@@ -426,11 +457,16 @@ export class UnifiedCommunicationService {
             displayName: participant.displayName,
             shareHistoryTime: new Date()
           },
-          context.createdBy
+          operatorUserId
         );
       }
 
-      await this.dbService.updateItem(this.containerName, context.id, context);
+      await this.dbService.updateItem(
+        this.containerName,
+        context.id,
+        context,
+        context.tenantId // Partition key
+      );
 
       this.logger.info('Participant added to context', {
         contextId,
@@ -468,14 +504,22 @@ export class UnifiedCommunicationService {
 
       // Remove from chat thread if exists
       if (context.chatThreadId) {
+        // Use first participant (thread creator) as operator for thread operations
+        const operatorUserId = context.participants[0]?.userId || context.createdBy;
+        
         await this.chatService.removeParticipant(
           context.chatThreadId,
           participant.acsUserId,
-          context.createdBy
+          operatorUserId
         );
       }
 
-      await this.dbService.updateItem(this.containerName, context.id, context);
+      await this.dbService.updateItem(
+        this.containerName,
+        context.id,
+        context,
+        context.tenantId // Partition key
+      );
 
       this.logger.info('Participant removed from context', {
         contextId,
@@ -510,7 +554,12 @@ export class UnifiedCommunicationService {
       call.duration = Math.floor((call.endedAt.getTime() - call.startedAt.getTime()) / 1000);
       context.updatedAt = new Date();
 
-      await this.dbService.updateItem(this.containerName, context.id, context);
+      await this.dbService.updateItem(
+        this.containerName,
+        context.id,
+        context,
+        context.tenantId // Partition key
+      );
 
       this.logger.info('Call ended', {
         contextId,

@@ -85,6 +85,13 @@ import { createAcsTokenRouter } from '../controllers/acs-token.controller';
 import { createTeamsRouter } from '../controllers/teams.controller';
 import { createServiceHealthRouter } from '../controllers/service-health.controller';
 import { createUnifiedCommunicationRouter } from '../controllers/unified-communication.controller';
+import { createAxiomRouter } from '../controllers/axiom.controller';
+
+// Import Item 3: Enhanced Vendor Management controllers
+import { createVendorCertificationRouter } from '../controllers/vendor-certification.controller';
+import { createPaymentRouter } from '../controllers/payment.controller';
+import { createVendorOnboardingRouter } from '../controllers/vendor-onboarding.controller';
+import { createVendorAnalyticsRouter } from '../controllers/vendor-analytics.controller';
 
 import { 
   authenticateJWT, 
@@ -331,6 +338,45 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       createUnifiedCommunicationRouter()
     );
+
+    // Axiom AI Platform - Document analysis, criteria evaluation, risk scoring (authenticated users)
+    // Powers AI features: USPAP compliance, QC automation, revision comparison, ROV analysis
+    this.app.use('/api/axiom',
+      this.unifiedAuth.authenticate(),
+      createAxiomRouter()
+    );
+
+    // ===== ITEM 3: ENHANCED VENDOR MANAGEMENT SYSTEM =====
+    
+    // Vendor Certifications - License tracking, expiry monitoring, document storage (authenticated users)
+    // Manages vendor certifications, automatic renewal alerts, state board verification
+    this.app.use('/api/vendor-certifications',
+      this.unifiedAuth.authenticate(),
+      createVendorCertificationRouter()
+    );
+
+    // Payment Processing - Invoicing, vendor payments, Stripe/ACH integration (authenticated users)
+    // Handles invoice generation, payment processing, vendor compensation tracking
+    this.app.use('/api/payments',
+      this.unifiedAuth.authenticate(),
+      createPaymentRouter()
+    );
+
+    // Vendor Onboarding - Multi-step workflow, document verification, approval process (authenticated users)
+    // Manages vendor onboarding from application to approval with background checks
+    this.app.use('/api/vendor-onboarding',
+      this.unifiedAuth.authenticate(),
+      createVendorOnboardingRouter()
+    );
+
+    // Vendor Analytics - Performance dashboards, trends, comparative analytics (authenticated users)
+    // Provides insights on vendor performance, rankings, tier analysis, historical trends
+    this.app.use('/api/vendor-analytics',
+      this.unifiedAuth.authenticate(),
+      createVendorAnalyticsRouter()
+    );
+
+    // ===== END ITEM 3 =====
 
     // Notifications - Email, SMS, Templates, Preferences (authenticated users)
     this.app.use('/api/notifications',

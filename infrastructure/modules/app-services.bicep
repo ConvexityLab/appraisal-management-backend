@@ -23,10 +23,13 @@ param azureClientId string = ''
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
+// Note: Storage uses Managed Identity via AZURE_STORAGE_ACCOUNT_NAME env var
+// No connection strings needed except for Azure Functions (legacy requirement)
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' existing = {
   name: storageAccountName
 }
 
+// Storage connection string - ONLY for Azure Functions (Functions requirement)
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id, '2023-04-01').keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
 
 var baseContainerSecrets = [
@@ -140,6 +143,10 @@ var containerApps = [
         value: cosmosDatabaseName
       }
       {
+        name: 'AZURE_STORAGE_ACCOUNT_NAME'
+        value: storageAccountName
+      }
+      {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
         value: applicationInsightsConnectionString
       }
@@ -193,6 +200,10 @@ var containerApps = [
       {
         name: 'AZURE_STORAGE_CONNECTION_STRING'
         secretRef: 'azurewebjobsstorage'
+      }
+      {
+        name: 'AZURE_STORAGE_ACCOUNT_NAME'
+        value: storageAccountName
       }
       {
         name: 'FUNCTIONS_EXTENSION_VERSION'

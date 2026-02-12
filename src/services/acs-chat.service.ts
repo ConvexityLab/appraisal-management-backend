@@ -55,7 +55,7 @@ export class AcsChatService {
     participants: ChatParticipant[],
     creatorUserId: string
   ): Promise<string> {
-    if (!this.configured || !this.chatClient) {
+    if (!this.configured) {
       throw new Error('ACS Chat Service is not configured');
     }
 
