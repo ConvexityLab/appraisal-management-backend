@@ -226,7 +226,8 @@ export const createUnifiedCommunicationRouter = () => {
     '/contexts/:contextId/chat',
     [
       param('contextId').isUUID().withMessage('Invalid context ID'),
-      body('userId').notEmpty().withMessage('User ID required')
+      body('userId').notEmpty().withMessage('User ID required'),
+      body('tenantId').notEmpty().withMessage('Tenant ID required')
     ],
     async (req: Request, res: Response): Promise<void> => {
       try {
@@ -241,9 +242,9 @@ export const createUnifiedCommunicationRouter = () => {
         }
 
         const { contextId } = req.params;
-        const { userId } = req.body;
+        const { userId, tenantId } = req.body;
 
-        const threadId = await communicationService.initializeChatThread(contextId as string, userId);
+        const threadId = await communicationService.initializeChatThread(contextId as string, tenantId, userId);
 
         logger.info('Chat thread initialized via API', {
           contextId,

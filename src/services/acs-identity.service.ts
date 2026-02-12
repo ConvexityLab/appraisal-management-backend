@@ -138,8 +138,21 @@ export class AcsIdentityService {
         }
       };
     } catch (error) {
-      this.logger.error('Error exchanging user token', { error, azureAdUserId });
-      throw error;
+      this.logger.error('Error exchanging user token', { 
+        error, 
+        azureAdUserId,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+      
+      return {
+        success: false,
+        data: null as any,
+        error: {
+          code: 'ACS_TOKEN_EXCHANGE_FAILED',
+          message: error instanceof Error ? error.message : 'Failed to exchange ACS token',
+          timestamp: new Date()
+        }
+      };
     }
   }
 

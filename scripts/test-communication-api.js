@@ -77,7 +77,8 @@ async function testUnifiedCommunicationAPI() {
     // Step 2: Initialize Chat Thread
     console.log('\n📝 Step 2: Initializing chat thread...');
     const chatResponse = await axiosInstance.post(`/api/communication/contexts/${context.id}/chat`, {
-      userId: 'user-appraiser-1'
+      userId: 'user-appraiser-1',
+      tenantId: context.tenantId
     });
     const chatData = chatResponse.data.data;
 

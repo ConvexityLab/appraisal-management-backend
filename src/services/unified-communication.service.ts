@@ -142,14 +142,19 @@ export class UnifiedCommunicationService {
   /**
    * Get context by ID
    */
-  async getContext(contextId: string): Promise<CommunicationContext | null> {
+  async getContext(contextId: string, tenantId?: string): Promise<CommunicationContext | null> {
     try {
-      const response = await this.dbService.getItem<CommunicationContext>(this.containerName, contextId);
+      const response = await this.dbService.getItem<CommunicationContext>(
+        this.containerName,
+        contextId,
+        tenantId // Partition key - if not provided, Cosmos will scan (slower)
+      );
       return response.success && response.data ? response.data : null;
     } catch (error: any) {
       this.logger.error('Failed to get context', {
         error: error.message,
-        contextId
+        contextId,
+        tenantId
       });
       throw error;
     }
@@ -180,9 +185,9 @@ export class UnifiedCommunicationService {
   /**
    * Initialize chat thread for existing context
    */
-  async initializeChatThread(contextId: string, userId: string): Promise<string> {
+  async initializeChatThread(contextId: string, tenantId: string, userId: string): Promise<string> {
     try {
-      const context = await this.getContext(contextId);
+      const context = await this.getContext(contextId, tenantId);
       if (!context) {
         throw new Error('Context not found');
       }
