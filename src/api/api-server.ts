@@ -170,6 +170,9 @@ export class AppraisalManagementAPIServer {
 
   private async initializeDatabase(): Promise<void> {
     
+    // Initialize database FIRST
+    await this.dbService.initialize();
+    
     // Initialize authorization middleware after database is ready - pass dbService
     this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
     this.logger.info('Authorization middleware initialized');
@@ -179,8 +182,6 @@ export class AppraisalManagementAPIServer {
     
     // Register error handlers LAST (after all routes)
     this.setupErrorHandling();
-    
-    await this.dbService.initialize();
   }
 
   /**
@@ -3008,8 +3009,8 @@ export class AppraisalManagementAPIServer {
    * Start background jobs
    */
   private startBackgroundJobs(): void {
-    // Start vendor timeout checker (Phase 4.2)
-    this.vendorTimeoutJob = new VendorTimeoutCheckerJob();
+    // Start vendor timeout checker (Phase 4.2) - pass dbService
+    this.vendorTimeoutJob = new VendorTimeoutCheckerJob(this.dbService);
     this.vendorTimeoutJob.start();
     this.logger.info('✅ Background jobs started', {
       jobs: ['vendor-timeout-checker']

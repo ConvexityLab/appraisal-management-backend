@@ -22,9 +22,9 @@ export class VendorTimeoutCheckerJob {
   private readonly TIMEOUT_HOURS = 4;
   private readonly CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-  constructor() {
+  constructor(dbService?: CosmosDbService) {
     this.logger = new Logger();
-    this.cosmosService = new CosmosDbService();
+    this.cosmosService = dbService || new CosmosDbService();
     this.acsService = new AzureCommunicationService();
   }
 
