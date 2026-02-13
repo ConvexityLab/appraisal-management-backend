@@ -17,6 +17,7 @@ export class VendorTimeoutCheckerJob {
   private cosmosService: CosmosDbService;
   private acsService: AzureCommunicationService;
   private isRunning = false;
+  private firewallBlocked = false;
   private intervalId?: NodeJS.Timeout;
   
   private readonly TIMEOUT_HOURS = 4;
@@ -36,6 +37,9 @@ export class VendorTimeoutCheckerJob {
       this.logger.warn('Vendor timeout checker already running');
       return;
     }
+
+    // Reset firewall block status on each start attempt (e.g., after IP allowlist updates)
+    this.firewallBlocked = false;
 
     this.logger.info('Starting vendor timeout checker job', {
       intervalMinutes: this.CHECK_INTERVAL_MS / 60000,
@@ -74,6 +78,11 @@ export class VendorTimeoutCheckerJob {
    */
   private async checkTimeouts(): Promise<void> {
     try {
+      if (this.firewallBlocked) {
+        // Skip work if Cosmos firewall blocked us earlier to avoid noisy logs
+        return;
+      }
+
       this.logger.info('Checking for vendor assignment timeouts...');
 
       // Query for orders in 'vendor_assigned' or 'pending_vendor_acceptance' state
@@ -105,9 +114,24 @@ export class VendorTimeoutCheckerJob {
       }
 
     } catch (error) {
+      const isFirewallError = this.isCosmosFirewallError(error);
+      if (isFirewallError) {
+        this.firewallBlocked = true;
+        this.logger.warn('Vendor timeout checker disabled due to Cosmos firewall restriction (public IP blocked).', { error });
+        return;
+      }
+
       this.logger.error('Error checking vendor timeouts', { error });
-      throw error;
     }
+  }
+
+  private isCosmosFirewallError(error: any): boolean {
+    return (
+      !!error &&
+      (error.code === 403 || error.statusCode === 403) &&
+      typeof error.body?.message === 'string' &&
+      error.body.message.includes('blocked by your Cosmos DB account firewall')
+    );
   }
 
   /**
@@ -140,7 +164,8 @@ export class VendorTimeoutCheckerJob {
    */
   private async handleTimeout(order: any): Promise<void> {
     const container = this.cosmosService.getContainer('orders');
-    
+    const partitionKey = order.status; // Cosmos container partitions by status
+
     try {
       // Update order: mark vendor as timed out, increment attempt count
       const attemptNumber = (order.vendorAssignment.attemptNumber || 0) + 1;
@@ -157,15 +182,14 @@ export class VendorTimeoutCheckerJob {
       order.vendorAssignmentHistory = order.vendorAssignmentHistory || [];
       order.vendorAssignmentHistory.push(failedAttempt);
 
-      // Clear current assignment
+  // Clear current assignment (keep status to avoid partition key change)
       order.vendorAssignment = null;
-      order.status = 'unassigned';
       order.updatedAt = new Date().toISOString();
       order.reassignmentRequired = true;
       order.reassignmentReason = `Vendor did not respond within ${this.TIMEOUT_HOURS} hours (Attempt ${attemptNumber})`;
 
       // Update in database
-      await container.item(order.id, order.tenantId).replace(order);
+      await container.item(order.id, partitionKey).replace(order);
 
       this.logger.info('Order marked for reassignment due to timeout', {
         orderId: order.id,

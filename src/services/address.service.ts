@@ -210,7 +210,10 @@ export class AddressService {
         const best = geocodeResults[0];
         if (best) {
           results.isValid = best.confidence > 0.8;
-          results.standardizedAddress = best.address;
+          results.standardizedAddress = {
+            ...best.address,
+            coordinates: best.coordinates
+          };
           results.deliverabilityScore = best.confidence;
           
           if (best.precision === 'approximate') {

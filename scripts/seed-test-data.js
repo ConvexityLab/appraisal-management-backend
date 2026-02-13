@@ -127,7 +127,12 @@ const orders = [
     clientId: 'client-001',
     clientName: 'First National Bank',
     status: 'vendor_assigned',
-    propertyAddress: '123 Main St, Dallas, TX 75201',
+    propertyAddress: {
+      street: '123 Main St',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75201'
+    },
     propertyType: 'Single Family',
     loanAmount: 325000,
     appraisalType: 'Full Appraisal',
@@ -152,7 +157,12 @@ const orders = [
     clientId: 'client-002',
     clientName: 'Wells Fargo',
     status: 'inspection_scheduled',
-    propertyAddress: '456 Oak Ave, Plano, TX 75074',
+    propertyAddress: {
+      street: '456 Oak Ave',
+      city: 'Plano',
+      state: 'TX',
+      zipCode: '75074'
+    },
     propertyType: 'Townhouse',
     loanAmount: 280000,
     appraisalType: 'Full Appraisal',
@@ -179,7 +189,12 @@ const orders = [
     clientId: 'client-001',
     clientName: 'First National Bank',
     status: 'in_progress',
-    propertyAddress: '789 Elm St, Richardson, TX 75080',
+    propertyAddress: {
+      street: '789 Elm St',
+      city: 'Richardson',
+      state: 'TX',
+      zipCode: '75080'
+    },
     propertyType: 'Single Family',
     loanAmount: 415000,
     appraisalType: 'Full Appraisal',
@@ -208,7 +223,12 @@ const orders = [
     clientId: 'client-003',
     clientName: 'Chase Bank',
     status: 'qc_review',
-    propertyAddress: '321 Pine St, Garland, TX 75040',
+    propertyAddress: {
+      street: '321 Pine St',
+      city: 'Garland',
+      state: 'TX',
+      zipCode: '75040'
+    },
     propertyType: 'Condo',
     loanAmount: 195000,
     appraisalType: 'Full Appraisal',
@@ -236,7 +256,12 @@ const orders = [
     clientId: 'client-002',
     clientName: 'Wells Fargo',
     status: 'completed',
-    propertyAddress: '555 Cedar Ln, Frisco, TX 75034',
+    propertyAddress: {
+      street: '555 Cedar Ln',
+      city: 'Frisco',
+      state: 'TX',
+      zipCode: '75034'
+    },
     propertyType: 'Single Family',
     loanAmount: 625000,
     appraisalType: 'Full Appraisal',
@@ -251,6 +276,7 @@ const orders = [
     },
     reportSubmittedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     reportUrl: 'blob://reports/order-005-report.pdf',
+    reportId: 'report-test-001', // Link to valuation report
     qcApprovedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     qcApprovedBy: 'test-user-qc',
     deliveredAt: new Date(Date.now() - 1.5 * 24 * 60 * 60 * 1000).toISOString(),
@@ -268,7 +294,12 @@ const orders = [
     clientId: 'client-001',
     clientName: 'First National Bank',
     status: 'unassigned',
-    propertyAddress: '888 Maple Dr, McKinney, TX 75070',
+    propertyAddress: {
+      street: '888 Maple Dr',
+      city: 'McKinney',
+      state: 'TX',
+      zipCode: '75070'
+    },
     propertyType: 'Single Family',
     loanAmount: 475000,
     appraisalType: 'Full Appraisal',
@@ -287,7 +318,12 @@ const orders = [
     clientId: 'client-003',
     clientName: 'Chase Bank',
     status: 'unassigned',
-    propertyAddress: '222 Birch Ave, Allen, TX 75002',
+    propertyAddress: {
+      street: '222 Birch Ave',
+      city: 'Allen',
+      state: 'TX',
+      zipCode: '75002'
+    },
     propertyType: 'Townhouse',
     loanAmount: 310000,
     appraisalType: 'Full Appraisal',
@@ -964,7 +1000,8 @@ async function seedData() {
     }
 
     // ===== DOCUMENTS =====
-    console.log('\n📄 Creating sample documents...');
+    // TODO: Re-enable once 'documents' container is created in Cosmos DB
+    console.log('\n📄 Skipping sample documents (container not configured)...');
     const documentsContainer = database.container('documents');
     
     const documents = [
@@ -1067,9 +1104,355 @@ async function seedData() {
       }
     ];
     
-    for (const doc of documents) {
-      await documentsContainer.items.upsert(doc);
-      console.log(`  ✅ Created document: ${doc.name} (${doc.category})`);
+    // TODO: Re-enable once 'documents' container is created in Cosmos DB
+    // for (const doc of documents) {
+    //   await documentsContainer.items.upsert(doc);
+    //   console.log(`  ✅ Created document: ${doc.name} (${doc.category})`);
+    // }
+
+    // ===== VALUATION REPORTS (Comp Analysis Migration) =====
+    console.log('\n📊 Creating valuation reports with comp analysis data...');
+    const reportingContainer = database.container('reporting');
+    
+    const valuationReports = [
+      {
+        id: 'report-test-001',
+        reportId: 'report-test-001',
+        orderId: 'order-005',
+        tenantId: TENANT_ID,
+        reportType: 'FULL_APPRAISAL',
+        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date().toISOString(),
+        
+        // Subject property
+        subject: {
+          address: {
+            street: '555 Cedar Ln',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1506,
+            longitude: -96.8235
+          },
+          propertyType: 'Single Family',
+          yearBuilt: 2015,
+          livingArea: 2450,
+          lotSize: 8500,
+          bed: 4,
+          bath: 3.5,
+          garage: 2,
+          pool: true,
+          condition: 'Good'
+        },
+        
+        // Comparable properties with SOLD and LISTED comps
+        compsData: [
+          {
+            propertyRecordId: 'comp-s1-001',
+            selectedCompFlag: 'S1',
+            address: '560 Cedar Ln',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1507,
+            longitude: -96.8236,
+            salePrice: 615000,
+            saleDate: '2026-01-15',
+            livingAreaSquareFeet: 2400,
+            yearBuilt: 2016,
+            bedroomCount: 4,
+            bathroomCount: 3.5,
+            garageSpaces: 2,
+            lotSizeSquareFeet: 8200,
+            pool: false,
+            distanceMiles: 0.1,
+            compAnalysis: {
+              adjustments: {
+                saleOrFinancingConcessions: 0,
+                dateOfSaleTime: 0,
+                location: 0,
+                leasehold: 0,
+                siteSize: 1000,
+                viewQuality: 0,
+                designAppeal: 0,
+                qualityOfConstruction: 0,
+                actualAge: -2000,
+                condition: 0,
+                aboveGradeTotalRoomsBedroomsBaths: 0,
+                grossLivingArea: 5000,
+                basementFinishedRoomsArea: 0,
+                functionalUtility: 0,
+                heatingCooling: 0,
+                energyEfficientItems: 0,
+                garageCarport: 0,
+                porch: 0,
+                other: -15000,
+                totalAdj: -11000,
+                netAdjPercent: -1.79,
+                adjustedSalePrice: 604000
+              }
+            }
+          },
+          {
+            propertyRecordId: 'comp-s2-002',
+            selectedCompFlag: 'S2',
+            address: '575 Pine Ave',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1515,
+            longitude: -96.8245,
+            salePrice: 635000,
+            saleDate: '2026-01-20',
+            livingAreaSquareFeet: 2500,
+            yearBuilt: 2014,
+            bedroomCount: 4,
+            bathroomCount: 3.5,
+            garageSpaces: 2,
+            lotSizeSquareFeet: 8800,
+            pool: true,
+            distanceMiles: 0.2,
+            compAnalysis: {
+              adjustments: {
+                saleOrFinancingConcessions: 0,
+                dateOfSaleTime: 0,
+                location: 0,
+                leasehold: 0,
+                siteSize: -1000,
+                viewQuality: 0,
+                designAppeal: 0,
+                qualityOfConstruction: 0,
+                actualAge: 2000,
+                condition: 0,
+                aboveGradeTotalRoomsBedroomsBaths: 0,
+                grossLivingArea: -5000,
+                basementFinishedRoomsArea: 0,
+                functionalUtility: 0,
+                heatingCooling: 0,
+                energyEfficientItems: 0,
+                garageCarport: 0,
+                porch: 0,
+                other: 0,
+                totalAdj: -4000,
+                netAdjPercent: -0.63,
+                adjustedSalePrice: 631000
+              }
+            }
+          },
+          {
+            propertyRecordId: 'comp-s3-003',
+            selectedCompFlag: 'S3',
+            address: '580 Oak St',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1520,
+            longitude: -96.8230,
+            salePrice: 605000,
+            saleDate: '2026-01-10',
+            livingAreaSquareFeet: 2350,
+            yearBuilt: 2017,
+            bedroomCount: 3,
+            bathroomCount: 3,
+            garageSpaces: 2,
+            lotSizeSquareFeet: 8000,
+            pool: false,
+            distanceMiles: 0.15,
+            compAnalysis: {
+              adjustments: {
+                saleOrFinancingConcessions: 0,
+                dateOfSaleTime: 0,
+                location: 0,
+                leasehold: 0,
+                siteSize: 2000,
+                viewQuality: 0,
+                designAppeal: 0,
+                qualityOfConstruction: 0,
+                actualAge: -4000,
+                condition: 0,
+                aboveGradeTotalRoomsBedroomsBaths: 10000,
+                grossLivingArea: 10000,
+                basementFinishedRoomsArea: 0,
+                functionalUtility: 0,
+                heatingCooling: 0,
+                energyEfficientItems: 0,
+                garageCarport: 0,
+                porch: 0,
+                other: -15000,
+                totalAdj: 3000,
+                netAdjPercent: 0.50,
+                adjustedSalePrice: 608000
+              }
+            }
+          },
+          {
+            propertyRecordId: 'comp-l1-004',
+            selectedCompFlag: 'L1',
+            address: '590 Maple Dr',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1525,
+            longitude: -96.8220,
+            listPrice: 645000,
+            listDate: '2026-02-01',
+            livingAreaSquareFeet: 2480,
+            yearBuilt: 2015,
+            bedroomCount: 4,
+            bathroomCount: 3.5,
+            garageSpaces: 3,
+            lotSizeSquareFeet: 9000,
+            pool: true,
+            distanceMiles: 0.25,
+            compAnalysis: {
+              adjustments: {
+                saleOrFinancingConcessions: 0,
+                dateOfSaleTime: 0,
+                location: 0,
+                leasehold: 0,
+                siteSize: -2000,
+                viewQuality: 0,
+                designAppeal: 0,
+                qualityOfConstruction: 0,
+                actualAge: 0,
+                condition: 0,
+                aboveGradeTotalRoomsBedroomsBaths: 0,
+                grossLivingArea: -3000,
+                basementFinishedRoomsArea: 0,
+                functionalUtility: 0,
+                heatingCooling: 0,
+                energyEfficientItems: 0,
+                garageCarport: -5000,
+                porch: 0,
+                other: 0,
+                totalAdj: -10000,
+                netAdjPercent: -1.55,
+                adjustedSalePrice: 635000
+              }
+            }
+          },
+          {
+            propertyRecordId: 'comp-l2-005',
+            selectedCompFlag: 'L2',
+            address: '595 Elm Way',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1530,
+            longitude: -96.8240,
+            listPrice: 629000,
+            listDate: '2026-02-05',
+            livingAreaSquareFeet: 2420,
+            yearBuilt: 2016,
+            bedroomCount: 4,
+            bathroomCount: 3,
+            garageSpaces: 2,
+            lotSizeSquareFeet: 8300,
+            pool: false,
+            distanceMiles: 0.3,
+            compAnalysis: {
+              adjustments: {
+                saleOrFinancingConcessions: 0,
+                dateOfSaleTime: 0,
+                location: 0,
+                leasehold: 0,
+                siteSize: 800,
+                viewQuality: 0,
+                designAppeal: 0,
+                qualityOfConstruction: 0,
+                actualAge: -2000,
+                condition: 0,
+                aboveGradeTotalRoomsBedroomsBaths: 5000,
+                grossLivingArea: 3000,
+                basementFinishedRoomsArea: 0,
+                functionalUtility: 0,
+                heatingCooling: 0,
+                energyEfficientItems: 0,
+                garageCarport: 0,
+                porch: 0,
+                other: -15000,
+                totalAdj: -8200,
+                netAdjPercent: -1.30,
+                adjustedSalePrice: 620800
+              }
+            }
+          },
+          {
+            propertyRecordId: 'comp-l3-006',
+            selectedCompFlag: 'L3',
+            address: '600 Birch Ct',
+            city: 'Frisco',
+            state: 'TX',
+            zip: '75034',
+            latitude: 33.1535,
+            longitude: -96.8250,
+            listPrice: 639000,
+            listDate: '2026-02-08',
+            livingAreaSquareFeet: 2550,
+            yearBuilt: 2014,
+            bedroomCount: 5,
+            bathroomCount: 4,
+            garageSpaces: 2,
+            lotSizeSquareFeet: 9200,
+            pool: true,
+            distanceMiles: 0.35,
+            compAnalysis: {
+              adjustments: {
+                saleOrFinancingConcessions: 0,
+                dateOfSaleTime: 0,
+                location: 0,
+                leasehold: 0,
+                siteSize: -2500,
+                viewQuality: 0,
+                designAppeal: 0,
+                qualityOfConstruction: 0,
+                actualAge: 2000,
+                condition: 0,
+                aboveGradeTotalRoomsBedroomsBaths: -10000,
+                grossLivingArea: -10000,
+                basementFinishedRoomsArea: 0,
+                functionalUtility: 0,
+                heatingCooling: 0,
+                energyEfficientItems: 0,
+                garageCarport: 0,
+                porch: 0,
+                other: 0,
+                totalAdj: -20500,
+                netAdjPercent: -3.21,
+                adjustedSalePrice: 618500
+              }
+            }
+          }
+        ],
+        
+        // Valuation estimate
+        valuationEstimate: {
+          selectedCompsIds: {
+            sold: ['comp-s1-001', 'comp-s2-002', 'comp-s3-003'],
+            listed: ['comp-l1-004', 'comp-l2-005', 'comp-l3-006']
+          },
+          soldCompsAverage: 614333,
+          listedCompsAverage: 624767,
+          finalValue: 625000,
+          confidence: 'high',
+          methodology: 'Sales Comparison Approach',
+          calculatedAt: new Date().toISOString()
+        },
+        
+        // Report metadata
+        appraiser: {
+          name: 'John Smith',
+          licenseNumber: 'TX-12345',
+          company: 'Premier Appraisal Group'
+        },
+        completedDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        status: 'completed'
+      }
+    ];
+    
+    for (const report of valuationReports) {
+      await reportingContainer.items.upsert(report);
+      console.log(`  ✅ Created valuation report: ${report.reportId} (${report.compsData.length} comps, $${report.valuationEstimate.finalValue.toLocaleString()})`);
     }
 
     console.log('\n🎉 Seed complete!\n');
@@ -1083,6 +1466,7 @@ async function seedData() {
     console.log(`  - ${inspections.length} inspections`);
     console.log(`  - ${enhancedOrders.length} enhanced orders`);
     console.log(`  - ${documents.length} documents`);
+    console.log(`  - ${valuationReports.length} valuation reports (with comp analysis)`);
     console.log('\n✨ Frontend can now query real data!\n');
 
   } catch (error) {

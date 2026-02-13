@@ -35,6 +35,7 @@
     "deploy:vendor-containers": "az deployment group create --resource-group <rg-name> --template-file infrastructure/vendor-marketplace-containers.bicep --parameters cosmosAccountName=<cosmos-account>",
     "job:vendor-metrics": "ts-node src/jobs/calculate-vendor-metrics.job.ts",
     "seed:vendors": "ts-node src/scripts/seed-vendor-test-data.ts",
+    "seed:all": "node scripts/seed-test-data.js",
     "test:vendor-performance": "vitest run --reporter=verbose tests/integration/vendor-performance.test.ts",
     "format:check": "prettier --check src/**/*.ts",
     "type-check": "npx tsc --noEmit",

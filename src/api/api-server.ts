@@ -114,6 +114,9 @@ import { EnhancedOrderController } from '../controllers/enhanced-order.controlle
 // Import Document Controller (Phase 6)
 import { DocumentController } from '../controllers/document.controller.js';
 
+// Import Reports Controller (Comp Analysis Migration)
+import { createReportsRouter } from '../controllers/reports.controller.js';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -409,6 +412,23 @@ export class AppraisalManagementAPIServer {
       documentController.router
     );
 
+    // Reports & Comps - Property valuation reports and comparable properties (Comp Analysis Migration)
+    // Migrated from Function Apps: getReport, upsertReport, runInteractiveAvm, PDF operations, geocoding
+    this.app.use('/api/reports',
+      this.unifiedAuth.authenticate(),
+      createReportsRouter(this.dbService)
+    );
+
+    // Storage/Geocode endpoints (part of reports functionality)
+    this.app.use('/api/storage',
+      this.unifiedAuth.authenticate(),
+      createReportsRouter(this.dbService)
+    );
+    this.app.use('/api/geocode',
+      this.unifiedAuth.authenticate(),
+      createReportsRouter(this.dbService)
+    );
+
     // Axiom AI Platform - Document analysis, criteria evaluation, risk scoring (authenticated users)
     // Powers AI features: USPAP compliance, QC automation, revision comparison, ROV analysis
     this.app.use('/api/axiom',
@@ -534,7 +554,6 @@ export class AppraisalManagementAPIServer {
     // Order Management routes (with authorization)
     this.app.post('/api/orders', 
       this.unifiedAuth.authenticate(), 
-      this.validateOrderCreation(), 
       this.createOrder.bind(this)
     );
     
@@ -543,7 +562,6 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       this.authzMiddleware ? this.authzMiddleware.loadUserProfile() : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
       this.authzMiddleware ? this.authzMiddleware.authorizeQuery('order', 'read') : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
-      this.validateOrderQuery(),
       this.getOrders.bind(this)
     );
     
@@ -555,21 +573,16 @@ export class AppraisalManagementAPIServer {
     
     this.app.get('/api/orders/:orderId', 
       this.unifiedAuth.authenticate(), 
-      this.validateOrderId(),
       this.getOrder.bind(this)
     );
     
     this.app.put('/api/orders/:orderId/status', 
       this.unifiedAuth.authenticate(), 
-      this.validateOrderId(),
-      this.validateStatusUpdate(),
       this.updateOrderStatus.bind(this)
     );
 
     this.app.post('/api/orders/:orderId/deliver',
       this.unifiedAuth.authenticate(),
-      this.validateOrderId(),
-      this.validateDelivery(),
       this.deliverOrder.bind(this)
     );
 
@@ -578,13 +591,11 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
       this.authorize('order', 'qc_validate'),
-      this.validateOrderId(),
       this.performQCValidation.bind(this)
     );
 
     this.app.get('/api/qc/results/:orderId',
       this.unifiedAuth.authenticate(),
-      this.validateOrderId(),
       this.getQCResults.bind(this)
     );
 

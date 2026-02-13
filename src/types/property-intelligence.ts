@@ -19,6 +19,7 @@ export interface AddressComponents {
   county?: string;
   country: string;
   formattedAddress: string;
+  coordinates?: Coordinates;
 }
 
 export interface GeocodingResult {

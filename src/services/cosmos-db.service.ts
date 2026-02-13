@@ -237,11 +237,12 @@ export class CosmosDbService {
         throw new Error('Orders container not initialized');
       }
 
-      // Try to find by orderId field first (numeric), then fall back to id field (UUID string)
+      // Find by id field - our orders use string IDs like 'order-005'
+      // CRITICAL: Filter by type='order' to exclude ROV requests and other document types
       const querySpec = {
-        query: 'SELECT * FROM c WHERE c.orderId = @orderId OR c.id = @id',
+        query: 'SELECT * FROM c WHERE c.type = @type AND c.id = @id',
         parameters: [
-          { name: '@orderId', value: isNaN(Number(id)) ? null : Number(id) },
+          { name: '@type', value: 'order' },
           { name: '@id', value: id }
         ]
       };
@@ -273,8 +274,9 @@ export class CosmosDbService {
         throw new Error('Orders container not initialized');
       }
 
-      let query = 'SELECT * FROM c WHERE 1=1';
-      const parameters: any[] = [];
+      // CRITICAL: Filter by type='order' to exclude ROV requests and other document types
+      let query = 'SELECT * FROM c WHERE c.type = @type';
+      const parameters: any[] = [{ name: '@type', value: 'order' }];
 
       // Build dynamic query based on filters
       if (filters.status && filters.status.length > 0) {

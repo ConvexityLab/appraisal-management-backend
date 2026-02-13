@@ -10,9 +10,6 @@ param containerAppPrincipalIds array
 @description('Optional: Developer user principal IDs for local testing')
 param developerPrincipalIds array = []
 
-@description('Tags to apply to role assignments')
-param tags object = {}
-
 // Reference to existing ACS resource
 resource communicationServices 'Microsoft.Communication/communicationServices@2023-04-01' existing = {
   name: communicationServicesName
