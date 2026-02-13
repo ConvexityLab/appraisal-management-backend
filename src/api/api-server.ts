@@ -170,8 +170,8 @@ export class AppraisalManagementAPIServer {
 
   private async initializeDatabase(): Promise<void> {
     
-    // Initialize authorization middleware after database is ready
-    this.authzMiddleware = await createAuthorizationMiddleware();
+    // Initialize authorization middleware after database is ready - pass dbService
+    this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
     this.logger.info('Authorization middleware initialized');
     
     // Register authorization routes AFTER middleware is initialized

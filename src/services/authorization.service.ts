@@ -35,20 +35,22 @@ export class AuthorizationService {
   private decisionCache: Map<string, { decision: PolicyDecision; timestamp: number }>;
   private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-  constructor(engine?: IAuthorizationEngine) {
+  constructor(engine?: IAuthorizationEngine, dbService?: CosmosDbService) {
     this.logger = new Logger();
     this.engine = engine || new CasbinAuthorizationEngine();
     this.graphService = new AccessGraphService(); // Changed from ACLService
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService || new CosmosDbService();
     this.decisionCache = new Map();
   }
 
   /**
    * Initialize the authorization service
    */
-  async initialize(): Promise<void> {
+  async initialize(dbAlreadyInitialized: boolean = false): Promise<void> {
     this.logger.info('Initializing authorization service');
-    await this.dbService.initialize();
+    if (!dbAlreadyInitialized) {
+      await this.dbService.initialize();
+    }
     await this.engine.initialize();
     this.logger.info('Authorization service initialized');
   }

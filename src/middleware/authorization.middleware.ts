@@ -7,6 +7,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger.js';
 import { AuthorizationService } from '../services/authorization.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { ResourceType, Action, UserProfile, AccessControl } from '../types/authorization.types.js';
 
 /**
@@ -32,9 +33,9 @@ export class AuthorizationMiddleware {
   private authzService: AuthorizationService;
   private readonly enforceAuthorization: boolean;
 
-  constructor(authzService?: AuthorizationService) {
+  constructor(authzService?: AuthorizationService, dbService?: CosmosDbService) {
     this.logger = new Logger();
-    this.authzService = authzService || new AuthorizationService();
+    this.authzService = authzService || new AuthorizationService(undefined, dbService);
     // Default to ENFORCING authorization (can be disabled with ENFORCE_AUTHORIZATION=false)
     this.enforceAuthorization = process.env.ENFORCE_AUTHORIZATION !== 'false';
     
@@ -49,8 +50,8 @@ export class AuthorizationMiddleware {
   /**
    * Initialize middleware (initialize authorization service)
    */
-  async initialize(): Promise<void> {
-    await this.authzService.initialize();
+  async initialize(dbAlreadyInitialized: boolean = false): Promise<void> {
+    await this.authzService.initialize(dbAlreadyInitialized);
     this.logger.info('Authorization middleware initialized');
   }
 
@@ -367,9 +368,10 @@ export class AuthorizationMiddleware {
  * Factory function to create middleware instance
  */
 export const createAuthorizationMiddleware = async (
-  authzService?: AuthorizationService
+  authzService?: AuthorizationService,
+  dbService?: CosmosDbService
 ): Promise<AuthorizationMiddleware> => {
-  const middleware = new AuthorizationMiddleware(authzService);
-  await middleware.initialize();
+  const middleware = new AuthorizationMiddleware(authzService, dbService);
+  await middleware.initialize(!!dbService); // Skip db init if dbService was passed
   return middleware;
 };
