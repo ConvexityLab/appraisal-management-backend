@@ -93,6 +93,27 @@ import { createPaymentRouter } from '../controllers/payment.controller';
 import { createVendorOnboardingRouter } from '../controllers/vendor-onboarding.controller';
 import { createVendorAnalyticsRouter } from '../controllers/vendor-analytics.controller';
 
+// Import Simple Communication Controller (Phase 4.1)
+import { createCommunicationRouter } from '../controllers/communication.controller';
+
+// Import Vendor Timeout Job (Phase 4.2)
+import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
+
+// Import Appraiser Controller (Phase 4.3)
+import { AppraiserController } from '../controllers/appraiser.controller';
+
+// Import Inspection Controller (Phase 4.4)
+import { InspectionController } from '../controllers/inspection.controller';
+
+// Import Photo Controller (Phase 4.5)
+import { PhotoController } from '../controllers/photo.controller.js';
+
+// Import Enhanced Order Controller (Phase 5)
+import { EnhancedOrderController } from '../controllers/enhanced-order.controller.js';
+
+// Import Document Controller (Phase 6)
+import { DocumentController } from '../controllers/document.controller.js';
+
 import { 
   authenticateJWT, 
   requireRole, 
@@ -114,6 +135,7 @@ export class AppraisalManagementAPIServer {
   private azureAuth: ReturnType<typeof createAzureEntraAuth>;
   private unifiedAuth: ReturnType<typeof createUnifiedAuth>;
   private authzMiddleware?: AuthorizationMiddleware;
+  private vendorTimeoutJob?: VendorTimeoutCheckerJob;
   
   // QC routers
   private qcChecklistRouter: express.Router;
@@ -337,6 +359,53 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/communication',
       this.unifiedAuth.authenticate(),
       createUnifiedCommunicationRouter()
+    );
+
+    // Simple Communication APIs - Direct email/SMS/Teams sending (Phase 4.1)
+    // Straightforward endpoints for sending messages and retrieving history
+    this.app.use('/api/communications',
+      this.unifiedAuth.authenticate(),
+      createCommunicationRouter()
+    );
+
+    // Appraiser Management - Profiles, licenses, assignments, conflict checking (Phase 4.3)
+    // Manages appraiser entities, license tracking, availability, and conflict-of-interest checks
+    const appraiserController = new AppraiserController(this.dbService);
+    this.app.use('/api/appraisers',
+      this.unifiedAuth.authenticate(),
+      appraiserController.router
+    );
+
+    // Inspection Scheduling - Appointment management, availability, calendar integration (Phase 4.4)
+    // Manages inspection appointments, scheduling, rescheduling, and appraiser calendar coordination
+    const inspectionController = new InspectionController(this.dbService);
+    this.app.use('/api/inspections',
+      this.unifiedAuth.authenticate(),
+      inspectionController.router
+    );
+
+    // Photo Upload & Management - Inspection photos with blob storage (Phase 4.5)
+    // Manages inspection photo uploads, retrieval, and storage in Azure Blob Storage
+    const photoController = new PhotoController(this.dbService);
+    this.app.use('/api/photos',
+      this.unifiedAuth.authenticate(),
+      photoController.router
+    );
+
+    // Enhanced Order Management - Advanced lifecycle, QC integration, analytics (Phase 5)
+    // Comprehensive order management with property intelligence and automated QC validation
+    const enhancedOrderController = new EnhancedOrderController(this.dbService);
+    this.app.use('/api/enhanced-orders',
+      this.unifiedAuth.authenticate(),
+      enhancedOrderController.router
+    );
+
+    // Document Management - Upload, storage, metadata management (Phase 6)
+    // Manages document uploads to blob storage with metadata tracking and search
+    const documentController = new DocumentController(this.dbService);
+    this.app.use('/api/documents',
+      this.unifiedAuth.authenticate(),
+      documentController.router
     );
 
     // Axiom AI Platform - Document analysis, criteria evaluation, risk scoring (authenticated users)
@@ -2919,6 +2988,8 @@ export class AppraisalManagementAPIServer {
       
       // Initialize database connection
       await this.initializeDatabase();
+      // Start background jobs
+      this.startBackgroundJobs();
       
       this.app.listen(this.port, () => {
         this.logger.info(`Appraisal Management API Server running on port ${this.port}`);
@@ -2930,6 +3001,28 @@ export class AppraisalManagementAPIServer {
     } catch (error) {
       this.logger.error('Failed to start API server', { error: error instanceof Error ? error.message : String(error) });
       process.exit(1);
+    }
+  }
+
+  /**
+   * Start background jobs
+   */
+  private startBackgroundJobs(): void {
+    // Start vendor timeout checker (Phase 4.2)
+    this.vendorTimeoutJob = new VendorTimeoutCheckerJob();
+    this.vendorTimeoutJob.start();
+    this.logger.info('✅ Background jobs started', {
+      jobs: ['vendor-timeout-checker']
+    });
+  }
+
+  /**
+   * Stop background jobs (for graceful shutdown)
+   */
+  public stopBackgroundJobs(): void {
+    if (this.vendorTimeoutJob) {
+      this.vendorTimeoutJob.stop();
+      this.logger.info('Background jobs stopped');
     }
   }
 
