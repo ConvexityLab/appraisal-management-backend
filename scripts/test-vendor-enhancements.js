@@ -23,6 +23,39 @@ let testInvoiceId;
 let testCertificationId;
 let testApplicationId;
 let testPaymentId;
+let authTokenOverride;
+
+async function fetchTestToken() {
+  try {
+    const resp = await axios.post(`${API_BASE_URL}/api/auth/test-token`, {
+      id: 'test-user-admin',
+      email: 'admin@test.com',
+      name: 'Test Admin User',
+      role: 'admin',
+      tenantId: TENANT_ID
+    });
+    return resp.data?.token;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Helper: Initialize auth token for tests
+ */
+async function initAuthToken() {
+  // If TEST_AUTH_TOKEN provided, keep using it. Otherwise try server-issued test token.
+  if (process.env.TEST_AUTH_TOKEN) {
+    return;
+  }
+  const token = await fetchTestToken();
+  if (token) {
+    authTokenOverride = token;
+    console.log('✅ Fetched server-issued test token');
+  } else {
+    console.warn('⚠️  Could not fetch server-issued test token; using mock token');
+  }
+}
 
 /**
  * Helper: Make API request with error handling
@@ -32,7 +65,7 @@ async function apiRequest(method, endpoint, data = null, params = null) {
   
   try {
     // For testing, use a mock token or set BYPASS_AUTH=true in .env
-    const authToken = process.env.TEST_AUTH_TOKEN || 'test-mock-token-bypass';
+    const authToken = authTokenOverride || process.env.TEST_AUTH_TOKEN || 'test-mock-token-bypass';
     
     const config = {
       method,
@@ -402,6 +435,8 @@ async function testPerformanceAnalytics() {
  * Main test runner
  */
 async function runTests() {
+  await initAuthToken();
+
   console.log('═══════════════════════════════════════════════════════════');
   console.log('  Item 3: Enhanced Vendor Management - Comprehensive Test');
   console.log('═══════════════════════════════════════════════════════════');

@@ -175,9 +175,21 @@ export class DocumentService {
         };
       }
 
+      const document = response.data[0];
+      if (!document) {
+        return {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Document not found',
+            timestamp: new Date()
+          }
+        };
+      }
+
       return {
         success: true,
-        data: response.data[0]
+        data: document
       };
     } catch (error) {
       console.error('Error getting document:', error);

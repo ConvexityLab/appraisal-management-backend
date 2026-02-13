@@ -89,3 +89,8 @@
 | Silently swallow errors (`catch {}`, `except: pass`) | Log, re-throw, or return a typed error — never hide failures |
 | Delete or loosen existing tests to make new code pass | Fix the code, not the test; explain if the test's assertion was genuinely wrong |
 | "While I'm here" drive-by changes unrelated to the task | Note them as suggestions; don't mix them into the diff |
+
+### Implenmentation Imperatives:
+1- WE NEVER use keys unles it is absolutely necessary like for third-party LLM APIs. We always prefer Managed Identity (DefaultAzureCredential) for Azure SDK clients.
+2- ABSOLUTELY NO silent defaults or fallbacks UNLESS specifically and directly tols or allowed to do it.  SILENT FALLBACKS ARE A MAJOR SOURCE OF BUGS AND CONFUSION. If a required config value is missing, throw an error with a clear message about what's missing and how to fix it.
+3- Under NO CRICUMSTANCES do WE EVER create infrastructure in code !!!  EVER EVER EVER !!! ABSOLUTELY NO code that has anythign like createIfNOtExisits(...) EVER !!!

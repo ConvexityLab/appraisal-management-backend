@@ -111,7 +111,7 @@ export class VendorCertificationService {
           vendorId,
           certificationId,
           uploadedBy: request.uploadedBy,
-          uploadedAt: new Date().toISOString()
+          uploadedAt: new Date().getTime().toString()
         }
       });
 

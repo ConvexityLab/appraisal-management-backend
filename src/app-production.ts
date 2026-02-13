@@ -40,6 +40,7 @@ const server = new AppraisalManagementAPIServer(config.port);
 // Graceful shutdown
 const gracefulShutdown = (signal: string) => {
   console.log(`\n🛑 ${signal} received, shutting down gracefully...`);
+  server.stopBackgroundJobs();
   process.exit(0);
 };
 

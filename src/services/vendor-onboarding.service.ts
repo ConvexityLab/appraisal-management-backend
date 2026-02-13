@@ -151,7 +151,7 @@ export class VendorOnboardingService {
           stepType: request.stepType,
           requirementId: request.requirementId,
           uploadedBy: request.uploadedBy,
-          uploadedAt: new Date().toISOString()
+          uploadedAt: new Date().getTime().toString()
         }
       });
 

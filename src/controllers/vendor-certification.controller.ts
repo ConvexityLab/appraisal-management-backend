@@ -217,11 +217,19 @@ export const createVendorCertificationRouter = (): Router => {
         });
 
       } catch (error) {
-        logger.error('Failed to upload certification document', { error });
-        res.status(500).json({
-          success: false,
-          error: error instanceof Error ? error.message : 'Upload failed'
+        const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+        logger.error('Failed to upload certification document', { 
+          error,
+          errorMessage,
+          stack: error instanceof Error ? error.stack : undefined
         });
+        
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: errorMessage
+          });
+        }
       }
     }
   );

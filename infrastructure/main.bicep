@@ -212,6 +212,16 @@ module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
   }
 }
 
+// Storage role assignments for Container Apps (after apps exist)
+module storageRoleAssignments 'modules/storage-role-assignments.bicep' = {
+  name: 'storage-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    storageAccountName: storage.outputs.storageAccountName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
 // ACS role assignments for Container Apps (after apps exist)
 module acsRoleAssignments 'modules/acs-role-assignments.bicep' = {
   name: 'acs-role-assignments-deployment'

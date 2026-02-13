@@ -1,5 +1,5 @@
 import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
-import { DefaultAzureCredential } from '@azure/identity';
+import { DefaultAzureCredential, AzureCliCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 
 export interface BlobUploadResult {
@@ -24,6 +24,7 @@ export interface BlobUploadRequest {
 export class BlobStorageService {
   private client: BlobServiceClient | null = null;
   private logger = new Logger('BlobStorageService');
+  private validatedContainers: Set<string> = new Set();
 
   constructor() {
     this.initialize();
@@ -35,23 +36,18 @@ export class BlobStorageService {
   private initialize(): void {
     try {
       const storageAccountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-      const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING; // Fallback for local dev
       
-      if (connectionString) {
-        // Local development with connection string
-        this.client = BlobServiceClient.fromConnectionString(connectionString);
-        this.logger.info('Blob storage initialized with connection string (local dev)');
-      } else if (storageAccountName) {
-        // Production: Use Managed Identity
-        const accountUrl = `https://${storageAccountName}.blob.core.windows.net`;
-        const credential = new DefaultAzureCredential();
-        this.client = new BlobServiceClient(accountUrl, credential);
-        this.logger.info('Blob storage initialized with Managed Identity', { accountUrl });
-      } else {
-        this.logger.warn('⚠️  Azure Storage not configured - set AZURE_STORAGE_ACCOUNT_NAME or AZURE_STORAGE_CONNECTION_STRING');
+      if (!storageAccountName) {
+        throw new Error('AZURE_STORAGE_ACCOUNT_NAME is required');
       }
+
+      const accountUrl = `https://${storageAccountName}.blob.core.windows.net`;
+      const credential = new DefaultAzureCredential();
+      this.client = new BlobServiceClient(accountUrl, credential);
+      this.logger.info('Blob storage initialized with DefaultAzureCredential', { accountUrl });
     } catch (error) {
       this.logger.error('Failed to initialize blob storage', { error });
+      throw error;
     }
   }
 
@@ -60,24 +56,33 @@ export class BlobStorageService {
    */
   async uploadBlob(request: BlobUploadRequest): Promise<BlobUploadResult> {
     if (!this.client) {
-      throw new Error('Blob storage not initialized - set AZURE_STORAGE_ACCOUNT_NAME (Managed Identity) or AZURE_STORAGE_CONNECTION_STRING (local dev)');
+      throw new Error('Blob storage not initialized - set AZURE_STORAGE_ACCOUNT_NAME');
     }
 
     try {
-      // Get container client (create if doesn't exist)
-      const containerClient = this.client.getContainerClient(request.containerName);
-      await containerClient.createIfNotExists({
-        access: 'blob' // Public read access for documents
+      this.logger.info('Starting blob upload', {
+        container: request.containerName,
+        blobName: request.blobName,
+        dataLength: request.data.length,
+        contentType: request.contentType,
+        hasMetadata: !!request.metadata
       });
-
-      // Get blob client and upload
+      
+      // Skip container existence check - containers are provisioned via Bicep
+      // Just get the container client directly
+      const containerClient = this.client.getContainerClient(request.containerName);
       const blockBlobClient = containerClient.getBlockBlobClient(request.blobName);
+      
+      this.logger.info('Calling blockBlobClient.upload()...');
+      
       await blockBlobClient.upload(request.data, request.data.length, {
         blobHTTPHeaders: {
           blobContentType: request.contentType
         },
         ...(request.metadata && { metadata: request.metadata })
       });
+      
+      this.logger.info('Upload call completed successfully');
 
       const url = blockBlobClient.url;
 
@@ -93,7 +98,25 @@ export class BlobStorageService {
         containerName: request.containerName,
         uploadedAt: new Date()
       };
-    } catch (error) {
+    } catch (error: any) {
+      // Log the full error details before transforming
+      this.logger.error('Blob upload error - RAW ERROR DETAILS', {
+        blobName: request.blobName,
+        container: request.containerName,
+        errorType: error?.constructor?.name,
+        statusCode: error?.statusCode,
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        response: error?.response,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+      });
+      
+      if (error?.statusCode === 403 || error?.code === 'AuthorizationPermissionMismatch') {
+        const account = process.env.AZURE_STORAGE_ACCOUNT_NAME || '<unset>';
+        throw new Error(`Blob upload forbidden for container '${request.containerName}' on account '${account}'. RBAC role assignments can take up to 5 minutes to propagate. Wait a few minutes and retry.`);
+      }
+
       this.logger.error('Failed to upload blob', { error, blobName: request.blobName });
       throw error;
     }
@@ -104,6 +127,28 @@ export class BlobStorageService {
    */
   async uploadFile(request: BlobUploadRequest): Promise<BlobUploadResult> {
     return this.uploadBlob(request);
+  }
+
+  /**
+   * Ensure target container exists; never creates infra. Throws with clear guidance if missing.
+   */
+  private async ensureContainerExists(containerName: string): Promise<ContainerClient> {
+    if (!this.client) {
+      throw new Error('Blob storage not initialized');
+    }
+
+    if (this.validatedContainers.has(containerName)) {
+      return this.client.getContainerClient(containerName);
+    }
+
+    const containerClient = this.client.getContainerClient(containerName);
+    const exists = await containerClient.exists();
+    if (!exists) {
+      throw new Error(`Storage container '${containerName}' is missing. Provision it via infra (Bicep deployment) and retry.`);
+    }
+
+    this.validatedContainers.add(containerName);
+    return containerClient;
   }
 
   /**
