@@ -249,4 +249,209 @@ router.post(
   }
 );
 
+/**
+ * GET /api/fraud-detection/alerts
+ * List fraud alerts with filtering
+ */
+router.get(
+  '/alerts',
+  async (req: Request, res: Response) => {
+    try {
+      const {
+        status,
+        riskLevel,
+        fromDate,
+        toDate,
+        orderId,
+        assignedTo,
+        limit = '50',
+        offset = '0'
+      } = req.query;
+
+      logger.info('Fetching fraud alerts', { status, riskLevel, limit, offset });
+
+      // TODO: Replace with actual database query
+      // For now, returning mock data structure
+      const alerts = {
+        alerts: [],
+        total: 0,
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+        summary: {
+          totalAlerts: 0,
+          newAlerts: 0,
+          underReview: 0,
+          resolved: 0,
+          criticalCount: 0,
+          highCount: 0,
+          mediumCount: 0,
+          lowCount: 0
+        }
+      };
+
+      return res.json({
+        success: true,
+        data: alerts
+      });
+    } catch (error) {
+      logger.error(`Error fetching fraud alerts: ${error}`);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/fraud-detection/alerts/:id
+ * Get fraud alert by ID
+ */
+router.get(
+  '/alerts/:id',
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      logger.info(`Fetching fraud alert ${id}`);
+
+      // TODO: Replace with actual database query
+      return res.status(404).json({
+        success: false,
+        error: 'Alert not found'
+      });
+    } catch (error) {
+      logger.error(`Error fetching fraud alert: ${error}`);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
+
+/**
+ * PUT /api/fraud-detection/alerts/:id/status
+ * Update alert status
+ */
+router.put(
+  '/alerts/:id/status',
+  [
+    body('status').isIn(['NEW', 'UNDER_REVIEW', 'ACKNOWLEDGED', 'RESOLVED', 'FALSE_POSITIVE']),
+    body('assignedTo').optional().isString(),
+    body('notes').optional().isString()
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { status, assignedTo, notes } = req.body;
+
+      logger.info(`Updating fraud alert ${id} status to ${status}`);
+
+      // TODO: Replace with actual database update
+      return res.json({
+        success: true,
+        data: {
+          id,
+          status,
+          updatedAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error(`Error updating fraud alert status: ${error}`);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/fraud-detection/alerts/:id/acknowledge
+ * Acknowledge a fraud alert
+ */
+router.post(
+  '/alerts/:id/acknowledge',
+  [
+    body('acknowledgedBy').notEmpty().withMessage('acknowledgedBy is required'),
+    body('notes').optional().isString()
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { acknowledgedBy, notes } = req.body;
+
+      logger.info(`Acknowledging fraud alert ${id}`, { acknowledgedBy });
+
+      // TODO: Replace with actual database update
+      return res.json({
+        success: true,
+        data: {
+          id,
+          status: 'ACKNOWLEDGED',
+          acknowledgedBy,
+          acknowledgedAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error(`Error acknowledging fraud alert: ${error}`);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/fraud-detection/alerts/:id/notes
+ * Add note to fraud alert
+ */
+router.post(
+  '/alerts/:id/notes',
+  [
+    body('content').notEmpty().withMessage('Note content is required'),
+    body('author').notEmpty().withMessage('Author is required')
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { content, author } = req.body;
+
+      logger.info(`Adding note to fraud alert ${id}`, { author });
+
+      // TODO: Replace with actual database operation
+      return res.status(201).json({
+        success: true,
+        data: {
+          noteId: `note-${Date.now()}`,
+          createdAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error(`Error adding fraud alert note: ${error}`);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
+
 export default router;
