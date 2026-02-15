@@ -317,6 +317,34 @@ var containers = [
   }
   // QC Workflow Automation Containers
   {
+    name: 'qc-checklists'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/name', order: 'ascending' }
+          { path: '/version', order: 'descending' }
+        ]
+        [
+          { path: '/category', order: 'ascending' }
+          { path: '/isActive', order: 'ascending' }
+        ]
+        [
+          { path: '/propertyType', order: 'ascending' }
+          { path: '/version', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
     name: 'qc-reviews'
     partitionKey: '/orderId'
     indexingPolicy: {
