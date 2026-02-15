@@ -4,6 +4,8 @@
  * Creates QC checklists that link criteria to required document categories
  * This enables the UI to show which documents are needed to validate each criterion
  * 
+ * Uses the existing 'criteria' container (not a separate qc-checklists container)
+ * 
  * Usage: node scripts/seed-qc-checklists-2026.js
  */
 
@@ -14,6 +16,7 @@ const { DefaultAzureCredential } = require('@azure/identity');
 const COSMOS_ENDPOINT = process.env.AZURE_COSMOS_ENDPOINT || 'https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/';
 const DATABASE_ID = 'appraisal-management';
 const TENANT_ID = 'test-tenant-001';
+const CLIENT_ID = 'default-client'; // For criteria container partition key
 
 const credential = new DefaultAzureCredential();
 const client = new CosmosClient({ endpoint: COSMOS_ENDPOINT, aadCredentials: credential });
@@ -29,6 +32,7 @@ const sampleChecklist = {
   id: 'checklist-uad-standard-2026',
   type: 'qc-checklist',
   tenantId: TENANT_ID,
+  clientId: CLIENT_ID, // Required for criteria container partition key
   
   name: 'UAD Standard Residential Appraisal Review',
   description: 'Comprehensive QC checklist for UAD-compliant residential appraisals with document validation requirements',
@@ -436,12 +440,12 @@ async function seedQCChecklists() {
   try {
     console.log('🚀 Starting QC checklist seeding...');
     
-    const container = database.container('qc-checklists');
+    const container = database.container('criteria');
     
     // Upsert the sample checklist
     console.log('📝 Creating checklist:', sampleChecklist.name);
     await container.items.upsert(sampleChecklist);
-    console.log('✅ Checklist created successfully');
+    console.log('✅ Checklist created successfully in criteria container');
     
     console.log('\n✨ QC checklist seeding completed!');
     console.log('📋 Created checklist:', sampleChecklist.id);
