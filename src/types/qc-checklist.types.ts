@@ -186,6 +186,10 @@ export interface QCQuestion {
   // Documentation Requirements
   documentationRequirements?: QCDocumentationRequirement[];
   
+  // Required Document Categories for validation
+  // Maps to DocumentCategory enum (appraisal-report, property-photo, inspection-report, etc.)
+  requiredDocumentCategories?: string[];
+  
   // AI Analysis Configuration
   aiAnalysis?: QCAIAnalysisConfig;
   
