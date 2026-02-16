@@ -49,6 +49,9 @@ import { validationResult as validateRequest } from 'express-validator';
 // Import QC Workflow controller
 import qcWorkflowRouter from '../controllers/qc-workflow.controller';
 
+// Import new QC Checklist controller (separate from old criteria.controller)
+import qcChecklistNewRouter from '../controllers/qc-checklist.controller.js';
+
 // Import Correlation ID middleware
 import { correlationIdMiddleware, requestLoggingMiddleware } from '../middleware/correlation-id.middleware.js';
 
@@ -410,6 +413,13 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/documents',
       this.unifiedAuth.authenticate(),
       documentController.router
+    );
+
+    // QC Checklist Management - Manage QC checklists with document requirements
+    // Provides CRUD operations for checklists stored in criteria container
+    this.app.use('/api/qc-checklists-new',
+      this.unifiedAuth.authenticate(),
+      qcChecklistNewRouter
     );
 
     // Reports & Comps - Property valuation reports and comparable properties (Comp Analysis Migration)
