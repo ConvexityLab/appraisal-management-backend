@@ -31,9 +31,9 @@ export class VendorCertificationService {
     REMINDER: 90   // 90 days
   };
 
-  constructor() {
+  constructor(dbService?: CosmosDbService) {
     this.logger = new Logger();
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService || new CosmosDbService();
     this.blobService = new BlobStorageService();
     this.notificationService = new NotificationService();
   }
@@ -205,20 +205,59 @@ export class VendorCertificationService {
     includeExpired: boolean = false
   ): Promise<VendorCertification[]> {
     try {
-      const query = includeExpired
-        ? `SELECT * FROM c WHERE c.vendorId = @vendorId AND c.type = 'vendor-certification' ORDER BY c.expiryDate DESC`
-        : `SELECT * FROM c WHERE c.vendorId = @vendorId AND c.type = 'vendor-certification' AND c.status != @expiredStatus ORDER BY c.expiryDate DESC`;
+      // TEMPORARY: Fetch certifications from vendor record until separate collection is populated
+      const vendorResult = await this.dbService.findVendorById(vendorId);
+      
+      if (!vendorResult.success || !vendorResult.data) {
+        this.logger.warn('Vendor not found', { vendorId });
+        return [];
+      }
 
-      const parameters = includeExpired
-        ? [{ name: '@vendorId', value: vendorId }]
-        : [
-            { name: '@vendorId', value: vendorId },
-            { name: '@expiredStatus', value: CertificationStatus.EXPIRED }
-          ];
+      const vendor = vendorResult.data;
+      const certifications: VendorCertification[] = [];
 
-      const result = await this.dbService.queryItems('certifications', query, parameters) as any;
+      // Transform vendor.certifications[] to VendorCertification[]
+      if (vendor.certifications && Array.isArray(vendor.certifications)) {
+        const now = Date.now(); // Cache current time
+        const MS_PER_DAY = 1000 * 60 * 60 * 24;
+        
+        for (const cert of vendor.certifications) {
+          const expiryDate = new Date(cert.expiryDate);
+          const daysUntilExpiry = Math.floor((expiryDate.getTime() - now) / MS_PER_DAY);
+          
+          let status = CertificationStatus.VERIFIED;
+          if (daysUntilExpiry < 0) {
+            status = CertificationStatus.EXPIRED;
+          } else if (daysUntilExpiry <= 60) {
+            status = CertificationStatus.EXPIRING_SOON;
+          }
 
-      return result.resources || [];
+          // Skip expired if not requested
+          if (!includeExpired && status === CertificationStatus.EXPIRED) {
+            continue;
+          }
+
+          const issueDate = new Date(cert.issueDate);
+          certifications.push({
+            id: `${vendorId}-cert-${cert.type.toLowerCase().replace(/\s+/g, '-')}-${cert.number}`,
+            vendorId: vendorId,
+            type: 'vendor-certification' as const,
+            certificationType: cert.type,
+            certificationNumber: cert.number,
+            issuingAuthority: cert.issuingAuthority,
+            issueDate: issueDate,
+            expiryDate: expiryDate,
+            status: status,
+            daysUntilExpiry: daysUntilExpiry,
+            verifiedAt: issueDate,
+            verifiedBy: 'system',
+            createdAt: issueDate,
+            updatedAt: new Date()
+          });
+        }
+      }
+
+      return certifications.sort((a, b) => b.expiryDate.getTime() - a.expiryDate.getTime());
 
     } catch (error) {
       this.logger.error('Failed to get vendor certifications', { error, vendorId });

@@ -68,9 +68,25 @@ export class UnifiedAuthMiddleware {
         }
 
         const token = authHeader.replace('Bearer ', '');
+        
+        // DEBUG: Log token info for troubleshooting
+        this.logger.debug('Auth token received', {
+          tokenLength: token.length,
+          tokenPrefix: token.substring(0, 50) + '...',
+          userAgent: req.headers['user-agent']?.substring(0, 50)
+        });
 
         // Decode token to check if it's a test token
         const decoded: any = jwt.decode(token);
+        
+        // DEBUG: Log decoded token info
+        this.logger.debug('Decoded token', {
+          hasIssuer: !!decoded?.iss,
+          hasAudience: !!decoded?.aud,
+          isTestToken: !!decoded?.isTestToken,
+          issuer: decoded?.iss?.substring(0, 50),
+          audience: decoded?.aud?.substring(0, 50)
+        });
         
         // Check if it's a test token
         if (decoded?.isTestToken) {
@@ -96,7 +112,20 @@ export class UnifiedAuthMiddleware {
         }
 
         // Not a test token, try Azure AD authentication
-        return this.azureAuth.authenticate(req as any, res, next);
+        try {
+          return this.azureAuth.authenticate(req as any, res, next);
+        } catch (azureError: any) {
+          this.logger.error('Azure AD authentication failed', { 
+            errorMessage: azureError?.message,
+            errorName: azureError?.name,
+            tokenPrefix: token.substring(0, 50) + '...'
+          });
+          return res.status(401).json({
+            error: 'Azure AD authentication failed',
+            code: 'AZURE_AUTH_FAILED',
+            message: azureError?.message
+          });
+        }
 
       } catch (error: any) {
         this.logger.error('Authentication failed', { 

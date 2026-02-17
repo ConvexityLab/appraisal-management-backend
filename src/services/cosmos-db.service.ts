@@ -32,6 +32,7 @@ export class CosmosDbService {
   private usersContainer: Container | null = null;
   private propertiesContainer: Container | null = null;
   private propertySummariesContainer: Container | null = null;
+  private qcReviewsContainer: Container | null = null;
   private qcResultsContainer: Container | null = null;
   private qcChecklistsContainer: Container | null = null;
   private qcExecutionsContainer: Container | null = null;
@@ -42,6 +43,7 @@ export class CosmosDbService {
   private templatesContainer: Container | null = null;
   private reviewsContainer: Container | null = null;
   private comparableAnalysesContainer: Container | null = null;
+  private documentsContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -61,6 +63,7 @@ export class CosmosDbService {
     documentTemplates: 'document-templates',
     reviews: 'appraisal-reviews',
     comparableAnalyses: 'comparable-analyses',
+    documents: 'documents',
     communicationContexts: 'communicationContexts',      // Unified communication platform
     communicationTranscripts: 'communicationTranscripts',// Chat/call/meeting transcripts
     aiInsights: 'aiInsights'                              // AI-generated insights
@@ -137,6 +140,7 @@ export class CosmosDbService {
       this.usersContainer = this.database.container(this.containers.users);
       this.propertiesContainer = this.database.container(this.containers.properties);
       this.propertySummariesContainer = this.database.container(this.containers.propertySummaries);
+      this.qcReviewsContainer = this.database.container(this.containers.qcReviews);
       this.qcResultsContainer = this.database.container(this.containers.qcResults);
       this.qcChecklistsContainer = this.database.container(this.containers.qcChecklists);
       this.qcExecutionsContainer = this.database.container(this.containers.qcExecutions);
@@ -147,6 +151,7 @@ export class CosmosDbService {
       this.templatesContainer = this.database.container(this.containers.documentTemplates);
       this.reviewsContainer = this.database.container(this.containers.reviews);
       this.comparableAnalysesContainer = this.database.container(this.containers.comparableAnalyses);
+      this.documentsContainer = this.database.container(this.containers.documents);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
@@ -449,12 +454,32 @@ export class CosmosDbService {
         throw new Error('Vendors container not initialized');
       }
 
+      console.log('\n\n=== FIND VENDOR BY ID ===');
+      console.log('Looking for vendor ID:', id);
+      console.log('Container:', this.vendorsContainer ? 'initialized' : 'NOT initialized');
+
       const querySpec = {
         query: 'SELECT * FROM c WHERE c.id = @id',
         parameters: [{ name: '@id', value: id }]
       };
 
-      const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();
+      console.log('Query:', JSON.stringify(querySpec, null, 2));
+
+      // Enable cross-partition query since we don't know the partition key (licenseState)
+      const { resources } = await this.vendorsContainer.items
+        .query<Vendor>(querySpec, { maxItemCount: 1 })
+        .fetchAll();
+      
+      console.log('Query returned resources count:', resources.length);
+      if (resources.length > 0) {
+        console.log('Found vendor:', resources[0].id, resources[0].businessName);
+        console.log('Vendor has certifications:', !!resources[0].certifications, 'length:', resources[0].certifications?.length);
+        console.log('Vendor has paymentHistory:', !!resources[0].paymentHistory, 'length:', resources[0].paymentHistory?.length);
+      } else {
+        console.log('NO VENDOR FOUND IN COSMOS DB');
+      }
+      console.log('=== END FIND VENDOR ===\n\n');
+
       const vendor = resources.length > 0 ? resources[0] : null;
 
       return {
@@ -2581,6 +2606,72 @@ export class CosmosDbService {
       return resources;
     } catch (error) {
       this.logger.error('Failed to find review reports', { error, reviewId });
+      throw error;
+    }
+  }
+
+  /**
+   * Query items from a specific container
+   * Generic method to query any container by name
+   */
+  async queryItems(containerName: string, querySpec: { query: string; parameters?: any[] }): Promise<ApiResponse<any[]>> {
+    try {
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+
+      const container = this.database.container(containerName);
+      const { resources } = await container.items.query(querySpec).fetchAll();
+
+      return {
+        success: true,
+        data: resources
+      };
+
+    } catch (error) {
+      this.logger.error('Failed to query items', {
+        error: error instanceof Error ? error.message : String(error),
+        containerName,
+        query: querySpec
+      });
+      return {
+        success: false,
+        data: [],
+        error: createApiError(
+          ErrorCodes.DATABASE_QUERY_FAILED,
+          error instanceof Error ? error.message : 'Unknown error'
+        )
+      };
+    }
+  }
+
+  /**
+   * Get a single item from a specific container
+   * Generic method to get any item by ID
+   */
+  async getItem(containerName: string, itemId: string, partitionKey?: string): Promise<any> {
+    try {
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+
+      const container = this.database.container(containerName);
+      const { resource } = await container.item(itemId, partitionKey || itemId).read();
+
+      return resource;
+
+    } catch (error) {
+      if (error.code === 404) {
+        return null; // Item not found
+      }
+      
+      this.logger.error('Failed to get item', {
+        error: error instanceof Error ? error.message : String(error),
+        containerName,
+        itemId
+      });
+      
+      // For non-404 errors, throw the error so caller can handle it
       throw error;
     }
   }

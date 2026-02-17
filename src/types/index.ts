@@ -109,6 +109,8 @@ export interface Vendor {
   insuranceInfo: InsuranceInfo;
   paymentInfo: PaymentInfo;
   preferences: VendorPreferences;
+  paymentHistory?: PaymentRecord[]; // Recent payment history (last 6 months)
+  invoiceHistory?: InvoiceRecord[]; // Recent invoices (last 6 months)
 }
 
 export interface VendorPerformance {
@@ -427,6 +429,31 @@ export interface PaymentInfo {
   accountNumber?: string;
   routingNumber?: string;
   address?: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  orderId: string;
+  invoiceId: string;
+  amount: number;
+  paymentMethod: 'ach' | 'check' | 'wire';
+  status: 'completed' | 'pending' | 'failed';
+  transactionId?: string;
+  processedAt: Date;
+  createdAt: Date;
+}
+
+export interface InvoiceRecord {
+  id: string;
+  invoiceNumber: string;
+  orderId: string;
+  totalAmount: number;
+  amountPaid: number;
+  amountDue: number;
+  status: 'paid' | 'sent' | 'overdue';
+  issueDate: Date;
+  dueDate: Date;
+  paidDate?: Date;
 }
 
 export interface VendorPreferences {

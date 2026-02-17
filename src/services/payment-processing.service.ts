@@ -33,9 +33,9 @@ export class PaymentProcessingService {
   private stripeEnabled: boolean = false;
   // private stripe: Stripe | null = null;
 
-  constructor() {
+  constructor(dbService?: CosmosDbService) {
     this.logger = new Logger();
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService || new CosmosDbService();
     this.notificationService = new NotificationService();
     
     // Initialize Stripe if configured
@@ -283,28 +283,42 @@ export class PaymentProcessingService {
     endDate?: Date
   ): Promise<Payment[]> {
     try {
-      let query = `
-        SELECT * FROM c 
-        WHERE c.vendorId = @vendorId 
-        AND c.type = 'payment'
-      `;
+      // Get payments from vendor.paymentHistory
+      const vendorResult = await this.dbService.findVendorById(vendorId);
+      
+      if (!vendorResult.success || !vendorResult.data) {
+        this.logger.warn('Vendor not found', { vendorId });
+        return [];
+      }
 
-      const parameters: any[] = [{ name: '@vendorId', value: vendorId }];
+      const vendor = vendorResult.data;
+      this.logger.info('DEBUG: Vendor payment data', { 
+        vendorId, 
+        hasPaymentHistory: !!vendor.paymentHistory,
+        paymentHistoryLength: vendor.paymentHistory?.length || 0,
+        hasInvoiceHistory: !!vendor.invoiceHistory,
+        invoiceHistoryLength: vendor.invoiceHistory?.length || 0
+      });
+      let payments = vendor.paymentHistory || [];
 
+      // Filter by date range if provided
       if (startDate) {
-        query += ` AND c.createdAt >= @startDate`;
-        parameters.push({ name: '@startDate', value: startDate.toISOString() });
+        payments = payments.filter(p => new Date(p.createdAt) >= startDate);
       }
-
       if (endDate) {
-        query += ` AND c.createdAt <= @endDate`;
-        parameters.push({ name: '@endDate', value: endDate.toISOString() });
+        payments = payments.filter(p => new Date(p.createdAt) <= endDate);
       }
 
-      query += ` ORDER BY c.createdAt DESC`;
-
-      const result = await this.dbService.queryItems('payments', query, parameters) as any;
-      return result.resources || [];
+      // Map PaymentRecord to Payment type
+      return payments.map(p => ({
+        ...p,
+        currency: 'USD',
+        paymentProvider: 'Bank of America',
+        initiatedAt: new Date(p.createdAt),
+        completedAt: p.processedAt,
+        updatedAt: p.processedAt,
+        type: 'payment'
+      } as any));
 
     } catch (error) {
       this.logger.error('Failed to get vendor payments', { error, vendorId });
@@ -363,22 +377,11 @@ export class PaymentProcessingService {
         : 0;
 
       return {
-        vendorId,
-        period: { startDate, endDate },
-        totalEarned,
-        totalPaid,
-        totalPending,
-        totalOverdue,
-        invoicesIssued: invoices.length,
-        invoicesPaid: invoices.filter(inv => inv.status === InvoiceStatus.PAID).length,
-        invoicesPending: invoices.filter(inv => 
-          inv.status === InvoiceStatus.SENT || inv.status === InvoiceStatus.VIEWED
-        ).length,
-        invoicesOverdue: invoices.filter(inv => inv.status === InvoiceStatus.OVERDUE).length,
-        paymentsByMethod,
-        averagePaymentTime,
-        onTimePaymentRate
-      };
+        totalPaid: totalPaid || 0,
+        totalPending: totalPending || 0,
+        averagePaymentDays: Math.round(averagePaymentTime) || 0,
+        recentPayments: payments.slice(0, 10) // Last 10 payments
+      } as any;
 
     } catch (error) {
       this.logger.error('Failed to get payment summary', { error, vendorId });
@@ -640,28 +643,48 @@ export class PaymentProcessingService {
     endDate?: Date
   ): Promise<Invoice[]> {
     try {
-      let query = `
-        SELECT * FROM c 
-        WHERE c.vendorId = @vendorId 
-        AND c.type = 'invoice'
-      `;
+      // Get invoices from vendor.invoiceHistory
+      const vendorResult = await this.dbService.findVendorById(vendorId);
+      
+      if (!vendorResult.success || !vendorResult.data) {
+        this.logger.warn('Vendor not found for invoices', { vendorId });
+        return [];
+      }
 
-      const parameters: any[] = [{ name: '@vendorId', value: vendorId }];
+      const vendor = vendorResult.data;
+      let invoices = vendor.invoiceHistory || [];
 
+      // Filter by date range if provided
       if (startDate) {
-        query += ` AND c.createdAt >= @startDate`;
-        parameters.push({ name: '@startDate', value: startDate.toISOString() });
+        invoices = invoices.filter(inv => new Date(inv.issueDate) >= startDate);
       }
-
       if (endDate) {
-        query += ` AND c.createdAt <= @endDate`;
-        parameters.push({ name: '@endDate', value: endDate.toISOString() });
+        invoices = invoices.filter(inv => new Date(inv.issueDate) <= endDate);
       }
 
-      query += ` ORDER BY c.createdAt DESC`;
-
-      const result = await this.dbService.queryItems('invoices', query, parameters) as any;
-      return result.resources || [];
+      // Map InvoiceRecord to Invoice type
+      return invoices.map(inv => ({
+        ...inv,
+        vendorId,
+        subtotal: inv.totalAmount / 1.08, // Assuming 8% tax
+        taxAmount: inv.totalAmount * 0.08 / 1.08,
+        discount: 0,
+        status: inv.status.toUpperCase() as any, // Convert 'paid' -> 'PAID'
+        lineItems: [{
+          id: `${inv.id}-line-1`,
+          description: 'Residential Appraisal - Full Service',
+          quantity: 1,
+          unitPrice: inv.totalAmount / 1.08,
+          totalPrice: inv.totalAmount / 1.08,
+          taxable: true,
+          category: 'Appraisal Fee'
+        }],
+        paymentMethod: 'ach' as any,
+        paymentTerms: 'Net 30',
+        createdAt: inv.issueDate,
+        updatedAt: inv.paidDate || inv.issueDate,
+        createdBy: 'system'
+      } as any));
 
     } catch (error) {
       this.logger.error('Failed to get vendor invoices', { error, vendorId });

@@ -411,11 +411,14 @@ export const createCommunicationRouter = (): Router => {
               id: m.id,
               channel: m.channel,
               to: m.to,
+              from: m.from,
               subject: m.subject,
+              body: m.body,
               status: m.status,
               sentAt: m.sentAt,
               createdAt: m.createdAt,
-              failureReason: m.failureReason
+              failureReason: m.failureReason,
+              metadata: m.metadata
             }))
           }
         });
@@ -424,6 +427,92 @@ export const createCommunicationRouter = (): Router => {
         logger.error('Failed to retrieve communication history', { 
           error: error.message,
           orderId: req.params.orderId
+        });
+        return res.status(500).json({
+          success: false,
+          error: error.message || 'Failed to retrieve communication history'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/communications/entity/:entityType/:entityId
+   * Retrieve all communication history for any entity (vendor, appraiser, order, etc.)
+   */
+  router.get(
+    '/entity/:entityType/:entityId',
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = (req as any).user?.tenantId || 'default';
+        const { entityType, entityId } = req.params;
+        const { channel } = req.query;
+
+        logger.info('Retrieving entity communication history', { entityType, entityId, channel });
+
+        // Build query based on entity type
+        let querySpec: any;
+        if (entityType === 'order') {
+          querySpec = {
+            query: channel 
+              ? 'SELECT * FROM c WHERE c.orderId = @entityId AND c.channel = @channel ORDER BY c.createdAt DESC'
+              : 'SELECT * FROM c WHERE c.orderId = @entityId ORDER BY c.createdAt DESC',
+            parameters: channel
+              ? [
+                  { name: '@entityId', value: entityId },
+                  { name: '@channel', value: channel }
+                ]
+              : [{ name: '@entityId', value: entityId }]
+          };
+        } else {
+          // For vendor, appraiser, etc - search by recipient or metadata
+          querySpec = {
+            query: channel
+              ? 'SELECT * FROM c WHERE (c.to LIKE @entityId OR c.metadata.entityId = @entityId) AND c.channel = @channel ORDER BY c.createdAt DESC'
+              : 'SELECT * FROM c WHERE (c.to LIKE @entityId OR c.metadata.entityId = @entityId) ORDER BY c.createdAt DESC',
+            parameters: channel
+              ? [
+                  { name: '@entityId', value: `%${entityId}%` },
+                  { name: '@channel', value: channel }
+                ]
+              : [{ name: '@entityId', value: `%${entityId}%` }]
+          };
+        }
+
+        // Query communications container (stored separately)
+        const container = cosmosService.getContainer('orders'); // Messages stored in orders container
+        const { resources: messages } = await container.items.query<CommunicationMessage>(querySpec).fetchAll();
+
+        logger.info('Entity communication history retrieved', { 
+          entityType,
+          entityId,
+          messageCount: messages.length 
+        });
+
+        return res.json({
+          success: true,
+          data: messages.map((m: CommunicationMessage) => ({
+            id: m.id,
+            channel: m.channel,
+            direction: 'outbound', // All messages sent from system are outbound
+            to: m.to,
+            from: m.from,
+            subject: m.subject,
+            body: m.body,
+            status: m.status,
+            timestamp: m.sentAt || m.createdAt,
+            sentAt: m.sentAt,
+            createdAt: m.createdAt,
+            failureReason: m.failureReason,
+            metadata: m.metadata
+          }))
+        });
+
+      } catch (error: any) {
+        logger.error('Failed to retrieve entity communication history', { 
+          error: error.message,
+          entityType: req.params.entityType,
+          entityId: req.params.entityId
         });
         return res.status(500).json({
           success: false,

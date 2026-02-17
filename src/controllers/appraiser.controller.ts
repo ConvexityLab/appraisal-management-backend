@@ -30,6 +30,11 @@ export class AppraiserController {
     this.router.post('/:id/assign', this.assignAppraiser.bind(this));
     this.router.get('/:id/conflicts', this.checkConflicts.bind(this));
     this.router.get('/:id/licenses/expiring', this.checkLicenseExpiration.bind(this));
+    
+    // Assignment acceptance workflow
+    this.router.get('/:id/assignments/pending', this.getPendingAssignments.bind(this));
+    this.router.post('/:id/assignments/:assignmentId/accept', this.acceptAssignment.bind(this));
+    this.router.post('/:id/assignments/:assignmentId/reject', this.rejectAssignment.bind(this));
   }
 
   /**
@@ -292,6 +297,112 @@ export class AppraiserController {
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Failed to check licenses'
+      });
+    }
+  }
+
+  /**
+   * GET /api/appraisers/:id/assignments/pending
+   * Get pending assignments for an appraiser awaiting acceptance
+   */
+  private async getPendingAssignments(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ success: false, error: 'ID parameter required' });
+        return;
+      }
+      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      
+      const assignments = await this.appraiserService.getPendingAssignments(id, tenantId);
+      
+      res.json({
+        success: true,
+        data: assignments,
+        count: assignments.length
+      });
+    } catch (error) {
+      this.logger.error('Error getting pending assignments', { error });
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get assignments'
+      });
+    }
+  }
+
+  /**
+   * POST /api/appraisers/:id/assignments/:assignmentId/accept
+   * Appraiser accepts an assignment
+   */
+  private async acceptAssignment(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { id, assignmentId } = req.params;
+      if (!id || !assignmentId) {
+        res.status(400).json({ success: false, error: 'ID and assignmentId parameters required' });
+        return;
+      }
+      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const { notes } = req.body;
+      
+      const assignment = await this.appraiserService.acceptAssignment(
+        assignmentId,
+        id,
+        tenantId,
+        notes
+      );
+      
+      res.json({
+        success: true,
+        data: assignment,
+        message: 'Assignment accepted successfully'
+      });
+    } catch (error) {
+      this.logger.error('Error accepting assignment', { error });
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to accept assignment'
+      });
+    }
+  }
+
+  /**
+   * POST /api/appraisers/:id/assignments/:assignmentId/reject
+   * Appraiser rejects an assignment
+   */
+  private async rejectAssignment(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { id, assignmentId } = req.params;
+      const { reason } = req.body;
+      
+      if (!id || !assignmentId) {
+        res.status(400).json({ success: false, error: 'ID and assignmentId parameters required' });
+        return;
+      }
+      
+      if (!reason) {
+        res.status(400).json({ success: false, error: 'Rejection reason is required' });
+        return;
+      }
+      
+      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      
+      const assignment = await this.appraiserService.rejectAssignment(
+        assignmentId,
+        id,
+        tenantId,
+        reason
+      );
+      
+      res.json({
+        success: true,
+        data: assignment,
+        message: 'Assignment rejected successfully'
+      });
+    } catch (error) {
+      this.logger.error('Error rejecting assignment', { error });
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to reject assignment'
       });
     }
   }

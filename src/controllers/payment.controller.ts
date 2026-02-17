@@ -7,13 +7,14 @@ import express, { Request, Response, Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { Logger } from '../utils/logger.js';
 import { PaymentProcessingService } from '../services/payment-processing.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { PaymentMethod, InvoiceStatus } from '../types/payment.types.js';
 
 const logger = new Logger();
-const paymentService = new PaymentProcessingService();
 
-export const createPaymentRouter = (): Router => {
+export const createPaymentRouter = (dbService: CosmosDbService): Router => {
   const router = express.Router();
+  const paymentService = new PaymentProcessingService(dbService);
 
   /**
    * POST /api/payments/invoices
@@ -184,10 +185,11 @@ export const createPaymentRouter = (): Router => {
 
   /**
    * GET /api/payments/vendor/:vendorId/payments
+   * GET /api/payments/vendors/:vendorId/history (frontend alias)
    * Get payment history for vendor
    */
   router.get(
-    '/vendor/:vendorId/payments',
+    ['/vendor/:vendorId/payments', '/vendors/:vendorId/history'],
     [
       param('vendorId').notEmpty(),
       query('startDate').optional().isISO8601(),
@@ -203,8 +205,10 @@ export const createPaymentRouter = (): Router => {
 
         res.json({
           success: true,
-          data: payments,
-          count: payments.length
+          data: {
+            payments,
+            total: payments.length
+          }
         });
 
       } catch (error) {
@@ -219,14 +223,15 @@ export const createPaymentRouter = (): Router => {
 
   /**
    * GET /api/payments/vendor/:vendorId/summary
+   * GET /api/payments/vendors/:vendorId/summary (frontend alias)
    * Get payment summary for vendor
    */
   router.get(
-    '/vendor/:vendorId/summary',
+    ['/vendor/:vendorId/summary', '/vendors/:vendorId/summary'],
     [
       param('vendorId').notEmpty(),
-      query('startDate').isISO8601().withMessage('Valid start date is required'),
-      query('endDate').isISO8601().withMessage('Valid end date is required')
+      query('startDate').optional().isISO8601(),
+      query('endDate').optional().isISO8601()
     ],
     async (req: Request, res: Response) => {
       try {
@@ -237,8 +242,13 @@ export const createPaymentRouter = (): Router => {
         }
 
         const { vendorId } = req.params;
-        const startDate = new Date(req.query.startDate as string);
-        const endDate = new Date(req.query.endDate as string);
+        // Default to last 90 days if not provided
+        const endDate = req.query.endDate 
+          ? new Date(req.query.endDate as string) 
+          : new Date();
+        const startDate = req.query.startDate 
+          ? new Date(req.query.startDate as string)
+          : new Date(endDate.getTime() - 90 * 24 * 60 * 60 * 1000);
 
         const summary = await paymentService.getPaymentSummary(vendorId!, startDate, endDate);
 

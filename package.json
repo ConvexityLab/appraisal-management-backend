@@ -28,6 +28,7 @@
     "test:watch": "vitest",
     "test:cosmos": "ts-node src/tests/cosmos-db-test-runner.ts",
     "test:cosmos-service": "ts-node src/tests/cosmos-service-test.ts",
+    "seed:vendors": "tsx --env-file .env src/scripts/seed-vendors.ts",
     "test:vendor": "node scripts/test-vendor-enhancements.js",
     "health-check": "tsx --env-file .env src/run-health-check.ts",
     "test:authorization": "ts-node scripts/test-authorization.ts",

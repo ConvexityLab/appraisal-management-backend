@@ -33,7 +33,7 @@ import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middl
 // Import QC controllers and middleware
 import { qcChecklistRouter } from '../controllers/criteria.controller';
 import { qcExecutionRouter } from '../controllers/reviews.controller';
-import { qcResultsRouter } from '../controllers/results.controller';
+import { QCResultsController } from '../controllers/results.controller';
 
 // Import Places API (New) controller
 import enhancedPropertyIntelligenceV2Router from '../controllers/enhanced-property-intelligence-v2.controller';
@@ -164,10 +164,11 @@ export class AppraisalManagementAPIServer {
     // Initialize Unified Authentication (Azure AD + Test Tokens)
     this.unifiedAuth = createUnifiedAuth();
     
-    // Initialize QC routers
+    // Initialize QC routers (except results, which needs dbService)
     this.qcChecklistRouter = qcChecklistRouter;
     this.qcExecutionRouter = qcExecutionRouter;
-    this.qcResultsRouter = qcResultsRouter;
+    // qcResultsRouter will be initialized after database is ready
+    this.qcResultsRouter = null as any; // Placeholder
     
     this.setupMiddleware();
     this.setupRoutes();
@@ -179,9 +180,37 @@ export class AppraisalManagementAPIServer {
     // Initialize database FIRST
     await this.dbService.initialize();
     
+    // Initialize QC Results router with shared dbService
+    this.qcResultsRouter = new QCResultsController(this.dbService).getRouter();
+    this.logger.info('QC Results controller initialized with shared database service');
+    
     // Initialize authorization middleware after database is ready - pass dbService
     this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
     this.logger.info('Authorization middleware initialized');
+    
+    // Register QC Results routes AFTER authz middleware is ready
+    this.app.use('/api/qc/results', 
+      this.unifiedAuth.authenticate(),
+      this.qcResultsRouter
+    );
+    this.logger.info('QC Results routes registered');
+    
+    // DEBUG: Add test auth endpoint
+    this.app.get('/api/auth/test',
+      this.unifiedAuth.authenticate(),
+      (req: any, res: any) => {
+        res.json({
+          success: true,
+          message: 'Authentication successful',
+          user: {
+            id: req.user?.id,
+            email: req.user?.email,
+            tenantId: req.user?.tenantId,
+            isTestUser: req.user?.isTestUser
+          }
+        });
+      }
+    );
     
     // Register authorization routes AFTER middleware is initialized
     this.setupAuthorizationRoutes();
@@ -238,7 +267,7 @@ export class AppraisalManagementAPIServer {
 
     // CORS configuration
     this.app.use(cors({
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000']),
+      origin: process.env.ALLOWED_ORIGINS?.split(',') || (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3010']),
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id'],
@@ -452,14 +481,14 @@ export class AppraisalManagementAPIServer {
     // Manages vendor certifications, automatic renewal alerts, state board verification
     this.app.use('/api/vendor-certifications',
       this.unifiedAuth.authenticate(),
-      createVendorCertificationRouter()
+      createVendorCertificationRouter(this.dbService)
     );
 
     // Payment Processing - Invoicing, vendor payments, Stripe/ACH integration (authenticated users)
     // Handles invoice generation, payment processing, vendor compensation tracking
     this.app.use('/api/payments',
       this.unifiedAuth.authenticate(),
-      createPaymentRouter()
+      createPaymentRouter(this.dbService)
     );
 
     // Vendor Onboarding - Multi-step workflow, document verification, approval process (authenticated users)
@@ -604,10 +633,11 @@ export class AppraisalManagementAPIServer {
       this.performQCValidation.bind(this)
     );
 
-    this.app.get('/api/qc/results/:orderId',
-      this.unifiedAuth.authenticate(),
-      this.getQCResults.bind(this)
-    );
+    // NOTE: QC Results route handled by results controller at /api/qc/results/*
+    // this.app.get('/api/qc/results/:orderId',
+    //   this.unifiedAuth.authenticate(),
+    //   this.getQCResults.bind(this)
+    // );
 
     this.app.get('/api/qc/metrics',
       this.unifiedAuth.authenticate(),
@@ -620,6 +650,11 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/vendors',
       this.unifiedAuth.authenticate(),
       this.getVendors.bind(this)
+    );
+
+    this.app.get('/api/vendors/:vendorId',
+      this.unifiedAuth.authenticate(),
+      this.getVendorById.bind(this)
     );
 
     this.app.post('/api/vendors',
@@ -872,10 +907,8 @@ export class AppraisalManagementAPIServer {
       this.qcExecutionRouter
     );
     
-    this.app.use('/api/qc/results', 
-      this.unifiedAuth.authenticate(),
-      this.qcResultsRouter
-    );
+    // QC Results routes registered in initializeDatabase() after dbService is ready
+    // this.app.use('/api/qc/results', ...)
 
     // QC Workflow Automation routes - review queue, revisions, escalations, SLA tracking
     this.app.use('/api/qc-workflow',
@@ -1037,13 +1070,15 @@ export class AppraisalManagementAPIServer {
 
   private validateOrderId() {
     return [
-      // Accept multiple formats: UUID, timestamp-randomstring, or numeric string
+      // Accept multiple formats: UUID, timestamp-randomstring, numeric string, or QC review format
       param('orderId').custom((value) => {
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
         const isTimestampFormat = /^\d+-[a-z0-9]+$/.test(value);
         const isNumeric = /^\d+$/.test(value);
-        if (!isUUID && !isTimestampFormat && !isNumeric) {
-          throw new Error('Order ID must be a UUID, timestamp-randomstring format, or numeric ID');
+        const isOrderFormat = /^ORD-\d{4}-\d{8}$/.test(value); // ORD-YYYY-XXXXXXXX
+        const isQCReviewFormat = /^qc[_-]?review[_-]?\d{8}[_-]?\d{3}$/.test(value); // qc_review_20260208_001
+        if (!isUUID && !isTimestampFormat && !isNumeric && !isOrderFormat && !isQCReviewFormat) {
+          throw new Error('Order ID must be a UUID, timestamp-randomstring format, numeric ID, order format (ORD-YYYY-XXXXXXXX), or QC review format');
         }
         return true;
       }),
@@ -1665,7 +1700,9 @@ export class AppraisalManagementAPIServer {
       const result = await this.dbService.findAllVendors();
       
       if (result.success) {
-        res.json(result.data);
+        // Transform Vendor[] to VendorProfile[] for frontend compatibility
+        const vendorProfiles = result.data.map(vendor => this.transformVendorToProfile(vendor));
+        res.json(vendorProfiles);
       } else {
         res.status(500).json({
           error: 'Failed to retrieve vendors',
@@ -1676,6 +1713,95 @@ export class AppraisalManagementAPIServer {
     } catch (error) {
       res.status(500).json({
         error: 'Failed to retrieve vendors',
+        code: 'VENDOR_RETRIEVAL_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
+   * Transform backend Vendor to frontend VendorProfile
+   */
+  private transformVendorToProfile(vendor: any): any {
+    return {
+      id: vendor.id,
+      vendorCode: vendor.licenseNumber || vendor.id,
+      tenantId: 'tenant-001', // Default tenant
+      
+      // Business information
+      businessName: vendor.name,
+      businessType: 'INDIVIDUAL' as const,
+      contactPerson: vendor.name,
+      email: vendor.email,
+      phone: vendor.phone,
+      
+      // Address - extract from serviceAreas if available
+      address: vendor.serviceAreas?.[0]?.state || '',
+      city: vendor.serviceAreas?.[0]?.counties?.[0] || '',
+      state: vendor.licenseState,
+      zipCode: vendor.serviceAreas?.[0]?.zipCodes?.[0] || '',
+      
+      // Licensing
+      stateLicense: vendor.licenseNumber,
+      licenseExpiration: vendor.licenseExpiry,
+      
+      // Service capabilities
+      serviceTypes: vendor.productTypes || [],
+      serviceAreas: vendor.serviceAreas || [],
+      maxActiveOrders: vendor.preferences?.maxOrdersPerDay || 10,
+      averageTurnaroundDays: Math.round((vendor.performance?.averageTurnTime || 96) / 24),
+      
+      // Status and performance
+      status: vendor.status?.toUpperCase() || 'ACTIVE',
+      onboardedAt: vendor.onboardingDate,
+      lastActiveAt: vendor.lastActive,
+      currentActiveOrders: 0,
+      
+      // Performance metrics from nested performance object
+      totalOrdersCompleted: vendor.performance?.totalOrders || 0,
+      averageQCScore: vendor.performance?.qualityScore ? vendor.performance.qualityScore * 20 : 0, // Convert 1-5 to 0-100
+      onTimeDeliveryRate: vendor.performance?.onTimeDeliveryRate || 0,
+      revisionRate: vendor.performance?.revisionRate || 0,
+      clientSatisfactionScore: vendor.performance?.clientSatisfactionScore || 0,
+      performanceScore: vendor.performance?.qualityScore ? vendor.performance.qualityScore * 20 : 0,
+      
+      // Financial
+      standardFee: 550,
+      rushFee: 150,
+      paymentTerms: vendor.paymentInfo?.method === 'ach' ? 'Net 30' : 'Net 15',
+      
+      // Metadata
+      createdAt: vendor.onboardingDate,
+      createdBy: 'system',
+      updatedAt: vendor.lastActive,
+      updatedBy: 'system'
+    };
+  }
+
+  private async getVendorById(req: AuthenticatedRequest, res: express.Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId;
+      const result = await this.dbService.findVendorById(vendorId);
+      
+      if (result.success && result.data) {
+        // Transform Vendor to VendorProfile for frontend compatibility
+        const vendorProfile = this.transformVendorToProfile(result.data);
+        res.json(vendorProfile);
+      } else if (result.success && !result.data) {
+        res.status(404).json({
+          error: 'Vendor not found',
+          code: 'VENDOR_NOT_FOUND'
+        });
+      } else {
+        res.status(500).json({
+          error: 'Failed to retrieve vendor',
+          code: 'VENDOR_RETRIEVAL_ERROR',
+          details: result.error
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: 'Failed to retrieve vendor',
         code: 'VENDOR_RETRIEVAL_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
       });

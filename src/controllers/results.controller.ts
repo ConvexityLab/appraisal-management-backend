@@ -83,9 +83,9 @@ export class QCResultsController {
   private cosmosService: CosmosDbService;
   private router: Router;
 
-  constructor() {
+  constructor(cosmosService?: CosmosDbService) {
     this.logger = new Logger('QCResultsController');
-    this.cosmosService = new CosmosDbService();
+    this.cosmosService = cosmosService || new CosmosDbService();
     this.router = Router();
     this.initializeRoutes();
   }
@@ -99,6 +99,13 @@ export class QCResultsController {
       this.validateSearchResults(),
       this.handleValidation,
       this.searchResults.bind(this)
+    );
+
+    // QC results by order ID - must come before /:resultId to avoid conflict
+    this.router.get('/order/:orderId',
+      this.validateGetResultByOrderId(),
+      this.handleValidation,
+      this.getResultByOrderId.bind(this)
     );
 
     this.router.get('/:resultId',
@@ -243,7 +250,16 @@ export class QCResultsController {
 
   /**
    * Get specific QC result by ID
+   * This method now handles both:
+   * - Traditional result IDs from the 'results' container
+   * - Order IDs that should query the 'qc-reviews' container
    */
+  private async getResultByOrderId(req: AuthenticatedRequest, res: Response): Promise<void> {
+    // Map orderId param to resultId so getResult's fallback logic works
+    req.params.resultId = req.params.orderId;
+    return this.getResult(req, res);
+  }
+
   private async getResult(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { resultId } = req.params;
@@ -261,7 +277,44 @@ export class QCResultsController {
         userId: req.user?.id
       });
 
-      const result = await this.cosmosService.getItem('results', resultId);
+      // First, try to get from the results container (original behavior)
+      let resultFromResults = await this.cosmosService.getItem('results', resultId);
+      let result = null;
+      
+      // Handle both possible return types from getItem (ApiResponse or direct value)
+      if (resultFromResults && typeof resultFromResults === 'object') {
+        if ('success' in resultFromResults && resultFromResults.success) {
+          result = resultFromResults.data;
+        } else if (!('success' in resultFromResults)) {
+          // Direct value returned (not ApiResponse wrapper)
+          result = resultFromResults;
+        }
+      }
+
+      if (!result) {
+        // If not found, try to query qc-reviews by orderId
+        this.logger.debug('Result not found in results container, trying qc-reviews by orderId', {
+          orderId: resultId,
+          userId: req.user?.id
+        });
+
+        const query = {
+          query: 'SELECT * FROM c WHERE c.orderId = @orderId',
+          parameters: [{ name: '@orderId', value: resultId }]
+        };
+
+        const qcReviewResult = await this.cosmosService.queryItems('qc-reviews', query);
+
+        if (qcReviewResult.success && qcReviewResult.data && qcReviewResult.data.length > 0) {
+          result = qcReviewResult.data[0];
+          this.logger.info('Found QC review by orderId', {
+            orderId: resultId,
+            reviewId: result.id,
+            hasCategoriesResults: !!result.categoriesResults,
+            categoriesCount: result.categoriesResults?.length || 0
+          });
+        }
+      }
 
       if (!result) {
         res.status(404).json({
@@ -271,7 +324,7 @@ export class QCResultsController {
         return;
       }
 
-      // Check access permissions
+      // Check access permissions (adapted for both result types)
       if (!this.hasResultAccess(req.user, result)) {
         res.status(403).json({
           success: false,
@@ -285,13 +338,14 @@ export class QCResultsController {
     } catch (error) {
       this.logger.error('Failed to get QC result', {
         error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
         resultId: req.params.resultId,
         userId: req.user?.id
       });
 
       res.status(500).json({
         success: false,
-        error: createApiError('QC_RESULT_GET_FAILED', 'Failed to retrieve QC result')
+        error: createApiError('QC_RESULT_GET_FAILED', `Failed to retrieve QC result: ${error instanceof Error ? error.message : 'Unknown error'}`)
       });
     }
   }
@@ -1090,6 +1144,12 @@ export class QCResultsController {
     ];
   }
 
+  private validateGetResultByOrderId() {
+    return [
+      param('orderId').notEmpty().withMessage('Order ID is required')
+    ];
+  }
+
   private validateGetResultsByChecklist() {
     return [
       param('checklistId').notEmpty().withMessage('Checklist ID is required'),
@@ -1439,6 +1499,8 @@ export class QCResultsController {
     if (result.executedBy === user.id) return true;
     if (result.clientId && user.clientId && result.clientId === user.clientId) return true;
     if (result.organizationId && user.organizationId && result.organizationId === user.organizationId) return true;
+    // For QC reviews, allow QC analysts, managers, and appraisers to access reviews
+    if (user.role === 'qc_analyst' || user.role === 'manager' || user.role === 'appraiser') return true;
     return false;
   }
 

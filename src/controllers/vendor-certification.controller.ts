@@ -7,6 +7,7 @@ import express, { Request, Response, Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { Logger } from '../utils/logger.js';
 import { VendorCertificationService } from '../services/vendor-certification.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { 
   CertificationStatus,
   CertificationType,
@@ -14,10 +15,10 @@ import {
 } from '../types/certification.types.js';
 
 const logger = new Logger();
-const certificationService = new VendorCertificationService();
 
-export const createVendorCertificationRouter = (): Router => {
+export const createVendorCertificationRouter = (dbService: CosmosDbService): Router => {
   const router = express.Router();
+  const certificationService = new VendorCertificationService(dbService);
 
   /**
    * POST /api/vendor-certifications/:vendorId
@@ -123,6 +124,46 @@ export const createVendorCertificationRouter = (): Router => {
         res.status(500).json({
           success: false,
           error: 'Failed to retrieve certifications'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/vendor-certifications/:vendorId/expiring
+   * Get expiring certifications for a specific vendor
+   */
+  router.get(
+    '/:vendorId/expiring',
+    async (req: Request, res: Response) => {
+      try {
+        const { vendorId } = req.params;
+        const days = parseInt(req.query.days as string) || 60;
+
+        // Get all certifications for the vendor
+        const certifications = await certificationService.getVendorCertifications(
+          vendorId!,
+          false // don't include expired
+        );
+
+        // Filter to only expiring soon
+        const expiring = certifications.filter(c => 
+          c.status === CertificationStatus.EXPIRING_SOON ||
+          (c.daysUntilExpiry !== undefined && c.daysUntilExpiry <= days && c.daysUntilExpiry >= 0)
+        );
+
+        res.json({
+          success: true,
+          data: expiring,
+          count: expiring.length,
+          daysThreshold: days
+        });
+
+      } catch (error) {
+        logger.error('Failed to get expiring certifications', { error });
+        res.status(500).json({
+          success: false,
+          error: 'Failed to retrieve expiring certifications'
         });
       }
     }

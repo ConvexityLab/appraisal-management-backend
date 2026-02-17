@@ -56,6 +56,123 @@ export class DatabaseService {
 class MockOrderRepository implements DatabaseOrderRepository {
   private orders: Map<string, AppraisalOrder> = new Map();
 
+  constructor() {
+    // Seed with test data on initialization
+    this.seedTestData();
+  }
+
+  private seedTestData(): void {
+    // Seed order-005: Completed order with full workflow
+    const order005: AppraisalOrder = {
+      id: 'order-005',
+      orderNumber: 'APR-2026-005',
+      clientId: 'client-002',
+      clientName: 'Wells Fargo',
+      status: 'completed' as any,
+      propertyAddress: {
+        street: '555 Cedar Ln',
+        city: 'Frisco',
+        state: 'TX',
+        zipCode: '75034',
+        county: 'Collin'
+      },
+      propertyType: 'Single Family' as any,
+      loanAmount: 625000,
+      appraisalType: 'Full Appraisal' as any,
+      dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+      priority: 'normal' as any,
+      vendorAssignment: {
+        vendorId: 'vendor-005',
+        assignedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+        acceptedAt: new Date(Date.now() - 14.9 * 24 * 60 * 60 * 1000),
+        assignedBy: 'test-user-admin',
+        status: 'accepted' as any
+      },
+      reportSubmittedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      reportUrl: 'blob://reports/order-005-report.pdf',
+      qcApprovedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      qcApprovedBy: 'test-user-qc',
+      deliveredAt: new Date(Date.now() - 1.5 * 24 * 60 * 60 * 1000),
+      finalValue: 625000,
+      createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 1.5 * 24 * 60 * 60 * 1000),
+      tenantId: 'test-tenant-123',
+      orderType: 'purchase' as any,
+      productType: 'full_appraisal' as any,
+      createdBy: 'test-user-admin'
+    };
+    this.orders.set(order005.id, order005);
+
+    // Add a few more test orders for variety
+    const order001: AppraisalOrder = {
+      id: 'order-001',
+      orderNumber: 'APR-2026-001',
+      clientId: 'client-001',
+      clientName: 'First National Bank',
+      status: 'vendor_assigned' as any,
+      propertyAddress: {
+        street: '123 Main St',
+        city: 'Dallas',
+        state: 'TX',
+        zipCode: '75201',
+        county: 'Dallas'
+      },
+      propertyType: 'Single Family' as any,
+      loanAmount: 325000,
+      appraisalType: 'Full Appraisal' as any,
+      dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      priority: 'normal' as any,
+      vendorAssignment: {
+        vendorId: 'vendor-001',
+        assignedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+        assignedBy: 'test-user-admin',
+        status: 'pending' as any
+      },
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+      tenantId: 'test-tenant-123',
+      orderType: 'purchase' as any,
+      productType: 'full_appraisal' as any,
+      createdBy: 'test-user-admin'
+    };
+    this.orders.set(order001.id, order001);
+
+    const order002: AppraisalOrder = {
+      id: 'order-002',
+      orderNumber: 'APR-2026-002',
+      clientId: 'client-002',
+      clientName: 'Wells Fargo',
+      status: 'inspection_scheduled' as any,
+      propertyAddress: {
+        street: '456 Oak Ave',
+        city: 'Plano',
+        state: 'TX',
+        zipCode: '75074',
+        county: 'Collin'
+      },
+      propertyType: 'Townhouse' as any,
+      loanAmount: 280000,
+      appraisalType: 'Full Appraisal' as any,
+      dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
+      priority: 'normal' as any,
+      vendorAssignment: {
+        vendorId: 'vendor-002',
+        assignedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
+        acceptedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+        assignedBy: 'test-user-admin',
+        status: 'accepted' as any
+      },
+      inspectionDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+      tenantId: 'test-tenant-123',
+      orderType: 'purchase' as any,
+      productType: 'full_appraisal' as any,
+      createdBy: 'test-user-admin'
+    };
+    this.orders.set(order002.id, order002);
+  }
+
   async create(order: AppraisalOrder): Promise<AppraisalOrder> {
     this.orders.set(order.id, order);
     return order;
@@ -66,9 +183,57 @@ class MockOrderRepository implements DatabaseOrderRepository {
   }
 
   async findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: AppraisalOrder[]; total: number }> {
-    const allOrders = Array.from(this.orders.values());
-    // Apply filters here
-    const filteredOrders = allOrders; // Simplified for now
+    let filteredOrders = Array.from(this.orders.values());
+    
+    // Apply status filter
+    if (filters.status && filters.status.length > 0) {
+      filteredOrders = filteredOrders.filter(order => filters.status!.includes(order.status));
+    }
+    
+    // Apply clientId filter
+    if (filters.clientId) {
+      filteredOrders = filteredOrders.filter(order => order.clientId === filters.clientId);
+    }
+    
+    // Apply productType filter
+    if (filters.productType && filters.productType.length > 0) {
+      filteredOrders = filteredOrders.filter(order => filters.productType!.includes(order.productType as any));
+    }
+    
+    // Apply priority filter
+    if (filters.priority && filters.priority.length > 0) {
+      filteredOrders = filteredOrders.filter(order => filters.priority!.includes(order.priority));
+    }
+    
+    // Apply assignedVendorId filter
+    if (filters.assignedVendorId) {
+      filteredOrders = filteredOrders.filter(order => 
+        order.vendorAssignment?.vendorId === filters.assignedVendorId
+      );
+    }
+    
+    // Apply date range filters
+    if (filters.dueDateFrom) {
+      filteredOrders = filteredOrders.filter(order => 
+        order.dueDate && new Date(order.dueDate) >= filters.dueDateFrom!
+      );
+    }
+    if (filters.dueDateTo) {
+      filteredOrders = filteredOrders.filter(order => 
+        order.dueDate && new Date(order.dueDate) <= filters.dueDateTo!
+      );
+    }
+    if (filters.createdFrom) {
+      filteredOrders = filteredOrders.filter(order => 
+        new Date(order.createdAt) >= filters.createdFrom!
+      );
+    }
+    if (filters.createdTo) {
+      filteredOrders = filteredOrders.filter(order => 
+        new Date(order.createdAt) <= filters.createdTo!
+      );
+    }
+    
     const total = filteredOrders.length;
     const orders = filteredOrders.slice(offset, offset + limit);
     return { orders, total };

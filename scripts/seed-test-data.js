@@ -253,36 +253,66 @@ const orders = [
     type: 'order',
     tenantId: TENANT_ID,
     orderNumber: 'APR-2026-005',
-    clientId: 'client-002',
-    clientName: 'Wells Fargo',
-    status: 'completed',
+    status: 'COMPLETED',
+    orderType: 'FULL_APPRAISAL',
+    productType: 'FULL_APPRAISAL_1004',
+    priority: 'STANDARD',
     propertyAddress: {
       street: '555 Cedar Ln',
       city: 'Frisco',
       state: 'TX',
-      zipCode: '75034'
+      zipCode: '75034',
+      county: 'Collin'
     },
-    propertyType: 'Single Family',
-    loanAmount: 625000,
-    appraisalType: 'Full Appraisal',
-    dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    priority: 'normal',
-    vendorAssignment: {
+    propertyDetails: {
+      propertyType: 'SINGLE_FAMILY',
+      yearBuilt: 2018,
+      squareFeet: 2800,
+      bedrooms: 4,
+      bathrooms: 3,
+      lotSize: 8500,
+      stories: 2,
+      garageSpaces: 2,
+      basement: false,
+      pool: true,
+      condition: 'Excellent',
+      occupancyStatus: 'Owner Occupied'
+    },
+    clientInformation: {
+      clientName: 'Wells Fargo',
+      contactName: 'Sarah Johnson',
+      contactEmail: 'sarah.johnson@wellsfargo.com',
+      contactPhone: '214-555-0102',
+      loanNumber: 'WF-2026-789456',
+      borrowerName: 'Robert Martinez',
+      loanType: 'Conventional',
+      loanPurpose: 'Purchase'
+    },
+    vendorInformation: {
       vendorId: 'vendor-005',
+      vendorName: 'Heritage Valuation Co',
+      vendorEmail: 'robert@heritagevalue.com',
+      vendorPhone: '+12145551005',
+      licenseNumber: 'TX-CR-98765',
       assignedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-      acceptedAt: new Date(Date.now() - 14.9 * 24 * 60 * 60 * 1000).toISOString(),
-      assignedBy: 'test-user-admin',
-      status: 'accepted'
+      acceptedAt: new Date(Date.now() - 14.9 * 24 * 60 * 60 * 1000).toISOString()
     },
+    loanAmount: 625000,
+    dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
     reportSubmittedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     reportUrl: 'blob://reports/order-005-report.pdf',
-    reportId: 'report-test-001', // Link to valuation report
+    reportId: 'report-test-001',
+    qcStatus: 'PASSED',
+    qcScore: 95,
     qcApprovedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     qcApprovedBy: 'test-user-qc',
     deliveredAt: new Date(Date.now() - 1.5 * 24 * 60 * 60 * 1000).toISOString(),
     finalValue: 625000,
+    specialInstructions: 'Property has solar panels and energy-efficient features - please note in valuation',
+    accessInstructions: 'Contact borrower 24 hours in advance. Gate code: #5432',
     createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1.5 * 24 * 60 * 60 * 1000).toISOString()
+    updatedAt: new Date(Date.now() - 1.5 * 24 * 60 * 60 * 1000).toISOString(),
+    createdBy: 'test-user-admin'
   },
 
   // UNASSIGNED - New order, needs vendor
