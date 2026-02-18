@@ -305,7 +305,11 @@ export class QCResultsController {
           parameters: [{ name: '@orderId', value: resultId }]
         };
 
-        const qcReviewResult = await this.cosmosService.queryItems<any>('qc-reviews', querySpec);
+        const qcReviewResult = await this.cosmosService.queryItems<any>(
+          'qc-reviews', 
+          querySpec.query,
+          querySpec.parameters
+        );
 
         if (qcReviewResult.success && qcReviewResult.data && qcReviewResult.data.length > 0) {
           const qcResult: any = qcReviewResult.data[0];

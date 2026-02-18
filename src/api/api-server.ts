@@ -1782,7 +1782,8 @@ export class AppraisalManagementAPIServer {
     try {
       const vendorId = req.params.vendorId;
       if (!vendorId) {
-        return res.status(400).json({ error: 'Vendor ID is required' });
+        res.status(400).json({ error: 'Vendor ID is required' });
+        return;
       }
       const result = await this.dbService.findVendorById(vendorId);
       

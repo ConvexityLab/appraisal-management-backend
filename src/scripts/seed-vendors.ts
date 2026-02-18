@@ -712,7 +712,8 @@ async function seedVendors(): Promise<void> {
       created++;
 
     } catch (error: any) {
-      logger.error(`❌ Failed to create ${vendorData.name}:`, error instanceof Error ? error.message : String(error));
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error(`❌ Failed to create ${vendorData.name}:`, { error: errorMsg });
     }
   }
 
