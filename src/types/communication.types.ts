@@ -4,6 +4,149 @@
  */
 
 // ============================================================================
+// COMMUNICATION RECORD (UNIFIED STORAGE)
+// ============================================================================
+
+export type CommunicationEntityType = 'order' | 'vendor' | 'appraiser' | 'client' | 'user' | 'general';
+export type CommunicationChannel = 'email' | 'sms' | 'teams' | 'chat' | 'phone' | 'in_app';
+export type CommunicationDirection = 'outbound' | 'inbound';
+export type CommunicationStatus = 'draft' | 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'bounced';
+export type CommunicationCategory = 
+  | 'order_assignment'
+  | 'order_discussion'
+  | 'negotiation'
+  | 'payment'
+  | 'document_request'
+  | 'revision_request'
+  | 'deadline_reminder'
+  | 'availability'
+  | 'employment'
+  | 'onboarding'
+  | 'training'
+  | 'compliance'
+  | 'general';
+
+export interface CommunicationEntity {
+  type: CommunicationEntityType;
+  id: string;
+  name?: string;
+  role?: string;
+}
+
+export interface CommunicationParticipantInfo {
+  id?: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+}
+
+export interface CommunicationRecord {
+  // Core identification
+  id: string;
+  tenantId: string;
+  type: 'communication';
+  
+  // Entity relationships
+  primaryEntity: CommunicationEntity;
+  relatedEntities?: CommunicationEntity[];
+  
+  // Conversation threading
+  threadId?: string;
+  parentMessageId?: string;
+  conversationContext?: string;
+  
+  // Channel & delivery
+  channel: CommunicationChannel;
+  direction: CommunicationDirection;
+  
+  // Participants
+  from: CommunicationParticipantInfo;
+  to: CommunicationParticipantInfo[];
+  cc?: CommunicationParticipantInfo[];
+  bcc?: CommunicationParticipantInfo[];
+  
+  // Message content
+  subject?: string;
+  body: string;
+  bodyFormat: 'text' | 'html' | 'markdown';
+  
+  attachments?: Array<{
+    id: string;
+    name: string;
+    url: string;
+    size: number;
+    mimeType: string;
+  }>;
+  
+  // Status & tracking
+  status: CommunicationStatus;
+  sentAt?: Date;
+  deliveredAt?: Date;
+  readAt?: Date;
+  failedAt?: Date;
+  
+  deliveryStatus?: {
+    messageId?: string;
+    provider?: string;
+    attempts?: number;
+    lastAttemptAt?: Date;
+    error?: string;
+  };
+  
+  // Categorization & search
+  category: CommunicationCategory;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  tags?: string[];
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  
+  // Business context
+  businessImpact?: {
+    affectsDeadline?: boolean;
+    requiresAction?: boolean;
+    actionDeadline?: Date;
+    estimatedResponseTime?: string;
+    escalationLevel?: number;
+  };
+  
+  // AI insights
+  aiAnalysis?: {
+    summary?: string;
+    actionItems?: Array<{
+      description: string;
+      assignedTo?: string;
+      dueDate?: Date;
+      status: 'pending' | 'completed';
+    }>;
+    detectedIssues?: string[];
+    suggestedResponse?: string;
+    confidence?: number;
+  };
+  
+  // Metadata
+  metadata?: {
+    source?: string;
+    triggeredBy?: string;
+    templateId?: string;
+    campaignId?: string;
+    [key: string]: any;
+  };
+  
+  // Audit & compliance
+  createdBy: string;
+  createdAt: Date;
+  updatedAt?: Date;
+  
+  archived?: boolean;
+  archiveReason?: string;
+  archivedAt?: Date;
+  archivedBy?: string;
+  
+  legalHold?: boolean;
+  retentionPolicyId?: string;
+}
+
+// ============================================================================
 // EMAIL TYPES
 // ============================================================================
 

@@ -10,41 +10,87 @@ import { AzureCommunicationService } from '../services/azure-communication.servi
 import { TeamsService } from '../services/teams.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+import { 
+  CommunicationRecord, 
+  CommunicationChannel,
+  CommunicationCategory,
+  CommunicationEntity,
+  CommunicationParticipantInfo 
+} from '../types/communication.types.js';
 
 const logger = new Logger();
 const acsService = new AzureCommunicationService();
 const teamsService = new TeamsService();
 const cosmosService = new CosmosDbService();
 
-interface CommunicationMessage {
-  id: string;
-  orderId: string;
-  tenantId: string;
-  channel: 'email' | 'sms' | 'teams';
-  to: string;
-  from?: string;
+/**
+ * Store communication record in Cosmos DB with rich structure
+ */
+async function storeCommunication(params: {
+  channel: CommunicationChannel;
+  primaryEntity: CommunicationEntity;
+  relatedEntities?: CommunicationEntity[];
+  from: CommunicationParticipantInfo;
+  to: CommunicationParticipantInfo | CommunicationParticipantInfo[];
   subject?: string;
   body: string;
   status: 'pending' | 'sent' | 'failed';
-  sentAt?: Date;
-  failureReason?: string;
+  tenantId: string;
+  createdBy: string;
+  category: CommunicationCategory;
+  threadId?: string;
   metadata?: any;
-  createdAt: Date;
-}
-
-/**
- * Store communication message in Cosmos DB
- */
-async function storeCommunication(message: CommunicationMessage): Promise<void> {
+}): Promise<CommunicationRecord> {
   try {
-    await cosmosService.createItem('communications', message);
-    logger.info('Communication message stored', { 
-      id: message.id, 
-      channel: message.channel,
-      orderId: message.orderId 
+    const toArray = Array.isArray(params.to) ? params.to : [params.to];
+    
+    const record: CommunicationRecord = {
+      id: `${params.channel}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      tenantId: params.tenantId,
+      type: 'communication',
+      
+      primaryEntity: params.primaryEntity,
+      relatedEntities: params.relatedEntities || [],
+      
+      threadId: params.threadId,
+      conversationContext: params.category,
+      
+      channel: params.channel,
+      direction: 'outbound',
+      
+      from: params.from,
+      to: toArray,
+      
+      subject: params.subject,
+      body: params.body,
+      bodyFormat: 'html',
+      
+      status: params.status,
+      sentAt: params.status === 'sent' ? new Date() : undefined,
+      failedAt: params.status === 'failed' ? new Date() : undefined,
+      
+      deliveryStatus: params.metadata,
+      
+      category: params.category,
+      priority: 'normal',
+      
+      createdBy: params.createdBy,
+      createdAt: new Date()
+    };
+    
+    await cosmosService.createItem('communications', record);
+    
+    logger.info('Communication record stored', { 
+      id: record.id, 
+      channel: record.channel,
+      primaryEntity: record.primaryEntity,
+      category: record.category
     });
+    
+    return record;
   } catch (error) {
-    logger.error('Failed to store communication message', { error, messageId: message.id });
+    logger.error('Failed to store communication record', { error, params });
+    throw error;
   }
 }
 
@@ -59,10 +105,13 @@ export const createCommunicationRouter = (): Router => {
   router.post(
     '/email',
     [
-      body('orderId').notEmpty().withMessage('Order ID is required'),
       body('to').isEmail().withMessage('Valid email address is required'),
       body('subject').notEmpty().withMessage('Subject is required'),
-      body('body').notEmpty().withMessage('Email body is required')
+      body('body').notEmpty().withMessage('Email body is required'),
+      body('primaryEntity').optional().isObject(),
+      body('primaryEntity.type').optional().isString(),
+      body('primaryEntity.id').optional().isString(),
+      body('category').optional().isString()
     ],
     async (req: Request, res: Response) => {
       try {
@@ -75,29 +124,24 @@ export const createCommunicationRouter = (): Router => {
         }
 
         const tenantId = (req as any).user?.tenantId || 'default';
-        const { orderId, to, subject, body } = req.body;
+        const userId = (req as any).user?.id || 'system';
+        const { to, subject, body, primaryEntity, relatedEntities, category = 'general', threadId } = req.body;
 
-        logger.info('Sending email', { orderId, to, subject });
-
-        // Create communication record
-        const messageId = `email-${orderId}-${Date.now()}`;
-        const message: CommunicationMessage = {
-          id: messageId,
-          orderId,
-          tenantId,
-          channel: 'email',
-          to,
-          from: process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || 'noreply@appraisal.platform',
-          subject,
-          body,
-          status: 'pending',
-          createdAt: new Date()
+        // Determine primary entity - default to general if not provided
+        const entity: CommunicationEntity = primaryEntity || {
+          type: 'general' as const,
+          id: 'general',
+          name: 'General Communication'
         };
+
+        logger.info('Sending email', { to, subject, primaryEntity: entity });
+
+        const fromAddress = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || 'noreply@appraisal.platform';
 
         // Send email via ACS
         const emailClient = acsService.getEmailClient();
         const emailMessage = {
-          senderAddress: message.from || process.env.AZURE_COMMUNICATION_EMAIL_FROM || 'noreply@appraisal.com',
+          senderAddress: fromAddress,
           content: {
             subject: subject,
             html: body
@@ -517,6 +561,295 @@ export const createCommunicationRouter = (): Router => {
         return res.status(500).json({
           success: false,
           error: error.message || 'Failed to retrieve communication history'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/communications/order/:orderId
+   * Get all communications for a specific order
+   */
+  router.get(
+    '/order/:orderId',
+    [param('orderId').notEmpty()],
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = (req as any).user?.tenantId || 'default';
+        const { orderId } = req.params;
+        const { includeRelated } = req.query;
+
+        let query = `
+          SELECT * FROM c 
+          WHERE c.type = 'communication'
+            AND c.tenantId = @tenantId
+        `;
+
+        const params: any[] = [
+          { name: '@tenantId', value: tenantId },
+          { name: '@orderId', value: orderId }
+        ];
+
+        if (includeRelated === 'true') {
+          query += ` AND (
+            (c.primaryEntity.type = 'order' AND c.primaryEntity.id = @orderId)
+            OR ARRAY_CONTAINS(c.relatedEntities, {type: 'order', id: @orderId}, true)
+          )`;
+        } else {
+          query += ` AND c.primaryEntity.type = 'order' AND c.primaryEntity.id = @orderId`;
+        }
+
+        query += ` ORDER BY c.createdAt DESC`;
+
+        const result = await cosmosService.queryItems('communications', query, params);
+
+        return res.json({
+          success: true,
+          data: result.data || [],
+          count: result.data?.length || 0
+        });
+      } catch (error: any) {
+        logger.error('Failed to get order communications', { error: error.message, orderId: req.params.orderId });
+        return res.status(500).json({
+          success: false,
+          error: error.message || 'Failed to retrieve communications'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/communications/vendor/:vendorId
+   * Get all communications with/about a vendor
+   */
+  router.get(
+    '/vendor/:vendorId',
+    [param('vendorId').notEmpty()],
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = (req as any).user?.tenantId || 'default';
+        const { vendorId } = req.params;
+        const { category, excludeOrderSpecific } = req.query;
+
+        let query = `
+          SELECT * FROM c 
+          WHERE c.type = 'communication'
+            AND c.tenantId = @tenantId
+            AND (
+              (c.primaryEntity.type = 'vendor' AND c.primaryEntity.id = @vendorId)
+              OR ARRAY_CONTAINS(c.relatedEntities, {type: 'vendor', id: @vendorId}, true)
+            )
+        `;
+
+        const params: any[] = [
+          { name: '@tenantId', value: tenantId },
+          { name: '@vendorId', value: vendorId }
+        ];
+
+        if (excludeOrderSpecific === 'true') {
+          query += ` AND c.primaryEntity.type != 'order'`;
+        }
+
+        if (category) {
+          query += ` AND c.category = @category`;
+          params.push({ name: '@category', value: category });
+        }
+
+        query += ` ORDER BY c.createdAt DESC`;
+
+        const result = await cosmosService.queryItems('communications', query, params);
+
+        return res.json({
+          success: true,
+          data: result.data || [],
+          count: result.data?.length || 0
+        });
+      } catch (error: any) {
+        logger.error('Failed to get vendor communications', { error: error.message, vendorId: req.params.vendorId });
+        return res.status(500).json({
+          success: false,
+          error: error.message || 'Failed to retrieve communications'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/communications/appraiser/:appraiserId
+   * Get all communications with/about an appraiser
+   */
+  router.get(
+    '/appraiser/:appraiserId',
+    [param('appraiserId').notEmpty()],
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = (req as any).user?.tenantId || 'default';
+        const { appraiserId } = req.params;
+        const { category, excludeOrderSpecific } = req.query;
+
+        let query = `
+          SELECT * FROM c 
+          WHERE c.type = 'communication'
+            AND c.tenantId = @tenantId
+            AND (
+              (c.primaryEntity.type = 'appraiser' AND c.primaryEntity.id = @appraiserId)
+              OR ARRAY_CONTAINS(c.relatedEntities, {type: 'appraiser', id: @appraiserId}, true)
+            )
+        `;
+
+        const params: any[] = [
+          { name: '@tenantId', value: tenantId },
+          { name: '@appraiserId', value: appraiserId }
+        ];
+
+        if (excludeOrderSpecific === 'true') {
+          query += ` AND c.primaryEntity.type != 'order'`;
+        }
+
+        if (category) {
+          query += ` AND c.category = @category`;
+          params.push({ name: '@category', value: category });
+        }
+
+        query += ` ORDER BY c.createdAt DESC`;
+
+        const result = await cosmosService.queryItems('communications', query, params);
+
+        return res.json({
+          success: true,
+          data: result.data || [],
+          count: result.data?.length || 0
+        });
+      } catch (error: any) {
+        logger.error('Failed to get appraiser communications', { error: error.message, appraiserId: req.params.appraiserId });
+        return res.status(500).json({
+          success: false,
+          error: error.message || 'Failed to retrieve communications'
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/communications/thread/:threadId
+   * Get entire conversation thread
+   */
+  router.get(
+    '/thread/:threadId',
+    [param('threadId').notEmpty()],
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = (req as any).user?.tenantId || 'default';
+        const { threadId } = req.params;
+
+        const query = `
+          SELECT * FROM c 
+          WHERE c.type = 'communication'
+            AND c.threadId = @threadId
+            AND c.tenantId = @tenantId
+          ORDER BY c.createdAt ASC
+        `;
+
+        const result = await cosmosService.queryItems('communications', query, [
+          { name: '@tenantId', value: tenantId },
+          { name: '@threadId', value: threadId }
+        ]);
+
+        return res.json({
+          success: true,
+          data: result.data || [],
+          count: result.data?.length || 0
+        });
+      } catch (error: any) {
+        logger.error('Failed to get thread communications', { error: error.message, threadId: req.params.threadId });
+        return res.status(500).json({
+          success: false,
+          error: error.message || 'Failed to retrieve communications'
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/communications/search
+   * Advanced search with multiple criteria
+   */
+  router.post(
+    '/search',
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = (req as any).user?.tenantId || 'default';
+        const {
+          entityType,
+          entityId,
+          category,
+          channel,
+          dateFrom,
+          dateTo,
+          searchTerm,
+          requiresAction,
+          status
+        } = req.body;
+
+        let conditions = ['c.type = \'communication\'', 'c.tenantId = @tenantId'];
+        const params: any[] = [{ name: '@tenantId', value: tenantId }];
+
+        if (entityType && entityId) {
+          conditions.push('(c.primaryEntity.type = @entityType AND c.primaryEntity.id = @entityId)');
+          params.push(
+            { name: '@entityType', value: entityType },
+            { name: '@entityId', value: entityId }
+          );
+        }
+
+        if (category) {
+          conditions.push('c.category = @category');
+          params.push({ name: '@category', value: category });
+        }
+
+        if (channel) {
+          conditions.push('c.channel = @channel');
+          params.push({ name: '@channel', value: channel });
+        }
+
+        if (status) {
+          conditions.push('c.status = @status');
+          params.push({ name: '@status', value: status });
+        }
+
+        if (dateFrom) {
+          conditions.push('c.createdAt >= @dateFrom');
+          params.push({ name: '@dateFrom', value: dateFrom });
+        }
+
+        if (dateTo) {
+          conditions.push('c.createdAt <= @dateTo');
+          params.push({ name: '@dateTo', value: dateTo });
+        }
+
+        if (searchTerm) {
+          conditions.push('(CONTAINS(LOWER(c.subject), LOWER(@searchTerm)) OR CONTAINS(LOWER(c.body), LOWER(@searchTerm)))');
+          params.push({ name: '@searchTerm', value: searchTerm });
+        }
+
+        if (requiresAction) {
+          conditions.push('c.businessImpact.requiresAction = true');
+        }
+
+        const query = `SELECT * FROM c WHERE ${conditions.join(' AND ')} ORDER BY c.createdAt DESC`;
+
+        const result = await cosmosService.queryItems('communications', query, params);
+
+        return res.json({
+          success: true,
+          data: result.data || [],
+          count: result.data?.length || 0
+        });
+      } catch (error: any) {
+        logger.error('Failed to search communications', { error: error.message });
+        return res.status(500).json({
+          success: false,
+          error: error.message || 'Failed to search communications'
         });
       }
     }

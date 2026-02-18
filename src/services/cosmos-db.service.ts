@@ -44,6 +44,7 @@ export class CosmosDbService {
   private reviewsContainer: Container | null = null;
   private comparableAnalysesContainer: Container | null = null;
   private documentsContainer: Container | null = null;
+  private communicationsContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -64,6 +65,7 @@ export class CosmosDbService {
     reviews: 'appraisal-reviews',
     comparableAnalyses: 'comparable-analyses',
     documents: 'documents',
+    communications: 'communications',
     communicationContexts: 'communicationContexts',      // Unified communication platform
     communicationTranscripts: 'communicationTranscripts',// Chat/call/meeting transcripts
     aiInsights: 'aiInsights'                              // AI-generated insights
@@ -152,6 +154,7 @@ export class CosmosDbService {
       this.reviewsContainer = this.database.container(this.containers.reviews);
       this.comparableAnalysesContainer = this.database.container(this.containers.comparableAnalyses);
       this.documentsContainer = this.database.container(this.containers.documents);
+      this.communicationsContainer = this.database.container(this.containers.communications);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {

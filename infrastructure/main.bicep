@@ -164,6 +164,17 @@ module cosmosDocumentsContainer 'modules/cosmos-db-documents-container.bicep' = 
   }
 }
 
+// Cosmos DB Communications Container (for unified communication tracking)
+module cosmosCommunicationsContainer 'modules/cosmos-db-communications-container.bicep' = {
+  name: 'cosmos-communications-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+    location: location
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
