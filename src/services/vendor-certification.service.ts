@@ -12,6 +12,7 @@ import { NotificationService } from './notification.service.js';
 import { 
   VendorCertification, 
   CertificationStatus,
+  CertificationType,
   CertificationAlert,
   CertificationUploadRequest,
   CertificationVerificationResult,

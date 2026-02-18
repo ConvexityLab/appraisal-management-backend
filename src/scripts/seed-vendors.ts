@@ -65,7 +65,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
         travelFee: 75
       }
     ],
-    productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY, ProductType.DESKTOP_APPRAISAL],
+    productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR, ProductType.DESKTOP_APPRAISAL],
     specialties: [
       { type: 'Residential', description: 'Single family and condominiums', yearsExperience: 15, certification: 'SRA' },
       { type: 'Commercial', description: 'Small commercial properties', yearsExperience: 8, certification: 'MAI' }
@@ -98,8 +98,8 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****1234'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH, OrderType.COMPLEX],
-      productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE, OrderType.CONSTRUCTION],
+      productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR],
       maxOrdersPerDay: 3,
       workingHours: { start: '08:00', end: '18:00' },
       workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
@@ -131,7 +131,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
         travelFee: 50
       }
     ],
-    productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY, ProductType.HYBRID_APPRAISAL],
+    productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR, ProductType.HYBRID_APPRAISAL],
     specialties: [
       { type: 'Residential', description: 'Single family homes', yearsExperience: 12 },
       { type: 'Luxury', description: 'High-value properties over $2M', yearsExperience: 6, certification: 'SRA' }
@@ -164,7 +164,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****5678'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE],
       productTypes: [ProductType.FULL_APPRAISAL, ProductType.HYBRID_APPRAISAL],
       maxOrdersPerDay: 4,
       workingHours: { start: '07:00', end: '17:00' },
@@ -238,7 +238,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****9999'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.COMPLEX],
+      orderTypes: [OrderType.PURCHASE, OrderType.CONSTRUCTION],
       productTypes: [ProductType.FULL_APPRAISAL, ProductType.DESKTOP_APPRAISAL],
       maxOrdersPerDay: 2,
       workingHours: { start: '09:00', end: '17:00' },
@@ -271,7 +271,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
         travelFee: 60
       }
     ],
-    productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY],
+    productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR],
     specialties: [
       { type: 'Residential', description: 'Single family, townhomes', yearsExperience: 8 }
     ],
@@ -303,8 +303,8 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****8888'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH],
-      productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE],
+      productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR],
       maxOrdersPerDay: 5,
       workingHours: { start: '06:00', end: '16:00' },
       workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
@@ -377,7 +377,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****7777'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH, OrderType.COMPLEX],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE, OrderType.CONSTRUCTION],
       productTypes: [ProductType.FULL_APPRAISAL, ProductType.DESKTOP_APPRAISAL, ProductType.HYBRID_APPRAISAL],
       maxOrdersPerDay: 2,
       workingHours: { start: '08:00', end: '19:00' },
@@ -410,7 +410,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
         travelFee: 50
       }
     ],
-    productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY, ProductType.DESKTOP_APPRAISAL],
+    productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR, ProductType.DESKTOP_APPRAISAL],
     specialties: [
       { type: 'Residential', description: 'Suburban single family', yearsExperience: 11, certification: 'SRA' }
     ],
@@ -442,8 +442,8 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****6666'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH],
-      productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE],
+      productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR],
       maxOrdersPerDay: 4,
       workingHours: { start: '07:00', end: '17:00' },
       workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
@@ -516,7 +516,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****5555'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH, OrderType.COMPLEX],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE, OrderType.CONSTRUCTION],
       productTypes: [ProductType.FULL_APPRAISAL, ProductType.DESKTOP_APPRAISAL],
       maxOrdersPerDay: 3,
       workingHours: { start: '08:00', end: '18:00' },
@@ -549,7 +549,7 @@ const vendors: Omit<Vendor, 'id'>[] = [
         travelFee: 60
       }
     ],
-    productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY, ProductType.HYBRID_APPRAISAL],
+    productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR, ProductType.HYBRID_APPRAISAL],
     specialties: [
       { type: 'Residential', description: 'Condos and waterfront', yearsExperience: 9 },
       { type: 'REO', description: 'Bank-owned properties', yearsExperience: 6 }
@@ -582,8 +582,8 @@ const vendors: Omit<Vendor, 'id'>[] = [
       routingNumber: '****4444'
     },
     preferences: {
-      orderTypes: [OrderType.STANDARD, OrderType.RUSH],
-      productTypes: [ProductType.FULL_APPRAISAL, ProductType.EXTERIOR_ONLY],
+      orderTypes: [OrderType.PURCHASE, OrderType.REFINANCE],
+      productTypes: [ProductType.FULL_APPRAISAL, ProductType.BPO_EXTERIOR],
       maxOrdersPerDay: 4,
       workingHours: { start: '08:00', end: '17:00' },
       workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
@@ -677,8 +677,10 @@ async function seedVendors(): Promise<void> {
           invoiceHistory: invoices
         };
         
-        // @ts-expect-error - Access private vendorsContainer for seeding
-        const container = cosmosDb['vendorsContainer'];
+        const container = (cosmosDb as any)['vendorsContainer'];
+        if (!container) {
+          throw new Error('Vendors container not initialized');
+        }
         await container.items.upsert(updatedVendor);
         logger.info(`✅ FORCE Updated ${vendorData.name} with certifications and payment history`);
         created++;
@@ -699,8 +701,7 @@ async function seedVendors(): Promise<void> {
 
       // We can't use createVendor because it expects Omit<Vendor, 'id'|'onboardingDate'|'lastActive'>
       // Instead, we'll use the raw container insert
-      // @ts-expect-error - Access private vendorsContainer for seeding
-      const container = cosmosDb['vendorsContainer'];
+      const container = (cosmosDb as any)['vendorsContainer'];
       
       if (!container) {
         throw new Error('Vendors container not initialized');
@@ -710,8 +711,8 @@ async function seedVendors(): Promise<void> {
       logger.info(`✅ Created ${vendorData.name} (${vendorId})`);
       created++;
 
-    } catch (error) {
-      logger.error(`❌ Failed to create ${vendorData.name}:`, error instanceof Error ? error.message : error);
+    } catch (error: any) {
+      logger.error(`❌ Failed to create ${vendorData.name}:`, error instanceof Error ? error.message : String(error));
     }
   }
 

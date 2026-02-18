@@ -147,10 +147,11 @@ export const createVendorCertificationRouter = (dbService: CosmosDbService): Rou
         );
 
         // Filter to only expiring soon
-        const expiring = certifications.filter(c => 
-          c.status === CertificationStatus.EXPIRING_SOON ||
-          (c.daysUntilExpiry !== undefined && c.daysUntilExpiry <= days && c.daysUntilExpiry >= 0)
-        );
+        const expiring = certifications.filter(c => {
+          if (c.status === CertificationStatus.EXPIRING_SOON) return true;
+          const daysUntil = Math.floor((c.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          return daysUntil >= 0 && daysUntil <= days;
+        });
 
         res.json({
           success: true,

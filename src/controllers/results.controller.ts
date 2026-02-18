@@ -256,7 +256,9 @@ export class QCResultsController {
    */
   private async getResultByOrderId(req: AuthenticatedRequest, res: Response): Promise<void> {
     // Map orderId param to resultId so getResult's fallback logic works
-    req.params.resultId = req.params.orderId;
+    if (req.params.orderId) {
+      req.params.resultId = req.params.orderId;
+    }
     return this.getResult(req, res);
   }
 
@@ -298,20 +300,21 @@ export class QCResultsController {
           userId: req.user?.id
         });
 
-        const query = {
+        const querySpec = {
           query: 'SELECT * FROM c WHERE c.orderId = @orderId',
           parameters: [{ name: '@orderId', value: resultId }]
         };
 
-        const qcReviewResult = await this.cosmosService.queryItems('qc-reviews', query);
+        const qcReviewResult = await this.cosmosService.queryItems<any>('qc-reviews', querySpec);
 
         if (qcReviewResult.success && qcReviewResult.data && qcReviewResult.data.length > 0) {
-          result = qcReviewResult.data[0];
+          const qcResult: any = qcReviewResult.data[0];
+          result = qcResult;
           this.logger.info('Found QC review by orderId', {
             orderId: resultId,
-            reviewId: result.id,
-            hasCategoriesResults: !!result.categoriesResults,
-            categoriesCount: result.categoriesResults?.length || 0
+            reviewId: qcResult.id,
+            hasCategoriesResults: !!qcResult.categoriesResults,
+            categoriesCount: qcResult.categoriesResults?.length || 0
           });
         }
       }

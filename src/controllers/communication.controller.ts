@@ -52,7 +52,7 @@ async function storeCommunication(params: {
       primaryEntity: params.primaryEntity,
       relatedEntities: params.relatedEntities || [],
       
-      threadId: params.threadId,
+      threadId: params.threadId || undefined,
       conversationContext: params.category,
       
       channel: params.channel,
@@ -140,6 +140,20 @@ export const createCommunicationRouter = (): Router => {
 
         // Send email via ACS
         const emailClient = acsService.getEmailClient();
+        // Create communication record
+        const message = await storeCommunication({
+          tenantId,
+          channel: 'email',
+          from: fromAddress,
+          to,
+          subject,
+          body,
+          primaryEntity: entity,
+          relatedEntities: relatedEntities || [],
+          category,
+          threadId
+        });
+
         const emailMessage = {
           senderAddress: fromAddress,
           content: {
@@ -159,10 +173,10 @@ export const createCommunicationRouter = (): Router => {
         message.sentAt = new Date();
         message.metadata = { messageId: response.id };
 
-        // Store in Cosmos
+        // Update stored communication
         await storeCommunication(message);
 
-        logger.info('Email sent successfully', { messageId, to, orderId });
+        logger.info('Email sent successfully', { messageId: message.id, to, entity });
 
         return res.json({
           success: true,
@@ -177,19 +191,21 @@ export const createCommunicationRouter = (): Router => {
         logger.error('Failed to send email', { error: error.message });
         
         // Store failed message
-        const messageId = `email-${req.body.orderId}-${Date.now()}`;
-        const failedMessage: CommunicationMessage = {
-          id: messageId,
-          orderId: req.body.orderId,
+        const messageId = `email-${Date.now()}`;
+        const failedMessage = await storeCommunication({
           tenantId: (req as any).user?.tenantId || 'default',
           channel: 'email',
+          from: fromAddress,
           to: req.body.to,
           subject: req.body.subject,
           body: req.body.body || '',
-          status: 'failed',
-          failureReason: error.message,
-          createdAt: new Date()
-        };
+          primaryEntity: entity,
+          relatedEntities: req.body.relatedEntities || [],
+          category: req.body.category || 'general',
+          threadId: req.body.threadId
+        });
+        failedMessage.status = 'failed';
+        failedMessage.failureReason = error.message;
         await storeCommunication(failedMessage);
 
         return res.status(500).json({
@@ -228,7 +244,7 @@ export const createCommunicationRouter = (): Router => {
 
         // Create communication record
         const messageId = `sms-${orderId}-${Date.now()}`;
-        const message: CommunicationMessage = {
+        const message: CommunicationRecord = {
           id: messageId,
           orderId,
           tenantId,
@@ -287,7 +303,7 @@ export const createCommunicationRouter = (): Router => {
         
         // Store failed message
         const messageId = `sms-${req.body.orderId}-${Date.now()}`;
-        const failedMessage: CommunicationMessage = {
+        const failedMessage: CommunicationRecord = {
           id: messageId,
           orderId: req.body.orderId,
           tenantId: (req as any).user?.tenantId || 'default',
@@ -338,7 +354,7 @@ export const createCommunicationRouter = (): Router => {
 
         // Create communication record
         const messageId = `teams-${orderId}-${Date.now()}`;
-        const message: CommunicationMessage = {
+        const message: CommunicationRecord = {
           id: messageId,
           orderId,
           tenantId,
@@ -383,7 +399,7 @@ export const createCommunicationRouter = (): Router => {
         
         // Store failed message
         const messageId = `teams-${req.body.orderId}-${Date.now()}`;
-        const failedMessage: CommunicationMessage = {
+        const failedMessage: CommunicationRecord = {
           id: messageId,
           orderId: req.body.orderId,
           tenantId: (req as any).user?.tenantId || 'default',
@@ -439,7 +455,7 @@ export const createCommunicationRouter = (): Router => {
           ]
         };
 
-        const { resources: messages } = await ordersContainer.items.query<CommunicationMessage>(querySpec).fetchAll();
+        const { resources: messages } = await ordersContainer.items.query<CommunicationRecord>(querySpec).fetchAll();
 
         logger.info('Communication history retrieved', { 
           orderId, 
@@ -451,7 +467,7 @@ export const createCommunicationRouter = (): Router => {
           data: {
             orderId,
             messageCount: messages.length,
-            messages: messages.map((m: CommunicationMessage) => ({
+            messages: messages.map((m: CommunicationRecord) => ({
               id: m.id,
               channel: m.channel,
               to: m.to,
@@ -525,7 +541,7 @@ export const createCommunicationRouter = (): Router => {
 
         // Query communications container (stored separately)
         const container = cosmosService.getContainer('orders'); // Messages stored in orders container
-        const { resources: messages } = await container.items.query<CommunicationMessage>(querySpec).fetchAll();
+        const { resources: messages } = await container.items.query<CommunicationRecord>(querySpec).fetchAll();
 
         logger.info('Entity communication history retrieved', { 
           entityType,
@@ -535,7 +551,7 @@ export const createCommunicationRouter = (): Router => {
 
         return res.json({
           success: true,
-          data: messages.map((m: CommunicationMessage) => ({
+          data: messages.map((m: CommunicationRecord) => ({
             id: m.id,
             channel: m.channel,
             direction: 'outbound', // All messages sent from system are outbound

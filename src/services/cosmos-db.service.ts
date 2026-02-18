@@ -474,8 +474,8 @@ export class CosmosDbService {
         .fetchAll();
       
       console.log('Query returned resources count:', resources.length);
-      if (resources.length > 0) {
-        console.log('Found vendor:', resources[0].id, resources[0].businessName);
+      if (resources.length > 0 && resources[0]) {
+        console.log('Found vendor:', resources[0].id, resources[0].name);
         console.log('Vendor has certifications:', !!resources[0].certifications, 'length:', resources[0].certifications?.length);
         console.log('Vendor has paymentHistory:', !!resources[0].paymentHistory, 'length:', resources[0].paymentHistory?.length);
       } else {

@@ -252,7 +252,6 @@ module acsRoleAssignments 'modules/acs-role-assignments.bicep' = {
     communicationServicesName: communicationServices.outputs.communicationServicesName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
     developerPrincipalIds: developerPrincipalIds
-    tags: tags
   }
 }
 

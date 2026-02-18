@@ -63,11 +63,10 @@ class MockOrderRepository implements DatabaseOrderRepository {
 
   private seedTestData(): void {
     // Seed order-005: Completed order with full workflow
-    const order005: AppraisalOrder = {
+    const order005: any = {
       id: 'order-005',
       orderNumber: 'APR-2026-005',
       clientId: 'client-002',
-      clientName: 'Wells Fargo',
       status: 'completed' as any,
       propertyAddress: {
         streetAddress: '555 Cedar Ln',
@@ -76,8 +75,6 @@ class MockOrderRepository implements DatabaseOrderRepository {
         zipCode: '75034',
         county: 'Collin'
       },
-      propertyType: 'Single Family' as any,
-      loanAmount: 625000,
       appraisalType: 'Full Appraisal' as any,
       dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
       priority: 'normal' as any,
@@ -104,11 +101,11 @@ class MockOrderRepository implements DatabaseOrderRepository {
     this.orders.set(order005.id, order005);
 
     // Add a few more test orders for variety
-    const order001: AppraisalOrder = {
+    const order001: any = {
       id: 'order-001',
       orderNumber: 'APR-2026-001',
       clientId: 'client-001',
-      clientName: 'First National Bank',
+
       status: 'vendor_assigned' as any,
       propertyAddress: {
         streetAddress: '123 Main St',
@@ -117,8 +114,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
         zipCode: '75201',
         county: 'Dallas'
       },
-      propertyType: 'Single Family' as any,
-      loanAmount: 325000,
+
       appraisalType: 'Full Appraisal' as any,
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
       priority: 'normal' as any,
@@ -137,11 +133,10 @@ class MockOrderRepository implements DatabaseOrderRepository {
     };
     this.orders.set(order001.id, order001);
 
-    const order002: AppraisalOrder = {
+    const order002: any = {
       id: 'order-002',
       orderNumber: 'APR-2026-002',
       clientId: 'client-002',
-      clientName: 'Wells Fargo',
       status: 'inspection_scheduled' as any,
       propertyAddress: {
         streetAddress: '456 Oak Ave',
@@ -150,8 +145,6 @@ class MockOrderRepository implements DatabaseOrderRepository {
         zipCode: '75074',
         county: 'Collin'
       },
-      propertyType: 'Townhouse' as any,
-      loanAmount: 280000,
       appraisalType: 'Full Appraisal' as any,
       dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
       priority: 'normal' as any,
@@ -208,7 +201,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
     // Apply assignedVendorId filter
     if (filters.assignedVendorId) {
       filteredOrders = filteredOrders.filter(order => 
-        order.assignments?.some(a => a.vendorId === filters.assignedVendorId)
+        order.assignedVendorId === filters.assignedVendorId
       );
     }
     

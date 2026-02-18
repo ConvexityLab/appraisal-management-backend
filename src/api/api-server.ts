@@ -1699,7 +1699,7 @@ export class AppraisalManagementAPIServer {
     try {
       const result = await this.dbService.findAllVendors();
       
-      if (result.success) {
+      if (result.success && result.data) {
         // Transform Vendor[] to VendorProfile[] for frontend compatibility
         const vendorProfiles = result.data.map(vendor => this.transformVendorToProfile(vendor));
         res.json(vendorProfiles);
@@ -1781,6 +1781,9 @@ export class AppraisalManagementAPIServer {
   private async getVendorById(req: AuthenticatedRequest, res: express.Response): Promise<void> {
     try {
       const vendorId = req.params.vendorId;
+      if (!vendorId) {
+        return res.status(400).json({ error: 'Vendor ID is required' });
+      }
       const result = await this.dbService.findVendorById(vendorId);
       
       if (result.success && result.data) {
