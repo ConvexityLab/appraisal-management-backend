@@ -70,7 +70,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
       clientName: 'Wells Fargo',
       status: 'completed' as any,
       propertyAddress: {
-        street: '555 Cedar Ln',
+        streetAddress: '555 Cedar Ln',
         city: 'Frisco',
         state: 'TX',
         zipCode: '75034',
@@ -111,7 +111,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
       clientName: 'First National Bank',
       status: 'vendor_assigned' as any,
       propertyAddress: {
-        street: '123 Main St',
+        streetAddress: '123 Main St',
         city: 'Dallas',
         state: 'TX',
         zipCode: '75201',
@@ -144,7 +144,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
       clientName: 'Wells Fargo',
       status: 'inspection_scheduled' as any,
       propertyAddress: {
-        street: '456 Oak Ave',
+        streetAddress: '456 Oak Ave',
         city: 'Plano',
         state: 'TX',
         zipCode: '75074',
@@ -208,7 +208,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
     // Apply assignedVendorId filter
     if (filters.assignedVendorId) {
       filteredOrders = filteredOrders.filter(order => 
-        order.vendorAssignment?.vendorId === filters.assignedVendorId
+        order.assignments?.some(a => a.vendorId === filters.assignedVendorId)
       );
     }
     
