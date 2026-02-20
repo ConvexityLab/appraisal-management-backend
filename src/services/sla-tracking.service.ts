@@ -34,7 +34,8 @@ export class SLATrackingService {
   private defaultSLAs = {
     qcReview: 240, // 4 hours
     revisionTurnaround: 1440, // 24 hours
-    escalationResponse: 120 // 2 hours
+    escalationResponse: 120, // 2 hours
+    appraisalCompletion: 10080 // 7 days
   };
 
   constructor() {
@@ -79,7 +80,7 @@ export class SLATrackingService {
    * Get applicable SLA configuration
    */
   async getSLAConfiguration(
-    entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION',
+    entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION' | 'APPRAISAL',
     clientId?: string,
     orderType?: string
   ): Promise<SLAConfiguration | null> {
@@ -108,11 +109,12 @@ export class SLATrackingService {
     }
   }
 
-  private getDefaultSLAConfig(entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION'): SLAConfiguration {
+  private getDefaultSLAConfig(entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION' | 'APPRAISAL'): SLAConfiguration {
     const minutesMap = {
       QC_REVIEW: this.defaultSLAs.qcReview,
       REVISION: this.defaultSLAs.revisionTurnaround,
-      ESCALATION: this.defaultSLAs.escalationResponse
+      ESCALATION: this.defaultSLAs.escalationResponse,
+      APPRAISAL: this.defaultSLAs.appraisalCompletion
     };
 
     return {
@@ -122,6 +124,7 @@ export class SLATrackingService {
       qcReviewTime: this.defaultSLAs.qcReview,
       revisionTurnaround: this.defaultSLAs.revisionTurnaround,
       escalationResponse: this.defaultSLAs.escalationResponse,
+      appraisalCompletion: this.defaultSLAs.appraisalCompletion,
       rushOrderMultiplier: 0.5,
       routineOrderMultiplier: 1.0,
       autoEscalateOnBreach: true,
@@ -137,10 +140,28 @@ export class SLATrackingService {
   // ===========================
 
   /**
+   * Get all SLA tracking records for a specific order
+   */
+  async getSLAsByOrderId(orderId: string): Promise<SLATracking[]> {
+    try {
+      const container = this.dbService.getContainer('sla-tracking');
+      const query = 'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.createdAt DESC';
+      const { resources } = await container.items.query<SLATracking>({
+        query,
+        parameters: [{ name: '@orderId', value: orderId }],
+      }).fetchAll();
+      return resources;
+    } catch (error) {
+      this.logger.error('Failed to get SLAs by orderId', { error, orderId });
+      return [];
+    }
+  }
+
+  /**
    * Start tracking SLA for an entity
    */
   async startSLATracking(
-    entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION',
+    entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION' | 'APPRAISAL',
     entityId: string,
     orderId: string,
     orderNumber: string,
@@ -635,22 +656,27 @@ export class SLATrackingService {
   }
 
   private getBaseMinutes(
-    entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION',
+    entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION' | 'APPRAISAL',
     config: SLAConfiguration | null
   ): number {
     if (!config) {
-      return this.defaultSLAs[entityType === 'QC_REVIEW' ? 'qcReview' : 
-                               entityType === 'REVISION' ? 'revisionTurnaround' : 
-                               'escalationResponse'];
+      const defaultMap: Record<string, number> = {
+        QC_REVIEW: this.defaultSLAs.qcReview,
+        REVISION: this.defaultSLAs.revisionTurnaround,
+        ESCALATION: this.defaultSLAs.escalationResponse,
+        APPRAISAL: this.defaultSLAs.appraisalCompletion
+      };
+      return defaultMap[entityType] ?? this.defaultSLAs.appraisalCompletion;
     }
 
-    const minutesMap = {
+    const minutesMap: Record<string, number> = {
       QC_REVIEW: config.qcReviewTime,
       REVISION: config.revisionTurnaround,
-      ESCALATION: config.escalationResponse
+      ESCALATION: config.escalationResponse,
+      APPRAISAL: config.appraisalCompletion
     };
 
-    return minutesMap[entityType];
+    return minutesMap[entityType] ?? config.appraisalCompletion;
   }
 
   private getPriorityMultiplier(priority: string, config: SLAConfiguration | null): number {

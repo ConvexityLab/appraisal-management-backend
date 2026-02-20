@@ -3,23 +3,8 @@
  * Defines milestone tracking, progress updates, and delivery workflow
  */
 
-export type OrderStatus = 
-  | 'PENDING'
-  | 'ASSIGNED'
-  | 'ACCEPTED'
-  | 'IN_PROGRESS'
-  | 'INSPECTION_SCHEDULED'
-  | 'INSPECTION_COMPLETE'
-  | 'DRAFT_SUBMITTED'
-  | 'DRAFT_UNDER_REVIEW'
-  | 'REVISIONS_REQUESTED'
-  | 'FINAL_SUBMITTED'
-  | 'FINAL_UNDER_REVIEW'
-  | 'APPROVED'
-  | 'DELIVERED'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'ON_HOLD';
+// OrderStatus — canonical definition lives in order-status.ts (single source of truth)
+export { OrderStatus } from './order-status.js';
 
 export type MilestoneType =
   | 'ASSIGNMENT'

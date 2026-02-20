@@ -57,7 +57,7 @@ async function seedSmokeTestData() {
       loanAmount: 400000,
       appraisalType: 'FULL_APPRAISAL_1004',
       appraisedValue: 500000,
-      orderStatus: 'IN_QC_REVIEW',
+      orderStatus: 'QC_REVIEW',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),

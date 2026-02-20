@@ -257,7 +257,7 @@ export class AzureEntraAuthMiddleware {
       const { role, permissions } = this.mapUserRole(groups, appRoles);
 
       req.user = {
-        id: payload.sub || payload.oid,
+        id: payload.oid || payload.sub, // Use oid (stable directory ID) not sub (pairwise app-specific)
         email: payload.email || payload.preferred_username || payload.upn,
         name: payload.name || (payload.given_name && payload.family_name ? payload.given_name + ' ' + payload.family_name : 'Unknown'),
         role,

@@ -1,10 +1,7 @@
-// @ts-nocheck
 /**
  * Communication Controller
  * Simple API for sending emails, SMS, and Teams notifications
  * Frontend handles all template rendering - backend just sends messages
- * 
- * Temporary: Legacy code needs refactoring to properly use CommunicationParticipantInfo types
  */
 
 import express, { Request, Response, Router } from 'express';
@@ -55,27 +52,27 @@ async function storeCommunication(params: {
       primaryEntity: params.primaryEntity,
       relatedEntities: params.relatedEntities || [],
       
-      threadId: params.threadId || undefined,
+      ...(params.threadId ? { threadId: params.threadId } : {}),
       conversationContext: params.category,
       
       channel: params.channel,
-      direction: 'outbound',
+      direction: 'outbound' as const,
       
       from: params.from,
       to: toArray,
       
-      subject: params.subject,
+      ...(params.subject ? { subject: params.subject } : {}),
       body: params.body,
-      bodyFormat: 'html',
+      bodyFormat: 'html' as const,
       
       status: params.status,
-      sentAt: params.status === 'sent' ? new Date() : undefined,
-      failedAt: params.status === 'failed' ? new Date() : undefined,
+      ...(params.status === 'sent' ? { sentAt: new Date() } : {}),
+      ...(params.status === 'failed' ? { failedAt: new Date() } : {}),
       
-      deliveryStatus: params.metadata,
+      ...(params.metadata ? { deliveryStatus: params.metadata } : {}),
       
       category: params.category,
-      priority: 'normal',
+      priority: 'normal' as const,
       
       createdBy: params.createdBy,
       createdAt: new Date()
@@ -236,9 +233,10 @@ export const createCommunicationRouter = (): Router => {
   router.post(
     '/sms',
     [
-      body('orderId').notEmpty().withMessage('Order ID is required'),
       body('to').notEmpty().withMessage('Phone number is required'),
-      body('body').notEmpty().withMessage('Message body is required')
+      body('body').notEmpty().withMessage('Message body is required'),
+      body('primaryEntity').optional().isObject(),
+      body('category').optional().isString()
     ],
     async (req: Request, res: Response) => {
       try {
@@ -251,29 +249,41 @@ export const createCommunicationRouter = (): Router => {
         }
 
         const tenantId = (req as any).user?.tenantId || 'default';
-        const { orderId, to, body } = req.body;
+        const userId = (req as any).user?.id || 'system';
+        const { to, body, primaryEntity, relatedEntities, category = 'general', threadId } = req.body;
 
-        logger.info('Sending SMS', { orderId, to });
+        const entity: CommunicationEntity = primaryEntity || {
+          type: 'general' as const,
+          id: 'general',
+          name: 'General Communication'
+        };
+
+        const smsFromNumber = process.env.AZURE_COMMUNICATION_SMS_NUMBER || '';
+        if (!smsFromNumber) {
+          throw new Error('AZURE_COMMUNICATION_SMS_NUMBER is not configured. Cannot send SMS.');
+        }
+
+        logger.info('Sending SMS', { to, primaryEntity: entity });
 
         // Create communication record
-        // @ts-expect-error - Legacy code needs refactoring to use CommunicationParticipantInfo objects
-        const messageId = `sms-${orderId}-${Date.now()}`;
-        const message: CommunicationRecord = {
-          id: messageId,
-          orderId,
+        const message = await storeCommunication({
           tenantId,
           channel: 'sms',
-          to,
-          from: process.env.AZURE_COMMUNICATION_SMS_NUMBER || '',
+          from: { name: 'System', phone: smsFromNumber },
+          to: { name: to, phone: to },
           body,
+          primaryEntity: entity,
+          relatedEntities: relatedEntities || [],
+          category,
+          threadId,
           status: 'pending',
-          createdAt: new Date()
-        };
+          createdBy: userId
+        });
 
         // Send SMS via ACS
         const smsClient = acsService.getSmsClient();
         const sendResults = await smsClient.send({
-          from: message.from!,
+          from: smsFromNumber,
           to: [to],
           message: body
         });
@@ -283,25 +293,23 @@ export const createCommunicationRouter = (): Router => {
         if (!result) {
           throw new Error('No SMS send result returned');
         }
+
         message.status = result.successful ? 'sent' : 'failed';
         message.sentAt = new Date();
         message.metadata = { messageId: result.messageId };
-        if (!result.successful) {
-          message.metadata = result.errorMessage || 'Unknown error';
-        }
 
-        // Store in Cosmos
-        await storeCommunication(message);
+        // Update stored communication
+        await cosmosService.createItem('communications', message);
 
         if (!result.successful) {
-          logger.error('SMS failed', { messageId, error: result.errorMessage });
+          logger.error('SMS failed', { messageId: message.id, error: result.errorMessage });
           return res.status(500).json({
             success: false,
             error: result.errorMessage || 'Failed to send SMS'
           });
         }
 
-        logger.info('SMS sent successfully', { messageId, to, orderId });
+        logger.info('SMS sent successfully', { messageId: message.id, to });
 
         return res.json({
           success: true,
@@ -314,21 +322,27 @@ export const createCommunicationRouter = (): Router => {
 
       } catch (error: any) {
         logger.error('Failed to send SMS', { error: error.message });
-        
+
         // Store failed message
-        const messageId = `sms-${req.body.orderId}-${Date.now()}`;
-        const failedMessage: CommunicationRecord = {
-          id: messageId,
-          orderId: req.body.orderId,
+        const failedEntity = req.body.primaryEntity || {
+          type: 'general' as const,
+          id: 'general',
+          name: 'General Communication'
+        };
+        const failedMessage = await storeCommunication({
           tenantId: (req as any).user?.tenantId || 'default',
           channel: 'sms',
-          to: req.body.to,
-          body: req.body.body,
+          from: { name: 'System', phone: process.env.AZURE_COMMUNICATION_SMS_NUMBER || '' },
+          to: { name: req.body.to, phone: req.body.to },
+          body: req.body.body || '',
+          primaryEntity: failedEntity,
+          relatedEntities: req.body.relatedEntities || [],
+          category: req.body.category || 'general',
+          threadId: req.body.threadId,
           status: 'failed',
-          metadata: error.message,
-          createdAt: new Date()
-        };
-        await storeCommunication(failedMessage);
+          createdBy: (req as any).user?.id || 'system'
+        });
+        await cosmosService.createItem('communications', failedMessage);
 
         return res.status(500).json({
           success: false,
@@ -362,47 +376,56 @@ export const createCommunicationRouter = (): Router => {
         }
 
         const tenantId = (req as any).user?.tenantId || 'default';
-        const { orderId, channelId, teamId, subject, body } = req.body;
+        const userId = (req as any).user?.id || 'system';
+        const { orderId, channelId, teamId, subject, body, primaryEntity, relatedEntities, category = 'order_discussion', threadId } = req.body;
+
+        const entity: CommunicationEntity = primaryEntity || {
+          type: 'order' as const,
+          id: orderId,
+          name: `Order ${orderId}`
+        };
 
         logger.info('Sending Teams message', { orderId, channelId, teamId, subject });
 
         // Create communication record
-        const messageId = `teams-${orderId}-${Date.now()}`;
-        const message: CommunicationRecord = {
-          id: messageId,
-          orderId,
+        const message = await storeCommunication({
           tenantId,
           channel: 'teams',
-          to: `${teamId}/${channelId}`,
+          from: { name: 'System' },
+          to: { name: `Teams Channel`, id: `${teamId}/${channelId}` },
           subject,
           body,
+          primaryEntity: entity,
+          relatedEntities: relatedEntities || [],
+          category,
+          threadId,
           status: 'pending',
-          createdAt: new Date()
-        };
+          createdBy: userId
+        });
 
-        // Send message via Teams service
-        const teamsMessageId = await teamsService.sendChannelMessage(
+        // Send message via Teams service (args: teamId, channelId, message, subject)
+        const teamsResult = await teamsService.sendChannelMessage(
           teamId,
           channelId,
-          subject,
-          body
+          body,
+          subject
         );
 
         // Update message status
         message.status = 'sent';
         message.sentAt = new Date();
-        message.metadata = { teamsMessageId };
+        message.deliveryStatus = { messageId: teamsResult.messageId, provider: 'teams' };
 
-        // Store in Cosmos
-        await storeCommunication(message);
+        // Update stored communication
+        await cosmosService.createItem('communications', message);
 
-        logger.info('Teams message sent successfully', { messageId, teamsMessageId, orderId });
+        logger.info('Teams message sent successfully', { messageId: message.id, teamsMessageId: teamsResult.messageId, orderId });
 
         return res.json({
           success: true,
           data: {
             messageId: message.id,
-            teamsMessageId,
+            teamsMessageId: teamsResult.messageId,
             status: message.status,
             sentAt: message.sentAt
           }
@@ -412,20 +435,26 @@ export const createCommunicationRouter = (): Router => {
         logger.error('Failed to send Teams message', { error: error.message });
         
         // Store failed message
-        const messageId = `teams-${req.body.orderId}-${Date.now()}`;
-        const failedMessage: CommunicationRecord = {
-          id: messageId,
-          orderId: req.body.orderId,
+        const failedEntity: CommunicationEntity = req.body.primaryEntity || {
+          type: 'order' as const,
+          id: req.body.orderId,
+          name: `Order ${req.body.orderId}`
+        };
+        await storeCommunication({
           tenantId: (req as any).user?.tenantId || 'default',
           channel: 'teams',
-          to: `${req.body.teamId}/${req.body.channelId}`,
+          from: { name: 'System' },
+          to: { name: `Teams Channel`, id: `${req.body.teamId}/${req.body.channelId}` },
           subject: req.body.subject,
-          body: req.body.body,
+          body: req.body.body || '',
+          primaryEntity: failedEntity,
+          relatedEntities: req.body.relatedEntities || [],
+          category: req.body.category || 'order_discussion',
+          threadId: req.body.threadId,
           status: 'failed',
-          metadata: error.message,
-          createdAt: new Date()
-        };
-        await storeCommunication(failedMessage);
+          createdBy: (req as any).user?.id || 'system',
+          metadata: { error: error.message }
+        });
 
         return res.status(500).json({
           success: false,
@@ -459,17 +488,21 @@ export const createCommunicationRouter = (): Router => {
 
         logger.info('Retrieving communication history', { orderId });
 
-        // Query Cosmos DB for all messages related to this order
-        const ordersContainer = cosmosService.getContainer('orders');
-        const querySpec = {
-          query: 'SELECT * FROM c WHERE c.orderId = @orderId AND c.type = @type ORDER BY c.createdAt DESC',
-          parameters: [
-            { name: '@orderId', value: orderId as string },
-            { name: '@type', value: 'communication' }
-          ]
-        };
+        // Query communications container for all messages related to this order
+        const query = `
+          SELECT * FROM c 
+          WHERE c.type = 'communication'
+            AND c.tenantId = @tenantId
+            AND (c.primaryEntity.type = 'order' AND c.primaryEntity.id = @orderId)
+          ORDER BY c.createdAt DESC
+        `;
 
-        const { resources: messages } = await ordersContainer.items.query<CommunicationRecord>(querySpec).fetchAll();
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, [
+          { name: '@tenantId', value: tenantId },
+          { name: '@orderId', value: orderId }
+        ]);
+
+        const messages = result.data || [];
 
         logger.info('Communication history retrieved', { 
           orderId, 
@@ -484,6 +517,7 @@ export const createCommunicationRouter = (): Router => {
             messages: messages.map((m: CommunicationRecord) => ({
               id: m.id,
               channel: m.channel,
+              direction: m.direction,
               to: m.to,
               from: m.from,
               subject: m.subject,
@@ -491,7 +525,6 @@ export const createCommunicationRouter = (): Router => {
               status: m.status,
               sentAt: m.sentAt,
               createdAt: m.createdAt,
-              metadata: m.metadata,
               metadata: m.metadata
             }))
           }
@@ -524,38 +557,32 @@ export const createCommunicationRouter = (): Router => {
 
         logger.info('Retrieving entity communication history', { entityType, entityId, channel });
 
-        // Build query based on entity type
-        let querySpec: any;
-        if (entityType === 'order') {
-          querySpec = {
-            query: channel 
-              ? 'SELECT * FROM c WHERE c.orderId = @entityId AND c.channel = @channel ORDER BY c.createdAt DESC'
-              : 'SELECT * FROM c WHERE c.orderId = @entityId ORDER BY c.createdAt DESC',
-            parameters: channel
-              ? [
-                  { name: '@entityId', value: entityId },
-                  { name: '@channel', value: channel }
-                ]
-              : [{ name: '@entityId', value: entityId }]
-          };
-        } else {
-          // For vendor, appraiser, etc - search by recipient or metadata
-          querySpec = {
-            query: channel
-              ? 'SELECT * FROM c WHERE (c.to LIKE @entityId OR c.metadata.entityId = @entityId) AND c.channel = @channel ORDER BY c.createdAt DESC'
-              : 'SELECT * FROM c WHERE (c.to LIKE @entityId OR c.metadata.entityId = @entityId) ORDER BY c.createdAt DESC',
-            parameters: channel
-              ? [
-                  { name: '@entityId', value: `%${entityId}%` },
-                  { name: '@channel', value: channel }
-                ]
-              : [{ name: '@entityId', value: `%${entityId}%` }]
-          };
+        // Build query - search by primaryEntity or relatedEntities
+        let query = `
+          SELECT * FROM c 
+          WHERE c.type = 'communication'
+            AND c.tenantId = @tenantId
+            AND (
+              (c.primaryEntity.type = @entityType AND c.primaryEntity.id = @entityId)
+              OR ARRAY_CONTAINS(c.relatedEntities, {type: @entityType, id: @entityId}, true)
+            )
+        `;
+
+        const params: { name: string; value: string }[] = [
+          { name: '@tenantId', value: tenantId },
+          { name: '@entityType', value: entityType },
+          { name: '@entityId', value: entityId }
+        ];
+
+        if (channel) {
+          query += ' AND c.channel = @channel';
+          params.push({ name: '@channel', value: channel as string });
         }
 
-        // Query communications container (stored separately)
-        const container = cosmosService.getContainer('orders'); // Messages stored in orders container
-        const { resources: messages } = await container.items.query<CommunicationRecord>(querySpec).fetchAll();
+        query += ' ORDER BY c.createdAt DESC';
+
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, params);
+        const messages = result.data || [];
 
         logger.info('Entity communication history retrieved', { 
           entityType,
@@ -568,7 +595,7 @@ export const createCommunicationRouter = (): Router => {
           data: messages.map((m: CommunicationRecord) => ({
             id: m.id,
             channel: m.channel,
-            direction: 'outbound', // All messages sent from system are outbound
+            direction: m.direction,
             to: m.to,
             from: m.from,
             subject: m.subject,
@@ -577,7 +604,6 @@ export const createCommunicationRouter = (): Router => {
             timestamp: m.sentAt || m.createdAt,
             sentAt: m.sentAt,
             createdAt: m.createdAt,
-            metadata: m.metadata,
             metadata: m.metadata
           }))
         });
@@ -605,18 +631,15 @@ export const createCommunicationRouter = (): Router => {
     [param('orderId').notEmpty()],
     async (req: Request, res: Response) => {
       try {
-        const tenantId = (req as any).user?.tenantId || 'default';
         const { orderId } = req.params;
         const { includeRelated } = req.query;
 
         let query = `
           SELECT * FROM c 
           WHERE c.type = 'communication'
-            AND c.tenantId = @tenantId
         `;
 
         const params: any[] = [
-          { name: '@tenantId', value: tenantId },
           { name: '@orderId', value: orderId }
         ];
 
@@ -631,7 +654,7 @@ export const createCommunicationRouter = (): Router => {
 
         query += ` ORDER BY c.createdAt DESC`;
 
-        const result = await cosmosService.queryItems('communications', query, params);
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, params);
 
         return res.json({
           success: true,
@@ -687,7 +710,7 @@ export const createCommunicationRouter = (): Router => {
 
         query += ` ORDER BY c.createdAt DESC`;
 
-        const result = await cosmosService.queryItems('communications', query, params);
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, params);
 
         return res.json({
           success: true,
@@ -743,7 +766,7 @@ export const createCommunicationRouter = (): Router => {
 
         query += ` ORDER BY c.createdAt DESC`;
 
-        const result = await cosmosService.queryItems('communications', query, params);
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, params);
 
         return res.json({
           success: true,
@@ -780,7 +803,7 @@ export const createCommunicationRouter = (): Router => {
           ORDER BY c.createdAt ASC
         `;
 
-        const result = await cosmosService.queryItems('communications', query, [
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, [
           { name: '@tenantId', value: tenantId },
           { name: '@threadId', value: threadId }
         ]);
@@ -868,7 +891,7 @@ export const createCommunicationRouter = (): Router => {
 
         const query = `SELECT * FROM c WHERE ${conditions.join(' AND ')} ORDER BY c.createdAt DESC`;
 
-        const result = await cosmosService.queryItems('communications', query, params);
+        const result = await cosmosService.queryItems<CommunicationRecord>('communications', query, params);
 
         return res.json({
           success: true,

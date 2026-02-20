@@ -14,6 +14,14 @@ export class AppraiserController {
   private appraiserService: AppraiserService;
   private logger: Logger;
 
+  /**
+   * Application-level tenant ID.
+   * Azure AD's `tid` claim is the directory GUID, NOT an app-level tenant.
+   * Until a proper tenant-mapping layer exists, all seed data and queries
+   * use this constant so they stay in sync.
+   */
+  private static readonly APP_TENANT_ID = 'test-tenant-123';
+
   constructor(cosmosService: CosmosDbService) {
     this.router = Router();
     this.appraiserService = new AppraiserService(cosmosService);
@@ -43,7 +51,7 @@ export class AppraiserController {
    */
   private async getAllAppraisers(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       const appraisers = await this.appraiserService.getAllAppraisers(tenantId);
       
       res.json({
@@ -70,7 +78,7 @@ export class AppraiserController {
    */
   private async getAvailableAppraisers(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       const specialty = req.query.specialty as string | undefined;
       
       const appraisers = await this.appraiserService.getAvailableAppraisers(tenantId, specialty);
@@ -101,7 +109,7 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       
       const appraiser = await this.appraiserService.getAppraiserById(id, tenantId);
       
@@ -132,7 +140,7 @@ export class AppraiserController {
    */
   private async createAppraiser(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       const appraiserData = {
         ...req.body,
         tenantId,
@@ -165,7 +173,7 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       
       const appraiser = await this.appraiserService.updateAppraiser(id, tenantId, req.body);
       
@@ -194,7 +202,7 @@ export class AppraiserController {
         return;
       }
       const { orderId, propertyAddress, propertyLat, propertyLng } = req.body;
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       const assignedBy = req.user?.id || 'system';
 
       if (!orderId || !propertyAddress) {
@@ -238,7 +246,7 @@ export class AppraiserController {
         return;
       }
       const { propertyAddress, propertyLat, propertyLng } = req.query;
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
 
       if (!propertyAddress) {
         res.status(400).json({
@@ -283,7 +291,7 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       
       const expiringLicenses = await this.appraiserService.checkLicenseExpiration(id, tenantId);
       
@@ -312,7 +320,7 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       
       const assignments = await this.appraiserService.getPendingAssignments(id, tenantId);
       
@@ -341,7 +349,7 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID and assignmentId parameters required' });
         return;
       }
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       const { notes } = req.body;
       
       const assignment = await this.appraiserService.acceptAssignment(
@@ -384,7 +392,7 @@ export class AppraiserController {
         return;
       }
       
-      const tenantId = req.user?.tenantId || 'test-tenant-123';
+      const tenantId = AppraiserController.APP_TENANT_ID;
       
       const assignment = await this.appraiserService.rejectAssignment(
         assignmentId,

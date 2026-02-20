@@ -580,18 +580,89 @@ export class VendorOnboardingService {
   }
 
   /**
-   * Create vendor profile from approved application
+   * Create vendor profile from approved application.
+   * Maps application data → Vendor record in the vendors container.
    */
   private async createVendorFromApplication(application: OnboardingApplication): Promise<string> {
     try {
       const vendorId = `vendor-${Date.now()}`;
+      const now = new Date();
 
-      // TODO: Create actual vendor profile using VendorManagementService
-      // For now, just return the generated ID
+      // Build vendor record from onboarding application data
+      const vendor = {
+        id: vendorId,
+        tenantId: application.id.split('-')[0] || 'tenant-001',
+        name: application.businessInfo.businessName || 
+              `${application.applicantInfo.firstName} ${application.applicantInfo.lastName}`,
+        email: application.applicantInfo.email,
+        phone: application.applicantInfo.phone,
+        licenseNumber: '', // Will be populated from certification step
+        licenseState: application.serviceInfo.licenseStates[0] || '',
+        licenseExpiry: new Date(now.getFullYear() + 2, now.getMonth(), now.getDate()),
+        certifications: (application.serviceInfo.certifications || []).map((cert: string) => ({
+          type: cert,
+          status: 'active',
+          issuedDate: now,
+          expiryDate: new Date(now.getFullYear() + 2, now.getMonth(), now.getDate())
+        })),
+        serviceAreas: (application.serviceInfo.coverageAreas || []).map((area: string) => ({
+          state: area,
+          counties: [],
+        })),
+        productTypes: [],
+        specialties: (application.serviceInfo.specialties || []).map((s: string) => s as any),
+        performance: {
+          totalOrders: 0,
+          completedOrders: 0,
+          averageTurnTime: 0,
+          revisionRate: 0,
+          onTimeDeliveryRate: 100,
+          qualityScore: 0,
+          clientSatisfactionScore: 0,
+          lastUpdated: now
+        },
+        status: 'active',
+        onboardingDate: now,
+        lastActive: now,
+        insuranceInfo: {
+          provider: '',
+          policyNumber: '',
+          expirationDate: new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()),
+          coverageAmount: 0,
+          eAndOCoverage: true
+        },
+        paymentInfo: {
+          paymentMethod: 'ach' as const,
+          bankName: '',
+          accountLast4: '',
+          routingLast4: '',
+          preferredSchedule: 'net30' as const
+        },
+        preferences: {
+          maxOrdersPerDay: application.serviceInfo.maxOrdersPerDay || 3,
+          preferredRadius: 50,
+          notificationPreferences: {
+            email: true,
+            sms: true,
+            push: true
+          }
+        },
+        onboardingApplicationId: application.id,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      };
 
-      this.logger.info('Vendor profile created from application', { 
+      // Persist to vendors container via CosmosDbService
+      const result = await this.dbService.createItem('vendors', vendor as any);
+
+      if (!result.success) {
+        throw new Error(`Failed to create vendor record: ${result.error?.message || 'Unknown error'}`);
+      }
+
+      this.logger.info('Vendor profile created from approved application', { 
         vendorId,
-        applicationId: application.id 
+        applicationId: application.id,
+        businessName: application.businessInfo.businessName
       });
 
       return vendorId;

@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { UnifiedCommunicationService } from '../services/unified-communication.service';
+import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware';
 import { Logger } from '../utils/logger';
 import { createApiResponse, createApiError, ErrorCodes } from '../utils/api-response.util';
 
@@ -352,6 +353,25 @@ export const createUnifiedCommunicationRouter = () => {
         const { contextId } = req.params;
         const { subject, startTime, endTime, participants, organizerUserId, description } = req.body;
 
+        // Use the authenticated user's Azure AD object ID as organizer.
+        // Graph API POST /users/{id}/onlineMeetings requires an AAD user ID, not an ACS ID.
+        const authReq = req as UnifiedAuthRequest;
+        const resolvedOrganizerId = authReq.user?.id || organizerUserId;
+
+        if (!resolvedOrganizerId) {
+          res.status(400).json(createApiError(
+            'VALIDATION_ERROR',
+            'Could not determine organizer user ID from authentication context'
+          ));
+          return;
+        }
+
+        logger.info('Scheduling meeting with organizer', {
+          resolvedOrganizerId,
+          requestBodyOrganizerId: organizerUserId,
+          authUserId: authReq.user?.id
+        });
+
         const meetingDetails = await communicationService.scheduleMeeting(
           contextId as string,
           {
@@ -361,7 +381,7 @@ export const createUnifiedCommunicationRouter = () => {
             participants,
             description
           },
-          organizerUserId
+          resolvedOrganizerId
         );
 
         logger.info('Meeting scheduled via API', {

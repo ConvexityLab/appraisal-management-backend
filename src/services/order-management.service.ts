@@ -1,4 +1,5 @@
 import { AppraisalOrder, OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '../types/index.js';
+import { isValidStatusTransition } from '../types/order-status.js';
 import { DatabaseService } from './database.service.js';
 import { VendorManagementService } from './vendor-management.service.js';
 import { NotificationService } from './notification.service.js';
@@ -498,23 +499,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   }
 
   private isValidStatusTransition(currentStatus: OrderStatus, newStatus: OrderStatus): boolean {
-    const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-      [OrderStatus.NEW]: [OrderStatus.ASSIGNED, OrderStatus.CANCELLED, OrderStatus.ON_HOLD],
-      [OrderStatus.ASSIGNED]: [OrderStatus.ACCEPTED, OrderStatus.NEW, OrderStatus.CANCELLED, OrderStatus.ON_HOLD],
-      [OrderStatus.ACCEPTED]: [OrderStatus.SCHEDULED, OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED],
-      [OrderStatus.SCHEDULED]: [OrderStatus.INSPECTED, OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED],
-      [OrderStatus.INSPECTED]: [OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED],
-      [OrderStatus.IN_PROGRESS]: [OrderStatus.SUBMITTED, OrderStatus.CANCELLED, OrderStatus.ON_HOLD],
-      [OrderStatus.SUBMITTED]: [OrderStatus.IN_QC, OrderStatus.REVISION_REQUESTED],
-      [OrderStatus.IN_QC]: [OrderStatus.COMPLETED, OrderStatus.REVISION_REQUESTED],
-      [OrderStatus.REVISION_REQUESTED]: [OrderStatus.IN_PROGRESS, OrderStatus.SUBMITTED],
-      [OrderStatus.COMPLETED]: [OrderStatus.DELIVERED],
-      [OrderStatus.DELIVERED]: [], // Final state
-      [OrderStatus.CANCELLED]: [], // Final state
-      [OrderStatus.ON_HOLD]: [OrderStatus.NEW, OrderStatus.ASSIGNED, OrderStatus.IN_PROGRESS]
-    };
-
-    return validTransitions[currentStatus]?.includes(newStatus) ?? false;
+    return isValidStatusTransition(currentStatus, newStatus);
   }
 
   private async handleStatusChange(previousOrder: AppraisalOrder, currentOrder: AppraisalOrder): Promise<void> {

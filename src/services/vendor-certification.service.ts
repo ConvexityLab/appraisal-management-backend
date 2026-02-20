@@ -199,14 +199,31 @@ export class VendorCertificationService {
   }
 
   /**
-   * Get all certifications for a vendor
+   * Get all certifications for a vendor.
+   * Tries the dedicated certifications container first, falls back to
+   * the vendor record's embedded certifications array.
    */
   async getVendorCertifications(
     vendorId: string,
     includeExpired: boolean = false
   ): Promise<VendorCertification[]> {
     try {
-      // TEMPORARY: Fetch certifications from vendor record until separate collection is populated
+      // Try querying the dedicated certifications container first
+      const query = includeExpired
+        ? 'SELECT * FROM c WHERE c.vendorId = @vendorId ORDER BY c.expiryDate DESC'
+        : 'SELECT * FROM c WHERE c.vendorId = @vendorId AND c.status != "EXPIRED" ORDER BY c.expiryDate DESC';
+
+      const result = await this.dbService.queryItems<VendorCertification>(
+        'certifications',
+        query,
+        [{ name: '@vendorId', value: vendorId }]
+      );
+
+      if (result.success && result.data && result.data.length > 0) {
+        return result.data;
+      }
+
+      // Fallback: read from vendor record's embedded certifications array
       const vendorResult = await this.dbService.findVendorById(vendorId);
       
       if (!vendorResult.success || !vendorResult.data) {

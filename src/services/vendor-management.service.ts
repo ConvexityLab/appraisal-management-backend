@@ -1,9 +1,12 @@
 /**
- * Clean Vendor Management Service
- * Core vendor management functionality for appraisal orders
+ * Vendor Management Service
+ * Core vendor management functionality backed by CosmosDbService.
+ * Used by order-management.service.ts and enhanced-order.controller.ts
+ * for vendor availability checks, matching, and performance tracking.
  */
 
-import { Vendor, AppraisalOrder, VendorStatus } from '../types/index.js';
+import { Vendor, AppraisalOrder, VendorStatus, OrderStatus } from '../types/index.js';
+import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 
 export interface VendorSearchResult {
@@ -15,122 +18,36 @@ export interface VendorSearchResult {
 
 export class VendorManagementService {
   private logger: Logger;
-  private vendors: Map<string, Vendor> = new Map();
+  private dbService: CosmosDbService;
 
-  constructor() {
+  constructor(dbService?: CosmosDbService) {
     this.logger = new Logger('VendorManagementService');
-    // Note: Mock vendor initialization removed for compilation
+    // Accept injected instance or create one (for backward compat with `new VendorManagementService()`)
+    this.dbService = dbService || new CosmosDbService();
   }
 
   /**
-   * Initialize mock vendors for demonstration
-   * Temporarily commented out for compilation issues
-   */
-  /* private initializeMockVendors(): void {
-    const mockVendors: Vendor[] = [
-      {
-        id: 'vendor-001',
-        name: 'John Smith',
-        businessName: 'Elite Appraisal Services',
-        email: 'john@eliteappraisal.com',
-        phone: '555-0101',
-        license: 'APR-12345',
-        certifications: ['SRA', 'MAI'],
-        serviceStates: ['TX', 'OK'],
-        specialties: ['Residential', 'Commercial'],
-        experience: 15,
-        status: VendorStatus.ACTIVE,
-        onboardedAt: new Date('2021-01-15'),
-        currentActiveOrders: 8,
-        totalOrdersCompleted: 245,
-        averageQCScore: 94.5,
-        onTimeDeliveryRate: 96.2,
-        clientSatisfactionScore: 4.7,
-        maxAssignmentRadius: 50,
-        autoAcceptOrders: true,
-        emailNotifications: true,
-        smsNotifications: true
-      },
-      {
-        id: 'vendor-002',
-        name: 'Sarah Johnson',
-        businessName: 'Rapid Valuations LLC',
-        email: 'sarah@rapidvaluations.com',
-        phone: '555-0102',
-        license: 'APR-23456',
-        certifications: ['SRA'],
-        serviceStates: ['TX', 'LA'],
-        specialties: ['Residential'],
-        experience: 8,
-        status: VendorStatus.ACTIVE,
-        onboardedAt: new Date('2022-03-10'),
-        currentActiveOrders: 12,
-        totalOrdersCompleted: 187,
-        averageQCScore: 92.1,
-        onTimeDeliveryRate: 94.8,
-        clientSatisfactionScore: 4.5,
-        maxAssignmentRadius: 40,
-        autoAcceptOrders: false,
-        emailNotifications: true,
-        smsNotifications: false
-      },
-      {
-        id: 'vendor-003',
-        name: 'Michael Chen',
-        businessName: 'Professional Property Evaluators',
-        email: 'mike@propevaluators.com',
-        phone: '555-0103',
-        license: 'APR-34567',
-        certifications: ['SRA', 'AI'],
-        serviceStates: ['TX'],
-        specialties: ['Residential', 'Commercial', 'Land'],
-        experience: 12,
-        status: VendorStatus.ACTIVE,
-        onboardedAt: new Date('2020-08-22'),
-        currentActiveOrders: 6,
-        totalOrdersCompleted: 312,
-        averageQCScore: 88.7,
-        onTimeDeliveryRate: 89.3,
-        clientSatisfactionScore: 4.2,
-        maxAssignmentRadius: 60,
-        autoAcceptOrders: true,
-        emailNotifications: true,
-        smsNotifications: true
-      }
-    ];
-
-    // Store vendors in memory
-    mockVendors.forEach(vendor => {
-      this.vendors.set(vendor.id, vendor);
-    });
-
-    this.logger.info(`Initialized ${mockVendors.length} mock vendors`);
-  } */
-
-  /**
-   * Find vendors available for an order
+   * Find vendors available for an order based on state, product type, and status.
    */
   async findAvailableVendors(order: AppraisalOrder): Promise<Vendor[]> {
     try {
-      const availableVendors = Array.from(this.vendors.values()).filter(vendor => {
-        // Check if vendor is active
-        if (vendor.status !== VendorStatus.ACTIVE) {
+      const result = await this.dbService.findAllVendors();
+      if (!result.success || !result.data) {
+        this.logger.warn('Failed to fetch vendors from Cosmos', { error: result.error });
+        return [];
+      }
+
+      const availableVendors = result.data.filter(vendor => {
+        if (vendor.status !== VendorStatus.ACTIVE && vendor.status !== ('active' as any)) {
           return false;
         }
 
-        // Check if vendor serves the state
         const orderState = order.propertyAddress?.state;
-        if (orderState && !vendor.serviceAreas.some(area => area.state === orderState)) {
+        if (orderState && vendor.serviceAreas && !vendor.serviceAreas.some(area => area.state === orderState)) {
           return false;
         }
 
-        // Check if vendor handles the property type
-        if (order.productType && !vendor.productTypes.includes(order.productType)) {
-          return false;
-        }
-
-        // Check capacity (simple check)
-        if (vendor.performance.totalOrders - vendor.performance.completedOrders >= 20) {
+        if (order.productType && vendor.productTypes && !vendor.productTypes.includes(order.productType)) {
           return false;
         }
 
@@ -139,7 +56,6 @@ export class VendorManagementService {
 
       this.logger.info(`Found ${availableVendors.length} available vendors for order ${order.id}`);
       return availableVendors;
-
     } catch (error) {
       this.logger.error('Error finding available vendors', { error, orderId: order.id });
       return [];
@@ -147,61 +63,103 @@ export class VendorManagementService {
   }
 
   /**
-   * Get vendor by ID
+   * Get vendor by ID from Cosmos.
    */
-  async getVendorById(vendorId: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
+  async getVendorById(vendorId: string): Promise<{ success: boolean; data?: Vendor | null; error?: any }> {
     try {
-      const vendor = this.vendors.get(vendorId);
-      if (!vendor) {
-        this.logger.warn(`Vendor not found: ${vendorId}`);
-        return { 
-          success: false, 
-          error: { code: 'VENDOR_NOT_FOUND', message: 'Vendor not found' } 
-        };
-      }
-      return { success: true, data: vendor };
+      const result = await this.dbService.findVendorById(vendorId);
+      return {
+        success: result.success,
+        ...(result.data !== undefined ? { data: result.data } : {}),
+        ...(result.error !== undefined ? { error: result.error } : {})
+      };
     } catch (error) {
       this.logger.error('Error getting vendor by ID', { error, vendorId });
-      return { 
-        success: false, 
-        error: { code: 'RETRIEVAL_ERROR', message: 'Error retrieving vendor' } 
+      return {
+        success: false,
+        error: { code: 'RETRIEVAL_ERROR', message: 'Error retrieving vendor' }
       };
     }
   }
 
   /**
-   * Get all vendors with optional filtering
+   * Check if a vendor is available to take an order.
    */
+  async checkVendorAvailability(vendorId: string, orderId: string): Promise<boolean> {
+    try {
+      const result = await this.dbService.findVendorById(vendorId);
+      if (!result.success || !result.data) {
+        this.logger.warn(`Vendor not found for availability check: ${vendorId}`);
+        return false;
+      }
 
+      const vendor = result.data;
+      const isActive = vendor.status === VendorStatus.ACTIVE || vendor.status === ('active' as any);
+      if (!isActive) {
+        this.logger.info(`Vendor ${vendorId} is not active`, { status: vendor.status });
+        return false;
+      }
 
-
+      return true;
+    } catch (error) {
+      this.logger.error('Error checking vendor availability', { error, vendorId, orderId });
+      return false;
+    }
+  }
 
   /**
-   * Assign order to vendor
+   * Find the best vendor for an order (simple scoring: active + matching state).
+   * For sophisticated multi-factor scoring, use VendorMatchingService via auto-assignment routes.
+   */
+  async findBestVendorForOrder(order: AppraisalOrder): Promise<Vendor | null> {
+    try {
+      const available = await this.findAvailableVendors(order);
+      if (available.length === 0) {
+        return null;
+      }
+
+      // Simple scoring: prefer vendors with higher quality scores
+      const sorted = available.sort((a, b) => {
+        const scoreA = a.performance?.qualityScore || 0;
+        const scoreB = b.performance?.qualityScore || 0;
+        return scoreB - scoreA;
+      });
+
+      return sorted[0] ?? null;
+    } catch (error) {
+      this.logger.error('Error finding best vendor for order', { error, orderId: order.id });
+      return null;
+    }
+  }
+
+  /**
+   * Assign an order to a vendor. Updates the order record in Cosmos.
    */
   async assignOrderToVendor(vendorId: string, orderId: string): Promise<boolean> {
     try {
-      const vendor = this.vendors.get(vendorId);
-      if (!vendor) {
+      const vendorResult = await this.dbService.findVendorById(vendorId);
+      if (!vendorResult.success || !vendorResult.data) {
         this.logger.warn(`Cannot assign order to non-existent vendor: ${vendorId}`);
         return false;
       }
 
-      if (vendor.status !== VendorStatus.ACTIVE) {
+      if (vendorResult.data.status !== VendorStatus.ACTIVE && vendorResult.data.status !== ('active' as any)) {
         this.logger.warn(`Cannot assign order to inactive vendor: ${vendorId}`);
         return false;
       }
 
-      // Increment active orders (would be updated in database in real implementation)
-      vendor.performance.totalOrders += 1;
+      const updateResult = await this.dbService.updateOrder(orderId, {
+        assignedVendorId: vendorId,
+        status: OrderStatus.ASSIGNED
+      } as any);
 
-      this.logger.info(`Assigned order ${orderId} to vendor ${vendorId}`, {
-        vendorName: vendor.name,
-        totalOrders: vendor.performance.totalOrders
-      });
+      if (updateResult.success) {
+        this.logger.info(`Assigned order ${orderId} to vendor ${vendorId}`);
+        return true;
+      }
 
-      return true;
-
+      this.logger.error(`Failed to update order for assignment`, { orderId, vendorId, error: updateResult.error });
+      return false;
     } catch (error) {
       this.logger.error('Error assigning order to vendor', { error, vendorId, orderId });
       return false;
@@ -209,7 +167,48 @@ export class VendorManagementService {
   }
 
   /**
-   * Get vendor statistics
+   * Update vendor performance metrics after an order is completed.
+   */
+  async updateVendorPerformance(vendorId: string, order: AppraisalOrder): Promise<void> {
+    try {
+      const vendorResult = await this.dbService.findVendorById(vendorId);
+      if (!vendorResult.success || !vendorResult.data) {
+        this.logger.warn(`Cannot update performance for non-existent vendor: ${vendorId}`);
+        return;
+      }
+
+      const vendor = vendorResult.data;
+      const currentPerformance = vendor.performance || {
+        totalOrders: 0,
+        completedOrders: 0,
+        qualityScore: 0,
+        onTimeDeliveryRate: 0,
+        revisionRate: 0,
+        clientSatisfactionScore: 0,
+        averageTurnTime: 0
+      };
+
+      // Increment completed orders
+      const updatedPerformance = {
+        ...currentPerformance,
+        completedOrders: (currentPerformance.completedOrders || 0) + 1
+      };
+
+      await this.dbService.updateVendor(vendorId, {
+        performance: updatedPerformance,
+        lastActive: new Date()
+      });
+
+      this.logger.info(`Updated vendor ${vendorId} performance`, {
+        completedOrders: updatedPerformance.completedOrders
+      });
+    } catch (error) {
+      this.logger.error('Error updating vendor performance', { error, vendorId, orderId: order.id });
+    }
+  }
+
+  /**
+   * Get vendor statistics across all vendors.
    */
   async getVendorStats(): Promise<{
     totalVendors: number;
@@ -219,12 +218,26 @@ export class VendorManagementService {
     totalActiveOrders: number;
   }> {
     try {
-      const allVendors = Array.from(this.vendors.values());
-      const activeVendors = allVendors.filter(v => v.status === VendorStatus.ACTIVE);
+      const result = await this.dbService.findAllVendors();
+      if (!result.success || !result.data) {
+        return { totalVendors: 0, activeVendors: 0, averageQCScore: 0, averageOnTimeRate: 0, totalActiveOrders: 0 };
+      }
 
-      const averageQCScore = activeVendors.reduce((sum, v) => sum + v.performance.qualityScore, 0) / Math.max(activeVendors.length, 1);
-      const averageOnTimeRate = activeVendors.reduce((sum, v) => sum + v.performance.onTimeDeliveryRate, 0) / Math.max(activeVendors.length, 1);
-      const totalActiveOrders = activeVendors.reduce((sum, v) => sum + (v.performance.totalOrders - v.performance.completedOrders), 0);
+      const allVendors = result.data;
+      const activeVendors = allVendors.filter(v =>
+        v.status === VendorStatus.ACTIVE || v.status === ('active' as any)
+      );
+
+      const averageQCScore = activeVendors.length > 0
+        ? activeVendors.reduce((sum, v) => sum + (v.performance?.qualityScore || 0), 0) / activeVendors.length
+        : 0;
+      const averageOnTimeRate = activeVendors.length > 0
+        ? activeVendors.reduce((sum, v) => sum + (v.performance?.onTimeDeliveryRate || 0), 0) / activeVendors.length
+        : 0;
+      const totalActiveOrders = activeVendors.reduce(
+        (sum, v) => sum + ((v.performance?.totalOrders || 0) - (v.performance?.completedOrders || 0)),
+        0
+      );
 
       return {
         totalVendors: allVendors.length,
@@ -233,73 +246,143 @@ export class VendorManagementService {
         averageOnTimeRate: Math.round(averageOnTimeRate * 10) / 10,
         totalActiveOrders
       };
-
     } catch (error) {
       this.logger.error('Error getting vendor statistics', { error });
-      return {
-        totalVendors: 0,
-        activeVendors: 0,
-        averageQCScore: 0,
-        averageOnTimeRate: 0,
-        totalActiveOrders: 0
-      };
+      return { totalVendors: 0, activeVendors: 0, averageQCScore: 0, averageOnTimeRate: 0, totalActiveOrders: 0 };
     }
   }
 
-  // Temporary stubs to make compilation pass
-  async checkVendorAvailability(vendorId: string, orderId: string): Promise<boolean> {
-    this.logger.info('Checking vendor availability', { vendorId, orderId });
-    return true; // Stub implementation
-  }
-
-  async findBestVendorForOrder(order: AppraisalOrder): Promise<Vendor | null> {
-    this.logger.info('Finding best vendor for order', { orderId: order.id });
-    return null; // Stub implementation
-  }
-
-  async updateVendorPerformance(vendorId: string, order: AppraisalOrder): Promise<void> {
-    this.logger.info('Updating vendor performance', { vendorId, orderId: order.id });
-    // Stub implementation
-  }
-
-  // Additional stubs for controller compatibility
+  /**
+   * Create a new vendor in Cosmos.
+   */
   async createVendor(vendorData: any): Promise<{ success: boolean; data?: Vendor; error?: any }> {
-    this.logger.info('Creating vendor', { vendorData });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor creation not implemented' } };
+    try {
+      return await this.dbService.createVendor({
+        ...vendorData,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        status: vendorData.status || VendorStatus.ACTIVE
+      });
+    } catch (error) {
+      this.logger.error('Error creating vendor', { error });
+      return { success: false, error: { code: 'CREATE_ERROR', message: 'Vendor creation failed' } };
+    }
   }
 
-  async updateVendor(vendorId: string, updateData: any, userId: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
-    this.logger.info('Updating vendor', { vendorId, updateData, userId });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor update not implemented' } };
+  /**
+   * Update a vendor in Cosmos.
+   */
+  async updateVendor(vendorId: string, updateData: any, userId?: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
+    try {
+      return await this.dbService.updateVendor(vendorId, {
+        ...updateData,
+        updatedAt: new Date(),
+        updatedBy: userId
+      });
+    } catch (error) {
+      this.logger.error('Error updating vendor', { error, vendorId });
+      return { success: false, error: { code: 'UPDATE_ERROR', message: 'Vendor update failed' } };
+    }
   }
 
-  async deactivateVendor(vendorId: string, reason: string, userId: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
-    this.logger.info('Deactivating vendor', { vendorId, reason, userId });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor deactivation not implemented' } };
+  /**
+   * Deactivate a vendor (soft delete).
+   */
+  async deactivateVendor(vendorId: string, reason: string, userId?: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
+    try {
+      return await this.dbService.updateVendor(vendorId, {
+        status: VendorStatus.INACTIVE
+      } as any);
+    } catch (error) {
+      this.logger.error('Error deactivating vendor', { error, vendorId });
+      return { success: false, error: { code: 'DEACTIVATE_ERROR', message: 'Vendor deactivation failed' } };
+    }
   }
 
-  async getVendors(filters: any, page: number, limit: number): Promise<{ success: boolean; data?: any; error?: any }> {
-    this.logger.info('Getting vendors', { filters, page, limit });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Get vendors not implemented' } };
+  /**
+   * Get vendors with optional filters.
+   */
+  async getVendors(filters: any, page: number = 1, limit: number = 50): Promise<{ success: boolean; data?: any; error?: any }> {
+    try {
+      const result = await this.dbService.findAllVendors();
+      if (!result.success || !result.data) {
+        return { success: false, error: result.error || { code: 'RETRIEVAL_ERROR', message: 'Failed to get vendors' } };
+      }
+
+      let vendors = result.data;
+
+      // Apply filters
+      if (filters?.status) {
+        vendors = vendors.filter(v => v.status === filters.status);
+      }
+      if (filters?.licenseState) {
+        vendors = vendors.filter(v => v.licenseState === filters.licenseState);
+      }
+
+      // Paginate
+      const start = (page - 1) * limit;
+      const paginated = vendors.slice(start, start + limit);
+
+      return {
+        success: true,
+        data: {
+          vendors: paginated,
+          total: vendors.length,
+          page,
+          limit
+        }
+      };
+    } catch (error) {
+      this.logger.error('Error getting vendors', { error, filters });
+      return { success: false, error: { code: 'RETRIEVAL_ERROR', message: 'Failed to get vendors' } };
+    }
   }
 
-  async updateVendorStatus(vendorId: string, status: any, reason: string, userId: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
-    this.logger.info('Updating vendor status', { vendorId, status, reason, userId });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor status update not implemented' } };
+  /**
+   * Update vendor status.
+   */
+  async updateVendorStatus(vendorId: string, status: any, reason: string, userId?: string): Promise<{ success: boolean; data?: Vendor; error?: any }> {
+    try {
+      return await this.dbService.updateVendor(vendorId, {
+        status
+      } as any);
+    } catch (error) {
+      this.logger.error('Error updating vendor status', { error, vendorId });
+      return { success: false, error: { code: 'STATUS_UPDATE_ERROR', message: 'Vendor status update failed' } };
+    }
   }
 
+  /**
+   * Get vendor performance from Cosmos.
+   */
   async getVendorPerformance(vendorId: string, startDate?: Date, endDate?: Date): Promise<{ success: boolean; data?: any; error?: any }> {
-    this.logger.info('Getting vendor performance', { vendorId, startDate, endDate });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor performance not implemented' } };
+    try {
+      return await this.dbService.getVendorPerformance(vendorId);
+    } catch (error) {
+      this.logger.error('Error getting vendor performance', { error, vendorId });
+      return { success: false, error: { code: 'PERFORMANCE_ERROR', message: 'Failed to get performance' } };
+    }
   }
 
-  async updateVendorPerformanceMetrics(vendorId: string, performanceData: any, userId: string): Promise<{ success: boolean; data?: any; error?: any }> {
-    this.logger.info('Updating vendor performance metrics', { vendorId, performanceData, userId });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor performance metrics not implemented' } };
+  /**
+   * Update vendor performance metrics.
+   */
+  async updateVendorPerformanceMetrics(vendorId: string, performanceData: any, userId?: string): Promise<{ success: boolean; data?: any; error?: any }> {
+    try {
+      return await this.dbService.updateVendor(vendorId, {
+        performance: performanceData
+      } as any);
+    } catch (error) {
+      this.logger.error('Error updating vendor performance metrics', { error, vendorId });
+      return { success: false, error: { code: 'PERFORMANCE_UPDATE_ERROR', message: 'Performance update failed' } };
+    }
   }
 
-  async searchVendors(searchCriteria: any, page: number, limit: number): Promise<{ success: boolean; data?: any; error?: any }> {
-    this.logger.info('Searching vendors', { searchCriteria, page, limit });
-    return { success: false, error: { code: 'NOT_IMPLEMENTED', message: 'Vendor search not implemented' } };
+  /**
+   * Search vendors by criteria.
+   */
+  async searchVendors(searchCriteria: any, page: number = 1, limit: number = 50): Promise<{ success: boolean; data?: any; error?: any }> {
+    // Delegate to getVendors with the search criteria as filters
+    return this.getVendors(searchCriteria, page, limit);
   }
 }

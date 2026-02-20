@@ -5,20 +5,8 @@
  * Supports end-to-end order lifecycle and vendor coordination
  */
 
-export enum OrderStatus {
-  DRAFT = 'DRAFT',
-  SUBMITTED = 'SUBMITTED',
-  ASSIGNED = 'ASSIGNED',
-  IN_PROGRESS = 'IN_PROGRESS',
-  DELIVERED = 'DELIVERED',
-  QC_REVIEW = 'QC_REVIEW',
-  QC_PASSED = 'QC_PASSED',
-  QC_FAILED = 'QC_FAILED',
-  REVISION_REQUESTED = 'REVISION_REQUESTED',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED',
-  EXPIRED = 'EXPIRED'
-}
+// OrderStatus — canonical definition lives in order-status.ts (single source of truth)
+export { OrderStatus } from './order-status.js';
 
 export enum OrderPriority {
   ROUTINE = 'ROUTINE',

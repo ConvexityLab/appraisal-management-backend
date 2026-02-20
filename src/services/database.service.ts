@@ -164,6 +164,148 @@ class MockOrderRepository implements DatabaseOrderRepository {
       createdBy: 'test-user-admin'
     };
     this.orders.set(order002.id, order002);
+
+    // Orders awaiting assignment (PENDING_ASSIGNMENT)
+    const pendingOrders: any[] = [
+      {
+        id: 'order-pa-001',
+        orderNumber: 'APR-2026-PA01',
+        clientId: 'client-001',
+        status: 'PENDING_ASSIGNMENT',
+        propertyAddress: {
+          street: '742 Evergreen Terrace',
+          city: 'Denver',
+          state: 'CO',
+          zipCode: '80202',
+          county: 'Denver'
+        },
+        orderType: 'PURCHASE',
+        productType: 'FULL_APPRAISAL',
+        dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+        priority: 'NORMAL',
+        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        tenantId: 'test-tenant-123',
+        createdBy: 'admin-user-001'
+      },
+      {
+        id: 'order-pa-002',
+        orderNumber: 'APR-2026-PA02',
+        clientId: 'client-002',
+        status: 'PENDING_ASSIGNMENT',
+        propertyAddress: {
+          street: '1600 Pennsylvania Ave',
+          city: 'Aurora',
+          state: 'CO',
+          zipCode: '80012',
+          county: 'Arapahoe'
+        },
+        orderType: 'REFINANCE',
+        productType: 'DESKTOP_APPRAISAL',
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        priority: 'RUSH',
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        tenantId: 'test-tenant-123',
+        createdBy: 'admin-user-001'
+      },
+      {
+        id: 'order-pa-003',
+        orderNumber: 'APR-2026-PA03',
+        clientId: 'client-003',
+        status: 'PENDING_ASSIGNMENT',
+        propertyAddress: {
+          street: '221B Baker Street',
+          city: 'Boulder',
+          state: 'CO',
+          zipCode: '80301',
+          county: 'Boulder'
+        },
+        orderType: 'PURCHASE',
+        productType: 'FULL_APPRAISAL',
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        priority: 'EXPEDITED',
+        createdAt: new Date(Date.now() - 0.5 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 0.5 * 24 * 60 * 60 * 1000).toISOString(),
+        tenantId: 'test-tenant-123',
+        createdBy: 'admin-user-001'
+      },
+      {
+        id: 'order-pa-004',
+        orderNumber: 'APR-2026-PA04',
+        clientId: 'client-001',
+        status: 'PENDING_ASSIGNMENT',
+        propertyAddress: {
+          street: '350 Fifth Avenue',
+          city: 'Lakewood',
+          state: 'CO',
+          zipCode: '80226',
+          county: 'Jefferson'
+        },
+        orderType: 'PURCHASE',
+        productType: 'HYBRID_APPRAISAL',
+        dueDate: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
+        priority: 'NORMAL',
+        createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        tenantId: 'test-tenant-123',
+        createdBy: 'admin-user-001'
+      }
+    ];
+
+    // Already-assigned orders
+    const assignedOrders: any[] = [
+      {
+        id: 'order-as-001',
+        orderNumber: 'APR-2026-AS01',
+        clientId: 'client-002',
+        status: 'ASSIGNED',
+        propertyAddress: {
+          street: '100 Maple Drive',
+          city: 'Fort Collins',
+          state: 'CO',
+          zipCode: '80521',
+          county: 'Larimer'
+        },
+        orderType: 'REFINANCE',
+        productType: 'FULL_APPRAISAL',
+        dueDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+        priority: 'NORMAL',
+        assignedVendorId: 'vendor-premier-appraisal',
+        assignedVendorName: 'Premier Appraisal Group',
+        createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        tenantId: 'test-tenant-123',
+        createdBy: 'admin-user-001'
+      },
+      {
+        id: 'order-as-002',
+        orderNumber: 'APR-2026-AS02',
+        clientId: 'client-003',
+        status: 'ASSIGNED',
+        propertyAddress: {
+          street: '55 Aspen Way',
+          city: 'Colorado Springs',
+          state: 'CO',
+          zipCode: '80903',
+          county: 'El Paso'
+        },
+        orderType: 'PURCHASE',
+        productType: 'FULL_APPRAISAL',
+        dueDate: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+        priority: 'NORMAL',
+        assignedVendorId: 'vendor-rocky-mountain',
+        assignedVendorName: 'Rocky Mountain Valuations',
+        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        tenantId: 'test-tenant-123',
+        createdBy: 'admin-user-001'
+      }
+    ];
+
+    for (const order of [...pendingOrders, ...assignedOrders]) {
+      this.orders.set(order.id, order);
+    }
   }
 
   async create(order: AppraisalOrder): Promise<AppraisalOrder> {

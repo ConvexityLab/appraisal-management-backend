@@ -60,14 +60,11 @@ export class AcsChatService {
     }
 
     try {
-      // Get or create ACS user for thread creator
-      const creatorAcsResponse = await this.identityService.exchangeUserToken(creatorUserId, 'system');
-      if (!creatorAcsResponse.success || !creatorAcsResponse.data) {
-        throw new Error('Failed to get ACS user token for thread creator');
-      }
+      // creatorUserId is already an ACS user ID (8:acs:...) — just get a token for it
+      const tokenData = await this.identityService.getTokenForAcsUser(creatorUserId);
 
       // Create chat client for the creator
-      const creatorToken = creatorAcsResponse.data.token;
+      const creatorToken = tokenData.token;
       const creatorChatClient = new ChatClient(
         this.endpoint,
         new AzureCommunicationTokenCredential(creatorToken)

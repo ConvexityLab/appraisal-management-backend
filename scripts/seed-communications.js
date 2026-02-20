@@ -24,10 +24,10 @@ const communicationsContainer = database.container('communications');
 
 const TEST_TENANT_ID = 'tenant-axiom-appraisal';
 
-// Test IDs from existing seed data
-const TEST_ORDER_1 = 'ord_2024_test_001';
-const TEST_ORDER_2 = 'ord_2024_test_002';
-const TEST_ORDER_3 = 'ord_2024_test_003';
+// Test IDs from existing seed data in database.service.ts
+const TEST_ORDER_1 = 'order-001';
+const TEST_ORDER_2 = 'order-002';
+const TEST_ORDER_3 = 'order-005';
 const TEST_APPRAISER_ID = 'appraiser-fl-res-11111';
 const TEST_VENDOR_1 = 'vendor-elite-appraisals';
 const TEST_VENDOR_2 = 'vendor-precision-valuations';
@@ -44,7 +44,8 @@ const thread4 = `thread-order-${TEST_ORDER_3}-deadline`;
 const testCommunications = [
   // ORDER 1: Assignment conversation (3 messages)
   {
-    id: `comm-${Date.now()}-001`,
+    id: 'comm-seed-001',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'email',
     direction: 'outbound',
@@ -106,7 +107,8 @@ Elite Appraisals Team`,
     updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
   },
   {
-    id: `comm-${Date.now()}-002`,
+    id: 'comm-seed-002',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'sms',
     direction: 'inbound',
@@ -152,7 +154,8 @@ Elite Appraisals Team`,
     updatedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString()
   },
   {
-    id: `comm-${Date.now()}-003`,
+    id: 'comm-seed-003',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'email',
     direction: 'outbound',
@@ -202,7 +205,8 @@ Sarah - Elite Appraisals`,
 
   // ORDER 2: Fee negotiation (2 messages)
   {
-    id: `comm-${Date.now()}-004`,
+    id: 'comm-seed-004',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'email',
     direction: 'inbound',
@@ -283,7 +287,8 @@ Licensed Appraiser #FL-11111`,
     updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
   },
   {
-    id: `comm-${Date.now()}-005`,
+    id: 'comm-seed-005',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'teams',
     direction: 'outbound',
@@ -331,7 +336,8 @@ Licensed Appraiser #FL-11111`,
 
   // ORDER 3: Deadline reminder
   {
-    id: `comm-${Date.now()}-006`,
+    id: 'comm-seed-006',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'sms',
     direction: 'outbound',
@@ -357,7 +363,7 @@ Licensed Appraiser #FL-11111`,
     primaryEntity: {
       type: 'order',
       id: TEST_ORDER_3,
-      name: 'ORD-2024-003 - 789 Palm Court, Tampa, FL 33602'
+      name: 'APR-2026-005 - 555 Cedar Ln, Frisco, TX 75034'
     },
     relatedEntities: [
       { type: 'vendor', id: TEST_VENDOR_1, name: 'Elite Appraisals' },
@@ -379,7 +385,8 @@ Licensed Appraiser #FL-11111`,
 
   // VENDOR RELATIONSHIP: Employment discussion (not order-specific)
   {
-    id: `comm-${Date.now()}-007`,
+    id: 'comm-seed-007',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'email',
     direction: 'outbound',
@@ -441,7 +448,8 @@ Elite Appraisals`,
 
   // APPRAISER TO VENDOR: General availability update
   {
-    id: `comm-${Date.now()}-008`,
+    id: 'comm-seed-008',
+    type: 'communication',
     tenantId: TEST_TENANT_ID,
     channel: 'email',
     direction: 'inbound',
@@ -519,8 +527,40 @@ John Smith`,
   }
 ];
 
+async function cleanupExistingCommunications() {
+  console.log('🧹 Cleaning up existing communications...\n');
+  try {
+    const { resources } = await communicationsContainer.items
+      .query('SELECT c.id, c.tenantId FROM c')
+      .fetchAll();
+    console.log(`   Found ${resources.length} existing records to delete\n`);
+    let deleted = 0;
+    for (const item of resources) {
+      try {
+        await communicationsContainer.item(item.id, item.tenantId).delete();
+        deleted++;
+      } catch (err) {
+        // Try without partition key if tenantId doesn't match
+        try {
+          await communicationsContainer.item(item.id, item.id).delete();
+          deleted++;
+        } catch (err2) {
+          console.error(`   ⚠️  Could not delete ${item.id}: ${err2.message}`);
+        }
+      }
+    }
+    console.log(`   ✅ Deleted ${deleted} records\n`);
+  } catch (error) {
+    console.error('   ⚠️  Cleanup error:', error.message);
+  }
+}
+
 async function seedCommunications() {
   console.log('🌱 Seeding test communications...\n');
+
+  // Clean up all existing records first
+  await cleanupExistingCommunications();
+
   console.log(`📊 Total communications to seed: ${testCommunications.length}\n`);
 
   let successCount = 0;

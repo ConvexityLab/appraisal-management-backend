@@ -68,7 +68,11 @@ export class CosmosDbService {
     communications: 'communications',
     communicationContexts: 'communicationContexts',      // Unified communication platform
     communicationTranscripts: 'communicationTranscripts',// Chat/call/meeting transcripts
-    aiInsights: 'aiInsights'                              // AI-generated insights
+    aiInsights: 'aiInsights',                            // AI-generated insights
+    chatThreads: 'chatThreads',                          // ACS chat thread metadata
+    chatMessages: 'chatMessages',                        // ACS chat message history
+    acsUserMappings: 'acsUserMappings',                  // Azure AD → ACS user ID mappings
+    teamsMeetings: 'teamsMeetings'                       // Teams meeting metadata
   };
 
   constructor(
@@ -952,8 +956,9 @@ export class CosmosDbService {
         throw new Error('Vendors container not initialized');
       }
 
+      // Exclude appraiser records that share the same container
       const querySpec = {
-        query: 'SELECT * FROM c ORDER BY c.onboardingDate DESC'
+        query: 'SELECT * FROM c WHERE NOT IS_DEFINED(c.type) OR c.type != \'appraiser\' ORDER BY c.onboardingDate DESC'
       };
 
       const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();

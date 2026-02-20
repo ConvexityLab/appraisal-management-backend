@@ -224,21 +224,10 @@ export enum ProductType {
   DESK_REVIEW = 'desk_review'
 }
 
-export enum OrderStatus {
-  NEW = 'new',
-  ASSIGNED = 'assigned',
-  ACCEPTED = 'accepted',
-  SCHEDULED = 'scheduled',
-  INSPECTED = 'inspected',
-  IN_PROGRESS = 'in_progress',
-  SUBMITTED = 'submitted',
-  IN_QC = 'in_qc',
-  REVISION_REQUESTED = 'revision_requested',
-  COMPLETED = 'completed',
-  DELIVERED = 'delivered',
-  CANCELLED = 'cancelled',
-  ON_HOLD = 'on_hold'
-}
+// OrderStatus — canonical definition lives in order-status.ts
+export { OrderStatus } from './order-status.js';
+export type { OrderStatusConfig, OrderStatusCategory } from './order-status.js';
+export { STATUS_CONFIG, isValidStatusTransition, normalizeOrderStatus, getStatusLabel, getStatusesByCategory, getActiveStatuses, getFinalStatuses } from './order-status.js';
 
 export enum Priority {
   LOW = 'low',

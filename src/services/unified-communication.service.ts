@@ -255,13 +255,13 @@ export class UnifiedCommunicationService {
       shareHistoryTime: new Date()
     }));
 
-    // Use first participant as creator
-    const creatorUserId = context.participants[0]?.userId;
-    if (!creatorUserId) {
-      throw new Error('No participants in context');
+    // Use first participant's ACS identity (already resolved during context creation)
+    const creatorAcsUserId = context.participants[0]?.acsUserId;
+    if (!creatorAcsUserId) {
+      throw new Error('No participants in context or creator missing ACS identity');
     }
 
-    return await this.chatService.createThread(topic, chatParticipants, creatorUserId);
+    return await this.chatService.createThread(topic, chatParticipants, creatorAcsUserId);
   }
 
   /**

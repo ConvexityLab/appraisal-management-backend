@@ -185,6 +185,33 @@ export class BlobStorageService {
   }
 
   /**
+   * Download blob as a readable stream (for proxying downloads via Managed Identity)
+   */
+  async downloadBlob(containerName: string, blobName: string): Promise<{
+    readableStream: NodeJS.ReadableStream;
+    contentType: string;
+    contentLength: number;
+  }> {
+    if (!this.client) {
+      throw new Error('Blob storage not initialized - set AZURE_STORAGE_ACCOUNT_NAME');
+    }
+
+    const containerClient = this.client.getContainerClient(containerName);
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    const downloadResponse = await blockBlobClient.download(0);
+
+    if (!downloadResponse.readableStreamBody) {
+      throw new Error(`Blob '${blobName}' returned no stream body`);
+    }
+
+    return {
+      readableStream: downloadResponse.readableStreamBody,
+      contentType: downloadResponse.contentType || 'application/octet-stream',
+      contentLength: downloadResponse.contentLength || 0
+    };
+  }
+
+  /**
    * Check if blob exists
    */
   async blobExists(containerName: string, blobName: string): Promise<boolean> {

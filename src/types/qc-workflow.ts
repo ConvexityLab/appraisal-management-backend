@@ -540,6 +540,7 @@ export interface SLAConfiguration {
   qcReviewTime: number; // Default: 4 hours = 240 minutes
   revisionTurnaround: number; // Default: 24 hours = 1440 minutes
   escalationResponse: number; // Default: 2 hours = 120 minutes
+  appraisalCompletion: number; // Default: 7 days = 10080 minutes
   
   // Priority-based overrides
   rushOrderMultiplier: number; // 0.5 = half the time
@@ -560,7 +561,7 @@ export interface SLAConfiguration {
 
 export interface SLATracking {
   id: string;
-  entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION';
+  entityType: 'QC_REVIEW' | 'REVISION' | 'ESCALATION' | 'APPRAISAL';
   entityId: string; // ID of the tracked entity
   
   orderId: string;

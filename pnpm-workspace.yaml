@@ -1,0 +1,6 @@
+ignoredBuiltDependencies:
+  - '@scarf/scarf'
+  - bcrypt
+  - esbuild
+  - protobufjs
+  - sharp

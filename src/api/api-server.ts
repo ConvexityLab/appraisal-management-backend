@@ -75,9 +75,6 @@ import { createVendorPerformanceRouter } from '../controllers/vendor-performance
 // Import Auto-Assignment controller
 import { createAutoAssignmentRouter } from '../controllers/auto-assignment.controller';
 
-// Import Order Negotiation controller
-import { createOrderNegotiationRouter } from '../controllers/order-negotiation.controller';
-
 // Import Delivery Workflow controller
 import { createDeliveryWorkflowRouter } from '../controllers/delivery-workflow.controller';
 
@@ -102,8 +99,21 @@ import { createCommunicationRouter } from '../controllers/communication.controll
 // Import Vendor Timeout Job (Phase 4.2)
 import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
 
+// Import Phase 3 background jobs
+import { SLAMonitoringJob } from '../jobs/sla-monitoring.job';
+import { OverdueOrderDetectionJob } from '../jobs/overdue-order-detection.job';
+
 // Import Appraiser Controller (Phase 4.3)
 import { AppraiserController } from '../controllers/appraiser.controller';
+
+// Import Vendor Controller (Phase A - Live Data)
+import { VendorController } from '../controllers/production-vendor.controller';
+
+// Import Negotiation Controller (Phase C1 - Live Data)
+import { createNegotiationRouter } from '../controllers/negotiation.controller';
+
+// Import Core Notification Service (Phase E - Event-Driven)
+import { NotificationService as EventNotificationOrchestrator } from '../services/core-notification.service';
 
 // Import Inspection Controller (Phase 4.4)
 import { InspectionController } from '../controllers/inspection.controller';
@@ -116,6 +126,9 @@ import { EnhancedOrderController } from '../controllers/enhanced-order.controlle
 
 // Import Document Controller (Phase 6)
 import { DocumentController } from '../controllers/document.controller.js';
+
+// Import Order Controller (Phase 0.2 — extracted from inline handlers)
+import { OrderController } from '../controllers/order.controller.js';
 
 // Import Reports Controller (Comp Analysis Migration)
 import { createReportsRouter } from '../controllers/reports.controller.js';
@@ -142,6 +155,10 @@ export class AppraisalManagementAPIServer {
   private unifiedAuth: ReturnType<typeof createUnifiedAuth>;
   private authzMiddleware?: AuthorizationMiddleware;
   private vendorTimeoutJob?: VendorTimeoutCheckerJob;
+  private slaMonitoringJob?: SLAMonitoringJob;
+  private overdueDetectionJob?: OverdueOrderDetectionJob;
+  private eventOrchestrator?: EventNotificationOrchestrator;
+  private orderController!: OrderController;
   
   // QC routers
   private qcChecklistRouter: express.Router;
@@ -360,12 +377,8 @@ export class AppraisalManagementAPIServer {
       createAutoAssignmentRouter()
     );
 
-    // Order Negotiation & Acceptance Workflow (authenticated users with proper permissions)
-    this.app.use('/api/negotiations',
-      this.unifiedAuth.authenticate(),
-      this.authzMiddleware.loadUserProfile(),
-      createOrderNegotiationRouter()
-    );
+    // Order Negotiation & Acceptance — handled by negotiation.controller.ts (Phase C1)
+    // Old order-negotiation.controller.ts removed (routes were shadowed).
 
     // Delivery Workflow - Progress Tracking, Milestones, Documents (authenticated users)
     this.app.use('/api/delivery',
@@ -412,6 +425,23 @@ export class AppraisalManagementAPIServer {
       appraiserController.router
     );
 
+    // Vendor Management - CRUD, assignment, performance (Phase A - Live Data)
+    // Uses CosmosDbService directly for all vendor operations
+    const vendorController = new VendorController(this.dbService);
+    this.app.use('/api/vendors',
+      this.unifiedAuth.authenticate(),
+      vendorController.router
+    );
+
+    // Negotiations - Accept, reject, counter-offer, respond (Phase C1 - Live Data)
+    // Full state machine for vendor/client fee negotiation with auto-accept thresholds
+    // Sole mount after merging with order-negotiation.controller.ts (Phase 0.4)
+    this.app.use('/api/negotiations',
+      this.unifiedAuth.authenticate(),
+      ...(this.authzMiddleware ? [this.authzMiddleware.loadUserProfile()] : []),
+      createNegotiationRouter()
+    );
+
     // Inspection Scheduling - Appointment management, availability, calendar integration (Phase 4.4)
     // Manages inspection appointments, scheduling, rescheduling, and appraiser calendar coordination
     const inspectionController = new InspectionController(this.dbService);
@@ -443,6 +473,8 @@ export class AppraisalManagementAPIServer {
       this.unifiedAuth.authenticate(),
       documentController.router
     );
+
+    // NOTE: Order Management (/api/orders) registered in setupRoutes() — must work even when authzMiddleware is absent
 
     // QC Checklist Management - Manage QC checklists with document requirements
     // Provides CRUD operations for checklists stored in criteria container
@@ -590,39 +622,13 @@ export class AppraisalManagementAPIServer {
 
     // NOTE: Authorization routes registered separately after authzMiddleware initialization
 
-    // Order Management routes (with authorization)
-    this.app.post('/api/orders', 
-      this.unifiedAuth.authenticate(), 
-      this.createOrder.bind(this)
-    );
-    
-    // TEST: Authorization on GET /api/orders (audit mode)
-    this.app.get('/api/orders', 
+    // Order Management - CRUD, status lifecycle, dashboard (Phase 0.2)
+    // Registered here (not in setupAuthorizationRoutes) so it works even when authzMiddleware is absent.
+    // OrderController handles its own authz internally via optional authzMiddleware param.
+    this.orderController = new OrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/orders',
       this.unifiedAuth.authenticate(),
-      this.authzMiddleware ? this.authzMiddleware.loadUserProfile() : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
-      this.authzMiddleware ? this.authzMiddleware.authorizeQuery('order', 'read') : (req: express.Request, res: express.Response, next: express.NextFunction) => next(),
-      this.getOrders.bind(this)
-    );
-    
-    // IMPORTANT: Specific routes MUST come before parameterized routes to avoid matching issues
-    this.app.get('/api/orders/dashboard',
-      this.unifiedAuth.authenticate(),
-      this.getOrderDashboard.bind(this)
-    );
-    
-    this.app.get('/api/orders/:orderId', 
-      this.unifiedAuth.authenticate(), 
-      this.getOrder.bind(this)
-    );
-    
-    this.app.put('/api/orders/:orderId/status', 
-      this.unifiedAuth.authenticate(), 
-      this.updateOrderStatus.bind(this)
-    );
-
-    this.app.post('/api/orders/:orderId/deliver',
-      this.unifiedAuth.authenticate(),
-      this.deliverOrder.bind(this)
+      this.orderController.router
     );
 
     // QC Validation routes
@@ -646,47 +652,7 @@ export class AppraisalManagementAPIServer {
       this.getQCMetrics.bind(this)
     );
 
-    // Vendor Management routes
-    this.app.get('/api/vendors',
-      this.unifiedAuth.authenticate(),
-      this.getVendors.bind(this)
-    );
-
-    this.app.get('/api/vendors/:vendorId',
-      this.unifiedAuth.authenticate(),
-      this.getVendorById.bind(this)
-    );
-
-    this.app.post('/api/vendors',
-      this.unifiedAuth.authenticate(),
-      ...this.loadUserProfileIfAvailable(),
-      this.authorize('vendor', 'create'),
-      this.validateVendorCreation(),
-      this.createVendor.bind(this)
-    );
-
-    this.app.put('/api/vendors/:vendorId',
-      this.unifiedAuth.authenticate(),
-      ...this.loadUserProfileIfAvailable(),
-      this.authorize('vendor', 'update'),
-      this.validateVendorId(),
-      this.validateVendorUpdate(),
-      this.updateVendor.bind(this)
-    );
-
-    this.app.post('/api/vendors/assign/:orderId',
-      this.unifiedAuth.authenticate(),
-      ...this.loadUserProfileIfAvailable(),
-      this.authorize('order', 'assign_vendor'),
-      this.validateOrderId(),
-      this.assignVendor.bind(this)
-    );
-
-    this.app.get('/api/vendors/performance/:vendorId',
-      this.unifiedAuth.authenticate(),
-      this.validateVendorId(),
-      this.getVendorPerformance.bind(this)
-    );
+    // Vendor Management routes — now handled by VendorController mounted above at /api/vendors
 
     // Analytics routes
     this.app.get('/api/analytics/overview',
@@ -944,9 +910,9 @@ export class AppraisalManagementAPIServer {
           this.logger.warn('Missing orderId in request body', { body: req.body });
           return res.status(400).json({ error: 'orderId is required' });
         }
-        // Forward to existing getOrder handler
+        // Forward to OrderController by setting params and piping through its router
         req.params.orderId = orderId;
-        return this.getOrder(req as AuthenticatedRequest, res);
+        return this.orderController.getOrder(req as AuthenticatedRequest, res);
       }
     );
 
@@ -954,8 +920,8 @@ export class AppraisalManagementAPIServer {
     this.app.post('/functions/createOrder',
       this.unifiedAuth.authenticate(),
       async (req: express.Request, res: express.Response) => {
-        // Forward to existing createOrder handler
-        return this.createOrder(req as AuthenticatedRequest, res);
+        // Forward to OrderController's createOrder handler
+        return this.orderController.createOrder(req as AuthenticatedRequest, res);
       }
     );
 
@@ -1086,12 +1052,7 @@ export class AppraisalManagementAPIServer {
     ];
   }
 
-  private validateVendorId() {
-    return [
-      param('vendorId').isUUID(),
-      this.handleValidationErrors
-    ];
-  }
+  // validateVendorId, validateVendorCreation, validateVendorUpdate — moved to VendorController
 
   private validateOrderQuery() {
     return [
@@ -1115,29 +1076,6 @@ export class AppraisalManagementAPIServer {
     return [
       body('reportUrl').isURL(),
       body('deliveryNotes').isLength({ max: 1000 }).optional(),
-      this.handleValidationErrors
-    ];
-  }
-
-  private validateVendorCreation() {
-    return [
-      body('name').isLength({ min: 2 }).trim(),
-      body('email').isEmail().normalizeEmail(),
-      body('phone').isMobilePhone('any'),
-      body('serviceTypes').isArray({ min: 1 }),
-      body('serviceAreas').isArray({ min: 1 }),
-      this.handleValidationErrors
-    ];
-  }
-
-  private validateVendorUpdate() {
-    return [
-      body('name').isLength({ min: 2 }).trim().optional(),
-      body('email').isEmail().normalizeEmail().optional(),
-      body('phone').isMobilePhone('any').optional(),
-      body('serviceTypes').isArray({ min: 1 }).optional(),
-      body('serviceAreas').isArray({ min: 1 }).optional(),
-      body('isActive').isBoolean().optional(),
       this.handleValidationErrors
     ];
   }
@@ -1395,189 +1333,8 @@ export class AppraisalManagementAPIServer {
     }
   }
 
-  // Order Management endpoints
-  private async createOrder(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const orderData = {
-        ...req.body,
-        createdBy: req.user?.id,
-        status: 'pending',
-        priority: req.body.priority || 'standard'
-      };
-
-      const result = await this.dbService.createOrder(orderData);
-      
-      if (result.success) {
-        res.status(201).json(result.data);
-      } else {
-        res.status(500).json({
-          error: 'Order creation failed',
-          code: 'ORDER_CREATION_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Order creation failed',
-        code: 'ORDER_CREATION_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async getOrders(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { status, priority, limit = 20, offset = 0 } = req.query;
-      
-      const filters: any = {};
-      if (status) filters.status = [status as string];
-      if (priority) filters.priority = [priority as string];
-
-      const result = await this.dbService.findOrders(filters, parseInt(offset as string), parseInt(limit as string));
-      
-      if (result.success) {
-        res.json({
-          orders: result.data,
-          pagination: result.metadata
-        });
-      } else {
-        res.status(500).json({
-          error: 'Failed to retrieve orders',
-          code: 'ORDER_RETRIEVAL_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to retrieve orders',
-        code: 'ORDER_RETRIEVAL_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async getOrder(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { orderId } = req.params;
-      if (!orderId) {
-        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
-        return;
-      }
-
-      const result = await this.dbService.findOrderById(orderId);
-      
-      if (result.success && result.data) {
-        res.json(result.data);
-      } else if (result.success && !result.data) {
-        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
-      } else {
-        res.status(500).json({
-          error: 'Failed to retrieve order',
-          code: 'ORDER_RETRIEVAL_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to retrieve order',
-        code: 'ORDER_RETRIEVAL_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async updateOrderStatus(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { orderId } = req.params;
-      const { status, notes } = req.body;
-
-      if (!orderId) {
-        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
-        return;
-      }
-
-      const result = await this.dbService.updateOrder(orderId, {});
-
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({
-          error: 'Failed to update order status',
-          code: 'ORDER_UPDATE_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to update order status',
-        code: 'ORDER_UPDATE_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async deliverOrder(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { orderId } = req.params;
-      const { reportUrl, deliveryNotes } = req.body;
-
-      if (!orderId) {
-        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
-        return;
-      }
-
-      const result = await this.dbService.updateOrder(orderId, {});
-
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({
-          error: 'Failed to deliver order',
-          code: 'ORDER_DELIVERY_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to deliver order',
-        code: 'ORDER_DELIVERY_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async getOrderDashboard(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      // Get real dashboard data from database
-      const [summaryResult, metricsResult, recentOrdersResult] = await Promise.allSettled([
-        this.dbService.getOrderSummary(),
-        this.dbService.getOrderMetrics(),
-        this.dbService.getRecentOrders(10)
-      ]);
-
-      const dashboard = {
-        summary: summaryResult.status === 'fulfilled' && summaryResult.value.success 
-          ? summaryResult.value.data 
-          : { totalOrders: 0, pendingOrders: 0, inProgressOrders: 0, completedOrders: 0 },
-        
-        metrics: metricsResult.status === 'fulfilled' && metricsResult.value.success
-          ? metricsResult.value.data
-          : { averageCompletionTime: 0, onTimeDeliveryRate: 0, qcPassRate: 0 },
-          
-        recentOrders: recentOrdersResult.status === 'fulfilled' && recentOrdersResult.value.success
-          ? recentOrdersResult.value.data
-          : []
-      };
-
-      res.json(dashboard);
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to retrieve dashboard',
-        code: 'DASHBOARD_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
+  // Order Management endpoints now handled by OrderController (this.orderController)
+  // See src/controllers/order.controller.ts
 
   // QC Validation endpoints
   private async performQCValidation(req: AuthenticatedRequest, res: express.Response): Promise<void> {
@@ -1694,266 +1451,7 @@ export class AppraisalManagementAPIServer {
     }
   }
 
-  // Vendor Management endpoints
-  private async getVendors(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const result = await this.dbService.findAllVendors();
-      
-      if (result.success && result.data) {
-        // Transform Vendor[] to VendorProfile[] for frontend compatibility
-        const vendorProfiles = result.data.map(vendor => this.transformVendorToProfile(vendor));
-        res.json(vendorProfiles);
-      } else {
-        res.status(500).json({
-          error: 'Failed to retrieve vendors',
-          code: 'VENDOR_RETRIEVAL_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to retrieve vendors',
-        code: 'VENDOR_RETRIEVAL_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  /**
-   * Transform backend Vendor to frontend VendorProfile
-   */
-  private transformVendorToProfile(vendor: any): any {
-    return {
-      id: vendor.id,
-      vendorCode: vendor.licenseNumber || vendor.id,
-      tenantId: 'tenant-001', // Default tenant
-      
-      // Business information
-      businessName: vendor.name,
-      businessType: 'INDIVIDUAL' as const,
-      contactPerson: vendor.name,
-      email: vendor.email,
-      phone: vendor.phone,
-      
-      // Address - extract from serviceAreas if available
-      address: vendor.serviceAreas?.[0]?.state || '',
-      city: vendor.serviceAreas?.[0]?.counties?.[0] || '',
-      state: vendor.licenseState,
-      zipCode: vendor.serviceAreas?.[0]?.zipCodes?.[0] || '',
-      
-      // Licensing
-      stateLicense: vendor.licenseNumber,
-      licenseExpiration: vendor.licenseExpiry,
-      
-      // Service capabilities
-      serviceTypes: vendor.productTypes || [],
-      serviceAreas: vendor.serviceAreas || [],
-      maxActiveOrders: vendor.preferences?.maxOrdersPerDay || 10,
-      averageTurnaroundDays: Math.round((vendor.performance?.averageTurnTime || 96) / 24),
-      
-      // Status and performance
-      status: vendor.status?.toUpperCase() || 'ACTIVE',
-      onboardedAt: vendor.onboardingDate,
-      lastActiveAt: vendor.lastActive,
-      currentActiveOrders: 0,
-      
-      // Performance metrics from nested performance object
-      totalOrdersCompleted: vendor.performance?.totalOrders || 0,
-      averageQCScore: vendor.performance?.qualityScore ? vendor.performance.qualityScore * 20 : 0, // Convert 1-5 to 0-100
-      onTimeDeliveryRate: vendor.performance?.onTimeDeliveryRate || 0,
-      revisionRate: vendor.performance?.revisionRate || 0,
-      clientSatisfactionScore: vendor.performance?.clientSatisfactionScore || 0,
-      performanceScore: vendor.performance?.qualityScore ? vendor.performance.qualityScore * 20 : 0,
-      
-      // Financial
-      standardFee: 550,
-      rushFee: 150,
-      paymentTerms: vendor.paymentInfo?.method === 'ach' ? 'Net 30' : 'Net 15',
-      
-      // Metadata
-      createdAt: vendor.onboardingDate,
-      createdBy: 'system',
-      updatedAt: vendor.lastActive,
-      updatedBy: 'system'
-    };
-  }
-
-  private async getVendorById(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const vendorId = req.params.vendorId;
-      if (!vendorId) {
-        res.status(400).json({ error: 'Vendor ID is required' });
-        return;
-      }
-      const result = await this.dbService.findVendorById(vendorId);
-      
-      if (result.success && result.data) {
-        // Transform Vendor to VendorProfile for frontend compatibility
-        const vendorProfile = this.transformVendorToProfile(result.data);
-        res.json(vendorProfile);
-      } else if (result.success && !result.data) {
-        res.status(404).json({
-          error: 'Vendor not found',
-          code: 'VENDOR_NOT_FOUND'
-        });
-      } else {
-        res.status(500).json({
-          error: 'Failed to retrieve vendor',
-          code: 'VENDOR_RETRIEVAL_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to retrieve vendor',
-        code: 'VENDOR_RETRIEVAL_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async createVendor(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const vendorData = {
-        ...req.body,
-        createdBy: req.user?.id,
-        status: 'active',
-        licenseState: req.body.serviceAreas?.[0] || 'Unknown'
-      };
-
-      const result = await this.dbService.createVendor(vendorData);
-      
-      if (result.success) {
-        res.status(201).json(result.data);
-      } else {
-        res.status(500).json({
-          error: 'Vendor creation failed',
-          code: 'VENDOR_CREATION_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Vendor creation failed',
-        code: 'VENDOR_CREATION_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async updateVendor(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { vendorId } = req.params;
-      
-      if (!vendorId) {
-        res.status(400).json({ error: 'Vendor ID is required', code: 'MISSING_VENDOR_ID' });
-        return;
-      }
-
-      const updateData = {
-        ...req.body,
-        updatedBy: req.user?.id
-      };
-
-      const result = await this.dbService.updateVendor(vendorId, updateData);
-      
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({
-          error: 'Vendor update failed',
-          code: 'VENDOR_UPDATE_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Vendor update failed',
-        code: 'VENDOR_UPDATE_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async assignVendor(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { orderId } = req.params;
-      
-      if (!orderId) {
-        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
-        return;
-      }
-
-      const orderResult = await this.dbService.findOrderById(orderId);
-      
-      if (!orderResult.success || !orderResult.data) {
-        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
-        return;
-      }
-
-      // Mock vendor assignment logic
-      const vendorsResult = await this.dbService.findAllVendors();
-      
-      if (vendorsResult.success && vendorsResult.data && vendorsResult.data.length > 0) {
-        const selectedVendor = vendorsResult.data[0]; // Simple assignment logic
-        
-        // Update order with assigned vendor
-        const updateResult = await this.dbService.updateOrder(orderId, {});
-
-        if (updateResult.success) {
-          res.json({
-            orderId,
-            assignedVendor: selectedVendor,
-            assignmentScore: 95.5,
-            assignedAt: new Date()
-          });
-        } else {
-          res.status(500).json({
-            error: 'Failed to assign vendor',
-            code: 'VENDOR_ASSIGNMENT_ERROR',
-            details: updateResult.error
-          });
-        }
-      } else {
-        res.status(404).json({ error: 'No available vendors', code: 'NO_VENDORS_AVAILABLE' });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Vendor assignment failed',
-        code: 'VENDOR_ASSIGNMENT_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
-
-  private async getVendorPerformance(req: AuthenticatedRequest, res: express.Response): Promise<void> {
-    try {
-      const { vendorId } = req.params;
-      
-      if (!vendorId) {
-        res.status(400).json({ error: 'Vendor ID is required', code: 'MISSING_VENDOR_ID' });
-        return;
-      }
-
-      const result = await this.dbService.getVendorPerformance(vendorId);
-      
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({
-          error: 'Failed to retrieve vendor performance',
-          code: 'VENDOR_PERFORMANCE_ERROR',
-          details: result.error
-        });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to retrieve vendor performance',
-        code: 'VENDOR_PERFORMANCE_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  }
+  // Vendor Management endpoints — REMOVED: now handled by VendorController (production-vendor.controller.ts)
 
   // Analytics endpoints
   private async getAnalyticsOverview(req: AuthenticatedRequest, res: express.Response): Promise<void> {
@@ -3163,8 +2661,32 @@ export class AppraisalManagementAPIServer {
     // Start vendor timeout checker (Phase 4.2) - pass dbService
     this.vendorTimeoutJob = new VendorTimeoutCheckerJob(this.dbService);
     this.vendorTimeoutJob.start();
+
+    // Start SLA monitoring job (Phase 3.3)
+    this.slaMonitoringJob = new SLAMonitoringJob(this.dbService);
+    this.slaMonitoringJob.start();
+
+    // Start overdue order detection job (Phase 3.4)
+    this.overdueDetectionJob = new OverdueOrderDetectionJob(this.dbService);
+    this.overdueDetectionJob.start();
+
+    // Start event-driven notification orchestrator (Phase E)
+    // Subscribes to Service Bus events and routes to WebSocket/Email/SMS channels
+    try {
+      this.eventOrchestrator = new EventNotificationOrchestrator();
+      this.eventOrchestrator.start().catch(err => {
+        this.logger.warn('Event notification orchestrator failed to start — events will not be processed', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('Event notification orchestrator could not be created — real-time notifications disabled', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator']
     });
   }
 
@@ -3174,8 +2696,17 @@ export class AppraisalManagementAPIServer {
   public stopBackgroundJobs(): void {
     if (this.vendorTimeoutJob) {
       this.vendorTimeoutJob.stop();
-      this.logger.info('Background jobs stopped');
     }
+    if (this.slaMonitoringJob) {
+      this.slaMonitoringJob.stop();
+    }
+    if (this.overdueDetectionJob) {
+      this.overdueDetectionJob.stop();
+    }
+    if (this.eventOrchestrator) {
+      this.eventOrchestrator.stop().catch(() => {});
+    }
+    this.logger.info('Background jobs stopped');
   }
 
   /**

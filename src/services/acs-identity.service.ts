@@ -174,6 +174,23 @@ export class AcsIdentityService {
   }
 
   /**
+   * Generate a fresh ACS token for a known ACS user ID.
+   * Use this when the ACS user identity is already resolved (e.g., from a stored context)
+   * to avoid redundant mapping lookups.
+   */
+  async getTokenForAcsUser(acsUserId: string): Promise<{ token: string; expiresOn: Date }> {
+    if (!this.configured || !this.identityClient) {
+      throw new Error('ACS Identity Client not initialized');
+    }
+    const tokenResponse = await this.identityClient.getToken(
+      { communicationUserId: acsUserId },
+      ['chat', 'voip']
+    );
+    this.logger.info('Generated token for existing ACS user', { acsUserId });
+    return { token: tokenResponse.token, expiresOn: tokenResponse.expiresOn };
+  }
+
+  /**
    * Get existing user mapping from Cosmos DB
    */
   private async getUserMapping(azureAdUserId: string, tenantId: string): Promise<AcsUserMapping | null> {

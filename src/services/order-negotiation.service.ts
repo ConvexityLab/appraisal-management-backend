@@ -1,11 +1,15 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { SLATrackingService } from './sla-tracking.service.js';
+import { OrderEventService } from './order-event.service.js';
+import { AuditTrailService } from './audit-trail.service.js';
 import { 
   OrderNegotiation, 
   NegotiationStatus, 
   ProposedTerms 
 } from '../types/vendor-marketplace.types.js';
 import { ApiResponse } from '../types/index.js';
+import { OrderStatus, normalizeOrderStatus } from '../types/order-status.js';
 
 interface NegotiationRound {
   roundNumber: number;
@@ -28,6 +32,9 @@ interface NegotiationRound {
 export class OrderNegotiationService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  private slaTrackingService: SLATrackingService;
+  private eventService: OrderEventService;
+  private auditService: AuditTrailService;
 
   // Business Rules
   private readonly DEFAULT_MAX_ROUNDS = 3;
@@ -38,6 +45,9 @@ export class OrderNegotiationService {
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
+    this.slaTrackingService = new SLATrackingService();
+    this.eventService = new OrderEventService();
+    this.auditService = new AuditTrailService();
   }
 
   /**
@@ -109,6 +119,49 @@ export class OrderNegotiationService {
       await this.dbService.createItem('negotiations', negotiation);
 
       this.logger.info('Order accepted by vendor', { orderId, vendorId });
+
+      // Fire event bus + audit trail (unified with OrderController behavior)
+      let previousStatus: OrderStatus;
+      try {
+        previousStatus = normalizeOrderStatus(order.status);
+      } catch {
+        previousStatus = OrderStatus.PENDING_ACCEPTANCE;
+      }
+      this.eventService.publishOrderStatusChanged(
+        orderId, previousStatus, OrderStatus.ACCEPTED, vendorId,
+      ).catch((err) =>
+        this.logger.error('Failed to publish ORDER_STATUS_CHANGED event', { orderId, error: err }),
+      );
+      this.auditService.log({
+        actor: { userId: vendorId, role: 'vendor' },
+        action: 'order.status_changed',
+        resource: { type: 'order', id: orderId },
+        before: { status: previousStatus },
+        after: { status: 'ACCEPTED' },
+        metadata: { source: 'negotiation-accept', vendorId },
+      }).catch((err) =>
+        this.logger.error('Failed to write audit log for acceptance', { orderId, error: err }),
+      );
+
+      // Start SLA tracking for the accepted order
+      try {
+        await this.slaTrackingService.startSLATracking(
+          'APPRAISAL',
+          orderId,
+          orderId,
+          order.orderNumber || orderId,
+          order.urgency || order.priority || 'ROUTINE',
+          order.clientId
+        );
+        this.logger.info('SLA tracking started for accepted order', { orderId });
+      } catch (slaError) {
+        this.logger.error('Failed to start SLA tracking (non-fatal)', {
+          orderId,
+          error: slaError instanceof Error ? slaError.message : String(slaError)
+        });
+        // Don't fail the acceptance if SLA tracking fails
+      }
+
       return updatedOrder;
 
     } catch (error: any) {
@@ -364,6 +417,50 @@ export class OrderNegotiationService {
       }, tenantId);
 
       this.logger.info('Counter-offer accepted', { negotiationId, orderId: negotiation.orderId });
+
+      // Fire event bus + audit trail (unified with OrderController behavior)
+      let prevOrderStatus: OrderStatus;
+      try {
+        prevOrderStatus = normalizeOrderStatus(orderResponse.data?.status ?? 'PENDING_ACCEPTANCE');
+      } catch {
+        prevOrderStatus = OrderStatus.PENDING_ACCEPTANCE;
+      }
+      this.eventService.publishOrderStatusChanged(
+        negotiation.orderId, prevOrderStatus, OrderStatus.ACCEPTED, clientId,
+      ).catch((err) =>
+        this.logger.error('Failed to publish ORDER_STATUS_CHANGED event', { orderId: negotiation.orderId, error: err }),
+      );
+      this.auditService.log({
+        actor: { userId: clientId, role: 'client' },
+        action: 'order.status_changed',
+        resource: { type: 'order', id: negotiation.orderId },
+        before: { status: prevOrderStatus },
+        after: { status: 'ACCEPTED', fee: negotiation.currentTerms.fee },
+        metadata: { source: 'counter-offer-accepted', negotiationId, vendorId: negotiation.vendorId },
+      }).catch((err) =>
+        this.logger.error('Failed to write audit log for counter-offer acceptance', { orderId: negotiation.orderId, error: err }),
+      );
+
+      // Start SLA tracking for the accepted order
+      try {
+        const order = orderResponse.data;
+        await this.slaTrackingService.startSLATracking(
+          'APPRAISAL',
+          negotiation.orderId,
+          negotiation.orderId,
+          order?.orderNumber || negotiation.orderId,
+          order?.urgency || order?.priority || 'ROUTINE',
+          order?.clientId
+        );
+        this.logger.info('SLA tracking started for counter-offer acceptance', { orderId: negotiation.orderId });
+      } catch (slaError) {
+        this.logger.error('Failed to start SLA tracking (non-fatal)', {
+          orderId: negotiation.orderId,
+          error: slaError instanceof Error ? slaError.message : String(slaError)
+        });
+        // Don't fail the acceptance if SLA tracking fails
+      }
+
       return updatedOrder;
 
     } catch (error: any) {
@@ -667,6 +764,27 @@ export class OrderNegotiationService {
 
     } catch (error: any) {
       this.logger.error('Failed to get negotiation history', error as Record<string, any>);
+      return [];
+    }
+  }
+
+  /**
+   * Get all negotiations awaiting AMC response (vendor-countered)
+   */
+  async getPendingCounterOffers(tenantId: string): Promise<OrderNegotiation[]> {
+    try {
+      const query = `
+        SELECT * FROM c 
+        WHERE c.tenantId = @tenantId
+        AND c.status = 'VENDOR_COUNTERED'
+        ORDER BY c.updatedAt DESC
+      `;
+      const response = await this.dbService.queryItems('negotiations', query, [
+        { name: '@tenantId', value: tenantId }
+      ]) as ApiResponse<OrderNegotiation[]>;
+      return response.data || [];
+    } catch (error: any) {
+      this.logger.error('Failed to get pending counter-offers', error as Record<string, any>);
       return [];
     }
   }

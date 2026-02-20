@@ -121,6 +121,17 @@ export interface AppraiserAssignment {
   propertyLat?: number;
   propertyLng?: number;
   
+  // Fee & Negotiation
+  proposedFee?: number;
+  agreedFee?: number;
+  counterOfferFee?: number;
+  counterOfferNotes?: string;
+  negotiationId?: string;
+  
+  // SLA
+  slaDeadline?: string;
+  slaStartedAt?: string;
+  
   // Timeline
   estimatedCompletionDate?: string;
   actualCompletionDate?: string;

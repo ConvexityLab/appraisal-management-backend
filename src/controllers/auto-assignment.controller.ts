@@ -22,6 +22,93 @@ export const createAutoAssignmentRouter = (): Router => {
   const router = express.Router();
 
   /**
+   * GET /api/auto-assignment/suggest
+   * Get vendor suggestions for an order — used by frontend autoAssignmentApi
+   * Returns VendorSuggestion[] shape expected by the UI
+   */
+  router.get(
+    '/suggest',
+    [
+      query('orderId').notEmpty().withMessage('orderId is required'),
+      query('limit').optional().isInt({ min: 1, max: 50 })
+    ],
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({
+            success: false,
+            errors: errors.array()
+          });
+        }
+
+        const tenantId = (req as any).user?.tenantId as string || 'default';
+        const orderId = req.query.orderId as string;
+        const limit = parseInt(req.query.limit as string) || 10;
+
+        // Look up the order to build a match request
+        const orderResponse = await dbService.getItem('orders', orderId, tenantId) as any;
+        const order = orderResponse?.data;
+        if (!order) {
+          return res.status(404).json({
+            success: false,
+            error: 'Order not found'
+          });
+        }
+
+        const matchRequest: VendorMatchRequest = {
+          orderId,
+          tenantId,
+          propertyAddress: order.propertyAddress
+            ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`
+            : '',
+          propertyType: order.propertyType || order.productType || 'Standard',
+          ...(order.dueDate ? { dueDate: new Date(order.dueDate) } : {}),
+          ...(order.urgency || order.priority ? { urgency: order.urgency || order.priority?.toUpperCase() } : {}),
+          ...(order.fee != null ? { budget: order.fee } : {})
+        };
+
+        logger.info('Getting vendor suggestions', { orderId, limit });
+
+        const matches = await matchingEngine.findMatchingVendors(matchRequest, limit);
+
+        // Transform VendorMatchResult[] → VendorSuggestion[] for the frontend
+        const suggestions = matches.map(m => ({
+          vendorId: m.vendorId,
+          vendorName: m.vendor?.name || 'Unknown Vendor',
+          score: m.matchScore,
+          rating: m.vendor?.overallScore || 0,
+          availability: m.scoreBreakdown.availability >= 70 ? 'available' as const
+            : m.scoreBreakdown.availability >= 40 ? 'limited' as const
+            : 'unavailable' as const,
+          distance: m.distance != null ? `${m.distance.toFixed(1)} mi` : 'N/A',
+          estimatedResponse: m.estimatedTurnaround
+            ? `${Math.round(m.estimatedTurnaround)} hrs`
+            : 'Unknown',
+          completedOrders: 0, // Not available from match result — would need separate query
+          onTimeRate: m.scoreBreakdown.performance / 100,
+          reasoning: {
+            proximityScore: m.scoreBreakdown.proximity,
+            availabilityScore: m.scoreBreakdown.availability,
+            ratingScore: m.scoreBreakdown.performance,
+            workloadScore: m.scoreBreakdown.experience
+          }
+        }));
+
+        return res.json({
+          success: true,
+          suggestions,
+          count: suggestions.length
+        });
+
+      } catch (error: any) {
+        logger.error('Failed to get vendor suggestions', error);
+        return next(error);
+      }
+    }
+  );
+
+  /**
    * POST /api/auto-assignment/find-matches
    * Find matching vendors for an order
    */

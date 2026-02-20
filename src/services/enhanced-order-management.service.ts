@@ -178,13 +178,13 @@ export class EnhancedOrderManagementService {
 
       switch (qcReport.qcDecision) {
         case QCDecision.ACCEPT:
-          nextStatus = OrderStatus.QC_PASSED;
+          nextStatus = OrderStatus.COMPLETED;
           statusReason = `QC validation passed with score ${qcReport.overallQCScore}/100`;
           order.qcStatus = 'PASSED';
           break;
         
         case QCDecision.ACCEPT_WITH_CONDITIONS:
-          nextStatus = OrderStatus.QC_PASSED;
+          nextStatus = OrderStatus.COMPLETED;
           statusReason = `QC validation passed with conditions (Score: ${qcReport.overallQCScore}/100, ${qcReport.actionItems.length} action items)`;
           order.qcStatus = 'PASSED';
           break;
@@ -196,13 +196,13 @@ export class EnhancedOrderManagementService {
           break;
         
         case QCDecision.REJECT:
-          nextStatus = OrderStatus.QC_FAILED;
+          nextStatus = OrderStatus.REVISION_REQUESTED;
           statusReason = `QC validation failed (Score: ${qcReport.overallQCScore}/100)`;
           order.qcStatus = 'FAILED';
           break;
         
         case QCDecision.ESCALATE:
-          nextStatus = OrderStatus.QC_FAILED;
+          nextStatus = OrderStatus.REVISION_REQUESTED;
           statusReason = `QC validation requires escalation due to fraud indicators`;
           order.qcStatus = 'FAILED';
           break;
@@ -218,7 +218,7 @@ export class EnhancedOrderManagementService {
 
       // Step 8: Auto-complete high-quality orders if enabled
       if (autoComplete && 
-          nextStatus === OrderStatus.QC_PASSED && 
+          nextStatus === OrderStatus.COMPLETED && 
           qcReport.overallQCScore >= 90 && 
           qcReport.actionItems.length === 0) {
         
@@ -318,18 +318,16 @@ export class EnhancedOrderManagementService {
           onTimeDeliveryRate: 94.2
         },
         statusDistribution: {
-          [OrderStatus.DRAFT]: 3,
+          [OrderStatus.NEW]: 3,
           [OrderStatus.SUBMITTED]: 8,
           [OrderStatus.ASSIGNED]: 12,
           [OrderStatus.IN_PROGRESS]: 15,
           [OrderStatus.DELIVERED]: 5,
           [OrderStatus.QC_REVIEW]: 4,
-          [OrderStatus.QC_PASSED]: 2,
-          [OrderStatus.QC_FAILED]: 1,
-          [OrderStatus.REVISION_REQUESTED]: 3,
-          [OrderStatus.COMPLETED]: 186,
+          [OrderStatus.COMPLETED]: 188,
+          [OrderStatus.REVISION_REQUESTED]: 4,
           [OrderStatus.CANCELLED]: 6,
-          [OrderStatus.EXPIRED]: 0
+          [OrderStatus.ON_HOLD]: 0
         },
         qcMetrics: {
           averageScore: 87.3,

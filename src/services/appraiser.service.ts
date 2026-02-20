@@ -5,17 +5,25 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { AzureCommunicationService } from './azure-communication.service.js';
+import { SLATrackingService } from './sla-tracking.service.js';
+import { OrderEventService } from './order-event.service.js';
+import { AuditTrailService } from './audit-trail.service.js';
 import { Logger } from '../utils/logger.js';
+import { OrderStatus, normalizeOrderStatus } from '../types/order-status.js';
 import type { Appraiser, AppraiserAssignment, ConflictCheckResult, License } from '../types/appraiser.types.js';
 
 export class AppraiserService {
   private cosmosService: CosmosDbService;
   private communicationService: AzureCommunicationService;
+  private eventService: OrderEventService;
+  private auditService: AuditTrailService;
   private logger: Logger;
 
   constructor(cosmosService?: CosmosDbService) {
     this.cosmosService = cosmosService || new CosmosDbService();
     this.communicationService = new AzureCommunicationService();
+    this.eventService = new OrderEventService();
+    this.auditService = new AuditTrailService();
     this.logger = new Logger('AppraiserService');
   }
 
@@ -421,6 +429,117 @@ Appraisal Management Team`.trim();
       appraiserId, 
       orderId: assignment.orderId 
     });
+
+    // Update parent order status to ACCEPTED (unified with negotiation flow)
+    try {
+      const ordersContainer = this.cosmosService.getContainer('orders');
+      const { resource: order } = await ordersContainer.item(assignment.orderId, tenantId).read();
+      if (order) {
+        await ordersContainer.item(assignment.orderId, tenantId).replace({
+          ...order,
+          status: 'ACCEPTED',
+          acceptedAt: new Date().toISOString(),
+          acceptedBy: appraiserId,
+          updatedAt: new Date().toISOString()
+        });
+        this.logger.info('Parent order status updated to ACCEPTED', { orderId: assignment.orderId });
+
+        // Fire event bus + audit trail (unified with OrderController behavior)
+        let previousStatus: OrderStatus;
+        try {
+          previousStatus = normalizeOrderStatus(order.status);
+        } catch {
+          previousStatus = OrderStatus.ASSIGNED;
+        }
+        this.eventService.publishOrderStatusChanged(
+          assignment.orderId, previousStatus, OrderStatus.ACCEPTED, appraiserId,
+        ).catch((err) =>
+          this.logger.error('Failed to publish ORDER_STATUS_CHANGED event', { orderId: assignment.orderId, error: err }),
+        );
+        this.auditService.log({
+          actor: { userId: appraiserId, role: 'appraiser' },
+          action: 'order.status_changed',
+          resource: { type: 'order', id: assignment.orderId },
+          before: { status: previousStatus },
+          after: { status: 'ACCEPTED' },
+          metadata: { source: 'appraiser-assignment-accept', assignmentId, notes },
+        }).catch((err) =>
+          this.logger.error('Failed to write audit log for assignment acceptance', { orderId: assignment.orderId, error: err }),
+        );
+
+        // Create negotiation audit record for consistency
+        try {
+          const negotiationsContainer = this.cosmosService.getContainer('negotiations');
+          await negotiationsContainer.items.create({
+            id: `negotiation-${assignment.orderId}-${Date.now()}`,
+            orderId: assignment.orderId,
+            vendorId: appraiserId,
+            clientId: order.clientId,
+            tenantId,
+            status: 'ACCEPTED',
+            originalTerms: {
+              fee: order.fee || 0,
+              dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
+              rushFee: order.urgency === 'RUSH',
+              specialInstructions: order.specialInstructions || ''
+            },
+            currentTerms: {
+              fee: order.fee || 0,
+              dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
+              additionalConditions: []
+            },
+            rounds: [{
+              roundNumber: 1,
+              timestamp: new Date(),
+              actor: 'VENDOR',
+              action: 'ACCEPT',
+              proposedTerms: {
+                fee: order.fee || 0,
+                dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
+                notes: notes || 'Assignment accepted via appraiser portal'
+              }
+            }],
+            maxRounds: 3,
+            expirationTime: new Date(Date.now() + 4 * 60 * 60 * 1000),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            decidedAt: new Date(),
+            decidedBy: appraiserId
+          });
+          this.logger.info('Negotiation audit record created', { orderId: assignment.orderId });
+        } catch (auditError) {
+          this.logger.error('Failed to create negotiation audit record (non-fatal)', {
+            orderId: assignment.orderId,
+            error: auditError instanceof Error ? auditError.message : String(auditError)
+          });
+        }
+
+        // Start SLA tracking for the accepted order
+        try {
+          const slaService = new SLATrackingService();
+          await slaService.startSLATracking(
+            'APPRAISAL',
+            assignment.orderId,
+            assignment.orderId,
+            order.orderNumber || assignment.orderId,
+            order.urgency || order.priority || 'ROUTINE',
+            order.clientId
+          );
+          this.logger.info('SLA tracking started for accepted assignment', { orderId: assignment.orderId });
+        } catch (slaError) {
+          this.logger.error('Failed to start SLA tracking (non-fatal)', {
+            orderId: assignment.orderId,
+            error: slaError instanceof Error ? slaError.message : String(slaError)
+          });
+        }
+      }
+    } catch (orderUpdateError) {
+      this.logger.error('Failed to update parent order status (non-fatal)', {
+        orderId: assignment.orderId,
+        error: orderUpdateError instanceof Error ? orderUpdateError.message : String(orderUpdateError)
+      });
+      // Don't fail the acceptance if the parent order update fails
+    }
     
     // Send notification to vendor/AMC about acceptance
     try {
@@ -543,6 +662,75 @@ Appraisal Management Team`.trim();
       orderId: assignment.orderId,
       reason 
     });
+
+    // Update parent order status to PENDING_ASSIGNMENT (needs reassignment)
+    try {
+      const ordersContainer = this.cosmosService.getContainer('orders');
+      const { resource: order } = await ordersContainer.item(assignment.orderId, tenantId).read();
+      if (order) {
+        await ordersContainer.item(assignment.orderId, tenantId).replace({
+          ...order,
+          status: 'PENDING_ASSIGNMENT',
+          assignedVendorId: null,
+          assignedVendorName: null,
+          updatedAt: new Date().toISOString()
+        });
+        this.logger.info('Parent order status updated to PENDING_ASSIGNMENT', { orderId: assignment.orderId });
+
+        // Create negotiation audit record for consistency
+        try {
+          const negotiationsContainer = this.cosmosService.getContainer('negotiations');
+          await negotiationsContainer.items.create({
+            id: `negotiation-${assignment.orderId}-${Date.now()}`,
+            orderId: assignment.orderId,
+            vendorId: appraiserId,
+            clientId: order.clientId,
+            tenantId,
+            status: 'REJECTED',
+            originalTerms: {
+              fee: order.fee || 0,
+              dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
+              rushFee: order.urgency === 'RUSH',
+              specialInstructions: order.specialInstructions || ''
+            },
+            currentTerms: {
+              fee: order.fee || 0,
+              dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
+              additionalConditions: []
+            },
+            rounds: [{
+              roundNumber: 1,
+              timestamp: new Date(),
+              actor: 'VENDOR',
+              action: 'REJECT',
+              proposedTerms: {
+                fee: order.fee || 0,
+                dueDate: order.dueDate ? new Date(order.dueDate) : new Date(),
+                notes: `Assignment declined: ${reason}`
+              },
+              reason
+            }],
+            maxRounds: 3,
+            expirationTime: new Date(Date.now() + 4 * 60 * 60 * 1000),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            decidedAt: new Date(),
+            decidedBy: appraiserId
+          });
+          this.logger.info('Negotiation audit record created for rejection', { orderId: assignment.orderId });
+        } catch (auditError) {
+          this.logger.error('Failed to create negotiation audit record (non-fatal)', {
+            orderId: assignment.orderId,
+            error: auditError instanceof Error ? auditError.message : String(auditError)
+          });
+        }
+      }
+    } catch (orderUpdateError) {
+      this.logger.error('Failed to update parent order status (non-fatal)', {
+        orderId: assignment.orderId,
+        error: orderUpdateError instanceof Error ? orderUpdateError.message : String(orderUpdateError)
+      });
+    }
     
     // Send notification to vendor/AMC about rejection (needs reassignment)
     try {

@@ -20,18 +20,21 @@ export class DocumentService {
    * Upload a document file and store metadata
    */
   async uploadDocument(
-    orderId: string,
+    orderId: string | undefined,
     tenantId: string,
     file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
     userId: string,
     category?: string,
     tags?: string[],
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    entityType?: string,
+    entityId?: string
   ): Promise<ApiResponse<DocumentMetadata>> {
     try {
-      // Generate unique blob name
+      // Generate unique blob name — use orderId for order docs, entityType/entityId for entity docs
       const extension = file.originalname.split('.').pop();
-      const blobName = `${orderId}/${uuidv4()}.${extension}`;
+      const blobPrefix = orderId || `${entityType}/${entityId}`;
+      const blobName = `${blobPrefix}/${uuidv4()}.${extension}`;
 
       // Upload to blob storage
       const uploadResult = await this.blobService.uploadBlob({
@@ -40,7 +43,9 @@ export class DocumentService {
         data: file.buffer,
         contentType: file.mimetype,
         metadata: {
-          orderId,
+          ...(orderId && { orderId }),
+          ...(entityType && { entityType }),
+          ...(entityId && { entityId }),
           tenantId,
           originalName: file.originalname,
           uploadedBy: userId
@@ -51,7 +56,7 @@ export class DocumentService {
       const document: DocumentMetadata = {
         id: uuidv4(),
         tenantId,
-        orderId,
+        ...(orderId && { orderId }),
         name: file.originalname,
         blobUrl: uploadResult.url,
         blobName: uploadResult.blobName,
@@ -62,7 +67,9 @@ export class DocumentService {
         version: 1,
         uploadedBy: userId,
         uploadedAt: new Date(),
-        ...(metadata && { metadata })
+        ...(metadata && { metadata }),
+        ...(entityType && { entityType }),
+        ...(entityId && { entityId })
       };
 
       // Save to Cosmos DB
@@ -110,6 +117,16 @@ export class DocumentService {
       if (query?.category) {
         sqlQuery += ` AND c.category = @category`;
         parameters.push({ name: '@category', value: query.category });
+      }
+
+      if (query?.entityType) {
+        sqlQuery += ` AND c.entityType = @entityType`;
+        parameters.push({ name: '@entityType', value: query.entityType });
+      }
+
+      if (query?.entityId) {
+        sqlQuery += ` AND c.entityId = @entityId`;
+        parameters.push({ name: '@entityId', value: query.entityId });
       }
 
       sqlQuery += ` ORDER BY c.uploadedAt DESC OFFSET @offset LIMIT @limit`;
