@@ -23,25 +23,22 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
     topicName: string = 'appraisal-events',
     subscriptionName: string = 'notification-service'
   ) {
-    this.serviceBusNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE || (() => {
-      if (process.env.NODE_ENV === 'development') {
-        return 'local-emulator';
-      }
-      throw new Error('AZURE_SERVICE_BUS_NAMESPACE environment variable is required (e.g., myservicebus.servicebus.windows.net)');
-    })();
+    this.logger = new Logger('ServiceBusEventSubscriber');
     this.topicName = topicName;
     this.subscriptionName = subscriptionName;
-    this.logger = new Logger('ServiceBusEventSubscriber');
 
-    // For local development, we'll use a mock client
-    if (this.serviceBusNamespace === 'local-emulator') {
-      this.logger.info('Using local emulator mode for Service Bus');
+    const resolvedNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE;
+
+    if (!resolvedNamespace || resolvedNamespace === 'local-emulator') {
+      // Only use mock when there truly is no namespace configured
+      this.serviceBusNamespace = 'local-emulator';
+      this.logger.info('No AZURE_SERVICE_BUS_NAMESPACE configured — using mock Service Bus');
       this.client = this.createMockClient();
     } else {
-      // Use managed identity in production
+      this.serviceBusNamespace = resolvedNamespace;
       const credential = new DefaultAzureCredential();
       this.client = new ServiceBusClient(this.serviceBusNamespace, credential);
-      this.logger.info('Using Managed Identity for Service Bus authentication');
+      this.logger.info('Using Managed Identity for Service Bus authentication', { namespace: this.serviceBusNamespace });
     }
   }
 
@@ -152,8 +149,11 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
           await this.handleMessage(message);
         },
         processError: async (args: any) => {
+          const err = args.error;
           this.logger.error('Service Bus message processing error', { 
-            error: args.error,
+            message: err?.message || 'Unknown error',
+            code: err?.code || 'UNKNOWN',
+            name: err?.name || 'Error',
             source: args.errorSource,
             entityPath: args.entityPath
           });

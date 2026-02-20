@@ -16,26 +16,21 @@ export class ServiceBusEventPublisher implements EventPublisher {
   private readonly logger: Logger;
 
   constructor(serviceBusNamespace?: string, topicName: string = 'appraisal-events') {
-    // For production, use managed identity with namespace
-    // For local dev, use emulator
-    this.serviceBusNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE || (() => {
-      if (process.env.NODE_ENV === 'development') {
-        return 'local-emulator';
-      }
-      throw new Error('AZURE_SERVICE_BUS_NAMESPACE environment variable is required (e.g., myservicebus.servicebus.windows.net)');
-    })();
     this.topicName = topicName;
     this.logger = new Logger('ServiceBusEventPublisher');
-    
-    // For local development, we'll use a mock client
-    if (this.serviceBusNamespace === 'local-emulator') {
-      this.logger.info('Using local emulator mode for Service Bus');
+
+    const resolvedNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE;
+
+    if (!resolvedNamespace || resolvedNamespace === 'local-emulator') {
+      // Only use mock when there truly is no namespace configured
+      this.serviceBusNamespace = 'local-emulator';
+      this.logger.info('No AZURE_SERVICE_BUS_NAMESPACE configured — using mock Service Bus');
       this.client = this.createMockClient();
     } else {
-      // Use managed identity in production
+      this.serviceBusNamespace = resolvedNamespace;
       const credential = new DefaultAzureCredential();
       this.client = new ServiceBusClient(this.serviceBusNamespace, credential);
-      this.logger.info('Using Managed Identity for Service Bus authentication');
+      this.logger.info('Using Managed Identity for Service Bus authentication', { namespace: this.serviceBusNamespace });
     }
   }
 

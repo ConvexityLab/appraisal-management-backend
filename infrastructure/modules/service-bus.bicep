@@ -189,6 +189,31 @@ resource analyticsSubscription 'Microsoft.ServiceBus/namespaces/topics/subscript
   }
 }
 
+// Appraisal Events Topic (for real-time notification pipeline)
+resource appraisalEventsTopic 'Microsoft.ServiceBus/namespaces/topics@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: serviceBusNamespace
+  name: 'appraisal-events'
+  properties: {
+    maxSizeInMegabytes: 1024
+    defaultMessageTimeToLive: 'P14D'
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    requiresDuplicateDetection: true
+    enablePartitioning: config.sku != 'Premium'
+  }
+}
+
+// Notification Service Subscription (consumed by backend notification pipeline)
+resource notificationServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'notification-service'
+  properties: {
+    maxDeliveryCount: 10
+    lockDuration: 'PT1M'
+    defaultMessageTimeToLive: 'P7D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id
@@ -202,4 +227,5 @@ output queueNames array = [
 output topicNames array = config.sku != 'Basic' ? [
   qcEventsTopic.name
   auditEventsTopic.name
+  appraisalEventsTopic.name
 ] : []
