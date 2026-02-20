@@ -19,6 +19,8 @@ param azureCommunicationEmailDomain string = ''
 param keyVaultUrl string = ''
 param azureTenantId string = ''
 param azureClientId string = ''
+param serviceBusNamespace string = ''
+param webPubSubEndpoint string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -165,6 +167,14 @@ var containerApps = [
       {
         name: 'AZURE_TENANT_ID'
         value: azureTenantId
+      }
+      {
+        name: 'AZURE_SERVICE_BUS_NAMESPACE'
+        value: serviceBusNamespace
+      }
+      {
+        name: 'AZURE_WEB_PUBSUB_ENDPOINT'
+        value: webPubSubEndpoint
       }
     ]
     scaleRule: {

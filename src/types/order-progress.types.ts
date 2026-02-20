@@ -4,6 +4,7 @@
  */
 
 // OrderStatus — canonical definition lives in order-status.ts (single source of truth)
+import { OrderStatus } from './order-status.js';
 export { OrderStatus } from './order-status.js';
 
 export type MilestoneType =

@@ -251,6 +251,109 @@ export class QCReviewQueueService {
     }
   }
 
+  /**
+   * Return a review to the queue (unassign analyst)
+   * Phase 5.6
+   */
+  async returnToQueue(queueItemId: string, reason: string, returnedBy: string): Promise<QCReviewQueueItem> {
+    try {
+      this.logger.info('Returning QC review to queue', { queueItemId, reason, returnedBy });
+
+      const queueItem = await this.getQueueItem(queueItemId);
+      if (!queueItem) {
+        throw new Error('Queue item not found');
+      }
+
+      if (queueItem.status !== QCReviewStatus.IN_REVIEW && queueItem.status !== QCReviewStatus.IN_PROGRESS) {
+        throw new Error(`Cannot return review in ${queueItem.status} status to queue`);
+      }
+
+      const previousAnalyst = queueItem.assignedAnalystId;
+      queueItem.assignedAnalystId = undefined as any;
+      queueItem.assignedAnalystName = undefined as any;
+      queueItem.assignedAt = undefined as any;
+      queueItem.startedAt = undefined as any;
+      queueItem.status = QCReviewStatus.PENDING;
+      queueItem.updatedAt = new Date();
+      (queueItem as any).returnedToQueueAt = new Date();
+      (queueItem as any).returnReason = reason;
+      (queueItem as any).returnedBy = returnedBy;
+      (queueItem as any).previousAnalystId = previousAnalyst;
+
+      await this.dbService.upsertDocument('qc-reviews', queueItem);
+
+      this.logger.info('QC review returned to queue', { queueItemId, previousAnalyst, reason });
+      return queueItem;
+
+    } catch (error) {
+      this.logger.error('Failed to return QC review to queue', { error, queueItemId });
+      throw error;
+    }
+  }
+
+  /**
+   * Complete review with a decision (approve / reject / conditional)
+   * Phase 5.7
+   */
+  async completeWithDecision(
+    queueItemId: string,
+    decision: {
+      outcome: 'APPROVED' | 'REJECTED' | 'CONDITIONAL';
+      reviewedBy: string;
+      notes?: string;
+      conditions?: string[];
+      score?: number;
+    }
+  ): Promise<QCReviewQueueItem> {
+    try {
+      this.logger.info('Completing QC review with decision', { queueItemId, outcome: decision.outcome });
+
+      const queueItem = await this.getQueueItem(queueItemId);
+      if (!queueItem) {
+        throw new Error('Queue item not found');
+      }
+
+      if (queueItem.status !== QCReviewStatus.IN_REVIEW && queueItem.status !== QCReviewStatus.IN_PROGRESS) {
+        throw new Error(`Cannot complete review in ${queueItem.status} status`);
+      }
+
+      queueItem.completedAt = new Date();
+      queueItem.updatedAt = new Date();
+
+      // Map decision to final status
+      if (decision.outcome === 'REJECTED') {
+        queueItem.status = QCReviewStatus.REVISION_REQUESTED;
+      } else {
+        queueItem.status = QCReviewStatus.COMPLETED;
+      }
+
+      // Store decision details on the item
+      (queueItem as any).decision = {
+        outcome: decision.outcome,
+        reviewedBy: decision.reviewedBy,
+        notes: decision.notes,
+        conditions: decision.conditions,
+        score: decision.score,
+        decidedAt: new Date(),
+      };
+
+      await this.dbService.upsertDocument('qc-reviews', queueItem);
+
+      this.logger.info('QC review decision recorded', {
+        queueItemId,
+        outcome: decision.outcome,
+        reviewedBy: decision.reviewedBy,
+        duration: this.calculateDuration(queueItem.startedAt!, queueItem.completedAt),
+      });
+
+      return queueItem;
+
+    } catch (error) {
+      this.logger.error('Failed to complete QC review with decision', { error, queueItemId });
+      throw error;
+    }
+  }
+
   // ===========================
   // PRIORITY SCORING
   // ===========================
@@ -599,6 +702,27 @@ export class QCReviewQueueService {
   // ===========================
   // HELPER METHODS
   // ===========================
+
+  /**
+   * Update arbitrary metadata on a queue item (e.g., Axiom evaluation results).
+   * Merges provided fields into the existing document.
+   */
+  async updateQueueItem(queueItemId: string | undefined, updates: Record<string, any>): Promise<void> {
+    if (!queueItemId) return;
+    try {
+      await this.ensureDbInitialized();
+      const item = await this.getQueueItem(queueItemId);
+      if (!item) {
+        this.logger.warn('Cannot update queue item — not found', { queueItemId });
+        return;
+      }
+      Object.assign(item, updates, { updatedAt: new Date() });
+      await this.dbService.upsertDocument('qc-reviews', item);
+    } catch (error) {
+      this.logger.error('Failed to update queue item', { queueItemId, error });
+      throw error;
+    }
+  }
 
   private async getQueueItem(queueItemId: string): Promise<QCReviewQueueItem | null> {
     try {

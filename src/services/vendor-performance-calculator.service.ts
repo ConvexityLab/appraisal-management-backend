@@ -274,8 +274,8 @@ export class VendorPerformanceCalculatorService {
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     return {
-      totalCompleted: orders.filter(o => o.status === 'completed' || o.status === 'delivered').length,
-      inProgress: orders.filter(o => o.status === 'in_progress' || o.status === 'assigned').length,
+      totalCompleted: orders.filter(o => o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED).length,
+      inProgress: orders.filter(o => o.status === OrderStatus.IN_PROGRESS || o.status === OrderStatus.ASSIGNED).length,
       last30Days: orders.filter(o => 
         new Date(o.createdAt) >= thirtyDaysAgo
       ).length,

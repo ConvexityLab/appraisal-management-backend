@@ -12,7 +12,7 @@ import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { body, param, query, validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 // Import our services
 import { CosmosDbService } from '../services/cosmos-db.service.js';

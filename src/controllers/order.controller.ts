@@ -23,6 +23,8 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { OrderEventService } from '../services/order-event.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
 import { SLATrackingService } from '../services/sla-tracking.service.js';
+import { QCReviewQueueService } from '../services/qc-review-queue.service.js';
+import { AxiomService } from '../services/axiom.service.js';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus, isValidStatusTransition } from '../types/order-status.js';
 import {
@@ -59,6 +61,8 @@ export class OrderController {
   private eventService: OrderEventService;
   private auditService: AuditTrailService;
   private slaService: SLATrackingService;
+  private qcQueueService: QCReviewQueueService;
+  private axiomService: AxiomService;
 
   constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
@@ -66,6 +70,8 @@ export class OrderController {
     this.eventService = new OrderEventService();
     this.auditService = new AuditTrailService();
     this.slaService = new SLATrackingService();
+    this.qcQueueService = new QCReviewQueueService();
+    this.axiomService = new AxiomService(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -297,6 +303,75 @@ export class OrderController {
           ).catch((err) =>
             logger.error('Failed to start SLA tracking for accepted order', { orderId, error: err }),
           );
+        }
+
+        // Auto-route to QC queue when order is SUBMITTED
+        if (newStatus === OrderStatus.SUBMITTED) {
+          const order = result.data!;
+          this.qcQueueService.addToQueue({
+            orderId,
+            orderNumber: (order as any).orderNumber || orderId,
+            appraisalId: (order as any).appraisalId || orderId,
+            propertyAddress: (order as any).propertyAddress || (order as any).property?.address || '',
+            appraisedValue: (order as any).appraisedValue || (order as any).orderValue || (order as any).fee || 0,
+            orderPriority: (order as any).priority || (order as any).urgency || 'ROUTINE',
+            clientId: (order as any).clientId || '',
+            clientName: (order as any).clientName || (order as any).client?.name || '',
+            vendorId: (order as any).vendorId || '',
+            vendorName: (order as any).vendorName || (order as any).vendor?.name || '',
+            submittedAt: new Date(),
+          }).then((queueItem) => {
+            logger.info('Order auto-routed to QC queue', { orderId, queueItemId: queueItem?.id });
+            // Start QC SLA tracking
+            this.slaService.startSLATracking(
+              'QC_REVIEW', queueItem?.id || orderId, orderId,
+              (order as any).orderNumber || orderId,
+              (order as any).priority || 'ROUTINE',
+            ).catch((err) =>
+              logger.error('Failed to start QC SLA tracking', { orderId, error: err }),
+            );
+
+            // Axiom→QC bridge: fetch AI evaluation to pre-populate QC findings
+            if (this.axiomService.isEnabled()) {
+              this.axiomService.getEvaluation(orderId).then((evaluation) => {
+                if (evaluation && evaluation.status === 'completed') {
+                  logger.info('Axiom evaluation attached to QC queue item', {
+                    orderId,
+                    queueItemId: queueItem?.id,
+                    riskScore: evaluation.overallRiskScore,
+                    criteriaCount: evaluation.criteria?.length || 0,
+                  });
+                  // Store the evaluation reference on the queue item for the QC analyst
+                  this.qcQueueService.updateQueueItem(queueItem?.id, {
+                    axiomEvaluationId: evaluation.evaluationId,
+                    axiomRiskScore: evaluation.overallRiskScore,
+                    axiomCriteriaSnapshot: (evaluation.criteria || []).map((c) => ({
+                      criterionId: c.criterionId,
+                      description: c.description,
+                      evaluation: c.evaluation,
+                      confidence: c.confidence,
+                    })),
+                  }).catch((err) =>
+                    logger.error('Failed to attach Axiom evaluation to queue item', { orderId, error: err }),
+                  );
+                } else {
+                  logger.info('No completed Axiom evaluation for order', { orderId, status: evaluation?.status });
+                }
+              }).catch((err) =>
+                logger.error('Failed to fetch Axiom evaluation for QC bridge', { orderId, error: err }),
+              );
+            }
+          }).catch((err) =>
+            logger.error('Failed to auto-route order to QC queue', { orderId, error: err }),
+          );
+        }
+
+        // Auto-transition to QC_REVIEW status when order enters queue
+        if (newStatus === OrderStatus.SUBMITTED) {
+          this.dbService.updateOrder(orderId, { status: OrderStatus.QC_REVIEW as unknown as AppraisalOrder['status'] })
+            .catch((err) =>
+              logger.error('Failed to auto-advance order to QC_REVIEW', { orderId, error: err }),
+            );
         }
 
         res.json(normalizeOrder(result.data!));

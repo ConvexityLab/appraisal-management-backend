@@ -131,9 +131,15 @@ export class SLAMonitoringJob {
             if (record.status === 'BREACHED') breached++;
             else promoted++;
           }
-        } catch (err) {
+        } catch (err: any) {
+          // Skip stale SLA records that reference documents no longer in the DB
+          const statusCode = err?.code || err?.statusCode;
+          if (statusCode === 404 || String(err?.message).includes('does not exist')) {
+            this.logger.warn(`Skipping stale SLA record ${record.id} — referenced document not found`);
+            continue;
+          }
           this.logger.error(`Failed to evaluate SLA ${record.id}`, {
-            error: err instanceof Error ? err.message : String(err),
+            error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
           });
         }
       }

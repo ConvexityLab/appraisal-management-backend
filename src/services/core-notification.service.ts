@@ -15,6 +15,9 @@ import {
 import { ServiceBusEventSubscriber } from './service-bus-subscriber';
 import { ServiceBusEventPublisher } from './service-bus-publisher';
 import { EmailNotificationService } from './email-notification.service.js';
+import { SmsNotificationService } from './sms-notification.service.js';
+import { InAppNotificationService } from './in-app-notification.service.js';
+import { WebPubSubService } from './web-pubsub.service.js';
 import { Logger } from '../utils/logger.js';
 
 export interface NotificationRule {
@@ -41,6 +44,9 @@ export class NotificationService {
   private subscriber: ServiceBusEventSubscriber;
   private publisher: ServiceBusEventPublisher;
   private emailService: EmailNotificationService;
+  private smsService: SmsNotificationService;
+  private inAppService: InAppNotificationService;
+  private webPubSubService: WebPubSubService | null = null;
   private logger: Logger;
   private rules: Map<string, NotificationRule[]> = new Map();
   private throttleMap: Map<string, number> = new Map();
@@ -61,8 +67,19 @@ export class NotificationService {
       'notification-events'
     );
 
-    // Initialize email service (ACS-backed)
+    // Initialize channel services
     this.emailService = new EmailNotificationService();
+    this.smsService = new SmsNotificationService();
+    this.inAppService = new InAppNotificationService();
+
+    // Initialize WebPubSub — gracefully degrade if not configured
+    try {
+      this.webPubSubService = new WebPubSubService({ enableLocalEmulation: process.env.NODE_ENV === 'development' });
+      this.logger.info('WebPubSub service initialized for real-time notifications');
+    } catch (error) {
+      this.logger.warn('WebPubSub not available — real-time WebSocket delivery disabled', { error: (error as Error).message });
+      this.webPubSubService = null;
+    }
 
     this.setupDefaultRules();
   }
@@ -327,7 +344,14 @@ export class NotificationService {
   private async sendToChannel(channel: NotificationChannel, notifications: NotificationMessage[]): Promise<void> {
     switch (channel) {
       case NotificationChannel.WEBSOCKET:
-        this.logger.debug('WebSocket channel not configured — skipping', { count: notifications.length });
+        // Always persist as in-app notification so nothing is lost
+        await this.persistAsInAppNotifications(notifications);
+        // Also deliver via WebSocket if available
+        if (this.webPubSubService) {
+          await this.sendWebSocketNotifications(notifications);
+        } else {
+          this.logger.debug('WebSocket not available — notifications persisted as in-app only', { count: notifications.length });
+        }
         break;
       case NotificationChannel.EMAIL:
         await this.sendEmailNotifications(notifications);
@@ -341,6 +365,83 @@ export class NotificationService {
       default:
         this.logger.warn(`Unsupported notification channel: ${channel}`);
     }
+  }
+
+  private async persistAsInAppNotifications(notifications: NotificationMessage[]): Promise<void> {
+    const tenantId = process.env.DEFAULT_TENANT_ID || 'tenant-001';
+
+    for (const notification of notifications) {
+      try {
+        // Determine target userId from event data
+        const eventData = notification.data?.originalEvent?.data || notification.data || {};
+        const userId = (eventData as any).userId || (eventData as any).assignedTo || (eventData as any).vendorId || 'system';
+        const orderId = (eventData as any).orderId;
+
+        await this.inAppService.createNotification({
+          tenantId,
+          userId,
+          title: notification.title,
+          message: notification.message,
+          category: this.mapEventCategoryToNotificationCategory(notification.category),
+          priority: this.mapPriorityToInApp(notification.priority),
+          ...(orderId ? { actionUrl: `/orders/${orderId}` } : {}),
+          metadata: { eventId: notification.data?.eventId, ruleId: notification.data?.ruleId },
+          ...(notification.data?.eventType ? { sourceEventType: notification.data.eventType as string } : {}),
+          ...(notification.data?.eventId ? { sourceEventId: notification.data.eventId as string } : {}),
+        });
+      } catch (error) {
+        this.logger.error('Failed to persist in-app notification', { error, notificationId: notification.id });
+        // Don't throw — persistence failure shouldn't stop other notifications
+      }
+    }
+  }
+
+  private mapEventCategoryToNotificationCategory(category: EventCategory | string): 'order' | 'assignment' | 'qc' | 'communication' | 'sla' | 'system' | 'revision' | 'escalation' | 'delivery' {
+    const map: Record<string, 'order' | 'assignment' | 'qc' | 'communication' | 'sla' | 'system' | 'revision' | 'escalation' | 'delivery'> = {
+      ORDER: 'order',
+      ASSIGNMENT: 'assignment',
+      QC: 'qc',
+      COMMUNICATION: 'communication',
+      SLA: 'sla',
+      SYSTEM: 'system',
+      REVISION: 'revision',
+      ESCALATION: 'escalation',
+      DELIVERY: 'delivery',
+    };
+    return map[String(category).toUpperCase()] || 'system';
+  }
+
+  private mapPriorityToInApp(priority: EventPriority | string): 'low' | 'normal' | 'high' | 'critical' {
+    const map: Record<string, 'low' | 'normal' | 'high' | 'critical'> = {
+      LOW: 'low',
+      NORMAL: 'normal',
+      HIGH: 'high',
+      CRITICAL: 'critical',
+    };
+    return map[String(priority).toUpperCase()] || 'normal';
+  }
+
+  private async sendWebSocketNotifications(notifications: NotificationMessage[]): Promise<void> {
+    if (!this.webPubSubService) return;
+
+    for (const notification of notifications) {
+      try {
+        // Attempt targeted delivery by user, fall back to broadcast
+        const eventData = notification.data?.originalEvent?.data || notification.data || {};
+        const userId = (eventData as any).userId || (eventData as any).assignedTo || (eventData as any).vendorId;
+
+        if (userId) {
+          await this.webPubSubService.sendToUser(userId, notification);
+        } else {
+          await this.webPubSubService.broadcastNotification(notification);
+        }
+      } catch (error) {
+        this.logger.error('Failed to send WebSocket notification', { error, notificationId: notification.id });
+        // Don't throw — WebSocket failure shouldn't stop other notifications
+      }
+    }
+
+    this.logger.info(`Processed ${notifications.length} WebSocket notifications`);
   }
 
   private async sendEmailNotifications(notifications: NotificationMessage[]): Promise<void> {
@@ -372,10 +473,26 @@ export class NotificationService {
   }
 
   private async sendSMSNotifications(notifications: NotificationMessage[]): Promise<void> {
-    // Placeholder for SMS integration
-    this.logger.info(`Sending ${notifications.length} SMS notifications`, {
-      notifications: notifications.map(n => ({ id: n.id, title: n.title, priority: n.priority }))
-    });
+    const tenantId = process.env.DEFAULT_TENANT_ID || 'tenant-001';
+
+    for (const notification of notifications) {
+      try {
+        const smsAddress = notification.targets
+          .find(t => t.channel === NotificationChannel.SMS)?.address;
+
+        if (!smsAddress || smsAddress === '+1234567890') {
+          this.logger.debug('No valid SMS address for notification, skipping', { id: notification.id });
+          continue;
+        }
+
+        await this.smsService.sendSms(smsAddress, `${notification.title}: ${notification.message}`, tenantId);
+      } catch (error) {
+        this.logger.error('Failed to send SMS notification', { error, notificationId: notification.id });
+        // Don't throw — SMS failure shouldn't stop other notifications
+      }
+    }
+
+    this.logger.info(`Processed ${notifications.length} SMS notifications`);
   }
 
   private async sendWebhookNotifications(notifications: NotificationMessage[]): Promise<void> {

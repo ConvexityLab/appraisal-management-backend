@@ -3,6 +3,7 @@
 // Import geospatial risk assessment types
 export * from './geospatial';
 import { PropertyRiskAssessment } from './geospatial';
+import { OrderStatus } from './order-status.js';
 
 export interface AppraisalOrder {
   id: string;

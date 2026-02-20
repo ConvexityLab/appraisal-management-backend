@@ -14,6 +14,8 @@ import { QCReviewQueueService } from '../services/qc-review-queue.service.js';
 import { RevisionManagementService } from '../services/revision-management.service.js';
 import { EscalationWorkflowService } from '../services/escalation-workflow.service.js';
 import { SLATrackingService } from '../services/sla-tracking.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { RevisionSeverity, CreateRevisionRequest } from '../types/qc-workflow.js';
 import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -24,6 +26,16 @@ const qcQueueService = new QCReviewQueueService();
 const revisionService = new RevisionManagementService();
 const escalationService = new EscalationWorkflowService();
 const slaService = new SLATrackingService();
+const dbService = new CosmosDbService();
+
+/** Map a QC score to a RevisionSeverity for the revision request */
+function mapScoreToSeverity(score?: number): RevisionSeverity {
+  if (score == null) return RevisionSeverity.MODERATE;
+  if (score < 30) return RevisionSeverity.CRITICAL;
+  if (score < 50) return RevisionSeverity.MAJOR;
+  if (score < 70) return RevisionSeverity.MODERATE;
+  return RevisionSeverity.MINOR;
+}
 
 // Middleware to handle validation errors
 const handleValidationErrors = (req: Request, res: Response, next: Function): void => {
@@ -851,6 +863,153 @@ router.post(
       return res.status(500).json({
         success: false,
         error: 'Failed to waive SLA'
+      });
+    }
+  }
+);
+
+// Note: export default router is at the bottom of file
+
+// ===========================
+// QUEUE RETURN & FINAL DECISION ENDPOINTS
+// Phase 5.6, 5.7
+// ===========================
+
+/**
+ * POST /api/qc-workflow/queue/:queueItemId/return
+ * Return a review to the queue (unassign analyst)
+ */
+router.post(
+  '/queue/:queueItemId/return',
+  [
+    param('queueItemId').notEmpty().withMessage('queueItemId is required'),
+    body('reason').isString().notEmpty().withMessage('reason is required'),
+    body('returnedBy').isString().notEmpty().withMessage('returnedBy is required'),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const result = await qcQueueService.returnToQueue(
+        req.params.queueItemId!,
+        req.body.reason,
+        req.body.returnedBy
+      );
+
+      return res.json({
+        success: true,
+        data: result,
+        message: 'Review returned to queue',
+      });
+    } catch (error) {
+      logger.error('Failed to return review to queue', { error });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to return review to queue',
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/qc-workflow/queue/:queueItemId/decision
+ * Record final review decision (approve / reject / conditional)
+ */
+router.post(
+  '/queue/:queueItemId/decision',
+  [
+    param('queueItemId').notEmpty().withMessage('queueItemId is required'),
+    body('outcome').isIn(['APPROVED', 'REJECTED', 'CONDITIONAL']).withMessage('outcome must be APPROVED, REJECTED, or CONDITIONAL'),
+    body('reviewedBy').isString().notEmpty().withMessage('reviewedBy is required'),
+    body('notes').optional().isString(),
+    body('conditions').optional().isArray(),
+    body('score').optional().isNumeric(),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const result = await qcQueueService.completeWithDecision(
+        req.params.queueItemId!,
+        {
+          outcome: req.body.outcome,
+          reviewedBy: req.body.reviewedBy,
+          notes: req.body.notes,
+          conditions: req.body.conditions,
+          score: req.body.score,
+        }
+      );
+
+      // ── Downstream effects based on outcome ────────────────────────
+      const { outcome, reviewedBy, notes, conditions, score } = req.body;
+
+      if (outcome === 'REJECTED') {
+        // 1. Transition order → REVISION_REQUESTED
+        await dbService.updateOrder(result.orderId, {
+          status: 'REVISION_REQUESTED' as any,
+        });
+        logger.info('Order transitioned to REVISION_REQUESTED', { orderId: result.orderId });
+
+        // 2. Auto-create revision request with issues derived from the decision
+        const issues: CreateRevisionRequest['issues'] = (conditions || []).map((c: string, i: number) => ({
+          category: 'general',
+          issueType: 'qc_finding',
+          severity: mapScoreToSeverity(score),
+          description: c,
+          fieldName: undefined,
+        }));
+        // Ensure at least one issue exists (from notes if no conditions)
+        if (issues.length === 0 && notes) {
+          issues.push({
+            category: 'general',
+            issueType: 'qc_finding',
+            severity: mapScoreToSeverity(score),
+            description: notes,
+          });
+        }
+
+        try {
+          const revision = await revisionService.createRevisionRequest({
+            orderId: result.orderId,
+            appraisalId: result.appraisalId,
+            qcReportId: result.id,
+            severity: mapScoreToSeverity(score),
+            dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days default
+            issues,
+            requestNotes: notes || 'QC review failed — revision required',
+            requestedBy: reviewedBy,
+          });
+          logger.info('Auto-created revision request from QC rejection', {
+            orderId: result.orderId,
+            revisionId: revision.id,
+          });
+        } catch (revErr) {
+          // Log but don't fail the decision — the order status was already updated
+          logger.error('Failed to auto-create revision from QC rejection', {
+            orderId: result.orderId,
+            error: revErr,
+          });
+        }
+      }
+
+      if (outcome === 'APPROVED') {
+        // Transition order → COMPLETED
+        await dbService.updateOrder(result.orderId, {
+          status: 'COMPLETED' as any,
+        });
+        logger.info('Order transitioned to COMPLETED after QC approval', { orderId: result.orderId });
+      }
+
+      return res.json({
+        success: true,
+        data: result,
+        message: `Review ${outcome.toLowerCase()}`,
+      });
+    } catch (error) {
+      logger.error('Failed to record review decision', { error });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to record review decision',
+        details: error instanceof Error ? error.message : String(error),
       });
     }
   }

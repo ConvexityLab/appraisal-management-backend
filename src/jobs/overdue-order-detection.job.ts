@@ -170,9 +170,15 @@ export class OverdueOrderDetectionJob {
           } catch {
             // Non-fatal
           }
-        } catch (err) {
+        } catch (err: any) {
+          // Skip stale documents that no longer exist (partition key mismatch or deleted)
+          const statusCode = err?.code || err?.statusCode;
+          if (statusCode === 404 || String(err?.message).includes('does not exist')) {
+            this.logger.warn(`Skipping stale order ${order.id} — document not found in DB`);
+            continue;
+          }
           this.logger.error(`Failed to flag order ${order.id} as overdue`, {
-            error: err instanceof Error ? err.message : String(err),
+            error: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
           });
         }
       }

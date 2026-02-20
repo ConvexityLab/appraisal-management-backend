@@ -187,6 +187,18 @@ module serviceBus 'modules/service-bus.bicep' = {
   }
 }
 
+// Web PubSub (deployed early for local testing)
+module webPubSub 'modules/web-pubsub.bicep' = {
+  name: 'web-pubsub-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    namingPrefix: namingPrefix
+    environment: environment
+    tags: tags
+  }
+}
+
 // Storage Account (deployed early for local testing)
 module storage 'modules/storage.bicep' = {
   name: 'storage-deployment'
@@ -221,6 +233,8 @@ module appServices 'modules/app-services.bicep' = {
     keyVaultUrl: keyVaultUrl
     azureTenantId: azureTenantId
     azureClientId: azureClientId
+    serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
+    webPubSubEndpoint: webPubSub.outputs.webPubSubEndpoint
   }
 }
 
@@ -252,6 +266,26 @@ module acsRoleAssignments 'modules/acs-role-assignments.bicep' = {
     communicationServicesName: communicationServices.outputs.communicationServicesName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
     developerPrincipalIds: developerPrincipalIds
+  }
+}
+
+// Service Bus role assignments for Container Apps (after apps exist)
+module serviceBusRoleAssignments 'modules/servicebus-role-assignments.bicep' = {
+  name: 'servicebus-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    serviceBusNamespaceName: serviceBus.outputs.namespaceName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
+// Web PubSub role assignments for Container Apps (after apps exist)
+module webPubSubRoleAssignments 'modules/webpubsub-role-assignments.bicep' = {
+  name: 'webpubsub-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    webPubSubName: webPubSub.outputs.webPubSubName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
 
@@ -402,6 +436,17 @@ output deploymentSummary object = {
     cosmosDb: 'Granted to all Container Apps'
     acs: 'Contributor role granted to all Container Apps'
     keyVault: 'Secrets access granted to all Container Apps'
+    serviceBus: 'Data Sender + Data Receiver granted to all Container Apps'
+  }
+  serviceBus: {
+    namespaceName: serviceBus.outputs.namespaceName
+    endpoint: serviceBus.outputs.endpoint
+    queues: serviceBus.outputs.queueNames
+    topics: serviceBus.outputs.topicNames
+  }
+  webPubSub: {
+    name: webPubSub.outputs.webPubSubName
+    hostName: webPubSub.outputs.webPubSubHostName
   }
 }
 
