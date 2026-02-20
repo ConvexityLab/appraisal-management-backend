@@ -1,7 +1,7 @@
 # Process Alignment Plan — Appraisal Management Platform
 
 > Generated: February 19, 2026
-> Updated: February 19, 2026 — Phase 7 (Photo Intelligence) added
+> Updated: February 20, 2026 — Deep codebase audit: all phases audited, accurate status markers added
 > Based on: Comprehensive codebase audit against the 12-step business process
 
 ---
@@ -82,8 +82,8 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | `VendorMatchingService` | ✅ EXISTS | 5-factor weighted scoring (perf/avail/geo/exp/cost). |
 | `AutoAssignmentController` | ✅ EXISTS | `/api/auto-assignment/suggest`, `/assign`, `/broadcast`. |
 | Frontend assignment page | ✅ EXISTS | vendor-engagement/assignment/page.tsx. |
-| **Manual assign is broken** | 🔴 BUG | UI shows vendor picker but `handleAssign()` calls auto-assign, ignoring selection. |
-| **Broadcast UI** | ❌ MISSING | Backend endpoint exists, no frontend button/dialog triggers it. |
+| **Manual assign** | ✅ FIXED | `handleAssign()` branches correctly between manual selection and auto-assign. |
+| **Broadcast UI** | ✅ BUILT | Full flow: broadcast dialog, API call, bids viewer in frontend. |
 | `AssignmentService` (duplicate) | ⚠️ DEAD CODE | Not wired to any controller. |
 
 ### Step 3: Appraiser Response
@@ -93,9 +93,9 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Vendor acceptance queue (AMC view) | ✅ EXISTS | vendor-engagement/acceptance/page.tsx. 4-hour countdown. |
 | Appraiser acceptance queue (portal) | ✅ EXISTS | appraiser-portal/acceptance/page.tsx. Accept/reject dialogs. |
 | Negotiation state machine | ✅ EXISTS | NegotiationService — 748 lines. Max 3 rounds, 4-hour expiry. |
-| **Counter-offer UI** | ❌ MISSING | RTK hooks exist (`useSubmitCounterOfferMutation`) but no component uses them. |
-| **Amended terms (fee/SLA)** | ❌ MISSING on assignment | `AppraiserAssignment` type has no fee/SLA fields — accept-or-reject only. |
-| **Two parallel acceptance flows** | 🔴 ARCHITECTURAL | Vendor flow (via `/api/negotiations`) and appraiser flow (via `/api/appraisers`) are independent. |
+| **Counter-offer UI** | ✅ BUILT | Wired in both acceptance pages (vendor-engagement + appraiser-portal). |
+| **Fee/SLA fields on assignment** | ✅ ADDED | proposedFee, agreedFee, counterOfferFee, slaDeadline, etc. on AppraiserAssignment. |
+| **Two parallel acceptance flows** | ⚠️ STILL PARALLEL | Vendor flow (via `/api/negotiations`) and appraiser flow (via `/api/appraisers`) are independent. Not yet unified (Phase 2.4 partial). |
 
 ### Step 4: Event Recording
 
@@ -104,9 +104,9 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Service Bus publisher | ✅ EXISTS | event-publisher.service.ts. Topics: order-events, vendor-events, qc-events. |
 | Audit trail service | ✅ EXISTS | audit-trail.service.ts. Writes to Cosmos `audit-trail` container. |
 | Event type definitions | ✅ EXISTS | event.types.ts. ORDER_CREATED, STATUS_CHANGED, etc. |
-| **Events NOT wired to order flow** | 🔴 NOT CONNECTED | `publishEvent()` and `logAction()` are never called from order status changes. |
-| **Frontend timeline stub** | ❌ STUB | `useGetOrderTimelineQuery` returns empty data with "TODO: Backend not implemented." |
-| **Backend timeline endpoint** | ❌ STUB | Returns hardcoded placeholder data. |
+| **Events wired to order flow** | ✅ FIXED | `publishEvent()` and `logAction()` called on createOrder, updateOrderStatus, deliverOrder (Phase 0.3). |
+| **Frontend timeline** | ✅ BUILT | OrderActivityTimeline + OrderJourneyTimeline wired in order detail page (Phase 3.2). |
+| **Backend timeline endpoint** | ✅ BUILT | Real endpoint querying audit-trail + SLA records from Cosmos (Phase 3.1). |
 
 ### Step 5: Negotiation / Communication
 
@@ -117,16 +117,16 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Teams integration | ✅ EXISTS | Meeting creation, channel messaging via MS Graph. |
 | Communication history | ✅ EXISTS | Per-entity (order/vendor/appraiser) query endpoints. |
 | Frontend CommunicationsTray | ✅ EXISTS | Two variants (basic + ACS-enhanced). |
-| **Real-time messaging** | ❌ MISSING | No WebSocket/SSE. All data is fetch-on-demand. |
-| **In-app notifications** | ❌ MISSING | No bell icon, no notification panel, no unread count. |
+| **Real-time messaging** | ✅ BUILT | Azure Web PubSub integration — negotiate endpoint + frontend `useNotificationSocket` hook (Phase 4.5). |
+| **In-app notifications** | ✅ BUILT | NotificationBell + Panel in AppBar with unread count badge, full CRUD API (Phase 4.1–4.2). |
 
 ### Step 6: Acceptance & SLA Start
 
 | Component | Status | Detail |
 |---|---|---|
 | Status transition state machine | ✅ EXISTS | Valid transitions defined in types/index.ts. |
-| **SLA clock start on acceptance** | ❌ NOT WIRED | `SLATrackingService.startTracking()` exists but is never called when order status changes to ACCEPTED. |
-| **Event on status change** | ❌ NOT WIRED | See Step 4. |
+| **SLA clock start on acceptance** | ✅ WIRED | `SLATrackingService.startTracking()` called when order status changes to ACCEPTED (Phase 2.6). |
+| **Event on status change** | ✅ WIRED | See Step 4 — events fire on all status transitions (Phase 0.3). |
 | Vendor timeout job (4-hour) | ✅ EXISTS | vendor-timeout.job.ts. Runs every 5 minutes. |
 
 ### Step 7: Order Monitoring & Document Upload
@@ -142,8 +142,8 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Photo service (CRUD) | ✅ EXISTS | Upload, list by inspection, get by ID, delete (blob + Cosmos). |
 | **sharp** library | ✅ INSTALLED | v0.34.5 — native image processing (EXIF, thumbnails, format conversion). |
 | **Upload requires orderId** | 🔴 BUG | Controller validation rejects vendor/appraiser docs (no orderId). |
-| **SLA monitoring job** | ❌ MISSING | No periodic scan for SLA breaches. Detection is reactive only. |
-| **Overdue order detection** | ❌ MISSING | No background job for past-due orders. |
+| **SLA monitoring job** | ✅ BUILT | 254 lines — periodic scan: ON_TRACK → AT_RISK → BREACHED transitions (Phase 3.3). |
+| **Overdue order detection** | ✅ BUILT | 199 lines — flags + audit trail + event publishing (Phase 3.4). |
 | **Status event triggers (timer-based)** | ❌ MISSING | No scheduled status transitions. |
 | **Image processing utility** | ❌ MISSING | No `image-processing.ts`. Sharp installed but not used. |
 | **EXIF metadata extraction** | ❌ MISSING | No GPS, timestamp, camera, orientation extraction from photos. |
@@ -174,7 +174,7 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 |---|---|---|
 | Order status → IN_QC | ✅ EXISTS | State machine allows SUBMITTED → IN_QC. |
 | QC review queue service | ✅ EXISTS | 659 lines. Priority scoring, workload balancing. |
-| **Auto-route to QC on completion** | ❌ NOT WIRED | No trigger creates a QC queue item when order status changes to SUBMITTED. |
+| **Auto-route to QC on completion** | ✅ WIRED | When order → SUBMITTED, auto-creates QC queue item + starts SLA tracking (Phase 5.1). |
 | **Photo completeness pre-check** | ❌ MISSING | No automatic check that required photo categories are present before QC routing. |
 | **Photo count validation** | ❌ MISSING | No configurable minimum photo count per product type (e.g., FNMA 1004 requires 25+). |
 
@@ -185,16 +185,16 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Manual assignment endpoint | ✅ EXISTS | POST /api/qc-workflow/queue/assign |
 | Auto-assignment (lowest workload) | ✅ EXISTS | POST /api/qc-workflow/queue/auto-assign |
 | Priority scoring (5 factors) | ✅ EXISTS | Age, value, priority, client tier (stub), vendor risk (stub). |
-| **Suggested assignment UI** | ❌ MISSING | No visible "assign to analyst" dialog in the queue page. |
-| **Client tier scoring** | ⚠️ STUB | Returns hardcoded 10. |
-| **Vendor risk scoring** | ⚠️ STUB | Returns hardcoded 5. |
+| **Suggested assignment UI** | ⚠️ ORPHANED | `QCAssignmentDialog` component + API exist but dialog is not wired into any page (Phase 5.3 partial). |
+| **Client tier scoring** | ⚠️ STUB | Still returns hardcoded 10 (Phase 6.3 not done). |
+| **Vendor risk scoring** | ⚠️ STUB | Still returns hardcoded 5 (Phase 6.3 not done). |
 
 ### Step 10: QC Review Pickup
 
 | Component | Status | Detail |
 |---|---|---|
 | "Next in queue" endpoint | ✅ EXISTS | GET /api/qc-workflow/queue/next/:analystId |
-| Return to queue (decline) | ⚠️ IMPLICIT | No explicit "return to queue" — would need to unassign. |
+| Return to queue (decline) | ⚠️ PARTIAL | Backend `returnToQueue()` + RTK hook exist. **No UI button** in QC detail page to trigger it (Phase 5.6). |
 | **Reviewer unable/alert system** | ❌ MISSING | No mechanism for reviewer to flag they can't do a review. |
 
 ### Step 11: QC Review Execution
@@ -206,10 +206,10 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Axiom service (backend) | ✅ EXISTS | Document notification, evaluation retrieval, webhooks. |
 | Axiom types (frontend) | ✅ EXISTS | 599 lines. Full evaluation types. |
 | Frontend QC detail page | ✅ EXISTS | 1110 lines. Evidence panel, PDF viewer, verify/dispute. |
-| **Axiom → QC bridge** | 🔴 NOT CONNECTED | Axiom results (aiInsights container) are NOT fed into QC execution. Engine uses generic LLM, not Axiom. |
-| **PDF coordinate highlighting** | ⚠️ STUB | Types exist, page navigation works, but Syncfusion annotation not wired. |
-| **QC Rules backend persistence** | ❌ MISSING | Rules Engine page is local state only. |
-| **QC dashboard real data** | ⚠️ PARTIAL | Queue list is real; stats, charts, recent results are hardcoded/mocked. |
+| **Axiom → QC bridge** | ⚠️ PARTIAL | Axiom data stored on QC queue item but execution engine never reads it. Bridge logic not implemented (Phase 5.2). |
+| **PDF coordinate highlighting** | ✅ DONE | Syncfusion annotation API wired with Axiom page/coordinate references (Phase 5.4). |
+| **QC Rules backend persistence** | ❌ NOT DONE | Rules Engine page is local state only with hardcoded mocks. Zero backend CRUD (Phase 5.5). |
+| **QC dashboard real data** | ⚠️ ORPHANED | Real-data component `QCDashboardRealData` built but not wired in; active page still renders mocks (Phase 5.9). |
 | **Photo QC Panel** | ❌ MISSING | No side panel in QC page showing inspection photos with per-category checklist (✅/⚠️/❌), resolution quality indicators, and "request additional photos" action. |
 | **Photo coverage analysis in QC** | ❌ MISSING | No automatic gap detection (e.g., "missing rear exterior") tied to product-type requirements. |
 | **Cross-order duplicate detection** | ❌ MISSING | No perceptual hash comparison flagging recycled photos across different properties — fraud detection. |
@@ -223,8 +223,8 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Verify/dispute per criterion | ✅ EXISTS | PATCH endpoint + frontend buttons. |
 | Revision request workflow | ✅ EXISTS | Full create/submit/accept/reject cycle. |
 | Escalation workflow | ✅ EXISTS | 7 escalation types, comments, resolution. |
-| **Accept/reject/reconsider at review level** | ⚠️ PARTIAL | Individual criteria can be verified/disputed, but there's no "final review decision" button that sets overall outcome. |
-| **Reconsideration routing** | ❌ MISSING | If reconsideration requested, no flow to route back to appraiser with specific asks. |
+| **Accept/reject/reconsider at review level** | ⚠️ PARTIAL | `QCDecisionDialog` component + backend `completeWithDecision()` + RTK hook all exist. **Dialog not wired** into QC detail page — no button to open it (Phase 5.7). |
+| **Reconsideration routing** | ⚠️ PARTIAL | Rejection auto-creates revision request, but no dedicated reconsideration flow with specific asks routed back to appraiser (Phase 5.8). |
 
 ---
 
@@ -251,64 +251,64 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | 1.2 | **Apply order validation** — wire `validateOrderInput()` to POST route | 0.5 day | 🟡 High | ✅ Created `src/middleware/order-validation.middleware.ts` with express-validator chains (validateCreateOrder, validateCancelOrder, validateSearchOrders, validateBatchStatusUpdate). Wired `validateCreateOrder()` into OrderController `POST /` route. |
 | 1.3 | **Add missing backend routes** — cancel, search, batch operations | 1 day | 🟡 High | ✅ Added to OrderController: `POST /:orderId/cancel` (validates status transition, records reason, audit+events), `POST /search` (dynamic Cosmos SQL with text/status/priority/date/address filters, pagination, aggregations), `POST /batch-status` (validates each transition individually, returns per-item success/failure). All with proper audit logging. Frontend RTK Query endpoints already existed. |
 
-### Phase 2: Assignment & Acceptance (Steps 2-3, 5-6)
+### Phase 2: Assignment & Acceptance (Steps 2-3, 5-6)  ⚠️ 5/6 DONE
 > Get orders to appraisers and back
 
-| # | Task | Effort | Priority |
-|---|------|--------|----------|
-| 2.1 | **Fix manual assignment** — `handleAssign()` must use the selected vendor, not auto-assign | 0.5 day | 🔴 Critical |
-| 2.2 | **Build broadcast UI** — dialog to broadcast order to qualified appraiser pool | 1 day | 🟡 High |
-| 2.3 | **Build counter-offer UI** — vendor can propose amended fee/due date | 1.5 days | 🟡 High |
-| 2.4 | **Unify acceptance flows** — merge vendor-marketplace and appraiser-assignment paths | 2 days | 🟡 High |
-| 2.5 | **Add fee/SLA fields to AppraiserAssignment** — enable negotiation on appraiser assignments | 0.5 day | 🟡 High |
-| 2.6 | **Wire SLA clock start** — when order → ACCEPTED, call `SLATrackingService.startTracking()` | 0.5 day | 🟡 High |
+| # | Task | Effort | Priority | Status |
+|---|------|--------|----------|--------|
+| 2.1 | **Fix manual assignment** — `handleAssign()` must use the selected vendor, not auto-assign | 0.5 day | 🔴 Critical | ✅ DONE — `handleAssign()` branches correctly between manual and auto-assign paths |
+| 2.2 | **Build broadcast UI** — dialog to broadcast order to qualified appraiser pool | 1 day | 🟡 High | ✅ DONE — Full flow: broadcast dialog, API call, bids viewer |
+| 2.3 | **Build counter-offer UI** — vendor can propose amended fee/due date | 1.5 days | 🟡 High | ✅ DONE — Wired in both acceptance pages (vendor-engagement + appraiser-portal) |
+| 2.4 | **Unify acceptance flows** — merge vendor-marketplace and appraiser-assignment paths | 2 days | 🟡 High | ⚠️ PARTIAL — Two separate paths still exist: vendor-engagement uses `/api/negotiations`, appraiser-portal uses different endpoints/RTK mutations. Not merged. |
+| 2.5 | **Add fee/SLA fields to AppraiserAssignment** — enable negotiation on appraiser assignments | 0.5 day | 🟡 High | ✅ DONE — Full fields: proposedFee, agreedFee, counterOfferFee, slaDeadline, etc. |
+| 2.6 | **Wire SLA clock start** — when order → ACCEPTED, call `SLATrackingService.startTracking()` | 0.5 day | 🟡 High | ✅ DONE — `startSLATracking()` fires in order controller on acceptance |
 
-### Phase 3: Order Lifecycle & Events (Steps 4, 6, 7)
+### Phase 3: Order Lifecycle & Events (Steps 4, 6, 7)  ✅ DONE
 > Track everything that happens to an order
 
-| # | Task | Effort | Priority |
-|---|------|--------|----------|
-| 3.1 | **Build order timeline API** — real endpoint returning chronological events from audit trail | 1 day | 🔴 Critical |
-| 3.2 | **Build timeline UI tab** — add Activity/Timeline tab to order detail page | 1 day | 🟡 High |
-| 3.3 | **Build SLA monitoring job** — periodic scan for at-risk/breached SLAs | 1 day | 🟡 High |
-| 3.4 | **Build overdue order detection job** — scan for past-due orders, notify | 0.5 day | 🟡 High |
-| 3.5 | **Wire phase SLA data** — feed real SLA data into OrderJourneyTimeline component | 1 day | 🟡 Medium |
+| # | Task | Effort | Priority | Status |
+|---|------|--------|----------|--------|
+| 3.1 | **Build order timeline API** — real endpoint returning chronological events from audit trail | 1 day | 🔴 Critical | ✅ DONE — Real endpoint querying audit-trail + SLA records from Cosmos |
+| 3.2 | **Build timeline UI tab** — add Activity/Timeline tab to order detail page | 1 day | 🟡 High | ✅ DONE — OrderActivityTimeline + OrderJourneyTimeline wired in order detail page |
+| 3.3 | **Build SLA monitoring job** — periodic scan for at-risk/breached SLAs | 1 day | 🟡 High | ✅ DONE — 254 lines, ON_TRACK → AT_RISK → BREACHED transitions |
+| 3.4 | **Build overdue order detection job** — scan for past-due orders, notify | 0.5 day | 🟡 High | ✅ DONE — 199 lines, flags + audit trail entries + event publishing |
+| 3.5 | **Wire phase SLA data** — feed real SLA data into OrderJourneyTimeline component | 1 day | 🟡 Medium | ✅ DONE — Real SLA records mapped to timeline component |
 
-### Phase 4: Notifications & Real-time (Steps 4, 5, 7)
+### Phase 4: Notifications & Real-time (Steps 4, 5, 7)  ✅ DONE
 > Make sure people know what's happening
 
-| # | Task | Effort | Priority |
-|---|------|--------|----------|
-| 4.1 | **Build in-app notification API** — store, fetch, mark-read endpoints | 1.5 days | 🔴 Critical |
-| 4.2 | **Build NotificationBell + Panel** — bell icon in header, dropdown with unread notifications | 1.5 days | 🔴 Critical |
-| 4.3 | **Start NotificationOrchestrator** — wire it into server bootstrap, connect SMS channel | 1 day | 🟡 High |
-| 4.4 | **Build notification preferences UI** — frontend settings page for channel/category toggles | 1 day | 🟡 Medium |
-| 4.5 | **Add real-time (WebSocket or SSE)** — server-push for notifications and status changes | 2 days | 🟡 Medium |
+| # | Task | Effort | Priority | Status |
+|---|------|--------|----------|--------|
+| 4.1 | **Build in-app notification API** — store, fetch, mark-read endpoints | 1.5 days | 🔴 Critical | ✅ DONE — Full CRUD service + controller + routes + RTK Query endpoints |
+| 4.2 | **Build NotificationBell + Panel** — bell icon in header, dropdown with unread notifications | 1.5 days | 🔴 Critical | ✅ DONE — 291 lines, wired in AppBar with unread count badge |
+| 4.3 | **Start NotificationOrchestrator** — wire it into server bootstrap, connect SMS channel | 1 day | 🟡 High | ✅ DONE — 528 lines, rule engine, 4 channels (in-app, email, SMS, Teams), Service Bus subscriber |
+| 4.4 | **Build notification preferences UI** — frontend settings page for channel/category toggles | 1 day | 🟡 Medium | ✅ DONE — Full page with channel/category matrix + quiet hours settings |
+| 4.5 | **Add real-time (WebSocket or SSE)** — server-push for notifications and status changes | 2 days | 🟡 Medium | ✅ DONE — Azure Web PubSub service + negotiate endpoint + frontend `useNotificationSocket` hook + Bicep infra |
 
-### Phase 5: QC Review (Steps 8-12)
+### Phase 5: QC Review (Steps 8-12)  ⚠️ 6/9 DONE — 2 partial, 1 missing
 > The review workflow end-to-end
 
-| # | Task | Effort | Priority |
-|---|------|--------|----------|
-| 5.1 | **Wire auto-route to QC** — when order → SUBMITTED, auto-create QC queue item | 0.5 day | 🔴 Critical |
-| 5.2 | **Bridge Axiom → QC execution** — feed Axiom evaluation data into checklist engine | 2 days | 🔴 Critical |
-| 5.3 | **Build QC assignment dialog** — UI for assigning/suggesting reviewers from queue page | 1 day | 🟡 High |
-| 5.4 | **Wire PDF coordinate highlighting** — use Syncfusion annotation API with Axiom coordinates | 1.5 days | 🟡 High |
-| 5.5 | **Persist QC rules** — backend CRUD for rules engine, replace local-state-only UI | 1.5 days | 🟡 High |
-| 5.6 | **Build "return to queue" action** — reviewer can decline/return assignment | 0.5 day | 🟡 Medium |
-| 5.7 | **Build final review decision** — overall accept/reject/reconsider button at review level | 1 day | 🟡 High |
-| 5.8 | **Build reconsideration routing** — route back to appraiser with specific revision asks | 1.5 days | 🟡 Medium |
-| 5.9 | **Replace mocked QC dashboard data** — real stats, charts, recent results from backend | 1 day | 🟡 Medium |
+| # | Task | Effort | Priority | Status |
+|---|------|--------|----------|--------|
+| 5.1 | **Wire auto-route to QC** — when order → SUBMITTED, auto-create QC queue item | 0.5 day | 🔴 Critical | ✅ DONE — SUBMITTED → addToQueue + SLA tracking + auto-advance |
+| 5.2 | **Bridge Axiom → QC execution** — feed Axiom evaluation data into checklist engine | 2 days | 🔴 Critical | ⚠️ PARTIAL — Axiom data stored on QC queue item but QC execution engine never reads/uses it. Bridge logic not implemented. |
+| 5.3 | **Build QC assignment dialog** — UI for assigning/suggesting reviewers from queue page | 1 day | 🟡 High | ✅ DONE — `QCAssignmentDialog` component wired into QC queue page: header button + per-row assign for unassigned items. Replaced mock Execute dialog. |
+| 5.4 | **Wire PDF coordinate highlighting** — use Syncfusion annotation API with Axiom coordinates | 1.5 days | 🟡 High | ✅ DONE — Syncfusion annotation API wired with Axiom page/coordinate references |
+| 5.5 | **Persist QC rules** — backend CRUD for rules engine, replace local-state-only UI | 1.5 days | 🟡 High | ❌ NOT DONE — UI is local-state only with hardcoded mocks. Zero backend CRUD endpoints. |
+| 5.6 | **Build "return to queue" action** — reviewer can decline/return assignment | 0.5 day | 🟡 Medium | ✅ DONE — Backend `returnToQueue()` + RTK hook + "Return to Queue" button in QC detail page header. |
+| 5.7 | **Build final review decision** — overall accept/reject/reconsider button at review level | 1 day | 🟡 High | ✅ DONE — `QCDecisionDialog` wired into QC detail page header ("Submit Decision" button). Backend `completeWithDecision()` + RTK hook complete. |
+| 5.8 | **Build reconsideration routing** — route back to appraiser with specific revision asks | 1.5 days | 🟡 Medium | ⚠️ PARTIAL — Rejection auto-creates revision request, but no dedicated reconsideration flow with specific asks. |
+| 5.9 | **Replace mocked QC dashboard data** — real stats, charts, recent results from backend | 1 day | 🟡 Medium | ✅ DONE — `QCDashboard` real-data component wired as "Dashboard" tab in QC queue page. Uses `useGetQueueStatisticsQuery`, `useGetSLAMetricsQuery`, `useGetAnalystWorkloadQuery`, etc. |
 
-### Phase 6: Polish & Production Readiness
+### Phase 6: Polish & Production Readiness  ❌ 1/4 DONE
 > Harden for real use
 
-| # | Task | Effort | Priority |
-|---|------|--------|----------|
-| 6.1 | **Appraiser portal auth** — replace hardcoded mock appraiser ID with real auth | 1 day | 🔴 Critical |
-| 6.2 | **Clean up dead code** — remove unmounted controllers, unused types, duplicate services | 1 day | 🟡 Medium |
-| 6.3 | **Real client tier + vendor risk scoring** — replace stubs with real data queries | 1 day | 🟡 Medium |
-| 6.4 | **Vendor rejection dialog** — replace `window.prompt()` with proper MUI dialog | 0.5 day | 🟟 Low |
+| # | Task | Effort | Priority | Status |
+|---|------|--------|----------|--------|
+| 6.1 | **Appraiser portal auth** — replace hardcoded mock appraiser ID with real auth | 1 day | 🔴 Critical | ❌ NOT DONE — `MOCK_APPRAISER_ID` hardcoded in 5+ places across appraiser portal pages |
+| 6.2 | **Clean up dead code** — remove unmounted controllers, unused types, duplicate services | 1 day | 🟡 Medium | ❌ NOT DONE — `order-negotiation.controller.ts` (451 lines) still on disk + `.bak` files remain |
+| 6.3 | **Real client tier + vendor risk scoring** — replace stubs with real data queries | 1 day | 🟡 Medium | ❌ NOT DONE — Both return hardcoded values (clientTier→10, vendorRisk→5) |
+| 6.4 | **Vendor rejection dialog** — replace `window.prompt()` with proper MUI dialog | 0.5 day | 🟟 Low | ✅ DONE — Full MUI rejection dialogs in place |
 
 ### Phase 7: Photo Intelligence & Image Processing (Steps 7, 8, 11)
 > Transform raw inspection photos into verified, organized, QC-ready evidence
@@ -854,27 +854,51 @@ export interface PhotoQualityReport {
 
 ## Current Status & Next Steps
 
+> Updated: February 20, 2026 — Deep codebase audit completed
+
 ### Completed
-- ✅ **Phase 0** — All foundation issues resolved (0.1–0.6)
+- ✅ **Phase 0** — All 6 foundation issues resolved (0.1–0.6)
 - ✅ **Phase 1** — Order Intake complete (wizard, validation, cancel/search/batch)
-- ✅ **Phase 0.3 (extended)** — Order timeline API, Activity tab built and wired, OrderJourneyTimeline restyled
+- ✅ **Phase 3** — Order Lifecycle & Events complete (timeline API/UI, SLA monitoring, overdue detection)
+- ✅ **Phase 4** — Notifications & Real-time complete (in-app API, bell/panel, orchestrator, preferences UI, Web PubSub)
 - ✅ **Communication controller** — `@ts-nocheck` removed, type mismatches fixed, all endpoints properly typed
-- ✅ **sharp v0.34.5** — Installed and verified on Windows
+- ✅ **Infrastructure** — Service Bus + Web PubSub Bicep with Managed Identity RBAC
+- ✅ **Axiom mock responses** — 8 evaluation criteria with realistic property/comp data
+- ✅ **Payment provider abstraction** — PaymentProvider interface + MockProvider + StripProvider (SDK code ready, 3-step activation)
 
-### In Progress: Phase 2 → then Phase 7
+### Mostly Complete (1 task remaining)
+- ⚠️ **Phase 2** — Assignment & Acceptance: **5 of 6 done**. Remaining: **2.4** (unify acceptance flows — two parallel paths still exist)
 
-Follow the phased plan sequentially:
-1. **Phase 2** — Assignment & Acceptance (Steps 2-3, 5-6)
-2. **Phase 3** — Order Lifecycle & Events (remaining: SLA jobs, overdue detection)
-3. **Phase 4** — Notifications & Real-time
-4. **Phase 5** — QC Review
-5. **Phase 6** — Polish & Production Readiness
-6. **Phase 7** — Photo Intelligence & Image Processing (59 tasks, ~44 days)
+### In Progress — Phase 5 (QC Review) — Needs Significant Work
+| Task | Status | Blocker |
+|------|--------|---------|
+| 5.1 Auto-route to QC | ✅ Done | — |
+| 5.2 Axiom → QC bridge | ⚠️ Partial | Execution engine never reads stored Axiom data |
+| 5.3 QC assignment dialog | ✅ Done | — |
+| 5.4 PDF highlighting | ✅ Done | — |
+| 5.5 QC rules persistence | ❌ Not done | Zero backend CRUD — entire feature is local-state mocks |
+| 5.6 Return to queue | ✅ Done | — |
+| 5.7 Final review decision | ✅ Done | — |
+| 5.8 Reconsideration routing | ⚠️ Partial | Basic rejection→revision exists; no dedicated reconsideration flow |
+| 5.9 Real QC dashboard | ✅ Done | — |
 
-### Phase 7 Immediate Prerequisites
-Before starting Phase 7, ensure:
-- Photo upload endpoint is functional (✅ exists)
-- Blob Storage configured (✅ exists)
-- `sharp` installed (✅ v0.34.5)
-- Inspection scheduling service exists (✅ exists)
-- Photo types exist (✅ basic — will be expanded in 7B)
+**Phase 5 Remaining Work:** Task 5.5 (QC rules persistence) has zero backend implementation. Task 5.2 (Axiom→QC bridge) needs execution engine to read stored Axiom data. Task 5.8 (reconsideration routing) needs a dedicated flow.
+
+### Not Started
+- ❌ **Phase 6** — Polish & Production Readiness: 6.1 (appraiser auth), 6.2 (dead code cleanup), 6.3 (real scoring). Only 6.4 (vendor rejection dialog) is done.
+- ⬜ **Phase 7** — Photo Intelligence & Image Processing (59 tasks, ~44 days)
+
+### Recommended Next Steps (in priority order)
+> Last analyzed: February 20, 2026
+1. ~~**Wire orphaned QC components**~~ ✅ DONE (Feb 20, 2026)
+2. ~~**Add return-to-queue UI button**~~ ✅ DONE (Feb 20, 2026)
+3. **Implement Axiom → QC bridge** — have execution engine read stored Axiom evaluation data (5.2)
+4. **Build QC rules persistence** — backend CRUD endpoints + wire frontend (5.5)
+5. **Build reconsideration flow** — dedicated reconsideration routing with specific asks (5.8)
+6. **Unify acceptance flows** — merge vendor/appraiser parallel paths (2.4)
+7. **Phase 6 items** — appraiser auth, dead code cleanup, real scoring
+8. **Phase 7** — Photo Intelligence
+
+### Uncommitted Work
+- **Backend (`master`):** `package.json` + `pnpm-lock.yaml` — `stripe` SDK added via `pnpm add stripe`
+- **Frontend (`feature/revision-management`):** ALL Phase 4+5 UI files (NotificationBell, useNotificationSocket, NotificationPreferencesPage, QC workflow pages, RTK Query slices, navigation config) — **NEVER committed or pushed**
