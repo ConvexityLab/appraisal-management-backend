@@ -20,33 +20,20 @@ import {
   BulkPaymentRequest,
   BulkPaymentResult
 } from '../types/payment.types.js';
-
-// Stripe SDK would be imported here in production
-// import Stripe from 'stripe';
+import { createPaymentProvider, PaymentProvider } from './payment-providers/index.js';
 
 export class PaymentProcessingService {
   private logger: Logger;
   private dbService: CosmosDbService;
   private notificationService: NotificationService;
-  
-  // Stripe client (initialized if API key is provided)
-  private stripeEnabled: boolean = false;
-  // private stripe: Stripe | null = null;
+  private provider: PaymentProvider;
 
   constructor(dbService?: CosmosDbService) {
     this.logger = new Logger();
     this.dbService = dbService || new CosmosDbService();
     this.notificationService = new NotificationService();
-    
-    // Initialize Stripe if configured
-    const stripeApiKey = process.env.STRIPE_SECRET_KEY;
-    if (stripeApiKey) {
-      // this.stripe = new Stripe(stripeApiKey, { apiVersion: '2023-10-16' });
-      this.stripeEnabled = true;
-      this.logger.info('Stripe payment processing enabled');
-    } else {
-      this.logger.warn('Stripe not configured - card payments will be disabled');
-    }
+    this.provider = createPaymentProvider();
+    this.logger.info(`Payment provider initialised: ${this.provider.name}`);
   }
 
   /**
@@ -205,31 +192,76 @@ export class PaymentProcessingService {
         updatedAt: new Date()
       };
 
-      // Process based on payment method
+      // Delegate to the configured payment provider
       let paymentResult: PaymentResult;
 
       switch (request.paymentMethod) {
         case PaymentMethod.STRIPE:
-          paymentResult = await this.processStripePayment(payment, request);
+        case PaymentMethod.CREDIT_CARD: {
+          // Inbound charge (client → platform)
+          const chargeResult = await this.provider.charge({
+            idempotencyKey: payment.id,
+            amountCents: Math.round(request.amount * 100),
+            currency: 'usd',
+            ...(request.stripePaymentMethodId ? { paymentMethodToken: request.stripePaymentMethodId } : {}),
+            description: `Invoice ${request.invoiceId}`,
+            metadata: { invoiceId: request.invoiceId, vendorId: request.vendorId },
+          });
+          paymentResult = {
+            success: chargeResult.success,
+            status: chargeResult.status,
+            ...(chargeResult.providerTransactionId ? { transactionId: chargeResult.providerTransactionId } : {}),
+            ...(chargeResult.message ? { message: chargeResult.message } : {}),
+            ...(chargeResult.error ? { error: chargeResult.error } : {}),
+            ...(chargeResult.receiptUrl ? { receiptUrl: chargeResult.receiptUrl } : {}),
+          };
           break;
-        
+        }
+
         case PaymentMethod.ACH:
-          paymentResult = await this.processACHPayment(payment, request);
+        case PaymentMethod.WIRE_TRANSFER: {
+          // Outbound payout (platform → vendor)
+          const payoutResult = await this.provider.payout({
+            idempotencyKey: payment.id,
+            amountCents: Math.round(request.amount * 100),
+            currency: 'usd',
+            ...(request.bankDetails ? {
+              bankDetails: {
+                routingNumber: request.bankDetails.routingNumber,
+                accountNumber: request.bankDetails.accountNumber,
+                accountHolderName: request.bankDetails.accountHolderName,
+                accountType: request.bankDetails.accountType.toLowerCase() as 'checking' | 'savings',
+              }
+            } : {}),
+            description: `Payout for invoice ${request.invoiceId}`,
+            metadata: { invoiceId: request.invoiceId, vendorId: request.vendorId },
+          });
+          paymentResult = {
+            success: payoutResult.success,
+            status: payoutResult.status,
+            ...(payoutResult.providerTransactionId ? { transactionId: payoutResult.providerTransactionId } : {}),
+            ...(payoutResult.message ? { message: payoutResult.message } : {}),
+            ...(payoutResult.error ? { error: payoutResult.error } : {}),
+          };
           break;
-        
-        case PaymentMethod.WIRE_TRANSFER:
-          paymentResult = await this.processWireTransfer(payment, request);
+        }
+
+        case PaymentMethod.CHECK: {
+          // Checks are manual — just record and mark as processing
+          paymentResult = {
+            success: true,
+            status: PaymentStatus.PROCESSING,
+            transactionId: `check_${Date.now()}`,
+            message: 'Check payment recorded — awaiting clearance',
+          };
           break;
-        
-        case PaymentMethod.CHECK:
-          paymentResult = await this.processCheckPayment(payment, request);
-          break;
-        
+        }
+
         default:
           paymentResult = {
             success: false,
             status: PaymentStatus.FAILED,
-            error: 'Unsupported payment method'
+            error: `Unsupported payment method: ${request.paymentMethod}`,
           };
       }
 
@@ -454,141 +486,6 @@ export class PaymentProcessingService {
   // ===========================
   // PRIVATE HELPER METHODS
   // ===========================
-
-  /**
-   * Process Stripe payment
-   */
-  private async processStripePayment(
-    payment: Payment,
-    request: PaymentRequest
-  ): Promise<PaymentResult> {
-    try {
-      if (!this.stripeEnabled) {
-        return {
-          success: false,
-          status: PaymentStatus.FAILED,
-          error: 'Stripe payment processing not configured'
-        };
-      }
-
-      // TODO: Actual Stripe integration
-      // const paymentIntent = await this.stripe!.paymentIntents.create({
-      //   amount: Math.round(request.amount * 100), // Convert to cents
-      //   currency: 'usd',
-      //   payment_method: request.stripePaymentMethodId,
-      //   confirm: true
-      // });
-
-      // Simulate successful payment for now
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      return {
-        success: true,
-        status: PaymentStatus.COMPLETED,
-        transactionId: `stripe_${Date.now()}`,
-        message: 'Payment processed successfully via Stripe'
-      };
-
-    } catch (error) {
-      this.logger.error('Stripe payment failed', { error });
-      return {
-        success: false,
-        status: PaymentStatus.FAILED,
-        error: error instanceof Error ? error.message : 'Stripe payment failed'
-      };
-    }
-  }
-
-  /**
-   * Process ACH payment
-   */
-  private async processACHPayment(
-    payment: Payment,
-    request: PaymentRequest
-  ): Promise<PaymentResult> {
-    try {
-      // TODO: Integrate with ACH processing service (Plaid, Dwolla, etc.)
-      
-      // Validate bank details
-      if (!request.bankDetails) {
-        return {
-          success: false,
-          status: PaymentStatus.FAILED,
-          error: 'Bank details required for ACH payment'
-        };
-      }
-
-      // Simulate ACH processing
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      return {
-        success: true,
-        status: PaymentStatus.PROCESSING, // ACH takes 1-3 business days
-        transactionId: `ach_${Date.now()}`,
-        message: 'ACH payment initiated - processing in 1-3 business days'
-      };
-
-    } catch (error) {
-      this.logger.error('ACH payment failed', { error });
-      return {
-        success: false,
-        status: PaymentStatus.FAILED,
-        error: error instanceof Error ? error.message : 'ACH payment failed'
-      };
-    }
-  }
-
-  /**
-   * Process wire transfer
-   */
-  private async processWireTransfer(
-    payment: Payment,
-    request: PaymentRequest
-  ): Promise<PaymentResult> {
-    try {
-      // Wire transfers are typically manual - mark as pending manual confirmation
-      return {
-        success: true,
-        status: PaymentStatus.PROCESSING,
-        transactionId: `wire_${Date.now()}`,
-        message: 'Wire transfer instructions sent - awaiting confirmation'
-      };
-
-    } catch (error) {
-      this.logger.error('Wire transfer failed', { error });
-      return {
-        success: false,
-        status: PaymentStatus.FAILED,
-        error: error instanceof Error ? error.message : 'Wire transfer failed'
-      };
-    }
-  }
-
-  /**
-   * Process check payment
-   */
-  private async processCheckPayment(
-    payment: Payment,
-    request: PaymentRequest
-  ): Promise<PaymentResult> {
-    try {
-      // Checks are manual - mark as pending confirmation
-      return {
-        success: true,
-        status: PaymentStatus.PROCESSING,
-        transactionId: `check_${Date.now()}`,
-        message: 'Check payment recorded - awaiting clearance'
-      };
-
-    } catch (error) {
-      this.logger.error('Check payment failed', { error });
-      return {
-        success: false,
-        status: PaymentStatus.FAILED,
-        error: error instanceof Error ? error.message : 'Check payment failed'
-      };
-    }
-  }
 
   /**
    * Update invoice with payment
