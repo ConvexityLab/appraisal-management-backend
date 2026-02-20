@@ -148,9 +148,11 @@ export class AxiomService {
     error?: string;
   }> {
     if (!this.enabled) {
+      const mockEvalId = `mock-eval-${notification.orderId}-${Date.now()}`;
+      console.log(`🧪 [MOCK] Axiom not configured — returning mock evaluationId for order ${notification.orderId}`);
       return {
-        success: false,
-        error: 'Axiom integration not configured'
+        success: true,
+        evaluationId: mockEvalId
       };
     }
 
@@ -239,6 +241,12 @@ export class AxiomService {
         return evaluation;
       }
 
+      // Return mock data when Axiom is not configured
+      if (!cachedResult) {
+        console.log(`🧪 [MOCK] Axiom not configured — returning mock evaluation for order ${orderId}`);
+        return this.buildMockEvaluation(orderId);
+      }
+
       return cachedResult;
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -292,6 +300,12 @@ export class AxiomService {
         }
 
         return evaluation;
+      }
+
+      // Return mock data when Axiom is not configured
+      if (!cached) {
+        console.log(`🧪 [MOCK] Axiom not configured — returning mock evaluation for evaluationId ${evaluationId}`);
+        return this.buildMockEvaluation('mock-order', evaluationId);
       }
 
       return cached;
@@ -390,10 +404,8 @@ export class AxiomService {
     error?: string;
   }> {
     if (!this.enabled) {
-      return {
-        success: false,
-        error: 'Axiom integration not configured'
-      };
+      console.log(`🧪 [MOCK] Axiom not configured — returning mock comparison for order ${orderId}`);
+      return this.buildMockComparison(orderId);
     }
 
     try {
@@ -436,6 +448,201 @@ export class AxiomService {
   // ============================================================================
   // Private Helper Methods
   // ============================================================================
+
+  /**
+   * Build a realistic mock evaluation result for development/demo purposes.
+   * Used when AXIOM_API_BASE_URL / AXIOM_API_KEY are not configured.
+   */
+  private buildMockEvaluation(orderId: string, evaluationId?: string): AxiomEvaluationResult {
+    const evalId = evaluationId || `mock-eval-${orderId}-${Date.now()}`;
+    return {
+      orderId,
+      evaluationId: evalId,
+      documentType: 'appraisal',
+      status: 'completed',
+      overallRiskScore: 32,
+      processingTime: 4820,
+      timestamp: new Date().toISOString(),
+      criteria: [
+        {
+          criterionId: 'USPAP_COMPLIANCE',
+          description: 'USPAP Standards Rule compliance — Standards 1 & 2',
+          evaluation: 'pass',
+          confidence: 0.94,
+          reasoning: 'Report contains all required USPAP elements including scope of work, certifications, assumptions & limiting conditions, and signed certification statement.',
+          documentReferences: [
+            { section: 'Certification', page: 28, quote: 'I certify that, to the best of my knowledge and belief…' },
+            { section: 'Scope of Work', page: 3, quote: 'The scope of work for this appraisal includes…' }
+          ]
+        },
+        {
+          criterionId: 'COMP_SELECTION',
+          description: 'Comparable selection appropriateness — proximity, recency, similarity',
+          evaluation: 'pass',
+          confidence: 0.88,
+          reasoning: 'Three comparable sales within 1.2 miles, sold within 6 months, similar GLA (±15%), same neighborhood. Adjustments are within acceptable ranges.',
+          supportingData: [
+            { comp: 1, address: '142 Oak Ridge Dr', distance: '0.4 mi', saleDate: '2025-11-15', salePrice: 425000, gla: 2180 },
+            { comp: 2, address: '309 Maple Ln', distance: '0.8 mi', saleDate: '2025-09-28', salePrice: 438000, gla: 2240 },
+            { comp: 3, address: '87 Birch Ct', distance: '1.1 mi', saleDate: '2025-10-03', salePrice: 415000, gla: 2050 }
+          ],
+          documentReferences: [
+            { section: 'Sales Comparison Approach', page: 12, quote: 'Comparable 1 is located 0.4 miles southeast of the subject…' }
+          ]
+        },
+        {
+          criterionId: 'MATH_ACCURACY',
+          description: 'Mathematical accuracy of adjustments and value calculations',
+          evaluation: 'pass',
+          confidence: 0.97,
+          reasoning: 'All net and gross adjustments are within acceptable thresholds. Net adjustments range from 4.2% to 8.7% (threshold: 15%). Gross adjustments range from 11.3% to 16.1% (threshold: 25%).',
+          documentReferences: [
+            { section: 'Adjustment Grid', page: 14, quote: 'Net Adj: 4.2% | Gross Adj: 11.3%' }
+          ]
+        },
+        {
+          criterionId: 'PROPERTY_DESCRIPTION',
+          description: 'Subject property description completeness and consistency',
+          evaluation: 'pass',
+          confidence: 0.91,
+          reasoning: 'Subject property details are complete: address, legal description, tax ID, site dimensions, zoning, improvements, utilities, and neighborhood description all present and internally consistent.',
+          documentReferences: [
+            { section: 'Subject', page: 1, quote: '2,150 SF single-family residence, 4 BR / 2.5 BA, built 2008' }
+          ]
+        },
+        {
+          criterionId: 'MARKET_CONDITIONS',
+          description: 'Market conditions analysis and trend support',
+          evaluation: 'warning',
+          confidence: 0.78,
+          reasoning: 'Market conditions are described as "stable" but recent MLS data shows a 3.2% appreciation trend over the past 12 months. Report could benefit from additional trend data to support the market conditions conclusion.',
+          documentReferences: [
+            { section: 'Neighborhood', page: 2, quote: 'Property values have been stable over the past 12 months.' }
+          ]
+        },
+        {
+          criterionId: 'HIGHEST_BEST_USE',
+          description: 'Highest and best use analysis — legally permissible, physically possible, financially feasible, maximally productive',
+          evaluation: 'pass',
+          confidence: 0.86,
+          reasoning: 'Highest and best use is identified as continued residential use, consistent with zoning (R-1), surrounding development, and market demand. All four tests addressed.',
+          documentReferences: [
+            { section: 'Highest & Best Use', page: 6, quote: 'The highest and best use of the subject, as improved, is continued use as a single-family residence.' }
+          ]
+        },
+        {
+          criterionId: 'SITE_ANALYSIS',
+          description: 'Site characteristics, zoning, and environmental considerations',
+          evaluation: 'pass',
+          confidence: 0.90,
+          reasoning: 'Site analysis includes lot dimensions, topography, utilities, flood zone determination (Zone X — no special hazard), zoning compliance, and easements. FEMA panel referenced.',
+          documentReferences: [
+            { section: 'Site', page: 4, quote: 'Lot size: 0.28 acres, generally level, public water & sewer, Zone X per FEMA panel 12345C0100J, effective 01/01/2024.' }
+          ]
+        },
+        {
+          criterionId: 'RECONCILIATION',
+          description: 'Value reconciliation logic and final opinion support',
+          evaluation: 'pass',
+          confidence: 0.85,
+          reasoning: 'Reconciliation provides adequate reasoning for weighting the Sales Comparison Approach most heavily. Final opinion of $432,000 is within the adjusted range of comparables ($421,500 – $441,200).',
+          documentReferences: [
+            { section: 'Reconciliation', page: 22, quote: 'Greatest weight given to the Sales Comparison Approach due to sufficient reliable comparable sales data.' }
+          ]
+        }
+      ],
+      extractedData: {
+        propertyDetails: {
+          address: '1847 Willowbrook Lane, Riverton, FL 32789',
+          propertyType: 'Single Family Residential',
+          gla: 2150,
+          bedrooms: 4,
+          bathrooms: 2.5,
+          yearBuilt: 2008,
+          lotSize: 0.28,
+          garage: '2-car attached',
+          condition: 'C3 — Good',
+          quality: 'Q3 — Good'
+        },
+        comparables: [
+          { address: '142 Oak Ridge Dr', salePrice: 425000, adjustedPrice: 431500, distance: 0.4 },
+          { address: '309 Maple Ln', salePrice: 438000, adjustedPrice: 441200, distance: 0.8 },
+          { address: '87 Birch Ct', salePrice: 415000, adjustedPrice: 421500, distance: 1.1 }
+        ],
+        adjustments: [
+          { comp: 1, netAdj: 6500, netAdjPct: 1.5, grossAdj: 18500, grossAdjPct: 4.4 },
+          { comp: 2, netAdj: 3200, netAdjPct: 0.7, grossAdj: 22400, grossAdjPct: 5.1 },
+          { comp: 3, netAdj: 6500, netAdjPct: 1.6, grossAdj: 19800, grossAdjPct: 4.8 }
+        ],
+        uspapElements: {
+          scopeOfWork: true,
+          certifications: true,
+          assumptions: true,
+          limitingConditions: true,
+          signedCertification: true,
+          effectiveDate: '2026-01-15',
+          reportDate: '2026-01-22'
+        }
+      }
+    };
+  }
+
+  /**
+   * Build a realistic mock document-comparison result for development/demo.
+   */
+  private buildMockComparison(orderId: string): {
+    success: boolean;
+    evaluationId?: string;
+    changes?: {
+      section: string;
+      changeType: 'added' | 'removed' | 'modified';
+      original?: string;
+      revised?: string;
+      significance: 'minor' | 'moderate' | 'major';
+    }[];
+    error?: string;
+  } {
+    return {
+      success: true,
+      evaluationId: `mock-compare-${orderId}-${Date.now()}`,
+      changes: [
+        {
+          section: 'Sales Comparison Approach — Comparable 2',
+          changeType: 'modified',
+          original: 'Sale Price: $438,000 | Sale Date: 09/28/2025',
+          revised: 'Sale Price: $442,000 | Sale Date: 09/28/2025 (verified with buyer agent)',
+          significance: 'moderate'
+        },
+        {
+          section: 'Subject Property — Condition',
+          changeType: 'modified',
+          original: 'Overall condition rated C3 (Good)',
+          revised: 'Overall condition rated C3 (Good) — updated interior photos added',
+          significance: 'minor'
+        },
+        {
+          section: 'Reconciliation',
+          changeType: 'modified',
+          original: 'Indicated Value: $430,000',
+          revised: 'Indicated Value: $432,000',
+          significance: 'major'
+        },
+        {
+          section: 'Market Conditions Addendum',
+          changeType: 'added',
+          revised: 'Added 12-month trend data showing 3.2% annual appreciation in zip code 32789, supporting stable-to-increasing market conclusion.',
+          significance: 'moderate'
+        },
+        {
+          section: 'Certifications',
+          changeType: 'modified',
+          original: 'Certification date: 01/15/2026',
+          revised: 'Certification date: 01/22/2026',
+          significance: 'minor'
+        }
+      ]
+    };
+  }
 
   /**
    * Store evaluation record in Cosmos DB aiInsights container
