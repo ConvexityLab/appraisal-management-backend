@@ -504,7 +504,7 @@ export class AppraisalManagementAPIServer {
     // Powers AI features: USPAP compliance, QC automation, revision comparison, ROV analysis
     this.app.use('/api/axiom',
       this.unifiedAuth.authenticate(),
-      createAxiomRouter()
+      createAxiomRouter(this.dbService)
     );
 
     // ===== ITEM 3: ENHANCED VENDOR MANAGEMENT SYSTEM =====

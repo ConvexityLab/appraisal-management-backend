@@ -9,13 +9,17 @@
  */
 
 import { Request, Response, Router } from 'express';
-import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload } from '../services/axiom.service';
+import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
+import { CosmosDbService } from '../services/cosmos-db.service';
 
 export class AxiomController {
   private axiomService: AxiomService;
+  private dbService: CosmosDbService;
+  private static readonly APP_TENANT_ID = 'test-tenant-123';
 
-  constructor(axiomService?: AxiomService) {
-    this.axiomService = axiomService || new AxiomService();
+  constructor(dbService: CosmosDbService, axiomService?: AxiomService) {
+    this.dbService = dbService;
+    this.axiomService = axiomService || new AxiomService(dbService);
   }
 
   /**
@@ -134,8 +138,119 @@ export class AxiomController {
   };
 
   /**
-   * Retrieve evaluation results for an order
+   * Analyze a document via Axiom (frontend-friendly route)
+   * POST /api/axiom/analyze
+   * 
+   * Accepts the frontend AxiomAnalyzeDocumentRequest shape, looks up the
+   * document's blob URL from Cosmos, and delegates to notifyDocumentUpload().
+   * 
+   * Body: {
+   *   documentId: string,
+   *   orderId: string,
+   *   documentType?: string
+   * }
+   */
+  analyzeDocument = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { documentId, orderId, documentType } = req.body;
+
+      if (!documentId) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'documentId is required' }
+        });
+        return;
+      }
+
+      if (!orderId) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'orderId is required' }
+        });
+        return;
+      }
+
+      // Look up the document from Cosmos to get its blob URL
+      const queryResult = await this.dbService.queryItems<any>(
+        'documents',
+        'SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
+        [
+          { name: '@id', value: documentId },
+          { name: '@tenantId', value: AxiomController.APP_TENANT_ID }
+        ]
+      );
+
+      const doc = queryResult.success && queryResult.data && queryResult.data.length > 0
+        ? queryResult.data[0]
+        : null;
+
+      if (!doc) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Document ${documentId} not found`
+          }
+        });
+        return;
+      }
+
+      const resolvedDocType = (documentType || 'appraisal') as DocumentType;
+
+      const notification: AxiomDocumentNotification = {
+        orderId,
+        documentType: resolvedDocType,
+        documentUrl: doc.blobUrl,
+        metadata: {
+          fileName: doc.name || doc.fileName,
+          fileSize: doc.fileSize,
+          uploadedAt: doc.uploadedAt instanceof Date ? doc.uploadedAt.toISOString() : String(doc.uploadedAt),
+          uploadedBy: typeof doc.uploadedBy === 'string' ? doc.uploadedBy : doc.uploadedBy?.name || 'unknown',
+          documentId
+        }
+      };
+
+      const result = await this.axiomService.notifyDocumentUpload(notification);
+
+      if (!result.success) {
+        res.status(503).json({
+          success: false,
+          error: {
+            code: 'AXIOM_API_ERROR',
+            message: result.error || 'Failed to submit document for analysis'
+          }
+        });
+        return;
+      }
+
+      res.status(202).json({
+        success: true,
+        data: {
+          evaluationId: result.evaluationId,
+          orderId,
+          documentId,
+          message: 'Document submitted for AI analysis'
+        }
+      });
+    } catch (error) {
+      console.error('Error analyzing document via Axiom:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to submit document for analysis',
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+  };
+
+  /**
+   * Retrieve ALL evaluation results for an order
    * GET /api/axiom/evaluations/order/:orderId
+   * 
+   * Returns an array of all evaluations (pending, processing, completed, failed).
+   * Frontend uses this to show Axiom status badges on each document.
    */
   getEvaluationByOrder = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -152,31 +267,19 @@ export class AxiomController {
         return;
       }
 
-      const evaluation = await this.axiomService.getEvaluation(orderId);
-
-      if (!evaluation) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: `No Axiom evaluation found for order ${orderId}`,
-            details: 'Document may not have been submitted to Axiom yet'
-          }
-        });
-        return;
-      }
+      const evaluations = await this.axiomService.getEvaluationsForOrder(orderId);
 
       res.json({
         success: true,
-        data: evaluation
+        data: evaluations
       });
     } catch (error) {
-      console.error('Error retrieving Axiom evaluation:', error);
+      console.error('Error retrieving Axiom evaluations:', error);
       res.status(500).json({
         success: false,
         error: {
           code: 'INTERNAL_ERROR',
-          message: 'Failed to retrieve evaluation',
+          message: 'Failed to retrieve evaluations',
           details: error instanceof Error ? error.message : String(error)
         }
       });
@@ -366,15 +469,18 @@ export class AxiomController {
 /**
  * Create Axiom router with all endpoints
  */
-export function createAxiomRouter(): Router {
+export function createAxiomRouter(dbService: CosmosDbService): Router {
   const router = Router();
-  const controller = new AxiomController();
+  const controller = new AxiomController(dbService);
 
   // Status check
   router.get('/status', controller.getStatus);
 
-  // Document notification
+  // Document notification (raw, used by backend-to-backend calls)
   router.post('/documents', controller.notifyDocument);
+
+  // Document analysis (frontend-friendly, looks up blob URL by documentId)
+  router.post('/analyze', controller.analyzeDocument);
 
   // Evaluation retrieval
   router.get('/evaluations/order/:orderId', controller.getEvaluationByOrder);

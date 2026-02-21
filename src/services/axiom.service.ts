@@ -102,16 +102,19 @@ export class AxiomService {
   private dbService: CosmosDbService;
   private containerName = 'aiInsights';
   private enabled: boolean;
+  private mockDelayMs: number;
 
   constructor(dbService?: CosmosDbService) {
     const baseURL = process.env.AXIOM_API_BASE_URL;
     const apiKey = process.env.AXIOM_API_KEY;
 
     this.enabled = !!(baseURL && apiKey);
+    this.mockDelayMs = parseInt(process.env.AXIOM_MOCK_DELAY_MS || '8000', 10);
 
     if (!this.enabled) {
-      console.warn('⚠️  Axiom AI Platform not configured - AI features will be disabled');
-      console.warn('   Set AXIOM_API_BASE_URL and AXIOM_API_KEY environment variables');
+      console.warn('⚠️  Axiom AI Platform not configured - AI features will use mock mode');
+      console.warn(`   Mock delay: ${this.mockDelayMs}ms (set AXIOM_MOCK_DELAY_MS to change)`);
+      console.warn('   Set AXIOM_API_BASE_URL and AXIOM_API_KEY to enable real Axiom');
     }
 
     // Initialize Axiom API client
@@ -149,7 +152,51 @@ export class AxiomService {
   }> {
     if (!this.enabled) {
       const mockEvalId = `mock-eval-${notification.orderId}-${Date.now()}`;
-      console.log(`🧪 [MOCK] Axiom not configured — returning mock evaluationId for order ${notification.orderId}`);
+      console.log(`🧪 [MOCK] Axiom mock mode — creating pending evaluation ${mockEvalId} for order ${notification.orderId}`);
+
+      // Store a PENDING record in Cosmos — frontend will see "Processing"
+      const pendingRecord: AxiomEvaluationResult = {
+        orderId: notification.orderId,
+        evaluationId: mockEvalId,
+        documentType: notification.documentType,
+        status: 'pending',
+        criteria: [],
+        overallRiskScore: 0,
+        timestamp: new Date().toISOString()
+      };
+      const cosmosRecord = {
+        id: mockEvalId,
+        ...pendingRecord,
+        _metadata: {
+          documentId: notification.metadata?.documentId,
+          fileName: notification.metadata?.fileName,
+          notificationSent: new Date().toISOString()
+        }
+      };
+      await this.storeEvaluationRecord(cosmosRecord);
+
+      // Transition to "processing" after 1 second
+      setTimeout(async () => {
+        try {
+          const processingRecord = { ...cosmosRecord, status: 'processing' as const, timestamp: new Date().toISOString() };
+          await this.storeEvaluationRecord(processingRecord);
+          console.log(`🧪 [MOCK] Axiom evaluation ${mockEvalId} → processing`);
+        } catch (err) {
+          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to processing`, err);
+        }
+      }, 1000);
+
+      // Transition to "completed" with full mock results after configured delay
+      setTimeout(async () => {
+        try {
+          const completedRecord = this.buildMockEvaluation(notification.orderId, mockEvalId);
+          await this.storeEvaluationRecord({ id: mockEvalId, ...completedRecord, _metadata: cosmosRecord._metadata });
+          console.log(`✅ [MOCK] Axiom evaluation ${mockEvalId} → completed (risk score: ${completedRecord.overallRiskScore})`);
+        } catch (err) {
+          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to completed`, err);
+        }
+      }, this.mockDelayMs);
+
       return {
         success: true,
         evaluationId: mockEvalId
@@ -241,13 +288,13 @@ export class AxiomService {
         return evaluation;
       }
 
-      // Return mock data when Axiom is not configured
-      if (!cachedResult) {
-        console.log(`🧪 [MOCK] Axiom not configured — returning mock evaluation for order ${orderId}`);
-        return this.buildMockEvaluation(orderId);
+      // In mock mode, return cached record (which may be pending/processing/completed)
+      // or null if no submission has been made for this order yet
+      if (cachedResult) {
+        return cachedResult;
       }
-
-      return cachedResult;
+      console.log(`🧪 [MOCK] No Axiom evaluation found for order ${orderId} — document not yet submitted`);
+      return null;
     } catch (error) {
       const axiosError = error as AxiosError;
       
@@ -302,13 +349,13 @@ export class AxiomService {
         return evaluation;
       }
 
-      // Return mock data when Axiom is not configured
-      if (!cached) {
-        console.log(`🧪 [MOCK] Axiom not configured — returning mock evaluation for evaluationId ${evaluationId}`);
-        return this.buildMockEvaluation('mock-order', evaluationId);
+      // In mock mode, return cached record (which may be pending/processing/completed)
+      // or null if no submission has been made yet
+      if (cached) {
+        return cached;
       }
-
-      return cached;
+      console.log(`🧪 [MOCK] No Axiom evaluation found for evaluationId ${evaluationId}`);
+      return null;
     } catch (error) {
       const axiosError = error as AxiosError;
       
@@ -656,6 +703,32 @@ export class AxiomService {
         error: error instanceof Error ? error.message : String(error)
       });
       // Don't throw - this is a caching issue, not critical
+    }
+  }
+
+  /**
+   * Get ALL evaluations for an order (for the order-level list view)
+   */
+  async getEvaluationsForOrder(orderId: string): Promise<AxiomEvaluationResult[]> {
+    try {
+      const query = `SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.timestamp DESC`;
+      const response = await this.dbService.queryItems<AxiomEvaluationResult>(
+        this.containerName,
+        query,
+        [{ name: '@orderId', value: orderId }]
+      );
+
+      if (response.success && response.data) {
+        return response.data;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('❌ Failed to retrieve evaluations for order', {
+        orderId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return [];
     }
   }
 

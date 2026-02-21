@@ -15,6 +15,7 @@ export interface DocumentMetadata {
   category?: string; // e.g., 'appraisal_report', 'photo', 'invoice', 'contract', 'license', 'certification', 'other'
   tags?: string[];
   version?: number;
+  contentHash?: string;  // SHA-256 hex digest of file content — for dedup & integrity checks
   uploadedBy: string;
   uploadedAt: Date;
   updatedAt?: Date;

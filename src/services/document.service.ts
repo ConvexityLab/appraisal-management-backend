@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { Container } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service';
 import { BlobStorageService } from './blob-storage.service';
@@ -6,13 +7,21 @@ import { DocumentMetadata, DocumentListQuery, DocumentUpdateRequest } from '../t
 import { ApiResponse } from '../types/index';
 
 export class DocumentService {
+  /** Cosmos container for document metadata */
   private readonly containerName = 'documents';
+  /** Azure Blob Storage container for document files */
+  private readonly blobContainerName: string;
   private container: Container;
 
   constructor(
     private readonly cosmosService: CosmosDbService,
     private readonly blobService: BlobStorageService
   ) {
+    const blobContainer = process.env.STORAGE_CONTAINER_DOCUMENTS;
+    if (!blobContainer) {
+      throw new Error('STORAGE_CONTAINER_DOCUMENTS env var is required — set it to the Azure Blob container name for documents (e.g. "appraisal-documents")');
+    }
+    this.blobContainerName = blobContainer;
     this.container = this.cosmosService.getContainer(this.containerName);
   }
 
@@ -36,9 +45,12 @@ export class DocumentService {
       const blobPrefix = orderId || `${entityType}/${entityId}`;
       const blobName = `${blobPrefix}/${uuidv4()}.${extension}`;
 
+      // Compute SHA-256 content hash for dedup & integrity verification
+      const contentHash = createHash('sha256').update(file.buffer).digest('hex');
+
       // Upload to blob storage
       const uploadResult = await this.blobService.uploadBlob({
-        containerName: 'documents',
+        containerName: this.blobContainerName,
         blobName,
         data: file.buffer,
         contentType: file.mimetype,
@@ -48,7 +60,8 @@ export class DocumentService {
           ...(entityId && { entityId }),
           tenantId,
           originalName: file.originalname,
-          uploadedBy: userId
+          uploadedBy: userId,
+          contentHash
         }
       });
 
@@ -62,6 +75,7 @@ export class DocumentService {
         blobName: uploadResult.blobName,
         fileSize: file.size,
         mimeType: file.mimetype,
+        contentHash,
         ...(category && { category }),
         ...(tags && { tags }),
         version: 1,
@@ -291,7 +305,7 @@ export class DocumentService {
       const document = getResponse.data;
 
       // Delete from blob storage
-      await this.blobService.deleteBlob('documents', document.blobName);
+      await this.blobService.deleteBlob(this.blobContainerName, document.blobName);
 
       // Delete from Cosmos DB
       await this.container.item(id, tenantId).delete();

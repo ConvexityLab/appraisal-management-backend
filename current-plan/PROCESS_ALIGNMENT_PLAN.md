@@ -854,7 +854,7 @@ export interface PhotoQualityReport {
 
 ## Current Status & Next Steps
 
-> Updated: February 20, 2026 — Deep codebase audit completed
+> Updated: February 20, 2026 — Plan updated with Axiom submission, monitoring, and delivery phases
 
 ### Completed
 - ✅ **Phase 0** — All 6 foundation issues resolved (0.1–0.6)
@@ -864,7 +864,8 @@ export interface PhotoQualityReport {
 - ✅ **Communication controller** — `@ts-nocheck` removed, type mismatches fixed, all endpoints properly typed
 - ✅ **Infrastructure** — Service Bus + Web PubSub Bicep with Managed Identity RBAC
 - ✅ **Axiom mock responses** — 8 evaluation criteria with realistic property/comp data
-- ✅ **Payment provider abstraction** — PaymentProvider interface + MockProvider + StripProvider (SDK code ready, 3-step activation)
+- ✅ **Payment provider abstraction** — PaymentProvider interface + MockProvider + StripeProvider (SDK code ready, 3-step activation)
+- ✅ **Document management** — Upload, list, download, preview working end-to-end. DocumentPanel wired in OrderDetailPage + OrderTabs. Category normalisation fixed. SHA-256 content hashing on upload.
 
 ### Mostly Complete (1 task remaining)
 - ⚠️ **Phase 2** — Assignment & Acceptance: **5 of 6 done**. Remaining: **2.4** (unify acceptance flows — two parallel paths still exist)
@@ -887,18 +888,129 @@ export interface PhotoQualityReport {
 ### Not Started
 - ❌ **Phase 6** — Polish & Production Readiness: 6.1 (appraiser auth), 6.2 (dead code cleanup), 6.3 (real scoring). Only 6.4 (vendor rejection dialog) is done.
 - ⬜ **Phase 7** — Photo Intelligence & Image Processing (59 tasks, ~44 days)
+- ⬜ **Phase 8** — Axiom Submission & Progress Monitoring (NEW — see below)
+- ⬜ **Phase 9** — Final Report Assembly & Delivery (NEW — see below)
 
-### Recommended Next Steps (in priority order)
+---
+
+## Phase 8: Axiom Document Submission & Progress Monitoring (Steps 8, 11)
+> Submit appraisal documents to Axiom for AI analysis and monitor processing
+
+### What Already Exists
+
+| Layer | Component | Status | Detail |
+|---|---|---|---|
+| Backend | `AxiomService` (688 lines) | ✅ Service exists | `notifyDocumentUpload()`, `getEvaluation()`, `getEvaluationById()`, `handleWebhook()`, `compareDocuments()`. Mock mode when `AXIOM_API_BASE_URL` unset. Stores results in Cosmos `aiInsights` container. |
+| Backend | `AxiomController` (391 lines) | ✅ Controller exists | Routes: `GET /api/axiom/status`, `POST /api/axiom/documents`, `GET /api/axiom/evaluations/order/:orderId`, `GET /api/axiom/evaluations/:evaluationId`, `POST /api/axiom/webhook`, `POST /api/axiom/documents/compare`. |
+| Backend | Axiom router | ✅ Mounted | `createAxiomRouter()` exported and mounted in api-server. |
+| Frontend | `axiomApi.ts` (255 lines) | ✅ RTK Query exists | `useAnalyzeDocumentMutation`, `useGetAxiomEvaluationQuery` (with 2s polling), `useGetOrderEvaluationsQuery`, `useCompareDocumentsMutation`, etc. |
+| Frontend | `axiom.types.ts` (599 lines) | ✅ Types exist | Full Axiom types: evaluation, criteria, comparison, enrichment, complexity scoring. |
+| Frontend | `axiom.service.ts` (frontend) | ✅ Client exists | Direct Axiom API client (bypasses backend — for future direct-connect use cases). |
+
+### What's Missing
+
+| # | Task | Effort | Priority | Detail |
+|---|------|--------|----------|--------|
+| 8.1 | **"Submit to Axiom" button in DocumentPanel** | 1 day | 🔴 Critical | When a document is uploaded (category = appraisal-report), show a "Submit for AI Analysis" action button. Clicking it calls `useAnalyzeDocumentMutation` with the document's blob URL + orderId. Button state: idle → submitting → submitted (with evaluationId). |
+| 8.2 | **Auto-submit on upload (configurable)** | 0.5 day | 🟡 High | Option to auto-call Axiom when an `appraisal-report` document is uploaded. Backend: after successful upload in `document.controller.ts`, if category is appraisal-report, call `axiomService.notifyDocumentUpload()`. Store returned `evaluationId` on the document's Cosmos record. |
+| 8.3 | **Axiom processing status indicator on document** | 1 day | 🔴 Critical | In `DocumentListItem`, show a badge/chip for Axiom status: `⏳ Processing`, `✅ Analysis Complete`, `❌ Analysis Failed`, `—` (not submitted). Fetch from `evaluationId` stored on document or from `GET /api/axiom/evaluations/order/:orderId`. |
+| 8.4 | **Axiom progress panel in Order Detail** | 1.5 days | 🔴 Critical | New sub-section or card in the Order Detail page (or a collapsible panel in the Documents tab) showing: current Axiom evaluation status, processing start time, estimated completion, criteria evaluated count, overall risk score (when complete). Uses `useGetOrderEvaluationsQuery(orderId)` with polling. |
+| 8.5 | **Progress polling / WebSocket push** | 0.5 day | 🟡 High | The RTK Query hook already polls every 2s while status is `processing`. Enhance: when webhook fires (`POST /api/axiom/webhook`), push a Web PubSub notification so frontend can instantly refetch instead of waiting for next poll. Wire into existing `NotificationOrchestrator`. |
+| 8.6 | **Mock Axiom flow for development** | 1 day | 🟡 High | When Axiom is not configured (`AXIOM_API_BASE_URL` unset), the mock currently returns instant results. Enhance: simulate realistic async flow — `notifyDocumentUpload` returns evaluationId, status stays `processing` for 5-10 seconds (configurable via `AXIOM_MOCK_DELAY_MS`), then transitions to `completed` with full mock criteria. This lets us test the progress UI without Axiom. |
+| 8.7 | **Axiom submission from QC routing** | 0.5 day | 🟡 High | When order transitions to `SUBMITTED` (Step 8), auto-submit the primary appraisal document to Axiom if not already submitted. Wire into the existing `auto-route to QC` logic in the order controller (Phase 5.1). |
+| 8.8 | **Axiom results summary in QC queue** | 0.5 day | 🟡 Medium | In the QC queue table, show a column for Axiom risk score and status (completed/pending/none). Helps reviewers prioritise high-risk orders. |
+
+#### Phase 8 Summary
+
+| Category | Tasks | Estimated Effort |
+|---|---|---|
+| Frontend — submit UI | 8.1 | 1 day |
+| Backend — auto-submit | 8.2, 8.7 | 1 day |
+| Frontend — progress/monitoring | 8.3, 8.4 | 2.5 days |
+| Real-time + mock | 8.5, 8.6 | 1.5 days |
+| QC integration | 8.8 | 0.5 day |
+| **TOTAL** | **8 tasks** | **~6.5 days** |
+
+**Recommended execution order:**
+1. **8.6** (mock async flow) — get testable feedback loop without real Axiom
+2. **8.1** (submit button) → **8.2** (auto-submit on upload) → **8.7** (auto-submit on QC routing)
+3. **8.3** (status badge) → **8.4** (progress panel)
+4. **8.5** (WebSocket push) → **8.8** (QC queue column)
+
+---
+
+## Phase 9: Final Report Assembly & Client Delivery (Step 12 → Post-QC)
+> Assemble approved documents into a delivery package and deliver to client/lender
+
+### What Already Exists
+
+| Layer | Component | Status | Detail |
+|---|---|---|---|
+| Backend | `DeliveryWorkflowService` (540+ lines) | ✅ Service exists | `uploadDocument()`, `getOrderDocuments()`, `reviewDocument()`, `createDeliveryPackage()`, `acknowledgeDeliveryPackage()`, `createRevisionRequest()`, `resolveRevisionRequest()`, `getOrderDeliveryPackages()`, `completeOrderDelivery()`. Uses Cosmos `deliveryPackages` container. |
+| Backend | `OrderController.deliverOrder()` | ✅ Endpoint exists | `POST /api/orders/:orderId/deliver` — validates status transition → DELIVERED, records reportUrl + deliveryNotes, fires audit event. |
+| Backend | `DeliveryPackage` type | ✅ Type exists | In `order-progress.types.ts` — id, orderId, tenantId, documents[], status, createdAt, deliveredAt, acknowledgedAt, notes. |
+| Frontend | `DeliveryPackage/index.tsx` (153 lines) | ⚠️ Exists but basic | Shows completion status card + DocumentPanel (read-only when completed). Has "Download Complete Package" button (TODO stub). Has TS error: `readOnly` prop not on `DocumentPanelProps`. |
+| Frontend | RTK Query | ⚠️ Partial | `useDeliverOrderMutation` likely exists via order API, but no dedicated delivery package endpoints (create, list, acknowledge). |
+
+### What's Missing
+
+| # | Task | Effort | Priority | Detail |
+|---|------|--------|----------|--------|
+| 9.1 | **Delivery workflow controller** | 1 day | 🔴 Critical | Create `delivery.controller.ts` exposing the existing `DeliveryWorkflowService` methods as REST endpoints: `POST /api/delivery/:orderId/package` (create package), `GET /api/delivery/:orderId/packages` (list), `POST /api/delivery/:orderId/package/:packageId/deliver` (mark delivered), `POST /api/delivery/:orderId/package/:packageId/acknowledge` (client ack). Wire into api-server. |
+| 9.2 | **Document selection for delivery** | 1.5 days | 🔴 Critical | In the DeliveryPackage tab, add UI to select which approved documents to include in the delivery package. Checkbox list of all order documents with category, name, QC status. Only `APPROVED` documents can be selected. "Create Delivery Package" button calls the create endpoint. |
+| 9.3 | **Delivery package assembly** | 1.5 days | 🔴 Critical | Backend: when creating a delivery package, copy selected document blobs into a dedicated `delivery-packages/{orderId}/{packageId}/` path in Blob Storage. Generate a manifest JSON with document list, order metadata, timestamps. Optionally generate a cover sheet PDF (order summary, property address, appraisal value, QC pass date). |
+| 9.4 | **Bulk download (ZIP)** | 1 day | 🟡 High | Endpoint: `GET /api/delivery/:orderId/package/:packageId/download` — streams a ZIP file containing all documents in the package + manifest. Frontend: wire into the "Download Complete Package" button (currently a TODO stub). Use `archiver` npm package for ZIP creation. |
+| 9.5 | **Delivery status tracking** | 0.5 day | 🟡 High | Track delivery package lifecycle: `DRAFT` → `ASSEMBLED` → `DELIVERED` → `ACKNOWLEDGED`. Show timeline in DeliveryPackage tab. Update order status to DELIVERED when package is delivered. |
+| 9.6 | **Client delivery notification** | 0.5 day | 🟡 High | When package is marked delivered, trigger notification via `NotificationOrchestrator`: email to client with download link, in-app notification to order stakeholders, audit trail entry. |
+| 9.7 | **Delivery RTK Query endpoints** | 0.5 day | 🔴 Critical | Create `deliveryApi.ts` with RTK Query endpoints mirroring 9.1 controller routes. Tags: `DeliveryPackage`. Hooks: `useCreateDeliveryPackageMutation`, `useGetDeliveryPackagesQuery`, `useDeliverPackageMutation`, `useAcknowledgePackageMutation`, `useDownloadPackageQuery`. |
+| 9.8 | **Enhanced DeliveryPackage tab** | 1.5 days | 🔴 Critical | Rewrite `DeliveryPackage/index.tsx`: fix TS error (remove `readOnly` prop or add to DocumentPanelProps), show delivery package history (list of past packages with status), show current package assembly UI (if QC approved), delivery tracking timeline, download buttons per package. |
+| 9.9 | **Delivery confirmation / client acknowledgement** | 0.5 day | 🟡 Medium | UI for client to acknowledge receipt (could be a simple link in the delivery email that hits the acknowledge endpoint). Show acknowledgement status in the delivery tab. |
+
+#### Phase 9 Summary
+
+| Category | Tasks | Estimated Effort |
+|---|---|---|
+| Backend — controller + routes | 9.1 | 1 day |
+| Backend — assembly + ZIP | 9.3, 9.4 | 2.5 days |
+| Frontend — RTK Query | 9.7 | 0.5 day |
+| Frontend — document selection | 9.2 | 1.5 days |
+| Frontend — delivery tab rewrite | 9.8 | 1.5 days |
+| Lifecycle + notifications | 9.5, 9.6, 9.9 | 1.5 days |
+| **TOTAL** | **9 tasks** | **~8.5 days** |
+
+**Recommended execution order:**
+1. **9.1** (controller) → **9.7** (RTK Query) — get the API layer in place
+2. **9.2** (document selection UI) → **9.3** (assembly backend) — core flow
+3. **9.8** (rewrite delivery tab) — integrate everything
+4. **9.4** (ZIP download) → **9.5** (status tracking) → **9.6** (notification) → **9.9** (acknowledgement)
+
+---
+
+## Recommended Next Steps (in priority order)
+
 > Last analyzed: February 20, 2026
-1. ~~**Wire orphaned QC components**~~ ✅ DONE (Feb 20, 2026)
-2. ~~**Add return-to-queue UI button**~~ ✅ DONE (Feb 20, 2026)
-3. **Implement Axiom → QC bridge** — have execution engine read stored Axiom evaluation data (5.2)
-4. **Build QC rules persistence** — backend CRUD endpoints + wire frontend (5.5)
-5. **Build reconsideration flow** — dedicated reconsideration routing with specific asks (5.8)
-6. **Unify acceptance flows** — merge vendor/appraiser parallel paths (2.4)
-7. **Phase 6 items** — appraiser auth, dead code cleanup, real scoring
-8. **Phase 7** — Photo Intelligence
+
+| Priority | Task | Phase | Effort | Rationale |
+|---|---|---|---|---|
+| 1 | **Mock async Axiom flow** | 8.6 | 1 day | Enables testing all Axiom UI without real Axiom service |
+| 2 | **"Submit to Axiom" button** | 8.1 | 1 day | Core Axiom user-facing action |
+| 3 | **Auto-submit on upload/QC routing** | 8.2 + 8.7 | 1 day | Automates the submission step |
+| 4 | **Axiom status badge on documents** | 8.3 | 1 day | Users can see processing state |
+| 5 | **Axiom progress panel** | 8.4 | 1.5 days | Full monitoring dashboard |
+| 6 | **Delivery controller + RTK Query** | 9.1 + 9.7 | 1.5 days | API foundation for delivery |
+| 7 | **Document selection + assembly** | 9.2 + 9.3 | 3 days | Core delivery flow |
+| 8 | **Enhanced delivery tab** | 9.8 | 1.5 days | Integrate into UI |
+| 9 | **ZIP download** | 9.4 | 1 day | "Download Package" button works |
+| 10 | **Axiom → QC bridge** | 5.2 | 2 days | Axiom results feed into QC checklist |
+| 11 | **WebSocket push for Axiom** | 8.5 | 0.5 day | Real-time status updates |
+| 12 | **Delivery notifications + ack** | 9.5 + 9.6 + 9.9 | 1.5 days | Complete delivery lifecycle |
+| 13 | **QC rules persistence** | 5.5 | 1.5 days | Backend CRUD for QC rules |
+| 14 | **Reconsideration routing** | 5.8 | 1.5 days | Dedicated revision flow |
+| 15 | **Phase 6 polish** | 6.1–6.3 | 3 days | Auth, dead code, real scoring |
+| 16 | **Phase 7 — Photo Intelligence** | 7.* | ~44 days | Advanced photo processing |
+
+**Estimated total for Phases 8+9: ~15 days**
 
 ### Uncommitted Work
-- **Backend (`master`):** `package.json` + `pnpm-lock.yaml` — `stripe` SDK added via `pnpm add stripe`
-- **Frontend (`feature/revision-management`):** ALL Phase 4+5 UI files (NotificationBell, useNotificationSocket, NotificationPreferencesPage, QC workflow pages, RTK Query slices, navigation config) — **NEVER committed or pushed**
+- **Backend (`master`):** `package.json` + `pnpm-lock.yaml` — `stripe` SDK added. Document category normalisation in `document.controller.ts`. SHA-256 content hashing in `document.service.ts`.
+- **Frontend (`feature/revision-management`):** ALL Phase 4+5 UI files (NotificationBell, useNotificationSocket, NotificationPreferencesPage, QC workflow pages, RTK Query slices, navigation config). OrderDetailPage Documents tab fix. DocumentUploadZone onDrop fix. **NEVER committed or pushed.**

@@ -11,6 +11,16 @@ import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.j
  * Field renames: name→fileName, blobName→blobPath, category→documentType, uploadedBy string→object.
  * Adds default status ('pending') and version (1) when absent.
  */
+
+/**
+ * Normalise a category value stored in Cosmos into the kebab-case enum values
+ * the frontend expects (e.g. 'APPRAISAL_REPORT' → 'appraisal-report').
+ */
+function normaliseCategoryToFrontend(raw: string | undefined): string {
+  if (!raw) return 'other';
+  return raw.toLowerCase().replace(/_/g, '-');
+}
+
 function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
   return {
     id: doc.id,
@@ -18,7 +28,7 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
     orderId: doc.orderId,
     entityType: doc.entityType,
     entityId: doc.entityId,
-    documentType: doc.category || 'other',
+    documentType: normaliseCategoryToFrontend(doc.category),
     fileName: doc.name,
     blobUrl: doc.blobUrl,
     blobPath: doc.blobName,
@@ -41,6 +51,13 @@ export class DocumentController {
   // Azure AD tid claim is a directory GUID, not our app tenant.
   // All seed data uses this value, so we hard-code it until tenant resolution middleware is built.
   private static readonly APP_TENANT_ID = 'test-tenant-123';
+
+  // Blob Storage container for document files (set via STORAGE_CONTAINER_DOCUMENTS env var)
+  private static readonly BLOB_CONTAINER = (() => {
+    const name = process.env.STORAGE_CONTAINER_DOCUMENTS;
+    if (!name) throw new Error('STORAGE_CONTAINER_DOCUMENTS env var is required');
+    return name;
+  })();
 
   // Multer configuration for file uploads
   private upload = multer({
@@ -140,8 +157,10 @@ export class DocumentController {
       };
 
       const orderId = body.orderId;
-      // Frontend sends 'documentType', backend schema uses 'category' — accept both
-      const category = body.documentType || body.category;
+      // Frontend sends 'documentType', backend schema uses 'category' — accept both.
+      // Normalise to kebab-case so Cosmos always stores a consistent format.
+      const rawCategory = body.documentType || body.category;
+      const category = rawCategory ? rawCategory.toLowerCase().replace(/_/g, '-') : undefined;
       const { tags, metadata, entityType, entityId } = body;
 
       // Require either orderId OR (entityType + entityId) — vendor/appraiser docs have no order
@@ -292,13 +311,17 @@ export class DocumentController {
       const doc = result.data;
 
       // Stream the blob through the backend
-      const { readableStream, contentType, contentLength } = await this.blobService.downloadBlob('documents', doc.blobName);
+      const { readableStream, contentType, contentLength } = await this.blobService.downloadBlob(DocumentController.BLOB_CONTAINER, doc.blobName);
 
       res.setHeader('Content-Type', contentType);
       if (contentLength) {
         res.setHeader('Content-Length', contentLength);
       }
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.name)}"`);
+
+      // Use 'inline' so browsers/viewers can render the content directly.
+      // Explicit downloads are handled by the frontend's downloadDocumentAuthenticated() utility.
+      const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
+      res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.name)}"`);
 
       readableStream.pipe(res);
     } catch (error) {
