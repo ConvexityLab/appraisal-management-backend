@@ -425,20 +425,99 @@ export class QCReviewQueueService {
 
   /**
    * Get client tier score (premium clients get priority)
+   * Queries sla-configurations container to determine client tier.
+   * Clients with custom SLA configs (enterprise/premium) score higher.
    */
   private async getClientTierScore(clientId: string): Promise<number> {
-    // Would query client profile in production
-    // For now, return default
-    return 10;
+    try {
+      const result = await this.dbService.queryItems<{ slaLevel?: string; clientTier?: string }>(
+        'sla-configurations',
+        'SELECT c.slaLevel, c.clientTier FROM c WHERE c.clientId = @clientId',
+        [{ name: '@clientId', value: clientId }]
+      );
+
+      if (!result.success || !result.data || result.data.length === 0) {
+        return 10; // Default tier score — no SLA config on record
+      }
+
+      const config = result.data[0];
+      const tier = (config.clientTier || config.slaLevel || '').toUpperCase();
+
+      const tierScores: Record<string, number> = {
+        ENTERPRISE: 15,
+        PREMIUM: 15,
+        STANDARD: 10,
+        BASIC: 5
+      };
+
+      return tierScores[tier] ?? 10;
+    } catch (error) {
+      this.logger.error('Failed to look up client tier score, using default', {
+        clientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      return 10;
+    }
   }
 
   /**
-   * Get vendor risk score (vendors with QC issues get scrutiny)
+   * Get vendor risk score (vendors with QC issues get more scrutiny)
+   * Queries qc-reviews container for historical QC outcomes for this vendor.
+   * Higher score = higher risk = higher priority for thorough review.
    */
   private async getVendorRiskScore(vendorId: string): Promise<number> {
-    // Would calculate from historical QC data in production
-    // Higher score = more risk = more scrutiny needed
-    return 5;
+    try {
+      const result = await this.dbService.queryItems<{
+        totalReviews: number;
+        failedReviews: number;
+      }>(
+        'qc-reviews',
+        `SELECT
+           COUNT(1) AS totalReviews,
+           COUNT(
+             CASE WHEN c.results.decision = 'REJECTED'
+                   OR c.results.decision = 'REVISION_REQUIRED'
+             THEN 1 END
+           ) AS failedReviews
+         FROM c
+         WHERE c.vendorId = @vendorId
+           AND c.status = 'COMPLETED'`,
+        [{ name: '@vendorId', value: vendorId }]
+      );
+
+      if (!result.success || !result.data || result.data.length === 0) {
+        return 5; // Default moderate risk — no history available
+      }
+
+      const { totalReviews, failedReviews } = result.data[0];
+
+      if (totalReviews === 0) {
+        return 5; // No history — moderate default
+      }
+
+      const failureRate = failedReviews / totalReviews;
+
+      // Map failure rate to 0-10 score
+      // 0% failures → 0 (low risk, low priority)
+      // 10% failures → 3
+      // 25% failures → 5
+      // 50%+ failures → 10 (high risk, high priority)
+      if (failureRate >= 0.5) return 10;
+      if (failureRate >= 0.35) return 8;
+      if (failureRate >= 0.25) return 6;
+      if (failureRate >= 0.15) return 4;
+      if (failureRate >= 0.05) return 2;
+
+      return 0;
+    } catch (error) {
+      this.logger.error('Failed to calculate vendor risk score, using default', {
+        vendorId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      return 5;
+    }
   }
 
   /**

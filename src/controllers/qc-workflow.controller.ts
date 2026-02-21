@@ -475,6 +475,192 @@ router.get('/revisions/overdue', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/qc-workflow/revisions/order/:orderId/history
+ * Get revision history for an order
+ */
+router.get(
+  '/revisions/order/:orderId/history',
+  [param('orderId').notEmpty()],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const history = await revisionService.getRevisionHistory(req.params.orderId!);
+
+      return res.json({
+        success: true,
+        data: history
+      });
+    } catch (error) {
+      logger.error('Failed to get revision history', { error, orderId: req.params.orderId });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve revision history'
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/qc-workflow/revisions
+ * Create revision request with itemized issues
+ */
+router.post(
+  '/revisions',
+  [
+    body('orderId').notEmpty().withMessage('orderId is required'),
+    body('appraisalId').optional().isString(),
+    body('qcReportId').optional().isString(),
+    body('severity').isIn(['CRITICAL', 'MAJOR', 'MINOR']).withMessage('severity must be CRITICAL, MAJOR, or MINOR'),
+    body('dueDate').optional().isISO8601(),
+    body('issues').isArray({ min: 1 }).withMessage('issues must be a non-empty array'),
+    body('issues.*.category').isString().notEmpty(),
+    body('issues.*.issueType').isString().notEmpty(),
+    body('issues.*.severity').isIn(['CRITICAL', 'MAJOR', 'MINOR']),
+    body('issues.*.description').isString().notEmpty(),
+    body('requestNotes').optional().isString(),
+    body('requestedBy').notEmpty().withMessage('requestedBy is required'),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const revision = await revisionService.createRevisionRequest({
+        orderId: req.body.orderId,
+        appraisalId: req.body.appraisalId || req.body.orderId,
+        qcReportId: req.body.qcReportId || '',
+        severity: req.body.severity as RevisionSeverity,
+        dueDate: req.body.dueDate ? new Date(req.body.dueDate) : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        issues: req.body.issues,
+        requestNotes: req.body.requestNotes || '',
+        requestedBy: req.body.requestedBy,
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: revision,
+        message: `Revision request created with ${req.body.issues.length} issue(s)`
+      });
+    } catch (error) {
+      logger.error('Failed to create revision request', { error, orderId: req.body.orderId });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to create revision request',
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/qc-workflow/revisions/:id/submit
+ * Appraiser submits revision response (resolves specified issues)
+ */
+router.post(
+  '/revisions/:id/submit',
+  [
+    param('id').notEmpty(),
+    body('resolvedIssues').isArray().withMessage('resolvedIssues is required'),
+    body('responseNotes').optional().isString(),
+    body('submittedBy').notEmpty().withMessage('submittedBy is required'),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const revision = await revisionService.submitRevision({
+        revisionId: req.params.id!,
+        resolvedIssues: req.body.resolvedIssues,
+        responseNotes: req.body.responseNotes,
+        submittedBy: req.body.submittedBy,
+      });
+
+      return res.json({
+        success: true,
+        data: revision,
+        message: 'Revision submitted for re-review'
+      });
+    } catch (error) {
+      logger.error('Failed to submit revision', { error, revisionId: req.params.id });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to submit revision',
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/qc-workflow/revisions/:id/accept
+ * Accept revision after re-review
+ */
+router.post(
+  '/revisions/:id/accept',
+  [
+    param('id').notEmpty(),
+    body('acceptedBy').notEmpty().withMessage('acceptedBy is required'),
+    body('notes').optional().isString(),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const revision = await revisionService.acceptRevision(
+        req.params.id!,
+        req.body.acceptedBy,
+        req.body.notes
+      );
+
+      return res.json({
+        success: true,
+        data: revision,
+        message: 'Revision accepted'
+      });
+    } catch (error) {
+      logger.error('Failed to accept revision', { error, revisionId: req.params.id });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to accept revision',
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/qc-workflow/revisions/:id/reject
+ * Reject revision (needs more work)
+ */
+router.post(
+  '/revisions/:id/reject',
+  [
+    param('id').notEmpty(),
+    body('rejectedBy').notEmpty().withMessage('rejectedBy is required'),
+    body('reason').notEmpty().withMessage('reason is required'),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const revision = await revisionService.rejectRevision(
+        req.params.id!,
+        req.body.rejectedBy,
+        req.body.reason
+      );
+
+      return res.json({
+        success: true,
+        data: revision,
+        message: 'Revision rejected — appraiser notified'
+      });
+    } catch (error) {
+      logger.error('Failed to reject revision', { error, revisionId: req.params.id });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to reject revision',
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+);
+
 // ===========================
 // ESCALATION WORKFLOW ENDPOINTS
 // ===========================

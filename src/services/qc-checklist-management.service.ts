@@ -5,7 +5,6 @@
 
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { Container } from '@azure/cosmos';
 import { createApiError } from '../utils/api-response.util.js';
 import { ApiResponse } from '../types/index.js';
 import {
@@ -41,59 +40,28 @@ export interface QCChecklistAssignmentFilters {
 export class QCChecklistManagementService {
   private logger: Logger;
   private dbService: CosmosDbService;
-  private checklistsContainer: Container | null = null;
-  private assignmentsContainer: Container | null = null;
-  
+  private initialized = false;
+
   private readonly CHECKLISTS_CONTAINER = 'qc_checklists';
   private readonly ASSIGNMENTS_CONTAINER = 'qc_assignments';
 
-  constructor() {
+  constructor(dbService?: CosmosDbService) {
     this.logger = new Logger('QCChecklistManagement');
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService || new CosmosDbService();
   }
 
   /**
-   * Initialize the service and create containers
+   * Lazy initialization — ensures the shared CosmosDbService is connected
+   * before any DB operation. Containers are provisioned via Bicep;
+   * we only need the client + database reference.
    */
-  async initialize(): Promise<void> {
-    await this.dbService.initialize();
-    await this.initializeContainers();
-  }
-
-  /**
-   * Initialize QC containers
-   */
-  private async initializeContainers(): Promise<void> {
-    try {
-      if (!this.dbService.isDbConnected()) {
-        throw new Error('Database not connected. Call initialize() first.');
-      }
-
-      const database = (this.dbService as any).database;
-      if (!database) {
-        throw new Error('Database not available');
-      }
-
-      // Create QC checklists container
-      const { container: checklistsContainer } = await database.containers.createIfNotExists({
-        id: this.CHECKLISTS_CONTAINER,
-        partitionKey: '/documentType'
-      });
-      this.checklistsContainer = checklistsContainer;
-
-      // Create QC assignments container
-      const { container: assignmentsContainer } = await database.containers.createIfNotExists({
-        id: this.ASSIGNMENTS_CONTAINER,
-        partitionKey: '/targetId'
-      });
-      this.assignmentsContainer = assignmentsContainer;
-
-      this.logger.info('QC containers initialized successfully');
-
-    } catch (error) {
-      this.logger.error('Failed to initialize QC containers', { error: error instanceof Error ? error.message : 'Unknown error' });
-      throw error;
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    if (!this.dbService.isDbConnected()) {
+      await this.dbService.initialize();
     }
+    this.initialized = true;
+    this.logger.info('QCChecklistManagementService initialized (lazy)');
   }
 
   // ============================================================================
@@ -105,11 +73,8 @@ export class QCChecklistManagementService {
    */
   async createChecklist(request: CreateQCChecklistRequest, userId: string): Promise<ApiResponse<QCChecklist>> {
     try {
+      await this.ensureInitialized();
       this.logger.info('Creating new QC checklist', { name: request.name, documentType: request.documentType });
-
-      if (!this.checklistsContainer) {
-        throw new Error('QC checklists container not initialized');
-      }
 
       // Generate unique IDs for categories, subcategories, and questions
       const checklist: QCChecklist = {
@@ -143,13 +108,13 @@ export class QCChecklistManagementService {
       await this.validateChecklist(checklist);
 
       // Save to database
-      const { resource } = await this.checklistsContainer.items.create(checklist);
+      const result = await this.dbService.createItem<QCChecklist>(this.CHECKLISTS_CONTAINER, checklist);
       
-      this.logger.info('QC checklist created successfully', { checklistId: resource?.id });
+      this.logger.info('QC checklist created successfully', { checklistId: result.data?.id });
       
       return {
         success: true,
-        data: resource as QCChecklist
+        data: result.data as QCChecklist
       };
 
     } catch (error) {
@@ -171,6 +136,7 @@ export class QCChecklistManagementService {
    */
   async getChecklist(checklistId: string, includeInactive = false): Promise<QCChecklist | null> {
     try {
+      await this.ensureInitialized();
       const response = await this.dbService.getItem<QCChecklist>(
         this.CHECKLISTS_CONTAINER, 
         checklistId
@@ -202,6 +168,7 @@ export class QCChecklistManagementService {
     userId: string
   ): Promise<QCChecklist> {
     try {
+      await this.ensureInitialized();
       const existingChecklist = await this.getChecklist(checklistId, true);
       if (!existingChecklist) {
         throw new Error(`QC checklist not found: ${checklistId}`);
@@ -271,6 +238,7 @@ export class QCChecklistManagementService {
     offset = 0
   ): Promise<{ checklists: QCChecklist[]; totalCount: number }> {
     try {
+      await this.ensureInitialized();
       const query = this.buildChecklistSearchQuery(filters);
       
       const result = await this.dbService.queryItems<QCChecklist>(
@@ -307,6 +275,7 @@ export class QCChecklistManagementService {
    */
   async assignChecklist(assignment: Omit<QCChecklistAssignment, 'id' | 'createdAt' | 'updatedAt'>): Promise<QCChecklistAssignment> {
     try {
+      await this.ensureInitialized();
       const newAssignment: QCChecklistAssignment = {
         ...assignment,
         id: this.generateId(),
@@ -344,6 +313,7 @@ export class QCChecklistManagementService {
    */
   async getAssignments(filters: QCChecklistAssignmentFilters = {}): Promise<QCChecklistAssignment[]> {
     try {
+      await this.ensureInitialized();
       const query = this.buildAssignmentSearchQuery(filters);
       
       const result = await this.dbService.queryItems<QCChecklistAssignment>(
@@ -371,6 +341,7 @@ export class QCChecklistManagementService {
     documentType?: string
   ): Promise<Array<{ checklist: QCChecklist; assignment: QCChecklistAssignment }>> {
     try {
+      await this.ensureInitialized();
       const now = new Date();
       
       // Get active assignments for the target
@@ -430,6 +401,7 @@ export class QCChecklistManagementService {
     userId: string
   ): Promise<QCChecklist> {
     try {
+      await this.ensureInitialized();
       const template = await this.getChecklist(templateId);
       if (!template || !template.isTemplate) {
         throw new Error(`Template not found or not a template: ${templateId}`);
@@ -479,6 +451,7 @@ export class QCChecklistManagementService {
     makeTemplate = false
   ): Promise<QCChecklist> {
     try {
+      await this.ensureInitialized();
       const sourceChecklist = await this.getChecklist(sourceChecklistId);
       if (!sourceChecklist) {
         throw new Error(`Source checklist not found: ${sourceChecklistId}`);
