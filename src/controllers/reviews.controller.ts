@@ -8,6 +8,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { Logger } from '../utils/logger.js';
 import { QCExecutionEngine } from '../services/qc-execution.engine.js';
 import { QCChecklistManagementService } from '../services/qc-checklist-management.service.js';
+import { AxiomService } from '../services/axiom.service.js';
 import { createApiError, createApiResponse } from '../utils/api-response.util.js';
 import {
   QCExecutionStatus,
@@ -57,6 +58,7 @@ export class QCExecutionController {
   private logger: Logger;
   private executionEngine: QCExecutionEngine;
   private checklistService: QCChecklistManagementService;
+  private axiomService: AxiomService;
   private router: Router;
   private activeSessions: Map<string, QCExecutionSession>;
 
@@ -64,6 +66,7 @@ export class QCExecutionController {
     this.logger = new Logger('QCExecutionController');
     this.executionEngine = new QCExecutionEngine();
     this.checklistService = new QCChecklistManagementService();
+    this.axiomService = new AxiomService();
     this.router = Router();
     this.activeSessions = new Map();
     this.initializeRoutes();
@@ -212,6 +215,36 @@ export class QCExecutionController {
       this.activeSessions.set(sessionId, session);
 
       // Execute QC review
+      // ── Axiom → QC bridge: inject Axiom evaluation if available ──
+      let axiomEvaluation: QCExecutionContext['axiomEvaluation'] | undefined;
+      try {
+        // targetId is typically the orderId — look up the Axiom evaluation
+        const axiomResult = await this.axiomService.getEvaluation(targetId);
+        if (axiomResult && axiomResult.status === 'completed') {
+          axiomEvaluation = {
+            evaluationId: axiomResult.evaluationId,
+            riskScore: axiomResult.overallRiskScore,
+            status: axiomResult.status,
+            criteria: axiomResult.criteria?.map((c) => ({
+              criterionId: c.criterionId,
+              description: c.description,
+              evaluation: c.evaluation,
+              confidence: c.confidence,
+            })),
+            completedAt: axiomResult.timestamp,
+          };
+          this.logger.info('Axiom evaluation injected into QC context', {
+            evaluationId: axiomResult.evaluationId,
+            riskScore: axiomResult.overallRiskScore,
+          });
+        }
+      } catch (err) {
+        this.logger.warn('Failed to fetch Axiom evaluation for QC bridge — continuing without', {
+          targetId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       const executionContext: QCExecutionContext = {
         checklistId,
         documentId: targetId,
@@ -222,8 +255,14 @@ export class QCExecutionController {
         autoExecute: true,
         requireHumanReview: false,
         ...(req.user?.clientId && { clientId: req.user.clientId }),
-        ...(req.user?.organizationId && { organizationId: req.user.organizationId })
+        ...(req.user?.organizationId && { organizationId: req.user.organizationId }),
+        ...(axiomEvaluation && { axiomEvaluation }),
       };
+
+      // Inject Axiom data into documentData so AI prompts can reference it
+      if (axiomEvaluation) {
+        documentData.__axiomEvaluation = axiomEvaluation;
+      }
 
       const result = await this.executionEngine.executeQCReview(
         checklist,
@@ -1220,23 +1259,55 @@ export class QCExecutionController {
       session.status = QCExecutionStatus.RUNNING;
       this.activeSessions.set(session.id, session);
 
+      // ── Axiom → QC bridge: inject Axiom evaluation if available ──
+      let axiomEvaluation: QCExecutionContext['axiomEvaluation'] | undefined;
+      try {
+        const axiomResult = await this.axiomService.getEvaluation(session.targetId);
+        if (axiomResult && axiomResult.status === 'completed') {
+          axiomEvaluation = {
+            evaluationId: axiomResult.evaluationId,
+            riskScore: axiomResult.overallRiskScore,
+            status: axiomResult.status,
+            criteria: axiomResult.criteria?.map((c) => ({
+              criterionId: c.criterionId,
+              description: c.description,
+              evaluation: c.evaluation,
+              confidence: c.confidence,
+            })),
+            completedAt: axiomResult.timestamp,
+          };
+        }
+      } catch (err) {
+        this.logger.warn('Failed to fetch Axiom evaluation for background QC — continuing without', {
+          targetId: session.targetId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      // Inject Axiom data into documentData so AI prompts can reference it
+      const documentData = { ...executionRequest.documentData };
+      if (axiomEvaluation) {
+        documentData.__axiomEvaluation = axiomEvaluation;
+      }
+
       // Create proper QCExecutionContext from available data
       const context: QCExecutionContext = {
         checklistId: session.checklistId,
         documentId: session.targetId,
         documentType: checklist.documentType || 'appraisal_report',
         executionId: session.id,
-        documentData: executionRequest.documentData,
+        documentData,
         userId: session.executedBy,
         // Use defaults for optional properties not in QCExecutionConfig
         aiProvider: 'azure',
         autoExecute: true,
-        requireHumanReview: false
+        requireHumanReview: false,
+        ...(axiomEvaluation && { axiomEvaluation }),
       };
 
       const result = await this.executionEngine.executeQCReview(
         checklist,
-        executionRequest.documentData,
+        documentData,
         context
       );
 

@@ -364,6 +364,20 @@ export interface QCExecutionContext {
   // Workflow Context
   currentStep?: string;
   workflowState?: Record<string, any>;
+
+  // Axiom AI evaluation data (injected by Axiom→QC bridge)
+  axiomEvaluation?: {
+    evaluationId: string;
+    riskScore: number;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    criteria?: Array<{
+      criterionId: string;
+      description: string;
+      evaluation: 'pass' | 'fail' | 'warning' | 'not_applicable';
+      confidence: number;
+    }>;
+    completedAt?: string;
+  };
 }
 
 /**

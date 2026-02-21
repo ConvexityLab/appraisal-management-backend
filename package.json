@@ -94,6 +94,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@types/pdfkit": "^0.17.4",
     "applicationinsights": "^3.13.0",
+    "archiver": "^7.0.1",
     "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
     "casbin": "^5.45.3",
@@ -131,6 +132,7 @@
     "xmlbuilder2": "^4.0.3"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/bcryptjs": "^2.4.2",
     "@types/compression": "^1.7.5",

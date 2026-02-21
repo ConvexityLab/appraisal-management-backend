@@ -25,6 +25,8 @@ import { AuditTrailService } from '../services/audit-trail.service.js';
 import { SLATrackingService } from '../services/sla-tracking.service.js';
 import { QCReviewQueueService } from '../services/qc-review-queue.service.js';
 import { AxiomService } from '../services/axiom.service.js';
+import { DocumentService } from '../services/document.service.js';
+import { BlobStorageService } from '../services/blob-storage.service.js';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus, isValidStatusTransition } from '../types/order-status.js';
 import {
@@ -63,6 +65,16 @@ export class OrderController {
   private slaService: SLATrackingService;
   private qcQueueService: QCReviewQueueService;
   private axiomService: AxiomService;
+  private _documentService: DocumentService | null = null;
+
+  /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
+   *  happens after the constructor runs during app startup. */
+  private get documentService(): DocumentService {
+    if (!this._documentService) {
+      this._documentService = new DocumentService(this.dbService, new BlobStorageService());
+    }
+    return this._documentService;
+  }
 
   constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
@@ -308,6 +320,43 @@ export class OrderController {
         // Auto-route to QC queue when order is SUBMITTED
         if (newStatus === OrderStatus.SUBMITTED) {
           const order = result.data!;
+
+          // Auto-submit appraisal-report documents to Axiom AI if not already submitted (8.7)
+          const tenantId = 'test-tenant-123'; // Same constant as DocumentController
+          this.documentService.listDocuments(tenantId, { orderId }).then((docResult) => {
+            if (!docResult.success || !docResult.data) return;
+            const appraisalDocs = docResult.data.filter(
+              (d) => d.category === 'appraisal-report' && !(d.metadata as any)?.evaluationId,
+            );
+            for (const doc of appraisalDocs) {
+              this.axiomService.notifyDocumentUpload({
+                orderId,
+                documentType: 'appraisal',
+                documentUrl: doc.blobUrl,
+                metadata: {
+                  fileName: doc.name,
+                  fileSize: doc.fileSize,
+                  uploadedAt: doc.uploadedAt instanceof Date ? doc.uploadedAt.toISOString() : String(doc.uploadedAt),
+                  uploadedBy: doc.uploadedBy,
+                  documentId: doc.id,
+                },
+              }).then((axiomResult) => {
+                if (axiomResult.success && axiomResult.evaluationId) {
+                  logger.info('Auto-submitted appraisal doc to Axiom on SUBMITTED', {
+                    orderId,
+                    documentId: doc.id,
+                    evaluationId: axiomResult.evaluationId,
+                  });
+                  this.documentService.updateDocument(doc.id, tenantId, {
+                    metadata: { ...doc.metadata as Record<string, unknown>, evaluationId: axiomResult.evaluationId },
+                  }).catch((err) => logger.error('Failed to store evaluationId on document', { documentId: doc.id, error: err }));
+                }
+              }).catch((err) => {
+                logger.error('Auto-submit to Axiom failed for document', { orderId, documentId: doc.id, error: err });
+              });
+            }
+          }).catch((err) => logger.error('Failed to query docs for Axiom auto-submit', { orderId, error: err }));
+
           this.qcQueueService.addToQueue({
             orderId,
             orderNumber: (order as any).orderNumber || orderId,

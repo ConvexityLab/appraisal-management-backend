@@ -3,6 +3,7 @@ import multer from 'multer';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BlobStorageService } from '../services/blob-storage.service';
 import { DocumentService } from '../services/document.service';
+import { AxiomService } from '../services/axiom.service';
 import { DocumentUploadRequest, DocumentUpdateRequest, DocumentListQuery, DocumentMetadata } from '../types/document.types';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
@@ -43,10 +44,14 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
   };
 }
 
+/** Appraisal-report categories eligible for auto-submission to Axiom AI */
+const AXIOM_AUTO_SUBMIT_CATEGORIES = new Set(['appraisal-report', 'appraisal_report']);
+
 export class DocumentController {
   public router: Router;
   private documentService: DocumentService;
   private blobService: BlobStorageService;
+  private axiomService: AxiomService;
 
   // Azure AD tid claim is a directory GUID, not our app tenant.
   // All seed data uses this value, so we hard-code it until tenant resolution middleware is built.
@@ -73,6 +78,7 @@ export class DocumentController {
     // Initialize services
     this.blobService = new BlobStorageService();
     this.documentService = new DocumentService(dbService, this.blobService);
+    this.axiomService = new AxiomService(dbService);
 
     this.initializeRoutes();
   }
@@ -204,10 +210,38 @@ export class DocumentController {
         return;
       }
 
+      const savedDoc = result.data;
+
+      // Auto-submit appraisal reports to Axiom AI for analysis (fire-and-forget)
+      if (savedDoc.orderId && AXIOM_AUTO_SUBMIT_CATEGORIES.has(category || '')) {
+        this.axiomService.notifyDocumentUpload({
+          orderId: savedDoc.orderId,
+          documentType: 'appraisal',
+          documentUrl: savedDoc.blobUrl,
+          metadata: {
+            fileName: savedDoc.name,
+            fileSize: savedDoc.fileSize,
+            uploadedAt: savedDoc.uploadedAt instanceof Date ? savedDoc.uploadedAt.toISOString() : String(savedDoc.uploadedAt),
+            uploadedBy: savedDoc.uploadedBy,
+            documentId: savedDoc.id,
+          },
+        }).then((axiomResult) => {
+          if (axiomResult.success && axiomResult.evaluationId) {
+            console.log(`[DocumentController] Auto-submitted doc ${savedDoc.id} to Axiom → evaluationId: ${axiomResult.evaluationId}`);
+            // Store evaluationId back on the document record (best-effort)
+            this.documentService.updateDocument(savedDoc.id, savedDoc.tenantId, {
+              metadata: { ...savedDoc.metadata as Record<string, unknown>, evaluationId: axiomResult.evaluationId },
+            }).catch((err) => console.error('[DocumentController] Failed to store evaluationId on document', err));
+          }
+        }).catch((err) => {
+          console.error(`[DocumentController] Auto-submit to Axiom failed for doc ${savedDoc.id}:`, err);
+        });
+      }
+
       // Map to frontend shape: { success, document }
       res.status(201).json({
         success: true,
-        document: toFrontendDocument(result.data)
+        document: toFrontendDocument(savedDoc)
       });
     } catch (error) {
       console.error('Error in uploadDocument:', error);

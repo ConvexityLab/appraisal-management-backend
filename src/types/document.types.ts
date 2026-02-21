@@ -16,6 +16,7 @@ export interface DocumentMetadata {
   tags?: string[];
   version?: number;
   contentHash?: string;  // SHA-256 hex digest of file content — for dedup & integrity checks
+  evaluationId?: string;  // Axiom AI evaluation ID — set when auto-submitted for analysis
   uploadedBy: string;
   uploadedAt: Date;
   updatedAt?: Date;

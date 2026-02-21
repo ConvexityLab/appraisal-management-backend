@@ -270,7 +270,18 @@ export interface QCReviewQueueItem {
   // SLA tracking
   slaTargetDate: Date;
   slaBreached: boolean;
-  
+
+  // Axiom AI evaluation (populated when auto-submitted on SUBMITTED)
+  axiomEvaluationId?: string;
+  axiomRiskScore?: number; // 0–100
+  axiomStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'none';
+  axiomCriteriaSnapshot?: Array<{
+    criterionId: string;
+    description: string;
+    evaluation: string;
+    confidence: number;
+  }>;
+
   // Metadata
   createdAt: Date;
   updatedAt: Date;

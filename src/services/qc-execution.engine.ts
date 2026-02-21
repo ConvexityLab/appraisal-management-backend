@@ -404,7 +404,23 @@ export class QCExecutionEngine {
 
     userPrompt += `Available Data:\n`;
     for (const [key, value] of Object.entries(questionData)) {
+      if (key === '__axiomEvaluation') continue; // Handled separately below
       userPrompt += `- ${key}: ${JSON.stringify(value)}\n`;
+    }
+
+    // ── Axiom → QC bridge: inject AI risk analysis context ──
+    const axiomData = fullDocumentData.__axiomEvaluation;
+    if (axiomData) {
+      userPrompt += `\n--- Axiom AI Pre-Analysis ---\n`;
+      userPrompt += `Overall Risk Score: ${axiomData.riskScore}/100\n`;
+      if (axiomData.criteria && Array.isArray(axiomData.criteria)) {
+        for (const criterion of axiomData.criteria) {
+          userPrompt += `  • ${criterion.description}: ${criterion.evaluation} (confidence: ${criterion.confidence})\n`;
+        }
+      }
+      userPrompt += `--- End Axiom AI Pre-Analysis ---\n`;
+      userPrompt += `\nConsider the Axiom AI risk analysis above as supplementary context. `;
+      userPrompt += `High-risk items should receive extra scrutiny.\n`;
     }
 
     if (question.options && question.options.length > 0) {

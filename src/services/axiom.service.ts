@@ -17,6 +17,8 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { CosmosDbService } from './cosmos-db.service';
+import { WebPubSubService } from './web-pubsub.service';
+import { EventPriority, EventCategory } from '../types/events.js';
 
 // ============================================================================
 // Type Definitions
@@ -100,6 +102,7 @@ export interface AxiomWebhookPayload {
 export class AxiomService {
   private client: AxiosInstance;
   private dbService: CosmosDbService;
+  private webPubSubService: WebPubSubService | null = null;
   private containerName = 'aiInsights';
   private enabled: boolean;
   private mockDelayMs: number;
@@ -130,6 +133,13 @@ export class AxiomService {
 
     // Initialize Cosmos DB service for storing results
     this.dbService = dbService || new CosmosDbService();
+
+    // Initialize WebPubSub for real-time push (best-effort — if not configured, skip)
+    try {
+      this.webPubSubService = new WebPubSubService({ enableLocalEmulation: true });
+    } catch {
+      console.warn('⚠️  WebPubSub not available for Axiom push notifications — updates will be poll-only');
+    }
   }
 
   /**
@@ -137,6 +147,42 @@ export class AxiomService {
    */
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * Broadcast Axiom evaluation status update via WebPubSub.
+   * Best-effort — logs a warning on failure but never throws.
+   */
+  private async broadcastAxiomStatus(
+    orderId: string,
+    evaluationId: string,
+    status: string,
+    riskScore?: number,
+  ): Promise<void> {
+    if (!this.webPubSubService) return;
+    try {
+      await this.webPubSubService.broadcastNotification({
+        id: `axiom-${evaluationId}-${status}`,
+        title: 'Axiom AI Analysis Update',
+        message: `Axiom evaluation for order ${orderId} is now ${status}`,
+        priority: EventPriority.NORMAL,
+        category: EventCategory.QC,
+        targets: [],
+        data: {
+          eventType: 'axiom.evaluation.updated',
+          orderId,
+          evaluationId,
+          status,
+          riskScore: riskScore ?? null,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      console.warn('⚠️  Failed to broadcast Axiom status via WebPubSub', {
+        evaluationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -181,6 +227,7 @@ export class AxiomService {
           const processingRecord = { ...cosmosRecord, status: 'processing' as const, timestamp: new Date().toISOString() };
           await this.storeEvaluationRecord(processingRecord);
           console.log(`🧪 [MOCK] Axiom evaluation ${mockEvalId} → processing`);
+          await this.broadcastAxiomStatus(notification.orderId, mockEvalId, 'processing');
         } catch (err) {
           console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to processing`, err);
         }
@@ -192,6 +239,7 @@ export class AxiomService {
           const completedRecord = this.buildMockEvaluation(notification.orderId, mockEvalId);
           await this.storeEvaluationRecord({ id: mockEvalId, ...completedRecord, _metadata: cosmosRecord._metadata });
           console.log(`✅ [MOCK] Axiom evaluation ${mockEvalId} → completed (risk score: ${completedRecord.overallRiskScore})`);
+          await this.broadcastAxiomStatus(notification.orderId, mockEvalId, 'completed', completedRecord.overallRiskScore);
         } catch (err) {
           console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to completed`, err);
         }
@@ -411,6 +459,14 @@ export class AxiomService {
         riskScore: evaluation.overallRiskScore,
         criteriaCount: evaluation.criteria.length
       });
+
+      // Push real-time status update via WebPubSub
+      await this.broadcastAxiomStatus(
+        payload.orderId,
+        payload.evaluationId,
+        payload.status,
+        evaluation.overallRiskScore,
+      );
 
       // TODO: Trigger follow-up actions based on risk score
       // - Auto-route high-risk orders (>70) to senior QC analysts
