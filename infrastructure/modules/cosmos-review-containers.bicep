@@ -138,6 +138,54 @@ resource reviewResultsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDataba
   }
 }
 
+// ─── bulk-portfolio-jobs ──────────────────────────────────────────────────────
+// Stores BulkPortfolioJob records for both ORDER_CREATION and TAPE_EVALUATION
+// modes.  For TAPE_EVALUATION jobs the items array contains ReviewTapeResult[].
+// Partitioned by /tenantId for efficient per-tenant job history queries.
+
+resource bulkPortfolioJobsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
+  parent: database
+  name: 'bulk-portfolio-jobs'
+  properties: {
+    resource: {
+      id: 'bulk-portfolio-jobs'
+      partitionKey: {
+        paths: ['/tenantId']
+        kind: 'Hash'
+      }
+      defaultTtl: -1
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/"_etag"/?' }
+          { path: '/items/*' }
+        ]
+        compositeIndexes: [
+          [
+            { path: '/tenantId', order: 'ascending' }
+            { path: '/submittedAt', order: 'descending' }
+          ]
+          [
+            { path: '/tenantId', order: 'ascending' }
+            { path: '/status', order: 'ascending' }
+          ]
+          [
+            { path: '/clientId', order: 'ascending' }
+            { path: '/submittedAt', order: 'descending' }
+          ]
+        ]
+      }
+      uniqueKeyPolicy: {
+        uniqueKeys: []
+      }
+    }
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 @description('Resource ID of the review-programs container.')
@@ -145,3 +193,6 @@ output reviewProgramsContainerId string = reviewProgramsContainer.id
 
 @description('Resource ID of the review-results container.')
 output reviewResultsContainerId string = reviewResultsContainer.id
+
+@description('Resource ID of the bulk-portfolio-jobs container.')
+output bulkPortfolioJobsContainerId string = bulkPortfolioJobsContainer.id

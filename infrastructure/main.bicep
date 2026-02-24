@@ -175,6 +175,28 @@ module cosmosCommunicationsContainer 'modules/cosmos-db-communications-container
   }
 }
 
+// Cosmos DB Review Containers (review-programs, review-results, bulk-portfolio-jobs)
+// Required for the Bulk Portfolio tape evaluation workflow (TAPE_EVALUATION mode).
+module cosmosReviewContainers 'modules/cosmos-review-containers.bicep' = {
+  name: 'cosmos-review-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Matching / RFB / ARV Containers (matching-criteria-sets, rfb-requests, arv-analyses)
+// Required for the matching engine, request-for-bid, and ARV analysis workflows.
+module cosmosMatchingRfbArvContainers 'modules/cosmos-matching-rfb-arv-containers.bicep' = {
+  name: 'cosmos-matching-rfb-arv-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
