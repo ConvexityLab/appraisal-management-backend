@@ -184,7 +184,7 @@ export class PhotoService {
     const { resources } = await container.items
       .query<InspectionPhoto>({
         query:
-          'SELECT * FROM c WHERE c.type = @type AND c.inspectionId = @inspectionId AND c.tenantId = @tenantId ORDER BY c.sequenceNumber, c.uploadedAt',
+          'SELECT * FROM c WHERE c.type = @type AND c.inspectionId = @inspectionId AND c.tenantId = @tenantId',
         parameters: [
           { name: '@type', value: 'photo' },
           { name: '@inspectionId', value: inspectionId },
@@ -192,7 +192,14 @@ export class PhotoService {
         ]
       })
       .fetchAll();
-    return resources;
+    // Sort in application code — Cosmos multi-field ORDER BY requires a composite
+    // index that is not provisioned. sequenceNumber=undefined sorts after numbered items.
+    return resources.sort((a, b) => {
+      const seqA = a.sequenceNumber ?? Number.MAX_SAFE_INTEGER;
+      const seqB = b.sequenceNumber ?? Number.MAX_SAFE_INTEGER;
+      if (seqA !== seqB) return seqA - seqB;
+      return (a.uploadedAt ?? '').localeCompare(b.uploadedAt ?? '');
+    });
   }
 
   async getPhotosByOrder(
@@ -203,7 +210,7 @@ export class PhotoService {
     const { resources } = await container.items
       .query<InspectionPhoto>({
         query:
-          'SELECT * FROM c WHERE c.type = @type AND c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.sequenceNumber, c.uploadedAt',
+          'SELECT * FROM c WHERE c.type = @type AND c.orderId = @orderId AND c.tenantId = @tenantId',
         parameters: [
           { name: '@type', value: 'photo' },
           { name: '@orderId', value: orderId },
@@ -211,7 +218,13 @@ export class PhotoService {
         ]
       })
       .fetchAll();
-    return resources;
+    // Sort in application code — same reason as getPhotosByInspection.
+    return resources.sort((a, b) => {
+      const seqA = a.sequenceNumber ?? Number.MAX_SAFE_INTEGER;
+      const seqB = b.sequenceNumber ?? Number.MAX_SAFE_INTEGER;
+      if (seqA !== seqB) return seqA - seqB;
+      return (a.uploadedAt ?? '').localeCompare(b.uploadedAt ?? '');
+    });
   }
 
   async getPhotoById(
