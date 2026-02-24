@@ -548,4 +548,178 @@ describe('TapeEvaluationService', () => {
       expect(service.evaluate([], program)).toHaveLength(0);
     });
   });
+
+  // ─── Additional coverage ─────────────────────────────────────────────────────
+
+  // Missing guard-absent tests for UNUSUAL_APPRECIATION_36M and HIGH_CLTV
+
+  describe('UNUSUAL_APPRECIATION_36M — absent prior sale', () => {
+    it('does NOT fire when priorSale36mPrice is absent (no prior sale data)', () => {
+      const item = makeItem();
+      delete item.priorSale36mPrice;
+      const results = service.evaluate([item], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'UNUSUAL_APPRECIATION_36M').isFired).toBe(false);
+    });
+  });
+
+  describe('HIGH_CLTV — absent firstLienBalance', () => {
+    it('does NOT fire when firstLienBalance is absent (cltv cannot be computed)', () => {
+      const item = makeItem();
+      delete item.firstLienBalance;
+      const results = service.evaluate([item], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_CLTV').isFired).toBe(false);
+    });
+  });
+
+  // Exact boundary values for deriveDecision() — tests the >= semantics directly
+
+  describe('deriveDecision() — exact boundary values', () => {
+    it('returns Accept at score 34 (one below conditional threshold of 35)', () => {
+      expect(service.deriveDecision(34, program.decisionRules)).toBe('Accept');
+    });
+
+    it('returns Conditional at score 35 (exactly at conditional threshold)', () => {
+      expect(service.deriveDecision(35, program.decisionRules)).toBe('Conditional');
+    });
+
+    it('returns Conditional at score 69 (one below reject threshold of 70)', () => {
+      expect(service.deriveDecision(69, program.decisionRules)).toBe('Conditional');
+    });
+
+    it('returns Reject at score 70 (exactly at reject threshold)', () => {
+      expect(service.deriveDecision(70, program.decisionRules)).toBe('Reject');
+    });
+  });
+
+  // Zero-value edge cases for critical source fields
+
+  describe('data quality — zero and absent source field edge cases', () => {
+    it('reports appraisedValue = 0 as a data quality issue', () => {
+      const results = service.evaluate([makeItem({ appraisedValue: 0 })], program);
+      const issues = assertDefined(results[0]).dataQualityIssues;
+      expect(issues.some(msg => msg.includes('appraisedValue'))).toBe(true);
+    });
+
+    it('reports loanAmount = 0 as a data quality issue', () => {
+      const results = service.evaluate([makeItem({ loanAmount: 0 })], program);
+      const issues = assertDefined(results[0]).dataQualityIssues;
+      expect(issues.some(msg => msg.includes('loanAmount'))).toBe(true);
+    });
+
+    it('does NOT report firstLienBalance = 0 as a data quality issue (free-and-clear is valid)', () => {
+      const results = service.evaluate([makeItem({ firstLienBalance: 0, secondLienBalance: 0 })], program);
+      const issues = assertDefined(results[0]).dataQualityIssues;
+      expect(issues.some(msg => msg.includes('firstLienBalance'))).toBe(false);
+    });
+
+    it('leaves ltv undefined when appraisedValue = 0 (division guard)', () => {
+      const result = service.computeCalculatedFields(makeItem({ appraisedValue: 0 }));
+      expect(result.ltv).toBeUndefined();
+    });
+
+    it('leaves cashOutRefi unchanged when loanPurpose is absent', () => {
+      const item = makeItem();
+      delete item.loanPurpose;
+      delete item.cashOutRefi;
+      const result = service.computeCalculatedFields(item);
+      // When loanPurpose is absent the field is simply not set — must not be NaN or crash
+      expect(result.cashOutRefi).toBeUndefined();
+    });
+
+    it('leaves nonMlsPct undefined when nonMlsCount is absent but numComps > 0', () => {
+      const item = makeItem({ numComps: 5 });
+      delete item.nonMlsCount;
+      const result = service.computeCalculatedFields(item);
+      expect(result.nonMlsPct).toBeUndefined();
+    });
+  });
+
+  // Custom threshold override — engine must honour program-specific thresholds
+
+  describe('custom threshold override', () => {
+    it('fires HIGH_LTV at ltv=0.71 when program threshold is 0.70', () => {
+      const strictProgram: ReviewProgram = {
+        ...VISION_APPRAISAL_V1_PROGRAM,
+        id: 'test-strict',
+        version: '0.1',
+        thresholds: {
+          ...VISION_APPRAISAL_V1_PROGRAM.thresholds,
+          ltv: 0.70,
+        },
+      };
+      // ltv = 142k / 200k = 0.71 — fires under strict (0.70) but NOT under default (0.80)
+      const results = service.evaluate([makeItem({ loanAmount: 142_000, appraisedValue: 200_000 })], strictProgram);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_LTV').isFired).toBe(true);
+    });
+
+    it('does NOT fire HIGH_LTV at ltv=0.71 with the default 0.80 threshold', () => {
+      const results = service.evaluate([makeItem({ loanAmount: 142_000, appraisedValue: 200_000 })], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_LTV').isFired).toBe(false);
+    });
+  });
+
+  // At-threshold-exact values — GT means strictly greater-than, so at-threshold must NOT fire
+
+  describe('at-threshold-exact values (GT operator boundary)', () => {
+    it('UNUSUAL_APPRECIATION_24M does NOT fire when appreciation24m is exactly 0.25', () => {
+      // 287500 / 230000 = 1.25 → appreciation = 0.25 exactly
+      const results = service.evaluate([makeItem({ appraisedValue: 287_500, priorSale24mPrice: 230_000 })], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'UNUSUAL_APPRECIATION_24M').isFired).toBe(false);
+    });
+
+    it('UNUSUAL_APPRECIATION_36M does NOT fire when appreciation36m is exactly 0.35', () => {
+      // 270000 / 200000 = 1.35 → appreciation = 0.35 exactly
+      const results = service.evaluate([makeItem({ appraisedValue: 270_000, priorSale36mPrice: 200_000 })], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'UNUSUAL_APPRECIATION_36M').isFired).toBe(false);
+    });
+
+    it('AVM_GAP does NOT fire when avmGapPct is exactly 0.10', () => {
+      // |110k - 100k| / 100k = 0.10 exactly
+      const results = service.evaluate([makeItem({ appraisedValue: 110_000, avmValue: 100_000 })], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'AVM_GAP').isFired).toBe(false);
+    });
+
+    it('NON_PUBLIC_COMPS does NOT fire when nonMlsPct is exactly 0.20', () => {
+      // 1 / 5 = 0.20 exactly
+      const results = service.evaluate([makeItem({ numComps: 5, nonMlsCount: 1 })], program);
+      expect(findFlag(assertDefined(results[0]).autoFlagResults, 'NON_PUBLIC_COMPS').isFired).toBe(false);
+    });
+  });
+
+  // Display value regression tests — assert that fired flags surface the correct
+  // field value and threshold for UI consumption (guards the AND-rule display fix)
+
+  describe('fired flag display values', () => {
+    it('HIGH_LTV: thresholdValue is the ltv threshold (0.80), not null', () => {
+      // ltv = 170k / 200k = 0.85 → fires
+      const results = service.evaluate([makeItem({ loanAmount: 170_000, appraisedValue: 200_000 })], program);
+      const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_LTV');
+      expect(flag.isFired).toBe(true);
+      expect(flag.thresholdValue).toBeCloseTo(0.80, 5);
+    });
+
+    it('HIGH_LTV: actualValue is the computed ltv, not a raw balance', () => {
+      const results = service.evaluate([makeItem({ loanAmount: 170_000, appraisedValue: 200_000 })], program);
+      const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_LTV');
+      // actualValue must be the ltv (0.85), not loanAmount (170000) or null
+      expect(typeof flag.actualValue).toBe('number');
+      expect((flag.actualValue as number)).toBeCloseTo(0.85, 5);
+    });
+
+    it('AVM_GAP: actualValue is avmGapPct (< 1), not avmValue (a large dollar amount)', () => {
+      // avmGapPct = |200k - 175k| / 175k ≈ 0.143
+      const results = service.evaluate([makeItem({ appraisedValue: 200_000, avmValue: 175_000 })], program);
+      const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'AVM_GAP');
+      expect(flag.isFired).toBe(true);
+      // actualValue must be a ratio (< 1), not a raw dollar value
+      expect(typeof flag.actualValue).toBe('number');
+      expect((flag.actualValue as number)).toBeLessThan(1);
+    });
+
+    it('AVM_GAP: thresholdValue is the avmGapPct threshold (0.10), not 0', () => {
+      const results = service.evaluate([makeItem({ appraisedValue: 200_000, avmValue: 175_000 })], program);
+      const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'AVM_GAP');
+      expect(flag.thresholdValue).toBeCloseTo(0.10, 5);
+    });
+  });
 });

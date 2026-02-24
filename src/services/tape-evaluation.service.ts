@@ -42,6 +42,7 @@ import type {
   ReviewThresholds,
   ReviewFlagRule,
   ReviewFlagOperator,
+  ReviewConditionOperator,
   ReviewDecision,
   ReviewDecisionRules,
 } from '../types/review-tape.types.js';
@@ -52,6 +53,16 @@ const CRITICAL_SOURCE_FIELDS: (keyof RiskTapeItem)[] = [
   'appraisedValue',
   'firstLienBalance',
 ];
+
+/**
+ * Subset of CRITICAL_SOURCE_FIELDS for which a zero value is also an error.
+ * firstLienBalance = 0 is a legitimate state (free-and-clear / no first lien),
+ * so it is intentionally excluded here.
+ */
+const ZERO_INVALID_SOURCE_FIELDS = new Set<keyof RiskTapeItem>([
+  'loanAmount',
+  'appraisedValue',
+]);
 
 // ─── Inverted-boolean manual flag fields ─────────────────────────────────────
 // For these fields, a truthy value means "no risk" and falsy means "risk".
@@ -217,8 +228,10 @@ export class TapeEvaluationService {
       isFired = rules.some(rule => this.evaluateRule(item, rule, thresholds));
     }
 
-    // Surface the first fired rule's actual value for display
-    const firedRule = isFired ? rules.find(r => this.evaluateRule(item, r, thresholds)) : undefined;
+    // Surface the "interesting" (comparison) rule's value for display.
+    // For AND conditions the guard rules (NOT_NULL / GT>0) come first;
+    // the actual comparison rule is last — so we walk backwards.
+    const firedRule = isFired ? this.findDisplayRule(operator, rules, item, thresholds) : undefined;
     const actualValue = firedRule ? (item[firedRule.field] as number | string | boolean | null | undefined) : undefined;
     const thresholdValue = firedRule?.thresholdKey != null
       ? thresholds[firedRule.thresholdKey]
@@ -272,6 +285,32 @@ export class TapeEvaluationService {
         return false;
       }
     }
+  }
+
+  /**
+   * Find the rule whose field + threshold should be surfaced in the UI.
+   *
+   * For AND conditions the first rules are typically guards (NOT_NULL / GT>0);
+   * the last rule is the meaningful comparison.  Walking backwards ensures we
+   * return the comparison rule, so the UI shows the actual value and threshold
+   * that caused the flag to fire (e.g. ltv=0.85, threshold=0.80) rather than
+   * the guard field's value (ltv=0.85, threshold=null).
+   *
+   * For OR conditions the first matching rule is used as-is.
+   */
+  private findDisplayRule(
+    operator: ReviewConditionOperator,
+    rules: ReviewFlagRule[],
+    item: RiskTapeItem,
+    thresholds: ReviewThresholds,
+  ): ReviewFlagRule | undefined {
+    if (operator === 'AND') {
+      for (let i = rules.length - 1; i >= 0; i--) {
+        if (this.evaluateRule(item, rules[i]!, thresholds)) return rules[i];
+      }
+      return undefined;
+    }
+    return rules.find(r => this.evaluateRule(item, r, thresholds));
   }
 
   private evaluateManualFlag(
@@ -330,7 +369,7 @@ export class TapeEvaluationService {
         issues.push(
           `Missing critical field: '${field}' — LTV, CLTV and related flags cannot be computed without it.`,
         );
-      } else if (typeof value === 'number' && value === 0) {
+      } else if (typeof value === 'number' && value === 0 && ZERO_INVALID_SOURCE_FIELDS.has(field)) {
         issues.push(
           `Field '${field}' is 0 — this may indicate a data entry error and will prevent accurate LTV/CLTV calculation.`,
         );
