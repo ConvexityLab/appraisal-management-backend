@@ -373,7 +373,7 @@ export interface QCExecutionContext {
     criteria?: Array<{
       criterionId: string;
       description: string;
-      evaluation: 'pass' | 'fail' | 'warning' | 'not_applicable';
+      evaluation: 'pass' | 'fail' | 'warning' | 'not_applicable' | 'info';
       confidence: number;
     }>;
     completedAt?: string;

@@ -16,6 +16,8 @@ import { EscalationWorkflowService } from '../services/escalation-workflow.servi
 import { SLATrackingService } from '../services/sla-tracking.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { RevisionSeverity, CreateRevisionRequest } from '../types/qc-workflow.js';
+import { FieldOverride } from '../types/final-report.types.js';
+import { FinalReportService } from '../services/final-report.service.js';
 import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -1185,6 +1187,55 @@ router.post(
         logger.info('Order transitioned to COMPLETED after QC approval', { orderId: result.orderId });
       }
 
+      if (outcome === 'CONDITIONAL') {
+        // Transition order → REVISION_REQUESTED with specific conditions to address
+        await dbService.updateOrder(result.orderId, {
+          status: 'REVISION_REQUESTED' as any,
+        });
+        logger.info('Order transitioned to REVISION_REQUESTED (conditional)', { orderId: result.orderId });
+
+        const conditionIssues: CreateRevisionRequest['issues'] = (conditions || []).map((c: string) => ({
+          category: 'general',
+          issueType: 'qc_finding',
+          severity: mapScoreToSeverity(score),
+          description: c,
+          fieldName: undefined,
+        }));
+        if (conditionIssues.length === 0 && notes) {
+          conditionIssues.push({
+            category: 'general',
+            issueType: 'qc_finding',
+            severity: 'MINOR' as any,
+            description: notes,
+          });
+        }
+
+        if (conditionIssues.length > 0) {
+          try {
+            const revision = await revisionService.createRevisionRequest({
+              orderId: result.orderId,
+              appraisalId: result.appraisalId,
+              qcReportId: result.id,
+              severity: mapScoreToSeverity(score),
+              dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days for conditional
+              issues: conditionIssues,
+              requestNotes: notes || 'Conditional approval — please address listed items before final sign-off',
+              requestedBy: reviewedBy,
+            });
+            logger.info('Auto-created revision request from conditional QC decision', {
+              orderId: result.orderId,
+              revisionId: revision.id,
+              conditionCount: conditionIssues.length,
+            });
+          } catch (revErr) {
+            logger.error('Failed to auto-create revision from conditional decision', {
+              orderId: result.orderId,
+              error: revErr,
+            });
+          }
+        }
+      }
+
       return res.json({
         success: true,
         data: result,
@@ -1197,6 +1248,54 @@ router.post(
         error: 'Failed to record review decision',
         details: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+);
+
+// ===========================
+// FIELD OVERRIDE ENDPOINTS
+// ===========================
+
+/**
+ * POST /api/qc-workflow/:reviewId/field-overrides
+ * Add or update a reviewer field-level override on a QC review.
+ * Overrides are merged into the PDF fill map at final report generation time.
+ */
+router.post(
+  '/:reviewId/field-overrides',
+  [
+    param('reviewId').notEmpty().withMessage('reviewId is required'),
+    body('fieldKey').notEmpty().withMessage('fieldKey is required'),
+    body('originalValue').notEmpty().withMessage('originalValue is required'),
+    body('overrideValue').notEmpty().withMessage('overrideValue is required'),
+    body('overriddenBy').notEmpty().withMessage('overriddenBy (userId) is required'),
+    body('source').optional().isIn(['HUMAN', 'AI'])
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    const reviewId = req.params['reviewId']!;
+    const override: FieldOverride = {
+      fieldKey: req.body.fieldKey,
+      originalValue: req.body.originalValue,
+      overrideValue: req.body.overrideValue,
+      overriddenBy: req.body.overriddenBy,
+      overriddenAt: new Date().toISOString(),
+      narrativeComment: req.body.narrativeComment,
+      source: (req.body.source as 'HUMAN' | 'AI') ?? 'HUMAN'
+    };
+
+    try {
+      const finalReportService = new FinalReportService(dbService);
+      const updatedReview = await finalReportService.addFieldOverride(reviewId, override);
+      res.status(200).json({ success: true, data: updatedReview });
+    } catch (error: any) {
+      const isNotFound = error.message?.includes('not found');
+      if (isNotFound) {
+        res.status(404).json({ success: false, error: error.message });
+      } else {
+        logger.error('Failed to add field override', { reviewId, error: error.message });
+        res.status(500).json({ success: false, error: 'Failed to add field override', details: error.message });
+      }
     }
   }
 );

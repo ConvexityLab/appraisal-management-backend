@@ -4,6 +4,9 @@
 export * from './geospatial';
 import { PropertyRiskAssessment } from './geospatial';
 import { OrderStatus } from './order-status.js';
+import { FinalReport } from './final-report.types.js';
+
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIAL';
 
 export interface AppraisalOrder {
   id: string;
@@ -27,6 +30,12 @@ export interface AppraisalOrder {
   createdBy: string;
   tags: string[];
   metadata: Record<string, any>;
+  // Payment tracking
+  paymentStatus?: PaymentStatus;
+  paidAt?: string;
+  paymentNotes?: string;
+  // Final report history — all generation attempts embedded in the order, newest first when sorted by createdAt
+  finalReports?: FinalReport[];
 }
 
 export interface PropertyAddress {
@@ -105,6 +114,9 @@ export interface Vendor {
   specialties: Specialty[];
   performance: VendorPerformance;
   status: VendorStatus;
+  isBusy?: boolean;
+  vacationStartDate?: string;
+  vacationEndDate?: string;
   onboardingDate: Date;
   lastActive: Date;
   insuranceInfo: InsuranceInfo;
@@ -219,10 +231,13 @@ export enum ProductType {
   BPO_EXTERIOR = 'bpo_exterior',
   BPO_INTERIOR = 'bpo_interior',
   EVALUATION = 'evaluation',
-  DVR = 'dvr', // Desktop Valuation Review
-  AVM = 'avm', // Automated Valuation Model
+  DVR = 'dvr',               // Desktop Valuation Review
+  AVM = 'avm',               // Automated Valuation Model
   FIELD_REVIEW = 'field_review',
-  DESK_REVIEW = 'desk_review'
+  DESK_REVIEW = 'desk_review',
+  ROV = 'rov',               // Reconsideration of Value (FHFA 2024 guidance)
+  FRAUD_ANALYSIS = 'fraud_analysis',  // AI-powered fraud / collusion analysis
+  ANALYSIS_1033 = 'analysis_1033',    // FNMA Form 1033 Individual Appraisal Field Review
 }
 
 // OrderStatus — canonical definition lives in order-status.ts
@@ -683,4 +698,113 @@ export interface OrderUpdateData {
   dueDate?: Date;
   tags?: string[];
   metadata?: Record<string, any>;
+}
+
+// ─── Client (Lender / AMC / Broker) ─────────────────────────────────────────
+
+export type ClientStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+export type ClientType = 'LENDER' | 'AMC' | 'BROKER' | 'CREDIT_UNION' | 'OTHER';
+
+export interface Client {
+  id: string;
+  tenantId: string;
+  clientName: string;
+  clientType: ClientType;
+  contactName: string;
+  contactEmail: string;
+  contactPhone?: string;
+  loanOfficerName?: string;
+  lenderName?: string;
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+  };
+  notes?: string;
+  status: ClientStatus;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface CreateClientRequest {
+  clientName: string;
+  clientType: ClientType;
+  contactName: string;
+  contactEmail: string;
+  contactPhone?: string;
+  loanOfficerName?: string;
+  lenderName?: string;
+  address?: Client['address'];
+  notes?: string;
+}
+
+export interface UpdateClientRequest {
+  clientName?: string;
+  clientType?: ClientType;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  loanOfficerName?: string;
+  lenderName?: string;
+  address?: Client['address'];
+  notes?: string;
+  status?: ClientStatus;
+}
+
+// ─── Product / Fee Configuration ─────────────────────────────────────────────
+
+export type ProductStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface Product {
+  id: string;
+  tenantId: string;
+  name: string;
+  productType: string;           // maps to ProductType enum in frontend
+  description?: string;
+  defaultFee: number;
+  rushFeeMultiplier: number;     // e.g. 1.5 = 50% surcharge on top
+  techFee?: number;              // AMC tech fee split
+  feeSplitPercent?: number;      // vendor split %
+  turnTimeDays: number;          // standard SLA
+  rushTurnTimeDays?: number;
+  isActive: boolean;
+  status: ProductStatus;
+  /** IDs of MatchingCriteriaSet documents to evaluate for vendor selection on orders using this product. */
+  matchingCriteriaSets?: string[];
+  /** When true the first bid accepted on an RFB is auto-awarded without coordinator review. */
+  autoAwardFirstBid?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface CreateProductRequest {
+  name: string;
+  productType: string;
+  description?: string;
+  defaultFee: number;
+  rushFeeMultiplier?: number;
+  techFee?: number;
+  feeSplitPercent?: number;
+  turnTimeDays: number;
+  rushTurnTimeDays?: number;
+  matchingCriteriaSets?: string[];
+  autoAwardFirstBid?: boolean;
+}
+
+export interface UpdateProductRequest {
+  name?: string;
+  productType?: string;
+  description?: string;
+  defaultFee?: number;
+  rushFeeMultiplier?: number;
+  techFee?: number;
+  feeSplitPercent?: number;
+  turnTimeDays?: number;
+  rushTurnTimeDays?: number;
+  status?: ProductStatus;
+  matchingCriteriaSets?: string[];
+  autoAwardFirstBid?: boolean;
 }

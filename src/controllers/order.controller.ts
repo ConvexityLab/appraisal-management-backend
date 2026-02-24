@@ -101,10 +101,12 @@ export class OrderController {
     this.router.post('/search', ...validateSearchOrders(), this.searchOrders.bind(this));
     this.router.post('/batch-status', ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
     this.router.get('/:orderId', this.getOrder.bind(this));
+    this.router.put('/:orderId', this.updateOrder.bind(this));
     this.router.put('/:orderId/status', this.updateOrderStatus.bind(this));
     this.router.post('/:orderId/cancel', ...validateCancelOrder(), this.cancelOrder.bind(this));
     this.router.post('/:orderId/deliver', this.deliverOrder.bind(this));
     this.router.post('/:orderId/assign', this.assignVendor.bind(this));
+    this.router.post('/:orderId/payment', this.markPayment.bind(this));
     this.router.get('/:orderId/timeline', this.getOrderTimeline.bind(this));
   }
 
@@ -147,6 +149,67 @@ export class OrderController {
       res.status(500).json({
         error: 'Order creation failed',
         code: 'ORDER_CREATION_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── PUT /:orderId ────────────────────────────────────────────────────────
+
+  /**
+   * Full order update — only editable fields are accepted.
+   * Status transitions must continue to use PUT /:orderId/status.
+   */
+  public async updateOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      if (!orderId) {
+        res.status(400).json({ error: 'orderId is required', code: 'VALIDATION_ERROR' });
+        return;
+      }
+
+      // Whitelist of editable fields — never allow status/id/tenantId drift
+      const EDITABLE_FIELDS = [
+        'priority', 'dueDate', 'orderType', 'productType',
+        'specialInstructions', 'engagementInstructions', 'internalNotes',
+        'clientInformation', 'tags', 'rushFee', 'orderFee',
+        'propertyAddress', 'propertyDetails',
+      ] as const;
+
+      const patch: Record<string, unknown> = { updatedAt: new Date(), updatedBy: req.user?.id ?? 'unknown' };
+      for (const field of EDITABLE_FIELDS) {
+        if (field in req.body) {
+          patch[field] = req.body[field];
+        }
+      }
+
+      if (Object.keys(patch).length === 2) {
+        // Only timestamps — nothing editable was sent
+        res.status(400).json({ error: 'No editable fields provided', code: 'VALIDATION_ERROR' });
+        return;
+      }
+
+      const result = await this.dbService.updateOrder(orderId, patch);
+
+      if (result.success && result.data) {
+        this.auditService.log({
+          actor: { userId: req.user?.id ?? 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          action: 'order.updated',
+          resource: { type: 'order', id: orderId },
+          after: patch,
+        }).catch((err) => logger.error('Audit log failed for order.updated', { error: err }));
+
+        res.json(result.data);
+      } else if (result.error?.code === 'ORDER_NOT_FOUND') {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+      } else {
+        res.status(500).json({ error: 'Order update failed', code: 'ORDER_UPDATE_ERROR', details: result.error });
+      }
+    } catch (error) {
+      logger.error('updateOrder failed', { error, orderId: req.params.orderId });
+      res.status(500).json({
+        error: 'Order update failed',
+        code: 'ORDER_UPDATE_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -585,6 +648,66 @@ export class OrderController {
       res.status(500).json({
         error: 'Failed to assign vendor',
         code: 'ORDER_ASSIGNMENT_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /:orderId/payment ────────────────────────────────────────────
+
+  private async markPayment(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      const { paymentStatus, paymentNotes } = req.body as {
+        paymentStatus: 'UNPAID' | 'PAID' | 'PARTIAL';
+        paymentNotes?: string;
+      };
+
+      if (!orderId) {
+        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
+        return;
+      }
+      if (!paymentStatus || !['UNPAID', 'PAID', 'PARTIAL'].includes(paymentStatus)) {
+        res.status(400).json({
+          error: `paymentStatus must be one of: UNPAID, PAID, PARTIAL. Received: ${String(paymentStatus)}`,
+          code: 'VALIDATION_ERROR',
+        });
+        return;
+      }
+
+      const patch: Record<string, unknown> = {
+        paymentStatus,
+        updatedAt: new Date(),
+        updatedBy: req.user?.id ?? 'unknown',
+      };
+      if (paymentStatus === 'PAID') {
+        patch['paidAt'] = new Date().toISOString();
+      }
+      if (paymentNotes !== undefined) {
+        patch['paymentNotes'] = paymentNotes;
+      }
+
+      const result = await this.dbService.updateOrder(orderId, patch);
+
+      if (result.success && result.data) {
+        this.auditService.log({
+          actor: { userId: req.user?.id ?? 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          action: 'order.payment.updated',
+          resource: { type: 'order', id: orderId },
+          after: { paymentStatus, paidAt: patch['paidAt'] },
+        }).catch((err) => logger.error('Audit log failed for order.payment.updated', { error: err }));
+
+        res.json(result.data);
+      } else if (result.error?.code === 'ORDER_NOT_FOUND') {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+      } else {
+        res.status(500).json({ error: 'Payment update failed', code: 'PAYMENT_UPDATE_ERROR', details: result.error });
+      }
+    } catch (error) {
+      logger.error('markPayment failed', { error, orderId: req.params.orderId });
+      res.status(500).json({
+        error: 'Payment update failed',
+        code: 'PAYMENT_UPDATE_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }

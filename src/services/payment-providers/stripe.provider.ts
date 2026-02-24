@@ -21,23 +21,20 @@ import {
   ProviderResult,
 } from './payment-provider.interface.js';
 
-// ── Step 1: Uncomment when `stripe` package is installed ────────────────
-// import Stripe from 'stripe';
+import Stripe from 'stripe';
 
 export class StripePaymentProvider implements PaymentProvider {
   readonly name = 'Stripe';
 
-  // private stripe: Stripe;
+  private stripe: Stripe;
   private secretKey: string;
 
   constructor(secretKey: string) {
     this.secretKey = secretKey;
-
-    // ── Step 2: Uncomment to initialise the SDK ─────────────────────────
-    // this.stripe = new Stripe(secretKey, {
-    //   apiVersion: '2024-12-18.acacia',   // pin to a stable API version
-    //   typescript: true,
-    // });
+    this.stripe = new Stripe(secretKey, {
+      apiVersion: '2026-01-28.clover',
+      typescript: true,
+    });
   }
 
   isAvailable(): boolean {
@@ -48,103 +45,77 @@ export class StripePaymentProvider implements PaymentProvider {
   // Charge (inbound — client pays you)
   // =====================================================================
   async charge(request: ProviderChargeRequest): Promise<ProviderResult> {
-    // ── Step 3: Replace the placeholder below with real SDK call ───────
-    //
-    // const paymentIntent = await this.stripe.paymentIntents.create({
-    //   amount: request.amountCents,
-    //   currency: request.currency,
-    //   payment_method: request.paymentMethodToken,
-    //   confirm: true,
-    //   description: request.description,
-    //   metadata: request.metadata,
-    // }, {
-    //   idempotencyKey: request.idempotencyKey,
-    // });
-    //
-    // return {
-    //   success: paymentIntent.status === 'succeeded',
-    //   providerTransactionId: paymentIntent.id,
-    //   status: paymentIntent.status === 'succeeded'
-    //     ? PaymentStatus.COMPLETED
-    //     : PaymentStatus.PROCESSING,
-    //   message: `Stripe PaymentIntent ${paymentIntent.status}`,
-    //   receiptUrl: paymentIntent.latest_charge
-    //     ? (typeof paymentIntent.latest_charge === 'string'
-    //         ? undefined
-    //         : paymentIntent.latest_charge.receipt_url ?? undefined)
-    //     : undefined,
-    //   rawResponse: paymentIntent,
-    // };
+    const paymentIntent = await this.stripe.paymentIntents.create({
+      amount: request.amountCents,
+      currency: request.currency,
+      confirm: true,
+      ...(request.paymentMethodToken !== undefined && { payment_method: request.paymentMethodToken }),
+      ...(request.description !== undefined && { description: request.description }),
+      ...(request.metadata !== undefined && { metadata: request.metadata }),
+    }, {
+      idempotencyKey: request.idempotencyKey,
+    });
 
-    return this.notYetWired('charge');
+    const latestCharge = paymentIntent.latest_charge;
+    const receiptUrl = latestCharge && typeof latestCharge !== 'string'
+      ? (latestCharge.receipt_url ?? undefined)
+      : undefined;
+
+    return {
+      success: paymentIntent.status === 'succeeded',
+      providerTransactionId: paymentIntent.id,
+      status: paymentIntent.status === 'succeeded'
+        ? PaymentStatus.COMPLETED
+        : PaymentStatus.PROCESSING,
+      message: `Stripe PaymentIntent ${paymentIntent.status}`,
+      ...(receiptUrl !== undefined && { receiptUrl }),
+      rawResponse: paymentIntent,
+    };
   }
 
   // =====================================================================
   // Payout (outbound — you pay vendor)
   // =====================================================================
   async payout(request: ProviderPayoutRequest): Promise<ProviderResult> {
-    // ── Step 3: Replace with real SDK call ─────────────────────────────
-    //
-    // Option A — Stripe Connect Transfer:
-    // const transfer = await this.stripe.transfers.create({
-    //   amount: request.amountCents,
-    //   currency: request.currency,
-    //   destination: request.destinationToken!,  // Connected Account ID
-    //   description: request.description,
-    //   metadata: request.metadata,
-    // }, {
-    //   idempotencyKey: request.idempotencyKey,
-    // });
-    //
-    // return {
-    //   success: true,
-    //   providerTransactionId: transfer.id,
-    //   status: PaymentStatus.PROCESSING,
-    //   message: `Stripe Transfer created`,
-    //   rawResponse: transfer,
-    // };
+    const transfer = await this.stripe.transfers.create({
+      amount: request.amountCents,
+      currency: request.currency,
+      destination: request.destinationToken!,
+      ...(request.description !== undefined && { description: request.description }),
+      ...(request.metadata !== undefined && { metadata: request.metadata }),
+    }, {
+      idempotencyKey: request.idempotencyKey,
+    });
 
-    return this.notYetWired('payout');
+    return {
+      success: true,
+      providerTransactionId: transfer.id,
+      status: PaymentStatus.PROCESSING,
+      message: `Stripe Transfer created`,
+      rawResponse: transfer,
+    };
   }
 
   // =====================================================================
   // Refund
   // =====================================================================
   async refund(request: ProviderRefundRequest): Promise<ProviderResult> {
-    // ── Step 3: Replace with real SDK call ─────────────────────────────
-    //
-    // const refund = await this.stripe.refunds.create({
-    //   payment_intent: request.originalTransactionId,
-    //   amount: request.amountCents,
-    //   reason: 'requested_by_customer',
-    //   metadata: request.metadata,
-    // });
-    //
-    // return {
-    //   success: refund.status === 'succeeded',
-    //   providerTransactionId: refund.id,
-    //   status: refund.status === 'succeeded'
-    //     ? PaymentStatus.REFUNDED
-    //     : PaymentStatus.PROCESSING,
-    //   message: `Stripe Refund ${refund.status}`,
-    //   rawResponse: refund,
-    // };
+    const refund = await this.stripe.refunds.create({
+      payment_intent: request.originalTransactionId,
+      amount: request.amountCents,
+      reason: 'requested_by_customer',
+      ...(request.metadata !== undefined && { metadata: request.metadata }),
+    });
 
-    return this.notYetWired('refund');
-  }
-
-  // =====================================================================
-  // Placeholder until SDK is installed
-  // =====================================================================
-  private async notYetWired(operation: string): Promise<ProviderResult> {
-    console.warn(
-      `⚠️  Stripe provider: "${operation}" called but SDK is not yet wired.`,
-      'Install the stripe package and uncomment the SDK code in stripe.provider.ts.'
-    );
     return {
-      success: false,
-      status: PaymentStatus.FAILED,
-      error: `Stripe SDK not yet wired — install "stripe" package and uncomment code in stripe.provider.ts`,
+      success: refund.status === 'succeeded',
+      providerTransactionId: refund.id,
+      status: refund.status === 'succeeded'
+        ? PaymentStatus.REFUNDED
+        : PaymentStatus.PROCESSING,
+      message: `Stripe Refund ${refund.status}`,
+      rawResponse: refund,
     };
   }
+
 }

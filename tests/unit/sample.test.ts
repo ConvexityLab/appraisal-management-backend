@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 
 describe('Sample Unit Test', () => {
   it('should pass basic arithmetic test', () => {

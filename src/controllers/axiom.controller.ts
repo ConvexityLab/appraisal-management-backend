@@ -11,15 +11,19 @@
 import { Request, Response, Router } from 'express';
 import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
 import { CosmosDbService } from '../services/cosmos-db.service';
+import { BulkPortfolioService } from '../services/bulk-portfolio.service';
+import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
 
 export class AxiomController {
   private axiomService: AxiomService;
   private dbService: CosmosDbService;
+  private bulkPortfolioService: BulkPortfolioService;
   private static readonly APP_TENANT_ID = 'test-tenant-123';
 
   constructor(dbService: CosmosDbService, axiomService?: AxiomService) {
     this.dbService = dbService;
     this.axiomService = axiomService || new AxiomService(dbService);
+    this.bulkPortfolioService = new BulkPortfolioService(dbService);
   }
 
   /**
@@ -464,6 +468,45 @@ export class AxiomController {
       });
     }
   };
+
+  /**
+   * Receive Axiom TAPE_EXTRACTION webhook
+   * POST /api/axiom/webhook/extraction
+   *
+   * Axiom calls this endpoint when a structured field extraction job finishes.
+   * The payload contains extractedFields (Partial<RiskTapeItem>) which are
+   * mapped to a RiskTapeItem, evaluated against the ReviewProgram, and stored
+   * as a ReviewTapeResult on the originating BulkPortfolioJob.
+   *
+   * Always returns 200 immediately — processing is fire-and-log so Axiom
+   * does not need to retry on our behalf.
+   */
+  handleExtractionWebhook = async (req: Request, res: Response): Promise<void> => {
+    // Acknowledge immediately — Axiom should not wait on our processing
+    res.status(200).json({ success: true, message: 'Extraction webhook received' });
+
+    const payload = req.body as TapeExtractionWebhookPayload;
+
+    if (!payload.evaluationId || !payload.jobId || !payload.loanNumber) {
+      console.error('❌ Extraction webhook missing required fields', {
+        hasEvaluationId: !!payload.evaluationId,
+        hasJobId: !!payload.jobId,
+        hasLoanNumber: !!payload.loanNumber,
+      });
+      return;
+    }
+
+    try {
+      await this.bulkPortfolioService.processExtractionCompletion(payload);
+    } catch (error) {
+      console.error('❌ Failed to process extraction webhook', {
+        evaluationId: payload.evaluationId,
+        jobId: payload.jobId,
+        loanNumber: payload.loanNumber,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 }
 
 /**
@@ -488,6 +531,9 @@ export function createAxiomRouter(dbService: CosmosDbService): Router {
 
   // Webhook
   router.post('/webhook', controller.handleWebhook);
+
+  // Extraction webhook (TAPE_EXTRACTION completion from Axiom)
+  router.post('/webhook/extraction', controller.handleExtractionWebhook);
 
   // Document comparison
   router.post('/documents/compare', controller.compareDocuments);

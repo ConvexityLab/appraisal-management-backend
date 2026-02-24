@@ -45,6 +45,14 @@ export class CosmosDbService {
   private comparableAnalysesContainer: Container | null = null;
   private documentsContainer: Container | null = null;
   private communicationsContainer: Container | null = null;
+  private clientsContainer: Container | null = null;
+  private productsContainer: Container | null = null;
+  private bulkPortfolioJobsContainer: Container | null = null;
+  private matchingCriteriaSetsContainer: Container | null = null;
+  private rfbRequestsContainer: Container | null = null;
+  private arvAnalysesContainer: Container | null = null;
+  private reviewProgramsContainer: Container | null = null;
+  private reviewResultsContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -72,7 +80,15 @@ export class CosmosDbService {
     chatThreads: 'chatThreads',                          // ACS chat thread metadata
     chatMessages: 'chatMessages',                        // ACS chat message history
     acsUserMappings: 'acsUserMappings',                  // Azure AD → ACS user ID mappings
-    teamsMeetings: 'teamsMeetings'                       // Teams meeting metadata
+    teamsMeetings: 'teamsMeetings',                      // Teams meeting metadata
+    clients: 'clients',                                   // Lender / AMC / Broker client records
+    products: 'products',                                 // Product / fee configuration
+    bulkPortfolioJobs: 'bulk-portfolio-jobs',             // Bulk upload job history
+    matchingCriteriaSets: 'matching-criteria-sets',       // Named reusable vendor eligibility rule sets
+    rfbRequests: 'rfb-requests',                          // Request-for-Bid rounds per order
+    arvAnalyses: 'arv-analyses',                          // As-Repaired Value analyses
+    reviewPrograms: 'review-programs',                   // Versioned criteria review programs (all programTypes)
+    reviewResults: 'review-results',                      // Per-loan ReviewTapeResult documents for large jobs
   };
 
   constructor(
@@ -159,6 +175,14 @@ export class CosmosDbService {
       this.comparableAnalysesContainer = this.database.container(this.containers.comparableAnalyses);
       this.documentsContainer = this.database.container(this.containers.documents);
       this.communicationsContainer = this.database.container(this.containers.communications);
+      this.clientsContainer = this.database.container(this.containers.clients);
+      this.productsContainer = this.database.container(this.containers.products);
+      this.bulkPortfolioJobsContainer = this.database.container(this.containers.bulkPortfolioJobs);
+      this.matchingCriteriaSetsContainer = this.database.container(this.containers.matchingCriteriaSets);
+      this.rfbRequestsContainer = this.database.container(this.containers.rfbRequests);
+      this.arvAnalysesContainer = this.database.container(this.containers.arvAnalyses);
+      this.reviewProgramsContainer = this.database.container(this.containers.reviewPrograms);
+      this.reviewResultsContainer = this.database.container(this.containers.reviewResults);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
@@ -503,6 +527,159 @@ export class CosmosDbService {
         )
       };
     }
+  }
+
+  // ===============================
+  // Client (Lender / AMC) Operations
+  // ===============================
+
+  async createClient(client: import('../types/index.js').CreateClientRequest & { tenantId: string; createdBy: string }): Promise<ApiResponse<import('../types/index.js').Client>> {
+    if (!this.clientsContainer) throw new Error('Clients container not initialized');
+    const now = new Date().toISOString();
+    const doc = {
+      id: this.generateId(),
+      status: 'ACTIVE' as const,
+      createdAt: now,
+      updatedAt: now,
+      clientName: client.clientName,
+      clientType: client.clientType,
+      contactName: client.contactName,
+      contactEmail: client.contactEmail,
+      tenantId: client.tenantId,
+      createdBy: client.createdBy,
+      ...(client.contactPhone !== undefined && { contactPhone: client.contactPhone }),
+      ...(client.loanOfficerName !== undefined && { loanOfficerName: client.loanOfficerName }),
+      ...(client.lenderName !== undefined && { lenderName: client.lenderName }),
+      ...(client.address !== undefined && { address: client.address }),
+      ...(client.notes !== undefined && { notes: client.notes }),
+    } satisfies import('../types/index.js').Client;
+    const { resource } = await this.clientsContainer.items.create(doc);
+    return { success: true, data: resource as unknown as import('../types/index.js').Client };
+  }
+
+  async findClients(tenantId: string, status?: string): Promise<ApiResponse<import('../types/index.js').Client[]>> {
+    if (!this.clientsContainer) throw new Error('Clients container not initialized');
+    let query = 'SELECT * FROM c WHERE c.tenantId = @tenantId';
+    const params: { name: string; value: string }[] = [{ name: '@tenantId', value: tenantId }];
+    if (status) {
+      query += ' AND c.status = @status';
+      params.push({ name: '@status', value: status });
+    }
+    query += ' ORDER BY c.clientName ASC';
+    const { resources } = await this.clientsContainer.items
+      .query<import('../types/index.js').Client>({ query, parameters: params })
+      .fetchAll();
+    return { success: true, data: resources };
+  }
+
+  async findClientById(id: string, tenantId: string): Promise<ApiResponse<import('../types/index.js').Client | null>> {
+    if (!this.clientsContainer) throw new Error('Clients container not initialized');
+    const { resources } = await this.clientsContainer.items
+      .query<import('../types/index.js').Client>({
+        query: 'SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
+        parameters: [{ name: '@id', value: id }, { name: '@tenantId', value: tenantId }],
+      })
+      .fetchAll();
+    return { success: true, data: resources[0] ?? null };
+  }
+
+  async updateClient(id: string, tenantId: string, updates: import('../types/index.js').UpdateClientRequest): Promise<ApiResponse<import('../types/index.js').Client>> {
+    if (!this.clientsContainer) throw new Error('Clients container not initialized');
+    const existing = await this.findClientById(id, tenantId);
+    if (!existing.success || !existing.data) {
+      return { success: false, error: createApiError('CLIENT_NOT_FOUND', `Client ${id} not found`) };
+    }
+    const updated = { ...existing.data, ...updates, updatedAt: new Date().toISOString() };
+    const { resource } = await this.clientsContainer.items.upsert(updated);
+    return { success: true, data: resource as unknown as import('../types/index.js').Client };
+  }
+
+  async deleteClient(id: string, tenantId: string): Promise<ApiResponse<void>> {
+    if (!this.clientsContainer) throw new Error('Clients container not initialized');
+    const existing = await this.findClientById(id, tenantId);
+    if (!existing.success || !existing.data) {
+      return { success: false, error: createApiError('CLIENT_NOT_FOUND', `Client ${id} not found`) };
+    }
+    // Soft-delete: set status to INACTIVE
+    await this.updateClient(id, tenantId, { status: 'INACTIVE' });
+    return { success: true, data: undefined };
+  }
+
+  // ===============================
+  // Product / Fee Configuration
+  // ===============================
+
+  async createProduct(product: import('../types/index.js').CreateProductRequest & { tenantId: string; createdBy: string }): Promise<ApiResponse<import('../types/index.js').Product>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const now = new Date().toISOString();
+    const doc = {
+      id: this.generateId(),
+      status: 'ACTIVE' as const,
+      isActive: true,
+      rushFeeMultiplier: product.rushFeeMultiplier ?? 1.5,
+      createdAt: now,
+      updatedAt: now,
+      name: product.name,
+      productType: product.productType,
+      defaultFee: product.defaultFee,
+      turnTimeDays: product.turnTimeDays,
+      tenantId: product.tenantId,
+      createdBy: product.createdBy,
+      ...(product.description !== undefined && { description: product.description }),
+      ...(product.techFee !== undefined && { techFee: product.techFee }),
+      ...(product.feeSplitPercent !== undefined && { feeSplitPercent: product.feeSplitPercent }),
+      ...(product.rushTurnTimeDays !== undefined && { rushTurnTimeDays: product.rushTurnTimeDays }),
+    } satisfies import('../types/index.js').Product;
+    const { resource } = await this.productsContainer.items.create(doc);
+    return { success: true, data: resource as unknown as import('../types/index.js').Product };
+  }
+
+  async findProducts(tenantId: string): Promise<ApiResponse<import('../types/index.js').Product[]>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const { resources } = await this.productsContainer.items
+      .query<import('../types/index.js').Product>({
+        query: 'SELECT * FROM c WHERE c.tenantId = @tenantId ORDER BY c.name ASC',
+        parameters: [{ name: '@tenantId', value: tenantId }],
+      })
+      .fetchAll();
+    return { success: true, data: resources };
+  }
+
+  async findProductById(id: string, tenantId: string): Promise<ApiResponse<import('../types/index.js').Product | null>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const { resources } = await this.productsContainer.items
+      .query<import('../types/index.js').Product>({
+        query: 'SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
+        parameters: [{ name: '@id', value: id }, { name: '@tenantId', value: tenantId }],
+      })
+      .fetchAll();
+    return { success: true, data: resources[0] ?? null };
+  }
+
+  async updateProduct(id: string, tenantId: string, updates: import('../types/index.js').UpdateProductRequest): Promise<ApiResponse<import('../types/index.js').Product>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const existing = await this.findProductById(id, tenantId);
+    if (!existing.success || !existing.data) {
+      return { success: false, error: createApiError('PRODUCT_NOT_FOUND', `Product ${id} not found`) };
+    }
+    const updated = {
+      ...existing.data,
+      ...updates,
+      isActive: updates.status !== undefined ? updates.status === 'ACTIVE' : existing.data.isActive,
+      updatedAt: new Date().toISOString(),
+    };
+    const { resource } = await this.productsContainer.items.upsert(updated);
+    return { success: true, data: resource as unknown as import('../types/index.js').Product };
+  }
+
+  async deleteProduct(id: string, tenantId: string): Promise<ApiResponse<void>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const existing = await this.findProductById(id, tenantId);
+    if (!existing.success || !existing.data) {
+      return { success: false, error: createApiError('PRODUCT_NOT_FOUND', `Product ${id} not found`) };
+    }
+    await this.updateProduct(id, tenantId, { status: 'INACTIVE' });
+    return { success: true, data: undefined };
   }
 
   // ===============================
@@ -2627,6 +2804,77 @@ export class CosmosDbService {
       this.isConnected = false;
       this.logger.info('Disconnected from Azure Cosmos DB');
     }
+  }
+
+  /**
+   * Returns the initialized database reference.
+   * Used by services that manage their own containers (e.g. BulkPortfolioService).
+   */
+  getDatabase(): import('@azure/cosmos').Database {
+    if (!this.database) {
+      throw new Error('Cosmos DB database not initialized — call initialize() first');
+    }
+    return this.database;
+  }
+
+  /**
+   * Returns the bulk-portfolio-jobs container reference.
+   */
+  getBulkPortfolioJobsContainer(): import('@azure/cosmos').Container {
+    if (!this.bulkPortfolioJobsContainer) {
+      throw new Error('bulk-portfolio-jobs container not initialized');
+    }
+    return this.bulkPortfolioJobsContainer;
+  }
+
+  /**
+   * Returns the matching-criteria-sets container reference.
+   */
+  getMatchingCriteriaSetsContainer(): import('@azure/cosmos').Container {
+    if (!this.matchingCriteriaSetsContainer) {
+      throw new Error('matching-criteria-sets container not initialized');
+    }
+    return this.matchingCriteriaSetsContainer;
+  }
+
+  /**
+   * Returns the rfb-requests container reference.
+   */
+  getRfbRequestsContainer(): import('@azure/cosmos').Container {
+    if (!this.rfbRequestsContainer) {
+      throw new Error('rfb-requests container not initialized');
+    }
+    return this.rfbRequestsContainer;
+  }
+
+  /**
+   * Returns the arv-analyses container reference.
+   */
+  getArvAnalysesContainer(): import('@azure/cosmos').Container {
+    if (!this.arvAnalysesContainer) {
+      throw new Error('arv-analyses container not initialized');
+    }
+    return this.arvAnalysesContainer;
+  }
+
+  /**
+   * Returns the review-programs container reference.
+   */
+  getReviewProgramsContainer(): import('@azure/cosmos').Container {
+    if (!this.reviewProgramsContainer) {
+      throw new Error('review-programs container not initialized');
+    }
+    return this.reviewProgramsContainer;
+  }
+
+  /**
+   * Returns the review-results container reference.
+   */
+  getReviewResultsContainer(): import('@azure/cosmos').Container {
+    if (!this.reviewResultsContainer) {
+      throw new Error('review-results container not initialized');
+    }
+    return this.reviewResultsContainer;
   }
 }
 

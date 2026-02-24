@@ -189,6 +189,19 @@ resource archiveContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   }
 }
 
+// PDF Report Templates Container (blank AcroForm PDFs used by final-report generation)
+resource pdfReportTemplatesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
+  parent: blobService
+  name: 'pdf-report-templates'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Blank AcroForm PDF templates for final report generation'
+      environment: environment
+    }
+  }
+}
+
 // File Service for shared file storage
 resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-04-01' = {
   parent: storageAccount
@@ -272,6 +285,7 @@ output containerNames array = [
   credentialsContainer.name
   templatesContainer.name
   archiveContainer.name
+  pdfReportTemplatesContainer.name
 ]
 output fileShareNames array = [
   sharedFileShare.name

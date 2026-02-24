@@ -19,6 +19,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import { CosmosDbService } from './cosmos-db.service';
 import { WebPubSubService } from './web-pubsub.service';
 import { EventPriority, EventCategory } from '../types/events.js';
+import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
 
 // ============================================================================
 // Type Definitions
@@ -93,6 +94,24 @@ export interface AxiomWebhookPayload {
     code: string;
     message: string;
   };
+}
+
+/**
+ * Cosmos record stored in aiInsights when a TAPE_EXTRACTION job is in flight.
+ * Retrieved by BulkPortfolioService.checkExtractionProgress() in mock/dev mode,
+ * or mapped directly from the webhook payload in production.
+ */
+export interface ExtractionRecord {
+  id: string;                       // = evaluationId
+  evaluationId: string;
+  requestType: 'TAPE_EXTRACTION';
+  jobId: string;
+  loanNumber: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  timestamp: string;
+  extractedFields?: Partial<RiskTapeItem>;
+  extractionConfidence?: number;
+  error?: string;
 }
 
 // ============================================================================
@@ -549,6 +568,161 @@ export class AxiomService {
   }
 
   // ============================================================================
+  // Document Extraction (Sprint 4 — DOCUMENT_EXTRACTION mode)
+  // ============================================================================
+
+  /**
+   * Submit an appraisal PDF to Axiom for structured 73-field extraction.
+   *
+   * Axiom resolves the DocumentSchema from request.programId and the hardcoded
+   * requestType 'TAPE_EXTRACTION'.
+   *
+   * Mock mode: follows the same pending → processing → completed lifecycle as
+   * notifyDocumentUpload().  The mock result is persisted to Cosmos (aiInsights)
+   * so BulkPortfolioService.checkExtractionProgress() can poll it in dev.
+   */
+  async submitForExtraction(request: TapeExtractionRequest): Promise<{
+    success: boolean;
+    evaluationId?: string;
+    error?: string;
+  }> {
+    if (!this.enabled) {
+      const mockEvalId = `mock-extract-${request.loanNumber}-${Date.now()}`;
+      console.log(
+        `🧪 [MOCK] Axiom extraction mock — creating pending record ${mockEvalId} for loan ${request.loanNumber}`,
+      );
+
+      const pendingRecord: ExtractionRecord = {
+        id: mockEvalId,
+        evaluationId: mockEvalId,
+        requestType: 'TAPE_EXTRACTION',
+        jobId: request.jobId,
+        loanNumber: request.loanNumber,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+      };
+      await this.storeEvaluationRecord(pendingRecord);
+
+      // → processing after 1 second
+      setTimeout(async () => {
+        try {
+          await this.storeEvaluationRecord({
+            ...pendingRecord,
+            status: 'processing',
+            timestamp: new Date().toISOString(),
+          });
+          console.log(`🧪 [MOCK] Extraction ${mockEvalId} → processing`);
+        } catch (err) {
+          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to processing`, err);
+        }
+      }, 1000);
+
+      // → completed with mock extracted fields after configured delay
+      setTimeout(async () => {
+        try {
+          const completedRecord: ExtractionRecord = {
+            ...pendingRecord,
+            status: 'completed',
+            timestamp: new Date().toISOString(),
+            extractedFields: this.buildMockExtractedFields(request.loanNumber),
+            extractionConfidence: 0.87,
+          };
+          await this.storeEvaluationRecord(completedRecord);
+          console.log(`✅ [MOCK] Extraction ${mockEvalId} → completed`);
+        } catch (err) {
+          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to completed`, err);
+        }
+      }, this.mockDelayMs);
+
+      return { success: true, evaluationId: mockEvalId };
+    }
+
+    // ── Production path ────────────────────────────────────────────────────
+    // Axiom POST /documents/extract — finalized contract v1.0
+    try {
+      const response = await this.client.post<{ evaluationId: string }>(
+        '/documents/extract',
+        {
+          requestType: 'TAPE_EXTRACTION',
+          jobId: request.jobId,
+          loanNumber: request.loanNumber,
+          document: {
+            url: request.documentUrl,
+            mimeType: 'application/pdf',
+          },
+          schema: {
+            programId: request.programId,
+            fieldSet: 'RISK_TAPE_73',
+          },
+          delivery: {
+            webhookUrl: request.webhookUrl,
+            includeFieldConfidence: true,
+          },
+          submittedAt: new Date().toISOString(),
+        },
+      );
+
+      const evaluationId = response.data.evaluationId;
+
+      // Cache a pending record so polling works even before the webhook fires
+      const pendingRecord: ExtractionRecord = {
+        id: evaluationId,
+        evaluationId,
+        requestType: 'TAPE_EXTRACTION',
+        jobId: request.jobId,
+        loanNumber: request.loanNumber,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+      };
+      await this.storeEvaluationRecord(pendingRecord);
+
+      console.log(`✅ Axiom extraction submitted`, {
+        jobId: request.jobId,
+        loanNumber: request.loanNumber,
+        evaluationId,
+      });
+
+      return { success: true, evaluationId };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const errorMessage = (axiosError.response?.data as any)?.message ?? axiosError.message;
+      console.error('❌ Failed to submit document for extraction via Axiom', {
+        jobId: request.jobId,
+        loanNumber: request.loanNumber,
+        error: errorMessage,
+      });
+      return { success: false, error: `Axiom API error: ${errorMessage}` };
+    }
+  }
+
+  /**
+   * Retrieve a tape extraction record from the aiInsights Cosmos cache.
+   * Returns null if the evaluationId does not exist or has not been stored yet.
+   */
+  async getExtractionRecord(evaluationId: string): Promise<ExtractionRecord | null> {
+    try {
+      const response = await this.dbService.queryItems<ExtractionRecord>(
+        this.containerName,
+        'SELECT * FROM c WHERE c.id = @id AND c.requestType = @rt',
+        [
+          { name: '@id', value: evaluationId },
+          { name: '@rt', value: 'TAPE_EXTRACTION' },
+        ],
+      );
+      if (response.success && response.data && response.data.length > 0) {
+        return response.data[0] ?? null;
+      }
+      return null;
+    } catch (error) {
+      console.error('❌ Failed to retrieve extraction record from Cosmos', {
+        evaluationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  // ============================================================================
   // Private Helper Methods
   // ============================================================================
 
@@ -687,6 +861,94 @@ export class AxiomService {
           reportDate: '2026-01-22'
         }
       }
+    };
+  }
+
+  /**
+   * Build a realistic mock Partial<RiskTapeItem> to simulate the extracted fields
+   * Axiom would return from a typical appraisal PDF.
+   *
+   * Values are plausible but fictional — used only in mock mode
+   * (AXIOM_API_BASE_URL not configured).  The loanNumber is seeded into the
+   * result so individual loans are distinguishable in the mock portfolio.
+   */
+  private buildMockExtractedFields(loanNumber: string): Partial<RiskTapeItem> {
+    // Vary values slightly per loan so the mock portfolio isn't uniform
+    const seed = loanNumber.split('').reduce((n, c) => n + c.charCodeAt(0), 0);
+    const vary = (base: number, pct = 0.1) =>
+      Math.round(base * (1 + ((seed % 100) / 100 - 0.5) * pct * 2) * 100) / 100;
+
+    const appraisedValue = vary(432_000);
+    const loanAmount = Math.round(appraisedValue * 0.8);
+
+    return {
+      // ── A. Loan Details ──────────────────────────────────────────────────
+      loanNumber,
+      loanAmount,
+      firstLienBalance: loanAmount,
+      secondLienBalance: 0,
+      loanPurpose: 'Purchase',
+      loanType: 'Conventional',
+      occupancyType: 'Primary',
+      ltv: vary(80),
+      cltv: vary(80),
+      dscr: vary(1.25, 0.2),
+      cashOutRefi: false,
+      // ── B. Property ──────────────────────────────────────────────────────
+      propertyAddress: `${1800 + (seed % 200)} Willowbrook Lane`,
+      city: 'Riverton',
+      county: 'Orange County',
+      state: 'FL',
+      zip: '32789',
+      censusTract: `12095${String(seed % 9999).padStart(4, '0')}.00`,
+      propertyType: 'SFR',
+      // ── C. Physical Characteristics ──────────────────────────────────────
+      units: 1,
+      yearBuilt: 2005 + (seed % 15),
+      gla: vary(2150, 0.15),
+      basementSf: 0,
+      lotSize: vary(0.28, 0.2),
+      bedrooms: 3 + (seed % 2),
+      bathsFull: 2,
+      bathsHalf: 1,
+      conditionRating: 'C3',
+      qualityRating: 'Q3',
+      parking: '2-car attached garage',
+      // ── D. Appraisal Details ─────────────────────────────────────────────
+      appraisedValue,
+      contractPrice: vary(appraisedValue, 0.05),
+      appraisalEffectiveDate: '2025-10-15',
+      appraiserLicense: `FL-CG-${String(10000 + (seed % 90000))}`,
+      formType: '1004',
+      ucdpSsrScore: `${(2 + (seed % 3)).toFixed(1)}`,
+      collateralRiskRating: 'Low',
+      reconciliationNotes: 'Greatest weight given to Sales Comparison Approach.',
+      // ── E. Prior Sales ───────────────────────────────────────────────────
+      priorPurchaseDate: '2018-06-01',
+      priorPurchasePrice: vary(310_000),
+      chainOfTitleRedFlags: false,
+      // ── F. Market / Comp Data ────────────────────────────────────────────
+      numComps: 3,
+      compPriceRangeLow: vary(410_000, 0.05),
+      compPriceRangeHigh: vary(445_000, 0.05),
+      avgPricePerSf: vary(198, 0.1),
+      avgDistanceMi: vary(0.8, 0.3),
+      maxDistanceMi: vary(1.2, 0.2),
+      compsDateRangeMonths: 6,
+      nonMlsCount: seed % 3,
+      nonMlsPct: seed % 3 === 0 ? 0 : vary(15, 0.5),
+      avgNetAdjPct: vary(5.2, 0.3),
+      avgGrossAdjPct: vary(12.8, 0.3),
+      avgDom: vary(22, 0.4),
+      monthsInventory: vary(3.1, 0.3),
+      marketTrend: 'Stable',
+      highRiskGeographyFlag: false,
+      appraiserGeoCompetency: true,
+      // ── G. Flags ─────────────────────────────────────────────────────────
+      highNetGrossFlag: 'No',
+      unusualAppreciationFlag: 'No',
+      dscrFlag: 'No',
+      nonPublicCompsFlag: seed % 3 === 0 ? 'No' : 'No',
     };
   }
 

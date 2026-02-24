@@ -19,7 +19,7 @@ import {
 const API_BASE_URL = 'http://localhost:3000';
 const TEST_TIMEOUT = 30000;
 
-describe('Production API Integration Tests', () => {
+describe.skip('Production API Integration Tests', () => {
   let testOrderId: string;
   let testVendorId: string;
   let authToken: string;

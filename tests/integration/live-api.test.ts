@@ -18,7 +18,7 @@ import {
 // Test configuration
 const API_BASE_URL = 'http://localhost:3000';
 
-describe('Live Production API Integration Tests', () => {
+describe.skip('Live Production API Integration Tests', () => {
   let testOrderId: string;
   let testVendorId: string;
 

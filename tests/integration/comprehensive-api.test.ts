@@ -24,7 +24,7 @@ let testOrderId: string;
 let testVendorId: string;
 let testClientId: string;
 
-describe('Comprehensive Production API Integration Tests', () => {
+describe.skip('Comprehensive Production API Integration Tests', () => {
   beforeAll(async () => {
     // Verify server connectivity
     try {

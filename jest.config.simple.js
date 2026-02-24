@@ -8,7 +8,8 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
-    '^@tests/(.*)$': '<rootDir>/tests/$1'
+    '^@tests/(.*)$': '<rootDir>/tests/$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1',  // strip .js extensions for ts-jest ESM compatibility
   },
   coverageDirectory: 'coverage',
   collectCoverageFrom: [

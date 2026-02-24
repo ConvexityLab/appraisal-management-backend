@@ -521,8 +521,192 @@ var containers = [
         { path: '/"_etag"/?' }
       ]
     }
+  }  // PDF form template catalog — platform-wide, independent of individual orders
+  {
+    name: 'document-templates'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/isActive', order: 'ascending' }
+          { path: '/formType', order: 'ascending' }
+        ]
+        [
+          { path: '/formType', order: 'ascending' }
+          { path: '/version', order: 'descending' }
+        ]
+      ]
+    }
   }
-]
+  // Lender / AMC / Broker client records — drives order intake client lookup
+  {
+    name: 'clients'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/clientName', order: 'ascending' }
+        ]
+        [
+          { path: '/clientType', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  // Product / fee configuration — appraisal product catalogue with pricing and turn-times
+  {
+    name: 'products'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/name', order: 'ascending' }
+        ]
+        [
+          { path: '/productType', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/isActive', order: 'ascending' }
+          { path: '/productType', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  // Bulk Portfolio Jobs — batch upload tracking, one document per submitted batch
+  {
+    name: 'bulk-portfolio-jobs'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/submittedAt', order: 'descending' }
+        ]
+        [
+          { path: '/clientId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  // Matching Criteria Sets — named, reusable vendor eligibility rule sets per product
+  {
+    name: 'matching-criteria-sets'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/name', order: 'ascending' }
+        ]
+      ]
+    }
+  }
+  // RFB Requests — one Request-for-Bid round per order; bids are sub-documents
+  {
+    name: 'rfb-requests'
+    partitionKey: '/orderId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/matchSnapshot/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  // ARV Analyses — As-Repaired Value analyses for fix-and-flip / DSCR / rehab
+  {
+    name: 'arv-analyses'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/comps/*' }
+        { path: '/scopeOfWork/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/dealType', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+      ]
+    }
+  }]
 
 // Cosmos DB Account with enterprise settings
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
@@ -651,4 +835,8 @@ output appSettings object = {
   COSMOS_CONTAINER_VENDORS: 'vendors'
   COSMOS_CONTAINER_PROPERTY_SUMMARIES: 'property-summaries'
   COSMOS_CONTAINER_PROPERTIES: 'properties'
+  COSMOS_CONTAINER_DOCUMENT_TEMPLATES: 'document-templates'
+  COSMOS_CONTAINER_QC_REVIEWS: 'qc-reviews'
+  COSMOS_CONTAINER_CLIENTS: 'clients'
+  COSMOS_CONTAINER_PRODUCTS: 'products'
 }

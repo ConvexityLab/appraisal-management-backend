@@ -146,6 +146,7 @@ export interface AppraisalOrder {
   
   // Special requirements
   specialInstructions?: string;
+  engagementInstructions?: string;
   accessInstructions?: string;
   contactInstructions?: string;
   

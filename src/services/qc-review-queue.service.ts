@@ -441,6 +441,9 @@ export class QCReviewQueueService {
       }
 
       const config = result.data[0];
+      if (!config) {
+        return 10;
+      }
       const tier = (config.clientTier || config.slaLevel || '').toUpperCase();
 
       const tierScores: Record<string, number> = {
@@ -490,7 +493,11 @@ export class QCReviewQueueService {
         return 5; // Default moderate risk — no history available
       }
 
-      const { totalReviews, failedReviews } = result.data[0];
+      const vendorStats = result.data[0];
+      if (!vendorStats) {
+        return 5;
+      }
+      const { totalReviews, failedReviews } = vendorStats;
 
       if (totalReviews === 0) {
         return 5; // No history — moderate default

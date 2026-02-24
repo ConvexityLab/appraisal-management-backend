@@ -603,9 +603,17 @@ class QCWorkflowE2ETest {
   }
 }
 
-// Run tests
-const test = new QCWorkflowE2ETest();
-test.runAllTests().catch(error => {
-  console.error('Test execution failed:', error);
-  process.exit(1);
+// INTEGRATION TEST — requires running server at localhost:3000.
+// Run manually or set INTEGRATION_TESTS=true before starting vitest.
+if (process.env.INTEGRATION_TESTS === 'true') {
+  const runner = new QCWorkflowE2ETest();
+  runner.runAllTests().catch(error => {
+    console.error('Test execution failed:', error);
+    process.exit(1);
+  });
+}
+
+// Vitest placeholder — all real tests run via QCWorkflowE2ETest above
+describe.skip('QC Workflow E2E Tests (requires running server at localhost:3000)', () => {
+  it('placeholder — run with INTEGRATION_TESTS=true', () => {});
 });

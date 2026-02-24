@@ -19,6 +19,9 @@ export interface VendorProfile {
   currentWorkload: number;
   maxConcurrentOrders: number;
   isAvailable: boolean;
+  isBusy?: boolean;
+  vacationStartDate?: string;
+  vacationEndDate?: string;
   excludedClients: string[];
   certifications: string[];
   specialties: string[];
@@ -161,6 +164,17 @@ export class VendorAssignmentService {
     return vendorPool.filter(vendor => {
       // Must be available
       if (!vendor.isAvailable) return false;
+
+      // Must not be explicitly marked busy
+      if (vendor.isBusy) return false;
+
+      // Must not be on vacation right now
+      if (vendor.vacationStartDate && vendor.vacationEndDate) {
+        const now = new Date();
+        const start = new Date(vendor.vacationStartDate);
+        const end = new Date(vendor.vacationEndDate);
+        if (now >= start && now <= end) return false;
+      }
 
       // Must support the order type
       if (!vendor.serviceTypes.includes(request.orderType)) return false;

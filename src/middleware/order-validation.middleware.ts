@@ -76,6 +76,10 @@ export function validateCreateOrder() {
     body('specialInstructions')
       .optional()
       .isString(),
+    body('engagementInstructions')
+      .optional()
+      .isString()
+      .trim(),
     body('propertyDetails')
       .optional()
       .isObject(),

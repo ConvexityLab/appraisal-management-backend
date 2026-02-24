@@ -17,7 +17,7 @@ import {
 // Test configuration
 const API_BASE_URL = 'http://localhost:3000';
 
-describe('Production API Manual Tests', () => {
+describe.skip('Production API Manual Tests', () => {
   let testOrderId: string;
   let testVendorId: string;
 

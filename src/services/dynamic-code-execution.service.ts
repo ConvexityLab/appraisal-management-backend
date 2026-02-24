@@ -95,7 +95,11 @@ export class DynamicCodeExecutionService {
 
     } catch (error) {
       const executionTime = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : 'Unknown execution error';
+      // VM context errors may not be `instanceof Error` in the host context (different Error constructor),
+      // so we extract .message via property access before falling back to String(error).
+      const errorMessage = (error as any)?.message
+        ? String((error as any).message)
+        : (error !== null && error !== undefined ? String(error) : 'Unknown execution error');
       
       this.logger.error('Code execution failed', { 
         error: errorMessage, 
@@ -141,7 +145,18 @@ export class DynamicCodeExecutionService {
         }
       } catch (error) {
         clearTimeout(timeoutId);
-        reject(error);
+        // Node.js VM timeout throws ERR_SCRIPT_EXECUTION_TIMEOUT with message like
+        // "Script execution timed out." — normalize to a consistent message.
+        const errCode = (error as any)?.code;
+        if (
+          errCode === 'ERR_SCRIPT_EXECUTION_TIMEOUT' ||
+          errCode === 'ERR_SCRIPT_EXECUTION_INTERRUPTED' ||
+          String((error as any)?.message ?? '').toLowerCase().includes('timed out')
+        ) {
+          reject(new Error(`Code execution timeout after ${timeout}ms`));
+        } else {
+          reject(error);
+        }
       }
     });
   }

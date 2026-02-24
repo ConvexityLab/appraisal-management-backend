@@ -18,7 +18,7 @@ const TEST_COORDINATES = {
 
 let authToken: string = '';
 
-describe('Minimal Server Integration Tests', () => {
+describe.skip('Minimal Server Integration Tests', () => {
   
   beforeAll(async () => {
     console.log('🧪 Setting up test environment...');

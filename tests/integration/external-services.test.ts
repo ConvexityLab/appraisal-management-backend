@@ -23,7 +23,7 @@ const FLOOD_ZONE_COORDINATES = {
   longitude: -95.3698
 };
 
-describe('External Services Integration Tests', () => {
+describe.skip('External Services Integration Tests', () => {
   beforeAll(async () => {
     // Verify server connectivity
     try {

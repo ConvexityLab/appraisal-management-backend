@@ -38,6 +38,7 @@ export class VendorController {
     this.router.get('/', this.getVendors.bind(this));
     this.router.get('/:vendorId', ...this.validateVendorIdParam(), this.getVendorById.bind(this));
     this.router.post('/', ...this.validateVendorCreation(), this.createVendor.bind(this));
+    this.router.patch('/:vendorId/availability', ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
     this.router.put('/:vendorId', ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
     this.router.delete('/:vendorId', ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
   }
@@ -92,6 +93,15 @@ export class VendorController {
       body('serviceTypes').optional().isArray({ min: 1 }),
       body('serviceAreas').optional().isArray({ min: 1 }),
       body('status').optional().isIn(Object.values(VendorStatus)),
+      this.handleValidationErrors.bind(this)
+    ];
+  }
+
+  private validateAvailabilityUpdate() {
+    return [
+      body('isBusy').optional().isBoolean().withMessage('isBusy must be a boolean'),
+      body('vacationStartDate').optional().isISO8601().withMessage('vacationStartDate must be a valid ISO date'),
+      body('vacationEndDate').optional().isISO8601().withMessage('vacationEndDate must be a valid ISO date'),
       this.handleValidationErrors.bind(this)
     ];
   }
@@ -231,6 +241,52 @@ export class VendorController {
       res.status(500).json({
         error: 'Vendor update failed',
         code: 'VENDOR_UPDATE_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/vendors/:vendorId/availability
+   * Set vendor busy status and/or vacation window.
+   */
+  private async setVendorAvailability(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!; // validated by middleware
+      const { isBusy, vacationStartDate, vacationEndDate } = req.body as {
+        isBusy?: boolean;
+        vacationStartDate?: string;
+        vacationEndDate?: string;
+      };
+
+      const updateData: Record<string, unknown> = {
+        updatedBy: req.user?.id,
+        updatedAt: new Date()
+      };
+      if (isBusy !== undefined) updateData.isBusy = isBusy;
+      if (vacationStartDate !== undefined) updateData.vacationStartDate = vacationStartDate;
+      if (vacationEndDate !== undefined) updateData.vacationEndDate = vacationEndDate;
+
+      const result = await this.dbService.updateVendor(vendorId, updateData as any);
+
+      if (result.success && result.data) {
+        this.logger.info('Vendor availability updated', { vendorId, isBusy, vacationStartDate, vacationEndDate });
+        const profile = this.transformVendorToProfile(result.data);
+        res.json(profile);
+      } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
+        res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
+      } else {
+        res.status(500).json({
+          error: 'Availability update failed',
+          code: 'AVAILABILITY_UPDATE_ERROR',
+          details: result.error
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to update vendor availability', { error, vendorId: req.params.vendorId });
+      res.status(500).json({
+        error: 'Availability update failed',
+        code: 'AVAILABILITY_UPDATE_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
@@ -426,7 +482,12 @@ export class VendorController {
       createdAt: vendor.createdAt || vendor.onboardingDate,
       createdBy: vendor.createdBy || 'system',
       updatedAt: vendor.updatedAt || vendor.lastActive,
-      updatedBy: vendor.updatedBy || 'system'
+      updatedBy: vendor.updatedBy || 'system',
+
+      // Availability
+      isBusy: vendor.isBusy ?? false,
+      vacationStartDate: vendor.vacationStartDate ?? null,
+      vacationEndDate: vendor.vacationEndDate ?? null
     };
   }
 }

@@ -4,6 +4,8 @@
  * Type definitions for QC review queue, revision management, escalation, and SLA tracking
  */
 
+import { FieldOverride, ReviewerEdit } from './final-report.types.js';
+
 // ===========================
 // QC REVIEW MASTER RECORD
 // ===========================
@@ -128,6 +130,10 @@ export interface QCReview {
   // Access Control
   accessControl?: AccessControl;
   
+  // Final report reviewer corrections
+  fieldOverrides?: FieldOverride[];
+  reviewerEdits?: ReviewerEdit[];
+
   // Audit
   createdAt: string; // ISO date
   updatedAt: string; // ISO date

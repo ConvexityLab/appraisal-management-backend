@@ -43,14 +43,23 @@ import { createBridgeMlsRouter } from '../controllers/bridge-mls.controller';
 // Import AVM and Fraud Detection controllers
 import avmRouter from '../controllers/avm.controller';
 import fraudDetectionRouter from '../controllers/fraud-detection.controller';
+import { createBulkPortfolioRouter } from '../controllers/bulk-portfolio.controller.js';
+import { createReviewProgramsRouter } from '../controllers/review-programs.controller.js';
+import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
+import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
+import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
+import { REVIEW_PROGRAM_SEEDS } from '../data/review-programs.js';
 
 // Import QC Workflow controller
 import qcWorkflowRouter from '../controllers/qc-workflow.controller';
 
 // Import new QC Checklist controller (separate from old criteria.controller)
 import qcChecklistNewRouter from '../controllers/qc-checklist.controller.js';
+
+// Import QC Rules controller
+import qcRulesRouter from '../controllers/qc-rules.controller.js';
 
 // Import Correlation ID middleware
 import { correlationIdMiddleware, requestLoggingMiddleware } from '../middleware/correlation-id.middleware.js';
@@ -77,6 +86,7 @@ import { createAutoAssignmentRouter } from '../controllers/auto-assignment.contr
 
 // Import Delivery Workflow controller
 import { createDeliveryWorkflowRouter } from '../controllers/delivery-workflow.controller';
+import { createDeliveryRouter } from '../controllers/delivery.controller';
 
 // Import Communication Services controllers
 import { createNotificationRouter } from '../controllers/notification.controller';
@@ -130,8 +140,23 @@ import { DocumentController } from '../controllers/document.controller.js';
 // Import Order Controller (Phase 0.2 — extracted from inline handlers)
 import { OrderController } from '../controllers/order.controller.js';
 
+// Import Client Controller (G10 — Lender / AMC / Broker management)
+import { ClientController } from '../controllers/client.controller.js';
+
+// Import Product Controller (G8/G9 — Product / fee configuration)
+import { ProductController } from '../controllers/product.controller.js';
+
 // Import Reports Controller (Comp Analysis Migration)
 import { createReportsRouter } from '../controllers/reports.controller.js';
+
+// Import Final Reports Controller (Phase 7 — Final Delivery)
+import { createFinalReportsRouter } from '../controllers/final-reports.controller.js';
+
+// Import Notification Rules Controller (H2 — DB-backed event alert configuration)
+import { notificationRulesRouter } from '../controllers/notification-rules.controller.js';
+
+// Import Calendar Controller (G1 — iCal feed)
+import { calendarRouter } from '../controllers/calendar.controller.js';
 
 import { 
   authenticateJWT, 
@@ -196,6 +221,9 @@ export class AppraisalManagementAPIServer {
     
     // Initialize database FIRST
     await this.dbService.initialize();
+
+    // Seed platform-wide review programs (upsert — idempotent, container must exist via Bicep)
+    await this.seedReviewPrograms();
     
     // Initialize QC Results router with shared dbService
     this.qcResultsRouter = new QCResultsController(this.dbService).getRouter();
@@ -234,6 +262,47 @@ export class AppraisalManagementAPIServer {
     
     // Register error handlers LAST (after all routes)
     this.setupErrorHandling();
+  }
+
+  /**
+   * Upsert platform-wide review programs into the `review-programs` Cosmos container.
+   *
+   * Rules:
+   *  - The container MUST already exist (provisioned via cosmos-review-containers.bicep).
+   *  - This method never creates the container — it only upserts documents.
+   *  - Global programs (clientId === null) are stored with the synthetic
+   *    partition key "__global__" so the required /clientId key is never null.
+   */
+  private async seedReviewPrograms(): Promise<void> {
+    try {
+      const container = this.dbService.getReviewProgramsContainer();
+      const GLOBAL_CLIENT_ID = '__global__';
+
+      for (const program of REVIEW_PROGRAM_SEEDS) {
+        const doc = {
+          ...program,
+          // Store null clientId as the synthetic key the container expects
+          clientId: program.clientId ?? GLOBAL_CLIENT_ID,
+        };
+        await container.items.upsert(doc);
+        this.logger.info('Seeded review program', {
+          id: program.id,
+          name: program.name,
+          version: program.version,
+          programType: program.programType,
+        });
+      }
+
+      this.logger.info('Review program seeding complete', {
+        count: REVIEW_PROGRAM_SEEDS.length,
+      });
+    } catch (err) {
+      // A seeding failure is fatal — the evaluation engine cannot run without programs.
+      this.logger.error('Failed to seed review programs', { error: err });
+      throw new Error(
+        `Review program seeding failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -380,6 +449,14 @@ export class AppraisalManagementAPIServer {
     // Order Negotiation & Acceptance — handled by negotiation.controller.ts (Phase C1)
     // Old order-negotiation.controller.ts removed (routes were shadowed).
 
+    // Delivery Workflow - Packages, ZIP download, ack, timeline, revisions (authenticated users)
+    // NOTE: Mounted first so these routes take precedence over the legacy workflow router below.
+    this.app.use('/api/delivery',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createDeliveryRouter()
+    );
+
     // Delivery Workflow - Progress Tracking, Milestones, Documents (authenticated users)
     this.app.use('/api/delivery',
       this.unifiedAuth.authenticate(),
@@ -488,6 +565,27 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/reports',
       this.unifiedAuth.authenticate(),
       createReportsRouter(this.dbService)
+    );
+
+    // Final Reports - Phase 7: Filled PDF report generation, delivery, and field overrides
+    // Template selection → data merge → pdf-lib fill → Blob upload → event chain
+    this.app.use('/api/final-reports',
+      this.unifiedAuth.authenticate(),
+      createFinalReportsRouter(this.dbService)
+    );
+
+    // Notification Rules — DB-backed event alert configuration (admin)
+    // CRUD for rules that route platform events to EMAIL / WEBSOCKET / SMS channels
+    this.app.use('/api/notification-rules',
+      this.unifiedAuth.authenticate(),
+      notificationRulesRouter
+    );
+
+    // Calendar iCal feed — RFC 5545 feed of order due dates + inspection dates
+    // GET /api/calendar/ical  →  text/calendar download compatible with all calendar apps
+    this.app.use('/api/calendar',
+      this.unifiedAuth.authenticate(),
+      calendarRouter
     );
 
     // Storage/Geocode endpoints (part of reports functionality)
@@ -629,6 +727,62 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/orders',
       this.unifiedAuth.authenticate(),
       this.orderController.router
+    );
+
+    // Client (Lender / AMC / Broker) management — G10
+    const clientController = new ClientController(this.dbService);
+    this.app.use('/api/clients',
+      this.unifiedAuth.authenticate(),
+      clientController.router
+    );
+
+    // Product / fee configuration — G8/G9
+    const productController = new ProductController(this.dbService);
+    this.app.use('/api/products',
+      this.unifiedAuth.authenticate(),
+      productController.router
+    );
+
+    // Bulk Portfolio — multi-order batch upload and analysis
+    this.app.use('/api/bulk-portfolios',
+      this.unifiedAuth.authenticate(),
+      createBulkPortfolioRouter(this.dbService)
+    );
+
+    // Review Programs — versioned criteria programs used by tape evaluation
+    this.app.use('/api/review-programs',
+      this.unifiedAuth.authenticate(),
+      createReviewProgramsRouter(this.dbService)
+    );
+
+    // Matching Criteria — named reusable provider eligibility rule sets
+    this.app.use('/api/matching-criteria',
+      this.unifiedAuth.authenticate(),
+      createMatchingCriteriaRouter(this.dbService)
+    );
+
+    // RFB — Request-for-Bid lifecycle (order-scoped endpoints)
+    this.app.use('/api/orders/:orderId/rfb',
+      this.unifiedAuth.authenticate(),
+      createOrderRfbRouter(this.dbService)
+    );
+
+    // RFB — broadcast / bid / award / cancel actions (rfb-scoped)
+    this.app.use('/api/rfb',
+      this.unifiedAuth.authenticate(),
+      createRfbActionRouter(this.dbService)
+    );
+
+    // ARV — As-Repaired Value calculator (standalone analyses)
+    this.app.use('/api/arv',
+      this.unifiedAuth.authenticate(),
+      createArvRouter(this.dbService)
+    );
+
+    // ARV — analyses linked to an order
+    this.app.use('/api/orders/:orderId/arv',
+      this.unifiedAuth.authenticate(),
+      createOrderArvRouter(this.dbService)
     );
 
     // QC Validation routes
@@ -880,6 +1034,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/qc-workflow',
       this.unifiedAuth.authenticate(),
       qcWorkflowRouter
+    );
+
+    // QC Rules Engine - automation rule configuration (CRUD + toggle/duplicate)
+    this.app.use('/api/qc-rules',
+      this.unifiedAuth.authenticate(),
+      qcRulesRouter
     );
 
     // Appraisal Review routes - review assignment, workflow, comparable analysis, reports
@@ -1353,42 +1513,19 @@ export class AppraisalManagementAPIServer {
         return;
       }
 
-      // Create mock QC validation result
-      const qcResult = {
-        orderId,
-        qcScore: 94.5,
-        validationResults: {
-          marketValidation: {
-            status: 'passed',
-            score: 95.2,
-            confidence: 'high'
-          },
-          riskAssessment: {
-            status: 'passed',
-            riskLevel: 'low',
-            score: 93.8
-          }
-        },
-        recommendations: [
-          'Market data validates property value within acceptable range',
-          'No significant risk factors identified'
-        ],
-        validatedBy: req.user?.id,
-        validatedAt: new Date()
-      };
-
-      // Store QC result in database
-      const saveResult = await this.dbService.createQCResult(qcResult);
-      
-      if (saveResult.success) {
-        res.json(saveResult.data);
-      } else {
-        res.status(500).json({
-          error: 'QC validation failed',
-          code: 'QC_VALIDATION_ERROR',
-          details: saveResult.error
-        });
+      // Look up real QC result already stored by the QC execution engine
+      const existingResult = await this.dbService.findQCResultByOrderId(orderId);
+      if (existingResult.success && existingResult.data) {
+        res.json(existingResult.data);
+        return;
       }
+
+      // No QC result exists yet — instruct the caller to use the real execution path
+      res.status(404).json({
+        error: 'No QC result found for this order. Run QC via POST /api/qc/execution/execute.',
+        code: 'QC_RESULT_NOT_FOUND',
+        orderId
+      });
     } catch (error) {
       res.status(500).json({
         error: 'QC validation failed',
@@ -1653,44 +1790,6 @@ export class AppraisalManagementAPIServer {
     return rolePermissions[role as keyof typeof rolePermissions] || [];
   }
 
-  private async generateAnalyticsOverview(): Promise<any> {
-    // Mock implementation - replace with actual analytics queries
-    return {
-      totalOrders: 1250,
-      completedOrders: 1100,
-      averageCompletionTime: 5.2,
-      qcPassRate: 94.5,
-      topVendors: [
-        { name: 'Premium Appraisals', completedOrders: 120, rating: 4.8 },
-        { name: 'Expert Valuations', completedOrders: 98, rating: 4.7 }
-      ],
-      monthlyTrends: {
-        orders: [85, 92, 78, 110, 95],
-        qcScores: [94.2, 95.1, 93.8, 94.7, 94.5]
-      }
-    };
-  }
-
-  private async generatePerformanceAnalytics(params: any): Promise<any> {
-    // Mock implementation - replace with actual analytics queries
-    return {
-      timeframe: {
-        startDate: params.startDate,
-        endDate: params.endDate,
-        groupBy: params.groupBy
-      },
-      metrics: {
-        orderVolume: [12, 15, 18, 22, 19, 25, 28],
-        completionTimes: [4.2, 4.8, 5.1, 4.9, 5.3, 4.7, 4.5],
-        qcScores: [94.2, 95.1, 93.8, 94.7, 94.5, 95.2, 94.8],
-        vendorPerformance: [
-          { vendorId: '1', avgCompletionTime: 4.2, qcScore: 95.1 },
-          { vendorId: '2', avgCompletionTime: 4.8, qcScore: 94.3 }
-        ]
-      }
-    };
-  }
-
   private setupErrorHandling(): void {
     // 404 handler
     this.app.use('*', (req: express.Request, res: express.Response) => {
@@ -1730,6 +1829,127 @@ export class AppraisalManagementAPIServer {
             type: 'http',
             scheme: 'bearer',
             bearerFormat: 'JWT'
+          }
+        },
+        schemas: {
+          AppraisalOrder: {
+            type: 'object',
+            description: 'Core appraisal order entity',
+            required: ['id', 'clientId', 'orderNumber', 'propertyAddress', 'propertyDetails',
+                       'orderType', 'productType', 'dueDate', 'rushOrder',
+                       'borrowerInformation', 'loanInformation', 'contactInformation',
+                       'status', 'priority', 'createdAt', 'updatedAt', 'createdBy', 'tags', 'metadata'],
+            properties: {
+              id:           { type: 'string', example: 'order-2026-001' },
+              clientId:     { type: 'string', example: 'client-bank-001' },
+              orderNumber:  { type: 'string', example: 'ORD-2026-001' },
+              status:       { type: 'string', example: 'ACTIVE' },
+              priority:     { type: 'string', example: 'NORMAL' },
+              orderType:    { type: 'string', example: 'APPRAISAL' },
+              productType:  { type: 'string', example: 'SINGLE_FAMILY' },
+              dueDate:      { type: 'string', format: 'date-time' },
+              rushOrder:    { type: 'boolean', example: false },
+              propertyAddress: {
+                type: 'object',
+                properties: {
+                  streetAddress: { type: 'string', example: '123 Main St' },
+                  city:          { type: 'string', example: 'Springfield' },
+                  state:         { type: 'string', example: 'IL' },
+                  zipCode:       { type: 'string', example: '62701' },
+                  county:        { type: 'string', example: 'Sangamon' },
+                  apn:           { type: 'string', example: '15-23-456-789' }
+                }
+              },
+              propertyDetails: {
+                type: 'object',
+                properties: {
+                  propertyType:    { type: 'string', example: 'SINGLE_FAMILY' },
+                  occupancy:       { type: 'string', example: 'OWNER_OCCUPIED' },
+                  yearBuilt:       { type: 'number', example: 2005 },
+                  grossLivingArea: { type: 'number', example: 2200 },
+                  lotSize:         { type: 'number', example: 7500 },
+                  bedrooms:        { type: 'number', example: 4 },
+                  bathrooms:       { type: 'number', example: 2.5 }
+                }
+              },
+              borrowerInformation: {
+                type: 'object',
+                properties: {
+                  firstName: { type: 'string' },
+                  lastName:  { type: 'string' },
+                  email:     { type: 'string', format: 'email' },
+                  phone:     { type: 'string' }
+                }
+              },
+              loanInformation: {
+                type: 'object',
+                properties: {
+                  loanAmount:    { type: 'number', example: 400000 },
+                  loanType:      { type: 'string', example: 'CONVENTIONAL' },
+                  loanPurpose:   { type: 'string', example: 'PURCHASE' },
+                  contractPrice: { type: 'number', example: 475000 }
+                }
+              },
+              contactInformation: {
+                type: 'object',
+                properties: {
+                  name:  { type: 'string' },
+                  role:  { type: 'string' },
+                  email: { type: 'string', format: 'email' },
+                  phone: { type: 'string' }
+                }
+              },
+              assignedVendorId: { type: 'string' },
+              paymentStatus:    { type: 'string', enum: ['UNPAID', 'PAID', 'PARTIAL'] },
+              // Final report history — all generation attempts embedded in the order document
+              finalReports: {
+                type: 'array',
+                description: 'All FinalReport generation attempts for this order, newest first.',
+                items: { $ref: '#/components/schemas/FinalReport' }
+              },
+              createdAt:  { type: 'string', format: 'date-time' },
+              updatedAt:  { type: 'string', format: 'date-time' },
+              createdBy:  { type: 'string' },
+              tags:       { type: 'array', items: { type: 'string' } },
+              metadata:   { type: 'object' }
+            }
+          },
+          FinalReport: {
+            type: 'object',
+            description: 'Final appraisal report generation record',
+            properties: {
+              id:               { type: 'string', format: 'uuid' },
+              orderId:          { type: 'string' },
+              qcReviewId:       { type: 'string' },
+              templateId:       { type: 'string' },
+              templateName:     { type: 'string' },
+              formType:         { type: 'string', example: '1004' },
+              status:           { type: 'string', enum: ['PENDING', 'GENERATING', 'GENERATED', 'FAILED'] },
+              blobPath:         { type: 'string', nullable: true },
+              blobUrl:          { type: 'string', nullable: true },
+              generatedBy:      { type: 'string' },
+              generatedAt:      { type: 'string', format: 'date-time', nullable: true },
+              failureReason:    { type: 'string', nullable: true },
+              mismoQueued:      { type: 'boolean' },
+              mismoXmlBlobPath: { type: 'string', description: 'Blob path of the generated MISMO XML', nullable: true },
+              underwritingQueued: { type: 'boolean' },
+              fieldOverrides:   { type: 'array', items: { type: 'object' } },
+              reviewerEdits:    { type: 'array', items: { type: 'object' } },
+              createdAt:        { type: 'string', format: 'date-time' },
+              updatedAt:        { type: 'string', format: 'date-time' }
+            }
+          },
+          ReportTemplate: {
+            type: 'object',
+            description: 'PDF AcroForm template available for final report generation',
+            properties: {
+              id:          { type: 'string', example: 'template-form-1004-urar-v1' },
+              name:        { type: 'string', example: 'Form 1004 — Uniform Residential Appraisal Report' },
+              formType:    { type: 'string', example: '1004' },
+              blobName:    { type: 'string', example: 'form-1004-urar-v1.pdf' },
+              description: { type: 'string', nullable: true },
+              isActive:    { type: 'boolean' }
+            }
           }
         }
       },
@@ -2624,6 +2844,141 @@ export class AppraisalManagementAPIServer {
                   }
                 }
               }
+            }
+          }
+        },
+
+        // ---------------------------------------------------------------
+        // Final Reports (Phase 7 — Final Delivery & Completion)
+        // ---------------------------------------------------------------
+        '/api/final-reports/templates': {
+          get: {
+            summary: 'List available PDF report templates',
+            security: [{ bearerAuth: [] }],
+            tags: ['Final Reports'],
+            description: 'Returns all active ReportTemplate records from the document-templates Cosmos container.',
+            responses: {
+              '200': {
+                description: 'Templates retrieved',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/ReportTemplate' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        '/api/final-reports/orders/{orderId}': {
+          get: {
+            summary: 'Get all FinalReport records for an order, newest first',
+            security: [{ bearerAuth: [] }],
+            tags: ['Final Reports'],
+            parameters: [
+              { name: 'orderId', in: 'path', required: true, schema: { type: 'string' } }
+            ],
+            responses: {
+              '200': {
+                description: 'Array of FinalReport records (empty array if none generated yet)',
+                content: {
+                  'application/json': {
+                    schema: { type: 'array', items: { $ref: '#/components/schemas/FinalReport' } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        '/api/final-reports/orders/{orderId}/generate': {
+          post: {
+            summary: 'Generate final report PDF for an order',
+            security: [{ bearerAuth: [] }],
+            tags: ['Final Reports'],
+            description:
+              'Runs the 9-step generation pipeline: load order & QC review → fill PDF template → ' +
+              'upload to Blob → persist FinalReport in Cosmos → fire post-generation events ' +
+              '(email notification, optional MISMO XML, optional underwriting push). ' +
+              'Requires an APPROVED or APPROVED_WITH_CONDITIONS QC review.',
+            parameters: [
+              { name: 'orderId', in: 'path', required: true, schema: { type: 'string' } }
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['templateId', 'requestedBy'],
+                    properties: {
+                      templateId:   { type: 'string', example: 'template-form-1004-urar-v1' },
+                      requestedBy:  { type: 'string', example: 'analyst-user-001' },
+                      notes:        { type: 'string', example: 'Final delivery run' }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              '200': {
+                description: 'Report generated successfully',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/FinalReport' } } }
+              },
+              '422': { description: 'Precondition failed — QC review not approved or template not found' },
+              '500': { description: 'PDF generation or Blob upload failed' }
+            }
+          }
+        },
+        '/api/final-reports/orders/{orderId}/download': {
+          get: {
+            summary: 'Stream the generated report PDF',
+            security: [{ bearerAuth: [] }],
+            tags: ['Final Reports'],
+            parameters: [
+              { name: 'orderId', in: 'path', required: true, schema: { type: 'string' } }
+            ],
+            responses: {
+              '200': {
+                description: 'PDF binary stream',
+                content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } }
+              },
+              '404': { description: 'No generated report found for this order' }
+            }
+          }
+        },
+        '/api/qc-workflow/{reviewId}/field-overrides': {
+          post: {
+            summary: 'Add or update a field-level override on a QC review',
+            security: [{ bearerAuth: [] }],
+            tags: ['Final Reports', 'QC Workflow - Reviews'],
+            parameters: [
+              { name: 'reviewId', in: 'path', required: true, schema: { type: 'string' } }
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['fieldKey', 'originalValue', 'overrideValue', 'overriddenBy', 'overriddenAt', 'source'],
+                    properties: {
+                      fieldKey:         { type: 'string', example: 'AppraisedValue' },
+                      originalValue:    { type: 'string', example: '450000' },
+                      overrideValue:    { type: 'string', example: '445000' },
+                      overriddenBy:     { type: 'string', example: 'analyst-001' },
+                      overriddenAt:     { type: 'string', format: 'date-time' },
+                      narrativeComment: { type: 'string', example: 'Adjusted per comp 2 re-analysis' },
+                      source:           { type: 'string', enum: ['HUMAN', 'AI'] }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              '201': { description: 'Field override saved' },
+              '404': { description: 'QC review not found' }
             }
           }
         }

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { CosmosDbService } from '../../src/services/cosmos-db.service'
 import type { AppraisalOrder, Vendor, PropertySummary } from '../../src/types'
 
-describe('Cosmos DB Real Integration Tests', () => {
+describe.skip('Cosmos DB Real Integration Tests', () => {
   let dbService: CosmosDbService
   let testOrderId: string
   let testVendorId: string

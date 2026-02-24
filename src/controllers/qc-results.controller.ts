@@ -14,7 +14,13 @@ const router = Router();
 const logger = new Logger();
 
 // Cosmos DB setup
-const COSMOS_ENDPOINT = process.env.AZURE_COSMOS_ENDPOINT || 'https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/';
+const COSMOS_ENDPOINT = process.env['AZURE_COSMOS_ENDPOINT'];
+if (!COSMOS_ENDPOINT) {
+  throw new Error(
+    'Required environment variable AZURE_COSMOS_ENDPOINT is not set. ' +
+    'Set it to your Cosmos DB endpoint URL (e.g. https://<account>.documents.azure.com:443/).'
+  );
+}
 const DATABASE_ID = 'appraisal-management';
 
 const credential = new DefaultAzureCredential();
