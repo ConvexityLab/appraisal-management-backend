@@ -50,7 +50,6 @@ import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
-import { REVIEW_PROGRAM_SEEDS } from '../data/review-programs.js';
 
 // Import QC Workflow controller
 import qcWorkflowRouter from '../controllers/qc-workflow.controller';
@@ -222,9 +221,6 @@ export class AppraisalManagementAPIServer {
     // Initialize database FIRST
     await this.dbService.initialize();
 
-    // Seed platform-wide review programs (upsert — idempotent, container must exist via Bicep)
-    await this.seedReviewPrograms();
-    
     // Initialize QC Results router with shared dbService
     this.qcResultsRouter = new QCResultsController(this.dbService).getRouter();
     this.logger.info('QC Results controller initialized with shared database service');
@@ -262,47 +258,6 @@ export class AppraisalManagementAPIServer {
     
     // Register error handlers LAST (after all routes)
     this.setupErrorHandling();
-  }
-
-  /**
-   * Upsert platform-wide review programs into the `review-programs` Cosmos container.
-   *
-   * Rules:
-   *  - The container MUST already exist (provisioned via cosmos-review-containers.bicep).
-   *  - This method never creates the container — it only upserts documents.
-   *  - Global programs (clientId === null) are stored with the synthetic
-   *    partition key "__global__" so the required /clientId key is never null.
-   */
-  private async seedReviewPrograms(): Promise<void> {
-    try {
-      const container = this.dbService.getReviewProgramsContainer();
-      const GLOBAL_CLIENT_ID = '__global__';
-
-      for (const program of REVIEW_PROGRAM_SEEDS) {
-        const doc = {
-          ...program,
-          // Store null clientId as the synthetic key the container expects
-          clientId: program.clientId ?? GLOBAL_CLIENT_ID,
-        };
-        await container.items.upsert(doc);
-        this.logger.info('Seeded review program', {
-          id: program.id,
-          name: program.name,
-          version: program.version,
-          programType: program.programType,
-        });
-      }
-
-      this.logger.info('Review program seeding complete', {
-        count: REVIEW_PROGRAM_SEEDS.length,
-      });
-    } catch (err) {
-      // A seeding failure is fatal — the evaluation engine cannot run without programs.
-      this.logger.error('Failed to seed review programs', { error: err });
-      throw new Error(
-        `Review program seeding failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
   }
 
   /**
