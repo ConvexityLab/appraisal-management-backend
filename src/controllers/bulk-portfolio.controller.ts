@@ -238,7 +238,7 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { overrideDecision } = req.body as {
+      const { overrideDecision, overrideReason } = req.body as {
         reviewerNotes?: string;
         overrideDecision?: string | null;
         overrideReason?: string;
@@ -248,6 +248,13 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
       if (overrideDecision != null && !['Accept', 'Conditional', 'Reject'].includes(overrideDecision)) {
         return res.status(400).json({
           error: `overrideDecision must be 'Accept', 'Conditional', 'Reject', or null — got '${overrideDecision}'`,
+        });
+      }
+
+      // overrideReason is required whenever a (non-null) decision override is being set
+      if (overrideDecision != null && (!overrideReason || !overrideReason.trim())) {
+        return res.status(400).json({
+          error: 'overrideReason is required and must be non-empty when overrideDecision is set',
         });
       }
 

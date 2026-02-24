@@ -609,20 +609,25 @@ export class BulkPortfolioService {
     const updated: ReviewTapeResult = { ...results[idx]! };
 
     if (patch.reviewerNotes !== undefined) {
-      (updated as any).reviewerNotes = patch.reviewerNotes;
+      updated.reviewerNotes = patch.reviewerNotes;
     }
     if (patch.overrideDecision !== undefined) {
       if (patch.overrideDecision === null) {
-        // Clearing the override
-        delete (updated as any).overrideDecision;
-        delete (updated as any).overrideReason;
-        delete (updated as any).overriddenAt;
-        delete (updated as any).overriddenBy;
+        // Clearing the override — remove all override fields
+        delete updated.overrideDecision;
+        delete updated.overrideReason;
+        delete updated.overriddenAt;
+        delete updated.overriddenBy;
       } else {
-        (updated as any).overrideDecision = patch.overrideDecision;
-        (updated as any).overrideReason = patch.overrideReason ?? '';
-        (updated as any).overriddenAt = now;
-        (updated as any).overriddenBy = patchedBy;
+        if (patch.overrideReason == null || patch.overrideReason.trim() === '') {
+          throw new Error(
+            `overrideReason is required and must be non-empty when overrideDecision is set — got '${patch.overrideReason ?? '(absent)'}'`,
+          );
+        }
+        updated.overrideDecision = patch.overrideDecision;
+        updated.overrideReason = patch.overrideReason;
+        updated.overriddenAt = now;
+        updated.overriddenBy = patchedBy;
       }
     }
 
