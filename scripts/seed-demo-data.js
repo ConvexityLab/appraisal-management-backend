@@ -1201,6 +1201,226 @@ const TIMELINE_EVENTS = [
   ]),
 ];
 
+// ─── Bulk Portfolio Jobs ──────────────────────────────────────────────────────
+
+// Helper: generate a plausible ReviewAutoFlag result array
+function makeFlags(firedIds = []) {
+  const allFlags = [
+    { id: 'high-ltv',        label: 'High LTV',              description: 'LTV exceeds 80%',              severity: 'HIGH',   weight: 25 },
+    { id: 'high-cltv',       label: 'High CLTV',             description: 'CLTV exceeds 90%',             severity: 'HIGH',   weight: 20 },
+    { id: 'avm-gap',         label: 'High AVM Gap',          description: 'Appraised value vs AVM >10%',  severity: 'HIGH',   weight: 20 },
+    { id: 'high-gross-adj',  label: 'High Gross Adj',        description: 'Gross adj % >25%',             severity: 'MEDIUM', weight: 15 },
+    { id: 'non-mls-comps',   label: 'Non-MLS Comps >30%',    description: 'High proportion of non-MLS',   severity: 'MEDIUM', weight: 10 },
+    { id: 'unusual-appr',    label: 'Unusual Appreciation',  description: '24m appreciation >30%',        severity: 'MEDIUM', weight: 10 },
+    { id: 'high-risk-geo',   label: 'High-Risk Geography',   description: 'Census tract flagged',          severity: 'LOW',    weight: 5  },
+  ];
+  return allFlags.map(f => ({
+    ...f,
+    isFired: firedIds.includes(f.id),
+    actualValue: null,
+    thresholdValue: null,
+  }));
+}
+
+// Helper: build a compact ReviewTapeResult
+function makeLoan(row, overrides = {}) {
+  const base = {
+    rowIndex: row,
+    loanNumber: `LN-DEMO-${String(row).padStart(4, '0')}`,
+    borrowerName: ['Robert Walsh', 'Linda Chen', 'Marcus Davis', 'Priya Patel',
+                   'James Hernandez', 'Sarah Kim', 'Kevin O\'Brien', 'Ana Rodriguez'][row - 1] ?? `Borrower ${row}`,
+    loanPurpose: row % 3 === 0 ? 'Refinance' : 'Purchase',
+    loanType: 'Conventional',
+    loanAmount: 400000 + row * 25000,
+    appraisedValue: 480000 + row * 30000,
+    contractPrice: 475000 + row * 30000,
+    ltv: 0.79 + (row % 4) * 0.03,
+    cltv: 0.79 + (row % 4) * 0.03,
+    occupancyType: 'Owner-Occupied',
+    propertyAddress: `${1000 + row * 111} Oak Street`,
+    city: ['Dallas', 'Plano', 'Irving', 'Arlington', 'Frisco', 'McKinney', 'Garland', 'Richardson'][row - 1] ?? 'Dallas',
+    county: 'Dallas',
+    state: 'TX',
+    zip: `752${String(row).padStart(2, '0')}`,
+    propertyType: 'SFR',
+    units: 1,
+    yearBuilt: 1990 + row * 2,
+    gla: 1800 + row * 100,
+    bedrooms: 3,
+    bathsFull: 2,
+    conditionRating: 'C3',
+    qualityRating: 'Q3',
+    appraisalEffectiveDate: daysAgo(30 - row).substring(0, 10),
+    formType: '1004',
+    numComps: 3 + row % 3,
+    avgDistanceMi: 0.5 + row * 0.2,
+    avgNetAdjPct: 0.04 + (row % 3) * 0.02,
+    avgGrossAdjPct: 0.12 + (row % 4) * 0.04,
+    avmValue: 465000 + row * 28000,
+    avmGapPct: 0.03 + (row % 5) * 0.025,
+    collateralRiskRating: 'Low',
+    marketTrend: 'Stable',
+    avgDom: 18 + row,
+    monthsInventory: 2.5 + row * 0.3,
+    dataQualityIssues: [],
+    evaluatedAt: daysAgo(1),
+    programId: 'vision-appraisal-v1.0',
+    programVersion: '1.0',
+    manualFlagResults: [],
+    ...overrides,
+  };
+  return base;
+}
+
+const TAPE_EVAL_LOANS_JOB1 = [
+  { ...makeLoan(1), overallRiskScore: 18.5, computedDecision: 'Accept',
+    autoFlagResults: makeFlags([]) },
+  { ...makeLoan(2), overallRiskScore: 22.0, computedDecision: 'Accept',
+    autoFlagResults: makeFlags([]) },
+  { ...makeLoan(3), overallRiskScore: 31.5, computedDecision: 'Accept',
+    autoFlagResults: makeFlags(['unusual-appr']) },
+  { ...makeLoan(4), overallRiskScore: 28.0, computedDecision: 'Accept',
+    autoFlagResults: makeFlags([]) },
+  { ...makeLoan(5), overallRiskScore: 52.0, computedDecision: 'Conditional',
+    ltv: 0.85, cltv: 0.85,
+    autoFlagResults: makeFlags(['high-ltv', 'avm-gap']),
+    dataQualityIssues: [] },
+  { ...makeLoan(6), overallRiskScore: 61.5, computedDecision: 'Conditional',
+    avgGrossAdjPct: 0.28, avmGapPct: 0.13,
+    autoFlagResults: makeFlags(['high-gross-adj', 'avm-gap', 'non-mls-comps']) },
+  { ...makeLoan(7), overallRiskScore: 74.0, computedDecision: 'Reject',
+    ltv: 0.92, cltv: 0.92, avmGapPct: 0.21,
+    autoFlagResults: makeFlags(['high-ltv', 'high-cltv', 'avm-gap', 'high-gross-adj']) },
+  { ...makeLoan(8), overallRiskScore: 78.5, computedDecision: 'Reject',
+    ltv: 0.89, cltv: 0.93, appreciation24m: 0.38,
+    autoFlagResults: makeFlags(['high-ltv', 'high-cltv', 'unusual-appr', 'avm-gap']) },
+];
+
+const TAPE_EVAL_LOANS_JOB2 = [
+  { ...makeLoan(1), overallRiskScore: 24.0, computedDecision: 'Accept',
+    autoFlagResults: makeFlags([]) },
+  { ...makeLoan(2), overallRiskScore: 19.5, computedDecision: 'Accept',
+    autoFlagResults: makeFlags([]) },
+  { ...makeLoan(3), overallRiskScore: 55.0, computedDecision: 'Conditional',
+    ltv: 0.83,
+    autoFlagResults: makeFlags(['high-ltv']) },
+  { ...makeLoan(4), overallRiskScore: 71.0, computedDecision: 'Reject',
+    ltv: 0.91, avmGapPct: 0.17,
+    autoFlagResults: makeFlags(['high-ltv', 'avm-gap', 'high-gross-adj']) },
+  { ...makeLoan(5), overallRiskScore: 33.0, computedDecision: 'Accept',
+    autoFlagResults: makeFlags(['unusual-appr']) },
+];
+
+const BULK_PORTFOLIO_JOBS = [
+  // ── Job 1: COMPLETED tape evaluation — 8 loans ─────────────────────────────
+  {
+    id: 'demo-bulk-job-001',
+    type: 'bulk-portfolio-job',
+    tenantId: TENANT_ID,
+    clientId: 'demo-client-001',
+    jobName: 'Apex Q1 2026 Portfolio Review',
+    fileName: 'apex-q1-2026-tape.xlsx',
+    status: 'COMPLETED',
+    processingMode: 'TAPE_EVALUATION',
+    reviewProgramId: 'vision-appraisal-v1.0',
+    reviewProgramVersion: '1.0',
+    submittedAt: daysAgo(3),
+    submittedBy: 'demo-seed',
+    completedAt: daysAgo(3),
+    totalRows: 8,
+    successCount: 8,
+    failCount: 0,
+    skippedCount: 0,
+    reviewSummary: {
+      totalLoans: 8,
+      acceptCount: 4,
+      conditionalCount: 2,
+      rejectCount: 2,
+      avgRiskScore: 45.8,
+      maxRiskScore: 78.5,
+      flagBreakdown: {
+        'high-ltv': 3, 'high-cltv': 2, 'avm-gap': 4,
+        'high-gross-adj': 2, 'non-mls-comps': 1, 'unusual-appr': 2,
+      },
+    },
+    items: TAPE_EVAL_LOANS_JOB1,
+  },
+
+  // ── Job 2: COMPLETED tape evaluation — 5 loans ─────────────────────────────
+  {
+    id: 'demo-bulk-job-002',
+    type: 'bulk-portfolio-job',
+    tenantId: TENANT_ID,
+    clientId: 'demo-client-002',
+    jobName: 'Lone Star Feb Tape',
+    fileName: 'lonestar-feb-tape.xlsx',
+    status: 'COMPLETED',
+    processingMode: 'TAPE_EVALUATION',
+    reviewProgramId: 'vision-appraisal-v1.0',
+    reviewProgramVersion: '1.0',
+    submittedAt: daysAgo(1),
+    submittedBy: 'demo-seed',
+    completedAt: daysAgo(1),
+    totalRows: 5,
+    successCount: 5,
+    failCount: 0,
+    skippedCount: 0,
+    reviewSummary: {
+      totalLoans: 5,
+      acceptCount: 3,
+      conditionalCount: 1,
+      rejectCount: 1,
+      avgRiskScore: 40.5,
+      maxRiskScore: 71.0,
+      flagBreakdown: {
+        'high-ltv': 2, 'avm-gap': 2, 'high-gross-adj': 1, 'unusual-appr': 1,
+      },
+    },
+    items: TAPE_EVAL_LOANS_JOB2,
+  },
+
+  // ── Job 3: PARTIAL order-creation job (2 failed rows) ──────────────────────
+  {
+    id: 'demo-bulk-job-003',
+    type: 'bulk-portfolio-job',
+    tenantId: TENANT_ID,
+    clientId: 'demo-client-001',
+    jobName: 'Apex March Batch Orders',
+    fileName: 'apex-march-orders.xlsx',
+    status: 'PARTIAL',
+    processingMode: 'ORDER_CREATION',
+    submittedAt: daysAgo(2),
+    submittedBy: 'demo-seed',
+    completedAt: daysAgo(2),
+    totalRows: 5,
+    successCount: 3,
+    failCount: 2,
+    skippedCount: 0,
+    items: [
+      { rowIndex: 1, loanNumber: 'APX-BATCH-001', analysisType: 'FRAUD',
+        propertyAddress: '4821 Mockingbird Ln', city: 'Dallas', state: 'TX', zipCode: '75209',
+        borrowerFirstName: 'James', borrowerLastName: 'Whitfield',
+        status: 'CREATED', orderId: 'demo-order-001', orderNumber: 'APX-2026-00101' },
+      { rowIndex: 2, loanNumber: 'APX-BATCH-002', analysisType: 'QUICK_REVIEW',
+        propertyAddress: '2214 Preston Rd', city: 'Plano', state: 'TX', zipCode: '75024',
+        borrowerFirstName: 'Emily', borrowerLastName: 'Carter',
+        status: 'CREATED', orderId: 'demo-order-002', orderNumber: 'APX-2026-00102' },
+      { rowIndex: 3, loanNumber: 'APX-BATCH-003', analysisType: 'FRAUD',
+        propertyAddress: '900 Commerce St', city: 'Dallas', state: 'TX', zipCode: '75202',
+        borrowerFirstName: 'Carlos', borrowerLastName: 'Rivera',
+        status: 'FAILED', errorMessage: 'Duplicate loan number: APX-BATCH-003 already exists in this tenant' },
+      { rowIndex: 4, loanNumber: 'APX-BATCH-004', analysisType: 'AVM',
+        propertyAddress: '6714 Greenville Ave', city: 'Dallas', state: 'TX', zipCode: '75206',
+        borrowerFirstName: 'Denise', borrowerLastName: 'Torres',
+        status: 'CREATED' },
+      { rowIndex: 5, loanNumber: 'APX-BATCH-005', analysisType: 'DVR',
+        propertyAddress: '',
+        borrowerFirstName: 'Victor', borrowerLastName: 'Nguyen',
+        status: 'FAILED', validationErrors: ['propertyAddress is required', 'city is required', 'zipCode is required'] },
+    ],
+  },
+];
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function run() {
   console.log('\n🌱 Demo Data Seeder — Comprehensive End-to-End Seed');
@@ -1221,6 +1441,7 @@ async function run() {
     { name: 'Communications',         container: 'communications',          items: COMMUNICATIONS },
     { name: 'RFB Requests',           container: 'rfb-requests',            items: RFB_REQUESTS },
     { name: 'Timeline Events',        container: 'communications',          items: TIMELINE_EVENTS },
+    { name: 'Bulk Portfolio Jobs',    container: 'bulk-portfolio-jobs',     items: BULK_PORTFOLIO_JOBS },
   ];
 
   let totalItems = 0;
@@ -1251,7 +1472,11 @@ async function run() {
   console.log('   LS-2026-00202   PENDING_ASSIGN — Dallas 75214  (RFB open, 3 bids received)');
   console.log('   APX-2026-00105  NEW           — Irving 75038  (just submitted, drive-by)');
   console.log('   APX-2026-00106  IN_PROGRESS   — Dallas 75243  (fix-and-flip, ARV loaded)');
-  console.log('\n💡 Run "node scripts/check-orders.js" to verify the seeded orders are visible.\n');
+  console.log('\n� Demo bulk portfolio jobs:');
+  console.log('   demo-bulk-job-001  COMPLETED  TAPE_EVAL  8 loans  — Apex Q1 2026 (4 Accept / 2 Cond / 2 Reject)');
+  console.log('   demo-bulk-job-002  COMPLETED  TAPE_EVAL  5 loans  — Lone Star Feb (3 Accept / 1 Cond / 1 Reject)');
+  console.log('   demo-bulk-job-003  PARTIAL    ORDER_CREATE 5 rows — Apex March Batch (3 created / 2 failed)');
+  console.log('\n�💡 Run "node scripts/check-orders.js" to verify the seeded orders are visible.\n');
 }
 
 run().catch((err) => {
