@@ -330,6 +330,7 @@ jobs:
           --set-env-vars \
             NODE_ENV=production \
             AZURE_API_CLIENT_ID=${{ secrets.AZURE_API_CLIENT_ID }} \
+            AZURE_AUDIENCE=api://dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a \
             ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} \
             AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
             GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
