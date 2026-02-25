@@ -19,7 +19,7 @@
     "dev:production": "tsx --env-file .env --watch src/app-production.ts",
     "api": "tsx --env-file .env --watch src/app-production.ts",
     "test": "jest",
-    "test:unit": "jest --config=jest.config.simple.js --verbose",
+    "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run --reporter=verbose tests/integration",
     "test:integration:production": "vitest run --reporter=verbose tests/integration/production-api.test.ts",
     "test:comprehensive": "vitest run --reporter=verbose tests/integration/comprehensive-api.test.ts",

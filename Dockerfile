@@ -2,23 +2,27 @@
 # Stage 1: Build
 FROM node:22-alpine AS builder
 
+RUN npm install -g pnpm@9
+
 WORKDIR /usr/src/app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml ./
 COPY tsconfig*.json ./
 
 # Install all dependencies including dev dependencies for build
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY src/ ./src/
 
 # Build TypeScript
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: Production
 FROM node:22-alpine AS production
+
+RUN npm install -g pnpm@9
 
 # Install security updates
 RUN apk update && apk upgrade && apk add --no-cache dumb-init
@@ -31,9 +35,9 @@ RUN addgroup -g 1001 -S appuser && \
     adduser -S appuser -u 1001 -G appuser
 
 # Copy package files and install production dependencies only
-COPY package*.json ./
-RUN npm ci --only=production && \
-    npm cache clean --force
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod && \
+    pnpm store prune
 
 # Copy built application from builder stage
 COPY --from=builder /usr/src/app/dist ./dist

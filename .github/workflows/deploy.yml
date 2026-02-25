@@ -93,7 +93,7 @@ jobs:
           code:
             - 'src/**'
             - 'package.json'
-            - 'package-lock.json'
+            - 'pnpm-lock.yaml'
             - 'Dockerfile'
             - 'tsconfig*.json'
 
