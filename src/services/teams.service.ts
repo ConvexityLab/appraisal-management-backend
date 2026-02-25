@@ -95,14 +95,14 @@ export class TeamsService {
   private async initialize(): Promise<void> {
     try {
       const tenantId = process.env.AZURE_TENANT_ID;
-      const clientId = process.env.AZURE_CLIENT_ID;
 
       if (!tenantId) {
         this.logger.warn('Teams service not configured: AZURE_TENANT_ID missing');
         return;
       }
 
-      // Use DefaultAzureCredential (Managed Identity in Azure, local credentials in dev)
+      // Use DefaultAzureCredential (Managed Identity in Azure, local credentials in dev).
+      // AZURE_CLIENT_ID in the environment selects the user-assigned managed identity.
       const credential = new DefaultAzureCredential();
 
       // Initialize Graph client with Microsoft Graph permissions

@@ -328,9 +328,15 @@ jobs:
           --min-replicas $MIN_REPLICAS \
           --max-replicas $MAX_REPLICAS \
           --set-env-vars \
+            NODE_ENV=production \
+            AZURE_API_CLIENT_ID=${{ secrets.AZURE_API_CLIENT_ID }} \
+            ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} \
             AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
             GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
             SAMBANOVA_API_KEY=secretref:sambanova-api-key
+          # NOTE: AZURE_CLIENT_ID is intentionally NOT set here.
+          # DefaultAzureCredential uses it to select a user-assigned managed identity.
+          # It is provisioned by Bicep (infrastructure) alongside the identity assignment.
         
         # Ensure the required secrets exist on the Container App
         az containerapp secret set \

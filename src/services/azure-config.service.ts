@@ -129,7 +129,7 @@ export class AzureConfigService {
     return !!(
       process.env.WEBSITE_SITE_NAME || 
       process.env.CONTAINER_APP_NAME ||
-      process.env.AZURE_CLIENT_ID ||
+      process.env.IDENTITY_ENDPOINT || // Container Apps managed identity endpoint
       process.env.MSI_ENDPOINT
     );
   }

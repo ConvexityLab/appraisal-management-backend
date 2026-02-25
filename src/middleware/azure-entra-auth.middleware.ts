@@ -388,9 +388,12 @@ export function createAzureEntraAuth(): AzureEntraAuthMiddleware {
     return azureEntraAuthInstance;
   }
 
+  // AZURE_API_CLIENT_ID = Entra app registration ID used for JWT audience validation.
+  // Do NOT use AZURE_CLIENT_ID here — that env var is consumed by DefaultAzureCredential
+  // to select the correct user-assigned managed identity and must not be overloaded.
   const config: EntraAuthConfig = {
     tenantId: process.env.AZURE_TENANT_ID || '',
-    clientId: process.env.AZURE_CLIENT_ID || ''
+    clientId: process.env.AZURE_API_CLIENT_ID || ''
   };
 
   if (process.env.AZURE_AUDIENCE) {
@@ -402,7 +405,7 @@ export function createAzureEntraAuth(): AzureEntraAuthMiddleware {
 
   if (!config.tenantId || !config.clientId) {
     logger.warn('Azure Entra ID not configured - authentication will fail in production');
-    logger.warn('Required environment variables: AZURE_TENANT_ID, AZURE_CLIENT_ID');
+    logger.warn('Required environment variables: AZURE_TENANT_ID, AZURE_API_CLIENT_ID');
   }
 
   logger.info('Creating NEW Azure Entra auth instance with JWKS cache');
