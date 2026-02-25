@@ -300,10 +300,10 @@ jobs:
         
     - name: Update API Container App with new image
       run: |
-        echo " Updating Container App with new image..."
+        echo " Updating Container App with new image and environment config..."
         
         # Determine scaling based on environment
-        if [[ "${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
+        if [["${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
           MIN_REPLICAS=2
           MAX_REPLICAS=10
         else
@@ -316,7 +316,20 @@ jobs:
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
           --image ${{ needs.build-and-push-container.outputs.api-image-full-name }} \
           --min-replicas $MIN_REPLICAS \
-          --max-replicas $MAX_REPLICAS
+          --max-replicas $MAX_REPLICAS \
+          --set-env-vars \
+            AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
+            GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
+            SAMBANOVA_API_KEY=secretref:sambanova-api-key
+        
+        # Ensure the required secrets exist on the Container App
+        az containerapp secret set \
+          --name ${{ steps.get-app.outputs.api-name }} \
+          --resource-group ${{ steps.get-app.outputs.resource-group }} \
+          --secrets \
+            azure-openai-api-key="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+            google-gemini-api-key="${{ secrets.GOOGLE_GEMINI_API_KEY }}" \
+            sambanova-api-key="${{ secrets.SAMBANOVA_API_KEY }}"
         
         echo " Container App updated successfully"
         echo "   - Image: ${{ needs.build-and-push-container.outputs.api-image-full-name }}"

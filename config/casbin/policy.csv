@@ -78,6 +78,14 @@ p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "escala
 p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "escalation", read, allow
 
 # ============================================
+# AI ASSISTANT — available to all authenticated roles
+# ============================================
+p, admin:.*, ai:.*, generate, allow
+p, manager:.*, ai:.*, generate, allow
+p, qc_analyst:.*, ai:.*, generate, allow
+p, appraiser:.*, ai:.*, generate, allow
+
+# ============================================
 # SPECIAL PERMISSIONS
 # ============================================
 # Users with canViewAllOrders flag
