@@ -277,7 +277,9 @@ jobs:
   deploy-container-app:
     name: Deploy Container to Container App
     needs: [determine-environment, deploy-infrastructure, build-and-push-container, detect-changes]
-    if: needs.detect-changes.outputs.code == 'true'
+    if: |
+      needs.detect-changes.outputs.code == 'true' &&
+      (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
     runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     
