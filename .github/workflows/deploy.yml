@@ -53,7 +53,7 @@ jobs:
           echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
         elif [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
           echo "environment=staging" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=true" >> $GITHUB_OUTPUT
+          echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
         elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
           DISPATCH_ENV="${ENVIRONMENT_INPUT}"
           DISPATCH_DEPLOY="${DEPLOY_INFRA_INPUT}"
