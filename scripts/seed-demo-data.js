@@ -1,0 +1,1266 @@
+/**
+ * Comprehensive Demo Data Seeder
+ *
+ * Seeds end-to-end demo data so the entire platform is demoable:
+ *   - 5 Vendors with full profiles, certifications, performance metrics
+ *   - 3 Appraisers with licenses and availability
+ *   - 2 Clients (lenders)
+ *   - 3 Products (Full Appraisal 1004, Drive-By 2055, Desktop Review)
+ *   - 6 Orders across all workflow stages (NEW → IN_PROGRESS → QC_REVIEW → COMPLETED)
+ *   - QC Reviews (for completed orders)
+ *   - Communications history (email, SMS threads)
+ *   - Comparable analyses embedded directly on each order (comparableProperties[])
+ *   - 1 ARV analysis (fix-and-flip order)
+ *   - Matching criteria sets (geography + performance)
+ *   - 1 RFB request (with bids)
+ *   - Timeline events per order
+ *
+ * Usage: node scripts/seed-demo-data.js
+ * Idempotent: uses fixed IDs prefixed with "demo-" — re-running upserts cleanly.
+ */
+
+'use strict';
+
+require('dotenv').config();
+const { CosmosClient } = require('@azure/cosmos');
+const { DefaultAzureCredential } = require('@azure/identity');
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+const COSMOS_ENDPOINT =
+  process.env.COSMOS_ENDPOINT ||
+  process.env.AZURE_COSMOS_ENDPOINT ||
+  'https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/';
+const DATABASE_ID = 'appraisal-management';
+const TENANT_ID   = '885097ba-35ea-48db-be7a-a0aa7ff451bd';
+
+const credential = new DefaultAzureCredential();
+const cosmosClient = new CosmosClient({ endpoint: COSMOS_ENDPOINT, aadCredentials: credential });
+const db = cosmosClient.database(DATABASE_ID);
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString();
+}
+function daysFromNow(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString();
+}
+function hoursAgo(n) {
+  return new Date(Date.now() - n * 3600_000).toISOString();
+}
+
+async function upsert(containerName, item) {
+  const container = db.container(containerName);
+  await container.items.upsert(item);
+  process.stdout.write('.');
+}
+
+// ─── Clients ──────────────────────────────────────────────────────────────────
+const CLIENTS = [
+  {
+    id: 'demo-client-001',
+    type: 'client',
+    tenantId: TENANT_ID,
+    clientName: 'Apex Mortgage Corp',
+    contactPerson: 'Sandra Lee',
+    email: 'slee@apexmortgage.com',
+    phone: '+1-972-555-0100',
+    address: '4800 Lyndon B Johnson Fwy, Dallas, TX 75244',
+    clientType: 'LENDER',
+    status: 'ACTIVE',
+    contractedFeeSchedule: 'standard',
+    totalOrdersPlaced: 412,
+    createdAt: daysAgo(365),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: 'demo-client-002',
+    type: 'client',
+    tenantId: TENANT_ID,
+    clientName: 'Lone Star Home Loans',
+    contactPerson: 'Travis Baxter',
+    email: 'tbaxter@lonestarloans.com',
+    phone: '+1-214-555-0200',
+    address: '100 Crescent Ct, Dallas, TX 75201',
+    clientType: 'BROKER',
+    status: 'ACTIVE',
+    contractedFeeSchedule: 'volume-discount',
+    totalOrdersPlaced: 178,
+    createdAt: daysAgo(200),
+    updatedAt: daysAgo(5),
+  },
+];
+
+// ─── Products ─────────────────────────────────────────────────────────────────
+const PRODUCTS = [
+  {
+    id: 'demo-product-001',
+    type: 'product',
+    tenantId: TENANT_ID,
+    name: 'Full Appraisal 1004',
+    description: 'URAR full interior and exterior appraisal per FNMA 1004',
+    productCode: '1004-STD',
+    orderType: 'FULL_APPRAISAL',
+    standardFee: 550,
+    rushFee: 750,
+    turnaroundDays: 7,
+    rushTurnaroundDays: 3,
+    matchingCriteriaSets: ['demo-criteria-geo-dallas', 'demo-criteria-performance'],
+    autoAwardFirstBid: false,
+    status: 'ACTIVE',
+    createdAt: daysAgo(300),
+    updatedAt: daysAgo(10),
+  },
+  {
+    id: 'demo-product-002',
+    type: 'product',
+    tenantId: TENANT_ID,
+    name: 'Drive-By Appraisal 2055',
+    description: 'Exterior-only drive-by appraisal, FNMA 2055',
+    productCode: '2055-DRIVEBY',
+    orderType: 'DRIVE_BY',
+    standardFee: 375,
+    rushFee: 500,
+    turnaroundDays: 5,
+    rushTurnaroundDays: 2,
+    matchingCriteriaSets: ['demo-criteria-geo-dallas'],
+    autoAwardFirstBid: true,
+    status: 'ACTIVE',
+    createdAt: daysAgo(300),
+    updatedAt: daysAgo(10),
+  },
+  {
+    id: 'demo-product-003',
+    type: 'product',
+    tenantId: TENANT_ID,
+    name: 'Desktop Review',
+    description: 'Desk review of existing appraisal without field work',
+    productCode: 'DESK-REVIEW',
+    orderType: 'DESK_REVIEW',
+    standardFee: 250,
+    rushFee: 350,
+    turnaroundDays: 3,
+    rushTurnaroundDays: 1,
+    matchingCriteriaSets: [],
+    autoAwardFirstBid: true,
+    status: 'ACTIVE',
+    createdAt: daysAgo(300),
+    updatedAt: daysAgo(10),
+  },
+];
+
+// ─── Vendors ──────────────────────────────────────────────────────────────────
+const VENDORS = [
+  {
+    id: 'demo-vendor-001',
+    type: 'vendor',
+    tenantId: TENANT_ID,
+    businessName: 'Premier Appraisal Group',
+    contactName: 'John Smith',
+    email: 'john@premierappraisal.com',
+    phone: '+1-214-555-1001',
+    status: 'ACTIVE',
+    vendorType: 'AMC',
+    specialties: ['FULL_APPRAISAL', 'DRIVE_BY', 'DESK_REVIEW'],
+    serviceAreas: [
+      { state: 'TX', counties: ['Dallas', 'Collin', 'Denton', 'Tarrant'], zipCodes: [] },
+    ],
+    rating: 4.8,
+    averageQCScore: 91,
+    onTimeDeliveryRate: 0.94,
+    revisionRate: 0.06,
+    performanceScore: 88,
+    totalOrdersCompleted: 247,
+    currentActiveOrders: 8,
+    maxActiveOrders: 20,
+    isBusy: false,
+    standardFee: 500,
+    rushFee: 700,
+    averageTurnaroundDays: 5.2,
+    certificationTypes: ['SRA', 'AI-RRS'],
+    licenseExpiration: daysFromNow(300),
+    createdAt: daysAgo(540),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: 'demo-vendor-002',
+    type: 'vendor',
+    tenantId: TENANT_ID,
+    businessName: 'Rocky Mountain Valuations',
+    contactName: 'Maria Garcia',
+    email: 'maria@rmvaluations.com',
+    phone: '+1-303-555-2002',
+    status: 'ACTIVE',
+    vendorType: 'INDEPENDENT',
+    specialties: ['FULL_APPRAISAL', 'FIELD_REVIEW'],
+    serviceAreas: [
+      { state: 'TX', counties: ['Dallas', 'Tarrant', 'Parker'], zipCodes: [] },
+    ],
+    rating: 4.9,
+    averageQCScore: 94,
+    onTimeDeliveryRate: 0.97,
+    revisionRate: 0.03,
+    performanceScore: 95,
+    totalOrdersCompleted: 312,
+    currentActiveOrders: 5,
+    maxActiveOrders: 15,
+    isBusy: false,
+    standardFee: 525,
+    rushFee: 725,
+    averageTurnaroundDays: 4.8,
+    certificationTypes: ['MAI', 'SRA'],
+    licenseExpiration: daysFromNow(180),
+    createdAt: daysAgo(600),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: 'demo-vendor-003',
+    type: 'vendor',
+    tenantId: TENANT_ID,
+    businessName: 'Texas Property Experts LLC',
+    contactName: 'David Johnson',
+    email: 'david@txproperty.com',
+    phone: '+1-972-555-3003',
+    status: 'ACTIVE',
+    vendorType: 'AMC',
+    specialties: ['FULL_APPRAISAL', 'DRIVE_BY', 'EXTERIOR_ONLY'],
+    serviceAreas: [
+      { state: 'TX', counties: ['Dallas', 'Collin', 'Rockwall', 'Hunt'], zipCodes: [] },
+    ],
+    rating: 4.6,
+    averageQCScore: 87,
+    onTimeDeliveryRate: 0.89,
+    revisionRate: 0.09,
+    performanceScore: 82,
+    totalOrdersCompleted: 158,
+    currentActiveOrders: 12,
+    maxActiveOrders: 18,
+    isBusy: false,
+    standardFee: 480,
+    rushFee: 660,
+    averageTurnaroundDays: 6.1,
+    certificationTypes: ['SRA'],
+    licenseExpiration: daysFromNow(240),
+    createdAt: daysAgo(400),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: 'demo-vendor-004',
+    type: 'vendor',
+    tenantId: TENANT_ID,
+    businessName: 'Metroplex Appraisal Services',
+    contactName: 'Carla Washington',
+    email: 'cwashington@metroplex-appraisal.com',
+    phone: '+1-817-555-4004',
+    status: 'ACTIVE',
+    vendorType: 'INDEPENDENT',
+    specialties: ['FULL_APPRAISAL', 'BPO'],
+    serviceAreas: [
+      { state: 'TX', counties: ['Tarrant', 'Dallas', 'Wise', 'Hood'], zipCodes: [] },
+    ],
+    rating: 4.7,
+    averageQCScore: 90,
+    onTimeDeliveryRate: 0.92,
+    revisionRate: 0.07,
+    performanceScore: 86,
+    totalOrdersCompleted: 203,
+    currentActiveOrders: 4,
+    maxActiveOrders: 12,
+    isBusy: false,
+    standardFee: 510,
+    rushFee: 710,
+    averageTurnaroundDays: 5.5,
+    certificationTypes: ['AI-RRS', 'SRA'],
+    licenseExpiration: daysFromNow(365),
+    createdAt: daysAgo(480),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: 'demo-vendor-005',
+    type: 'vendor',
+    tenantId: TENANT_ID,
+    businessName: 'National Valuation Network',
+    contactName: 'Robert Chen',
+    email: 'rchen@nvn.com',
+    phone: '+1-469-555-5005',
+    status: 'ACTIVE',
+    vendorType: 'AMC',
+    specialties: ['FULL_APPRAISAL', 'DRIVE_BY', 'DESK_REVIEW', 'FIELD_REVIEW'],
+    serviceAreas: [
+      { state: 'TX', counties: ['Dallas', 'Collin', 'Denton', 'Tarrant', 'Rockwall', 'Kaufman'], zipCodes: [] },
+    ],
+    rating: 4.5,
+    averageQCScore: 85,
+    onTimeDeliveryRate: 0.88,
+    revisionRate: 0.11,
+    performanceScore: 79,
+    totalOrdersCompleted: 520,
+    currentActiveOrders: 18,
+    maxActiveOrders: 25,
+    isBusy: false,
+    standardFee: 465,
+    rushFee: 645,
+    averageTurnaroundDays: 6.8,
+    certificationTypes: ['SRA'],
+    licenseExpiration: daysFromNow(400),
+    createdAt: daysAgo(720),
+    updatedAt: daysAgo(1),
+  },
+];
+
+// ─── Appraisers ───────────────────────────────────────────────────────────────
+const APPRAISERS = [
+  {
+    id: 'demo-appraiser-001',
+    type: 'appraiser',
+    tenantId: TENANT_ID,
+    licenseState: 'TX',
+    firstName: 'Michael',
+    lastName: 'Thompson',
+    email: 'mthompson@premierappraisal.com',
+    phone: '+1-214-555-9001',
+    employmentStatus: 'staff',
+    status: 'active',
+    availability: 'available',
+    specialties: ['RESIDENTIAL', 'CONDO', 'TOWNHOME'],
+    rating: 4.9,
+    completedAppraisals: 186,
+    qcPassRate: 0.96,
+    currentWorkload: 3,
+    maxCapacity: 10,
+    averageTurnaroundTime: '4.5 days',
+    yearsOfExperience: 14,
+    licenses: [
+      {
+        id: 'lic-tx-mthompson',
+        type: 'certified_residential',
+        state: 'TX',
+        licenseNumber: 'TX-CR-1234567',
+        issuedDate: daysAgo(1825),
+        expirationDate: daysFromNow(547),
+        status: 'active',
+      },
+    ],
+    serviceArea: {
+      states: ['TX'],
+      counties: ['Dallas', 'Collin', 'Rockwall'],
+      radiusMiles: 40,
+      homeBase: { lat: 32.7767, lng: -96.7970 },
+    },
+    conflictProperties: [],
+    createdAt: daysAgo(365),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: 'demo-appraiser-002',
+    type: 'appraiser',
+    tenantId: TENANT_ID,
+    licenseState: 'TX',
+    firstName: 'Patricia',
+    lastName: 'Nguyen',
+    email: 'pnguyen@rmvaluations.com',
+    phone: '+1-972-555-9002',
+    employmentStatus: 'contract',
+    status: 'active',
+    availability: 'available',
+    specialties: ['RESIDENTIAL', 'MULTI_FAMILY'],
+    rating: 4.7,
+    completedAppraisals: 241,
+    qcPassRate: 0.94,
+    currentWorkload: 5,
+    maxCapacity: 12,
+    averageTurnaroundTime: '5.1 days',
+    yearsOfExperience: 18,
+    licenses: [
+      {
+        id: 'lic-tx-pnguyen',
+        type: 'certified_general',
+        state: 'TX',
+        licenseNumber: 'TX-CG-7654321',
+        issuedDate: daysAgo(2190),
+        expirationDate: daysFromNow(365),
+        status: 'active',
+      },
+    ],
+    serviceArea: {
+      states: ['TX'],
+      counties: ['Tarrant', 'Dallas', 'Denton'],
+      radiusMiles: 45,
+      homeBase: { lat: 32.7555, lng: -97.3308 },
+    },
+    conflictProperties: [],
+    createdAt: daysAgo(500),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: 'demo-appraiser-003',
+    type: 'appraiser',
+    tenantId: TENANT_ID,
+    licenseState: 'TX',
+    firstName: 'Kevin',
+    lastName: 'Okafor',
+    email: 'kokafor@txproperty.com',
+    phone: '+1-469-555-9003',
+    employmentStatus: 'freelance',
+    status: 'active',
+    availability: 'busy',
+    specialties: ['RESIDENTIAL', 'LAND'],
+    rating: 4.5,
+    completedAppraisals: 97,
+    qcPassRate: 0.91,
+    currentWorkload: 8,
+    maxCapacity: 9,
+    averageTurnaroundTime: '6.2 days',
+    yearsOfExperience: 7,
+    licenses: [
+      {
+        id: 'lic-tx-kokafor',
+        type: 'certified_residential',
+        state: 'TX',
+        licenseNumber: 'TX-CR-9988776',
+        issuedDate: daysAgo(730),
+        expirationDate: daysFromNow(200),
+        status: 'active',
+      },
+    ],
+    serviceArea: {
+      states: ['TX'],
+      counties: ['Dallas', 'Collin', 'Kaufman'],
+      radiusMiles: 35,
+      homeBase: { lat: 32.9186, lng: -96.6376 },
+    },
+    conflictProperties: [],
+    createdAt: daysAgo(200),
+    updatedAt: daysAgo(3),
+  },
+];
+
+// ─── Matching Criteria Sets ───────────────────────────────────────────────────
+const MATCHING_CRITERIA_SETS = [
+  {
+    id: 'demo-criteria-geo-dallas',
+    type: 'matching-criteria-set',
+    tenantId: TENANT_ID,
+    name: 'Dallas Metro Geography',
+    description: 'Limits providers to those serving Dallas, Collin, Tarrant, or Denton counties in TX',
+    combinator: 'OR',
+    criteria: [
+      { field: 'serviceAreas.state', operator: 'eq', value: 'TX', label: 'Texas-licensed' },
+      {
+        field: 'geo_fence',
+        operator: 'within_radius_miles',
+        value: { center: { lat: 32.7767, lng: -96.7970 }, radiusMiles: 60 },
+        label: 'Within 60 miles of Dallas CBD',
+      },
+    ],
+    providerTypes: ['APPRAISER', 'AMC'],
+    createdAt: daysAgo(30),
+    updatedAt: daysAgo(1),
+    createdBy: 'seed-script',
+  },
+  {
+    id: 'demo-criteria-performance',
+    type: 'matching-criteria-set',
+    tenantId: TENANT_ID,
+    name: 'High-Performance Threshold',
+    description: 'Only vendors with QC score ≥ 88 and on-time delivery ≥ 90%',
+    combinator: 'AND',
+    criteria: [
+      { field: 'averageQCScore',       operator: 'gte', value: 88,   label: 'QC Score ≥ 88' },
+      { field: 'onTimeDeliveryRate',   operator: 'gte', value: 0.90, label: 'On-time ≥ 90%' },
+      { field: 'revisionRate',         operator: 'lte', value: 0.10, label: 'Revision rate ≤ 10%' },
+    ],
+    providerTypes: ['APPRAISER', 'AMC'],
+    createdAt: daysAgo(30),
+    updatedAt: daysAgo(1),
+    createdBy: 'seed-script',
+  },
+];
+
+// ─── Orders ───────────────────────────────────────────────────────────────────
+const ORDERS = [
+  // Order 1 — COMPLETED (7 days ago)
+  {
+    id: 'demo-order-001',
+    orderNumber: 'APX-2026-00101',
+    type: 'order',
+    tenantId: TENANT_ID,
+    status: 'COMPLETED',
+    priority: 'ROUTINE',
+    orderType: 'FULL_APPRAISAL',
+    productId: 'demo-product-001',
+    clientInformation: {
+      clientId: 'demo-client-001',
+      clientName: 'Apex Mortgage Corp',
+      contactPerson: 'Sandra Lee',
+      email: 'slee@apexmortgage.com',
+      phone: '+1-972-555-0100',
+      address: '4800 Lyndon B Johnson Fwy, Dallas, TX 75244',
+      loanNumber: 'LN-2026-445512',
+      borrowerName: 'James & Rachel Whitfield',
+      loanOfficer: 'Marcus Cooper',
+      loanOfficerEmail: 'mcooper@apexmortgage.com',
+    },
+    propertyDetails: {
+      address: '4821 Mockingbird Lane',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75209',
+      county: 'Dallas',
+      coordinates: { latitude: 32.8420, longitude: -96.8175 },
+      parcelNumber: '00-1234-0056-0000',
+      propertyType: 'SINGLE_FAMILY',
+      yearBuilt: 1986,
+      squareFootage: 2340,
+      lotSize: 8500,
+      bedrooms: 4,
+      bathrooms: 2.5,
+      stories: 2,
+      hasBasement: false,
+      hasGarage: true,
+    },
+    propertyAddress: {
+      street: '4821 Mockingbird Lane',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75209',
+      county: 'Dallas',
+      latitude: 32.8420,
+      longitude: -96.8175,
+    },
+    assignedVendorId: 'demo-vendor-002',
+    assignedVendorName: 'Rocky Mountain Valuations',
+    assignedAppraiserId: 'demo-appraiser-001',
+    assignedAppraiserName: 'Michael Thompson',
+    orderValue: 550,
+    totalFee: 550,
+    vendorFee: 425,
+    dueDate: daysAgo(7),
+    createdAt: daysAgo(21),
+    submittedAt: daysAgo(21),
+    acceptedAt: daysAgo(20),
+    deliveredAt: daysAgo(8),
+    completedAt: daysAgo(7),
+    lastUpdated: daysAgo(7),
+    qcStatus: 'PASSED',
+    qcScore: 93,
+    currentPhase: 'complete',
+    reportId: 'demo-report-001',
+    specialInstructions: 'Buyer is relocating from out of state. Expedite if possible.',
+    tags: ['purchase', 'single-family', 'completed'],
+    createdBy: 'demo-seed',
+    // Comparable sales embedded on the order — consumed by CompAnalysisTableV2 / report builder
+    comparableProperties: [
+      {
+        id: 'comp-s1',
+        slot: 'S1',
+        address: '4730 Mockingbird Ln, Dallas TX 75209',
+        salePrice: 485000,
+        saleDate: daysAgo(45),
+        squareFeet: 2290,
+        bedrooms: 4,
+        bathrooms: 2.5,
+        yearBuilt: 1989,
+        distanceMiles: 0.4,
+        adjustedSalePrice: 490000,
+        adjustments: { size: 2500, age: -1000, condition: 0 },
+        selectedCompFlag: true,
+      },
+      {
+        id: 'comp-s2',
+        slot: 'S2',
+        address: '5012 Pershing Ave, Dallas TX 75209',
+        salePrice: 495000,
+        saleDate: daysAgo(62),
+        squareFeet: 2410,
+        bedrooms: 4,
+        bathrooms: 2,
+        yearBuilt: 1984,
+        distanceMiles: 0.6,
+        adjustedSalePrice: 487500,
+        adjustments: { size: -3500, bathrooms: -3000, age: 1000 },
+        selectedCompFlag: true,
+      },
+      {
+        id: 'comp-s3',
+        slot: 'S3',
+        address: '4615 Prescott Ave, Dallas TX 75209',
+        salePrice: 478000,
+        saleDate: daysAgo(38),
+        squareFeet: 2200,
+        bedrooms: 3,
+        bathrooms: 2.5,
+        yearBuilt: 1991,
+        distanceMiles: 0.5,
+        adjustedSalePrice: 492000,
+        adjustments: { size: 7000, bedrooms: 5000, age: -1000 },
+        selectedCompFlag: true,
+      },
+    ],
+    indicatedValue: 490000,
+    reconciledValue: 490000,
+  },
+  // Order 2 — QC_REVIEW (delivered yesterday, awaiting QC)
+  {
+    id: 'demo-order-002',
+    orderNumber: 'APX-2026-00102',
+    type: 'order',
+    tenantId: TENANT_ID,
+    status: 'QC_REVIEW',
+    priority: 'ROUTINE',
+    orderType: 'FULL_APPRAISAL',
+    productId: 'demo-product-001',
+    clientInformation: {
+      clientId: 'demo-client-001',
+      clientName: 'Apex Mortgage Corp',
+      contactPerson: 'Sandra Lee',
+      email: 'slee@apexmortgage.com',
+      phone: '+1-972-555-0100',
+      address: '4800 Lyndon B Johnson Fwy, Dallas, TX 75244',
+      loanNumber: 'LN-2026-448833',
+      borrowerName: 'Omar & Fatima Hassan',
+      loanOfficer: 'Lisa Torres',
+      loanOfficerEmail: 'ltorres@apexmortgage.com',
+    },
+    propertyDetails: {
+      address: '7702 Preston Rd',
+      city: 'Plano',
+      state: 'TX',
+      zipCode: '75024',
+      county: 'Collin',
+      coordinates: { latitude: 33.0739, longitude: -96.8237 },
+      propertyType: 'SINGLE_FAMILY',
+      yearBuilt: 2001,
+      squareFootage: 3120,
+      lotSize: 9800,
+      bedrooms: 5,
+      bathrooms: 3,
+      stories: 2,
+      hasBasement: false,
+      hasGarage: true,
+    },
+    propertyAddress: {
+      street: '7702 Preston Rd',
+      city: 'Plano',
+      state: 'TX',
+      zipCode: '75024',
+      county: 'Collin',
+      latitude: 33.0739,
+      longitude: -96.8237,
+    },
+    assignedVendorId: 'demo-vendor-001',
+    assignedVendorName: 'Premier Appraisal Group',
+    assignedAppraiserId: 'demo-appraiser-002',
+    assignedAppraiserName: 'Patricia Nguyen',
+    orderValue: 550,
+    totalFee: 550,
+    vendorFee: 400,
+    dueDate: daysAgo(1),
+    createdAt: daysAgo(14),
+    submittedAt: daysAgo(14),
+    acceptedAt: daysAgo(13),
+    deliveredAt: daysAgo(1),
+    completedAt: null,
+    lastUpdated: daysAgo(1),
+    qcStatus: 'PENDING',
+    qcScore: null,
+    currentPhase: 'qc',
+    reportId: null,
+    tags: ['purchase', 'single-family', 'qc-pending'],
+    createdBy: 'demo-seed',
+  },
+  // Order 3 — IN_PROGRESS (appraiser has accepted, inspection scheduled for tomorrow)
+  {
+    id: 'demo-order-003',
+    orderNumber: 'LS-2026-00201',
+    type: 'order',
+    tenantId: TENANT_ID,
+    status: 'IN_PROGRESS',
+    priority: 'RUSH',
+    orderType: 'FULL_APPRAISAL',
+    productId: 'demo-product-001',
+    clientInformation: {
+      clientId: 'demo-client-002',
+      clientName: 'Lone Star Home Loans',
+      contactPerson: 'Travis Baxter',
+      email: 'tbaxter@lonestarloans.com',
+      phone: '+1-214-555-0200',
+      address: '100 Crescent Ct, Dallas, TX 75201',
+      loanNumber: 'LS-2026-009934',
+      borrowerName: 'Ryan Mackenzie',
+      loanOfficer: 'Travis Baxter',
+      loanOfficerEmail: 'tbaxter@lonestarloans.com',
+    },
+    propertyDetails: {
+      address: '1402 Swiss Ave',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75204',
+      county: 'Dallas',
+      coordinates: { latitude: 32.7890, longitude: -96.7601 },
+      propertyType: 'SINGLE_FAMILY',
+      yearBuilt: 1924,
+      squareFootage: 3850,
+      lotSize: 11200,
+      bedrooms: 4,
+      bathrooms: 3.5,
+      stories: 2,
+      hasBasement: true,
+      hasGarage: false,
+    },
+    propertyAddress: {
+      street: '1402 Swiss Ave',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75204',
+      county: 'Dallas',
+      latitude: 32.7890,
+      longitude: -96.7601,
+    },
+    assignedVendorId: 'demo-vendor-002',
+    assignedVendorName: 'Rocky Mountain Valuations',
+    assignedAppraiserId: 'demo-appraiser-001',
+    assignedAppraiserName: 'Michael Thompson',
+    orderValue: 750,
+    totalFee: 750,
+    vendorFee: 575,
+    dueDate: daysFromNow(3),
+    inspectionScheduledAt: daysFromNow(1),
+    createdAt: daysAgo(4),
+    submittedAt: daysAgo(4),
+    acceptedAt: daysAgo(3),
+    deliveredAt: null,
+    completedAt: null,
+    lastUpdated: hoursAgo(6),
+    qcStatus: null,
+    currentPhase: 'inspection',
+    specialInstructions: 'Historic district — exterior photos required per Dallas Landmark Commission guidelines.',
+    engagementInstructions: 'Contact borrower 24 hours before inspection: +1-214-555-7890',
+    tags: ['purchase', 'rush', 'historic', 'single-family'],
+    createdBy: 'demo-seed',
+  },
+  // Order 4 — PENDING_ASSIGNMENT (RFB broadcast, awaiting bids)
+  {
+    id: 'demo-order-004',
+    orderNumber: 'LS-2026-00202',
+    type: 'order',
+    tenantId: TENANT_ID,
+    status: 'PENDING_ASSIGNMENT',
+    priority: 'EXPEDITED',
+    orderType: 'FULL_APPRAISAL',
+    productId: 'demo-product-001',
+    clientInformation: {
+      clientId: 'demo-client-002',
+      clientName: 'Lone Star Home Loans',
+      contactPerson: 'Travis Baxter',
+      email: 'tbaxter@lonestarloans.com',
+      phone: '+1-214-555-0200',
+      address: '100 Crescent Ct, Dallas, TX 75201',
+      loanNumber: 'LS-2026-010102',
+      borrowerName: 'Mei & Wei Zhang',
+      loanOfficer: 'Travis Baxter',
+      loanOfficerEmail: 'tbaxter@lonestarloans.com',
+    },
+    propertyDetails: {
+      address: '5617 Gaston Ave',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75214',
+      county: 'Dallas',
+      coordinates: { latitude: 32.8120, longitude: -96.7408 },
+      propertyType: 'SINGLE_FAMILY',
+      yearBuilt: 1958,
+      squareFootage: 1980,
+      lotSize: 7200,
+      bedrooms: 3,
+      bathrooms: 2,
+      stories: 1,
+      hasBasement: false,
+      hasGarage: true,
+    },
+    propertyAddress: {
+      street: '5617 Gaston Ave',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75214',
+      county: 'Dallas',
+      latitude: 32.8120,
+      longitude: -96.7408,
+    },
+    assignedVendorId: null,
+    assignedVendorName: null,
+    orderValue: 550,
+    totalFee: 550,
+    vendorFee: null,
+    dueDate: daysFromNow(8),
+    createdAt: daysAgo(2),
+    submittedAt: daysAgo(2),
+    acceptedAt: null,
+    currentPhase: 'assignment',
+    rfbRequestId: 'demo-rfb-001',
+    tags: ['purchase', 'rfb-active'],
+    createdBy: 'demo-seed',
+  },
+  // Order 5 — NEW (just submitted, not yet assigned)
+  {
+    id: 'demo-order-005',
+    orderNumber: 'APX-2026-00105',
+    type: 'order',
+    tenantId: TENANT_ID,
+    status: 'NEW',
+    priority: 'ROUTINE',
+    orderType: 'DRIVE_BY',
+    productId: 'demo-product-002',
+    clientInformation: {
+      clientId: 'demo-client-001',
+      clientName: 'Apex Mortgage Corp',
+      contactPerson: 'Sandra Lee',
+      email: 'slee@apexmortgage.com',
+      phone: '+1-972-555-0100',
+      address: '4800 Lyndon B Johnson Fwy, Dallas, TX 75244',
+      loanNumber: 'LN-2026-451200',
+      borrowerName: 'Andre Williams',
+      loanOfficer: 'Kim Park',
+      loanOfficerEmail: 'kpark@apexmortgage.com',
+    },
+    propertyDetails: {
+      address: '3312 Walnut Hill Ln',
+      city: 'Irving',
+      state: 'TX',
+      zipCode: '75038',
+      county: 'Dallas',
+      coordinates: { latitude: 32.8786, longitude: -96.9695 },
+      propertyType: 'CONDO',
+      yearBuilt: 2012,
+      squareFootage: 1450,
+      lotSize: 0,
+      bedrooms: 2,
+      bathrooms: 2,
+      stories: 1,
+    },
+    propertyAddress: {
+      street: '3312 Walnut Hill Ln',
+      city: 'Irving',
+      state: 'TX',
+      zipCode: '75038',
+      county: 'Dallas',
+      latitude: 32.8786,
+      longitude: -96.9695,
+    },
+    assignedVendorId: null,
+    orderValue: 375,
+    totalFee: 375,
+    dueDate: daysFromNow(5),
+    createdAt: hoursAgo(3),
+    submittedAt: hoursAgo(3),
+    currentPhase: 'intake',
+    tags: ['refinance', 'condo', 'new'],
+    createdBy: 'demo-seed',
+  },
+  // Order 6 — ARV / Fix-and-Flip order (IN_PROGRESS with ARV analysis)
+  {
+    id: 'demo-order-006',
+    orderNumber: 'APX-2026-00106',
+    type: 'order',
+    tenantId: TENANT_ID,
+    status: 'IN_PROGRESS',
+    priority: 'EXPEDITED',
+    orderType: 'FULL_APPRAISAL',
+    productId: 'demo-product-001',
+    loanPurpose: 'FIX_FLIP',
+    clientInformation: {
+      clientId: 'demo-client-001',
+      clientName: 'Apex Mortgage Corp',
+      contactPerson: 'Sandra Lee',
+      email: 'slee@apexmortgage.com',
+      phone: '+1-972-555-0100',
+      address: '4800 Lyndon B Johnson Fwy, Dallas, TX 75244',
+      loanNumber: 'LN-2026-453801',
+      borrowerName: 'Cornerstone Realty Investments LLC',
+      loanOfficer: 'Marcus Cooper',
+      loanOfficerEmail: 'mcooper@apexmortgage.com',
+    },
+    propertyDetails: {
+      address: '8814 Abrams Rd',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75243',
+      county: 'Dallas',
+      coordinates: { latitude: 32.9001, longitude: -96.7219 },
+      propertyType: 'SINGLE_FAMILY',
+      yearBuilt: 1972,
+      squareFootage: 1780,
+      lotSize: 8200,
+      bedrooms: 3,
+      bathrooms: 1.5,
+      stories: 1,
+      hasBasement: false,
+      hasGarage: true,
+    },
+    propertyAddress: {
+      street: '8814 Abrams Rd',
+      city: 'Dallas',
+      state: 'TX',
+      zipCode: '75243',
+      county: 'Dallas',
+      latitude: 32.9001,
+      longitude: -96.7219,
+    },
+    assignedVendorId: 'demo-vendor-004',
+    assignedVendorName: 'Metroplex Appraisal Services',
+    assignedAppraiserId: 'demo-appraiser-002',
+    assignedAppraiserName: 'Patricia Nguyen',
+    orderValue: 550,
+    totalFee: 550,
+    vendorFee: 420,
+    dueDate: daysFromNow(5),
+    arvAnalysisId: 'demo-arv-001',
+    createdAt: daysAgo(3),
+    submittedAt: daysAgo(3),
+    acceptedAt: daysAgo(2),
+    currentPhase: 'inspection',
+    tags: ['fix-flip', 'arv', 'investment'],
+    createdBy: 'demo-seed',
+  },
+];
+
+// ─── QC Reviews ───────────────────────────────────────────────────────────────
+const QC_REVIEWS = [
+  {
+    id: 'demo-qc-001',
+    type: 'qc-review',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-001',
+    orderNumber: 'APX-2026-00101',
+    reviewerId: 'qc-analyst-001',
+    reviewerName: 'Analyst: Auto-QC Engine',
+    status: 'COMPLETED',
+    result: 'PASSED',
+    overallScore: 93,
+    sections: [
+      { name: 'Subject Property', score: 95, status: 'PASSED', findings: [] },
+      { name: 'Comparable Selection', score: 91, status: 'PASSED', findings: [] },
+      { name: 'Adjustments', score: 88, status: 'PASSED', findings: [] },
+      { name: 'Market Analysis', score: 94, status: 'PASSED', findings: [] },
+      { name: 'Reconciliation', score: 97, status: 'PASSED', findings: [] },
+    ],
+    findings: [
+      {
+        id: 'finding-001',
+        category: 'COMPARABLE_SELECTION',
+        severity: 'minor',
+        description: 'Comparable #2 sale date is 7 months prior; time adjustment applied.',
+        status: 'resolved',
+      },
+    ],
+    startedAt: daysAgo(8),
+    completedAt: daysAgo(7),
+    createdAt: daysAgo(8),
+    updatedAt: daysAgo(7),
+  },
+  {
+    id: 'demo-qc-002',
+    type: 'qc-review',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-002',
+    orderNumber: 'APX-2026-00102',
+    reviewerId: null,
+    reviewerName: null,
+    status: 'PENDING',
+    result: null,
+    overallScore: null,
+    findings: [],
+    startedAt: null,
+    completedAt: null,
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+];
+
+// ─── ARV Analysis ─────────────────────────────────────────────────────────────
+const ARV_ANALYSES = [
+  {
+    id: 'demo-arv-001',
+    type: 'arv-analysis',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-006',
+    dealType: 'FIX_FLIP',
+    mode: 'HYBRID',
+    status: 'DRAFT',
+    asIsValue: 195000,
+    estimatedARV: 328000,
+    rehabBudget: 78000,
+    purchasePrice: 185000,
+    afterRepairEquity: 65000,
+    dealMetrics: {
+      maxAllowableOffer: 196800,
+      potentialProfit: 65000,
+      roi: 0.351,
+      arvLTV: 0.564,
+      debtServiceCoverageRatio: null,
+      breakEvenRentMonthly: null,
+    },
+    scopeOfWork: [
+      { id: 'sow-001', category: 'KITCHEN',    description: 'Full kitchen remodel — new cabinets, counters, appliances', estimatedCost: 28000, status: 'PLANNED' },
+      { id: 'sow-002', category: 'BATHROOMS',  description: 'Both bathrooms — new tile, vanity, fixtures',             estimatedCost: 14000, status: 'PLANNED' },
+      { id: 'sow-003', category: 'FLOORING',   description: 'Hardwood throughout main living areas',                   estimatedCost: 9500,  status: 'PLANNED' },
+      { id: 'sow-004', category: 'ROOF',       description: 'Full roof replacement',                                   estimatedCost: 12000, status: 'PLANNED' },
+      { id: 'sow-005', category: 'HVAC',       description: 'Replace 19-year-old HVAC system',                         estimatedCost: 7500,  status: 'PLANNED' },
+      { id: 'sow-006', category: 'EXTERIOR',   description: 'Paint exterior, landscaping, driveway repair',            estimatedCost: 7000,  status: 'PLANNED' },
+    ],
+    arvComps: [
+      {
+        id: 'arv-comp-1',
+        address: '8721 Abrams Rd, Dallas TX 75243',
+        salePrice: 332000,
+        saleDate: daysAgo(55),
+        squareFeet: 1820,
+        bedrooms: 3,
+        bathrooms: 2,
+        renovated: true,
+        distanceMiles: 0.3,
+        adjustedValue: 328000,
+      },
+      {
+        id: 'arv-comp-2',
+        address: '8905 Dartmouth Dr, Dallas TX 75243',
+        salePrice: 318000,
+        saleDate: daysAgo(72),
+        squareFeet: 1750,
+        bedrooms: 3,
+        bathrooms: 2,
+        renovated: true,
+        distanceMiles: 0.5,
+        adjustedValue: 326000,
+      },
+    ],
+    notes: 'Comparable properties in the Abrams corridor have appreciated ~14% post-renovation. Subject lot size (8,200 sqft) is above neighborhood median which supports the upper range.',
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(1),
+    createdBy: 'seed-script',
+  },
+];
+
+// ─── Communications ───────────────────────────────────────────────────────────
+const COMMUNICATIONS = [
+  {
+    id: 'demo-comm-001',
+    type: 'communication',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-003',
+    channel: 'SMS',
+    direction: 'OUTBOUND',
+    recipient: { name: 'Michael Thompson', phone: '+1-214-555-9001', type: 'APPRAISER' },
+    subject: null,
+    body: `New order APX-2026-00103 (RUSH). Property: 1402 Swiss Ave, Dallas TX 75204. Due: ${daysFromNow(3).substring(0, 10)}. Please confirm acceptance.`,
+    status: 'DELIVERED',
+    sentAt: daysAgo(4),
+    createdAt: daysAgo(4),
+  },
+  {
+    id: 'demo-comm-002',
+    type: 'communication',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-003',
+    channel: 'SMS',
+    direction: 'INBOUND',
+    sender: { name: 'Michael Thompson', phone: '+1-214-555-9001', type: 'APPRAISER' },
+    subject: null,
+    body: 'Confirmed. I will schedule inspection for tomorrow 10am. The borrower has been notified.',
+    status: 'RECEIVED',
+    receivedAt: daysAgo(3),
+    createdAt: daysAgo(3),
+  },
+  {
+    id: 'demo-comm-003',
+    type: 'communication',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-001',
+    channel: 'EMAIL',
+    direction: 'OUTBOUND',
+    recipient: { name: 'Sandra Lee', email: 'slee@apexmortgage.com', type: 'CLIENT' },
+    subject: 'Appraisal Report Delivered — Order APX-2026-00101',
+    body: 'Your appraisal report for 4821 Mockingbird Lane, Dallas TX has been completed and is available for review. Indicated Value: $490,000. QC Status: PASSED (Score: 93/100).',
+    status: 'DELIVERED',
+    sentAt: daysAgo(7),
+    createdAt: daysAgo(7),
+  },
+];
+
+// ─── RFB Request ──────────────────────────────────────────────────────────────
+const RFB_REQUESTS = [
+  {
+    id: 'demo-rfb-001',
+    type: 'rfb-request',
+    tenantId: TENANT_ID,
+    orderId: 'demo-order-004',
+    productId: 'demo-product-001',
+    criteriaSetIds: ['demo-criteria-geo-dallas', 'demo-criteria-performance'],
+    matchedProviderIds: ['demo-vendor-001', 'demo-vendor-002', 'demo-vendor-004'],
+    broadcastAt: daysAgo(2),
+    deadlineAt: daysFromNow(1),
+    status: 'BIDS_RECEIVED',
+    autoAward: false,
+    bids: [
+      {
+        id: 'demo-bid-001',
+        providerId: 'demo-vendor-001',
+        providerName: 'Premier Appraisal Group',
+        proposedFee: 510,
+        proposedTurnaroundDays: 6,
+        notes: 'Available to start immediately.',
+        status: 'PENDING',
+        respondedAt: hoursAgo(20),
+      },
+      {
+        id: 'demo-bid-002',
+        providerId: 'demo-vendor-002',
+        providerName: 'Rocky Mountain Valuations',
+        proposedFee: 525,
+        proposedTurnaroundDays: 5,
+        notes: 'Can complete in 5 business days. Strong Collin County experience.',
+        status: 'PENDING',
+        respondedAt: hoursAgo(14),
+      },
+      {
+        id: 'demo-bid-003',
+        providerId: 'demo-vendor-004',
+        providerName: 'Metroplex Appraisal Services',
+        proposedFee: 495,
+        proposedTurnaroundDays: 7,
+        notes: null,
+        status: 'PENDING',
+        respondedAt: hoursAgo(8),
+      },
+    ],
+    awardedBidId: null,
+    createdBy: 'seed-script',
+    createdAt: daysAgo(2),
+    updatedAt: hoursAgo(8),
+  },
+];
+
+// ─── Timeline Events ──────────────────────────────────────────────────────────
+function makeTimeline(orderId, events) {
+  return events.map((e, i) => ({
+    id: `demo-timeline-${orderId}-${i + 1}`,
+    type: 'timeline-event',
+    tenantId: TENANT_ID,
+    orderId,
+    eventType: e.type,
+    actor: e.actor,
+    timestamp: e.ts,
+    details: e.details,
+    systemGenerated: e.system !== false,
+  }));
+}
+
+const TIMELINE_EVENTS = [
+  ...makeTimeline('demo-order-001', [
+    { type: 'ORDER_CREATED',      actor: 'system',              ts: daysAgo(21), details: 'Order created from client portal',          system: true },
+    { type: 'VENDOR_ASSIGNED',    actor: 'auto-assignment',     ts: daysAgo(21), details: 'Assigned to Rocky Mountain Valuations',      system: true },
+    { type: 'ORDER_ACCEPTED',     actor: 'demo-vendor-002',     ts: daysAgo(20), details: 'Vendor accepted order',                      system: false },
+    { type: 'INSPECTION_SCHEDULED', actor: 'demo-appraiser-001', ts: daysAgo(19), details: 'Inspection scheduled with borrower',        system: false },
+    { type: 'INSPECTION_COMPLETED', actor: 'demo-appraiser-001', ts: daysAgo(14), details: 'On-site inspection completed',              system: false },
+    { type: 'REPORT_DELIVERED',   actor: 'demo-vendor-002',     ts: daysAgo(8),  details: 'Draft report submitted for QC',              system: true },
+    { type: 'QC_STARTED',         actor: 'qc-analyst-001',      ts: daysAgo(8),  details: 'QC review initiated',                       system: true },
+    { type: 'QC_COMPLETED',       actor: 'qc-analyst-001',      ts: daysAgo(7),  details: 'QC passed — score 93/100',                  system: true },
+    { type: 'ORDER_COMPLETED',    actor: 'system',              ts: daysAgo(7),  details: 'Order delivered to client',                  system: true },
+  ]),
+  ...makeTimeline('demo-order-002', [
+    { type: 'ORDER_CREATED',      actor: 'system',              ts: daysAgo(14), details: 'Order created from client portal' },
+    { type: 'VENDOR_ASSIGNED',    actor: 'auto-assignment',     ts: daysAgo(14), details: 'Assigned to Premier Appraisal Group' },
+    { type: 'ORDER_ACCEPTED',     actor: 'demo-vendor-001',     ts: daysAgo(13), details: 'Vendor accepted order', system: false },
+    { type: 'INSPECTION_COMPLETED', actor: 'demo-appraiser-002', ts: daysAgo(6), details: 'Inspection completed by Patricia Nguyen', system: false },
+    { type: 'REPORT_DELIVERED',   actor: 'demo-vendor-001',     ts: daysAgo(1),  details: 'Report submitted; QC queue' },
+    { type: 'QC_STARTED',         actor: 'system',              ts: daysAgo(1),  details: 'Automatic QC review initiated' },
+  ]),
+  ...makeTimeline('demo-order-003', [
+    { type: 'ORDER_CREATED',      actor: 'system',              ts: daysAgo(4),  details: 'RUSH order created' },
+    { type: 'VENDOR_ASSIGNED',    actor: 'auto-assignment',     ts: daysAgo(4),  details: 'Rush-matched to Rocky Mountain Valuations' },
+    { type: 'ORDER_ACCEPTED',     actor: 'demo-vendor-002',     ts: daysAgo(3),  details: 'Vendor accepted RUSH order', system: false },
+    { type: 'SMS_SENT',           actor: 'system',              ts: daysAgo(4),  details: 'Acceptance request SMS sent to appraiser' },
+    { type: 'SMS_RECEIVED',       actor: 'demo-appraiser-001',  ts: daysAgo(3),  details: 'Appraiser confirmed via SMS', system: false },
+    { type: 'INSPECTION_SCHEDULED', actor: 'demo-appraiser-001', ts: daysAgo(3), details: `Inspection set for ${daysFromNow(1).substring(0, 10)}`, system: false },
+  ]),
+  ...makeTimeline('demo-order-004', [
+    { type: 'ORDER_CREATED',      actor: 'system',              ts: daysAgo(2),  details: 'Order created' },
+    { type: 'RFB_BROADCAST',      actor: 'system',              ts: daysAgo(2),  details: 'RFB sent to 3 matched vendors' },
+    { type: 'BID_RECEIVED',       actor: 'demo-vendor-001',     ts: hoursAgo(20), details: 'Bid: $510 / 6 days', system: false },
+    { type: 'BID_RECEIVED',       actor: 'demo-vendor-002',     ts: hoursAgo(14), details: 'Bid: $525 / 5 days', system: false },
+    { type: 'BID_RECEIVED',       actor: 'demo-vendor-004',     ts: hoursAgo(8),  details: 'Bid: $495 / 7 days', system: false },
+  ]),
+  ...makeTimeline('demo-order-006', [
+    { type: 'ORDER_CREATED',      actor: 'system',              ts: daysAgo(3),  details: 'Fix-and-flip order created' },
+    { type: 'ARV_ANALYSIS_CREATED', actor: 'system',            ts: daysAgo(3),  details: 'ARV analysis initialized' },
+    { type: 'VENDOR_ASSIGNED',    actor: 'auto-assignment',     ts: daysAgo(3),  details: 'Assigned to Metroplex Appraisal Services' },
+    { type: 'ORDER_ACCEPTED',     actor: 'demo-vendor-004',     ts: daysAgo(2),  details: 'Vendor accepted order', system: false },
+  ]),
+];
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+async function run() {
+  console.log('\n🌱 Demo Data Seeder — Comprehensive End-to-End Seed');
+  console.log(`   Cosmos: ${COSMOS_ENDPOINT}`);
+  console.log(`   DB:     ${DATABASE_ID}`);
+  console.log(`   Tenant: ${TENANT_ID}\n`);
+
+  const sections = [
+    { name: 'Clients',                container: 'clients',                 items: CLIENTS },
+    { name: 'Products',               container: 'products',                items: PRODUCTS },
+    { name: 'Vendors',                container: 'vendors',                 items: VENDORS },
+    { name: 'Appraisers',             container: 'vendors',                 items: APPRAISERS },
+    { name: 'Matching Criteria',      container: 'matching-criteria-sets',  items: MATCHING_CRITERIA_SETS },
+    { name: 'Orders',                 container: 'orders',                  items: ORDERS },
+    { name: 'QC Reviews',             container: 'qc-reviews',              items: QC_REVIEWS },
+    // Comps are embedded on the order document — no separate container needed
+    { name: 'ARV Analyses',           container: 'arv-analyses',            items: ARV_ANALYSES },
+    { name: 'Communications',         container: 'communications',          items: COMMUNICATIONS },
+    { name: 'RFB Requests',           container: 'rfb-requests',            items: RFB_REQUESTS },
+    { name: 'Timeline Events',        container: 'communications',          items: TIMELINE_EVENTS },
+  ];
+
+  let totalItems = 0;
+  let errors = 0;
+
+  for (const section of sections) {
+    process.stdout.write(`  ${section.name.padEnd(25)} `);
+    for (const item of section.items) {
+      try {
+        await upsert(section.container, item);
+        totalItems++;
+      } catch (err) {
+        process.stdout.write('!');
+        errors++;
+        if (process.env.VERBOSE) {
+          console.error(`\n  ❌ ${section.container} / ${item.id}: ${err.message}`);
+        }
+      }
+    }
+    console.log(` (${section.items.length})`);
+  }
+
+  console.log(`\n✅ Done. ${totalItems} items upserted${errors > 0 ? `, ${errors} errors` : ''}.`);
+  console.log('\n📋 Demo order summary:');
+  console.log('   APX-2026-00101  COMPLETED     — Dallas 75209  (QC passed, value $490K)');
+  console.log('   APX-2026-00102  QC_REVIEW     — Plano 75024   (awaiting QC analyst)');
+  console.log('   LS-2026-00201   IN_PROGRESS   — Dallas 75204  (RUSH, inspection tomorrow)');
+  console.log('   LS-2026-00202   PENDING_ASSIGN — Dallas 75214  (RFB open, 3 bids received)');
+  console.log('   APX-2026-00105  NEW           — Irving 75038  (just submitted, drive-by)');
+  console.log('   APX-2026-00106  IN_PROGRESS   — Dallas 75243  (fix-and-flip, ARV loaded)');
+  console.log('\n💡 Run "node scripts/check-orders.js" to verify the seeded orders are visible.\n');
+}
+
+run().catch((err) => {
+  console.error('\n\n💥 Seed failed:', err.message);
+  if (err.code === 'REQUEST_ENTITY_TOO_LARGE') {
+    console.error('   Tip: One of the items is too large for Cosmos. Check ARV_ANALYSES or embedded comparableProperties on an order.');
+  }
+  if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+    console.error('   Tip: DefaultAzureCredential could not authenticate. Run "az login" first.');
+  }
+  process.exit(1);
+});
