@@ -193,6 +193,9 @@ export class FinalReportService {
     let filledPdfBytes: Uint8Array;
     try {
       filledPdfBytes = await this._generatePdf(template, fieldMap);
+      if (request.customPagePdfs?.length) {
+        filledPdfBytes = await this._appendCustomPages(filledPdfBytes, request.customPagePdfs);
+      }
     } catch (pdfError) {
       const failureReason = pdfError instanceof Error ? pdfError.message : String(pdfError);
       this.logger.error('PDF generation failed', { orderId, reportId, error: failureReason });
@@ -467,6 +470,34 @@ export class FinalReportService {
     }
 
     return map;
+  }
+
+  /**
+   * Append one or more addendum PDFs (base64-encoded) to the filled URAR bytes.
+   *
+   * Each entry in `customPagePdfs` is the base64-encoded output of a jsPDF document
+   * produced by the frontend (e.g. photo addendum, market condition addendum, location map).
+   * Pages are appended in array order after the last URAR page.
+   *
+   * Failures here bubble up into the same try/catch as `_generatePdf()` so they produce
+   * a FAILED report status rather than an unhandled server error.
+   */
+  private async _appendCustomPages(
+    urarPdfBytes: Uint8Array,
+    customPagePdfs: string[]
+  ): Promise<Uint8Array> {
+    const merged = await PDFDocument.load(urarPdfBytes);
+    for (const b64 of customPagePdfs) {
+      const addendumBytes = Buffer.from(b64, 'base64');
+      const addendum = await PDFDocument.load(addendumBytes);
+      const indices = addendum.getPageIndices();
+      const pages = await merged.copyPages(addendum, indices);
+      pages.forEach(p => merged.addPage(p));
+    }
+    this.logger.info('Custom addendum pages appended', {
+      addendumCount: customPagePdfs.length
+    });
+    return merged.save();
   }
 
   /**

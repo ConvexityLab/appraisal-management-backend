@@ -255,6 +255,67 @@ export class ValuationEngine {
     };
   }
 
+  /**
+   * Suggest ranked comparable properties for a subject.
+   * Backed by ValuationEngine CMA — no Bridge API dependency.
+   * Returns mocked data today; swap findComparableProperties() for a real
+   * Cosmos / MLS query when the data pipeline is ready.
+   */
+  async suggestComparables(
+    address: PropertyAddress,
+    subject: SubjectFeatures
+  ): Promise<CompSuggestion[]> {
+    const comps = await this.findComparableProperties(address);
+
+    return comps.map((comp, i): CompSuggestion => {
+      const sizeAdj = (subject.squareFootage - comp.squareFootage) * 75; // $75/sqft
+      const bedAdj  = (subject.bedrooms    - comp.bedrooms)    * 2_500;
+      const bathAdj = (subject.bathrooms   - comp.bathrooms)   * 1_500;
+      const totalAdj = sizeAdj + bedAdj + bathAdj;
+      const adjustedValue = comp.salePrice + totalAdj;
+
+      // Crude similarity: penalise distance, size diff, age diff
+      const sizeDiffPct  = Math.abs(comp.squareFootage - subject.squareFootage) / (subject.squareFootage || 1);
+      const distancePenalty = comp.distance * 0.05;
+      const similarityScore = Math.max(0, 1 - sizeDiffPct * 0.5 - distancePenalty);
+
+      const reasons: string[] = [];
+      if (sizeDiffPct < 0.1) reasons.push('Very similar square footage');
+      if (comp.bedrooms === subject.bedrooms) reasons.push('Same bedroom count');
+      if (comp.distance < 0.5) reasons.push('Within 0.5 mi of subject');
+      if (reasons.length === 0) reasons.push('Nearest available comparable');
+
+      return {
+        id: `ve-mock-${i + 1}`,
+        address: {
+          street: comp.address,
+          city: address.city || '',
+          state: address.state || '',
+          zip: address.zipCode,
+        },
+        salePrice: comp.salePrice,
+        saleDate: comp.saleDate.toISOString().slice(0, 10),
+        squareFootage: comp.squareFootage,
+        bedrooms: comp.bedrooms,
+        bathrooms: comp.bathrooms,
+        distance: comp.distance,
+        similarityScore: parseFloat(similarityScore.toFixed(3)),
+        reasoning: reasons.join('; '),
+        adjustments: {
+          size: Math.round(sizeAdj),
+          bedrooms: Math.round(bedAdj),
+          bathrooms: Math.round(bathAdj),
+          total: Math.round(totalAdj),
+        },
+        adjustedValue: Math.round(adjustedValue),
+        recommendationStrength:
+          similarityScore > 0.85 ? 'strong' :
+          similarityScore > 0.65 ? 'moderate' : 'weak',
+        source: 'valuation-engine' as const,
+      };
+    }).sort((a, b) => b.similarityScore - a.similarityScore);
+  }
+
   // Helper methods (simplified implementations for demonstration)
   private async findComparableProperties(address: PropertyAddress): Promise<ComparableProperty[]> {
     // Mock comparable properties
@@ -566,4 +627,43 @@ export interface ValuationInputs {
   risk: RiskAssessment;
   market: MarketTrendAnalysis;
   confidence: ConfidenceMetrics;
+}
+
+// ─── Comp Search / Suggest types ─────────────────────────────────────────────
+
+/** Subset of subject property features needed for comp matching. */
+export interface SubjectFeatures {
+  squareFootage: number;
+  bedrooms: number;
+  bathrooms: number;
+  yearBuilt?: number;
+  lotSize?: number;
+}
+
+/** A single comparable property suggestion returned by suggestComparables(). */
+export interface CompSuggestion {
+  id: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+  salePrice: number;
+  saleDate: string;          // ISO date "YYYY-MM-DD"
+  squareFootage: number;
+  bedrooms: number;
+  bathrooms: number;
+  distance: number;          // miles from subject
+  similarityScore: number;   // 0–1
+  reasoning: string;
+  adjustments: {
+    size: number;
+    bedrooms: number;
+    bathrooms: number;
+    total: number;
+  };
+  adjustedValue: number;
+  recommendationStrength: 'strong' | 'moderate' | 'weak';
+  source: 'valuation-engine';
 }

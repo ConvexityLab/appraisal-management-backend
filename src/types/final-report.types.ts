@@ -115,6 +115,12 @@ export interface FinalReportGenerationRequest {
   templateId: string;
   requestedBy: string;
   notes?: string;
+  /**
+   * Base64-encoded custom addendum page PDFs (jsPDF output from frontend).
+   * Each entry is appended after the last filled URAR page in array order.
+   * Example sources: photo addendum, market condition addendum, location map.
+   */
+  customPagePdfs?: string[];
 }
 
 /**

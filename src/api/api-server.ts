@@ -151,6 +151,10 @@ import { createReportsRouter } from '../controllers/reports.controller.js';
 // Import Final Reports Controller (Phase 7 — Final Delivery)
 import { createFinalReportsRouter } from '../controllers/final-reports.controller.js';
 
+// Import Comps Controller (ValuationEngine-backed comp search/suggest — no Bridge dependency)
+import { createCompsRouter } from '../controllers/comps.controller.js';
+import { createAiReportBuilderRouter } from '../controllers/ai-report-builder.controller.js';
+
 // Import Notification Rules Controller (H2 — DB-backed event alert configuration)
 import { notificationRulesRouter } from '../controllers/notification-rules.controller.js';
 
@@ -527,6 +531,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/final-reports',
       this.unifiedAuth.authenticate(),
       createFinalReportsRouter(this.dbService)
+    );
+
+    // Comps Search & Suggest — ValuationEngine-backed, no Bridge API dependency
+    // GET  /api/comps/search   — geo/zip search for comparable properties
+    // POST /api/comps/suggest  — ranked suggestions for a subject property
+    this.app.use('/api/comps',
+      this.unifiedAuth.authenticate(),
+      createCompsRouter()
     );
 
     // Notification Rules — DB-backed event alert configuration (admin)
@@ -947,6 +959,13 @@ export class AppraisalManagementAPIServer {
 
     this.app.get('/api/ai/health',
       this.aiServicesController.getServiceHealth
+    );
+
+    // AI Report Builder — natural language → @json-render component tree
+    // POST /api/ai/report-builder/generate
+    this.app.use('/api/ai/report-builder',
+      this.unifiedAuth.authenticate(),
+      createAiReportBuilderRouter()
     );
 
     // AVM (Automated Valuation Model) routes
