@@ -31,22 +31,24 @@ export interface UnifiedAuthRequest extends Request {
 export class UnifiedAuthMiddleware {
   private logger: Logger;
   private azureAuth: ReturnType<typeof createAzureEntraAuth>;
-  private testTokenGen: TestTokenGenerator;
+  private testTokenGen: TestTokenGenerator | null = null;
   private userProfileService: UserProfileService;
   private readonly allowTestTokens: boolean;
 
   constructor() {
     this.logger = new Logger();
     this.azureAuth = createAzureEntraAuth();
-    this.testTokenGen = new TestTokenGenerator();
     this.userProfileService = new UserProfileService();
     
-    // Allow test tokens in development/test environments
-    this.allowTestTokens = process.env.ALLOW_TEST_TOKENS === 'true' || 
-                           process.env.NODE_ENV === 'development' ||
-                           process.env.NODE_ENV === 'test';
+    // Allow test tokens only in non-production environments
+    this.allowTestTokens = process.env.NODE_ENV !== 'production' &&
+                           (process.env.ALLOW_TEST_TOKENS === 'true' ||
+                            process.env.NODE_ENV === 'development' ||
+                            process.env.NODE_ENV === 'test');
 
+    // Only instantiate TestTokenGenerator when actually needed — never in production
     if (this.allowTestTokens) {
+      this.testTokenGen = new TestTokenGenerator();
       this.logger.warn('⚠️  Test tokens are ENABLED - DO NOT USE IN PRODUCTION');
     }
   }
@@ -97,7 +99,7 @@ export class UnifiedAuthMiddleware {
             });
           }
           
-          const validation = this.testTokenGen.verifyToken(token);
+          const validation = this.testTokenGen!.verifyToken(token);
           
           if (validation.valid && validation.user) {
             req.user = validation.user;
@@ -164,7 +166,7 @@ export class UnifiedAuthMiddleware {
         
         // Check if it's a test token
         if (decoded?.isTestToken && this.allowTestTokens) {
-          const validation = this.testTokenGen.verifyToken(token);
+          const validation = this.testTokenGen!.verifyToken(token);
           
           if (validation.valid && validation.user) {
             req.user = validation.user;
