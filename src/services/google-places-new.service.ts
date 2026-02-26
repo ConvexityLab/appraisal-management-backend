@@ -330,12 +330,13 @@ export class GooglePlacesNewService {
     this.apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
     
     if (!this.apiKey) {
-      const error = 'Google Maps API key is required. Configure GOOGLE_MAPS_API_KEY environment variable.';
-      this.logger.error(error);
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error(error);
-      }
-      this.logger.warn('Running in development mode without Google Maps API - limited functionality');
+      this.logger.warn('GOOGLE_MAPS_API_KEY is not configured. Google Places features will be unavailable. Set GOOGLE_MAPS_API_KEY to enable.');
+    }
+  }
+
+  private requireApiKey(): void {
+    if (!this.apiKey) {
+      throw new Error('Google Maps API key is required but not configured. Set the GOOGLE_MAPS_API_KEY environment variable.');
     }
   }
 
