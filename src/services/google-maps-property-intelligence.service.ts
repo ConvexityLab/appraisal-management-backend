@@ -45,7 +45,6 @@ export class GoogleMapsPropertyIntelligenceService {
     if (!this.apiKey) {
       this.logger.warn('GOOGLE_MAPS_API_KEY is not configured. Google Maps features will be unavailable. Set GOOGLE_MAPS_API_KEY to enable.');
     }
-    }
 
     this.baseUrls = {
       places: 'https://maps.googleapis.com/maps/api/place',
