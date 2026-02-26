@@ -1,4 +1,4 @@
-{
+﻿{
     "openapi":  "3.0.0",
     "info":  {
                  "title":  "Appraisal Management API",
@@ -645,28 +645,34 @@
                                                                                              "Property Intelligence"
                                                                                          ],
                                                                                 "parameters":  [
-                                                                                                    {
-                                                                                                        "name":  "latitude",
-                                                                                                        "in":  "query",
-                                                                                                        "required":  true,
-                                                                                                        "schema":  {"type":  "number"},
-                                                                                                        "description":  "Property latitude"
-                                                                                                    },
-                                                                                                    {
-                                                                                                        "name":  "longitude",
-                                                                                                        "in":  "query",
-                                                                                                        "required":  true,
-                                                                                                        "schema":  {"type":  "number"},
-                                                                                                        "description":  "Property longitude"
-                                                                                                    },
-                                                                                                    {
-                                                                                                        "name":  "propertyId",
-                                                                                                        "in":  "query",
-                                                                                                        "required":  false,
-                                                                                                        "schema":  {"type":  "string"},
-                                                                                                        "description":  "Optional property ID"
-                                                                                                    }
-                                                                                                ],
+                                                                                                   {
+                                                                                                       "name":  "latitude",
+                                                                                                       "in":  "query",
+                                                                                                       "required":  true,
+                                                                                                       "schema":  {
+                                                                                                                      "type":  "number"
+                                                                                                                  },
+                                                                                                       "description":  "Property latitude"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "name":  "longitude",
+                                                                                                       "in":  "query",
+                                                                                                       "required":  true,
+                                                                                                       "schema":  {
+                                                                                                                      "type":  "number"
+                                                                                                                  },
+                                                                                                       "description":  "Property longitude"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "name":  "propertyId",
+                                                                                                       "in":  "query",
+                                                                                                       "required":  false,
+                                                                                                       "schema":  {
+                                                                                                                      "type":  "string"
+                                                                                                                  },
+                                                                                                       "description":  "Optional property ID"
+                                                                                                   }
+                                                                                               ],
                                                                                 "responses":  {
                                                                                                   "200":  {
                                                                                                               "description":  "Housing data"
@@ -1102,28 +1108,34 @@
                                                                                                "Property Intelligence"
                                                                                            ],
                                                                                   "parameters":  [
-                                                                                                      {
-                                                                                                          "name":  "latitude",
-                                                                                                          "in":  "query",
-                                                                                                          "required":  true,
-                                                                                                          "schema":  {"type":  "number"},
-                                                                                                          "description":  "Property latitude"
-                                                                                                      },
-                                                                                                      {
-                                                                                                          "name":  "longitude",
-                                                                                                          "in":  "query",
-                                                                                                          "required":  true,
-                                                                                                          "schema":  {"type":  "number"},
-                                                                                                          "description":  "Property longitude"
-                                                                                                      },
-                                                                                                      {
-                                                                                                          "name":  "propertyId",
-                                                                                                          "in":  "query",
-                                                                                                          "required":  false,
-                                                                                                          "schema":  {"type":  "string"},
-                                                                                                          "description":  "Optional property ID"
-                                                                                                      }
-                                                                                                  ],
+                                                                                                     {
+                                                                                                         "name":  "latitude",
+                                                                                                         "in":  "query",
+                                                                                                         "required":  true,
+                                                                                                         "schema":  {
+                                                                                                                        "type":  "number"
+                                                                                                                    },
+                                                                                                         "description":  "Property latitude"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "longitude",
+                                                                                                         "in":  "query",
+                                                                                                         "required":  true,
+                                                                                                         "schema":  {
+                                                                                                                        "type":  "number"
+                                                                                                                    },
+                                                                                                         "description":  "Property longitude"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "propertyId",
+                                                                                                         "in":  "query",
+                                                                                                         "required":  false,
+                                                                                                         "schema":  {
+                                                                                                                        "type":  "string"
+                                                                                                                    },
+                                                                                                         "description":  "Optional property ID"
+                                                                                                     }
+                                                                                                 ],
                                                                                   "responses":  {
                                                                                                     "200":  {
                                                                                                                 "description":  "Economics data"
@@ -1163,28 +1175,34 @@
                                                                                                    "Property Intelligence"
                                                                                                ],
                                                                                       "parameters":  [
-                                                                                                          {
-                                                                                                              "name":  "latitude",
-                                                                                                              "in":  "query",
-                                                                                                              "required":  true,
-                                                                                                              "schema":  {"type":  "number"},
-                                                                                                              "description":  "Property latitude"
-                                                                                                          },
-                                                                                                          {
-                                                                                                              "name":  "longitude",
-                                                                                                              "in":  "query",
-                                                                                                              "required":  true,
-                                                                                                              "schema":  {"type":  "number"},
-                                                                                                              "description":  "Property longitude"
-                                                                                                          },
-                                                                                                          {
-                                                                                                              "name":  "propertyId",
-                                                                                                              "in":  "query",
-                                                                                                              "required":  false,
-                                                                                                              "schema":  {"type":  "string"},
-                                                                                                              "description":  "Optional property ID"
-                                                                                                          }
-                                                                                                      ],
+                                                                                                         {
+                                                                                                             "name":  "latitude",
+                                                                                                             "in":  "query",
+                                                                                                             "required":  true,
+                                                                                                             "schema":  {
+                                                                                                                            "type":  "number"
+                                                                                                                        },
+                                                                                                             "description":  "Property latitude"
+                                                                                                         },
+                                                                                                         {
+                                                                                                             "name":  "longitude",
+                                                                                                             "in":  "query",
+                                                                                                             "required":  true,
+                                                                                                             "schema":  {
+                                                                                                                            "type":  "number"
+                                                                                                                        },
+                                                                                                             "description":  "Property longitude"
+                                                                                                         },
+                                                                                                         {
+                                                                                                             "name":  "propertyId",
+                                                                                                             "in":  "query",
+                                                                                                             "required":  false,
+                                                                                                             "schema":  {
+                                                                                                                            "type":  "string"
+                                                                                                                        },
+                                                                                                             "description":  "Optional property ID"
+                                                                                                         }
+                                                                                                     ],
                                                                                       "responses":  {
                                                                                                         "200":  {
                                                                                                                     "description":  "Census data"
@@ -1409,6 +1427,148 @@
                                                                                          }
                                                                              }
                                                            }
-                                               }
+                                               },
+                  "/api/bulk-portfolios":  {
+                                               "get":  {
+                                                           "operationId":  "getBulkPortfolioJobs",
+                                                           "summary":  "List bulk portfolio jobs",
+                                                           "tags":  [
+                                                                        "BulkPortfolios"
+                                                                    ],
+                                                           "parameters":  [
+                                                                              {
+                                                                                  "name":  "clientId",
+                                                                                  "in":  "query",
+                                                                                  "required":  false,
+                                                                                  "schema":  {
+                                                                                                 "type":  "string"
+                                                                                             }
+                                                                              }
+                                                                          ],
+                                                           "responses":  {
+                                                                             "200":  {
+                                                                                         "description":  "Jobs retrieved"
+                                                                                     }
+                                                                         }
+                                                       }
+                                           },
+                  "/api/bulk-portfolios/submit":  {
+                                                      "post":  {
+                                                                   "operationId":  "submitBulkPortfolio",
+                                                                   "summary":  "Submit a bulk portfolio batch",
+                                                                   "tags":  [
+                                                                                "BulkPortfolios"
+                                                                            ],
+                                                                   "responses":  {
+                                                                                     "201":  {
+                                                                                                 "description":  "Batch submitted"
+                                                                                             }
+                                                                                 }
+                                                               }
+                                                  },
+                  "/api/bulk-portfolios/{jobId}":  {
+                                                       "get":  {
+                                                                   "operationId":  "getBulkPortfolioJob",
+                                                                   "summary":  "Get a single bulk portfolio job",
+                                                                   "tags":  [
+                                                                                "BulkPortfolios"
+                                                                            ],
+                                                                   "parameters":  [
+                                                                                      {
+                                                                                          "name":  "jobId",
+                                                                                          "in":  "path",
+                                                                                          "required":  true,
+                                                                                          "schema":  {
+                                                                                                         "type":  "string"
+                                                                                                     }
+                                                                                      }
+                                                                                  ],
+                                                                   "responses":  {
+                                                                                     "200":  {
+                                                                                                 "description":  "Job retrieved"
+                                                                                             }
+                                                                                 }
+                                                               }
+                                                   },
+                  "/api/bulk-portfolios/{jobId}/review-results":  {
+                                                                      "get":  {
+                                                                                  "operationId":  "getBulkPortfolioReviewResults",
+                                                                                  "summary":  "Get tape evaluation results for a job",
+                                                                                  "tags":  [
+                                                                                               "BulkPortfolios"
+                                                                                           ],
+                                                                                  "parameters":  [
+                                                                                                     {
+                                                                                                         "name":  "jobId",
+                                                                                                         "in":  "path",
+                                                                                                         "required":  true,
+                                                                                                         "schema":  {
+                                                                                                                        "type":  "string"
+                                                                                                                    }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "responses":  {
+                                                                                                    "200":  {
+                                                                                                                "description":  "Review results retrieved"
+                                                                                                            }
+                                                                                                }
+                                                                              }
+                                                                  },
+                  "/api/bulk-portfolios/{jobId}/review-results/{loanNumber}":  {
+                                                                                   "patch":  {
+                                                                                                 "operationId":  "patchBulkPortfolioReviewResult",
+                                                                                                 "summary":  "Update reviewer notes / decision override for a loan",
+                                                                                                 "tags":  [
+                                                                                                              "BulkPortfolios"
+                                                                                                          ],
+                                                                                                 "parameters":  [
+                                                                                                                    {
+                                                                                                                        "name":  "jobId",
+                                                                                                                        "in":  "path",
+                                                                                                                        "required":  true,
+                                                                                                                        "schema":  {
+                                                                                                                                       "type":  "string"
+                                                                                                                                   }
+                                                                                                                    },
+                                                                                                                    {
+                                                                                                                        "name":  "loanNumber",
+                                                                                                                        "in":  "path",
+                                                                                                                        "required":  true,
+                                                                                                                        "schema":  {
+                                                                                                                                       "type":  "string"
+                                                                                                                                   }
+                                                                                                                    }
+                                                                                                                ],
+                                                                                                 "responses":  {
+                                                                                                                   "200":  {
+                                                                                                                               "description":  "Review result updated"
+                                                                                                                           }
+                                                                                                               }
+                                                                                             }
+                                                                               },
+                  "/api/bulk-portfolios/{jobId}/extraction-progress":  {
+                                                                           "get":  {
+                                                                                       "operationId":  "getBulkPortfolioExtractionProgress",
+                                                                                       "summary":  "Poll async extraction job progress",
+                                                                                       "tags":  [
+                                                                                                    "BulkPortfolios"
+                                                                                                ],
+                                                                                       "parameters":  [
+                                                                                                          {
+                                                                                                              "name":  "jobId",
+                                                                                                              "in":  "path",
+                                                                                                              "required":  true,
+                                                                                                              "schema":  {
+                                                                                                                             "type":  "string"
+                                                                                                                         }
+                                                                                                          }
+                                                                                                      ],
+                                                                                       "responses":  {
+                                                                                                         "200":  {
+                                                                                                                     "description":  "Extraction progress retrieved"
+                                                                                                                 }
+                                                                                                     }
+                                                                                   }
+                                                                       }
               }
 }
