@@ -422,11 +422,13 @@ export class OrderController {
               const orderData = orderResult.success ? orderResult.data : null;
               const fields = orderData ? buildOrderFields(orderData) : [];
               return this.documentService.listDocuments(tenantId, { orderId }).then((docResult) => {
-                if (!docResult.success || !docResult.data) return null;
-                const appraisalDocs = docResult.data.filter(
-                  (d) => d.category === 'appraisal-report' && !(d.metadata as any)?.axiomEvaluationId,
-                );
-                if (appraisalDocs.length === 0) return null;
+                const appraisalDocs = docResult.success && docResult.data
+                  ? docResult.data.filter(
+                      (d) => d.category === 'appraisal-report' && !(d.metadata as any)?.axiomEvaluationId,
+                    )
+                  : [];
+                // Submit to Axiom even with no documents — fields-only evaluation is valid
+                // per AXIOM_TEAM_REQUIREMENTS: "Either array may be empty"
                 const documents = appraisalDocs.map((d) => ({
                   documentName: d.name,
                   documentReference: d.blobUrl,

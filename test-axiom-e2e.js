@@ -77,16 +77,48 @@ async function runPhase1() {
   info(`Tenant:    ${TENANT_ID}`);
   info(`Client:    ${CLIENT_ID}`);
   info(`Auth:      ${AXIOM_KEY ? 'Bearer token set' : 'none (dev server — no auth required)'}`);
-  info(`Template:  complete-document-criteria-evaluation`);
+  info(`Pipeline: risk-evaluation v1.0.0 (inline — set AXIOM_PIPELINE_ID_RISK_EVAL=<uuid> when registered)`);
 
   const testOrderId = `e2e-test-${Date.now()}`;
   const payload = {
-    pipelineId: 'complete-document-criteria-evaluation',
+    // Inline Loom pipeline definition — Axiom's pipelineId requires a UUID for stored
+    // templates; use inline until the Axiom team provides registered template UUIDs.
+    pipeline: {
+      name: 'risk-evaluation',
+      version: '1.0.0',
+      stages: [
+        {
+          name: 'process-documents',
+          actor: 'DocumentProcessor',
+          mode: 'single',
+          input: {
+            documents: { path: 'trigger.documents' },
+            tenantId:  { path: 'trigger.tenantId' },
+            clientId:  { path: 'trigger.clientId' },
+          },
+          timeout: 120000,
+        },
+        {
+          name: 'evaluate-criteria',
+          actor: 'CriterionEvaluator',
+          mode: 'single',
+          input: {
+            fields:    { path: 'trigger.fields' },
+            programId: { path: 'trigger.programId' },
+            documents: { path: 'stages.process-documents' },
+            tenantId:  { path: 'trigger.tenantId' },
+            clientId:  { path: 'trigger.clientId' },
+          },
+          timeout: 180000,
+        },
+      ],
+    },
     input: {
       tenantId: TENANT_ID,
       clientId: CLIENT_ID,
       correlationId: testOrderId,
       correlationType: 'ORDER',
+      programId: 'FNMA-SEL-2024',
       webhookUrl: `${API_BASE || 'http://localhost:3011'}/api/axiom/webhook`,
       webhookSecret: process.env.AXIOM_WEBHOOK_SECRET || 'test-secret',
       fields: [
@@ -101,7 +133,6 @@ async function runPhase1() {
       documents: [
         { documentName: 'Appraisal Report', documentReference: `blob://appraisal-documents/${testOrderId}/report.pdf` },
       ],
-      schemaMode: 'RISK_EVALUATION',
     },
   };
 
@@ -291,7 +322,7 @@ async function main() {
     let orderId = ORDER_ID;
     if (!orderId) {
       if (process.stdin.isTTY) {
-        orderId = await prompt('\n  Enter the Cosmos order ID to transition to SUBMITTED\n  (must be in DRAFT or ACCEPTED state)\n  Order ID: ');
+        orderId = await prompt('\n  Enter the Cosmos order ID to transition to SUBMITTED\n  (must be in IN_PROGRESS state — e.g. demo-order-006)\n  Order ID: ');
       }
       if (!orderId) {
         warn('No TEST_ORDER_ID set and not running interactively — skipping Phase 2');
@@ -307,9 +338,10 @@ async function main() {
   console.log(exitCode === 0 ? '  🎉  ALL CHECKS PASSED' : '  💥  SOME CHECKS FAILED — see ❌ lines above');
   console.log('═'.repeat(60));
 
-  if (!AXIOM_KEY && runPhase2Flag) {
-    console.log('\n  To run Phase 1 (live Axiom probe), set AXIOM_API_KEY in .env');
-    console.log('  and re-run: PHASE=1 node test-axiom-e2e.js');
+  if (!AXIOM_BASE && runPhase2Flag) {
+    console.log('\n  To enable live mode, set AXIOM_API_BASE_URL in .env (AXIOM_API_KEY is optional)');
+    console.log('  To use a registered Axiom template instead of inline pipeline:');
+    console.log('    AXIOM_PIPELINE_ID_RISK_EVAL=<uuid> node test-axiom-e2e.js');
   }
 }
 

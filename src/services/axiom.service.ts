@@ -165,20 +165,70 @@ export class AxiomService {
   private enabled: boolean;
   private mockDelayMs: number;
 
-  // ── Axiom Cosmos pipeline-template IDs (seeded via standard-templates.ts) ──
-  // These are the human-readable string IDs registered in the `pipeline-templates`
-  // Cosmos container. Pass directly as `pipelineId` in POST /api/pipelines.
-  // Override via AXIOM_PIPELINE_ID_* env vars if you register custom templates.
+  // ── Inline Loom pipeline definitions ───────────────────────────────────────
+  // Axiom's POST /api/pipelines accepts either:
+  //   • pipelineId: "<uuid>"  — references a stored template in pipeline-templates Cosmos container
+  //   • pipeline: { ... }     — inline Loom definition sent with the request
+  //
+  // The dev server does NOT have our templates registered, so we use inline definitions.
+  // When the Axiom team provides registered template UUIDs, set:
+  //   AXIOM_PIPELINE_ID_RISK_EVAL=<uuid>
+  //   AXIOM_PIPELINE_ID_DOC_EXTRACT=<uuid>
+  //   AXIOM_PIPELINE_ID_BULK_EVAL=<uuid>
+  // and those UUIDs will be used instead of the inline definitions.
 
-  /** Full PDF→extraction→classification→schema-extract→criteria-eval pipeline. */
-  private static readonly TEMPLATE_RISK_EVAL   = 'complete-document-criteria-evaluation';
-  /** Adaptive PDF processing — auto-detects text vs image and routes accordingly. */
-  private static readonly TEMPLATE_DOC_EXTRACT = 'adaptive-document-processing';
+  /** Single-order: document processing + criteria evaluation pipeline. */
+  private static readonly PIPELINE_RISK_EVAL: LoomPipelineDefinition = {
+    name: 'risk-evaluation',
+    version: '1.0.0',
+    stages: [
+      {
+        name: 'process-documents',
+        actor: 'DocumentProcessor',
+        mode: 'single',
+        input: {
+          documents: { path: 'trigger.documents' },
+          tenantId:  { path: 'trigger.tenantId' },
+          clientId:  { path: 'trigger.clientId' },
+        },
+        timeout: 120000,
+      },
+      {
+        name: 'evaluate-criteria',
+        actor: 'CriterionEvaluator',
+        mode: 'single',
+        input: {
+          fields:    { path: 'trigger.fields' },
+          programId: { path: 'trigger.programId' },
+          documents: { path: 'stages.process-documents' },
+          tenantId:  { path: 'trigger.tenantId' },
+          clientId:  { path: 'trigger.clientId' },
+        },
+        timeout: 180000,
+      },
+    ],
+  };
 
-  // ── Inline Loom definition for BULK_EVAL ──────────────────────────────────
-  // No registered template exists for bulk/batch jobs. Used as-is until the
-  // Axiom team seeds a bulk pipeline template.
+  /** Document-only extraction pipeline (no criteria eval). */
+  private static readonly PIPELINE_DOC_EXTRACT: LoomPipelineDefinition = {
+    name: 'document-extraction',
+    version: '1.0.0',
+    stages: [
+      {
+        name: 'extract',
+        actor: 'DocumentProcessor',
+        mode: 'single',
+        input: {
+          documents: { path: 'trigger.documents' },
+          tenantId:  { path: 'trigger.tenantId' },
+          clientId:  { path: 'trigger.clientId' },
+        },
+        timeout: 120000,
+      },
+    ],
+  };
 
+  /** Bulk/batch: multiple loans in one pipeline job. */
   private static readonly PIPELINE_BULK_EVAL: LoomPipelineDefinition = {
     name: 'bulk-risk-evaluation',
     version: '1.0.0',
@@ -212,12 +262,12 @@ export class AxiomService {
   };
 
   /**
-   * Returns the `pipelineId` (registered Cosmos template) or `pipeline`
-   * (inline definition) param for POST /api/pipelines.
+   * Returns the `pipelineId` (registered Cosmos template UUID) or `pipeline`
+   * (inline Loom definition) param for POST /api/pipelines.
    *
-   * RISK_EVAL and DOC_EXTRACT use known registered template IDs by default.
-   * BULK_EVAL falls back to an inline definition — no registered template exists yet.
-   * Set AXIOM_PIPELINE_ID_<TYPE> env var to override any default.
+   * All three types default to inline definitions because the Axiom dev server
+   * does not have our templates registered. Set AXIOM_PIPELINE_ID_<TYPE> to a
+   * valid UUID when the Axiom team provisions registered templates in Cosmos.
    */
   private buildPipelineParam(
     type: 'RISK_EVAL' | 'DOC_EXTRACT' | 'BULK_EVAL',
@@ -225,9 +275,8 @@ export class AxiomService {
     const envOverride = process.env[`AXIOM_PIPELINE_ID_${type}`];
     if (envOverride) return { pipelineId: envOverride };
 
-    if (type === 'RISK_EVAL')   return { pipelineId: AxiomService.TEMPLATE_RISK_EVAL };
-    if (type === 'DOC_EXTRACT') return { pipelineId: AxiomService.TEMPLATE_DOC_EXTRACT };
-    // BULK_EVAL: no registered template — send inline definition
+    if (type === 'RISK_EVAL')   return { pipeline: AxiomService.PIPELINE_RISK_EVAL };
+    if (type === 'DOC_EXTRACT') return { pipeline: AxiomService.PIPELINE_DOC_EXTRACT };
     return { pipeline: AxiomService.PIPELINE_BULK_EVAL };
   }
 

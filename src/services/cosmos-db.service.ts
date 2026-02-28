@@ -395,18 +395,34 @@ export class CosmosDbService {
         };
       }
 
+      const existingOrder = existingResponse.data;
       const updatedOrder = {
-        ...existingResponse.data,
+        ...existingOrder,
         ...updates,
         updatedAt: new Date()
       };
 
-      // Use clientId as partition key (not status)
-      const { resource } = await this.ordersContainer.item(id, updatedOrder.clientId).replace(updatedOrder);
+      // The orders container is partitioned by /status.
+      // When status changes, the document must move partitions: delete from the old
+      // partition then create in the new one. When status is unchanged, a simple replace works.
+      const oldStatus = (existingOrder.status ?? existingOrder.id) as string;
+      const newStatus = (updatedOrder.status ?? updatedOrder.id) as string;
+
+      let resource: AppraisalOrder;
+      if (oldStatus !== newStatus) {
+        // Status change → delete from old partition, create in new partition
+        await this.ordersContainer.item(id, oldStatus).delete();
+        const createResponse = await this.ordersContainer.items.create(updatedOrder);
+        resource = createResponse.resource as AppraisalOrder;
+      } else {
+        // Same partition → in-place replace
+        const replaceResponse = await this.ordersContainer.item(id, oldStatus).replace(updatedOrder);
+        resource = replaceResponse.resource as AppraisalOrder;
+      }
 
       return {
         success: true,
-        data: resource as AppraisalOrder
+        data: resource
       };
 
     } catch (error) {
