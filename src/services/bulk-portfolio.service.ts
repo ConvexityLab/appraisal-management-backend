@@ -55,37 +55,6 @@ const DEFAULT_TURN_TIME_DAYS: Record<BulkAnalysisType, number> = {
   ROV: 3,
 };
 
-/**
- * Build structured Axiom pipeline fields from an order.
- * Only includes fields with a non-empty / non-zero value.
- */
-function buildOrderFields(
-  order: AppraisalOrder,
-): Array<{ fieldName: string; fieldType: string; value: unknown }> {
-  const addr = order.propertyAddress;
-  const prop = order.propertyDetails;
-  const loan = order.loanInformation;
-  const borrower = order.borrowerInformation;
-  return [
-    { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
-    { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
-    { fieldName: 'propertyAddress', fieldType: 'string', value: addr?.streetAddress ?? '' },
-    { fieldName: 'city',            fieldType: 'string', value: addr?.city ?? '' },
-    { fieldName: 'state',           fieldType: 'string', value: addr?.state ?? '' },
-    { fieldName: 'zipCode',         fieldType: 'string', value: addr?.zipCode ?? '' },
-    { fieldName: 'propertyType',    fieldType: 'string', value: String(prop?.propertyType ?? '') },
-    { fieldName: 'yearBuilt',       fieldType: 'number', value: prop?.yearBuilt ?? 0 },
-    { fieldName: 'gla',             fieldType: 'number', value: prop?.grossLivingArea ?? 0 },
-    { fieldName: 'bedrooms',        fieldType: 'number', value: prop?.bedrooms ?? 0 },
-    { fieldName: 'bathrooms',       fieldType: 'number', value: prop?.bathrooms ?? 0 },
-    { fieldName: 'borrowerName',    fieldType: 'string', value: `${borrower?.firstName ?? ''} ${borrower?.lastName ?? ''}`.trim() },
-  ].filter(
-    (f) =>
-      (typeof f.value === 'string' && f.value !== '') ||
-      (typeof f.value === 'number' && f.value !== 0),
-  );
-}
-
 export class BulkPortfolioService {
   private readonly logger: Logger;
   private _tapeEvaluationService: TapeEvaluationService | null = null;
@@ -236,12 +205,11 @@ export class BulkPortfolioService {
             orderNumber: (result.data as any).orderNumber,
           });
           successCount++;
-          // Auto-submit to Axiom AI pipeline (B-2) — fire-and-forget, never blocks order creation
+          // Auto-submit to Axiom AI pipeline — fire-and-forget, never blocks order creation
           const createdOrderId = result.data.id;
-          const createdOrder = result.data as unknown as AppraisalOrder;
           setImmediate(() => {
             this.axiomService
-              .submitOrderEvaluation(createdOrderId, buildOrderFields(createdOrder), [])
+              .submitOrderEvaluation(createdOrderId, this._orderToLoanData(item))
               .then((axiomResult) => {
                 if (axiomResult) {
                   this.dbService
@@ -317,24 +285,6 @@ export class BulkPortfolioService {
       failCount,
       skippedCount,
       status: finalStatus,
-    });
-
-    // Auto-submit CREATED orders to Axiom for risk evaluation (fire-and-forget)
-    setImmediate(() => {
-      const createdItems = results.filter(
-        (r): r is typeof r & { orderId: string } =>
-          r.status === 'CREATED' && typeof r.orderId === 'string',
-      );
-      for (const item of createdItems) {
-        this.axiomService
-          .submitOrderEvaluation(item.orderId, this._orderToLoanData(item))
-          .catch((err: Error) => {
-            this.logger.warn('Axiom auto-submit failed for order', {
-              orderId: item.orderId,
-              error: err.message,
-            });
-          });
-      }
     });
 
     return job;
