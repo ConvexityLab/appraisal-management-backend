@@ -93,6 +93,7 @@ export class TestTokenGenerator {
           name: decoded.name,
           role: decoded.role,
           tenantId: decoded.tenantId,
+          clientId: decoded.clientId,
           permissions: decoded.permissions,
           accessScope: decoded.accessScope
         }

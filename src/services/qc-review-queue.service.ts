@@ -303,6 +303,11 @@ export class QCReviewQueueService {
       notes?: string;
       conditions?: string[];
       score?: number;
+      /** Axiom evaluation snapshot stamped at review completion time */
+      axiomEvaluationId?: string;
+      axiomRiskScore?: number;
+      axiomStatus?: QCReviewQueueItem['axiomStatus'];
+      axiomCriteriaSnapshot?: QCReviewQueueItem['axiomCriteriaSnapshot'];
     }
   ): Promise<QCReviewQueueItem> {
     try {
@@ -336,6 +341,20 @@ export class QCReviewQueueService {
         score: decision.score,
         decidedAt: new Date(),
       };
+
+      // Stamp Axiom snapshot if provided — records the AI risk assessment at the moment of completion
+      if (decision.axiomEvaluationId !== undefined) {
+        queueItem.axiomEvaluationId = decision.axiomEvaluationId;
+      }
+      if (decision.axiomRiskScore !== undefined) {
+        queueItem.axiomRiskScore = decision.axiomRiskScore;
+      }
+      if (decision.axiomStatus !== undefined) {
+        queueItem.axiomStatus = decision.axiomStatus;
+      }
+      if (decision.axiomCriteriaSnapshot !== undefined) {
+        queueItem.axiomCriteriaSnapshot = decision.axiomCriteriaSnapshot;
+      }
 
       await this.dbService.upsertDocument('qc-reviews', queueItem);
 
@@ -810,7 +829,7 @@ export class QCReviewQueueService {
     }
   }
 
-  private async getQueueItem(queueItemId: string): Promise<QCReviewQueueItem | null> {
+  async getQueueItem(queueItemId: string): Promise<QCReviewQueueItem | null> {
     try {
       const result = await this.dbService.getDocument('qc-reviews', queueItemId);
       return result as QCReviewQueueItem;

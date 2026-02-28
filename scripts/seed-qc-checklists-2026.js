@@ -1,12 +1,30 @@
 /**
  * Seed QC Checklists with Document Requirements - 2026
- * 
- * Creates QC checklists that link criteria to required document categories
- * This enables the UI to show which documents are needed to validate each criterion
- * 
- * Uses the existing 'criteria' container (not a separate qc-checklists container)
- * 
+ *
+ * Creates QC checklists that link criteria to required document categories.
+ * This enables the UI to show which documents are needed to validate each criterion.
+ *
+ * Writes to the 'criteria' container (partitioned by /clientId) — this is where
+ * QCChecklistManagementService.CHECKLISTS_CONTAINER points.
+ *
  * Usage: node scripts/seed-qc-checklists-2026.js
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AXIOM CRITERION IDs
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The `axiomCriterionIds` values below are criterion concept codes
+ * (e.g. 'PROPERTY_ADDRESS_COMPLETE') used by the Axiom platform.
+ *
+ * These match the `concept` field returned by:
+ *   GET /api/criteria/clients/:clientId/tenants/:tenantId/programs/:programId/:version/compiled
+ *
+ * The fully-qualified Axiom nodeId format is:
+ *   program:{fullProgramId}:{taxonomyCategory}.{concept}:{seq}
+ *   e.g.  program:canonical-fnma-1033-v1.0.0:propertyIdentification.PROPERTY_ADDRESS_COMPLETE:001
+ *
+ * The QC execution engine matches criteria using the concept code,
+ * not the full nodeId, so these values are stable across recompilation.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 require('dotenv').config();
@@ -67,6 +85,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'CRITICAL',
               tags: ['address', 'identification'],
+              axiomCriterionIds: ['PROPERTY_ADDRESS_COMPLETE'], // APPR-1033-001
               
               dataRequirements: [
                 {
@@ -106,6 +125,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'HIGH',
               tags: ['legal', 'description'],
+              axiomCriterionIds: ['PARCEL_ID_MATCHES_TITLE'], // APPR-1033-002
               
               requiredDocumentCategories: ['appraisal-report', 'title-document'],
               
@@ -151,6 +171,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'HIGH',
               tags: ['photos', 'exterior'],
+              axiomCriterionIds: ['REQUIRED_PHOTOS_INCLUDED'], // APPR-1033-061
               
               // Photos are required to validate this
               requiredDocumentCategories: ['property-photo', 'inspection-report'],
@@ -178,6 +199,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'HIGH',
               tags: ['photos', 'interior'],
+              axiomCriterionIds: ['REQUIRED_PHOTOS_INCLUDED'], // APPR-1033-061 — same criterion covers both exterior and interior
               
               requiredDocumentCategories: ['property-photo', 'inspection-report'],
               
@@ -204,6 +226,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'CRITICAL',
               tags: ['condition', 'rating'],
+              axiomCriterionIds: ['PROPERTY_CONDITION_DOCUMENTED'], // APPR-1033-030
               
               requiredDocumentCategories: ['appraisal-report', 'property-photo', 'inspection-report'],
               
@@ -252,6 +275,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'HIGH',
               tags: ['comps', 'recency'],
+              axiomCriterionIds: ['THREE_CLOSED_COMPS_USED', 'COMPS_ARE_SUITABLE_SUBSTITUTES'], // APPR-1033-070, APPR-1033-071
               
               requiredDocumentCategories: ['appraisal-report', 'comparable-analysis', 'property-listing'],
               
@@ -276,6 +300,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'HIGH',
               tags: ['comps', 'location'],
+              axiomCriterionIds: ['COMPS_ARE_SUITABLE_SUBSTITUTES'], // APPR-1033-071
               
               requiredDocumentCategories: ['appraisal-report', 'comparable-analysis'],
               
@@ -299,6 +324,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'CRITICAL',
               tags: ['comps', 'similarity'],
+              axiomCriterionIds: ['COMPS_ARE_SUITABLE_SUBSTITUTES', 'ADJUSTMENTS_ARE_REASONABLE'], // APPR-1033-071, APPR-1033-074
               
               requiredDocumentCategories: ['appraisal-report', 'comparable-analysis', 'property-listing'],
               
@@ -346,6 +372,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'CRITICAL',
               tags: ['value', 'range'],
+              axiomCriterionIds: ['VALUE_SUPPORTED_BY_COMPS', 'ADJUSTMENTS_ARE_REASONABLE'], // APPR-1033-076, APPR-1033-074
               
               requiredDocumentCategories: ['appraisal-report', 'comparable-analysis'],
               
@@ -372,6 +399,7 @@ const sampleChecklist = {
               type: 'YES_NO',
               priority: 'HIGH',
               tags: ['reconciliation', 'explanation'],
+              axiomCriterionIds: ['VALUE_SUPPORTED_BY_COMPS'], // APPR-1033-076
               
               requiredDocumentCategories: ['appraisal-report'],
               
@@ -439,23 +467,23 @@ const sampleChecklist = {
 async function seedQCChecklists() {
   try {
     console.log('🚀 Starting QC checklist seeding...');
-    
-    const container = database.container('criteria');
-    
-    // Upsert the sample checklist
-    console.log('📝 Creating checklist:', sampleChecklist.name);
-    await container.items.upsert(sampleChecklist);
-    console.log('✅ Checklist created successfully in criteria container');
-    
+
+    // QC checklists live in the criteria container (partitioned by /clientId).
+    // QCChecklistManagementService.CHECKLISTS_CONTAINER = 'criteria'.
+    const criteriaContainer = database.container('criteria');
+    console.log('📝 Upserting into criteria container:', sampleChecklist.name);
+    await criteriaContainer.items.upsert(sampleChecklist);
+    console.log('✅ Upserted into criteria container');
+
     console.log('\n✨ QC checklist seeding completed!');
     console.log('📋 Created checklist:', sampleChecklist.id);
     console.log('📊 Total categories:', sampleChecklist.categories.length);
-    console.log('❓ Total questions:', 
-      sampleChecklist.categories.reduce((total, cat) => 
-        total + cat.subcategories.reduce((subTotal, sub) => 
+    console.log('❓ Total questions:',
+      sampleChecklist.categories.reduce((total, cat) =>
+        total + cat.subcategories.reduce((subTotal, sub) =>
           subTotal + sub.questions.length, 0), 0)
     );
-    
+
   } catch (error) {
     console.error('❌ Error seeding QC checklists:', error);
     throw error;

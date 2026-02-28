@@ -57,6 +57,37 @@ function normalizeOrder<T extends { status?: string }>(order: T): T {
   return order;
 }
 
+/**
+ * Build structured Axiom pipeline fields from an order.
+ * Only includes fields with a non-empty / non-zero value.
+ */
+function buildOrderFields(
+  order: AppraisalOrder,
+): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+  const addr = order.propertyAddress;
+  const prop = order.propertyDetails;
+  const loan = order.loanInformation;
+  const borrower = order.borrowerInformation;
+  return [
+    { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
+    { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
+    { fieldName: 'propertyAddress', fieldType: 'string', value: addr?.streetAddress ?? '' },
+    { fieldName: 'city',            fieldType: 'string', value: addr?.city ?? '' },
+    { fieldName: 'state',           fieldType: 'string', value: addr?.state ?? '' },
+    { fieldName: 'zipCode',         fieldType: 'string', value: addr?.zipCode ?? '' },
+    { fieldName: 'propertyType',    fieldType: 'string', value: String(prop?.propertyType ?? '') },
+    { fieldName: 'yearBuilt',       fieldType: 'number', value: prop?.yearBuilt ?? 0 },
+    { fieldName: 'gla',             fieldType: 'number', value: prop?.grossLivingArea ?? 0 },
+    { fieldName: 'bedrooms',        fieldType: 'number', value: prop?.bedrooms ?? 0 },
+    { fieldName: 'bathrooms',       fieldType: 'number', value: prop?.bathrooms ?? 0 },
+    { fieldName: 'borrowerName',    fieldType: 'string', value: `${borrower?.firstName ?? ''} ${borrower?.lastName ?? ''}`.trim() },
+  ].filter(
+    (f) =>
+      (typeof f.value === 'string' && f.value !== '') ||
+      (typeof f.value === 'number' && f.value !== 0),
+  );
+}
+
 export class OrderController {
   public router: Router;
   private dbService: CosmosDbService;
@@ -384,41 +415,38 @@ export class OrderController {
         if (newStatus === OrderStatus.SUBMITTED) {
           const order = result.data!;
 
-          // Auto-submit appraisal-report documents to Axiom AI if not already submitted (8.7)
-          const tenantId = 'test-tenant-123'; // Same constant as DocumentController
-          this.documentService.listDocuments(tenantId, { orderId }).then((docResult) => {
-            if (!docResult.success || !docResult.data) return;
-            const appraisalDocs = docResult.data.filter(
-              (d) => d.category === 'appraisal-report' && !(d.metadata as any)?.evaluationId,
-            );
-            for (const doc of appraisalDocs) {
-              this.axiomService.notifyDocumentUpload({
-                orderId,
-                documentType: 'appraisal',
-                documentUrl: doc.blobUrl,
-                metadata: {
-                  fileName: doc.name,
-                  fileSize: doc.fileSize,
-                  uploadedAt: doc.uploadedAt instanceof Date ? doc.uploadedAt.toISOString() : String(doc.uploadedAt),
-                  uploadedBy: doc.uploadedBy,
-                  documentId: doc.id,
-                },
-              }).then((axiomResult) => {
-                if (axiomResult.success && axiomResult.evaluationId) {
-                  logger.info('Auto-submitted appraisal doc to Axiom on SUBMITTED', {
-                    orderId,
-                    documentId: doc.id,
-                    evaluationId: axiomResult.evaluationId,
-                  });
-                  this.documentService.updateDocument(doc.id, tenantId, {
-                    metadata: { ...doc.metadata as Record<string, unknown>, evaluationId: axiomResult.evaluationId },
-                  }).catch((err) => logger.error('Failed to store evaluationId on document', { documentId: doc.id, error: err }));
-                }
-              }).catch((err) => {
-                logger.error('Auto-submit to Axiom failed for document', { orderId, documentId: doc.id, error: err });
+          // Auto-submit appraisal-report documents to Axiom AI via pipeline (A-1)
+          setImmediate(() => {
+            const tenantId = 'test-tenant-123';
+            this.dbService.findOrderById(orderId).then((orderResult) => {
+              const orderData = orderResult.success ? orderResult.data : null;
+              const fields = orderData ? buildOrderFields(orderData) : [];
+              return this.documentService.listDocuments(tenantId, { orderId }).then((docResult) => {
+                if (!docResult.success || !docResult.data) return null;
+                const appraisalDocs = docResult.data.filter(
+                  (d) => d.category === 'appraisal-report' && !(d.metadata as any)?.axiomEvaluationId,
+                );
+                if (appraisalDocs.length === 0) return null;
+                const documents = appraisalDocs.map((d) => ({
+                  documentName: d.name,
+                  documentReference: d.blobUrl,
+                }));
+                return this.axiomService.submitOrderEvaluation(orderId, fields, documents);
               });
-            }
-          }).catch((err) => logger.error('Failed to query docs for Axiom auto-submit', { orderId, error: err }));
+            }).then((axiomResult) => {
+              if (axiomResult) {
+                this.dbService.updateOrder(orderId, {
+                  axiomEvaluationId: axiomResult.evaluationId,
+                  axiomPipelineJobId: axiomResult.pipelineJobId,
+                  axiomStatus: 'submitted',
+                }).catch((err) =>
+                  logger.error('Failed to stamp Axiom fields on order after SUBMITTED', { orderId, error: err }),
+                );
+              }
+            }).catch((err) =>
+              logger.error('Auto-submit to Axiom failed on SUBMITTED status change', { orderId, error: err }),
+            );
+          });
 
           this.qcQueueService.addToQueue({
             orderId,

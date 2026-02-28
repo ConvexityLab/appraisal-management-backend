@@ -95,6 +95,8 @@ import { createTeamsRouter } from '../controllers/teams.controller';
 import { createServiceHealthRouter } from '../controllers/service-health.controller';
 import { createUnifiedCommunicationRouter } from '../controllers/unified-communication.controller';
 import { createAxiomRouter } from '../controllers/axiom.controller';
+import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
+import { AxiomService } from '../services/axiom.service.js';
 
 // Import Item 3: Enhanced Vendor Management controllers
 import { createVendorCertificationRouter } from '../controllers/vendor-certification.controller';
@@ -570,6 +572,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/axiom',
       this.unifiedAuth.authenticate(),
       createAxiomRouter(this.dbService)
+    );
+
+    // Axiom Criteria Programs — GET compiled criteria (cache-first) / POST force-recompile
+    this.app.use('/api/criteria',
+      this.unifiedAuth.authenticate(),
+      createCriteriaProgramsRouter(new AxiomService(this.dbService))
     );
 
     // ===== ITEM 3: ENHANCED VENDOR MANAGEMENT SYSTEM =====

@@ -42,7 +42,7 @@ export class QCChecklistManagementService {
   private dbService: CosmosDbService;
   private initialized = false;
 
-  private readonly CHECKLISTS_CONTAINER = 'qc_checklists';
+  private readonly CHECKLISTS_CONTAINER = 'criteria'; // QC checklist templates live in the criteria container
   private readonly ASSIGNMENTS_CONTAINER = 'qc_assignments';
 
   constructor(dbService?: CosmosDbService) {
@@ -137,17 +137,24 @@ export class QCChecklistManagementService {
   async getChecklist(checklistId: string, includeInactive = false): Promise<QCChecklist | null> {
     try {
       await this.ensureInitialized();
-      const response = await this.dbService.getItem<QCChecklist>(
-        this.CHECKLISTS_CONTAINER, 
-        checklistId
+
+      // criteria is partitioned by /clientId, so a point-read requires knowing
+      // the clientId upfront. Use a SQL query by id instead — it works across
+      // all partition key values without needing to know the clientId.
+      const response = await this.dbService.queryItems<QCChecklist>(
+        this.CHECKLISTS_CONTAINER,
+        'SELECT * FROM c WHERE c.id = @id',
+        [{ name: '@id', value: checklistId }]
       );
 
-      if (!response.success || !response.data) {
+      const checklist = response.data?.[0] ?? null;
+      if (!checklist) {
         return null;
       }
 
-      const checklist = response.data;
-      if (!includeInactive && !checklist.isActive) {
+      // Explicit false check: documents with isActive=undefined are treated as
+      // active (seed docs may use active:true rather than isActive:true).
+      if (!includeInactive && checklist.isActive === false) {
         return null;
       }
 

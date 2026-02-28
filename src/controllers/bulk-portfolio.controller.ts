@@ -7,6 +7,7 @@
  *   GET   /api/bulk-portfolios/:jobId                            → get single job with full item results
  *   GET   /api/bulk-portfolios/:jobId/review-results             → tape evaluation results for a job
  *   PATCH /api/bulk-portfolios/:jobId/review-results/:loanNumber → update reviewer notes / decision override
+ *   POST  /api/bulk-portfolios/:jobId/create-orders              → convert eligible tape results into orders
  *   GET   /api/bulk-portfolios/:jobId/extraction-progress        → poll async extraction job progress
  */
 
@@ -283,6 +284,53 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
         }
         logger.error('Bulk portfolio patch review result error', { error: err });
         return res.status(500).json({ error: 'Failed to update review result' });
+      }
+    },
+  );
+
+  /**
+   * POST /:jobId/create-orders
+   *
+   * Convert eligible ReviewTapeResult rows from a completed TAPE_EVALUATION job
+   * into AppraisalOrders.  Eligible rows are those with computedDecision (or
+   * overrideDecision) of 'Accept' or 'Conditional' that do not yet have an orderId.
+   *
+   * Idempotent: rows that already have an orderId are silently skipped.
+   *
+   * Returns:
+   *   201 { created, skipped, failed, results[] }
+   */
+  router.post(
+    '/:jobId/create-orders',
+    param('jobId').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      try {
+        const tenantId = resolveTenantId(req);
+        const submittedBy = req.user?.id ?? 'unknown';
+        const service = getService(dbService);
+
+        const summary = await service.createOrdersFromResults(
+          req.params['jobId']!,
+          tenantId,
+          submittedBy,
+        );
+
+        return res.status(201).json(summary);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        if (msg.includes('not found')) {
+          return res.status(404).json({ error: msg });
+        }
+        if (msg.includes('not a tape evaluation') || msg.includes('status')) {
+          return res.status(400).json({ error: msg });
+        }
+        logger.error('Bulk portfolio create-orders error', { error: err });
+        return res.status(500).json({ error: 'Failed to create orders from results', message: msg });
       }
     },
   );

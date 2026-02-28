@@ -5,6 +5,7 @@ import { BlobStorageService } from '../services/blob-storage.service';
 import { DocumentService } from '../services/document.service';
 import { AxiomService } from '../services/axiom.service';
 import { DocumentUploadRequest, DocumentUpdateRequest, DocumentListQuery, DocumentMetadata } from '../types/document.types';
+import type { AppraisalOrder } from '../types/index.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
 /**
@@ -46,6 +47,37 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
 
 /** Appraisal-report categories eligible for auto-submission to Axiom AI */
 const AXIOM_AUTO_SUBMIT_CATEGORIES = new Set(['appraisal-report', 'appraisal_report']);
+
+/**
+ * Build the Axiom fields array from an AppraisalOrder for use in submitOrderEvaluation.
+ * Only includes fields with a non-empty / non-zero value.
+ */
+function buildOrderFields(
+  order: AppraisalOrder,
+): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+  const addr = order.propertyAddress;
+  const prop = order.propertyDetails;
+  const loan = order.loanInformation;
+  const borrower = order.borrowerInformation;
+  return [
+    { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
+    { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
+    { fieldName: 'propertyAddress', fieldType: 'string', value: addr?.streetAddress ?? '' },
+    { fieldName: 'city',            fieldType: 'string', value: addr?.city ?? '' },
+    { fieldName: 'state',           fieldType: 'string', value: addr?.state ?? '' },
+    { fieldName: 'zipCode',         fieldType: 'string', value: addr?.zipCode ?? '' },
+    { fieldName: 'propertyType',    fieldType: 'string', value: String(prop?.propertyType ?? '') },
+    { fieldName: 'yearBuilt',       fieldType: 'number', value: prop?.yearBuilt ?? 0 },
+    { fieldName: 'gla',             fieldType: 'number', value: prop?.grossLivingArea ?? 0 },
+    { fieldName: 'bedrooms',        fieldType: 'number', value: prop?.bedrooms ?? 0 },
+    { fieldName: 'bathrooms',       fieldType: 'number', value: prop?.bathrooms ?? 0 },
+    { fieldName: 'borrowerName',    fieldType: 'string', value: `${borrower?.firstName ?? ''} ${borrower?.lastName ?? ''}`.trim() },
+  ].filter(
+    (f) =>
+      (typeof f.value === 'string' && f.value !== '') ||
+      (typeof f.value === 'number' && f.value !== 0),
+  );
+}
 
 export class DocumentController {
   public router: Router;
@@ -212,29 +244,34 @@ export class DocumentController {
 
       const savedDoc = result.data;
 
-      // Auto-submit appraisal reports to Axiom AI for analysis (fire-and-forget)
+      // Auto-submit appraisal reports to Axiom AI for risk evaluation (fire-and-forget)
       if (savedDoc.orderId && AXIOM_AUTO_SUBMIT_CATEGORIES.has(category || '')) {
-        this.axiomService.notifyDocumentUpload({
-          orderId: savedDoc.orderId,
-          documentType: 'appraisal',
-          documentUrl: savedDoc.blobUrl,
-          metadata: {
-            fileName: savedDoc.name,
-            fileSize: savedDoc.fileSize,
-            uploadedAt: savedDoc.uploadedAt instanceof Date ? savedDoc.uploadedAt.toISOString() : String(savedDoc.uploadedAt),
-            uploadedBy: savedDoc.uploadedBy,
-            documentId: savedDoc.id,
-          },
-        }).then((axiomResult) => {
-          if (axiomResult.success && axiomResult.evaluationId) {
-            console.log(`[DocumentController] Auto-submitted doc ${savedDoc.id} to Axiom → evaluationId: ${axiomResult.evaluationId}`);
-            // Store evaluationId back on the document record (best-effort)
-            this.documentService.updateDocument(savedDoc.id, savedDoc.tenantId, {
-              metadata: { ...savedDoc.metadata as Record<string, unknown>, evaluationId: axiomResult.evaluationId },
-            }).catch((err) => console.error('[DocumentController] Failed to store evaluationId on document', err));
-          }
-        }).catch((err) => {
-          console.error(`[DocumentController] Auto-submit to Axiom failed for doc ${savedDoc.id}:`, err);
+        const orderId = savedDoc.orderId;
+        setImmediate(() => {
+          this.dbService.findOrderById(orderId).then((orderResult) => {
+            const order = orderResult.success ? orderResult.data : null;
+            const fields = order
+              ? buildOrderFields(order)
+              : [];
+            const documents = [
+              { documentName: savedDoc.name, documentReference: savedDoc.blobUrl },
+            ];
+            return this.axiomService.submitOrderEvaluation(orderId, fields, documents);
+          }).then((axiomResult) => {
+            if (axiomResult) {
+              console.log(`[DocumentController] Auto-submitted doc ${savedDoc.id} to Axiom pipeline → evaluationId: ${axiomResult.evaluationId}`);
+              // Stamp evaluationId and status on the order (best-effort)
+              this.dbService.updateOrder(orderId, {
+                axiomEvaluationId: axiomResult.evaluationId,
+                axiomPipelineJobId: axiomResult.pipelineJobId,
+                axiomStatus: 'submitted',
+              }).catch((err: Error) => {
+                console.error('[DocumentController] Failed to stamp axiomEvaluationId on order', err.message);
+              });
+            }
+          }).catch((err: Error) => {
+            console.error(`[DocumentController] Auto-submit to Axiom failed for doc ${savedDoc.id}:`, err.message);
+          });
         });
       }
 

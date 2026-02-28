@@ -148,6 +148,56 @@ jobs:
         args: --severity-threshold=high
       continue-on-error: true
 
+  axiom-contract:
+    name: Axiom API Contract Verification
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build TypeScript
+      run: npm run build
+
+    - name: Start server (background)
+      run: node dist/app-production.js &
+      env:
+        NODE_ENV: test
+        PORT: 3011
+        # Auth middleware uses this secret to validate test JWTs in non-production
+        TEST_JWT_SECRET: test-secret-key-DO-NOT-USE-IN-PRODUCTION
+        # Cosmos is unavailable in CI — the verifier handles 404 gracefully
+        AZURE_STORAGE_ACCOUNT_NAME: ci-placeholder
+
+    - name: Wait for server to be ready
+      run: |
+        for i in $(seq 1 30); do
+          if curl -sf http://127.0.0.1:3011/health > /dev/null 2>&1; then
+            echo "Server is ready (attempt $i)"
+            exit 0
+          fi
+          echo "Waiting for server… ($i/30)"
+          sleep 2
+        done
+        echo "Server did not become ready in time"
+        exit 1
+
+    - name: Run Axiom contract verifier
+      run: npm run verify:axiom-contract
+      env:
+        VERIFY_BASE_URL: http://127.0.0.1:3011
+        TEST_JWT_SECRET: test-secret-key-DO-NOT-USE-IN-PRODUCTION
+
   # notify-on-failure:
   #   name: Notify on Failure
   #   runs-on: ubuntu-latest

@@ -26,6 +26,23 @@ export interface QCPromptTemplate {
   context: Record<string, any>;
 }
 
+/**
+ * Per-run counters for the Axiom→QC pre-answer bridge.
+ * Created in executeQCReview and threaded through the private call chain
+ * so the final summary can report what fraction of questions were
+ * answered by Axiom vs the LLM vs skipped (no AI config on question).
+ */
+interface AxiomBridgeRunMetrics {
+  /** Every non-skipped question processed during this run */
+  totalQuestions: number;
+  /** Questions answered by the Axiom pre-answer bridge (LLM call skipped) */
+  axiomPreAnswered: number;
+  /** Questions where the LLM was called (Axiom had no matching criterion) */
+  llmAnswered: number;
+  /** Questions with no aiAnalysis config AND no Axiom match — left unanswered */
+  skippedNoAiConfig: number;
+}
+
 export class QCExecutionEngine {
   private logger: Logger;
   private aiService: UniversalAIService;
@@ -51,6 +68,13 @@ export class QCExecutionEngine {
       });
 
       const startTime = new Date();
+      const bridgeMetrics: AxiomBridgeRunMetrics = {
+        totalQuestions: 0,
+        axiomPreAnswered: 0,
+        llmAnswered: 0,
+        skippedNoAiConfig: 0,
+      };
+
       const result: QCExecutionResult = {
         id: this.generateExecutionId(),
         checklistId: checklist.id,
@@ -81,7 +105,7 @@ export class QCExecutionEngine {
           continue;
         }
 
-        const categoryResult = await this.processCategoryQC(category, documentData, context);
+        const categoryResult = await this.processCategoryQC(category, documentData, context, bridgeMetrics);
         result.categoryResults.push(categoryResult);
 
         // Update overall scoring
@@ -132,6 +156,19 @@ export class QCExecutionEngine {
         }
       });
 
+      const preAnswerRatePct =
+        bridgeMetrics.totalQuestions > 0
+          ? Math.round((bridgeMetrics.axiomPreAnswered / bridgeMetrics.totalQuestions) * 100)
+          : 0;
+      this.logger.info('Axiom bridge pre-answer rate', {
+        executionId: result.id,
+        totalQuestions: bridgeMetrics.totalQuestions,
+        axiomPreAnswered: bridgeMetrics.axiomPreAnswered,
+        llmAnswered: bridgeMetrics.llmAnswered,
+        skippedNoAiConfig: bridgeMetrics.skippedNoAiConfig,
+        preAnswerRatePct,
+      });
+
       this.logger.info('QC review execution completed', {
         executionId: result.id,
         passed: result.passed,
@@ -164,7 +201,8 @@ export class QCExecutionEngine {
   private async processCategoryQC(
     category: any,
     documentData: Record<string, any>,
-    context: QCExecutionContext
+    context: QCExecutionContext,
+    metrics: AxiomBridgeRunMetrics
   ): Promise<any> {
     this.logger.debug('Processing category QC', { categoryId: category.id, categoryName: category.name });
 
@@ -187,7 +225,7 @@ export class QCExecutionEngine {
         continue;
       }
 
-      const subcategoryResult = await this.processSubcategoryQC(subcategory, documentData, context);
+      const subcategoryResult = await this.processSubcategoryQC(subcategory, documentData, context, metrics);
       categoryResult.subcategoryResults.push(subcategoryResult);
 
       // Update category scoring
@@ -215,7 +253,8 @@ export class QCExecutionEngine {
   private async processSubcategoryQC(
     subcategory: any,
     documentData: Record<string, any>,
-    context: QCExecutionContext
+    context: QCExecutionContext,
+    metrics: AxiomBridgeRunMetrics
   ): Promise<any> {
     this.logger.debug('Processing subcategory QC', { subcategoryId: subcategory.id, subcategoryName: subcategory.name });
 
@@ -238,7 +277,7 @@ export class QCExecutionEngine {
         continue;
       }
 
-      const questionResult = await this.processQuestionQC(question, documentData, context);
+      const questionResult = await this.processQuestionQC(question, documentData, context, metrics);
       subcategoryResult.questionResults.push(questionResult);
 
       // Update subcategory scoring
@@ -266,7 +305,8 @@ export class QCExecutionEngine {
   private async processQuestionQC(
     question: QCQuestion,
     documentData: Record<string, any>,
-    context: QCExecutionContext
+    context: QCExecutionContext,
+    metrics: AxiomBridgeRunMetrics
   ): Promise<any> {
     this.logger.debug('Processing question QC', { questionId: question.id, question: question.question });
 
@@ -291,14 +331,86 @@ export class QCExecutionEngine {
     };
 
     try {
+      metrics.totalQuestions++;
+
       // Extract required data for this question
       const questionData = this.extractQuestionData(question, documentData);
 
       // Generate AI prompt for this question
       const prompt = await this.generateQuestionPrompt(question, questionData, documentData);
 
+      // ── Axiom pre-answer bridge ────────────────────────────────────────────────
+      // If Axiom has already evaluated a criterion that maps to this question,
+      // use that result directly and skip the LLM call — saving latency and cost.
+      //
+      // Matching precedence (first match wins):
+      //   1. Explicit: question.axiomCriterionIds contains the criterion's ID
+      //   2. Fuzzy:    criterion ID overlaps with question.id or question.tags
+      //
+      // The explicit list is the preferred path; the fuzzy fallback ensures
+      // backward-compatibility for questions that pre-date the explicit field.
+      const axiomBridgeData = documentData.__axiomEvaluation;
+      if (axiomBridgeData?.criteria && Array.isArray(axiomBridgeData.criteria)) {
+        const explicitIds: string[] = question.axiomCriterionIds ?? [];
+        const matchingCriterion = axiomBridgeData.criteria.find((c: any) => {
+          const cid: string = c.criterionId ?? '';
+          if (explicitIds.length > 0) {
+            return explicitIds.includes(cid);
+          }
+          // Fuzzy fallback: overlapping substrings between criterionId and question id/tags
+          const qtags: string[] = question.tags ?? [];
+          return (
+            question.id.includes(cid) ||
+            cid.includes(question.id) ||
+            qtags.some((t) => cid.includes(t) || t.includes(cid))
+          );
+        });
+        if (matchingCriterion) {
+          const rawEval: string = matchingCriterion.evaluation ?? '';
+          const passed = rawEval === 'pass' || rawEval === 'passed';
+          const citations = (matchingCriterion.documentReferences ?? []).map(
+            (r: any) => ({
+              documentId: r.documentId,
+              pageNumber: r.page,
+              sectionReference: r.section,
+              excerpt: r.quote || r.text || undefined,
+            })
+          );
+          const axiomAnswer: QCAnswer = {
+            questionId: question.id,
+            value: rawEval,
+            confidence: matchingCriterion.confidence ?? 0,
+            source: 'ai',
+            timestamp: new Date(),
+            supportingData: { axiomCriterionId: matchingCriterion.criterionId },
+            citations,
+          };
+          questionResult.answer = axiomAnswer;
+          questionResult.passed = passed;
+          questionResult.score = passed ? 100 : 0;
+          questionResult.status = QCStatus.COMPLETED;
+          questionResult.aiAnalysisResult = {
+            analysisType: 'axiom_pre_answer',
+            result: {
+              answer: rawEval,
+              reasoning: matchingCriterion.reasoning ?? '',
+            },
+            confidence: matchingCriterion.confidence ?? 0,
+          };
+          metrics.axiomPreAnswered++;
+          this.logger.debug('Axiom pre-answer applied', {
+            questionId: question.id,
+            criterionId: matchingCriterion.criterionId,
+            evaluation: rawEval,
+          });
+          return questionResult;
+        }
+      }
+      // ── End Axiom pre-answer bridge ────────────────────────────────────────────
+
       // Execute AI analysis if configured
       if (question.aiAnalysis) {
+        metrics.llmAnswered++;
         const aiResult = await this.executeAIAnalysis(question, prompt, questionData, context);
         questionResult.aiAnalysisResult = aiResult;
 
@@ -322,6 +434,10 @@ export class QCExecutionEngine {
           questionResult.score = validation.score;
           questionResult.validationErrors = validation.errors;
         }
+      } else {
+        // No aiAnalysis config on this question and Axiom had no matching criterion.
+        // Question is left unanswered — counts toward skippedNoAiConfig in metrics.
+        metrics.skippedNoAiConfig++;
       }
 
       questionResult.status = questionResult.passed ? QCStatus.COMPLETED : QCStatus.FAILED;
@@ -415,7 +531,9 @@ export class QCExecutionEngine {
       userPrompt += `Overall Risk Score: ${axiomData.riskScore}/100\n`;
       if (axiomData.criteria && Array.isArray(axiomData.criteria)) {
         for (const criterion of axiomData.criteria) {
-          userPrompt += `  • ${criterion.description}: ${criterion.evaluation} (confidence: ${criterion.confidence})\n`;
+          const label: string = criterion.criterionName ?? criterion.description ?? criterion.criterionId ?? 'Unknown';
+          const evalResult: string = criterion.evaluation ?? criterion.status ?? 'unknown';
+          userPrompt += `  • ${label}: ${evalResult} (confidence: ${criterion.confidence})\n`;
         }
       }
       userPrompt += `--- End Axiom AI Pre-Analysis ---\n`;

@@ -12,13 +12,46 @@ import { Request, Response, Router } from 'express';
 import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service';
+import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
+import type { AppraisalOrder } from '../types/index.js';
 
 export class AxiomController {
   private axiomService: AxiomService;
   private dbService: CosmosDbService;
   private bulkPortfolioService: BulkPortfolioService;
   private static readonly APP_TENANT_ID = 'test-tenant-123';
+
+  /**
+   * Build structured Axiom pipeline fields from an order.
+   * Only includes fields with a non-empty / non-zero value.
+   */
+  private static buildOrderFields(
+    order: AppraisalOrder,
+  ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+    const addr = order.propertyAddress;
+    const prop = order.propertyDetails;
+    const loan = order.loanInformation;
+    const borrower = order.borrowerInformation;
+    return [
+      { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
+      { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
+      { fieldName: 'propertyAddress', fieldType: 'string', value: addr?.streetAddress ?? '' },
+      { fieldName: 'city',            fieldType: 'string', value: addr?.city ?? '' },
+      { fieldName: 'state',           fieldType: 'string', value: addr?.state ?? '' },
+      { fieldName: 'zipCode',         fieldType: 'string', value: addr?.zipCode ?? '' },
+      { fieldName: 'propertyType',    fieldType: 'string', value: String(prop?.propertyType ?? '') },
+      { fieldName: 'yearBuilt',       fieldType: 'number', value: prop?.yearBuilt ?? 0 },
+      { fieldName: 'gla',             fieldType: 'number', value: prop?.grossLivingArea ?? 0 },
+      { fieldName: 'bedrooms',        fieldType: 'number', value: prop?.bedrooms ?? 0 },
+      { fieldName: 'bathrooms',       fieldType: 'number', value: prop?.bathrooms ?? 0 },
+      { fieldName: 'borrowerName',    fieldType: 'string', value: `${borrower?.firstName ?? ''} ${borrower?.lastName ?? ''}`.trim() },
+    ].filter(
+      (f) =>
+        (typeof f.value === 'string' && f.value !== '') ||
+        (typeof f.value === 'number' && f.value !== 0),
+    );
+  }
 
   constructor(dbService: CosmosDbService, axiomService?: AxiomService) {
     this.dbService = dbService;
@@ -105,15 +138,27 @@ export class AxiomController {
         return;
       }
 
-      // Notify Axiom
-      const result = await this.axiomService.notifyDocumentUpload(notification);
+      // Load order for structured pipeline fields (A-2)
+      const orderResult = await this.dbService.findOrderById(notification.orderId);
+      const order: AppraisalOrder | null = orderResult.success ? orderResult.data ?? null : null;
+      const fields = order ? AxiomController.buildOrderFields(order) : [];
+      const documents = [{
+        documentName: (notification.metadata as any)?.fileName ?? notification.orderId,
+        documentReference: notification.documentUrl,
+      }];
 
-      if (!result.success) {
+      const pipelineResult = await this.axiomService.submitOrderEvaluation(
+        notification.orderId,
+        fields,
+        documents,
+      );
+
+      if (!pipelineResult) {
         res.status(503).json({
           success: false,
           error: {
             code: 'AXIOM_API_ERROR',
-            message: result.error || 'Failed to notify Axiom',
+            message: 'Failed to submit document to Axiom pipeline',
             details: 'Axiom API may be unavailable or misconfigured'
           }
         });
@@ -123,9 +168,10 @@ export class AxiomController {
       res.status(202).json({
         success: true,
         data: {
-          evaluationId: result.evaluationId,
+          evaluationId: pipelineResult.evaluationId,
+          pipelineJobId: pipelineResult.pipelineJobId,
           orderId: notification.orderId,
-          message: 'Document notification sent to Axiom - evaluation in progress'
+          message: 'Document submitted to Axiom pipeline - evaluation in progress'
         }
       });
     } catch (error) {
@@ -199,29 +245,28 @@ export class AxiomController {
         return;
       }
 
-      const resolvedDocType = (documentType || 'appraisal') as DocumentType;
+      // Look up the order to build structured fields for the Axiom pipeline
+      const orderResult = await this.dbService.findOrderById(orderId);
+      const order: AppraisalOrder | null = orderResult.success ? orderResult.data ?? null : null;
 
-      const notification: AxiomDocumentNotification = {
+      const fields = order ? AxiomController.buildOrderFields(order) : [];
+      const documents = [{
+        documentName: doc.name || doc.fileName || documentId,
+        documentReference: doc.blobUrl,
+      }];
+
+      const pipelineResult = await this.axiomService.submitOrderEvaluation(
         orderId,
-        documentType: resolvedDocType,
-        documentUrl: doc.blobUrl,
-        metadata: {
-          fileName: doc.name || doc.fileName,
-          fileSize: doc.fileSize,
-          uploadedAt: doc.uploadedAt instanceof Date ? doc.uploadedAt.toISOString() : String(doc.uploadedAt),
-          uploadedBy: typeof doc.uploadedBy === 'string' ? doc.uploadedBy : doc.uploadedBy?.name || 'unknown',
-          documentId
-        }
-      };
+        fields,
+        documents
+      );
 
-      const result = await this.axiomService.notifyDocumentUpload(notification);
-
-      if (!result.success) {
+      if (!pipelineResult) {
         res.status(503).json({
           success: false,
           error: {
             code: 'AXIOM_API_ERROR',
-            message: result.error || 'Failed to submit document for analysis'
+            message: 'Failed to submit document to Axiom pipeline'
           }
         });
         return;
@@ -230,7 +275,8 @@ export class AxiomController {
       res.status(202).json({
         success: true,
         data: {
-          evaluationId: result.evaluationId,
+          evaluationId: pipelineResult.evaluationId,
+          pipelineJobId: pipelineResult.pipelineJobId,
           orderId,
           documentId,
           message: 'Document submitted for AI analysis'
@@ -340,55 +386,79 @@ export class AxiomController {
   };
 
   /**
-   * Webhook endpoint for Axiom completion notifications
+   * Receive Axiom pipeline webhook for single-order evaluations.
    * POST /api/axiom/webhook
-   * 
-   * Body: {
-   *   evaluationId: string,
-   *   orderId: string,
-   *   status: 'completed' | 'failed',
-   *   timestamp: string,
-   *   error?: { code, message }
-   * }
+   *
+   * Accepts either the new pipeline payload:
+   *   { correlationId, correlationType, pipelineJobId, status, timestamp, result? }
+   * or the legacy shape (mock/dev):
+   *   { evaluationId, orderId, status, timestamp }
+   *
+   * Protected by HMAC signature verification via verifyAxiomWebhook middleware.
    */
   handleWebhook = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const payload: AxiomWebhookPayload = req.body;
+    // Acknowledge immediately so Axiom doesn't retry
+    res.status(200).json({ success: true, message: 'Webhook received' });
 
-      // Validate required fields
-      if (!payload.evaluationId || !payload.orderId || !payload.status) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'evaluationId, orderId, and status are required'
-          }
-        });
-        return;
+    const body = req.body as Record<string, unknown>;
+
+    // ── New pipeline shape ────────────────────────────────────────────────
+    if (body['correlationId'] && body['correlationType'] === 'ORDER') {
+      const correlationId = body['correlationId'] as string;
+      const pipelineJobId = body['pipelineJobId'] as string | undefined;
+      const status = (body['status'] as string) ?? 'completed';
+      const result = body['result'] as Record<string, unknown> | undefined;
+
+      const updateData: Partial<AppraisalOrder> = {};
+      // Narrow the status string so exactOptionalPropertyTypes is satisfied
+      const axiomStatusValue = status as AppraisalOrder['axiomStatus'];
+      if (axiomStatusValue !== undefined) updateData.axiomStatus = axiomStatusValue;
+      if (pipelineJobId) updateData.axiomPipelineJobId = pipelineJobId;
+      if (result) {
+        if (typeof result['overallRiskScore'] === 'number') updateData.axiomRiskScore = result['overallRiskScore'];
+        const dec = result['overallDecision'] as AppraisalOrder['axiomDecision'] | undefined;
+        if (dec !== undefined) updateData.axiomDecision = dec;
+        if (Array.isArray(result['flags'])) updateData.axiomFlags = result['flags'] as string[];
+        updateData.axiomCompletedAt = new Date().toISOString();
       }
 
-      // Process webhook asynchronously
-      this.axiomService.handleWebhook(payload)
-        .catch(error => {
-          console.error('Background webhook processing failed:', error);
+      this.dbService.updateOrder(correlationId, updateData)
+        .then((r) => {
+          if (!r.success) {
+            console.error('❌ Axiom webhook: failed to stamp order', { orderId: correlationId, error: r.error });
+          }
+        })
+        .catch((err: unknown) => {
+          console.error('❌ Axiom webhook: updateOrder threw', { orderId: correlationId, error: (err as Error).message });
         });
 
-      // Respond immediately to webhook
-      res.status(200).json({
-        success: true,
-        message: 'Webhook received and processing'
-      });
-    } catch (error) {
-      console.error('Error handling Axiom webhook:', error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to process webhook',
-          details: error instanceof Error ? error.message : String(error)
-        }
-      });
+      // For completed pipelines, fetch full criteria results and store them in aiInsights.
+      // This is the authoritative path — it fires even when the SSE stream was not open
+      // (e.g. server restarted between submit and completion).
+      if (status === 'completed' && pipelineJobId) {
+        this.axiomService.fetchAndStorePipelineResults(correlationId, pipelineJobId)
+          .catch((err: unknown) => {
+            console.error('❌ Axiom webhook: fetchAndStorePipelineResults failed', {
+              orderId: correlationId,
+              pipelineJobId,
+              error: (err as Error).message,
+            });
+          });
+      }
+
+      return;
     }
+
+    // ── Legacy shape (mock / dev tests) ──────────────────────────────────
+    const legacyPayload = body as unknown as AxiomWebhookPayload;
+    if (legacyPayload.evaluationId && legacyPayload.orderId) {
+      this.axiomService.handleWebhook(legacyPayload).catch((error: unknown) => {
+        console.error('❌ Background legacy webhook processing failed:', error);
+      });
+      return;
+    }
+
+    console.warn('⚠️  Axiom webhook received with unrecognised payload shape', { keys: Object.keys(body) });
   };
 
   /**
@@ -507,6 +577,70 @@ export class AxiomController {
       });
     }
   };
+
+  /**
+   * Receive Axiom pipeline webhook for bulk tape jobs.
+   * POST /api/axiom/webhook/bulk
+   *
+   * Payload: { correlationId, correlationType: 'BULK_JOB', pipelineJobId, status, timestamp, results[] }
+   *
+   * Protected by HMAC signature verification.
+   */
+  handleBulkWebhook = async (req: Request, res: Response): Promise<void> => {
+    // Acknowledge immediately — Axiom must not wait on our processing
+    res.status(200).json({ success: true, message: 'Bulk webhook received' });
+
+    const body = req.body as Record<string, unknown>;
+    const jobId = body['correlationId'] as string | undefined;
+    const pipelineJobId = body['pipelineJobId'] as string | undefined;
+    const status = (body['status'] as string) ?? 'completed';
+    const rawResults = body['results'] as Array<Record<string, unknown>> | undefined;
+
+    if (!jobId) {
+      console.warn('⚠️  Bulk webhook missing correlationId', { keys: Object.keys(body) });
+      return;
+    }
+
+    console.log(`📨 Axiom bulk webhook — jobId=${jobId} pipelineJobId=${pipelineJobId} status=${status} loans=${rawResults?.length ?? 0}`);
+
+    if (!rawResults || rawResults.length === 0) {
+      // No per-loan results: just broadcast the job-level status change
+      this.axiomService.broadcastBatchJobUpdate(jobId).catch(() => undefined);
+      return;
+    }
+
+    // Map raw Axiom payload rows → typed loanResults
+    // exactOptionalPropertyTypes: omit optional fields entirely when value is not present
+    type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
+    const loanResults: LoanResult[] = rawResults
+      .filter((r) => typeof r['loanNumber'] === 'string')
+      .map((r) => {
+        const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
+        const entry: LoanResult = { loanNumber: r['loanNumber'] as string, status: loanStatus };
+        if (typeof r['riskScore'] === 'number') entry.riskScore = r['riskScore'];
+        const dec = r['decision'];
+        if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') entry.decision = dec;
+        return entry;
+      });
+
+    try {
+      const updatedJob = await this.bulkPortfolioService.stampBatchEvaluationResults(jobId, loanResults);
+      const completedLoans = (updatedJob.items as Array<{ axiomStatus?: string }>)
+        .filter((r) => r.axiomStatus === 'completed').length;
+      const totalLoans = updatedJob.items?.length ?? loanResults.length;
+
+      this.axiomService.broadcastBatchJobUpdate(jobId, completedLoans, totalLoans)
+        .catch(() => undefined);
+    } catch (err) {
+      console.error('❌ Bulk webhook: stampBatchEvaluationResults failed', {
+        jobId,
+        pipelineJobId,
+        error: (err as Error).message,
+      });
+      // Still broadcast so the frontend knows to refresh (it will see any partial stamps)
+      this.axiomService.broadcastBatchJobUpdate(jobId).catch(() => undefined);
+    }
+  };
 }
 
 /**
@@ -529,11 +663,10 @@ export function createAxiomRouter(dbService: CosmosDbService): Router {
   router.get('/evaluations/order/:orderId', controller.getEvaluationByOrder);
   router.get('/evaluations/:evaluationId', controller.getEvaluationById);
 
-  // Webhook
-  router.post('/webhook', controller.handleWebhook);
-
-  // Extraction webhook (TAPE_EXTRACTION completion from Axiom)
-  router.post('/webhook/extraction', controller.handleExtractionWebhook);
+  // Webhooks — HMAC verification applied before handlers
+  router.post('/webhook', verifyAxiomWebhook, controller.handleWebhook);
+  router.post('/webhook/bulk', verifyAxiomWebhook, controller.handleBulkWebhook);
+  router.post('/webhook/extraction', verifyAxiomWebhook, controller.handleExtractionWebhook);
 
   // Document comparison
   router.post('/documents/compare', controller.compareDocuments);

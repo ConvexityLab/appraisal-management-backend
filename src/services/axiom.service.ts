@@ -16,10 +16,12 @@
  */
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { EventSource } from 'eventsource';
 import { CosmosDbService } from './cosmos-db.service';
 import { WebPubSubService } from './web-pubsub.service';
 import { EventPriority, EventCategory } from '../types/events.js';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
+import type { CompileResponse, CompiledProgramNode } from '../types/axiom.types.js';
 
 // ============================================================================
 // Type Definitions
@@ -45,20 +47,40 @@ export interface AxiomDocumentNotification {
 }
 
 export interface DocumentReference {
-  section?: string;
-  page?: number;
-  quote?: string;
+  /** Page number in the source document (1-indexed) */
+  page: number;
+  /** Section name, e.g. "Sales Comparison Approach" */
+  section: string;
+  /** Verbatim excerpt from the document supporting this evaluation (required — every reference must cite the source text) */
+  quote: string;
+  /** Confidence of the reference extraction (0.0–1.0) */
   confidence?: number;
+  /** Bounding box coordinates for PDF viewer highlighting */
+  coordinates?: { x: number; y: number; width: number; height: number };
+  // Resolved by service layer after Cosmos read (not from Axiom):
+  /** Internal document ID from the documents Cosmos container */
+  documentId?: string;
+  /** Human-readable file name, e.g. "Appraisal Report.pdf" */
+  documentName?: string;
+  /** Azure Blob Storage URL for the PDF viewer */
+  blobUrl?: string;
 }
 
 export interface CriterionEvaluation {
   criterionId: string;
+  /** Human-readable criterion label, e.g. "Comparable Selection" */
+  criterionName: string;
+  /** @deprecated use criterionName */
   description: string;
   evaluation: EvaluationStatus;
-  confidence: number; // 0.0 to 1.0
+  /** Confidence 0.0–1.0 (multiply by 100 for percentage display) */
+  confidence: number;
   reasoning: string;
+  /** Suggested corrective action when evaluation is fail or warning */
+  remediation?: string;
   supportingData?: any[];
-  documentReferences?: DocumentReference[];
+  /** Evidence citations — every criterion evaluation must reference the document sections it used */
+  documentReferences: DocumentReference[];
 }
 
 export interface AxiomEvaluationResult {
@@ -114,6 +136,23 @@ export interface ExtractionRecord {
   error?: string;
 }
 
+/** Inline Loom stage definition — matches the Axiom POST /api/pipelines stages array schema. */
+interface LoomStage {
+  name: string;
+  actor: string;
+  mode: 'single' | 'scatter' | 'gather';
+  /** Loom path expressions: string values are literals; use { path: "trigger.field" } for dynamic refs. */
+  input?: Record<string, string | { path: string }>;
+  timeout?: number;
+}
+
+/** Inline Loom pipeline definition — sent as the `pipeline` field in POST /api/pipelines. */
+interface LoomPipelineDefinition {
+  name: string;
+  version: string;
+  stages: LoomStage[];
+}
+
 // ============================================================================
 // Axiom Service
 // ============================================================================
@@ -126,28 +165,102 @@ export class AxiomService {
   private enabled: boolean;
   private mockDelayMs: number;
 
+  // ── Axiom Cosmos pipeline-template IDs (seeded via standard-templates.ts) ──
+  // These are the human-readable string IDs registered in the `pipeline-templates`
+  // Cosmos container. Pass directly as `pipelineId` in POST /api/pipelines.
+  // Override via AXIOM_PIPELINE_ID_* env vars if you register custom templates.
+
+  /** Full PDF→extraction→classification→schema-extract→criteria-eval pipeline. */
+  private static readonly TEMPLATE_RISK_EVAL   = 'complete-document-criteria-evaluation';
+  /** Adaptive PDF processing — auto-detects text vs image and routes accordingly. */
+  private static readonly TEMPLATE_DOC_EXTRACT = 'adaptive-document-processing';
+
+  // ── Inline Loom definition for BULK_EVAL ──────────────────────────────────
+  // No registered template exists for bulk/batch jobs. Used as-is until the
+  // Axiom team seeds a bulk pipeline template.
+
+  private static readonly PIPELINE_BULK_EVAL: LoomPipelineDefinition = {
+    name: 'bulk-risk-evaluation',
+    version: '1.0.0',
+    stages: [
+      {
+        name: 'load-criteria',
+        actor: 'CriteriaLoader',
+        mode: 'single',
+        input: {
+          programId: { path: 'trigger.programId' },
+          tenantId:  { path: 'trigger.tenantId' },
+          clientId:  { path: 'trigger.clientId' },
+        },
+      },
+      {
+        name: 'evaluate-loans',
+        actor: 'CriterionEvaluator',
+        mode: 'single',
+        input: {
+          criteria: { path: 'stages.load-criteria.criteria' },
+          loans:    { path: 'trigger.loans' },
+        },
+      },
+      {
+        name: 'aggregate-results',
+        actor: 'ResultsAggregator',
+        mode: 'single',
+        input: { results: { path: 'stages.evaluate-loans' } },
+      },
+    ],
+  };
+
+  /**
+   * Returns the `pipelineId` (registered Cosmos template) or `pipeline`
+   * (inline definition) param for POST /api/pipelines.
+   *
+   * RISK_EVAL and DOC_EXTRACT use known registered template IDs by default.
+   * BULK_EVAL falls back to an inline definition — no registered template exists yet.
+   * Set AXIOM_PIPELINE_ID_<TYPE> env var to override any default.
+   */
+  private buildPipelineParam(
+    type: 'RISK_EVAL' | 'DOC_EXTRACT' | 'BULK_EVAL',
+  ): { pipelineId: string } | { pipeline: LoomPipelineDefinition } {
+    const envOverride = process.env[`AXIOM_PIPELINE_ID_${type}`];
+    if (envOverride) return { pipelineId: envOverride };
+
+    if (type === 'RISK_EVAL')   return { pipelineId: AxiomService.TEMPLATE_RISK_EVAL };
+    if (type === 'DOC_EXTRACT') return { pipelineId: AxiomService.TEMPLATE_DOC_EXTRACT };
+    // BULK_EVAL: no registered template — send inline definition
+    return { pipeline: AxiomService.PIPELINE_BULK_EVAL };
+  }
+
   constructor(dbService?: CosmosDbService) {
     const baseURL = process.env.AXIOM_API_BASE_URL;
-    const apiKey = process.env.AXIOM_API_KEY;
+    const apiKey  = process.env.AXIOM_API_KEY;
 
-    this.enabled = !!(baseURL && apiKey);
+    // Live mode requires only a base URL — API key is optional (server may be open in dev).
+    this.enabled = !!baseURL;
     this.mockDelayMs = parseInt(process.env.AXIOM_MOCK_DELAY_MS || '8000', 10);
 
     if (!this.enabled) {
-      console.warn('⚠️  Axiom AI Platform not configured - AI features will use mock mode');
+      console.warn('⚠️  Axiom AI Platform not configured — AI features will use mock mode');
       console.warn(`   Mock delay: ${this.mockDelayMs}ms (set AXIOM_MOCK_DELAY_MS to change)`);
-      console.warn('   Set AXIOM_API_BASE_URL and AXIOM_API_KEY to enable real Axiom');
+      console.warn('   Set AXIOM_API_BASE_URL to enable real Axiom (AXIOM_API_KEY is optional)');
+    } else {
+      console.log(`✅ Axiom live mode — ${baseURL}${apiKey ? ' (authenticated)' : ' (no auth — dev server)'}`);
+    }
+
+    // Build request headers; only attach Authorization when a key is actually set
+    const axiomHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'AppraisalManagementPlatform/1.0',
+    };
+    if (apiKey) {
+      axiomHeaders['Authorization'] = `Bearer ${apiKey}`;
     }
 
     // Initialize Axiom API client
     this.client = axios.create({
       baseURL: baseURL || 'https://axiom-api.placeholder.com',
       timeout: 30000, // 30 seconds
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey || 'not-configured'}`,
-        'User-Agent': 'AppraisalManagementPlatform/1.0'
-      }
+      headers: axiomHeaders,
     });
 
     // Initialize Cosmos DB service for storing results
@@ -166,6 +279,41 @@ export class AxiomService {
    */
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * Broadcast an axiom.batch.updated event via WebPubSub so the frontend
+   * invalidates the BulkPortfolioJob cache tags and refreshes the grid.
+   * Best-effort — logs a warning on failure but never throws.
+   */
+  async broadcastBatchJobUpdate(
+    jobId: string,
+    completedLoans?: number,
+    totalLoans?: number,
+  ): Promise<void> {
+    if (!this.webPubSubService) return;
+    try {
+      await this.webPubSubService.broadcastNotification({
+        id: `axiom-batch-${jobId}-${Date.now()}`,
+        title: 'Axiom AI Batch Update',
+        message: `Axiom batch evaluation completed for job ${jobId}`,
+        priority: EventPriority.NORMAL,
+        category: EventCategory.QC,
+        targets: [],
+        data: {
+          eventType: 'axiom.batch.updated',
+          jobId,
+          ...(completedLoans !== undefined ? { completedLoans } : {}),
+          ...(totalLoans !== undefined ? { totalLoans } : {}),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      console.warn('⚠️  Failed to broadcast Axiom batch status via WebPubSub', {
+        jobId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -234,6 +382,8 @@ export class AxiomService {
         ...pendingRecord,
         _metadata: {
           documentId: notification.metadata?.documentId,
+          documentName: notification.metadata?.fileName,
+          blobUrl: notification.documentUrl,
           fileName: notification.metadata?.fileName,
           notificationSent: new Date().toISOString()
         }
@@ -292,6 +442,9 @@ export class AxiomService {
         overallRiskScore: 0,
         timestamp: new Date().toISOString(),
         _metadata: {
+          documentId: notification.metadata?.documentId,
+          documentName: notification.metadata?.fileName,
+          blobUrl: notification.documentUrl,
           notificationSent: new Date().toISOString(),
           documentUrl: notification.documentUrl,
           fileName: notification.metadata?.fileName
@@ -381,6 +534,32 @@ export class AxiomService {
   }
 
   /**
+   * Inject documentId/documentName/blobUrl from Cosmos _metadata into every
+   * DocumentReference in a completed evaluation.
+   *
+   * Axiom returns references without document-identity fields; those are known
+   * only to our service layer (stored in _metadata at submission time). Stamping
+   * them here means the frontend can navigate directly to the correct PDF page.
+   */
+  private enrichCriteriaRefs(
+    criteria: CriterionEvaluation[],
+    meta: Record<string, any>
+  ): CriterionEvaluation[] {
+    if (!meta || (!meta.documentId && !meta.blobUrl && !meta.documentUrl)) {
+      return criteria;
+    }
+    return criteria.map(c => ({
+      ...c,
+      documentReferences: c.documentReferences.map(r => ({
+        ...r,
+        documentId: r.documentId ?? meta.documentId,
+        documentName: r.documentName ?? meta.documentName ?? meta.fileName,
+        blobUrl: r.blobUrl ?? meta.blobUrl ?? meta.documentUrl,
+      })),
+    }));
+  }
+
+  /**
    * Retrieve evaluation results by evaluation ID
    * 
    * @param evaluationId Evaluation ID
@@ -397,6 +576,8 @@ export class AxiomService {
       const cached = cachedResponse.success && cachedResponse.data ? cachedResponse.data : null;
 
       if (cached && cached.status === 'completed') {
+        const meta = (cached as any)._metadata ?? {};
+        cached.criteria = this.enrichCriteriaRefs(cached.criteria, meta);
         return cached;
       }
 
@@ -419,6 +600,8 @@ export class AxiomService {
       // In mock mode, return cached record (which may be pending/processing/completed)
       // or null if no submission has been made yet
       if (cached) {
+        const meta = (cached as any)._metadata ?? {};
+        cached.criteria = this.enrichCriteriaRefs(cached.criteria, meta);
         return cached;
       }
       console.log(`🧪 [MOCK] No Axiom evaluation found for evaluationId ${evaluationId}`);
@@ -453,14 +636,24 @@ export class AxiomService {
 
     try {
       // Fetch full evaluation results from Axiom
-      const evaluation = await this.getEvaluationById(payload.evaluationId);
+      const rawEvaluation = await this.getEvaluationById(payload.evaluationId);
 
-      if (!evaluation) {
+      if (!rawEvaluation) {
         console.error('❌ Failed to retrieve evaluation after webhook notification', {
           evaluationId: payload.evaluationId
         });
         return;
       }
+
+      // getEvaluationById enriches criteria from _metadata for cached records,
+      // but the live API path does not carry _metadata.  Re-read the pending
+      // record so we can enrich the references before persisting the completion.
+      const pendingRecord = await this.dbService.getItem<any>(this.containerName, payload.evaluationId);
+      const meta = pendingRecord?.data?._metadata ?? {};
+      const evaluation: AxiomEvaluationResult = {
+        ...rawEvaluation,
+        criteria: this.enrichCriteriaRefs(rawEvaluation.criteria, meta),
+      };
 
       // Update evaluation record with completion status
       await this.storeEvaluationRecord({
@@ -723,12 +916,722 @@ export class AxiomService {
   }
 
   // ============================================================================
+  // Pipeline-based Evaluation (POST /api/pipelines — Axiom real API)
+  // ============================================================================
+
+  /**
+   * Submit a single order to the Axiom Loom pipeline for AI risk evaluation.
+   *
+   * Axiom returns a `jobId` (202 response); we open an SSE stream on `/observe`
+   * to track progress via named events (pipeline_completed, pipeline_failed, etc.)
+   * and also expect a webhook POST to /api/axiom/webhook when complete.
+   *
+   * Returns { pipelineJobId, evaluationId } on success, null on failure.
+   */
+  async submitOrderEvaluation(
+    orderId: string,
+    fields: Array<{ fieldName: string; fieldType: string; value: unknown }>,
+    documents?: Array<{ documentName: string; documentReference: string }>,
+    programId?: string,
+  ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
+    if (!this.enabled) {
+      return this.mockPipelineSubmit(orderId, 'ORDER', orderId, programId);
+    }
+
+    const apiBaseUrl = process.env['API_BASE_URL'];
+    if (!apiBaseUrl) {
+      throw new Error('API_BASE_URL is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
+    if (!webhookSecret) {
+      throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const tenantId = process.env['AXIOM_TENANT_ID'];
+    if (!tenantId) {
+      throw new Error('AXIOM_TENANT_ID is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const clientId = process.env['AXIOM_CLIENT_ID'];
+    if (!clientId) {
+      throw new Error('AXIOM_CLIENT_ID is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+
+    try {
+      const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
+        ...this.buildPipelineParam('RISK_EVAL'),
+        input: {
+          tenantId,
+          clientId,
+          correlationId: orderId,
+          correlationType: 'ORDER',
+          webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
+          webhookSecret,
+          fields,
+          documents: documents ?? [],
+          schemaMode: 'RISK_EVALUATION',
+          ...(programId ? { programId } : {}),
+        },
+      });
+
+      const pipelineJobId = response.data.jobId;
+      const evaluationId = `eval-${orderId}-${pipelineJobId}`;
+
+      await this.storeEvaluationRecord({
+        id: evaluationId,
+        orderId,
+        evaluationId,
+        pipelineJobId,
+        correlationType: 'ORDER',
+        documentType: 'appraisal' as DocumentType,
+        status: 'pending',
+        criteria: [],
+        overallRiskScore: 0,
+        timestamp: new Date().toISOString(),
+      });
+
+      this.watchPipelineStream(pipelineJobId, orderId, 'ORDER').catch((err) => {
+        console.error('⚠️  Axiom SSE stream error for order', { orderId, pipelineJobId, error: (err as Error).message });
+      });
+
+      return { pipelineJobId, evaluationId };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
+      console.error('❌ Failed to submit order evaluation to Axiom pipeline', { orderId, error: errorMessage });
+      return null;
+    }
+  }
+
+  /**
+   * Submit a bulk tape job (multiple loans) to the Axiom Loom pipeline.
+   *
+   * Each loan provides its own fields and optional documents. Axiom evaluates
+   * them in parallel and posts a single webhook back when all are complete.
+   */
+  async submitBatchEvaluation(
+    jobId: string,
+    loans: Array<{
+      loanNumber: string;
+      fields: Array<{ fieldName: string; fieldType: string; value: unknown }>;
+      documents?: Array<{ documentName: string; documentReference: string }>;
+    }>,
+    programId?: string,
+  ): Promise<{ pipelineJobId: string; batchId: string } | null> {
+    if (!this.enabled) {
+      const mock = await this.mockPipelineSubmit(jobId, 'BULK_JOB', jobId, programId);
+      if (!mock) return null;
+      return { pipelineJobId: mock.pipelineJobId, batchId: mock.evaluationId };
+    }
+
+    const apiBaseUrl = process.env['API_BASE_URL'];
+    if (!apiBaseUrl) {
+      throw new Error('API_BASE_URL is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
+    if (!webhookSecret) {
+      throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const tenantId = process.env['AXIOM_TENANT_ID'];
+    if (!tenantId) {
+      throw new Error('AXIOM_TENANT_ID is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const clientId = process.env['AXIOM_CLIENT_ID'];
+    if (!clientId) {
+      throw new Error('AXIOM_CLIENT_ID is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+
+    try {
+      const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
+        ...this.buildPipelineParam('BULK_EVAL'),
+        input: {
+          tenantId,
+          clientId,
+          correlationId: jobId,
+          correlationType: 'BULK_JOB',
+          webhookUrl: `${apiBaseUrl}/api/axiom/webhook/bulk`,
+          webhookSecret,
+          loans,
+          schemaMode: 'RISK_EVALUATION',
+          ...(programId ? { programId } : {}),
+        },
+      });
+
+      const pipelineJobId = response.data.jobId;
+      const batchId = `batch-${jobId}-${pipelineJobId}`;
+
+      await this.storeEvaluationRecord({
+        id: batchId,
+        jobId,
+        batchId,
+        pipelineJobId,
+        correlationType: 'BULK_JOB',
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+      });
+
+      this.watchPipelineStream(pipelineJobId, jobId, 'BULK_JOB').catch((err) => {
+        console.error('⚠️  Axiom SSE stream error for bulk job', { jobId, pipelineJobId, error: (err as Error).message });
+      });
+
+      return { pipelineJobId, batchId };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
+      console.error('❌ Failed to submit batch evaluation to Axiom pipeline', { jobId, error: errorMessage });
+      return null;
+    }
+  }
+
+  /**
+   * Submit a document for structured field extraction via the Axiom pipeline.
+   *
+   * This replaces the old `submitForExtraction` path which used the legacy
+   * `/documents/extract` endpoint (no longer supported).  Results are delivered
+   * via SSE and a webhook POST to /api/axiom/webhook.
+   */
+  async submitDocumentExtractionPipeline(
+    jobId: string,
+    loanNumber: string,
+    documents: Array<{ documentName: string; documentReference: string }>,
+    programId?: string,
+  ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
+    if (!this.enabled) {
+      return this.mockPipelineSubmit(`${jobId}-${loanNumber}`, 'ORDER', jobId, programId);
+    }
+
+    const apiBaseUrl = process.env['API_BASE_URL'];
+    if (!apiBaseUrl) {
+      throw new Error('API_BASE_URL is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
+    if (!webhookSecret) {
+      throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const tenantId = process.env['AXIOM_TENANT_ID'];
+    if (!tenantId) {
+      throw new Error('AXIOM_TENANT_ID is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const clientId = process.env['AXIOM_CLIENT_ID'];
+    if (!clientId) {
+      throw new Error('AXIOM_CLIENT_ID is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+
+    try {
+      const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
+        ...this.buildPipelineParam('DOC_EXTRACT'),
+        input: {
+          tenantId,
+          clientId,
+          correlationId: `${jobId}:${loanNumber}`,
+          correlationType: 'ORDER',
+          webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
+          webhookSecret,
+          documents,
+          schemaMode: 'DOCUMENT_EXTRACTION',
+          ...(programId ? { programId } : {}),
+        },
+      });
+
+      const pipelineJobId = response.data.jobId;
+      const evaluationId = `extract-${jobId}-${loanNumber}-${pipelineJobId}`;
+
+      const pendingRecord: ExtractionRecord = {
+        id: evaluationId,
+        evaluationId,
+        requestType: 'TAPE_EXTRACTION',
+        jobId,
+        loanNumber,
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+      };
+      await this.storeEvaluationRecord({ ...pendingRecord, pipelineJobId });
+
+      this.watchPipelineStream(pipelineJobId, `${jobId}:${loanNumber}`, 'ORDER').catch((err) => {
+        console.error('⚠️  Axiom SSE stream error for extraction', { jobId, loanNumber, error: (err as Error).message });
+      });
+
+      return { pipelineJobId, evaluationId };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
+      console.error('❌ Failed to submit document extraction to Axiom pipeline', { jobId, loanNumber, error: errorMessage });
+      return null;
+    }
+  }
+
+  /**
+   * Fetch final results from a completed Axiom pipeline job.
+   *
+   * Called internally after SSE signals completion (or by the webhook handler
+   * to hydrate the full result set).
+   */
+  async fetchPipelineResults(pipelineJobId: string): Promise<Record<string, unknown> | null> {
+    try {
+      const response = await this.client.get<Record<string, unknown>>(`/api/pipelines/${pipelineJobId}/results`);
+      return response.data;
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      console.error('❌ Failed to fetch Axiom pipeline results', {
+        pipelineJobId,
+        status: axiosError.response?.status,
+        error: axiosError.message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Map the raw Axiom /api/pipelines/:id/results payload into our AxiomEvaluationResult shape.
+   *
+   * Axiom wraps stage outputs under `results`; we fall through to the root object if absent.
+   * All field reads are defensive — a missing field never throws, it gets a safe default.
+   */
+  private mapPipelineResultsToEvaluation(
+    raw: Record<string, unknown>,
+    orderId: string,
+    evaluationId: string,
+    pipelineJobId: string,
+  ): Omit<AxiomEvaluationResult, 'documentType'> & { pipelineJobId: string } {
+    // Axiom may nest the domain output under a `results` key
+    const inner = (raw['results'] as Record<string, unknown> | undefined) ?? raw;
+    const rawCriteria: unknown[] = Array.isArray(inner['criteria'])
+      ? inner['criteria']
+      : Array.isArray(raw['criteria'])
+      ? raw['criteria'] as unknown[]
+      : [];
+
+    const criteria: CriterionEvaluation[] = (rawCriteria as any[]).map(
+      (c: any): CriterionEvaluation => ({
+        criterionId: c.criterionId ?? c.id ?? '',
+        criterionName: c.criterionName ?? c.name ?? c.title ?? c.criterionId ?? '',
+        description: c.description ?? '',
+        evaluation: (c.evaluation ?? c.status ?? 'warning') as EvaluationStatus,
+        confidence: typeof c.confidence === 'number' ? c.confidence : 0,
+        reasoning: c.reasoning ?? '',
+        remediation: c.remediation,
+        supportingData: c.supportingData ?? c.dataUsed,
+        documentReferences: Array.isArray(c.documentReferences)
+          ? (c.documentReferences as any[]).map(
+              (r: any): DocumentReference => ({
+                page: r.page ?? 0,
+                section: r.section ?? '',
+                quote: r.quote ?? r.text ?? '',
+                confidence: r.confidence,
+                coordinates: r.coordinates,
+                documentId: r.documentId,
+                documentName: r.documentName,
+                blobUrl: r.blobUrl,
+              }),
+            )
+          : [],
+      }),
+    );
+
+    const overallRiskScore =
+      typeof inner['overallRiskScore'] === 'number' ? inner['overallRiskScore'] :
+      typeof inner['riskScore'] === 'number' ? inner['riskScore'] :
+      typeof raw['overallRiskScore'] === 'number' ? raw['overallRiskScore'] as number : 0;
+
+    const execMeta = raw['executionMetadata'] as Record<string, unknown> | undefined;
+    const processingTime = typeof execMeta?.['duration'] === 'number'
+      ? (execMeta['duration'] as number)
+      : undefined;
+    const extractedData = (inner['extractedData'] as AxiomEvaluationResult['extractedData']) ?? undefined;
+
+    return {
+      orderId,
+      evaluationId,
+      pipelineJobId,
+      status: 'completed' as const,
+      criteria,
+      overallRiskScore,
+      timestamp: new Date().toISOString(),
+      // Conditionally include optional fields so exactOptionalPropertyTypes is satisfied
+      ...(processingTime !== undefined ? { processingTime } : {}),
+      ...(extractedData !== undefined ? { extractedData } : {}),
+    };
+  }
+
+  /**
+   * Fetch the full results for a completed pipeline from Axiom, map them to
+   * AxiomEvaluationResult format, enrich document-reference metadata from the
+   * pending Cosmos record, persist to aiInsights, and broadcast via WebPubSub.
+   *
+   * Called both from the SSE stream completion handler and from the webhook
+   * controller so results always land in Cosmos regardless of which path fires
+   * first (SSE stream is best-effort; webhook is authoritative).
+   */
+  async fetchAndStorePipelineResults(
+    orderId: string,
+    pipelineJobId: string,
+    evaluationId?: string,
+    fallbackRiskScore?: number,
+  ): Promise<void> {
+    const evalId = evaluationId ?? `eval-${orderId}-${pipelineJobId}`;
+
+    // Read the pending record we stored at submit time — we need its _metadata
+    // (documentId, documentName, blobUrl) to enrich document references.
+    const pendingResponse = await this.dbService.getItem<any>(this.containerName, evalId);
+    const meta: Record<string, any> = pendingResponse?.data?._metadata ?? {};
+
+    const rawResults = await this.fetchPipelineResults(pipelineJobId);
+
+    if (rawResults) {
+      const mapped = this.mapPipelineResultsToEvaluation(rawResults, orderId, evalId, pipelineJobId);
+      const enriched = {
+        id: evalId,
+        ...mapped,
+        documentType: (pendingResponse?.data?.documentType ?? 'appraisal') as DocumentType,
+        criteria: this.enrichCriteriaRefs(mapped.criteria, meta),
+        _metadata: { ...meta, completedAt: new Date().toISOString() },
+      };
+      await this.storeEvaluationRecord(enriched);
+      console.log(`✅ Axiom pipeline results stored`, {
+        orderId, pipelineJobId, evalId, criteriaCount: mapped.criteria.length, riskScore: mapped.overallRiskScore,
+      });
+      await this.broadcastAxiomStatus(orderId, evalId, 'completed', mapped.overallRiskScore);
+    } else {
+      // Axiom results not available yet (409 still running, or transient error).
+      // Still broadcast so frontend knows to refetch via polling.
+      console.warn('⚠️  fetchAndStorePipelineResults: no results returned from Axiom', { orderId, pipelineJobId, evalId });
+      await this.broadcastAxiomStatus(orderId, evalId, 'completed', fallbackRiskScore);
+    }
+  }
+
+  /**
+   * Open a server-to-server SSE stream to the Axiom pipeline and relay each
+   * progress event to the frontend via WebPubSub.
+   *
+   * The stream is resumable: if we reconnect, we pass the last received event
+   * id as `?from=<cursor>` so Axiom replays missed events.
+   *
+   * This method runs until the stream closes (completed / failed) or until
+   * a 30-minute timeout guard fires.
+   */
+  private async watchPipelineStream(
+    pipelineJobId: string,
+    correlationId: string,
+    correlationType: 'ORDER' | 'BULK_JOB',
+  ): Promise<void> {
+    const baseURL = process.env['AXIOM_API_BASE_URL'];
+    if (!baseURL) return; // should never reach here in production, but guard anyway
+
+    const apiKey = process.env['AXIOM_API_KEY'];
+    const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes hard limit
+
+    return new Promise<void>((resolve, reject) => {
+      let lastEventId: string | undefined;
+      let settled = false;
+
+      const settle = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        if (err) reject(err);
+        else resolve();
+      };
+
+      const openStream = () => {
+        const url = lastEventId
+          ? `${baseURL}/api/pipelines/${pipelineJobId}/observe?from=${encodeURIComponent(lastEventId)}`
+          : `${baseURL}/api/pipelines/${pipelineJobId}/observe`;
+
+        // eventsource v4 passes auth via a custom fetch wrapper
+        const fetchWithAuth: typeof globalThis.fetch = (input, init) => {
+          const headers = new Headers((init?.headers as HeadersInit | undefined) ?? {});
+          if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
+          return fetch(input, { ...init, headers });
+        };
+
+        const es = new EventSource(url, { fetch: fetchWithAuth });
+
+        // Helper: track SSE cursor and parse event data safely
+        const extractPayload = (event: MessageEvent): Record<string, unknown> => {
+          if (event.lastEventId) lastEventId = event.lastEventId;
+          try { return JSON.parse(event.data as string) as Record<string, unknown>; } catch { return {}; }
+        };
+
+        // Terminal: pipeline completed — fetch full results and store them in aiInsights
+        es.addEventListener('pipeline_completed', (event) => {
+          const payload = extractPayload(event);
+          const riskScore = payload['riskScore'] as number | undefined;
+          const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
+          // Fire-and-forget: settle the stream immediately; result storage runs concurrently
+          this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore)
+            .catch((err) => {
+              console.error('⚠️  SSE pipeline_completed: failed to store Axiom results', {
+                pipelineJobId, correlationId, error: (err as Error).message,
+              });
+              // Best-effort broadcast even if result fetch failed
+              this.broadcastAxiomStatus(correlationId, evaluationId, 'completed', riskScore).catch(() => {/* logged inside */});
+            });
+          es.close();
+          settle();
+        });
+
+        // Terminal: pipeline failed — mark stored record as failed, broadcast to frontend
+        es.addEventListener('pipeline_failed', (event) => {
+          const payload = extractPayload(event);
+          const errorMsg = (payload['error'] as string | undefined) ?? 'Pipeline execution failed';
+          const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
+          this.dbService.getItem<any>(this.containerName, evaluationId)
+            .then((r) => {
+              const existing = (r.success && r.data) ? r.data : {};
+              return this.storeEvaluationRecord({
+                ...existing,
+                id: evaluationId,
+                status: 'failed',
+                error: { code: 'PIPELINE_FAILED', message: errorMsg },
+                timestamp: new Date().toISOString(),
+              });
+            })
+            .catch((err) => {
+              console.error('⚠️  SSE pipeline_failed: could not mark record as failed', {
+                evaluationId, error: (err as Error).message,
+              });
+            });
+          this.broadcastAxiomStatus(correlationId, evaluationId, 'failed').catch(() => {/* logged inside */});
+          es.close();
+          settle();
+        });
+
+        // Progress: stage lifecycle — relay 'running' status to frontend
+        es.addEventListener('stage_started', (event) => {
+          extractPayload(event);
+          this.broadcastAxiomStatus(correlationId, pipelineJobId, 'running').catch(() => {/* logged inside */});
+        });
+
+        es.addEventListener('stage_completed', (event) => {
+          extractPayload(event);
+          this.broadcastAxiomStatus(correlationId, pipelineJobId, 'running').catch(() => {/* logged inside */});
+        });
+
+        // Snapshot: full pipeline state at connection time — relay if not already terminal
+        es.addEventListener('snapshot', (event) => {
+          const payload = extractPayload(event);
+          const snapshotStatus = (payload['status'] as string | undefined) ?? 'running';
+          if (snapshotStatus !== 'completed' && snapshotStatus !== 'failed') {
+            this.broadcastAxiomStatus(correlationId, pipelineJobId, snapshotStatus).catch(() => {/* logged inside */});
+          }
+        });
+
+        es.addEventListener('error', (event) => {
+          const code = (event as { code?: number }).code;
+          // Reconnectable errors (code 200/503 etc.) — EventSource will retry automatically.
+          // We only reject on irrecoverable errors (no code = network gone).
+          if (code === undefined || code === 401 || code === 404) {
+            es.close();
+            settle(new Error(`SSE stream error for pipeline ${pipelineJobId} (code=${code})`));
+          }
+        });
+      };
+
+      const timeoutHandle = setTimeout(() => {
+        settle(new Error(`SSE stream timed out after 30 minutes for pipeline ${pipelineJobId}`));
+      }, TIMEOUT_MS);
+
+      openStream();
+    });
+  }
+
+  /**
+   * Internal helper: run a full mock pending→processing→completed lifecycle for
+   * any pipeline submission in non-production mode.
+   */
+  private async mockPipelineSubmit(
+    correlationId: string,
+    correlationType: 'ORDER' | 'BULK_JOB',
+    storageKey: string,
+    _programId?: string,
+  ): Promise<{ pipelineJobId: string; evaluationId: string }> {
+    const pipelineJobId = `mock-pipeline-${storageKey}-${Date.now()}`;
+    const evaluationId = `mock-eval-${storageKey}-${Date.now()}`;
+
+    console.log(
+      `🧪 [MOCK] Axiom pipeline submit — correlationId=${correlationId} correlationType=${correlationType} pipelineJobId=${pipelineJobId}`,
+    );
+
+    const pendingRecord = {
+      id: evaluationId,
+      evaluationId,
+      pipelineJobId,
+      correlationId,
+      correlationType,
+      orderId: correlationType === 'ORDER' ? correlationId : undefined,
+      documentType: 'appraisal' as DocumentType,
+      status: 'pending' as const,
+      criteria: [],
+      overallRiskScore: 0,
+      timestamp: new Date().toISOString(),
+    };
+    await this.storeEvaluationRecord(pendingRecord);
+
+    setTimeout(async () => {
+      try {
+        await this.storeEvaluationRecord({ ...pendingRecord, status: 'processing', timestamp: new Date().toISOString() });
+        console.log(`🧪 [MOCK] Pipeline ${pipelineJobId} → processing`);
+        await this.broadcastAxiomStatus(correlationId, evaluationId, 'processing');
+      } catch (err) { console.error('🧪 [MOCK] Failed transition to processing', err); }
+    }, 1000);
+
+    setTimeout(async () => {
+      try {
+        const completed = correlationType === 'ORDER'
+          ? this.buildMockEvaluation(correlationId, evaluationId)
+          : { ...pendingRecord, status: 'completed' as const, overallRiskScore: 35, timestamp: new Date().toISOString() };
+        await this.storeEvaluationRecord({ id: evaluationId, ...completed });
+        console.log(`✅ [MOCK] Pipeline ${pipelineJobId} → completed`);
+        await this.broadcastAxiomStatus(correlationId, evaluationId, 'completed', 35);
+      } catch (err) { console.error('🧪 [MOCK] Failed transition to completed', err); }
+    }, this.mockDelayMs);
+
+    return { pipelineJobId, evaluationId };
+  }
+
+  // ============================================================================
+  // Criteria Compilation
+  // ============================================================================
+
+  /**
+   * In-memory cache for compiled criteria programs.
+   * Key: `${clientId}:${tenantId}:${programId}:${programVersion}`
+   * Entries expire after AXIOM_COMPILE_CACHE_TTL_MS (default 1 hour).
+   */
+  private compileCache = new Map<string, { response: CompileResponse; expiresAt: number }>();
+
+  private compileCacheKey(
+    clientId: string, tenantId: string, programId: string, programVersion: string,
+  ): string {
+    return `${clientId}:${tenantId}:${programId}:${programVersion}`;
+  }
+
+  private compileCacheTtlMs(): number {
+    return parseInt(process.env.AXIOM_COMPILE_CACHE_TTL_MS || String(60 * 60 * 1000), 10);
+  }
+
+  /**
+   * GET compiled criteria for a program (cache-first).
+   *
+   * Real mode  : GET {AXIOM_API_BASE_URL}/api/programs/{programId}/{version}/compiled
+   *              with clientId + tenantId as query params.
+   * Mock mode  : returns a fixed mock CompileResponse.
+   *
+   * Cache is bypassed when force=true or on a cache miss.
+   *
+   * @throws Error with `statusCode: 404` when Axiom returns 404
+   *   (delta or referenced canonical does not exist yet).
+   */
+  async getCompiledCriteria(
+    clientId: string,
+    tenantId: string,
+    programId: string,
+    programVersion: string,
+    force = false,
+  ): Promise<CompileResponse> {
+    const key = this.compileCacheKey(clientId, tenantId, programId, programVersion);
+
+    // Cache hit
+    if (!force) {
+      const cached = this.compileCache.get(key);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.response;
+      }
+    }
+
+    // Mock mode
+    if (!this.enabled) {
+      const mock = this.buildMockCompileResponse(programId, programVersion);
+      this.compileCache.set(key, { response: mock, expiresAt: Date.now() + this.compileCacheTtlMs() });
+      return mock;
+    }
+
+    // Real Axiom API
+    try {
+      const { data } = await this.client.get<CompileResponse>(
+        `/api/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compiled`,
+        { params: { clientId, tenantId } },
+      );
+      const response: CompileResponse = { ...data, cached: true };
+      this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
+      return response;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 404) {
+        const notFound = new Error(
+          `Axiom: program '${programId}' version '${programVersion}' not found — ` +
+          `delta or referenced canonical does not exist yet`,
+        ) as Error & { statusCode: number };
+        notFound.statusCode = 404;
+        throw notFound;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * POST force-recompile a program (always fresh, never cached).
+   *
+   * Real mode  : POST {AXIOM_API_BASE_URL}/api/programs/{programId}/{version}/compile
+   *              Body: { clientId, tenantId, userId? }
+   * Mock mode  : returns a fresh mock CompileResponse.
+   *
+   * @throws Error with `statusCode: 404` when Axiom returns 404.
+   */
+  async compileCriteria(
+    clientId: string,
+    tenantId: string,
+    programId: string,
+    programVersion: string,
+    userId?: string,
+  ): Promise<CompileResponse> {
+    // Mock mode
+    if (!this.enabled) {
+      const mock = this.buildMockCompileResponse(programId, programVersion);
+      // Populate cache so a subsequent GET picks up the fresh result
+      const key = this.compileCacheKey(clientId, tenantId, programId, programVersion);
+      this.compileCache.set(key, { response: mock, expiresAt: Date.now() + this.compileCacheTtlMs() });
+      return mock;
+    }
+
+    // Real Axiom API
+    try {
+      const { data } = await this.client.post<CompileResponse>(
+        `/api/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compile`,
+        { clientId, tenantId, ...(userId ? { userId } : {}) },
+      );
+      const response: CompileResponse = { ...data, cached: false };
+      // Warm the cache with the fresh result
+      const key = this.compileCacheKey(clientId, tenantId, programId, programVersion);
+      this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
+      return response;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 404) {
+        const notFound = new Error(
+          `Axiom: program '${programId}' version '${programVersion}' not found — ` +
+          `delta or referenced canonical does not exist yet`,
+        ) as Error & { statusCode: number };
+        notFound.statusCode = 404;
+        throw notFound;
+      }
+      throw err;
+    }
+  }
+
+  // ============================================================================
   // Private Helper Methods
   // ============================================================================
 
   /**
    * Build a realistic mock evaluation result for development/demo purposes.
    * Used when AXIOM_API_BASE_URL / AXIOM_API_KEY are not configured.
+   *
+   * PROVISIONAL CRITERION IDs — READ BEFORE UPDATING
+   * The `criterionId` values below use the concept codes from Axiom's
+   * criteria-definitions for programId: canonical-fnma-1033-v1.0.0.
+   *
+   * These match the `concept` field returned by:
+   *   GET /api/criteria/.../programs/canonical-fnma-1033/v1.0.0/compiled
+   *
+   * The QC execution engine matches on concept code, not the full nodeId,
+   * so these values are stable across recompilation.
    */
   private buildMockEvaluation(orderId: string, evaluationId?: string): AxiomEvaluationResult {
     const evalId = evaluationId || `mock-eval-${orderId}-${Date.now()}`;
@@ -741,8 +1644,10 @@ export class AxiomService {
       processingTime: 4820,
       timestamp: new Date().toISOString(),
       criteria: [
+        // Provisional: code field values from CertoDb.criteria-definitions (not compiled nodeIds)
         {
-          criterionId: 'USPAP_COMPLIANCE',
+          criterionId: 'NO_UNACCEPTABLE_APPRAISAL_PRACTICES', // APPR-1033-011
+          criterionName: 'USPAP Standards Compliance',
           description: 'USPAP Standards Rule compliance — Standards 1 & 2',
           evaluation: 'pass',
           confidence: 0.94,
@@ -753,23 +1658,36 @@ export class AxiomService {
           ]
         },
         {
-          criterionId: 'COMP_SELECTION',
-          description: 'Comparable selection appropriateness — proximity, recency, similarity',
+          criterionId: 'THREE_CLOSED_COMPS_USED', // APPR-1033-070
+          criterionName: 'Comparable Count',
+          description: 'Minimum three closed comparable sales used',
           evaluation: 'pass',
-          confidence: 0.88,
-          reasoning: 'Three comparable sales within 1.2 miles, sold within 6 months, similar GLA (±15%), same neighborhood. Adjustments are within acceptable ranges.',
+          confidence: 0.99,
+          reasoning: 'Three closed comparable sales are presented in the Sales Comparison grid.',
           supportingData: [
             { comp: 1, address: '142 Oak Ridge Dr', distance: '0.4 mi', saleDate: '2025-11-15', salePrice: 425000, gla: 2180 },
             { comp: 2, address: '309 Maple Ln', distance: '0.8 mi', saleDate: '2025-09-28', salePrice: 438000, gla: 2240 },
             { comp: 3, address: '87 Birch Ct', distance: '1.1 mi', saleDate: '2025-10-03', salePrice: 415000, gla: 2050 }
           ],
           documentReferences: [
+            { section: 'Sales Comparison Approach', page: 12, quote: 'Three closed sales are presented as comparable sales.' }
+          ]
+        },
+        {
+          criterionId: 'COMPS_ARE_SUITABLE_SUBSTITUTES', // APPR-1033-071
+          criterionName: 'Comparable Selection Quality',
+          description: 'Comparable selection appropriateness — proximity, recency, similarity',
+          evaluation: 'pass',
+          confidence: 0.88,
+          reasoning: 'Three comparable sales within 1.2 miles, sold within 6 months, similar GLA (±15%), same neighborhood.',
+          documentReferences: [
             { section: 'Sales Comparison Approach', page: 12, quote: 'Comparable 1 is located 0.4 miles southeast of the subject…' }
           ]
         },
         {
-          criterionId: 'MATH_ACCURACY',
-          description: 'Mathematical accuracy of adjustments and value calculations',
+          criterionId: 'ADJUSTMENTS_ARE_REASONABLE', // APPR-1033-074
+          criterionName: 'Adjustment Reasonableness',
+          description: 'Mathematical accuracy and reasonableness of adjustments',
           evaluation: 'pass',
           confidence: 0.97,
           reasoning: 'All net and gross adjustments are within acceptable thresholds. Net adjustments range from 4.2% to 8.7% (threshold: 15%). Gross adjustments range from 11.3% to 16.1% (threshold: 25%).',
@@ -778,51 +1696,79 @@ export class AxiomService {
           ]
         },
         {
-          criterionId: 'PROPERTY_DESCRIPTION',
-          description: 'Subject property description completeness and consistency',
+          criterionId: 'PROPERTY_ADDRESS_COMPLETE', // APPR-1033-001
+          criterionName: 'Property Address Complete',
+          description: 'Subject property address is complete and present',
           evaluation: 'pass',
           confidence: 0.91,
-          reasoning: 'Subject property details are complete: address, legal description, tax ID, site dimensions, zoning, improvements, utilities, and neighborhood description all present and internally consistent.',
+          reasoning: 'Property address is complete and matches public records.',
           documentReferences: [
-            { section: 'Subject', page: 1, quote: '2,150 SF single-family residence, 4 BR / 2.5 BA, built 2008' }
+            { section: 'Subject', page: 1, quote: '1847 Willowbrook Lane, Riverton, FL 32789' }
           ]
         },
         {
-          criterionId: 'MARKET_CONDITIONS',
+          criterionId: 'PARCEL_ID_MATCHES_TITLE', // APPR-1033-002
+          criterionName: 'Legal Description',
+          description: 'Parcel ID / legal description matches title documentation',
+          evaluation: 'pass',
+          confidence: 0.91,
+          reasoning: 'Legal description and parcel ID are present and consistent with title documentation.',
+          documentReferences: [
+            { section: 'Subject', page: 1, quote: 'Parcel ID: 12-34-56-7890, Lot 14, Block 3, Willowbrook Estates…' }
+          ]
+        },
+        {
+          criterionId: 'MARKET_TRENDS_IDENTIFIED', // APPR-1033-051
+          criterionName: 'Market Conditions Analysis',
           description: 'Market conditions analysis and trend support',
           evaluation: 'warning',
+          remediation: 'Add 12-month appreciation trend data from MLS to support the market conditions conclusion.',
           confidence: 0.78,
-          reasoning: 'Market conditions are described as "stable" but recent MLS data shows a 3.2% appreciation trend over the past 12 months. Report could benefit from additional trend data to support the market conditions conclusion.',
+          reasoning: 'Market conditions are described as "stable" but recent MLS data shows a 3.2% appreciation trend over the past 12 months.',
           documentReferences: [
             { section: 'Neighborhood', page: 2, quote: 'Property values have been stable over the past 12 months.' }
           ]
         },
         {
-          criterionId: 'HIGHEST_BEST_USE',
-          description: 'Highest and best use analysis — legally permissible, physically possible, financially feasible, maximally productive',
+          criterionId: 'PROPERTY_HIGHEST_BEST_USE', // APPR-1033-022
+          criterionName: 'Highest & Best Use',
+          description: 'Highest and best use analysis',
           evaluation: 'pass',
           confidence: 0.86,
-          reasoning: 'Highest and best use is identified as continued residential use, consistent with zoning (R-1), surrounding development, and market demand. All four tests addressed.',
+          reasoning: 'Highest and best use identified as continued residential use, consistent with zoning (R-1) and market demand. All four tests addressed.',
           documentReferences: [
             { section: 'Highest & Best Use', page: 6, quote: 'The highest and best use of the subject, as improved, is continued use as a single-family residence.' }
           ]
         },
         {
-          criterionId: 'SITE_ANALYSIS',
-          description: 'Site characteristics, zoning, and environmental considerations',
+          criterionId: 'PROPERTY_CONDITION_DOCUMENTED', // APPR-1033-030
+          criterionName: 'Property Condition Documented',
+          description: 'Property condition rating is present and supported',
           evaluation: 'pass',
           confidence: 0.90,
-          reasoning: 'Site analysis includes lot dimensions, topography, utilities, flood zone determination (Zone X — no special hazard), zoning compliance, and easements. FEMA panel referenced.',
+          reasoning: 'Condition rating C3 is documented with supporting narrative and photographic evidence.',
           documentReferences: [
-            { section: 'Site', page: 4, quote: 'Lot size: 0.28 acres, generally level, public water & sewer, Zone X per FEMA panel 12345C0100J, effective 01/01/2024.' }
+            { section: 'Improvements', page: 5, quote: 'Condition: C3 — The improvements are well maintained with limited physical depreciation.' }
           ]
         },
         {
-          criterionId: 'RECONCILIATION',
-          description: 'Value reconciliation logic and final opinion support',
+          criterionId: 'REQUIRED_PHOTOS_INCLUDED', // APPR-1033-061
+          criterionName: 'Required Photos Included',
+          description: 'All required exterior and interior photographs are present',
+          evaluation: 'pass',
+          confidence: 0.95,
+          reasoning: 'Front, rear, and street scene exterior photos present. Interior photos include kitchen, main living area, and bathrooms.',
+          documentReferences: [
+            { section: 'Addenda — Photographs', page: 25, quote: 'Subject Front, Subject Rear, Subject Street Scene, Interior Kitchen, Interior Living Room' }
+          ]
+        },
+        {
+          criterionId: 'VALUE_SUPPORTED_BY_COMPS', // APPR-1033-076
+          criterionName: 'Value Supported by Comparables',
+          description: 'Final value opinion is supported within the comparable sales range',
           evaluation: 'pass',
           confidence: 0.85,
-          reasoning: 'Reconciliation provides adequate reasoning for weighting the Sales Comparison Approach most heavily. Final opinion of $432,000 is within the adjusted range of comparables ($421,500 – $441,200).',
+          reasoning: 'Final opinion of $432,000 is within the adjusted range of comparables ($421,500 – $441,200). Reconciliation provides adequate reasoning.',
           documentReferences: [
             { section: 'Reconciliation', page: 22, quote: 'Greatest weight given to the Sales Comparison Approach due to sufficient reliable comparable sales data.' }
           ]
@@ -1037,7 +1983,13 @@ export class AxiomService {
       );
 
       if (response.success && response.data) {
-        return response.data;
+        return response.data.map(evaluation => {
+          const meta = (evaluation as any)._metadata ?? {};
+          return {
+            ...evaluation,
+            criteria: this.enrichCriteriaRefs(evaluation.criteria, meta),
+          };
+        });
       }
 
       return [];
@@ -1074,5 +2026,68 @@ export class AxiomService {
       });
       return null;
     }
+  }
+
+  /**
+   * Build a mock CompileResponse for development / when Axiom is not configured.
+   * Uses the known 1033 criterion codes confirmed from Axiom's criteria-definitions.
+   */
+  private buildMockCompileResponse(programId: string, programVersion: string): CompileResponse {
+    const fullProgramId = `${programId}-v${programVersion}`;
+    const now = new Date().toISOString();
+
+    const defs: Array<{ concept: string; title: string; description: string; category: string; priority: string }> = [
+      { concept: 'PROPERTY_ADDRESS_COMPLETE',           title: 'Property Address Complete',           description: 'Subject property address is complete and present',                                              category: 'propertyIdentification',   priority: 'critical'  },
+      { concept: 'PARCEL_ID_MATCHES_TITLE',             title: 'Legal Description / Parcel ID',       description: 'Parcel ID / legal description matches title documentation',                                    category: 'propertyIdentification',   priority: 'critical'  },
+      { concept: 'NO_UNACCEPTABLE_APPRAISAL_PRACTICES', title: 'USPAP Standards Compliance',          description: 'Report complies with USPAP Standards Rules 1 & 2',                                            category: 'uspap',                    priority: 'critical'  },
+      { concept: 'PROPERTY_CONDITION_DOCUMENTED',       title: 'Property Condition Documented',       description: 'Condition rating (C1–C6) is present and supported by photos',                                 category: 'subjectPropertyDescription', priority: 'critical'},
+      { concept: 'MARKET_TRENDS_IDENTIFIED',            title: 'Market Trends Identified',            description: 'Market conditions identified and consistent with third-party data',                           category: 'neighborhoodAnalysis',     priority: 'required' },
+      { concept: 'PROPERTY_HIGHEST_BEST_USE',           title: 'Highest & Best Use',                  description: 'Highest and best use analysis is present and supportable',                                    category: 'siteAnalysis',             priority: 'required' },
+      { concept: 'REQUIRED_PHOTOS_INCLUDED',            title: 'Required Photos Included',            description: 'Front, rear, street, and all comparable photos are present and labeled',                     category: 'requiredExhibits',         priority: 'required' },
+      { concept: 'THREE_CLOSED_COMPS_USED',             title: 'Three Closed Comparables Used',       description: 'At least three closed arm\'s-length comparable sales used in the sales comparison approach',  category: 'comparableSalesAnalysis',  priority: 'critical'  },
+      { concept: 'COMPS_ARE_SUITABLE_SUBSTITUTES',      title: 'Comparable Selection Quality',        description: 'Comparables are suitable substitutes — similar style, size, age, condition, and location',    category: 'comparableSalesAnalysis',  priority: 'critical'  },
+      { concept: 'ADJUSTMENTS_ARE_REASONABLE',          title: 'Adjustment Reasonableness',           description: 'All adjustments are reasonable and supported by market data',                                  category: 'comparableSalesAnalysis',  priority: 'critical'  },
+      { concept: 'VALUE_SUPPORTED_BY_COMPS',            title: 'Value Supported by Comparables',      description: 'Final value opinion is supported by the adjusted comparable sales',                           category: 'comparableSalesAnalysis',  priority: 'critical'  },
+    ];
+
+    const criteria: CompiledProgramNode[] = defs.map((d, i) => {
+      const seq = String(i + 1).padStart(3, '0');
+      const nodeId = `program:${fullProgramId}:${d.category}.${d.concept}:${seq}`;
+      return {
+        id: nodeId,
+        nodeId,
+        tier: 'program',
+        owner: fullProgramId,
+        version: programVersion,
+        canonNodeId: `canon:axiom:${d.category}.${d.concept}`,
+        canonPath: `${d.category}.${d.concept}`,
+        taxonomyCategory: d.category,
+        concept: d.concept,
+        title: d.title,
+        description: d.description,
+        evaluation: { mode: 'ai-assisted' },
+        dataRequirements: [],
+        documentRequirements: [],
+        priority: d.priority,
+        required: d.priority === 'critical',
+        programId: fullProgramId,
+        compiledAt: now,
+      };
+    });
+
+    const categories = [...new Set(defs.map((d) => d.category))];
+
+    return {
+      criteria,
+      cached: false,
+      metadata: {
+        programId,
+        programVersion,
+        fullProgramId,
+        criteriaCount: criteria.length,
+        categories,
+        compiledAt: now,
+      },
+    };
   }
 }

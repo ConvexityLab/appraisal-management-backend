@@ -328,6 +328,13 @@ export interface ReviewTapeResult extends RiskTapeItem {
   axiomEvaluationId?: string;
   /** Axiom overall extraction confidence score (0–1) */
   axiomExtractionConfidence?: number;
+  // ── Axiom AI evaluation output (set after batch/order evaluation completes) ──
+  /** Axiom risk score 0–100 returned by the evaluation pipeline */
+  axiomRiskScore?: number;
+  /** Axiom overall decision returned by the evaluation pipeline */
+  axiomDecision?: 'ACCEPT' | 'CONDITIONAL' | 'REJECT';
+  /** Axiom evaluation lifecycle status */
+  axiomStatus?: 'submitted' | 'processing' | 'completed' | 'failed';
   // ── Reviewer override (set via PATCH /:jobId/review-results/:loanNumber) ──
   /** Reviewer-supplied decision override; takes precedence over computedDecision in the UI */
   overrideDecision?: ReviewDecision;
@@ -337,6 +344,11 @@ export interface ReviewTapeResult extends RiskTapeItem {
   overriddenAt?: string;
   /** User id of the reviewer who saved the override */
   overriddenBy?: string;
+  // ── Order creation (set via POST /:jobId/create-orders) ──────────────────
+  /** AppraisalOrder id stamped after create-orders converts this result to an order */
+  orderId?: string;
+  /** Human-readable order number (e.g. ORD-2026-00123) */
+  orderNumber?: string;
 }
 
 // ─── Batch Evaluation Summary ─────────────────────────────────────────────────

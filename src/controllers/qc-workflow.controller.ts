@@ -15,6 +15,7 @@ import { RevisionManagementService } from '../services/revision-management.servi
 import { EscalationWorkflowService } from '../services/escalation-workflow.service.js';
 import { SLATrackingService } from '../services/sla-tracking.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { AxiomService } from '../services/axiom.service.js';
 import { RevisionSeverity, CreateRevisionRequest } from '../types/qc-workflow.js';
 import { FieldOverride } from '../types/final-report.types.js';
 import { FinalReportService } from '../services/final-report.service.js';
@@ -29,6 +30,7 @@ const revisionService = new RevisionManagementService();
 const escalationService = new EscalationWorkflowService();
 const slaService = new SLATrackingService();
 const dbService = new CosmosDbService();
+const axiomService = new AxiomService();
 
 /** Map a QC score to a RevisionSeverity for the revision request */
 function mapScoreToSeverity(score?: number): RevisionSeverity {
@@ -1116,6 +1118,40 @@ router.post(
   handleValidationErrors,
   async (req: Request, res: Response) => {
     try {
+      // Resolve the orderId before calling completeWithDecision so we can fetch
+      // the Axiom evaluation snapshot to stamp onto the completed record.
+      const queueItemPreview = await qcQueueService.getQueueItem(req.params.queueItemId!);
+      const orderId: string = queueItemPreview?.orderId ?? '';
+
+      // Build Axiom snapshot (best-effort — failure must not block the decision)
+      let axiomSnapshot: {
+        axiomEvaluationId?: string;
+        axiomRiskScore?: number;
+        axiomStatus?: 'completed';
+        axiomCriteriaSnapshot?: Array<{ criterionId: string; description: string; evaluation: string; confidence: number }>;
+      } = {};
+      if (orderId) {
+        try {
+          const evaluations = await axiomService.getEvaluationsForOrder(orderId);
+          const completed = evaluations.find((e) => e.status === 'completed');
+          if (completed) {
+            axiomSnapshot = {
+              axiomEvaluationId: completed.evaluationId,
+              axiomRiskScore: completed.overallRiskScore,
+              axiomStatus: 'completed',
+              axiomCriteriaSnapshot: (completed.criteria ?? []).map((c: any) => ({
+                criterionId: c.criterionId,
+                description: c.criterionName ?? c.description ?? c.criterionId,
+                evaluation: c.evaluation ?? c.status,
+                confidence: c.confidence ?? 0,
+              })),
+            };
+          }
+        } catch (axiomErr) {
+          logger.warn('Could not fetch Axiom snapshot for QC decision record', { axiomErr, orderId });
+        }
+      }
+
       const result = await qcQueueService.completeWithDecision(
         req.params.queueItemId!,
         {
@@ -1124,6 +1160,7 @@ router.post(
           notes: req.body.notes,
           conditions: req.body.conditions,
           score: req.body.score,
+          ...axiomSnapshot,
         }
       );
 

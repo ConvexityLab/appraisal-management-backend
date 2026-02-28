@@ -36,6 +36,21 @@ export interface AppraisalOrder {
   paymentNotes?: string;
   // Final report history — all generation attempts embedded in the order, newest first when sorted by createdAt
   finalReports?: FinalReport[];
+  // ── Axiom AI evaluation ─────────────────────────────────────────────────
+  /** Axiom pipelineJobId returned by POST /api/pipelines */
+  axiomPipelineJobId?: string;
+  /** Axiom evaluation/batch correlation ID */
+  axiomEvaluationId?: string;
+  /** Axiom risk score 0–100 */
+  axiomRiskScore?: number;
+  /** Axiom overall decision */
+  axiomDecision?: 'ACCEPT' | 'CONDITIONAL' | 'REJECT';
+  /** Axiom evaluation lifecycle status */
+  axiomStatus?: 'submitted' | 'processing' | 'completed' | 'failed';
+  /** ISO timestamp when Axiom completed evaluation */
+  axiomCompletedAt?: string;
+  /** Risk flags raised by Axiom */
+  axiomFlags?: string[];
 }
 
 export interface PropertyAddress {
@@ -698,6 +713,14 @@ export interface OrderUpdateData {
   dueDate?: Date;
   tags?: string[];
   metadata?: Record<string, any>;
+  // Axiom AI evaluation fields (stamped by webhook handler)
+  axiomPipelineJobId?: string;
+  axiomEvaluationId?: string;
+  axiomRiskScore?: number;
+  axiomDecision?: 'ACCEPT' | 'CONDITIONAL' | 'REJECT';
+  axiomStatus?: 'submitted' | 'processing' | 'completed' | 'failed';
+  axiomCompletedAt?: string;
+  axiomFlags?: string[];
 }
 
 // ─── Client (Lender / AMC / Broker) ─────────────────────────────────────────

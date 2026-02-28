@@ -35,7 +35,7 @@ import type {
   ReviewDecision,
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
-import { OrderType, Priority } from '../types/index.js';
+import { OrderType, Priority, type AppraisalOrder } from '../types/index.js';
 
 /** Analysis types that require an existing appraisal to review */
 const REVIEW_TYPES: Set<BulkAnalysisType> = new Set([
@@ -54,6 +54,37 @@ const DEFAULT_TURN_TIME_DAYS: Record<BulkAnalysisType, number> = {
   DVR: 3,
   ROV: 3,
 };
+
+/**
+ * Build structured Axiom pipeline fields from an order.
+ * Only includes fields with a non-empty / non-zero value.
+ */
+function buildOrderFields(
+  order: AppraisalOrder,
+): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+  const addr = order.propertyAddress;
+  const prop = order.propertyDetails;
+  const loan = order.loanInformation;
+  const borrower = order.borrowerInformation;
+  return [
+    { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
+    { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
+    { fieldName: 'propertyAddress', fieldType: 'string', value: addr?.streetAddress ?? '' },
+    { fieldName: 'city',            fieldType: 'string', value: addr?.city ?? '' },
+    { fieldName: 'state',           fieldType: 'string', value: addr?.state ?? '' },
+    { fieldName: 'zipCode',         fieldType: 'string', value: addr?.zipCode ?? '' },
+    { fieldName: 'propertyType',    fieldType: 'string', value: String(prop?.propertyType ?? '') },
+    { fieldName: 'yearBuilt',       fieldType: 'number', value: prop?.yearBuilt ?? 0 },
+    { fieldName: 'gla',             fieldType: 'number', value: prop?.grossLivingArea ?? 0 },
+    { fieldName: 'bedrooms',        fieldType: 'number', value: prop?.bedrooms ?? 0 },
+    { fieldName: 'bathrooms',       fieldType: 'number', value: prop?.bathrooms ?? 0 },
+    { fieldName: 'borrowerName',    fieldType: 'string', value: `${borrower?.firstName ?? ''} ${borrower?.lastName ?? ''}`.trim() },
+  ].filter(
+    (f) =>
+      (typeof f.value === 'string' && f.value !== '') ||
+      (typeof f.value === 'number' && f.value !== 0),
+  );
+}
 
 export class BulkPortfolioService {
   private readonly logger: Logger;
@@ -205,6 +236,35 @@ export class BulkPortfolioService {
             orderNumber: (result.data as any).orderNumber,
           });
           successCount++;
+          // Auto-submit to Axiom AI pipeline (B-2) — fire-and-forget, never blocks order creation
+          const createdOrderId = result.data.id;
+          const createdOrder = result.data as unknown as AppraisalOrder;
+          setImmediate(() => {
+            this.axiomService
+              .submitOrderEvaluation(createdOrderId, buildOrderFields(createdOrder), [])
+              .then((axiomResult) => {
+                if (axiomResult) {
+                  this.dbService
+                    .updateOrder(createdOrderId, {
+                      axiomEvaluationId: axiomResult.evaluationId,
+                      axiomPipelineJobId: axiomResult.pipelineJobId,
+                      axiomStatus: 'submitted',
+                    })
+                    .catch((err: Error) =>
+                      this.logger.warn('Failed to stamp Axiom fields on bulk order', {
+                        orderId: createdOrderId,
+                        error: err.message,
+                      }),
+                    );
+                }
+              })
+              .catch((err: Error) =>
+                this.logger.warn('Axiom auto-submit failed for bulk order', {
+                  orderId: createdOrderId,
+                  error: err.message,
+                }),
+              );
+          });
         } else {
           const msg = result.error?.message ?? 'Order creation failed';
           this.logger.warn('Failed to create order for bulk row', {
@@ -257,6 +317,24 @@ export class BulkPortfolioService {
       failCount,
       skippedCount,
       status: finalStatus,
+    });
+
+    // Auto-submit CREATED orders to Axiom for risk evaluation (fire-and-forget)
+    setImmediate(() => {
+      const createdItems = results.filter(
+        (r): r is typeof r & { orderId: string } =>
+          r.status === 'CREATED' && typeof r.orderId === 'string',
+      );
+      for (const item of createdItems) {
+        this.axiomService
+          .submitOrderEvaluation(item.orderId, this._orderToLoanData(item))
+          .catch((err: Error) => {
+            this.logger.warn('Axiom auto-submit failed for order', {
+              orderId: item.orderId,
+              error: err.message,
+            });
+          });
+      }
     });
 
     return job;
@@ -327,6 +405,19 @@ export class BulkPortfolioService {
       conditional: summary.conditionalCount,
       reject: summary.rejectCount,
       avgRiskScore: summary.avgRiskScore,
+    });
+
+    // Auto-submit batch to Axiom for AI risk evaluation (fire-and-forget)
+    setImmediate(() => {
+      const loans = this._tapeResultsToLoanData(results);
+      this.axiomService
+        .submitBatchEvaluation(jobId, loans, request.reviewProgramId)
+        .catch((err: Error) => {
+          this.logger.warn('Axiom batch auto-submit failed', {
+            jobId,
+            error: err.message,
+          });
+        });
     });
 
     return job;
@@ -644,6 +735,79 @@ export class BulkPortfolioService {
     return updated;
   }
 
+  /**
+   * Stamp Axiom batch-evaluation results onto individual ReviewTapeResult items.
+   *
+   * Called from handleBulkWebhook after Axiom finishes a TAPE_EVALUATION batch.
+   * Each `loanResult` carries the loan number plus the AI-computed riskScore /
+   * decision / status.  All matching items are updated in-memory and the job
+   * is persisted **once** at the end — never once-per-loan.
+   *
+   * Returns the updated job so the caller can log summary counts.
+   */
+  async stampBatchEvaluationResults(
+    jobId: string,
+    loanResults: Array<{
+      loanNumber: string;
+      riskScore?: number;
+      decision?: 'ACCEPT' | 'CONDITIONAL' | 'REJECT';
+      status: 'completed' | 'failed';
+    }>,
+  ): Promise<BulkPortfolioJob> {
+    const jobResult = await this.dbService.queryItems<BulkPortfolioJob>(
+      'bulk-portfolio-jobs',
+      'SELECT * FROM c WHERE c.id = @id',
+      [{ name: '@id', value: jobId }],
+    );
+
+    const job = jobResult.success && jobResult.data?.[0];
+    if (!job) {
+      throw new Error(`stampBatchEvaluationResults: job '${jobId}' not found`);
+    }
+
+    if (job.processingMode !== 'TAPE_EVALUATION') {
+      throw new Error(
+        `stampBatchEvaluationResults: job '${jobId}' is not a TAPE_EVALUATION job ` +
+          `(processingMode: ${job.processingMode ?? 'ORDER_CREATION'})`,
+      );
+    }
+
+    const results = (job.items ?? []) as ReviewTapeResult[];
+    let stampedCount = 0;
+
+    for (const lr of loanResults) {
+      const idx = results.findIndex((r) => r.loanNumber === lr.loanNumber);
+      if (idx === -1) {
+        this.logger.warn('stampBatchEvaluationResults: loanNumber not found in job', {
+          jobId,
+          loanNumber: lr.loanNumber,
+        });
+        continue;
+      }
+
+      const axiomStatus: ReviewTapeResult['axiomStatus'] =
+        lr.status === 'completed' ? 'completed' : 'failed';
+
+      results[idx] = {
+        ...results[idx]!,
+        axiomStatus,
+        ...(lr.riskScore !== undefined ? { axiomRiskScore: lr.riskScore } : {}),
+        ...(lr.decision !== undefined ? { axiomDecision: lr.decision } : {}),
+      };
+      stampedCount++;
+    }
+
+    await this._saveJob({ ...job, items: results });
+
+    this.logger.info('Batch evaluation results stamped onto job', {
+      jobId,
+      requested: loanResults.length,
+      stamped: stampedCount,
+    });
+
+    return { ...job, items: results };
+  }
+
   async checkExtractionProgress(jobId: string): Promise<BulkPortfolioJob> {
     const jobResult = await this.dbService.queryItems<BulkPortfolioJob>(
       'bulk-portfolio-jobs',
@@ -732,6 +896,70 @@ export class BulkPortfolioService {
     return program;
   }
 
+  /**
+   * Map a single BulkPortfolioItem to the Axiom fields array for ORDER evaluation.
+   * Filters out blank strings and zero numbers so Axiom doesn't receive empty values.
+   */
+  private _orderToLoanData(
+    item: BulkPortfolioItem,
+  ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+    const borrowerName =
+      `${item.borrowerFirstName ?? ''} ${item.borrowerLastName ?? ''}`.trim();
+    return [
+      { fieldName: 'loanNumber',      fieldType: 'string', value: item.loanNumber ?? '' },
+      { fieldName: 'loanAmount',      fieldType: 'number', value: item.loanAmount ?? 0 },
+      { fieldName: 'loanType',        fieldType: 'string', value: item.loanType ?? '' },
+      { fieldName: 'loanPurpose',     fieldType: 'string', value: item.loanPurpose ?? '' },
+      { fieldName: 'propertyAddress', fieldType: 'string', value: item.propertyAddress },
+      { fieldName: 'city',            fieldType: 'string', value: item.city },
+      { fieldName: 'state',           fieldType: 'string', value: item.state },
+      { fieldName: 'zipCode',         fieldType: 'string', value: item.zipCode },
+      { fieldName: 'propertyType',    fieldType: 'string', value: item.propertyType ?? '' },
+      { fieldName: 'yearBuilt',       fieldType: 'number', value: item.yearBuilt ?? 0 },
+      { fieldName: 'gla',             fieldType: 'number', value: item.gla ?? 0 },
+      { fieldName: 'bedrooms',        fieldType: 'number', value: item.bedrooms ?? 0 },
+      { fieldName: 'bathrooms',       fieldType: 'number', value: item.bathrooms ?? 0 },
+      { fieldName: 'analysisType',    fieldType: 'string', value: item.analysisType },
+      { fieldName: 'borrowerName',    fieldType: 'string', value: borrowerName },
+    ].filter(
+      (f) =>
+        (typeof f.value === 'string' && f.value !== '') ||
+        (typeof f.value === 'number' && f.value !== 0),
+    );
+  }
+
+  /**
+   * Map ReviewTapeResult[] to the Axiom batch loans array for TAPE evaluation.
+   * Each entry carries the loanNumber plus a fields[] array built from RiskTapeItem data.
+   */
+  private _tapeResultsToLoanData(
+    results: ReviewTapeResult[],
+  ): Array<{ loanNumber: string; fields: Array<{ fieldName: string; fieldType: string; value: unknown }> }> {
+    return results.map((r) => ({
+      loanNumber: r.loanNumber ?? String(r.rowIndex),
+      fields: [
+        { fieldName: 'loanAmount',       fieldType: 'number', value: r.loanAmount ?? 0 },
+        { fieldName: 'loanType',         fieldType: 'string', value: r.loanType ?? '' },
+        { fieldName: 'loanPurpose',      fieldType: 'string', value: r.loanPurpose ?? '' },
+        { fieldName: 'propertyAddress',  fieldType: 'string', value: r.propertyAddress ?? '' },
+        { fieldName: 'city',             fieldType: 'string', value: r.city ?? '' },
+        { fieldName: 'state',            fieldType: 'string', value: r.state ?? '' },
+        { fieldName: 'zipCode',          fieldType: 'string', value: r.zip ?? '' },
+        { fieldName: 'appraisedValue',   fieldType: 'number', value: r.appraisedValue ?? 0 },
+        { fieldName: 'ltv',              fieldType: 'number', value: r.ltv ?? 0 },
+        { fieldName: 'propertyType',     fieldType: 'string', value: r.propertyType ?? '' },
+        { fieldName: 'yearBuilt',        fieldType: 'number', value: r.yearBuilt ?? 0 },
+        { fieldName: 'gla',              fieldType: 'number', value: r.gla ?? 0 },
+        { fieldName: 'overallRiskScore', fieldType: 'number', value: r.overallRiskScore },
+        { fieldName: 'computedDecision', fieldType: 'string', value: r.computedDecision },
+      ].filter(
+        (f) =>
+          (typeof f.value === 'string' && f.value !== '') ||
+          (typeof f.value === 'number' && f.value !== 0),
+      ),
+    }));
+  }
+
   /** Aggregate ReviewTapeResult[] into a ReviewTapeJobSummary. */
   private _computeTapeJobSummary(results: ReviewTapeResult[]): ReviewTapeJobSummary {
     const flagBreakdown: Record<string, number> = {};
@@ -771,6 +999,202 @@ export class BulkPortfolioService {
       maxRiskScore: maxScore,
       flagBreakdown,
     };
+  }
+
+  // ─── createOrdersFromResults ───────────────────────────────────────────────
+
+  /**
+   * Convert eligible ReviewTapeResult rows from a TAPE_EVALUATION job into
+   * AppraisalOrders.
+   *
+   * Eligible rows:
+   *   - computedDecision (or overrideDecision when set) is 'Accept' or 'Conditional'
+   *   - orderId is not already stamped (not previously converted)
+   *
+   * Each eligible result is mapped to a BulkPortfolioItem shape and run through
+   * the same order-creation path used by ORDER_CREATION jobs. orderId and
+   * orderNumber are stamped back onto the result in-place, and the job is
+   * persisted once after all rows are processed.
+   *
+   * Returns a summary of how many orders were created, skipped, and failed.
+   */
+  async createOrdersFromResults(
+    jobId: string,
+    tenantId: string,
+    submittedBy: string,
+  ): Promise<{
+    created: number;
+    skipped: number;
+    failed: number;
+    results: Array<{ loanNumber?: string; orderId?: string; orderNumber?: string; error?: string }>;
+  }> {
+    const job = await this.getJob(jobId, tenantId);
+    if (!job) {
+      throw new Error(`Job '${jobId}' not found`);
+    }
+    if (job.processingMode !== 'TAPE_EVALUATION') {
+      throw new Error(
+        `Job '${jobId}' is not a tape evaluation job (processingMode: ${job.processingMode ?? 'ORDER_CREATION'}) — only TAPE_EVALUATION jobs can have orders created from results`,
+      );
+    }
+    if (job.status !== 'COMPLETED' && job.status !== 'PARTIAL') {
+      throw new Error(
+        `Job '${jobId}' has status '${job.status}' — orders can only be created from COMPLETED or PARTIAL jobs`,
+      );
+    }
+
+    const tapeResults = job.items as ReviewTapeResult[];
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+    const resultSummary: Array<{ loanNumber?: string; orderId?: string; orderNumber?: string; error?: string }> = [];
+
+    for (let idx = 0; idx < tapeResults.length; idx++) {
+      const result = tapeResults[idx]!;
+      const effectiveDecision = result.overrideDecision ?? result.computedDecision;
+
+      // Skip rows that are not Accept/Conditional, or already have an orderId
+      if (effectiveDecision === 'Reject' || result.orderId) {
+        skipped++;
+        const skippedEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = {};
+        if (result.loanNumber !== undefined) skippedEntry.loanNumber = result.loanNumber;
+        if (result.orderId !== undefined) skippedEntry.orderId = result.orderId;
+        if (result.orderNumber !== undefined) skippedEntry.orderNumber = result.orderNumber;
+        resultSummary.push(skippedEntry);
+        continue;
+      }
+
+      // Map tape fields to the BulkPortfolioItem shape required by the order builder
+      const item: BulkPortfolioItem = {
+        rowIndex: result.rowIndex,
+        analysisType: 'FRAUD',                         // tapes are always fraud/QC reviews
+        propertyAddress: result.propertyAddress ?? '',
+        city: result.city ?? '',
+        state: result.state ?? '',
+        zipCode: result.zip ?? '',
+        ...(result.county !== undefined && { county: result.county }),
+        borrowerFirstName: result.borrowerName?.split(' ')[0] ?? 'Unknown',
+        borrowerLastName: result.borrowerName?.split(' ').slice(1).join(' ') || 'Unknown',
+        ...(result.loanNumber !== undefined && { loanNumber: result.loanNumber }),
+        ...(result.loanAmount !== undefined && { loanAmount: result.loanAmount }),
+        ...(result.appraisalEffectiveDate !== undefined && { existingAppraisalDate: result.appraisalEffectiveDate }),
+        ...(result.appraisedValue !== undefined && { existingAppraisedValue: result.appraisedValue }),
+        ...(result.appraiserLicense !== undefined && { appraiserLicense: result.appraiserLicense }),
+        ...(result.formType !== undefined && { appraisalFormType: result.formType }),
+        ...(result.conditionRating !== undefined && { conditionRating: result.conditionRating }),
+        ...(result.qualityRating !== undefined && { qualityRating: result.qualityRating }),
+        ...(result.gla !== undefined && { gla: result.gla }),
+        ...(result.lotSize !== undefined && { lotSize: result.lotSize }),
+        ...(result.yearBuilt !== undefined && { yearBuilt: result.yearBuilt }),
+        ...(result.bedrooms !== undefined && { bedrooms: result.bedrooms }),
+        ...(result.bathsFull !== undefined && { bathrooms: result.bathsFull }),
+        cuRiskScore: result.overallRiskScore,
+      };
+
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + DEFAULT_TURN_TIME_DAYS[item.analysisType]);
+
+      const orderPayload = {
+        tenantId,
+        clientId: job.clientId,
+        orderNumber: this._generateOrderNumber(item),
+        type: 'order' as const,
+        orderType: this._inferOrderType(item),
+        productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[item.analysisType],
+        status: OrderStatus.NEW,
+        priority: Priority.NORMAL,
+        dueDate,
+        rushOrder: false,
+        tags: ['bulk-portfolio', 'tape-conversion'],
+        metadata: {
+          ...this._buildMetadata(item),
+          sourceTapeJobId: jobId,
+          tapeRiskScore: result.overallRiskScore,
+          tapeDecision: effectiveDecision,
+        },
+        propertyAddress: {
+          streetAddress: item.propertyAddress,
+          city: item.city,
+          state: item.state,
+          zipCode: item.zipCode,
+          county: item.county ?? '',
+          apn: item.apn,
+        },
+        propertyDetails: {
+          propertyType: (result.propertyType as any) ?? 'single_family_residential',
+          occupancy: 'owner_occupied' as any,
+          yearBuilt: result.yearBuilt,
+          grossLivingArea: result.gla,
+          lotSize: result.lotSize,
+          bedrooms: result.bedrooms,
+          bathrooms: result.bathsFull,
+          features: [],
+        },
+        borrowerInformation: {
+          firstName: item.borrowerFirstName,
+          lastName: item.borrowerLastName,
+        },
+        loanInformation: {
+          loanAmount: result.loanAmount ?? 0,
+          loanType: (result.loanType as any) ?? 'conventional',
+          loanPurpose: (result.loanPurpose as any) ?? 'refinance',
+          contractPrice: undefined,
+        },
+        contactInformation: {
+          name: result.borrowerName ?? 'Unknown',
+          role: 'borrower' as any,
+          preferredMethod: 'email' as any,
+        },
+        createdBy: submittedBy,
+      };
+
+      try {
+        const orderResult = await this.dbService.createOrder(orderPayload as any);
+        if (orderResult.success && orderResult.data) {
+          tapeResults[idx] = {
+            ...result,
+            orderId: orderResult.data.id,
+            orderNumber: (orderResult.data as any).orderNumber,
+          };
+          created++;
+          const successEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = {
+            orderId: orderResult.data.id,
+            orderNumber: (orderResult.data as any).orderNumber,
+          };
+          if (result.loanNumber !== undefined) successEntry.loanNumber = result.loanNumber;
+          resultSummary.push(successEntry);
+        } else {
+          const msg = orderResult.error?.message ?? 'Order creation failed';
+          this.logger.warn('createOrdersFromResults: failed to create order', {
+            jobId,
+            loanNumber: result.loanNumber,
+            error: msg,
+          });
+          failed++;
+          const warnEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = { error: msg };
+          if (result.loanNumber !== undefined) warnEntry.loanNumber = result.loanNumber;
+          resultSummary.push(warnEntry);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        this.logger.error('createOrdersFromResults: exception creating order', {
+          jobId,
+          loanNumber: result.loanNumber,
+          error: msg,
+        });
+        failed++;
+        const catchEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = { error: msg };
+        if (result.loanNumber !== undefined) catchEntry.loanNumber = result.loanNumber;
+        resultSummary.push(catchEntry);
+      }
+    }
+
+    // Persist the updated items (with orderId/orderNumber stamped) back to Cosmos
+    await this._saveJob({ ...job, items: tapeResults });
+
+    this.logger.info('createOrdersFromResults complete', { jobId, created, skipped, failed });
+
+    return { created, skipped, failed, results: resultSummary };
   }
 
   // ─── getJobs ───────────────────────────────────────────────────────────────

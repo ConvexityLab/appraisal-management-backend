@@ -189,7 +189,17 @@ export interface QCQuestion {
   // Required Document Categories for validation
   // Maps to DocumentCategory enum (appraisal-report, property-photo, inspection-report, etc.)
   requiredDocumentCategories?: string[];
-  
+
+  /**
+   * Explicit Axiom criterion IDs that pre-answer this question.
+   * When the Axiom bridge finds a matching criterionId here it skips
+   * the LLM call and uses the Axiom result directly — providing
+   * deterministic matching instead of the fuzzy tag/id heuristic.
+   * Values must match the criterionId strings returned by AxiomService.
+   * e.g. ['COMP_SELECTION', 'MATH_ACCURACY']
+   */
+  axiomCriterionIds?: string[];
+
   // AI Analysis Configuration
   aiAnalysis?: QCAIAnalysisConfig;
   
