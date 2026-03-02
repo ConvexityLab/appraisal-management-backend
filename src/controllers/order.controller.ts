@@ -147,6 +147,7 @@ export class OrderController {
     try {
       const orderData = {
         ...req.body,
+        tenantId: req.user!.tenantId,
         createdBy: req.user?.id,
         status: OrderStatus.NEW,
         priority: req.body.priority || 'STANDARD',
@@ -161,7 +162,7 @@ export class OrderController {
           logger.error('Failed to publish ORDER_CREATED event', { orderId: created?.id, error: err }),
         );
         this.auditService.log({
-          actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
           action: 'order.created',
           resource: { type: 'order', id: created?.id || 'unknown' },
           after: { status: OrderStatus.NEW, priority: orderData.priority },
@@ -381,12 +382,12 @@ export class OrderController {
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
         this.eventService.publishOrderStatusChanged(
-          orderId, currentStatus, newStatus, req.user?.id || 'unknown',
+          orderId, currentStatus, newStatus, req.user!.id,
         ).catch((err) =>
           logger.error('Failed to publish ORDER_STATUS_CHANGED event', { orderId, error: err }),
         );
         this.auditService.log({
-          actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
           action: 'order.status_changed',
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },
@@ -417,9 +418,20 @@ export class OrderController {
 
           // Auto-submit appraisal-report documents to Axiom AI via pipeline (A-1)
           setImmediate(() => {
-            const tenantId = 'test-tenant-123';
             this.dbService.findOrderById(orderId).then((orderResult) => {
               const orderData = orderResult.success ? orderResult.data : null;
+              // Derive tenantId from the order record itself — never hardcode.
+              // All orders are created with a tenantId; if it is missing the record is corrupt.
+              const tenantId = orderData?.tenantId;
+              if (!tenantId) {
+                logger.error('Cannot auto-submit to Axiom: order has no tenantId', { orderId });
+                return;
+              }
+              const clientId = orderData?.clientId;
+              if (!clientId) {
+                logger.error('Cannot auto-submit to Axiom: order has no clientId', { orderId });
+                return;
+              }
               const fields = orderData ? buildOrderFields(orderData) : [];
               return this.documentService.listDocuments(tenantId, { orderId }).then((docResult) => {
                 const appraisalDocs = docResult.success && docResult.data
@@ -433,7 +445,7 @@ export class OrderController {
                   documentName: d.name,
                   documentReference: d.blobUrl,
                 }));
-                return this.axiomService.submitOrderEvaluation(orderId, fields, documents);
+                return this.axiomService.submitOrderEvaluation(orderId, fields, documents, tenantId, clientId);
               });
             }).then((axiomResult) => {
               if (axiomResult) {
@@ -577,12 +589,12 @@ export class OrderController {
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
         this.eventService.publishOrderStatusChanged(
-          orderId, currentStatus, OrderStatus.DELIVERED, req.user?.id || 'unknown',
+          orderId, currentStatus, OrderStatus.DELIVERED, req.user!.id,
         ).catch((err) =>
           logger.error('Failed to publish ORDER_STATUS_CHANGED event for delivery', { orderId, error: err }),
         );
         this.auditService.log({
-          actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
           action: 'order.delivered',
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },
@@ -648,17 +660,17 @@ export class OrderController {
         assignedVendorId: vendorId,
         assignedVendorName: vendorName || null,
         assignedAt: new Date().toISOString(),
-        assignedBy: req.user?.id || 'system',
+        assignedBy: req.user!.id,
       } as Partial<AppraisalOrder>);
 
       if (result.success) {
         this.eventService.publishOrderStatusChanged(
-          orderId, currentStatus, OrderStatus.ASSIGNED, req.user?.id || 'unknown',
+          orderId, currentStatus, OrderStatus.ASSIGNED, req.user!.id,
         ).catch((err) =>
           logger.error('Failed to publish ORDER_STATUS_CHANGED for assignment', { orderId, error: err }),
         );
         this.auditService.log({
-          actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+          actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
           action: 'order.assigned',
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },

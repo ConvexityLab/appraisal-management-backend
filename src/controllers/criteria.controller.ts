@@ -137,12 +137,12 @@ export class QCChecklistController {
 
       const checklistData: CreateQCChecklistRequest = {
         ...req.body,
-        createdBy: req.user?.id || 'system',
+        createdBy: req.user!.id,
         clientId: req.body.clientId || req.user?.clientId,
         organizationId: req.body.organizationId || req.user?.organizationId
       };
 
-      const result = await this.qcService.createChecklist(checklistData, req.user?.id || 'system');
+      const result = await this.qcService.createChecklist(checklistData, req.user!.id);
 
       this.logger.info('QC checklist created successfully', {
         checklistId: result.data?.id,
@@ -266,7 +266,7 @@ export class QCChecklistController {
         modifiedBy: req.user?.id
       };
 
-      const result = await this.qcService.updateChecklist(id, updates, req.user?.id || 'system');
+      const result = await this.qcService.updateChecklist(id, updates, req.user!.id);
 
       this.logger.info('QC checklist updated successfully', {
         checklistId: id,
@@ -328,7 +328,7 @@ export class QCChecklistController {
         return;
       }
 
-      await this.qcService.deleteChecklist(id, req.user?.id || 'system');
+      await this.qcService.deleteChecklist(id, req.user!.id);
 
       this.logger.info('QC checklist deleted successfully', {
         checklistId: id,
@@ -427,7 +427,7 @@ export class QCChecklistController {
         templateId,
         name,
         customizations,
-        req.user?.id || 'system'
+        req.user!.id
       );
 
       this.logger.info('Checklist created from template successfully', {
@@ -475,7 +475,7 @@ export class QCChecklistController {
         userId: req.user?.id
       });
 
-      const result = await this.qcService.cloneChecklist(id, name, req.user?.id || 'system');
+      const result = await this.qcService.cloneChecklist(id, name, req.user!.id);
 
       this.logger.info('QC checklist cloned successfully', {
         sourceChecklistId: id,
@@ -511,7 +511,7 @@ export class QCChecklistController {
     try {
       const assignmentData = {
         ...req.body,
-        assignedBy: req.user?.id || 'system',
+        assignedBy: req.user!.id,
         assignedAt: new Date()
       };
 

@@ -10,6 +10,7 @@
 
 import { Request, Response, Router } from 'express';
 import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
+import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
@@ -20,7 +21,6 @@ export class AxiomController {
   private axiomService: AxiomService;
   private dbService: CosmosDbService;
   private bulkPortfolioService: BulkPortfolioService;
-  private static readonly APP_TENANT_ID = 'test-tenant-123';
 
   /**
    * Build structured Axiom pipeline fields from an order.
@@ -141,7 +141,17 @@ export class AxiomController {
       // Load order for structured pipeline fields (A-2)
       const orderResult = await this.dbService.findOrderById(notification.orderId);
       const order: AppraisalOrder | null = orderResult.success ? orderResult.data ?? null : null;
-      const fields = order ? AxiomController.buildOrderFields(order) : [];
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Order ${notification.orderId} not found — cannot submit to Axiom without tenant/client context`,
+          },
+        });
+        return;
+      }
+      const fields = AxiomController.buildOrderFields(order);
       const documents = [{
         documentName: (notification.metadata as any)?.fileName ?? notification.orderId,
         documentReference: notification.documentUrl,
@@ -151,6 +161,8 @@ export class AxiomController {
         notification.orderId,
         fields,
         documents,
+        order.tenantId,
+        order.clientId,
       );
 
       if (!pipelineResult) {
@@ -192,7 +204,8 @@ export class AxiomController {
    * POST /api/axiom/analyze
    * 
    * Accepts the frontend AxiomAnalyzeDocumentRequest shape, looks up the
-   * document's blob URL from Cosmos, and delegates to notifyDocumentUpload().
+   * document's blob URL from Cosmos, and submits to the Axiom pipeline
+   * via submitOrderEvaluation().
    * 
    * Body: {
    *   documentId: string,
@@ -200,7 +213,7 @@ export class AxiomController {
    *   documentType?: string
    * }
    */
-  analyzeDocument = async (req: Request, res: Response): Promise<void> => {
+  analyzeDocument = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { documentId, orderId, documentType } = req.body;
 
@@ -220,13 +233,19 @@ export class AxiomController {
         return;
       }
 
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } });
+        return;
+      }
+
       // Look up the document from Cosmos to get its blob URL
       const queryResult = await this.dbService.queryItems<any>(
         'documents',
         'SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
         [
           { name: '@id', value: documentId },
-          { name: '@tenantId', value: AxiomController.APP_TENANT_ID }
+          { name: '@tenantId', value: tenantId }
         ]
       );
 
@@ -248,8 +267,18 @@ export class AxiomController {
       // Look up the order to build structured fields for the Axiom pipeline
       const orderResult = await this.dbService.findOrderById(orderId);
       const order: AppraisalOrder | null = orderResult.success ? orderResult.data ?? null : null;
+      if (!order) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Order ${orderId} not found — cannot submit to Axiom without tenant/client context`,
+          },
+        });
+        return;
+      }
 
-      const fields = order ? AxiomController.buildOrderFields(order) : [];
+      const fields = AxiomController.buildOrderFields(order);
       const documents = [{
         documentName: doc.name || doc.fileName || documentId,
         documentReference: doc.blobUrl,
@@ -258,7 +287,9 @@ export class AxiomController {
       const pipelineResult = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
-        documents
+        documents,
+        order.tenantId,
+        order.clientId,
       );
 
       if (!pipelineResult) {
@@ -317,7 +348,8 @@ export class AxiomController {
         return;
       }
 
-      const evaluations = await this.axiomService.getEvaluationsForOrder(orderId);
+      const tenantId = (req as unknown as import('../middleware/unified-auth.middleware.js').UnifiedAuthRequest).user?.tenantId;
+      const evaluations = await this.axiomService.getEvaluationsForOrder(orderId, tenantId);
 
       res.json({
         success: true,
@@ -403,8 +435,46 @@ export class AxiomController {
     const body = req.body as Record<string, unknown>;
 
     // ── New pipeline shape ────────────────────────────────────────────────
-    if (body['correlationId'] && body['correlationType'] === 'ORDER') {
-      const correlationId = body['correlationId'] as string;
+    const correlationType = body['correlationType'] as string | undefined;
+    const rawCorrelationId = body['correlationId'] as string | undefined;
+
+    if (rawCorrelationId && correlationType === 'TAPE_LOAN') {
+      // correlationId is '{jobId}::{loanNumber}' for tape fan-out submissions
+      const separatorIdx = rawCorrelationId.indexOf('::');
+      if (separatorIdx === -1) {
+        console.error('❌ Axiom webhook TAPE_LOAN: malformed correlationId (missing ::)', { correlationId: rawCorrelationId });
+        return;
+      }
+      const jobId = rawCorrelationId.slice(0, separatorIdx);
+      const loanNumber = rawCorrelationId.slice(separatorIdx + 2);
+      const pipelineJobId = body['pipelineJobId'] as string | undefined;
+      const status = (body['status'] as string) ?? 'completed';
+      const result = body['result'] as Record<string, unknown> | undefined;
+
+      type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
+      const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
+      const loanEntry: LoanResult = { loanNumber, status: loanStatus };
+      if (result) {
+        if (typeof result['overallRiskScore'] === 'number') loanEntry.riskScore = result['overallRiskScore'];
+        const dec = result['overallDecision'];
+        if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') loanEntry.decision = dec;
+      }
+
+      console.log(`📨 Axiom TAPE_LOAN webhook — jobId=${jobId} loanNumber=${loanNumber} pipelineJobId=${pipelineJobId} status=${status}`);
+
+      this.bulkPortfolioService.stampBatchEvaluationResults(jobId, [loanEntry])
+        .then(() => this.axiomService.broadcastBatchJobUpdate(jobId))
+        .catch((err: unknown) => {
+          console.error('❌ Axiom TAPE_LOAN webhook: stampBatchEvaluationResults failed', {
+            jobId, loanNumber, pipelineJobId, error: (err as Error).message,
+          });
+        });
+
+      return;
+    }
+
+    if (rawCorrelationId && correlationType === 'ORDER') {
+      const correlationId = rawCorrelationId;
       const pipelineJobId = body['pipelineJobId'] as string | undefined;
       const status = (body['status'] as string) ?? 'completed';
       const result = body['result'] as Record<string, unknown> | undefined;

@@ -17,6 +17,8 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { TapeEvaluationService } from './tape-evaluation.service.js';
 import { AxiomService } from './axiom.service.js';
 import { ReviewDocumentExtractionService } from './review-document-extraction.service.js';
+import { BlobStorageService } from './blob-storage.service.js';
+import { DocumentService } from './document.service.js';
 import {
   ANALYSIS_TYPE_TO_PRODUCT_TYPE,
   BulkAnalysisType,
@@ -36,6 +38,27 @@ import type {
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority, type AppraisalOrder } from '../types/index.js';
+
+/** Per-order Axiom evaluation summary returned by getJobAxiomStatus() */
+export interface BulkJobAxiomStatusItem {
+  axiomStatus: 'submitted' | 'processing' | 'completed' | 'failed';
+  axiomRiskScore?: number;
+  axiomEvaluationId: string;
+}
+
+/** Return type of attachDocumentsToJob (Scenarios B & C) */
+export interface AttachDocumentsResult {
+  uploaded: number;
+  failed: number;
+  noOrder: number;
+  results: Array<{
+    filename: string;
+    loanNumber: string;
+    orderId: string | null;
+    status: 'uploaded' | 'no-order' | 'error';
+    error?: string;
+  }>;
+}
 
 /** Analysis types that require an existing appraisal to review */
 const REVIEW_TYPES: Set<BulkAnalysisType> = new Set([
@@ -60,6 +83,7 @@ export class BulkPortfolioService {
   private _tapeEvaluationService: TapeEvaluationService | null = null;
   private _axiomService: AxiomService | null = null;
   private _extractionService: ReviewDocumentExtractionService | null = null;
+  private _documentService: DocumentService | null = null;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.logger = new Logger();
@@ -84,6 +108,14 @@ export class BulkPortfolioService {
       this._extractionService = new ReviewDocumentExtractionService(this.axiomService);
     }
     return this._extractionService;
+  }
+
+  private get documentService(): DocumentService {
+    if (!this._documentService) {
+      const blobService = new BlobStorageService();
+      this._documentService = new DocumentService(this.dbService, blobService);
+    }
+    return this._documentService;
   }
 
   // ─── submit ────────────────────────────────────────────────────────────────
@@ -205,11 +237,33 @@ export class BulkPortfolioService {
             orderNumber: (result.data as any).orderNumber,
           });
           successCount++;
-          // Auto-submit to Axiom AI pipeline — fire-and-forget, never blocks order creation
           const createdOrderId = result.data.id;
+
+          // Scenario A — if the tape row carried a documentUrl, fetch it and
+          // persist it to blob storage so it is associated with the new order.
+          if (item.documentUrl) {
+            const docUrl = item.documentUrl;
+            setImmediate(() => {
+              this._fetchAndStoreDocument(
+                docUrl,
+                createdOrderId,
+                tenantId,
+                submittedBy,
+                item.loanNumber,
+              ).catch((err: Error) =>
+                this.logger.warn('Scenario A document upload failed', {
+                  orderId: createdOrderId,
+                  url: docUrl,
+                  error: err.message,
+                }),
+              );
+            });
+          }
+
+          // Auto-submit to Axiom AI pipeline — fire-and-forget, never blocks order creation
           setImmediate(() => {
             this.axiomService
-              .submitOrderEvaluation(createdOrderId, this._orderToLoanData(item))
+              .submitOrderEvaluation(createdOrderId, this._orderToLoanData(item), undefined, tenantId, request.clientId)
               .then((axiomResult) => {
                 if (axiomResult) {
                   this.dbService
@@ -290,6 +344,48 @@ export class BulkPortfolioService {
     return job;
   }
 
+  // ─── _fetchAndStoreDocument ───────────────────────────────────────────────
+
+  /**
+   * Scenario A — fetch a remote appraisal PDF by URL and persist it to blob
+   * storage + Cosmos documents container.  Never throws (logs and returns on
+   * failure) so it cannot abort order creation.
+   */
+  private async _fetchAndStoreDocument(
+    url: string,
+    orderId: string,
+    tenantId: string,
+    uploadedBy: string,
+    loanNumber: string | undefined,
+  ): Promise<void> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} fetching document URL: ${url}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = response.headers.get('content-type') ?? 'application/pdf';
+    // Derive a filename: prefer the URL basename, fall back to loan number
+    const urlBasename = url.split('/').pop()?.split('?')[0] ?? '';
+    const filename =
+      urlBasename.length > 0
+        ? urlBasename
+        : loanNumber
+          ? `${loanNumber}.pdf`
+          : `appraisal-${orderId}.pdf`;
+
+    await this.documentService.uploadDocument(
+      orderId,
+      tenantId,
+      { buffer, originalname: filename, mimetype: contentType, size: buffer.length },
+      uploadedBy,
+      'appraisal-report',
+      ['bulk-upload', 'scenario-a'],
+      { source: 'bulk-tape-url', originalUrl: url },
+    );
+    this.logger.info('Scenario A document stored', { orderId, url, filename });
+  }
+
   // ─── _submitTapeEvaluation ────────────────────────────────────────────────
 
   /**
@@ -357,17 +453,25 @@ export class BulkPortfolioService {
       avgRiskScore: summary.avgRiskScore,
     });
 
-    // Auto-submit batch to Axiom for AI risk evaluation (fire-and-forget)
+    // Auto-submit each loan individually to Axiom for AI enrichment (fire-and-forget).
+    // We fan-out via the single-order RISK_EVAL pipeline, one pipeline job per loan.
+    // correlationId is '{jobId}::{loanNumber}' — the webhook handler splits this to
+    // route the result back to the correct ReviewTapeResult row via stampTapeLoanResult.
     setImmediate(() => {
-      const loans = this._tapeResultsToLoanData(results);
-      this.axiomService
-        .submitBatchEvaluation(jobId, loans, request.reviewProgramId)
-        .catch((err: Error) => {
-          this.logger.warn('Axiom batch auto-submit failed', {
-            jobId,
-            error: err.message,
+      for (const result of results) {
+        const loanNumber = result.loanNumber ?? String(result.rowIndex);
+        const correlationId = `${jobId}::${loanNumber}`;
+        const fields = this._tapeResultToLoanDataSingle(result);
+        this.axiomService
+          .submitOrderEvaluation(correlationId, fields, undefined, tenantId, request.clientId, request.reviewProgramId, 'TAPE_LOAN')
+          .catch((err: Error) => {
+            this.logger.warn('Axiom per-loan auto-submit failed', {
+              jobId,
+              loanNumber,
+              error: err.message,
+            });
           });
-        });
+      }
     });
 
     return job;
@@ -910,6 +1014,35 @@ export class BulkPortfolioService {
     }));
   }
 
+  /**
+   * Map a single ReviewTapeResult to the Axiom fields array for use in
+   * submitOrderEvaluation (per-loan fan-out from _submitTapeEvaluation).
+   */
+  private _tapeResultToLoanDataSingle(
+    r: ReviewTapeResult,
+  ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+    return [
+      { fieldName: 'loanAmount',       fieldType: 'number', value: r.loanAmount ?? 0 },
+      { fieldName: 'loanType',         fieldType: 'string', value: r.loanType ?? '' },
+      { fieldName: 'loanPurpose',      fieldType: 'string', value: r.loanPurpose ?? '' },
+      { fieldName: 'propertyAddress',  fieldType: 'string', value: r.propertyAddress ?? '' },
+      { fieldName: 'city',             fieldType: 'string', value: r.city ?? '' },
+      { fieldName: 'state',            fieldType: 'string', value: r.state ?? '' },
+      { fieldName: 'zipCode',          fieldType: 'string', value: r.zip ?? '' },
+      { fieldName: 'appraisedValue',   fieldType: 'number', value: r.appraisedValue ?? 0 },
+      { fieldName: 'ltv',              fieldType: 'number', value: r.ltv ?? 0 },
+      { fieldName: 'propertyType',     fieldType: 'string', value: r.propertyType ?? '' },
+      { fieldName: 'yearBuilt',        fieldType: 'number', value: r.yearBuilt ?? 0 },
+      { fieldName: 'gla',              fieldType: 'number', value: r.gla ?? 0 },
+      { fieldName: 'overallRiskScore', fieldType: 'number', value: r.overallRiskScore },
+      { fieldName: 'computedDecision', fieldType: 'string', value: r.computedDecision },
+    ].filter(
+      (f) =>
+        (typeof f.value === 'string' && f.value !== '') ||
+        (typeof f.value === 'number' && f.value !== 0),
+    );
+  }
+
   /** Aggregate ReviewTapeResult[] into a ReviewTapeJobSummary. */
   private _computeTapeJobSummary(results: ReviewTapeResult[]): ReviewTapeJobSummary {
     const flagBreakdown: Record<string, number> = {};
@@ -1197,6 +1330,99 @@ export class BulkPortfolioService {
     }
   }
 
+  // ─── attachDocumentsToJob ─────────────────────────────────────────────────
+
+  /**
+   * Scenarios B & C — accept one or more PDF files whose names encode the
+   * loan number (e.g. "LN-12345.pdf"), look up the corresponding orderId from
+   * the saved job, and store each file via DocumentService.
+   *
+   * Files whose stem does not match any loan number in the job are recorded
+   * with status 'no-order' — they are NOT rejected so the caller gets a full
+   * picture of what happened.
+   *
+   * The job must be an ORDER_CREATION job (processingMode absent or
+   * 'ORDER_CREATION').  Throws if the job is not found or is the wrong type.
+   */
+  async attachDocumentsToJob(
+    jobId: string,
+    tenantId: string,
+    files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>,
+    uploadedBy: string,
+  ): Promise<AttachDocumentsResult> {
+    const job = await this.getJob(jobId, tenantId);
+    if (!job) {
+      throw new Error(`Job not found: ${jobId}`);
+    }
+    if (job.processingMode && job.processingMode !== 'ORDER_CREATION') {
+      throw new Error(
+        `attachDocumentsToJob requires an ORDER_CREATION job — this job is ${job.processingMode}`,
+      );
+    }
+
+    // Build loan-number → orderId map from CREATED rows
+    const loanToOrder = new Map<string, string>();
+    for (const item of job.items as BulkPortfolioItem[]) {
+      if (item.status === 'CREATED' && item.orderId && item.loanNumber) {
+        loanToOrder.set(item.loanNumber.trim().toLowerCase(), item.orderId);
+      }
+    }
+
+    const results: AttachDocumentsResult['results'] = [];
+    let uploaded = 0;
+    let failed = 0;
+    let noOrder = 0;
+
+    for (const file of files) {
+      // Strip extension to derive loan number from filename
+      const stem = file.originalname.replace(/\.[^.]+$/, '').trim();
+      const orderId = loanToOrder.get(stem.toLowerCase()) ?? null;
+
+      if (!orderId) {
+        results.push({ filename: file.originalname, loanNumber: stem, orderId: null, status: 'no-order' });
+        noOrder++;
+        continue;
+      }
+
+      try {
+        const uploadResult = await this.documentService.uploadDocument(
+          orderId,
+          tenantId,
+          file,
+          uploadedBy,
+          'appraisal-report',
+          ['bulk-upload', 'scenario-bc'],
+          { source: 'bulk-attach', jobId },
+        );
+        if (uploadResult.success) {
+          results.push({ filename: file.originalname, loanNumber: stem, orderId, status: 'uploaded' });
+          uploaded++;
+        } else {
+          results.push({
+            filename: file.originalname,
+            loanNumber: stem,
+            orderId,
+            status: 'error',
+            error: uploadResult.error?.message ?? 'Upload failed',
+          });
+          failed++;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        this.logger.error('attachDocumentsToJob: upload exception', {
+          filename: file.originalname,
+          orderId,
+          error: msg,
+        });
+        results.push({ filename: file.originalname, loanNumber: stem, orderId, status: 'error', error: msg });
+        failed++;
+      }
+    }
+
+    this.logger.info('attachDocumentsToJob complete', { jobId, uploaded, failed, noOrder });
+    return { uploaded, failed, noOrder, results };
+  }
+
   // ─── Private helpers ───────────────────────────────────────────────────────
 
   /** Row-level validation — returns array of human-readable error strings */
@@ -1269,6 +1495,72 @@ export class BulkPortfolioService {
     const zip = item.zipCode.slice(0, 5);
     const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     return `${prefix}-${zip}-${rand}`;
+  }
+
+  // ─── getJobAxiomStatus ──────────────────────────────────────────────────────
+
+  /**
+   * Batch-fetch the latest Axiom evaluation status for every CREATED row in an
+   * ORDER_CREATION job.  Issues a single cross-partition query against aiInsights
+   * rather than N individual lookups.
+   *
+   * Returns a map of orderId → BulkJobAxiomStatusItem.  Missing entries mean no
+   * evaluation record exists yet (Axiom submission still queued).
+   */
+  async getJobAxiomStatus(
+    jobId: string,
+    tenantId: string,
+  ): Promise<Record<string, BulkJobAxiomStatusItem>> {
+    const job = await this.getJob(jobId, tenantId);
+    if (!job) throw new Error(`Bulk job ${jobId} not found`);
+
+    // Only ORDER_CREATION jobs carry BulkPortfolioItem rows with orderId.
+    const orderIds = (job.items as BulkPortfolioItem[])
+      .filter(
+        (item): item is BulkPortfolioItem & { orderId: string } =>
+          typeof (item as BulkPortfolioItem).orderId === 'string',
+      )
+      .map((item) => item.orderId);
+
+    if (orderIds.length === 0) return {};
+
+    const response = await this.dbService.queryItems<{
+      id: string;
+      orderId: string;
+      status: string;
+      results?: { riskScore?: number };
+      _ts: number;
+    }>(
+      'aiInsights',
+      `SELECT c.id, c.orderId, c.status, c.results, c._ts
+       FROM c
+       WHERE c.tenantId = @tenantId
+         AND ARRAY_CONTAINS(@orderIds, c.orderId)`,
+      [
+        { name: '@tenantId', value: tenantId },
+        { name: '@orderIds', value: orderIds },
+      ],
+    );
+
+    if (!response.success || !response.data) return {};
+
+    // Keep only the most recent evaluation record per orderId (highest _ts).
+    const latestTs = new Map<string, number>();
+    const out: Record<string, BulkJobAxiomStatusItem> = {};
+    for (const row of response.data) {
+      if (!row.orderId) continue;
+      const prev = latestTs.get(row.orderId);
+      if (prev !== undefined && prev >= row._ts) continue;
+      latestTs.set(row.orderId, row._ts);
+      const riskScore = row.results?.riskScore;
+      out[row.orderId] = {
+        axiomStatus: row.status as BulkJobAxiomStatusItem['axiomStatus'],
+        axiomEvaluationId: row.id,
+        ...(riskScore !== undefined ? { axiomRiskScore: riskScore } : {}),
+      };
+    }
+
+    return out;
   }
 
   /** Persist the job to the bulk-portfolio-jobs Cosmos container */

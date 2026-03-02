@@ -397,11 +397,11 @@ The VisionOne Valuation Platform is a **full-stack, enterprise-grade appraisal m
 | # | Issue | Severity | Location | Impact |
 |---|-------|----------|----------|--------|
 | B1 | Appraiser portal pages use `'current-user'` / `'current-user-id'` placeholder strings in some action payloads | 🔴 Critical | Multiple portal pages | Actions fire with wrong user ID; audit trail incorrect |
-| B2 | QC rules engine is local-state only — no backend persistence; rules reset on page reload | 🔴 Critical | `/qc/rules/page.tsx` | QC configuration is not saved |
-| B3 | Axiom evaluation data is stored on QC queue item but QC execution engine never reads/uses it | 🔴 Critical | `qc-execution.engine.ts` | AI analysis is not actually driving QC criteria evaluation |
+| ~~B2~~ | ~~QC rules engine is local-state only~~ | ✅ Resolved | `qc-rules.controller.ts` + `qc-rules.service.ts` (Cosmos) + `qcRulesApi.ts` + `qc/rules/page.tsx` | Full backend CRUD with Cosmos persistence wired end-to-end |
+| ~~B3~~ | ~~Axiom evaluation data never read by QC execution engine~~ | ✅ Resolved | `reviews.controller.ts` lines 196–245 | `getEvaluation(targetId)` result injected into `QCExecutionContext.axiomEvaluation` |
 | B4 | Two acceptance flow paths (vendor-engagement vs appraiser-portal) are not unified | 🟡 High | `negotiation.controller.ts` vs appraiser endpoints | Potential data inconsistency; both paths should converge |
-| B5 | Client tier scoring in QC priority returns hardcoded 10 | 🟡 High | `qc-review-queue.service.ts` | Priority scoring inaccurate; high-value clients not prioritized |
-| B6 | Vendor risk scoring in QC priority returns hardcoded 5 | 🟡 High | `qc-review-queue.service.ts` | Priority scoring inaccurate |
+| ~~B5~~ | ~~Client tier scoring returns hardcoded 10~~ | ✅ Resolved | `qc-review-queue.service.ts` `getClientTierScore()` | Queries Cosmos `sla-configurations` for `clientTier`/`slaLevel`; ENTERPRISE→15, STANDARD→10, BASIC→5 |
+| ~~B6~~ | ~~Vendor risk scoring returns hardcoded 5~~ | ✅ Resolved | `qc-review-queue.service.ts` `getVendorRiskScore()` | Queries `qc-reviews` for historical failure rate; maps ≥50%→10, ≥35%→8, ≥25%→6, ≥15%→4, ≥5%→2, else 0 |
 | B7 | `pdf-report-templates` Blob container has no templates — Final Report generation will fail | 🔴 Critical | `FinalReportService` | Cannot generate any final reports until templates seeded |
 | B8 | MISMO XML generation has no API endpoint or UI trigger | 🟡 High | `mismo-xml-generator.service.ts` | UCDP/EAD submission pathway not accessible |
 | B9 | ROV detail page download ROV report button is a TODO placeholder | 🟡 Medium | `/rov/[id]/page.tsx` | Cannot download ROV package |
@@ -478,7 +478,7 @@ The following is an **ordered, prioritized list** of remaining work to reach ful
 | N6 | Client self-registration portal | 3 days | External-facing client onboarding |
 | N7 | Borrower self-scheduling link | 2 days | Inspection appointment self-scheduling portal |
 | N8 | Billing statement PDF export | 0.5 day | PDF generation for monthly billing statements |
-| N9 | Clean up dead code (Phase 6.2) | 1 day | Remove `order-negotiation.controller.ts` (451-line orphan), `.bak` files, unused duplicate services |
+| ~~N9~~ | ~~Clean up dead code (Phase 6.2)~~ | ~~1 day~~ | ✅ **DONE** — `order-negotiation.controller.ts` was already deleted from `src/`. No `.bak` files in `src/`. `order-negotiation.service.ts` retained (still imported by live `negotiation.controller.ts`). |
 | N10 | LOS Integration (Encompass, Byte Pro) | 10+ days | Phase 5 from original roadmap |
 | N11 | Underwriting push (live endpoint) | 2 days | Requires underwriting system API credentials |
 

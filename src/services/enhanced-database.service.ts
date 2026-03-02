@@ -631,6 +631,7 @@ export class EnhancedDatabaseService {
       {
         id: 'order-001',
         clientId: 'client-001',
+        tenantId: 'tenant-001',
         orderNumber: 'APR-2024-001',
         propertyAddress: firstProperty.address,
         propertyDetails: firstProperty.details,

@@ -85,9 +85,6 @@ export class DocumentController {
   private blobService: BlobStorageService;
   private axiomService: AxiomService;
 
-  // Azure AD tid claim is a directory GUID, not our app tenant.
-  // All seed data uses this value, so we hard-code it until tenant resolution middleware is built.
-  private static readonly APP_TENANT_ID = 'test-tenant-123';
 
   // Blob Storage container for document files (set via STORAGE_CONTAINER_DOCUMENTS env var)
   private static readonly BLOB_CONTAINER = (() => {
@@ -222,8 +219,9 @@ export class DocumentController {
         parsedMetadata = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
       }
 
-      const tenantId = DocumentController.APP_TENANT_ID;
-      const userId = req.user?.id || 'unknown';
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+      const userId = req.user!.id;
 
       const result = await this.documentService.uploadDocument(
         orderId,
@@ -250,13 +248,19 @@ export class DocumentController {
         setImmediate(() => {
           this.dbService.findOrderById(orderId).then((orderResult) => {
             const order = orderResult.success ? orderResult.data : null;
-            const fields = order
-              ? buildOrderFields(order)
-              : [];
+            if (!order) {
+              console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} not found`);
+              return Promise.resolve(null);
+            }
+            if (!order.tenantId || !order.clientId) {
+              console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} missing tenantId or clientId`);
+              return Promise.resolve(null);
+            }
+            const fields = buildOrderFields(order);
             const documents = [
               { documentName: savedDoc.name, documentReference: savedDoc.blobUrl },
             ];
-            return this.axiomService.submitOrderEvaluation(orderId, fields, documents);
+            return this.axiomService.submitOrderEvaluation(orderId, fields, documents, order.tenantId, order.clientId);
           }).then((axiomResult) => {
             if (axiomResult) {
               console.log(`[DocumentController] Auto-submitted doc ${savedDoc.id} to Axiom pipeline → evaluationId: ${axiomResult.evaluationId}`);
@@ -295,7 +299,8 @@ export class DocumentController {
    */
   private async listDocuments(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = DocumentController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       
       const query: DocumentListQuery = {};
       if (req.query.orderId) query.orderId = req.query.orderId as string;
@@ -339,7 +344,8 @@ export class DocumentController {
   private async getDocument(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id!;
-      const tenantId = DocumentController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
 
       const result = await this.documentService.getDocument(id, tenantId);
 
@@ -369,7 +375,8 @@ export class DocumentController {
   private async downloadDocument(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id!;
-      const tenantId = DocumentController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
 
       // Look up document metadata to get the blobName
       const result = await this.documentService.getDocument(id, tenantId);
@@ -411,7 +418,8 @@ export class DocumentController {
   private async updateDocument(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id!;
-      const tenantId = DocumentController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       const updates: DocumentUpdateRequest = req.body;
 
       const result = await this.documentService.updateDocument(id, tenantId, updates);
@@ -441,7 +449,8 @@ export class DocumentController {
   private async deleteDocument(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id!;
-      const tenantId = DocumentController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
 
       const result = await this.documentService.deleteDocument(id, tenantId);
 

@@ -135,21 +135,17 @@ Backend (receives, verifies, stamps Cosmos, broadcasts via WebPubSub)
 
 ---
 
-## 4. What Is Broken / Wrong Right Now
+## 4. Previously Broken — Now Fixed
 
-### 4.1 🔴 `order.controller.ts` — wrong Axiom method called on SUBMIT
+### 4.1 ✅ FIXED — `order.controller.ts` now calls `submitOrderEvaluation()`
 
-**File:** `src/controllers/order.controller.ts` line ~395  
-**What it does:** When an order's status changes to `SUBMITTED`, it loops over `appraisal-report` documents and calls `this.axiomService.notifyDocumentUpload()` for each one.  
-**Why it's wrong:** `notifyDocumentUpload()` is the old pre-pipeline stub. It hits `POST /documents` (not the pipeline), does not set `pipelineJobId` on the order, does not open an SSE stream, and does not stamp the correct Axiom fields back on the order.  
-**What it should do:** Match the pattern in `document.controller.ts` — call `this.axiomService.submitOrderEvaluation(orderId, fields, documents)`, then stamp `axiomEvaluationId`, `axiomPipelineJobId`, `axiomStatus: 'submitted'` on the order.  
-**Impact:** Every order submitted via the UI's status-change flow goes to the wrong Axiom path. In mock mode it still produces an evaluation (the old mock lifecycle runs), but in production it would call a non-pipeline endpoint.
+**Was:** On SUBMITTED status change, called `notifyDocumentUpload()` (old pre-pipeline stub).  
+**Fix:** Now calls `this.axiomService.submitOrderEvaluation(orderId, fields, documents)` and stamps `axiomEvaluationId`, `axiomPipelineJobId`, `axiomStatus: 'submitted'` back on the order — matching the pattern in `document.controller.ts`.
 
-### 4.2 ⚠️ `axiom.controller.ts` `notifyDocument` handler still delegates to `notifyDocumentUpload()`
+### 4.2 ✅ FIXED — `axiom.controller.ts` `notifyDocument` handler
 
-**File:** `src/controllers/axiom.controller.ts` line ~142  
-**What it does:** `POST /api/axiom/documents` calls `this.axiomService.notifyDocumentUpload(notification)`.  
-**Why it's a smell:** This is a backend-to-backend route and `notifyDocumentUpload` is the old stub. Should be converted to `submitOrderEvaluation`. However, this route is not called from the frontend (`/analyze` is) so it is lower urgency than 4.1. Mark for cleanup.
+**Was:** `POST /api/axiom/documents` delegated to `notifyDocumentUpload()` (old stub).  
+**Fix:** Converted to `submitOrderEvaluation()`. This backend-to-backend route now routes to the pipeline correctly.
 
 ---
 
@@ -157,38 +153,36 @@ Backend (receives, verifies, stamps Cosmos, broadcasts via WebPubSub)
 
 These are ordered by dependency. Nothing in Group B can ship until Group A is done.
 
-### Group A — Fix broken wiring (do this week)
+### Group A — Fix broken wiring ✅ ALL DONE
 
-| ID | What | File | Effort |
-|---|---|---|---|
-| **A-1** | Replace `notifyDocumentUpload()` in `order.controller.ts` with `submitOrderEvaluation()` pattern (same as `document.controller.ts`). Stamp `axiomEvaluationId`, `axiomPipelineJobId`, `axiomStatus` back on order on success. | `src/controllers/order.controller.ts` line ~395 | 1 hour |
-| **A-2** | Convert `POST /api/axiom/documents` handler to use `submitOrderEvaluation()` instead of `notifyDocumentUpload()`. | `src/controllers/axiom.controller.ts` line ~142 | 30 min |
+| ID | What | Status |
+|---|---|---|
+| **A-1** | Replace `notifyDocumentUpload()` in `order.controller.ts` with `submitOrderEvaluation()`. | ✅ DONE — `order.controller.ts` now calls `submitOrderEvaluation()` and stamps `axiomEvaluationId`/`axiomPipelineJobId`/`axiomStatus` on the order. |
+| **A-2** | Convert `POST /api/axiom/documents` handler to `submitOrderEvaluation()`. | ✅ DONE — `axiom.controller.ts` `notifyDocument` handler updated. |
 
-### Group B — Missing auto-submit wiring (blocking full automation)
+### Group B — Auto-submit wiring ✅ ALL DONE
 
-| ID | What | File | Effort |
-|---|---|---|---|
-| **B-1** | Add `_orderToLoanData(item: BulkPortfolioItem)` helper that maps item fields → `Array<{fieldName, fieldType, value}>` for the pipeline input. | `src/services/bulk-portfolio.service.ts` | 1 hour |
-| **B-2** | After `createOrder()` succeeds in the ORDER_CREATION path, fire `setImmediate(() => this.axiomService.submitOrderEvaluation(...))`. Never blocks order creation. Warn-log on failure. | `src/services/bulk-portfolio.service.ts` | 30 min |
-| **B-3** | Investigate: identify the document upload controller/service path for single (flow) orders. Confirm blob URL is available at upload time. Then add `submitOrderEvaluation()` call on appraisal-report upload. | TBD after investigation | 1–2 hours |
+| ID | What | Status |
+|---|---|---|
+| **B-1** | `_orderToLoanData()` helper in `bulk-portfolio.service.ts`. | ✅ DONE — helper exists at `bulk-portfolio.service.ts` line ~212. |
+| **B-2** | Fire `submitOrderEvaluation()` after `createOrder()` in ORDER_CREATION path. | ✅ DONE — `setImmediate(() => this.axiomService.submitOrderEvaluation(...))` wired in `bulk-portfolio.service.ts`. |
+| **B-3** | `submitOrderEvaluation()` on appraisal-report upload in single-order flow. | ✅ DONE — `document.controller.ts` calls `submitOrderEvaluation()` on appraisal-report upload. |
 
-### Group C — Tape batch (blocked on Axiom team)
+### Group C — Tape batch ✅ ALL DONE
 
-| ID | What | File | Effort |
-|---|---|---|---|
-| **C-1** | Add `_tapeResultToLoanData(result: ReviewTapeResult)` helper. | `src/services/bulk-portfolio.service.ts` | 1 hour |
-| **C-2** | After `_submitTapeEvaluation()` saves the job, fire `setImmediate(() => this.axiomService.submitBatchEvaluation(...))`. | `src/services/bulk-portfolio.service.ts` | 30 min |
-| **C-3** | Add "AI Risk" column to `ReviewTapeResultsGrid.tsx` — shows `axiomRiskScore` + `axiomDecision` when present, spinner when `axiomStatus === 'processing'`, auto-refreshes via WebSocket. | `src/app/(control-panel)/bulk-portfolios/ReviewTapeResultsGrid.tsx` | 2 hours |
+| ID | What | Status |
+|---|---|---|
+| **C-1** | `_tapeResultToLoanData()` helper. | ✅ DONE — implemented in `bulk-portfolio.service.ts`. |
+| **C-2** | Fire `submitBatchEvaluation()` after `_submitTapeEvaluation()`. | ✅ DONE — per-loan `submitOrderEvaluation` fan-out with `TAPE_LOAN` correlationType; webhook routing with `::` separator implemented. |
+| **C-3** | "AI Risk" column in `ReviewTapeResultsGrid.tsx`. | ✅ DONE — shows `axiomRiskScore`/`axiomDecision`, spinner on `axiomStatus === 'processing'`, auto-refreshes via WebSocket. |
 
-> ⏸️ **C-1 through C-3 are blocked until Axiom confirms `POST /api/pipelines` supports the `loans[]` scatter pattern.** See Section 7.
+### Group D — Frontend display ✅ ALL DONE
 
-### Group D — Frontend display (results not visible in UI yet)
-
-| ID | What | File | Effort |
-|---|---|---|---|
-| **D-1** | Wire `useGetOrderEvaluationsQuery(orderId)` in the order detail page. Render an Axiom panel: status badge, risk score (0–100), decision badge (ACCEPT/CONDITIONAL/REJECT), top flags, "Re-run Analysis" button. | Order detail page component | 3–4 hours |
-| **D-2** | Fix confidence display in `AxiomInsightsPanel` — `${criterion.confidence}%` should be `${Math.round(criterion.confidence * 100)}%` (backend returns 0–1 float, not a percentage). | `AxiomInsightsPanel` component | 15 min |
-| **D-3** | Verify frontend `AxiomDocumentReference.text` field is mapped from backend `DocumentReference.quote`. The `normalizeEvaluationResponse()` in `axiomApi.ts` already sets both `quote` and `text` (deprecated alias) — confirm the panel renders `quote` not just `text`. | `axiomApi.ts` + panel component | 30 min |
+| ID | What | Status |
+|---|---|---|
+| **D-1** | Wire `useGetOrderEvaluationsQuery(orderId)` in order detail page with Axiom panel. | ✅ DONE — `AxiomAnalysisTab` (with `AxiomInsightsPanel`) wired in orders/[id]/page.tsx. |
+| **D-2** | Fix confidence display: `${criterion.confidence}%` → `${Math.round(criterion.confidence * 100)}%`. | ✅ DONE — `AxiomInsightsPanel` already renders `Math.round(c.confidence * 100)%`. |
+| **D-3** | Verify `AxiomDocumentReference.text` maps from backend `DocumentReference.quote`. | ✅ DONE — `normalizeEvaluationResponse()` sets both `quote` and `text`; panel renders `quote`. |
 
 ---
 

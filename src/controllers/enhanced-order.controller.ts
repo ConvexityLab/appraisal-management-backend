@@ -58,7 +58,11 @@ export class EnhancedOrderController {
    */
   private async createOrderWithIntelligence(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id || 'test-user';
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+        return;
+      }
       const enablePreQualification = req.body.enablePreQualification !== false;
 
       const result = await this.enhancedOrderService.createOrderWithIntelligence(
@@ -85,8 +89,12 @@ export class EnhancedOrderController {
    */
   private async getDashboard(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id || 'test-user';
-      
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+        return;
+      }
+
       const result = await this.enhancedOrderService.getOrderDashboard(
         {},
         userId

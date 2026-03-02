@@ -15,9 +15,8 @@ import { AppraisalManagementAPIServer } from './api/api-server.js';
 // In production ALL of these are required; in dev/test we warn only so local
 // mock/azurite setups can start without a full cloud config.
 const requiredEnvVars: string[] = [
-  'COSMOS_DB_ENDPOINT',
-  'COSMOS_DB_DATABASE_ID',
-  'AZURE_STORAGE_ACCOUNT_NAME',
+  'AZURE_COSMOS_ENDPOINT',       // Used by all services and controllers (was COSMOS_DB_ENDPOINT — wrong name)
+  'AZURE_STORAGE_ACCOUNT_NAME',  // Used by blob storage service
 ];
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 const isProduction = process.env['NODE_ENV'] === 'production';

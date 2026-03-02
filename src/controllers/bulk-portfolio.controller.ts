@@ -6,14 +6,17 @@
  *   GET   /api/bulk-portfolios                                   → list jobs for tenant
  *   GET   /api/bulk-portfolios/:jobId                            → get single job with full item results
  *   GET   /api/bulk-portfolios/:jobId/review-results             → tape evaluation results for a job
+ *   GET   /api/bulk-portfolios/:jobId/axiom-status               → per-order Axiom status map (ORDER_CREATION jobs)
  *   PATCH /api/bulk-portfolios/:jobId/review-results/:loanNumber → update reviewer notes / decision override
  *   POST  /api/bulk-portfolios/:jobId/create-orders              → convert eligible tape results into orders
  *   GET   /api/bulk-portfolios/:jobId/extraction-progress        → poll async extraction job progress
  */
 
 import express, { Response } from 'express';
+import multer from 'multer';
 import { body, param, query, validationResult } from 'express-validator';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service.js';
+import type { BulkJobAxiomStatusItem, AttachDocumentsResult } from '../services/bulk-portfolio.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
@@ -89,6 +92,15 @@ const validateSubmit = [
 ];
 
 export function createBulkPortfolioRouter(dbService: CosmosDbService) {
+  // Multer for Scenario B / C document uploads — stored in memory, 50 MB cap
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      // Accept any file — callers should send PDFs but we don't reject other types
+      cb(null, true);
+    },
+  });
   /**
    * POST /submit
    * Body: BulkSubmitRequest
@@ -336,6 +348,40 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
   );
 
   /**
+   * GET /:jobId/axiom-status
+   *
+   * Returns a map of orderId → { axiomStatus, axiomRiskScore?, axiomEvaluationId }
+   * for all rows in an ORDER_CREATION job that have a CREATED status.
+   * Intended to be polled by the UI at ~15 s intervals until all rows reach
+   * a terminal evaluation state (completed | failed).
+   */
+  router.get(
+    '/:jobId/axiom-status',
+    param('jobId').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      try {
+        const tenantId = resolveTenantId(req);
+        const service = getService(dbService);
+        const statusMap: Record<string, BulkJobAxiomStatusItem> =
+          await service.getJobAxiomStatus(req.params['jobId']!, tenantId);
+        return res.json(statusMap);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        if (msg.includes('not found')) {
+          return res.status(404).json({ error: msg });
+        }
+        logger.error('Bulk portfolio axiom-status error', { error: err });
+        return res.status(500).json({ error: 'Failed to retrieve Axiom status' });
+      }
+    },
+  );
+
+  /**
    * GET /:jobId/extraction-progress
    *
    * Polls Axiom's aiInsights Cosmos cache for completed TAPE_EXTRACTION records
@@ -363,6 +409,64 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
         return res
           .status(500)
           .json({ error: 'Failed to check extraction progress' });
+      }
+    },
+  );
+
+  /**
+   * POST /:jobId/attach-documents
+   *
+   * Scenarios B & C — attach one or more PDF files to orders in a completed
+   * ORDER_CREATION job.  Each file must be named <loanNumber>.<ext> so the
+   * backend can match it to the right order (e.g. "LN-12345.pdf").
+   *
+   * Multipart field: "files" (one or more).
+   *
+   * Returns 200 { uploaded, failed, noOrder, results[] }.
+   */
+  router.post(
+    '/:jobId/attach-documents',
+    param('jobId').isString().notEmpty(),
+    upload.array('files', 200),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const files = req.files as Express.Multer.File[] | undefined;
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded — include at least one file under the "files" field' });
+      }
+
+      try {
+        const tenantId = resolveTenantId(req);
+        const uploadedBy = req.user?.id ?? 'unknown';
+        const service = getService(dbService);
+
+        const result: AttachDocumentsResult = await service.attachDocumentsToJob(
+          req.params['jobId']!,
+          tenantId,
+          files.map((f) => ({
+            buffer: f.buffer,
+            originalname: f.originalname,
+            mimetype: f.mimetype,
+            size: f.size,
+          })),
+          uploadedBy,
+        );
+
+        return res.status(200).json(result);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        if (msg.includes('not found')) {
+          return res.status(404).json({ error: msg });
+        }
+        if (msg.includes('ORDER_CREATION')) {
+          return res.status(400).json({ error: msg });
+        }
+        logger.error('Bulk portfolio attach-documents error', { error: err });
+        return res.status(500).json({ error: 'Failed to attach documents', message: msg });
       }
     },
   );

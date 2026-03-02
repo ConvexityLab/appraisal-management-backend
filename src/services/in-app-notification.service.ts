@@ -118,14 +118,12 @@ export class InAppNotificationService {
 
       this.database = this.client.database(databaseId);
 
-      // Create container if it doesn't exist (for dev/test — production uses Bicep)
-      const { container } = await this.database.containers.createIfNotExists({
-        id: containerId,
-        partitionKey: { paths: ['/userId'] },
-        defaultTtl: TTL_90_DAYS,
-      });
+      // Container must be pre-created by Bicep — never create infrastructure in code.
+      this.container = this.database.container(containerId);
 
-      this.container = container;
+      // Verify the container is reachable before marking as initialized
+      await this.container.read();
+
       this.initialized = true;
       this.logger.info('In-app notification container initialized');
       return this.container;

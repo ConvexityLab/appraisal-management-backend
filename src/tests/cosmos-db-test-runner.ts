@@ -36,6 +36,7 @@ export async function testCosmosDbConnection(): Promise<void> {
     const now = new Date();
     const testOrder = {
       clientId: 'test-client-001',
+      tenantId: 'test-tenant-001',
       orderNumber: `TEST-${Date.now()}`,
       propertyAddress: {
         streetAddress: '123 Test Property Lane',

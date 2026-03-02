@@ -223,7 +223,7 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | Verify/dispute per criterion | ✅ EXISTS | PATCH endpoint + frontend buttons. |
 | Revision request workflow | ✅ EXISTS | Full create/submit/accept/reject cycle. |
 | Escalation workflow | ✅ EXISTS | 7 escalation types, comments, resolution. |
-| **Accept/reject/reconsider at review level** | ⚠️ PARTIAL | `QCDecisionDialog` component + backend `completeWithDecision()` + RTK hook all exist. **Dialog not wired** into QC detail page — no button to open it (Phase 5.7). |
+| **Accept/reject/reconsider at review level** | ✅ DONE | `QCDecisionDialog` wired into QC detail page header via "Submit Decision" button. Backend `completeWithDecision()` + RTK `useCompleteReviewWithDecisionMutation` complete. |
 | **Reconsideration routing** | ⚠️ PARTIAL | Rejection auto-creates revision request, but no dedicated reconsideration flow with specific asks routed back to appraiser (Phase 5.8). |
 
 ---
@@ -285,29 +285,29 @@ Remaining: Two assignment scoring algorithms still exist (`VendorMatchingService
 | 4.4 | **Build notification preferences UI** — frontend settings page for channel/category toggles | 1 day | 🟡 Medium | ✅ DONE — Full page with channel/category matrix + quiet hours settings |
 | 4.5 | **Add real-time (WebSocket or SSE)** — server-push for notifications and status changes | 2 days | 🟡 Medium | ✅ DONE — Azure Web PubSub service + negotiate endpoint + frontend `useNotificationSocket` hook + Bicep infra |
 
-### Phase 5: QC Review (Steps 8-12)  ⚠️ 6/9 DONE — 2 partial, 1 missing
+### Phase 5: QC Review (Steps 8-12)  ⚠️ 8/9 DONE — 1 partial
 > The review workflow end-to-end
 
 | # | Task | Effort | Priority | Status |
 |---|------|--------|----------|--------|
 | 5.1 | **Wire auto-route to QC** — when order → SUBMITTED, auto-create QC queue item | 0.5 day | 🔴 Critical | ✅ DONE — SUBMITTED → addToQueue + SLA tracking + auto-advance |
-| 5.2 | **Bridge Axiom → QC execution** — feed Axiom evaluation data into checklist engine | 2 days | 🔴 Critical | ⚠️ PARTIAL — Axiom data stored on QC queue item but QC execution engine never reads/uses it. Bridge logic not implemented. |
+| 5.2 | **Bridge Axiom → QC execution** — feed Axiom evaluation data into checklist engine | 2 days | 🔴 Critical | ✅ DONE — `reviews.controller.ts` fetches `axiomService.getEvaluation(targetId)` and injects the result as `QCExecutionContext.axiomEvaluation`. Also stamps `documentData.__axiomEvaluation` so AI prompts can reference it. |
 | 5.3 | **Build QC assignment dialog** — UI for assigning/suggesting reviewers from queue page | 1 day | 🟡 High | ✅ DONE — `QCAssignmentDialog` component wired into QC queue page: header button + per-row assign for unassigned items. Replaced mock Execute dialog. |
 | 5.4 | **Wire PDF coordinate highlighting** — use Syncfusion annotation API with Axiom coordinates | 1.5 days | 🟡 High | ✅ DONE — Syncfusion annotation API wired with Axiom page/coordinate references |
-| 5.5 | **Persist QC rules** — backend CRUD for rules engine, replace local-state-only UI | 1.5 days | 🟡 High | ❌ NOT DONE — UI is local-state only with hardcoded mocks. Zero backend CRUD endpoints. |
+| 5.5 | **Persist QC rules** — backend CRUD for rules engine, replace local-state-only UI | 1.5 days | 🟡 High | ✅ DONE — `qc-rules.controller.ts` (CRUD + toggle + duplicate) + `qc-rules.service.ts` (Cosmos `qc-rules` container) + `qcRulesApi.ts` (RTK Query) + `qc/rules/page.tsx` (uses `useGetQCRulesQuery` and all mutations). |
 | 5.6 | **Build "return to queue" action** — reviewer can decline/return assignment | 0.5 day | 🟡 Medium | ✅ DONE — Backend `returnToQueue()` + RTK hook + "Return to Queue" button in QC detail page header. |
 | 5.7 | **Build final review decision** — overall accept/reject/reconsider button at review level | 1 day | 🟡 High | ✅ DONE — `QCDecisionDialog` wired into QC detail page header ("Submit Decision" button). Backend `completeWithDecision()` + RTK hook complete. |
 | 5.8 | **Build reconsideration routing** — route back to appraiser with specific revision asks | 1.5 days | 🟡 Medium | ⚠️ PARTIAL — Rejection auto-creates revision request, but no dedicated reconsideration flow with specific asks. |
 | 5.9 | **Replace mocked QC dashboard data** — real stats, charts, recent results from backend | 1 day | 🟡 Medium | ✅ DONE — `QCDashboard` real-data component wired as "Dashboard" tab in QC queue page. Uses `useGetQueueStatisticsQuery`, `useGetSLAMetricsQuery`, `useGetAnalystWorkloadQuery`, etc. |
 
-### Phase 6: Polish & Production Readiness  ❌ 1/4 DONE
+### Phase 6: Polish & Production Readiness  ⚠️ 3/4 DONE
 > Harden for real use
 
 | # | Task | Effort | Priority | Status |
 |---|------|--------|----------|--------|
-| 6.1 | **Appraiser portal auth** — replace hardcoded mock appraiser ID with real auth | 1 day | 🔴 Critical | ❌ NOT DONE — `MOCK_APPRAISER_ID` hardcoded in 5+ places across appraiser portal pages |
+| 6.1 | **Appraiser portal auth** — replace hardcoded mock appraiser ID with real auth | 1 day | 🔴 Critical | ✅ DONE — `user?.id ?? 'unknown-appraiser'` fallback removed from all 5 locations. `useGetPendingAssignmentsQuery` gets `skip: !userId`; all mutation handlers fail fast with an actionable error if `user.id` is absent; spinner shown while auth resolves. |
 | 6.2 | **Clean up dead code** — remove unmounted controllers, unused types, duplicate services | 1 day | 🟡 Medium | ❌ NOT DONE — `order-negotiation.controller.ts` (451 lines) still on disk + `.bak` files remain |
-| 6.3 | **Real client tier + vendor risk scoring** — replace stubs with real data queries | 1 day | 🟡 Medium | ❌ NOT DONE — Both return hardcoded values (clientTier→10, vendorRisk→5) |
+| 6.3 | **Real client tier + vendor risk scoring** — replace stubs with real data queries | 1 day | 🟡 Medium | ✅ DONE — `getClientTierScore()` queries Cosmos `sla-configurations` for `clientTier`/`slaLevel`; `getVendorRiskScore()` queries `qc-reviews` for historical failure rate (REJECTED/REVISION_REQUIRED). |
 | 6.4 | **Vendor rejection dialog** — replace `window.prompt()` with proper MUI dialog | 0.5 day | 🟟 Low | ✅ DONE — Full MUI rejection dialogs in place |
 
 ### Phase 7: Photo Intelligence & Image Processing (Steps 7, 8, 11)

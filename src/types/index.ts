@@ -11,6 +11,7 @@ export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIAL';
 export interface AppraisalOrder {
   id: string;
   clientId: string;
+  tenantId: string;
   orderNumber: string;
   propertyAddress: PropertyAddress;
   propertyDetails: PropertyDetails;
@@ -51,6 +52,10 @@ export interface AppraisalOrder {
   axiomCompletedAt?: string;
   /** Risk flags raised by Axiom */
   axiomFlags?: string[];
+  /** Axiom evaluation program applied to this order */
+  axiomProgramId?: string;
+  /** Version of the Axiom evaluation program */
+  axiomProgramVersion?: string;
 }
 
 export interface PropertyAddress {
@@ -721,6 +726,8 @@ export interface OrderUpdateData {
   axiomStatus?: 'submitted' | 'processing' | 'completed' | 'failed';
   axiomCompletedAt?: string;
   axiomFlags?: string[];
+  axiomProgramId?: string;
+  axiomProgramVersion?: string;
 }
 
 // ─── Client (Lender / AMC / Broker) ─────────────────────────────────────────

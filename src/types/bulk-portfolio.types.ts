@@ -133,6 +133,14 @@ export interface BulkPortfolioItem {
   /** Collateral Underwriter risk score 1.0–5.0; preferred ≤2.5 */
   cuRiskScore?: number;
 
+  // ── Document (optional — Scenario A: URL in tape CSV for auto-upload) ───────
+  /**
+   * Optional URL of the appraisal PDF to automatically fetch and store in blob
+   * storage when this order is created.  Populated from a "document url" /
+   * "appraisal url" / "pdf url" column in the tape CSV.
+   */
+  documentUrl?: string;
+
   // ── Result (populated by service after submission) ────────────────────────
   status?: BulkItemStatus;
   validationErrors?: string[];

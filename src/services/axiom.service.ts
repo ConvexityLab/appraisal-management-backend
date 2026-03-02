@@ -86,6 +86,16 @@ export interface CriterionEvaluation {
 export interface AxiomEvaluationResult {
   orderId: string;
   evaluationId: string;
+  pipelineJobId?: string;
+  correlationType?: string;
+  /** Our tenant identifier passed to Axiom for data partitioning and correlation */
+  tenantId?: string;
+  /** Our client identifier passed to Axiom for data partitioning and correlation */
+  clientId?: string;
+  /** The evaluation program applied to this submission */
+  programId?: string;
+  /** The version of the evaluation program */
+  programVersion?: string;
   documentType: DocumentType;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   criteria: CriterionEvaluation[];
@@ -402,131 +412,6 @@ export class AxiomService {
   }
 
   /**
-   * Notify Axiom of a new document for analysis
-   * 
-   * @param notification Document notification with Azure Blob SAS URL
-   * @returns Evaluation ID for tracking
-   */
-  async notifyDocumentUpload(notification: AxiomDocumentNotification): Promise<{
-    success: boolean;
-    evaluationId?: string;
-    error?: string;
-  }> {
-    if (!this.enabled) {
-      const mockEvalId = `mock-eval-${notification.orderId}-${Date.now()}`;
-      console.log(`🧪 [MOCK] Axiom mock mode — creating pending evaluation ${mockEvalId} for order ${notification.orderId}`);
-
-      // Store a PENDING record in Cosmos — frontend will see "Processing"
-      const pendingRecord: AxiomEvaluationResult = {
-        orderId: notification.orderId,
-        evaluationId: mockEvalId,
-        documentType: notification.documentType,
-        status: 'pending',
-        criteria: [],
-        overallRiskScore: 0,
-        timestamp: new Date().toISOString()
-      };
-      const cosmosRecord = {
-        id: mockEvalId,
-        ...pendingRecord,
-        _metadata: {
-          documentId: notification.metadata?.documentId,
-          documentName: notification.metadata?.fileName,
-          blobUrl: notification.documentUrl,
-          fileName: notification.metadata?.fileName,
-          notificationSent: new Date().toISOString()
-        }
-      };
-      await this.storeEvaluationRecord(cosmosRecord);
-
-      // Transition to "processing" after 1 second
-      setTimeout(async () => {
-        try {
-          const processingRecord = { ...cosmosRecord, status: 'processing' as const, timestamp: new Date().toISOString() };
-          await this.storeEvaluationRecord(processingRecord);
-          console.log(`🧪 [MOCK] Axiom evaluation ${mockEvalId} → processing`);
-          await this.broadcastAxiomStatus(notification.orderId, mockEvalId, 'processing');
-        } catch (err) {
-          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to processing`, err);
-        }
-      }, 1000);
-
-      // Transition to "completed" with full mock results after configured delay
-      setTimeout(async () => {
-        try {
-          const completedRecord = this.buildMockEvaluation(notification.orderId, mockEvalId);
-          await this.storeEvaluationRecord({ id: mockEvalId, ...completedRecord, _metadata: cosmosRecord._metadata });
-          console.log(`✅ [MOCK] Axiom evaluation ${mockEvalId} → completed (risk score: ${completedRecord.overallRiskScore})`);
-          await this.broadcastAxiomStatus(notification.orderId, mockEvalId, 'completed', completedRecord.overallRiskScore);
-        } catch (err) {
-          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to completed`, err);
-        }
-      }, this.mockDelayMs);
-
-      return {
-        success: true,
-        evaluationId: mockEvalId
-      };
-    }
-
-    try {
-      const response = await this.client.post<{ evaluationId: string }>('/documents', {
-        orderId: notification.orderId,
-        documentType: notification.documentType,
-        documentUrl: notification.documentUrl,
-        metadata: notification.metadata || {},
-        timestamp: new Date().toISOString()
-      });
-
-      const evaluationId = response.data.evaluationId;
-
-      // Store initial pending record in Cosmos
-      await this.storeEvaluationRecord({
-        id: evaluationId,
-        orderId: notification.orderId,
-        evaluationId,
-        documentType: notification.documentType,
-        status: 'pending',
-        criteria: [],
-        overallRiskScore: 0,
-        timestamp: new Date().toISOString(),
-        _metadata: {
-          documentId: notification.metadata?.documentId,
-          documentName: notification.metadata?.fileName,
-          blobUrl: notification.documentUrl,
-          notificationSent: new Date().toISOString(),
-          documentUrl: notification.documentUrl,
-          fileName: notification.metadata?.fileName
-        }
-      });
-
-      console.log(`✅ Axiom notified of document upload`, {
-        orderId: notification.orderId,
-        evaluationId,
-        documentType: notification.documentType
-      });
-
-      return {
-        success: true,
-        evaluationId
-      };
-    } catch (error) {
-      const axiosError = error as AxiosError;
-      const errorMessage = axiosError.response?.data || axiosError.message;
-      
-      console.error('❌ Failed to notify Axiom of document upload', {
-        orderId: notification.orderId,
-        error: errorMessage
-      });
-
-      return {
-        success: false,
-        error: `Axiom API error: ${errorMessage}`
-      };
-    }
-  }
-
-  /**
    * Retrieve evaluation results for an order
    * 
    * @param orderId Order ID to retrieve evaluation for
@@ -548,9 +433,16 @@ export class AxiomService {
 
         // Store/update in Cosmos DB
         if (evaluation.status === 'completed' || evaluation.status === 'failed') {
+          // Enrich document references using _metadata from the pending cached record
+          // (Axiom does not return documentId/blobUrl on individual citations)
+          if (evaluation.status === 'completed') {
+            const meta = (cachedResult as any)?._metadata ?? {};
+            evaluation.criteria = this.enrichCriteriaRefs(evaluation.criteria, meta);
+          }
           await this.storeEvaluationRecord({
             id: evaluation.evaluationId,
-            ...evaluation
+            ...evaluation,
+            _metadata: (cachedResult as any)?._metadata,
           });
         }
 
@@ -720,6 +612,27 @@ export class AxiomService {
         riskScore: evaluation.overallRiskScore,
         criteriaCount: evaluation.criteria.length
       });
+
+      // Stamp axiomProgramId / axiomProgramVersion back onto the order document so the
+      // frontend can display which program was applied and pass it to criteria queries.
+      // Skip tape-loan ('::' separator) and bulk ('batch-') correlationIds — those do
+      // not map 1:1 to a real order document.
+      if (
+        payload.status === 'completed' &&
+        evaluation.programId &&
+        !payload.orderId.includes('::') &&
+        !payload.orderId.startsWith('batch-')
+      ) {
+        await this.dbService.updateOrder(payload.orderId, {
+          axiomProgramId: evaluation.programId,
+          ...(evaluation.programVersion ? { axiomProgramVersion: evaluation.programVersion } : {}),
+        }).catch((err) =>
+          console.error('❌ Failed to stamp axiomProgramId on order from webhook', {
+            orderId: payload.orderId,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
 
       // Push real-time status update via WebPubSub
       await this.broadcastAxiomStatus(
@@ -980,11 +893,14 @@ export class AxiomService {
   async submitOrderEvaluation(
     orderId: string,
     fields: Array<{ fieldName: string; fieldType: string; value: unknown }>,
-    documents?: Array<{ documentName: string; documentReference: string }>,
+    documents: Array<{ documentName: string; documentReference: string }> | undefined,
+    tenantId: string,
+    clientId: string,
     programId?: string,
+    correlationType: 'ORDER' | 'TAPE_LOAN' = 'ORDER',
   ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
     if (!this.enabled) {
-      return this.mockPipelineSubmit(orderId, 'ORDER', orderId, programId);
+      return this.mockPipelineSubmit(orderId, correlationType, orderId, programId);
     }
 
     const apiBaseUrl = process.env['API_BASE_URL'];
@@ -995,14 +911,6 @@ export class AxiomService {
     if (!webhookSecret) {
       throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
     }
-    const tenantId = process.env['AXIOM_TENANT_ID'];
-    if (!tenantId) {
-      throw new Error('AXIOM_TENANT_ID is required for Axiom pipeline submissions — configure it in environment settings');
-    }
-    const clientId = process.env['AXIOM_CLIENT_ID'];
-    if (!clientId) {
-      throw new Error('AXIOM_CLIENT_ID is required for Axiom pipeline submissions — configure it in environment settings');
-    }
 
     try {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
@@ -1011,7 +919,7 @@ export class AxiomService {
           tenantId,
           clientId,
           correlationId: orderId,
-          correlationType: 'ORDER',
+          correlationType,
           webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
           webhookSecret,
           fields,
@@ -1030,6 +938,9 @@ export class AxiomService {
         evaluationId,
         pipelineJobId,
         correlationType: 'ORDER',
+        tenantId,
+        clientId,
+        ...(programId ? { programId } : {}),
         documentType: 'appraisal' as DocumentType,
         status: 'pending',
         criteria: [],
@@ -1063,6 +974,8 @@ export class AxiomService {
       fields: Array<{ fieldName: string; fieldType: string; value: unknown }>;
       documents?: Array<{ documentName: string; documentReference: string }>;
     }>,
+    tenantId: string,
+    clientId: string,
     programId?: string,
   ): Promise<{ pipelineJobId: string; batchId: string } | null> {
     if (!this.enabled) {
@@ -1078,14 +991,6 @@ export class AxiomService {
     const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
     if (!webhookSecret) {
       throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
-    }
-    const tenantId = process.env['AXIOM_TENANT_ID'];
-    if (!tenantId) {
-      throw new Error('AXIOM_TENANT_ID is required for Axiom pipeline submissions — configure it in environment settings');
-    }
-    const clientId = process.env['AXIOM_CLIENT_ID'];
-    if (!clientId) {
-      throw new Error('AXIOM_CLIENT_ID is required for Axiom pipeline submissions — configure it in environment settings');
     }
 
     try {
@@ -1113,6 +1018,9 @@ export class AxiomService {
         batchId,
         pipelineJobId,
         correlationType: 'BULK_JOB',
+        tenantId,
+        clientId,
+        ...(programId ? { programId } : {}),
         status: 'pending',
         timestamp: new Date().toISOString(),
       });
@@ -1141,6 +1049,8 @@ export class AxiomService {
     jobId: string,
     loanNumber: string,
     documents: Array<{ documentName: string; documentReference: string }>,
+    tenantId: string,
+    clientId: string,
     programId?: string,
   ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
     if (!this.enabled) {
@@ -1154,14 +1064,6 @@ export class AxiomService {
     const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
     if (!webhookSecret) {
       throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
-    }
-    const tenantId = process.env['AXIOM_TENANT_ID'];
-    if (!tenantId) {
-      throw new Error('AXIOM_TENANT_ID is required for Axiom pipeline submissions — configure it in environment settings');
-    }
-    const clientId = process.env['AXIOM_CLIENT_ID'];
-    if (!clientId) {
-      throw new Error('AXIOM_CLIENT_ID is required for Axiom pipeline submissions — configure it in environment settings');
     }
 
     try {
@@ -1192,7 +1094,13 @@ export class AxiomService {
         status: 'pending',
         timestamp: new Date().toISOString(),
       };
-      await this.storeEvaluationRecord({ ...pendingRecord, pipelineJobId });
+      await this.storeEvaluationRecord({
+        ...pendingRecord,
+        pipelineJobId,
+        tenantId,
+        clientId,
+        ...(programId ? { programId } : {}),
+      });
 
       this.watchPipelineStream(pipelineJobId, `${jobId}:${loanNumber}`, 'ORDER').catch((err) => {
         console.error('⚠️  Axiom SSE stream error for extraction', { jobId, loanNumber, error: (err as Error).message });
@@ -1280,6 +1188,10 @@ export class AxiomService {
       typeof inner['riskScore'] === 'number' ? inner['riskScore'] :
       typeof raw['overallRiskScore'] === 'number' ? raw['overallRiskScore'] as number : 0;
 
+    // Extract programId / programVersion from wherever Axiom puts them
+    const programId = (inner['programId'] ?? raw['programId'] ?? (raw['trigger'] as any)?.programId) as string | undefined;
+    const programVersion = (inner['programVersion'] ?? raw['programVersion'] ?? (raw['trigger'] as any)?.programVersion) as string | undefined;
+
     const execMeta = raw['executionMetadata'] as Record<string, unknown> | undefined;
     const processingTime = typeof execMeta?.['duration'] === 'number'
       ? (execMeta['duration'] as number)
@@ -1297,6 +1209,8 @@ export class AxiomService {
       // Conditionally include optional fields so exactOptionalPropertyTypes is satisfied
       ...(processingTime !== undefined ? { processingTime } : {}),
       ...(extractedData !== undefined ? { extractedData } : {}),
+      ...(programId ? { programId } : {}),
+      ...(programVersion ? { programVersion } : {}),
     };
   }
 
@@ -1326,10 +1240,16 @@ export class AxiomService {
 
     if (rawResults) {
       const mapped = this.mapPipelineResultsToEvaluation(rawResults, orderId, evalId, pipelineJobId);
+      const pending = pendingResponse?.data ?? {};
       const enriched = {
         id: evalId,
         ...mapped,
-        documentType: (pendingResponse?.data?.documentType ?? 'appraisal') as DocumentType,
+        documentType: (pending.documentType ?? 'appraisal') as DocumentType,
+        // Carry tenantId/clientId/programId forward from the pending record so they
+        // survive the overwrite and remain queryable on completed records.
+        ...(pending.tenantId ? { tenantId: pending.tenantId } : {}),
+        ...(pending.clientId ? { clientId: pending.clientId } : {}),
+        ...(pending.programId ? { programId: pending.programId } : {}),
         criteria: this.enrichCriteriaRefs(mapped.criteria, meta),
         _metadata: { ...meta, completedAt: new Date().toISOString() },
       };
@@ -1488,7 +1408,7 @@ export class AxiomService {
    */
   private async mockPipelineSubmit(
     correlationId: string,
-    correlationType: 'ORDER' | 'BULK_JOB',
+    correlationType: 'ORDER' | 'BULK_JOB' | 'TAPE_LOAN',
     storageKey: string,
     _programId?: string,
   ): Promise<{ pipelineJobId: string; evaluationId: string }> {
@@ -2022,13 +1942,18 @@ export class AxiomService {
   /**
    * Get ALL evaluations for an order (for the order-level list view)
    */
-  async getEvaluationsForOrder(orderId: string): Promise<AxiomEvaluationResult[]> {
+  async getEvaluationsForOrder(orderId: string, tenantId?: string): Promise<AxiomEvaluationResult[]> {
     try {
-      const query = `SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.timestamp DESC`;
+      const query = tenantId
+        ? `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.timestamp DESC`
+        : `SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.timestamp DESC`;
+      const params = tenantId
+        ? [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }]
+        : [{ name: '@orderId', value: orderId }];
       const response = await this.dbService.queryItems<AxiomEvaluationResult>(
         this.containerName,
         query,
-        [{ name: '@orderId', value: orderId }]
+        params
       );
 
       if (response.success && response.data) {

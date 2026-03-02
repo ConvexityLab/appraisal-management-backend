@@ -14,13 +14,6 @@ export class AppraiserController {
   private appraiserService: AppraiserService;
   private logger: Logger;
 
-  /**
-   * Application-level tenant ID.
-   * Azure AD's `tid` claim is the directory GUID, NOT an app-level tenant.
-   * Until a proper tenant-mapping layer exists, all seed data and queries
-   * use this constant so they stay in sync.
-   */
-  private static readonly APP_TENANT_ID = 'test-tenant-123';
 
   constructor(cosmosService: CosmosDbService) {
     this.router = Router();
@@ -51,7 +44,8 @@ export class AppraiserController {
    */
   private async getAllAppraisers(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       const appraisers = await this.appraiserService.getAllAppraisers(tenantId);
       
       res.json({
@@ -78,7 +72,8 @@ export class AppraiserController {
    */
   private async getAvailableAppraisers(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       const specialty = req.query.specialty as string | undefined;
       
       const appraisers = await this.appraiserService.getAvailableAppraisers(tenantId, specialty);
@@ -109,7 +104,8 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       
       const appraiser = await this.appraiserService.getAppraiserById(id, tenantId);
       
@@ -140,7 +136,8 @@ export class AppraiserController {
    */
   private async createAppraiser(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       const appraiserData = {
         ...req.body,
         tenantId,
@@ -173,7 +170,8 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       
       const appraiser = await this.appraiserService.updateAppraiser(id, tenantId, req.body);
       
@@ -202,8 +200,9 @@ export class AppraiserController {
         return;
       }
       const { orderId, propertyAddress, propertyLat, propertyLng } = req.body;
-      const tenantId = AppraiserController.APP_TENANT_ID;
-      const assignedBy = req.user?.id || 'system';
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+      const assignedBy = req.user!.id;
 
       if (!orderId || !propertyAddress) {
         res.status(400).json({
@@ -246,7 +245,8 @@ export class AppraiserController {
         return;
       }
       const { propertyAddress, propertyLat, propertyLng } = req.query;
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
 
       if (!propertyAddress) {
         res.status(400).json({
@@ -291,7 +291,8 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       
       const expiringLicenses = await this.appraiserService.checkLicenseExpiration(id, tenantId);
       
@@ -320,7 +321,8 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID parameter required' });
         return;
       }
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       
       const assignments = await this.appraiserService.getPendingAssignments(id, tenantId);
       
@@ -349,7 +351,8 @@ export class AppraiserController {
         res.status(400).json({ success: false, error: 'ID and assignmentId parameters required' });
         return;
       }
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       const { notes } = req.body;
       
       const assignment = await this.appraiserService.acceptAssignment(
@@ -392,7 +395,8 @@ export class AppraiserController {
         return;
       }
       
-      const tenantId = AppraiserController.APP_TENANT_ID;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       
       const assignment = await this.appraiserService.rejectAssignment(
         assignmentId,

@@ -32,6 +32,7 @@ async function testCosmosDbService(): Promise<void> {
     const now = new Date();
     const testOrder = {
       clientId: 'test-client-001',
+      tenantId: 'test-tenant-001',
       orderNumber: `TEST-ORDER-${Date.now()}`,
       propertyAddress: {
         streetAddress: '123 Test Property St',

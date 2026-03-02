@@ -20,8 +20,7 @@
 import { Request, Response, Router } from 'express';
 import archiver from 'archiver';
 import { DeliveryWorkflowService } from '../services/delivery-workflow.service';
-
-const APP_TENANT_ID = 'test-tenant-123';
+import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
 export class DeliveryController {
   private deliveryService: DeliveryWorkflowService;
@@ -45,8 +44,11 @@ export class DeliveryController {
    *   submissionNotes?: string
    * }
    */
-  createPackage = async (req: Request, res: Response): Promise<void> => {
+  createPackage = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { orderId, packageType, documentIds, deliveredTo, submissionNotes } = req.body;
 
       if (!orderId) {
@@ -68,7 +70,7 @@ export class DeliveryController {
 
       const result = await this.deliveryService.createDeliveryPackage(
         orderId,
-        APP_TENANT_ID,
+        tenantId,
         packageType,
         documentIds,
         deliveredTo,
@@ -97,15 +99,18 @@ export class DeliveryController {
   /**
    * GET /api/delivery/packages/order/:orderId
    */
-  getPackagesByOrder = async (req: Request, res: Response): Promise<void> => {
+  getPackagesByOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { orderId } = req.params;
       if (!orderId) {
         res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'orderId parameter is required' } });
         return;
       }
 
-      const result = await this.deliveryService.getOrderDeliveryPackages(orderId, APP_TENANT_ID);
+      const result = await this.deliveryService.getOrderDeliveryPackages(orderId, tenantId);
       res.json({ success: true, data: result.data });
     } catch (error) {
       console.error('Error getting delivery packages:', error);
@@ -125,8 +130,11 @@ export class DeliveryController {
    *
    * Body: { acknowledgedBy: string }
    */
-  acknowledgePackage = async (req: Request, res: Response): Promise<void> => {
+  acknowledgePackage = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { packageId } = req.params;
       const { acknowledgedBy } = req.body;
 
@@ -139,7 +147,7 @@ export class DeliveryController {
         return;
       }
 
-      const result = await this.deliveryService.acknowledgeDeliveryPackage(packageId, APP_TENANT_ID, acknowledgedBy);
+      const result = await this.deliveryService.acknowledgeDeliveryPackage(packageId, tenantId, acknowledgedBy);
 
       if (!result.success) {
         const status = result.error?.code === 'PACKAGE_NOT_FOUND' ? 404 : 500;
@@ -166,8 +174,11 @@ export class DeliveryController {
    *
    * Streams a ZIP archive of all documents in the delivery package.
    */
-  downloadPackage = async (req: Request, res: Response): Promise<void> => {
+  downloadPackage = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { orderId, packageId } = req.params;
 
       if (!orderId || !packageId) {
@@ -178,7 +189,7 @@ export class DeliveryController {
         return;
       }
 
-      const result = await this.deliveryService.getDeliveryPackage(packageId, APP_TENANT_ID);
+      const result = await this.deliveryService.getDeliveryPackage(packageId, tenantId);
       if (!result.success || !result.data) {
         const status = result.error?.code === 'PACKAGE_NOT_FOUND' ? 404 : 500;
         res.status(status).json({ success: false, error: result.error });
@@ -252,15 +263,18 @@ export class DeliveryController {
    * Returns the signed client acknowledgement URL for a package.
    * Internal use — generates a new token if the stored one is expired.
    */
-  getAcknowledgementUrl = async (req: Request, res: Response): Promise<void> => {
+  getAcknowledgementUrl = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { packageId } = req.params;
       if (!packageId) {
         res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'packageId parameter is required' } });
         return;
       }
 
-      const pkgResult = await this.deliveryService.getDeliveryPackage(packageId, APP_TENANT_ID);
+      const pkgResult = await this.deliveryService.getDeliveryPackage(packageId, tenantId);
       if (!pkgResult.success || !pkgResult.data) {
         const status = pkgResult.error?.code === 'PACKAGE_NOT_FOUND' ? 404 : 500;
         res.status(status).json({ success: false, error: pkgResult.error });
@@ -279,7 +293,7 @@ export class DeliveryController {
       }
 
       const baseUrl = process.env.CLIENT_PORTAL_BASE_URL || req.protocol + '://' + req.get('host');
-      const url = `${baseUrl}/delivery/acknowledge?packageId=${packageId}&token=${encodeURIComponent(token)}`;
+      const url = `${baseUrl}/delivery/acknowledge?packageId=${packageId}&tenantId=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
 
       res.json({ success: true, data: { url, token, expiresAt } });
     } catch (error) {
@@ -305,9 +319,15 @@ export class DeliveryController {
     try {
       const { packageId } = req.params;
       const { token, clientName, feedback } = req.body;
+      // tenantId is embedded in the acknowledgement URL by getAcknowledgementUrl (authenticated caller)
+      const tenantId = req.query.tenantId as string | undefined;
 
       if (!packageId) {
         res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'packageId parameter is required' } });
+        return;
+      }
+      if (!tenantId) {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'tenantId query parameter is required' } });
         return;
       }
       if (!token) {
@@ -321,7 +341,7 @@ export class DeliveryController {
 
       const result = await this.deliveryService.clientAcknowledgeDeliveryPackage(
         packageId,
-        APP_TENANT_ID,
+        tenantId,
         token,
         clientName,
         feedback,
@@ -356,15 +376,18 @@ export class DeliveryController {
    *
    * Returns a chronological audit trail of delivery events.
    */
-  getTimeline = async (req: Request, res: Response): Promise<void> => {
+  getTimeline = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { orderId } = req.params;
       if (!orderId) {
         res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'orderId parameter is required' } });
         return;
       }
 
-      const result = await this.deliveryService.getOrderDeliveryTimeline(orderId, APP_TENANT_ID);
+      const result = await this.deliveryService.getOrderDeliveryTimeline(orderId, tenantId);
       res.json({ success: true, data: result.data });
     } catch (error) {
       console.error('Error getting delivery timeline:', error);
@@ -384,8 +407,11 @@ export class DeliveryController {
    *
    * Body: { completedBy: string }
    */
-  completeOrder = async (req: Request, res: Response): Promise<void> => {
+  completeOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { orderId } = req.params;
       const { completedBy } = req.body;
 
@@ -398,7 +424,7 @@ export class DeliveryController {
         return;
       }
 
-      const result = await this.deliveryService.completeOrderDelivery(orderId, APP_TENANT_ID, completedBy);
+      const result = await this.deliveryService.completeOrderDelivery(orderId, tenantId, completedBy);
 
       if (!result.success) {
         const status = result.error?.code === 'ORDER_NOT_FOUND' ? 404 : 500;
@@ -427,8 +453,11 @@ export class DeliveryController {
   /**
    * GET /api/delivery/revisions/order/:orderId?status=OPEN
    */
-  getRevisionsByOrder = async (req: Request, res: Response): Promise<void> => {
+  getRevisionsByOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { orderId } = req.params;
       const status = req.query.status as string | undefined;
 
@@ -441,7 +470,7 @@ export class DeliveryController {
       type RevisionStatus = typeof validStatuses[number];
       const typedStatus = status && validStatuses.includes(status as RevisionStatus) ? status as RevisionStatus : undefined;
 
-      const result = await this.deliveryService.getOrderRevisionRequests(orderId, APP_TENANT_ID, typedStatus);
+      const result = await this.deliveryService.getOrderRevisionRequests(orderId, tenantId, typedStatus);
       res.json({ success: true, data: result.data });
     } catch (error) {
       console.error('Error getting revision requests:', error);
@@ -461,8 +490,11 @@ export class DeliveryController {
    *
    * Body: { resolvedBy: string, resolutionNotes?: string }
    */
-  resolveRevision = async (req: Request, res: Response): Promise<void> => {
+  resolveRevision = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
+
       const { revisionId } = req.params;
       const { resolvedBy, resolutionNotes } = req.body;
 
@@ -475,7 +507,7 @@ export class DeliveryController {
         return;
       }
 
-      const result = await this.deliveryService.resolveRevisionRequest(revisionId, APP_TENANT_ID, resolvedBy, resolutionNotes);
+      const result = await this.deliveryService.resolveRevisionRequest(revisionId, tenantId, resolvedBy, resolutionNotes);
 
       if (!result.success) {
         const status = result.error?.code === 'REVISION_NOT_FOUND' ? 404 : 500;
