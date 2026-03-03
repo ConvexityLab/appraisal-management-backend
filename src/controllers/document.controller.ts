@@ -252,7 +252,8 @@ export class DocumentController {
               console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} not found`);
               return Promise.resolve(null);
             }
-            if (!order.tenantId || !order.clientId) {
+            const clientId = (order as any).clientInformation?.clientId || order.clientId;
+            if (!order.tenantId || !clientId) {
               console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} missing tenantId or clientId`);
               return Promise.resolve(null);
             }
@@ -260,7 +261,7 @@ export class DocumentController {
             const documents = [
               { documentName: savedDoc.name, documentReference: savedDoc.blobUrl },
             ];
-            return this.axiomService.submitOrderEvaluation(orderId, fields, documents, order.tenantId, order.clientId);
+            return this.axiomService.submitOrderEvaluation(orderId, fields, documents, order.tenantId, clientId);
           }).then((axiomResult) => {
             if (axiomResult) {
               console.log(`[DocumentController] Auto-submitted doc ${savedDoc.id} to Axiom pipeline → evaluationId: ${axiomResult.evaluationId}`);

@@ -284,12 +284,13 @@ export class AxiomController {
         documentReference: doc.blobUrl,
       }];
 
+      const clientId = (order as any).clientInformation?.clientId || order.clientId;
       const pipelineResult = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
         documents,
         order.tenantId,
-        order.clientId,
+        clientId,
       );
 
       if (!pipelineResult) {

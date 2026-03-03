@@ -64,6 +64,30 @@ export interface DocumentReference {
   documentName?: string;
   /** Azure Blob Storage URL for the PDF viewer */
   blobUrl?: string;
+  /** Field paths in the supporting data that this citation produced (e.g. ["salePrice1", "gla1"]) */
+  sourceFieldPaths?: string[];
+}
+
+/**
+ * A single row of supporting data produced by a criterion evaluation.
+ * Carries arbitrary extracted key/value fields plus source-linkage metadata
+ * that enables the UI to open the source document at the exact page and
+ * location where the data was found — providing a full audit trail from
+ * extracted value → document origin.
+ */
+export interface SupportingDataItem {
+  /** Arbitrary extracted field name → value */
+  [key: string]: unknown;
+  /** Name of the document this row was extracted from (e.g. "Appraisal Report.pdf") */
+  sourceDocument?: string;
+  /** 1-indexed page number in the source document */
+  sourcePage?: number;
+  /** Bounding box coordinates for PDF viewer highlight overlay */
+  sourceCoordinates?: { x: number; y: number; width: number; height: number };
+  /** Resolved by enrichCriteriaRefs: internal Cosmos document ID */
+  sourceDocumentId?: string;
+  /** Resolved by enrichCriteriaRefs: Azure Blob Storage URL */
+  sourceBlobUrl?: string;
 }
 
 export interface CriterionEvaluation {
@@ -78,7 +102,7 @@ export interface CriterionEvaluation {
   reasoning: string;
   /** Suggested corrective action when evaluation is fail or warning */
   remediation?: string;
-  supportingData?: any[];
+  supportingData?: SupportingDataItem[];
   /** Evidence citations — every criterion evaluation must reference the document sections it used */
   documentReferences: DocumentReference[];
 }
@@ -489,14 +513,36 @@ export class AxiomService {
     if (!meta || (!meta.documentId && !meta.blobUrl && !meta.documentUrl)) {
       return criteria;
     }
+    const metaDocName = meta.documentName ?? meta.fileName; // stays `any` — assignable to string | undefined
     return criteria.map(c => ({
       ...c,
       documentReferences: c.documentReferences.map(r => ({
         ...r,
         documentId: r.documentId ?? meta.documentId,
-        documentName: r.documentName ?? meta.documentName ?? meta.fileName,
+        documentName: r.documentName ?? metaDocName,
         blobUrl: r.blobUrl ?? meta.blobUrl ?? meta.documentUrl,
       })),
+      // Stamp sourceDocumentId/sourceBlobUrl on supporting-data rows that originated
+      // from this document. A row matches when its sourceDocument name equals the meta
+      // document name, or when no sourceDocument is set but source location data exists.
+      ...(c.supportingData != null
+        ? {
+            supportingData: c.supportingData.map((row: SupportingDataItem): SupportingDataItem => {
+              if (row.sourceDocumentId) return row; // already resolved — skip
+              const rowDocName = row.sourceDocument;
+              const nameMatches = !rowDocName || rowDocName === metaDocName;
+              const hasSourceLocation = row.sourceDocument != null || row.sourcePage != null;
+              if (hasSourceLocation && nameMatches) {
+                return {
+                  ...row,
+                  sourceDocumentId: meta.documentId,
+                  sourceBlobUrl: meta.blobUrl ?? meta.documentUrl,
+                };
+              }
+              return row;
+            }),
+          }
+        : {}),
     }));
   }
 
@@ -1177,6 +1223,7 @@ export class AxiomService {
                 documentId: r.documentId,
                 documentName: r.documentName,
                 blobUrl: r.blobUrl,
+                sourceFieldPaths: r.sourceFieldPaths,
               }),
             )
           : [],
