@@ -98,6 +98,7 @@
     "@azure/storage-blob": "^12.31.0",
     "@azure/web-pubsub": "^1.2.0",
     "@azure/web-pubsub-express": "^1.0.6",
+    "@fluidframework/azure-service-utils": "^2.90.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@types/pdfkit": "^0.17.4",
     "applicationinsights": "^3.13.0",

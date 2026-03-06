@@ -21,6 +21,8 @@ param azureTenantId string = ''
 param azureClientId string = ''
 param serviceBusNamespace string = ''
 param webPubSubEndpoint string = ''
+param fluidRelayTenantId string = ''
+param fluidRelayEndpoint string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -175,6 +177,16 @@ var containerApps = [
       {
         name: 'AZURE_WEB_PUBSUB_ENDPOINT'
         value: webPubSubEndpoint
+      }
+      // Fluid Relay: non-secret identifiers only.
+      // The signing key is in Key Vault under "fluid-relay-key"; CollaborationService fetches it at runtime.
+      {
+        name: 'AZURE_FLUID_RELAY_TENANT_ID'
+        value: fluidRelayTenantId
+      }
+      {
+        name: 'AZURE_FLUID_RELAY_ENDPOINT'
+        value: fluidRelayEndpoint
       }
     ]
     scaleRule: {

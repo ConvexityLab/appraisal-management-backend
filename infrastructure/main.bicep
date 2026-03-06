@@ -209,6 +209,18 @@ module serviceBus 'modules/service-bus.bicep' = {
   }
 }
 
+// Fluid Relay (real-time collaborative editing — orders, QC, ARV pages)
+module fluidRelay 'modules/fluid-relay.bicep' = {
+  name: 'fluid-relay-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    namingPrefix: namingPrefix
+    environment: environment
+    tags: tags
+  }
+}
+
 // Web PubSub (deployed early for local testing)
 module webPubSub 'modules/web-pubsub.bicep' = {
   name: 'web-pubsub-deployment'
@@ -257,6 +269,8 @@ module appServices 'modules/app-services.bicep' = {
     azureClientId: azureClientId
     serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
     webPubSubEndpoint: webPubSub.outputs.webPubSubEndpoint
+    fluidRelayTenantId: fluidRelay.outputs.fluidRelayTenantId
+    fluidRelayEndpoint: fluidRelay.outputs.fluidRelayEndpoint
   }
 }
 
@@ -346,8 +360,16 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     azureTenantId: azureTenantId
     azureClientId: azureClientId
     azureClientSecret: azureClientSecret
+    fluidRelayTenantKey: fluidRelay.outputs.fluidRelayPrimaryKey
   }
 }
+
+// Fluid Relay tenant env config passed into the API container app (non-secret values only)
+// The signing key is retrieved from Key Vault at runtime — it is NOT an env var.
+var fluidRelayEnvVars = [
+  { name: 'AZURE_FLUID_RELAY_TENANT_ID', value: fluidRelay.outputs.fluidRelayTenantId }
+  { name: 'AZURE_FLUID_RELAY_ENDPOINT', value: fluidRelay.outputs.fluidRelayEndpoint }
+]
 
 // Key Vault Role Assignments for Container Apps
 module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
@@ -469,6 +491,11 @@ output deploymentSummary object = {
   webPubSub: {
     name: webPubSub.outputs.webPubSubName
     hostName: webPubSub.outputs.webPubSubHostName
+  }
+  fluidRelay: {
+    name: fluidRelay.outputs.fluidRelayName
+    tenantId: fluidRelay.outputs.fluidRelayTenantId
+    endpoint: fluidRelay.outputs.fluidRelayEndpoint
   }
 }
 

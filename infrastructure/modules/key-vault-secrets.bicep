@@ -59,6 +59,10 @@ param azureClientId string = ''
 @description('Azure Client Secret')
 param azureClientSecret string = ''
 
+@secure()
+@description('Azure Fluid Relay primary tenant key — fetched at runtime from listKeys(), stored here so Container Apps can retrieve it via Managed Identity')
+param fluidRelayTenantKey string = ''
+
 // Reference existing resources to get their secrets
 // cosmosAccount and serviceBusNamespace removed - using managed identity instead of keys
 
@@ -308,6 +312,20 @@ resource azureClientSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' 
   properties: {
     value: azureClientSecret
     contentType: 'password'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+// Fluid Relay signing key — retrieved by CollaborationService at runtime via Managed Identity.
+// Never exposed as an env var; Key Vault fetch is the only path.
+resource fluidRelayKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(fluidRelayTenantKey)) {
+  parent: keyVault
+  name: 'fluid-relay-key'
+  properties: {
+    value: fluidRelayTenantKey
+    contentType: 'api-key'
     attributes: {
       enabled: true
     }

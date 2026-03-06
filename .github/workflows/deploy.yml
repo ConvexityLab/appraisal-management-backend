@@ -362,7 +362,9 @@ jobs:
             AZURE_OPENAI_DEPLOYMENT=${{ secrets.AZURE_OPENAI_DEPLOYMENT }} \
             AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
             GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
-            SAMBANOVA_API_KEY=secretref:sambanova-api-key
+            SAMBANOVA_API_KEY=secretref:sambanova-api-key \
+            AZURE_FLUID_RELAY_TENANT_ID=${{ secrets.AZURE_FLUID_RELAY_TENANT_ID }} \
+            AZURE_FLUID_RELAY_ENDPOINT=${{ secrets.AZURE_FLUID_RELAY_ENDPOINT }}
           # NOTE: AZURE_CLIENT_ID is intentionally NOT set here.
           # DefaultAzureCredential uses it to select a user-assigned managed identity.
           # It is provisioned by Bicep (infrastructure) alongside the identity assignment.

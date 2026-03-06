@@ -97,6 +97,7 @@ import { createUnifiedCommunicationRouter } from '../controllers/unified-communi
 import { createAxiomRouter } from '../controllers/axiom.controller';
 import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
+import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
 
 // Import Item 3: Enhanced Vendor Management controllers
 import { createVendorCertificationRouter } from '../controllers/vendor-certification.controller';
@@ -430,6 +431,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/acs',
       this.unifiedAuth.authenticate(),
       createAcsTokenRouter()
+    );
+
+    // Collaboration - Fluid Relay token exchange for real-time co-editing (authenticated users)
+    // Issues a short-lived Fluid Relay JWT scoped to the requesting user.
+    // The tenant signing key is fetched from Key Vault (Managed Identity) — never from env.
+    this.app.use('/api/collaboration',
+      this.unifiedAuth.authenticate(),
+      createCollaborationRouter()
     );
 
     // Teams Meetings - Teams interoperability (authenticated users)
