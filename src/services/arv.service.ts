@@ -10,6 +10,7 @@
 import type { Container } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { calculateArv, calculateDealMetrics } from './arv-engine.service.js';
+import { AccessControlHelper } from './access-control-helper.service.js';
 import type {
   ArvAnalysis,
   ArvStatus,
@@ -34,6 +35,8 @@ function now(): string {
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
+
+const accessControlHelper = new AccessControlHelper();
 
 export class ArvService {
   private readonly container: Container;
@@ -65,6 +68,12 @@ export class ArvService {
       netValueAdd: 0,
       dealAnalysis: request.dealAnalysis ?? {},
       ...(request.notes !== undefined && { notes: request.notes }),
+      accessControl: accessControlHelper.createAccessControl({
+        ownerId: createdBy,
+        assignedUserIds: [createdBy],
+        visibilityScope: 'TEAM',
+        tenantId,
+      }),
       createdBy,
       createdAt: now(),
       updatedAt: now(),

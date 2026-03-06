@@ -5,6 +5,7 @@
  */
 
 import { FieldOverride, ReviewerEdit } from './final-report.types.js';
+import { AccessControl } from './authorization.types.js';
 
 // ===========================
 // QC REVIEW MASTER RECORD
@@ -775,14 +776,8 @@ export interface TimelineEvent {
   metadata?: Record<string, any>;
 }
 
-export interface AccessControl {
-  ownerId: string;
-  ownerEmail?: string;
-  teamId?: string;
-  visibilityScope: string; // PRIVATE, TEAM, ORGANIZATION, PUBLIC
-  allowedUserIds?: string[];
-  allowedRoles?: string[];
-}
+// AccessControl is the canonical type from authorization.types.ts
+// (ownerId, assignedUserIds, teamId, clientId, vendorId, visibilityScope, tenantId)
 
 // ===========================
 // API REQUEST/RESPONSE TYPES

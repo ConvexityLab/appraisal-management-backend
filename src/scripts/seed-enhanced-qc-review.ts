@@ -342,8 +342,8 @@ async function seedEnhancedQCReview() {
         ownerEmail: "sarah.johnson@example.com",
         teamId: "qc-team-west",
         visibilityScope: "TEAM",
-        allowedUserIds: ["analyst-001", "analyst-002", "supervisor-001"],
-        allowedRoles: ["QC_ANALYST", "QC_SUPERVISOR", "QC_MANAGER"]
+        assignedUserIds: ["analyst-001", "analyst-002", "supervisor-001"],
+        tenantId: "test-tenant-123"
       }
     };
 

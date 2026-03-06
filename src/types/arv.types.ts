@@ -5,6 +5,8 @@
  * Used for Fix-and-Flip, Rehab loans, DSCR, Bridge, and Hard Money underwriting.
  */
 
+import type { AccessControl } from './authorization.types.js';
+
 // ─── Enums / Union Types ──────────────────────────────────────────────────────
 
 export type DealType =
@@ -136,6 +138,8 @@ export interface ArvAnalysis {
   dealAnalysis: ArvDealAnalysis;
 
   notes?: string;
+  /** Access control metadata — populated at creation time from creator identity. */
+  accessControl?: AccessControl;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

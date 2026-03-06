@@ -11,6 +11,17 @@ module.exports = {
   transform: {
     '^.+\\.ts$': 'ts-jest'
   },
+  globals: {
+    'ts-jest': {
+      // Type-checking is handled by tsc --noEmit; disable here to avoid
+      // false "Cannot find module" errors from .js extension imports in commonjs projects.
+      diagnostics: false,
+    },
+  },
+  moduleNameMapper: {
+    // Strip .js extensions from relative imports so ts-jest resolves .ts source files
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

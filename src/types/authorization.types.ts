@@ -190,7 +190,9 @@ export type ResourceType =
   | 'revision' 
   | 'escalation' 
   | 'analytics'
-  | 'user';
+  | 'user'
+  | 'rov_request'
+  | 'arv_analysis';
 
 export type Action = 
   | 'read' 
