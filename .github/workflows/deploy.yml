@@ -278,6 +278,7 @@ jobs:
     name: Deploy Container to Container App
     needs: [determine-environment, deploy-infrastructure, build-and-push-container, detect-changes]
     if: |
+      always() &&
       needs.detect-changes.outputs.code == 'true' &&
       needs.build-and-push-container.result == 'success' &&
       (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped' || needs.deploy-infrastructure.result == 'failure')
