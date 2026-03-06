@@ -190,10 +190,10 @@ resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
   properties: {
     resource: {
       id: 'acsUserMappings'
-      // Partition key is /tenantId for proper multi-tenant isolation.
-      // Document ID: '${azureAdUserId}-${tenantId}' ensures uniqueness across tenants.
+      // Partition key is /azureAdUserId — matches the existing staging container.
+      // Cosmos DB does not allow partition key changes on existing containers.
       partitionKey: {
-        paths: ['/tenantId']
+        paths: ['/azureAdUserId']
         kind: 'Hash'
       }
       indexingPolicy: {

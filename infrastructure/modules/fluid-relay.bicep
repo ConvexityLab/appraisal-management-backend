@@ -23,9 +23,7 @@ resource fluidRelayServer 'Microsoft.FluidRelay/fluidRelayServers@2022-06-01' = 
   identity: {
     type: 'SystemAssigned'
   }
-  properties: {
-    storageType: environment == 'prod' ? 'microsoft' : 'microsoft'
-  }
+  properties: {}
 }
 
 // ─── Outputs ───────────────────────────────────────────────────────────────────

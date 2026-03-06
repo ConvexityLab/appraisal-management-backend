@@ -53,7 +53,7 @@ resource webPubSub 'Microsoft.SignalRService/webPubSub@2024-03-01' = {
 // Hub for appraisal notifications
 resource notificationsHub 'Microsoft.SignalRService/webPubSub/hubs@2024-03-01' = {
   parent: webPubSub
-  name: 'appraisal-notifications'
+  name: 'appraisalNotifications'
   properties: {
     anonymousConnectPolicy: 'deny'
     eventHandlers: []
