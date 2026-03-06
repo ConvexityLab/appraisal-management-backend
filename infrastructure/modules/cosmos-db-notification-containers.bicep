@@ -190,8 +190,10 @@ resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
   properties: {
     resource: {
       id: 'acsUserMappings'
+      // Partition key is /tenantId for proper multi-tenant isolation.
+      // Document ID: '${azureAdUserId}-${tenantId}' ensures uniqueness across tenants.
       partitionKey: {
-        paths: ['/azureAdUserId']
+        paths: ['/tenantId']
         kind: 'Hash'
       }
       indexingPolicy: {
@@ -207,7 +209,7 @@ resource acsUserMappingsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
         ]
       }
     }
-    }
+  }
 }
 
 // Teams meetings container for Teams interoperability

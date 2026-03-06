@@ -23,7 +23,14 @@ export class EmailService {
 
   constructor() {
     this.logger = new Logger();
-    this.defaultFrom = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || 'donotreply@loneanalytics.com';
+    const emailDomain = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN;
+    if (!emailDomain) {
+      throw new Error(
+        'AZURE_COMMUNICATION_EMAIL_DOMAIN is not set. ' +
+        'Set it to the DoNotReply@<resource>.azurecomm.net address from the ACS Email domain.'
+      );
+    }
+    this.defaultFrom = emailDomain;
     this.initialize();
   }
 

@@ -14,7 +14,8 @@ import { CosmosDbService } from './cosmos-db.service';
 import { ApiResponse } from '../types/index.js';
 
 interface AcsUserMapping {
-  id: string;
+  id: string;              // '${azureAdUserId}-${tenantId}'
+  tenantId: string;        // partition key — tenant-scoped isolation
   azureAdUserId: string;
   acsUserId: string;
   createdAt: Date;
@@ -109,6 +110,7 @@ export class AcsIdentityService {
         // Save mapping to Cosmos DB
         mapping = {
           id: `${azureAdUserId}-${tenantId}`,
+          tenantId,
           azureAdUserId,
           acsUserId,
           createdAt: new Date()
@@ -200,18 +202,17 @@ export class AcsIdentityService {
         return null;
       }
 
-      const query = `SELECT * FROM c WHERE c.azureAdUserId = @azureAdUserId`;
-      const parameters = [{ name: '@azureAdUserId', value: azureAdUserId }];
-
-      const result = await this.dbService.queryItems<AcsUserMapping>(
+      // Use direct point-read with the composite ID and azureAdUserId partition key
+      // (partition key for acsUserMappings is /azureAdUserId per Bicep definition).
+      const mappingId = `${azureAdUserId}-${tenantId}`;
+      const result = await this.dbService.getItem<AcsUserMapping>(
         'acsUserMappings',
-        query,
-        parameters
+        mappingId,
+        azureAdUserId
       );
 
-      if (result.success && result.data && result.data.length > 0) {
-        const mapping = result.data[0];
-        return mapping || null;
+      if (result.success && result.data) {
+        return result.data;
       }
 
       return null;
@@ -276,7 +277,7 @@ export class AcsIdentityService {
       if (!this.dbService) {
         throw new Error('Database service not initialized');
       }
-      await this.dbService.deleteItem('acsUserMappings', mapping.id, mapping.azureAdUserId);
+      await this.dbService.deleteItem('acsUserMappings', mapping.id, mapping.tenantId);
 
       this.logger.info('User identity revoked', { azureAdUserId, acsUserId: mapping.acsUserId });
 

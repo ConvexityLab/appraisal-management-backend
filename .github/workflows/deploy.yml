@@ -324,6 +324,16 @@ jobs:
           MAX_REPLICAS=5
         fi
         
+        # Secrets must be created/updated BEFORE they are referenced in --set-env-vars.
+        # On a fresh container app the secretref would fail if the secret doesn't exist yet.
+        az containerapp secret set \
+          --name ${{ steps.get-app.outputs.api-name }} \
+          --resource-group ${{ steps.get-app.outputs.resource-group }} \
+          --secrets \
+            azure-openai-api-key="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+            google-gemini-api-key="${{ secrets.GOOGLE_GEMINI_API_KEY }}" \
+            sambanova-api-key="${{ secrets.SAMBANOVA_API_KEY }}"
+        
         az containerapp update \
           --name ${{ steps.get-app.outputs.api-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
@@ -335,21 +345,14 @@ jobs:
             AZURE_API_CLIENT_ID=${{ secrets.AZURE_API_CLIENT_ID }} \
             AZURE_AUDIENCE=${{ secrets.AZURE_API_CLIENT_ID }} \
             ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} \
+            AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
+            AZURE_OPENAI_DEPLOYMENT=${{ secrets.AZURE_OPENAI_DEPLOYMENT }} \
             AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
             GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
             SAMBANOVA_API_KEY=secretref:sambanova-api-key
           # NOTE: AZURE_CLIENT_ID is intentionally NOT set here.
           # DefaultAzureCredential uses it to select a user-assigned managed identity.
           # It is provisioned by Bicep (infrastructure) alongside the identity assignment.
-        
-        # Ensure the required secrets exist on the Container App
-        az containerapp secret set \
-          --name ${{ steps.get-app.outputs.api-name }} \
-          --resource-group ${{ steps.get-app.outputs.resource-group }} \
-          --secrets \
-            azure-openai-api-key="${{ secrets.AZURE_OPENAI_API_KEY }}" \
-            google-gemini-api-key="${{ secrets.GOOGLE_GEMINI_API_KEY }}" \
-            sambanova-api-key="${{ secrets.SAMBANOVA_API_KEY }}"
         
         echo " Container App updated successfully"
         echo "   - Image: ${{ needs.build-and-push-container.outputs.api-image-full-name }}"

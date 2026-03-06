@@ -19,6 +19,8 @@
 
 import { Logger } from '../utils/logger.js';
 import { GenericCacheService } from './cache/generic-cache.service';
+import { OpenAIClient, AzureKeyCredential } from '@azure/openai';
+import { DefaultAzureCredential } from '@azure/identity';
 
 // Types for AI operations
 interface AIRequest {
@@ -171,15 +173,21 @@ export class UniversalAIService {
 
   private initializeProviders(): void {
     // Azure OpenAI Configuration
+    // Authentication: uses AZURE_OPENAI_API_KEY if set, otherwise DefaultAzureCredential (Managed Identity).
+    // AZURE_OPENAI_DEPLOYMENT must be set to the deployment name (e.g. gpt-4o-mini).
+    const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT;
+    if (!azureDeployment && process.env.AZURE_OPENAI_ENDPOINT) {
+      this.logger?.warn?.('AZURE_OPENAI_DEPLOYMENT is not set. Azure OpenAI will be disabled.');
+    }
     const azureConfig: ProviderConfig = {
       name: 'Azure OpenAI',
-      enabled: !!(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY),
+      enabled: !!(process.env.AZURE_OPENAI_ENDPOINT && azureDeployment),
       endpoint: process.env.AZURE_OPENAI_ENDPOINT || '',
       apiKey: process.env.AZURE_OPENAI_API_KEY || '',
       models: {
-        text: ['gpt-4', 'gpt-35-turbo', 'gpt-4-turbo'],
-        embedding: ['text-embedding-ada-002'],
-        vision: ['gpt-4-vision-preview', 'gpt-4o']
+        text: azureDeployment ? [azureDeployment] : ['gpt-4'],
+        embedding: [process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-ada-002'],
+        vision: [process.env.AZURE_OPENAI_VISION_DEPLOYMENT || 'gpt-4o']
       },
       costPerToken: {
         input: 0.00003, // $0.03 per 1K tokens for GPT-4
@@ -673,40 +681,44 @@ Analyze the provided appraisal report and return findings in JSON format with sp
   // PROVIDER IMPLEMENTATIONS
   // ===========================
 
+  /**
+   * Build an OpenAIClient for Azure OpenAI.
+   * Uses AZURE_OPENAI_API_KEY when set; falls back to DefaultAzureCredential (Managed Identity).
+   */
+  private getAzureOpenAIClient(): OpenAIClient {
+    const config = this.providers.get('azure-openai')!;
+    if (config.apiKey) {
+      return new OpenAIClient(config.endpoint, new AzureKeyCredential(config.apiKey));
+    }
+    // No API key — rely on Managed Identity (DefaultAzureCredential)
+    return new OpenAIClient(config.endpoint, new DefaultAzureCredential());
+  }
+
   private async generateWithAzureOpenAI(request: AIRequest): Promise<AIResponse> {
     const config = this.providers.get('azure-openai')!;
-    const model = request.model || config.models.text[0];
-    
-    const response = await fetch(`${config.endpoint}/openai/deployments/${model}/chat/completions?api-version=2024-02-15-preview`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': config.apiKey
-      },
-      body: JSON.stringify({
-        messages: request.messages,
-        temperature: request.temperature || 0.7,
-        max_tokens: request.maxTokens || 2000,
-        top_p: 0.95,
-        frequency_penalty: 0,
-        presence_penalty: 0
-      })
-    });
+    const deploymentId: string = request.model ?? config.models.text[0] ?? 'gpt-4o-mini';
+    const client = this.getAzureOpenAIClient();
 
-    if (!response.ok) {
-      throw new Error(`Azure OpenAI API error: ${response.status} ${response.statusText}`);
-    }
+    const result = await client.getChatCompletions(
+      deploymentId,
+      request.messages as any,
+      {
+        temperature: request.temperature ?? 0.7,
+        maxTokens: request.maxTokens ?? 2000,
+        topP: 0.95,
+      }
+    );
 
-    const data = await response.json();
-    const usage = data.usage;
-    const content = data.choices[0].message.content;
+    const content: string = result.choices[0]?.message?.content ?? '';
+    const tokensUsed = result.usage?.totalTokens ?? 0;
 
     return {
       content,
       provider: 'azure-openai',
-      model: model || 'gpt-4',
-      tokensUsed: usage.total_tokens,
-      cost: (usage.prompt_tokens * config.costPerToken.input) + (usage.completion_tokens * config.costPerToken.output),
+      model: deploymentId,
+      tokensUsed,
+      cost: (result.usage?.promptTokens ?? 0) * config.costPerToken.input +
+            (result.usage?.completionTokens ?? 0) * config.costPerToken.output,
       responseTime: 0 // Will be set by caller
     };
   }
@@ -757,32 +769,18 @@ Analyze the provided appraisal report and return findings in JSON format with sp
 
   private async generateEmbeddingWithAzureOpenAI(request: EmbeddingRequest): Promise<EmbeddingResponse> {
     const config = this.providers.get('azure-openai')!;
-    const model = request.model || config.models.embedding[0];
-    
-    const response = await fetch(`${config.endpoint}/openai/deployments/${model}/embeddings?api-version=2024-02-15-preview`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': config.apiKey
-      },
-      body: JSON.stringify({
-        input: request.text,
-        model
-      })
-    });
+    const deploymentId: string = request.model ?? config.models.embedding[0] ?? 'text-embedding-ada-002';
+    const client = this.getAzureOpenAIClient();
 
-    if (!response.ok) {
-      throw new Error(`Azure OpenAI Embedding API error: ${response.status} ${response.statusText}`);
-    }
+    const result = await client.getEmbeddings(deploymentId, [request.text]);
 
-    const data = await response.json();
-    const embedding = data.data[0].embedding;
-    const tokensUsed = data.usage.total_tokens;
+    const embedding: number[] = result.data[0]?.embedding ?? [];
+    const tokensUsed = result.usage?.totalTokens ?? Math.ceil(request.text.length / 4);
 
     return {
       embedding,
       provider: 'azure-openai',
-      model: model || 'text-embedding-ada-002',
+      model: deploymentId,
       dimensions: embedding.length,
       tokensUsed,
       cost: tokensUsed * config.costPerToken.input

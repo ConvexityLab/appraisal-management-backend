@@ -374,6 +374,9 @@ module staticWebApp 'modules/static-web-app.bicep' = {
 }
 
 // Azure Communication Services (ACS, Teams Interop, Notifications)
+// Email sender address is derived from the Azure-managed domain (always verified).
+// emailDomain / autoConfigureDns / dnsZoneResourceGroup params are kept at top level
+// for future custom-domain use but are not passed to this module.
 module communicationServices 'modules/communication-services-deployment.bicep' = {
   name: 'communication-services-deployment'
   scope: resourceGroup
@@ -381,9 +384,6 @@ module communicationServices 'modules/communication-services-deployment.bicep' =
     environmentName: environment
     location: location
     cosmosDbAccountName: cosmosDb.outputs.cosmosAccountName
-    emailDomain: emailDomain
-    autoConfigureDns: autoConfigureDns
-    dnsZoneResourceGroup: dnsZoneResourceGroup
     tags: tags
   }
 }

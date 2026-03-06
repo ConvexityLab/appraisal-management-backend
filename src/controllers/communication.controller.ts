@@ -136,7 +136,10 @@ export const createCommunicationRouter = (): Router => {
 
         logger.info('Sending email', { to, subject, primaryEntity: entity });
 
-        const fromAddress = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || 'noreply@appraisal.platform';
+        if (!acsService.isEmailConfigured()) {
+          throw new Error('ACS Email is not configured. Set AZURE_COMMUNICATION_ENDPOINT and AZURE_COMMUNICATION_EMAIL_DOMAIN.');
+        }
+        const fromAddress = acsService.getEmailSenderAddress();
 
         // Send email via ACS
         const emailClient = acsService.getEmailClient();
@@ -192,7 +195,7 @@ export const createCommunicationRouter = (): Router => {
       } catch (error: any) {
         logger.error('Failed to send email', { error: error.message });
         
-        const failedFromAddress = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || 'noreply@appraisal.platform';
+        const failedFromAddress = acsService.isEmailConfigured() ? acsService.getEmailSenderAddress() : 'unknown@unconfigured';
         const failedUserId = (req as any).user?.id || 'system';
         const failedEntity = req.body.primaryEntity || {
           type: 'general' as const,

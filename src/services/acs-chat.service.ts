@@ -35,14 +35,14 @@ export class AcsChatService {
     this.identityService = new AcsIdentityService();
     
     this.endpoint = process.env.AZURE_COMMUNICATION_ENDPOINT || process.env.ACS_ENDPOINT || '';
-    const apiKey = process.env.AZURE_COMMUNICATION_API_KEY || process.env.ACS_API_KEY || '';
 
-    if (!this.endpoint || !apiKey) {
-      this.logger.warn('ACS Chat Service: Missing AZURE_COMMUNICATION_ENDPOINT or AZURE_COMMUNICATION_API_KEY - service will not be available');
+    if (!this.endpoint) {
+      // Endpoint is the only thing needed — all operations use per-request user tokens
+      // via AcsIdentityService (Managed Identity or API key handled there).
+      this.logger.warn('ACS Chat Service: Missing AZURE_COMMUNICATION_ENDPOINT - service will not be available');
       return;
     }
 
-    // Service initializes per-request with user tokens, not a static client
     this.configured = true;
     this.logger.info('ACS Chat Service initialized successfully');
   }

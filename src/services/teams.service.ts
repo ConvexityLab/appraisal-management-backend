@@ -15,7 +15,7 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { DefaultAzureCredential } from '@azure/identity';
 import { CosmosDbService } from './cosmos-db.service';
-import { EmailService } from './email.service';
+import { AzureCommunicationService } from './azure-communication.service';
 import { Logger } from '../utils/logger.js';
 
 interface TeamsMeetingParticipant {
@@ -61,7 +61,7 @@ interface CreateMeetingOptions {
 export class TeamsService {
   private graphClient: Client | null = null;
   private cosmosDbService!: CosmosDbService;
-  private emailService!: EmailService;
+  private acsService!: AzureCommunicationService;
   private logger: Logger;
   private isConfigured: boolean = false;
 
@@ -79,7 +79,7 @@ export class TeamsService {
     // Initialize services only if Teams is configured
     try {
       this.cosmosDbService = new CosmosDbService();
-      this.emailService = new EmailService();
+      this.acsService = new AzureCommunicationService();
     } catch (error) {
       this.logger.warn('Failed to initialize Teams service dependencies', { error });
       this.isConfigured = false;
@@ -484,46 +484,40 @@ export class TeamsService {
         throw new Error('Channel does not have an email address configured');
       }
 
-      this.logger.info('Sending email notification to Teams channel', { 
+      this.logger.info('Sending email notification to Teams channel via ACS', { 
         teamId, 
         channelId, 
         channelEmail,
         subject,
-        emailServiceConfigured: this.emailService.isConfigured()
+        acsEmailConfigured: this.acsService.isEmailConfigured()
       });
 
-      // Use the email service (SMTP/SendGrid)
-      const result = await this.emailService.sendEmail({
-        to: channelEmail,
-        subject: subject,
-        html: htmlContent,
-        text: htmlContent.replace(/<[^>]*>/g, '') // Strip HTML tags for plain text fallback
-      });
-
-      if (!result.success) {
-        this.logger.error('Email service failed to send notification', {
-          error: result.error,
-          channelEmail
-        });
-
-        return {
-          success: false,
-          channelEmail,
-          error: result.error || 'Email service not configured. Set SMTP_HOST or SENDGRID_API_KEY in environment variables.'
-        };
+      if (!this.acsService.isEmailConfigured()) {
+        throw new Error('ACS Email is not configured. Set AZURE_COMMUNICATION_ENDPOINT and AZURE_COMMUNICATION_EMAIL_DOMAIN.');
       }
+
+      // Use Azure Communication Services Email (consistent with rest of codebase)
+      const emailClient = this.acsService.getEmailClient();
+      const senderAddress = this.acsService.getEmailSenderAddress();
+
+      const poller = await emailClient.beginSend({
+        senderAddress,
+        content: { subject, html: htmlContent },
+        recipients: { to: [{ address: channelEmail }] }
+      });
+      const sendResult = await poller.pollUntilDone();
 
       this.logger.info('Email notification sent to Teams channel', { 
         teamId, 
         channelId,
         channelEmail,
-        messageId: result.messageId
+        messageId: sendResult.id
       });
 
       return {
         success: true,
         channelEmail,
-        ...(result.messageId && { messageId: result.messageId })
+        messageId: sendResult.id
       };
     } catch (error: any) {
       this.logger.error('Failed to send email notification to channel:', { 

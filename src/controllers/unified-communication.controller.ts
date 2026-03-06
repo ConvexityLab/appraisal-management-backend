@@ -30,7 +30,9 @@ export const createUnifiedCommunicationRouter = () => {
       body('participants').isArray({ min: 1 }).withMessage('At least one participant required'),
       body('participants.*.userId').notEmpty().withMessage('Participant user ID required'),
       body('participants.*.displayName').notEmpty().withMessage('Participant display name required'),
-      body('participants.*.email').isEmail().withMessage('Valid participant email required'),
+      // Email is optional — some participants (e.g. order stakeholders) may not have a known email.
+      // When provided it must be a valid address; empty string / null / omitted are all allowed.
+      body('participants.*.email').optional({ checkFalsy: true }).isEmail().withMessage('Invalid participant email address'),
       body('participants.*.role').notEmpty().withMessage('Participant role required'),
       body('autoCreateChat').optional().isBoolean()
     ],
@@ -419,7 +421,8 @@ export const createUnifiedCommunicationRouter = () => {
       param('contextId').isUUID().withMessage('Invalid context ID'),
       body('userId').notEmpty().withMessage('User ID required'),
       body('displayName').notEmpty().withMessage('Display name required'),
-      body('email').isEmail().withMessage('Valid email required'),
+      // Email optional — same rule as context creation (some external users lack a known address)
+      body('email').optional({ checkFalsy: true }).isEmail().withMessage('Valid email required when provided'),
       body('role').notEmpty().withMessage('Role required')
     ],
     async (req: Request, res: Response): Promise<void> => {

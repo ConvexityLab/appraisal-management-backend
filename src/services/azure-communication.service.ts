@@ -31,7 +31,7 @@ export class AzureCommunicationService {
     
     // Get configuration from environment
     this.endpoint = process.env.AZURE_COMMUNICATION_ENDPOINT || '';
-    this.emailDomain = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || 'noreply@appraisal.platform';
+    this.emailDomain = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || '';
     this.smsNumber = process.env.AZURE_COMMUNICATION_SMS_NUMBER || '';
     
     // Use Managed Identity for authentication
@@ -118,6 +118,9 @@ export class AzureCommunicationService {
    * Get configured email sender address
    */
   getEmailSenderAddress(): string {
+    if (!this.emailDomain) {
+      throw new Error('Email sender address not configured. Set AZURE_COMMUNICATION_EMAIL_DOMAIN to a verified address (e.g. DoNotReply@yourdomain.com).');
+    }
     return this.emailDomain;
   }
 

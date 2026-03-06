@@ -62,6 +62,16 @@ Write-Host ""
 $openAiKey = Read-Host "Paste new AZURE_OPENAI_API_KEY"
 Set-GhSecret "AZURE_OPENAI_API_KEY" $openAiKey
 
+$openAiEndpointDefault = "https://certo-open-ai.openai.azure.com/"
+$openAiEndpointInput   = Read-Host "AZURE_OPENAI_ENDPOINT (press Enter for default: $openAiEndpointDefault)"
+$openAiEndpoint        = if ([string]::IsNullOrWhiteSpace($openAiEndpointInput)) { $openAiEndpointDefault } else { $openAiEndpointInput }
+Set-GhSecret "AZURE_OPENAI_ENDPOINT" $openAiEndpoint
+
+$openAiDeploymentDefault = "gpt-4o-mini"
+$openAiDeploymentInput   = Read-Host "AZURE_OPENAI_DEPLOYMENT (press Enter for default: $openAiDeploymentDefault)"
+$openAiDeployment        = if ([string]::IsNullOrWhiteSpace($openAiDeploymentInput)) { $openAiDeploymentDefault } else { $openAiDeploymentInput }
+Set-GhSecret "AZURE_OPENAI_DEPLOYMENT" $openAiDeployment
+
 Set-GhSecret "GOOGLE_GEMINI_API_KEY" "AIzaSyA4ruodrY3GSipv0fNovAtMHwiXDLlhiiQ"
 Set-GhSecret "SAMBANOVA_API_KEY"     "e601b0a9-c260-4f03-9387-ce50c2bf33a1"
 

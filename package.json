@@ -42,6 +42,7 @@
     "deploy:vendor-containers": "az deployment group create --resource-group <rg-name> --template-file infrastructure/vendor-marketplace-containers.bicep --parameters cosmosAccountName=<cosmos-account>",
     "job:vendor-metrics": "ts-node src/jobs/calculate-vendor-metrics.job.ts",
     "seed:all": "node scripts/seed-test-data.js",
+    "seed:communication-platform": "node scripts/seed-communication-platform.js",
     "seed:orders-2026": "node scripts/seed-orders-2026.js",
     "seed:criteria-sets": "node scripts/seed-matching-criteria-sets.js",
     "seed:qc-checklists": "node scripts/seed-qc-checklists-2026.js",
