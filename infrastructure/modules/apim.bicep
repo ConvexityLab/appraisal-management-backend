@@ -107,20 +107,41 @@ resource functionBackend 'Microsoft.ApiManagement/service/backends@2023-05-01-pr
   }
 }
 
-// API: Main API - Import from OpenAPI spec
+// API: Main API
+// The full swagger spec is imported post-deploy via 'az apim api import' in infrastructure.yml
+// because api-swagger.json exceeds Bicep's 128 KB loadTextContent() limit (BCP184).
+// This resource creates the API shell with correct serviceUrl and subscriptionRequired settings;
+// the import step overlays the full operation list without touching these properties.
 resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
   parent: apim
   name: apiName
   properties: {
     displayName: 'Appraisal Management API'
     description: 'Main REST API for appraisal management operations'
-    path: ''  // No base path - swagger paths include /api
+    path: ''
     protocols: ['https']
     subscriptionRequired: false
-    serviceUrl: 'https://${apiContainerAppFqdn}'  // Swagger paths include /api
+    serviceUrl: 'https://${apiContainerAppFqdn}'
     type: 'http'
-    format: 'openapi+json'
-    value: loadTextContent('../api-swagger.json')
+  }
+}
+
+// Catch-all operation so APIM routing works before the swagger import step runs
+resource apiAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: api
+  name: 'api-all'
+  properties: {
+    displayName: 'All operations'
+    method: '*'
+    urlTemplate: '/{*path}'
+    description: 'Wildcard — replaced by full swagger import in infrastructure.yml'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: true
+      }
+    ]
   }
 }
 

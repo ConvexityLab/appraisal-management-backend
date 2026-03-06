@@ -64,6 +64,7 @@ jobs:
       app-service-name: ${{ steps.deploy.outputs.appServiceName }}
       app-service-url: ${{ steps.deploy.outputs.appServiceUrl }}
       key-vault-name: ${{ steps.deploy.outputs.keyVaultName }}
+      apim-name: ${{ steps.deploy.outputs.apimName }}
     
     steps:
     - name: Checkout code
@@ -141,18 +142,42 @@ jobs:
         app_service_url=$(echo "$deployment_output" | jq -r '.appServiceUrl.value')
         key_vault_name=$(echo "$deployment_output" | jq -r '.keyVaultName.value')
         
+        apim_name=$(echo "$deployment_output" | jq -r '.apimName.value')
+        
         # Set outputs
         echo "resourceGroupName=$resource_group" >> $GITHUB_OUTPUT
         echo "appServiceName=$app_service_name" >> $GITHUB_OUTPUT
         echo "appServiceUrl=$app_service_url" >> $GITHUB_OUTPUT
         echo "keyVaultName=$key_vault_name" >> $GITHUB_OUTPUT
+        echo "apimName=$apim_name" >> $GITHUB_OUTPUT
         
         echo "✅ Infrastructure deployment outputs:"
         echo "   Resource Group: $resource_group"
         echo "   App Service: $app_service_name"
         echo "   App Service URL: $app_service_url"
         echo "   Key Vault: $key_vault_name"
-        
+        echo "   APIM: $apim_name"
+
+    - name: Import API swagger into APIM
+      run: |
+        echo "📋 Importing API swagger spec into APIM (spec exceeds Bicep 128 KB limit)..."
+        RG="${{ steps.deploy.outputs.resourceGroupName }}"
+        APIM_NAME="${{ steps.deploy.outputs.apimName }}"
+        SERVICE_URL="${{ steps.deploy.outputs.appServiceUrl }}"
+
+        az apim api import \
+          --resource-group "$RG" \
+          --service-name "$APIM_NAME" \
+          --path '' \
+          --specification-format OpenApiJson \
+          --specification-path infrastructure/api-swagger.json \
+          --api-id appraisal-management-api \
+          --display-name 'Appraisal Management API' \
+          --protocols https \
+          --subscription-required false \
+          --service-url "$SERVICE_URL"
+        echo "✅ Swagger spec imported into APIM: $APIM_NAME"
+
     - name: Verify deployment
       run: |
         echo "🔍 Verifying deployment..."

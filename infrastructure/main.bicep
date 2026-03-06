@@ -364,13 +364,6 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   }
 }
 
-// Fluid Relay tenant env config passed into the API container app (non-secret values only)
-// The signing key is retrieved from Key Vault at runtime — it is NOT an env var.
-var fluidRelayEnvVars = [
-  { name: 'AZURE_FLUID_RELAY_TENANT_ID', value: fluidRelay.outputs.fluidRelayTenantId }
-  { name: 'AZURE_FLUID_RELAY_ENDPOINT', value: fluidRelay.outputs.fluidRelayEndpoint }
-]
-
 // Key Vault Role Assignments for Container Apps
 module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
   name: 'keyvault-role-assignments-deployment'
@@ -446,6 +439,7 @@ output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
 output applicationInsightsName string = monitoring.outputs.applicationInsightsName
 output appServiceName string = appServices.outputs.containerAppNames[0]
 output appServiceUrl string = 'https://${appServices.outputs.containerAppFqdns[0]}'
+output apimName string = apim.outputs.apimName
 output apimGatewayUrl string = apim.outputs.apimGatewayUrl
 output apimApiUrl string = apim.outputs.apiUrl
 output apimFunctionUrl string = apim.outputs.functionUrl
