@@ -325,6 +325,18 @@ jobs:
           MAX_REPLICAS=5
         fi
         
+        # Resolve image: use newly built image if available, otherwise keep the currently running one.
+        NEW_IMAGE="${{ needs.build-and-push-container.outputs.api-image-full-name }}"
+        if [[ -z "$NEW_IMAGE" ]]; then
+          NEW_IMAGE=$(az containerapp show \
+            --name ${{ steps.get-app.outputs.api-name }} \
+            --resource-group ${{ steps.get-app.outputs.resource-group }} \
+            --query "properties.template.containers[0].image" -o tsv)
+          echo "No new image built — keeping current image: $NEW_IMAGE"
+        else
+          echo "Deploying new image: $NEW_IMAGE"
+        fi
+        
         # Secrets must be created/updated BEFORE they are referenced in --set-env-vars.
         # On a fresh container app the secretref would fail if the secret doesn't exist yet.
         az containerapp secret set \
@@ -338,7 +350,7 @@ jobs:
         az containerapp update \
           --name ${{ steps.get-app.outputs.api-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
-          --image ${{ needs.build-and-push-container.outputs.api-image-full-name }} \
+          --image "$NEW_IMAGE" \
           --min-replicas $MIN_REPLICAS \
           --max-replicas $MAX_REPLICAS \
           --set-env-vars \
@@ -356,7 +368,7 @@ jobs:
           # It is provisioned by Bicep (infrastructure) alongside the identity assignment.
         
         echo " Container App updated successfully"
-        echo "   - Image: ${{ needs.build-and-push-container.outputs.api-image-full-name }}"
+        echo "   - Image: $NEW_IMAGE"
         echo "   - Scale: $MIN_REPLICAS-$MAX_REPLICAS replicas"
 
     - name: Update Functions Container App with new image
