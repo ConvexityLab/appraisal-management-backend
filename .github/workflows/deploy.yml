@@ -382,16 +382,28 @@ jobs:
           FUNC_MIN_REPLICAS=1
           FUNC_MAX_REPLICAS=4
         fi
+
+        # Resolve image: use newly built image if available, otherwise keep the currently running one.
+        FUNC_NEW_IMAGE="${{ needs.build-and-push-container.outputs.functions-image-full-name }}"
+        if [[ -z "$FUNC_NEW_IMAGE" ]]; then
+          FUNC_NEW_IMAGE=$(az containerapp show \
+            --name ${{ steps.get-app.outputs.functions-name }} \
+            --resource-group ${{ steps.get-app.outputs.resource-group }} \
+            --query "properties.template.containers[0].image" -o tsv)
+          echo "No new image built — keeping current image: $FUNC_NEW_IMAGE"
+        else
+          echo "Deploying new image: $FUNC_NEW_IMAGE"
+        fi
         
         az containerapp update \
           --name ${{ steps.get-app.outputs.functions-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
-          --image ${{ needs.build-and-push-container.outputs.functions-image-full-name }} \
+          --image "$FUNC_NEW_IMAGE" \
           --min-replicas $FUNC_MIN_REPLICAS \
           --max-replicas $FUNC_MAX_REPLICAS
         
         echo " Functions Container App updated successfully"
-        echo "   - Image: ${{ needs.build-and-push-container.outputs.functions-image-full-name }}"
+        echo "   - Image: $FUNC_NEW_IMAGE"
         echo "   - Scale: $FUNC_MIN_REPLICAS-$FUNC_MAX_REPLICAS replicas"
         
     - name: Wait for Container App to scale up
