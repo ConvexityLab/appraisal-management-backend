@@ -61,6 +61,8 @@ export enum QCDecision {
  */
 export interface QCReview {
   id: string;
+  /** FK to the parent Engagement. Preferred for all new QC records. */
+  engagementId?: string;
   orderId: string;
   orderNumber?: string;
   appraisalId?: string;

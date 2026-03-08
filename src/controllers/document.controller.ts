@@ -41,6 +41,7 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
     uploadedAt: doc.uploadedAt,
     modifiedAt: doc.updatedAt,
     version: doc.version ?? 1,
+    ...(doc.previousVersionId && { replacesDocumentId: doc.previousVersionId }),
     metadata: doc.metadata ? { tags: doc.tags, ...doc.metadata as Record<string, unknown> } : (doc.tags ? { tags: doc.tags } : undefined)
   };
 }
@@ -130,6 +131,25 @@ export class DocumentController {
     this.router.get(
       '/',
       this.listDocuments.bind(this)
+    );
+
+    /**
+     * POST /:id/versions
+     * Upload a new version of an existing document
+     */
+    this.router.post(
+      '/:id/versions',
+      this.upload.single('file'),
+      this.uploadNewVersion.bind(this)
+    );
+
+    /**
+     * GET /:id/versions
+     * Get version history for a document
+     */
+    this.router.get(
+      '/:id/versions',
+      this.getVersionHistory.bind(this)
     );
 
     /**
@@ -470,6 +490,96 @@ export class DocumentController {
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Failed to delete document'
+      });
+    }
+  }
+
+  /**
+   * POST /:id/versions
+   * Upload a new version of an existing document
+   */
+  private async uploadNewVersion(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      if (!req.file) {
+        res.status(400).json({ success: false, error: 'No file uploaded' });
+        return;
+      }
+
+      const existingDocumentId = req.params.id!;
+      const tenantId = req.user?.tenantId;
+      const userId = req.user?.id || req.user?.azureAdObjectId || 'unknown';
+      if (!tenantId) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } });
+        return;
+      }
+
+      const result = await this.documentService.uploadNewVersion(
+        existingDocumentId,
+        tenantId,
+        req.file,
+        userId
+      );
+
+      if (!result.success) {
+        const statusCode = result.error?.code === 'NOT_FOUND' ? 404 : 500;
+        res.status(statusCode).json(result);
+        return;
+      }
+
+      const frontendDoc = toFrontendDocument(result.data!);
+      // Add versioning fields the FE type expects
+      frontendDoc.replacesDocumentId = existingDocumentId;
+
+      res.status(201).json({
+        success: true,
+        document: frontendDoc
+      });
+    } catch (error) {
+      console.error('Error in uploadNewVersion:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to upload new version'
+      });
+    }
+  }
+
+  /**
+   * GET /:id/versions
+   * Get version history for a document (all versions in the chain)
+   */
+  private async getVersionHistory(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const documentId = req.params.id!;
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } });
+        return;
+      }
+
+      const result = await this.documentService.getVersionHistory(documentId, tenantId);
+
+      if (!result.success) {
+        const statusCode = result.error?.code === 'NOT_FOUND' ? 404 : 500;
+        res.status(statusCode).json(result);
+        return;
+      }
+
+      const versions = (result.data || []).map(doc => {
+        const fe = toFrontendDocument(doc);
+        if (doc.previousVersionId) fe.replacesDocumentId = doc.previousVersionId;
+        return fe;
+      });
+
+      res.json({
+        success: true,
+        versions,
+        count: versions.length
+      });
+    } catch (error) {
+      console.error('Error in getVersionHistory:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get version history'
       });
     }
   }

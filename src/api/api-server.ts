@@ -48,6 +48,7 @@ import { createReviewProgramsRouter } from '../controllers/review-programs.contr
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
+import { createEngagementRouter } from '../controllers/engagement.controller.js';
 import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
 
@@ -138,6 +139,9 @@ import { EnhancedOrderController } from '../controllers/enhanced-order.controlle
 
 // Import Document Controller (Phase 6)
 import { DocumentController } from '../controllers/document.controller.js';
+
+// Import E-Signature Controller
+import { ESignatureController } from '../controllers/esignature.controller.js';
 
 // Import Order Controller (Phase 0.2 — extracted from inline handlers)
 import { OrderController } from '../controllers/order.controller.js';
@@ -533,6 +537,13 @@ export class AppraisalManagementAPIServer {
       documentController.router
     );
 
+    // E-Signature Management - Signing request lifecycle
+    const esignatureController = new ESignatureController(this.dbService);
+    this.app.use('/api/esignature',
+      this.unifiedAuth.authenticate(),
+      esignatureController.router
+    );
+
     // NOTE: Order Management (/api/orders) registered in setupRoutes() — must work even when authzMiddleware is absent
 
     // QC Checklist Management - Manage QC checklists with document requirements
@@ -850,6 +861,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/arv',
       this.unifiedAuth.authenticate(),
       createArvRouter(this.dbService)
+    );
+
+    // Engagements — aggregate root for lender-side valuation requests
+    this.app.use('/api/engagements',
+      this.unifiedAuth.authenticate(),
+      createEngagementRouter(this.dbService)
     );
 
     // ARV — analyses linked to an order
@@ -1677,32 +1694,27 @@ export class AppraisalManagementAPIServer {
 
   // Analytics endpoints
   private async getAnalyticsOverview(req: AuthenticatedRequest, res: express.Response): Promise<void> {
+    const emptyOverview = {
+      orders: { total: 0, active: 0, completed: 0, cancelled: 0, averageTurnaroundDays: 0, onTimeDeliveryRate: 0 },
+      qc: { totalReviews: 0, passRate: 0, averageScore: 0, criticalIssuesFound: 0, revisionsRequested: 0 },
+      vendors: { totalActive: 0, averagePerformanceScore: 0, topPerformers: 0, underPerforming: 0 },
+      fraud: { totalAnalyses: 0, alertsGenerated: 0, criticalAlerts: 0, averageRiskScore: 0 },
+      financial: { totalRevenue: 0, averageOrderValue: 0, revenueGrowth: 0 },
+      periodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      periodEnd: new Date().toISOString(),
+      generatedAt: new Date().toISOString(),
+    };
+
     try {
       const result = await this.dbService.getAnalyticsOverview();
       
       if (result.success) {
         res.json(result.data);
       } else {
-        // Return empty analytics instead of error if database not available
-        res.json({
-          totalOrders: 0,
-          completedOrders: 0,
-          averageCompletionTime: 0,
-          qcPassRate: 0,
-          topVendors: [],
-          monthlyTrends: []
-        });
+        res.json(emptyOverview);
       }
     } catch (error) {
-      // Return empty analytics instead of error
-      res.json({
-        totalOrders: 0,
-        completedOrders: 0,
-        averageCompletionTime: 0,
-        qcPassRate: 0,
-        topVendors: [],
-        monthlyTrends: []
-      });
+      res.json(emptyOverview);
     }
   }
 

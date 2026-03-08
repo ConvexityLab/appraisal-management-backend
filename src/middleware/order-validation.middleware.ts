@@ -173,3 +173,54 @@ export function validateBatchStatusUpdate() {
     handleValidationErrors,
   ];
 }
+
+// ─── POST /batch/assign ────────────────────────────────────────────────────
+
+/**
+ * Validates the body of POST /api/orders/batch/assign.
+ * Requires orderIds array and vendorId.
+ */
+export function validateBatchAssign() {
+  return [
+    body('orderIds')
+      .isArray({ min: 1 })
+      .withMessage('orderIds must be a non-empty array'),
+    body('orderIds.*')
+      .isString()
+      .withMessage('Each orderId must be a string'),
+    body('vendorId')
+      .isString()
+      .isLength({ min: 1 })
+      .withMessage('vendorId is required'),
+    body('assignedBy')
+      .optional()
+      .isString(),
+    handleValidationErrors,
+  ];
+}
+
+// ─── POST /export ──────────────────────────────────────────────────────────
+
+/**
+ * Validates the body of POST /api/orders/export.
+ * Requires orderIds array and format.
+ */
+export function validateExportOrders() {
+  return [
+    body('orderIds')
+      .isArray({ min: 1 })
+      .withMessage('orderIds must be a non-empty array'),
+    body('orderIds.*')
+      .isString()
+      .withMessage('Each orderId must be a string'),
+    body('format')
+      .isString()
+      .isIn(['CSV', 'EXCEL', 'JSON'])
+      .withMessage('format must be CSV, EXCEL, or JSON'),
+    body('includeFields')
+      .optional()
+      .isArray()
+      .withMessage('includeFields must be an array'),
+    handleValidationErrors,
+  ];
+}

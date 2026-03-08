@@ -51,6 +51,8 @@ export class CosmosDbService {
   private matchingCriteriaSetsContainer: Container | null = null;
   private rfbRequestsContainer: Container | null = null;
   private arvAnalysesContainer: Container | null = null;
+  // ── Engagement domain ────────────────────────────────────────────────────
+  private engagementsContainer: Container | null = null;
   private reviewProgramsContainer: Container | null = null;
   private reviewResultsContainer: Container | null = null;
   // ── Construction Finance ─────────────────────────────────────────────────
@@ -91,6 +93,8 @@ export class CosmosDbService {
     matchingCriteriaSets: 'matching-criteria-sets',       // Named reusable vendor eligibility rule sets
     rfbRequests: 'rfb-requests',                          // Request-for-Bid rounds per order
     arvAnalyses: 'arv-analyses',                          // As-Repaired Value analyses
+    // ── Engagement domain (aggregate root for lender-side work) ──────────
+    engagements: 'engagements',                           // LenderEngagement records
     reviewPrograms: 'review-programs',                   // Versioned criteria review programs (all programTypes)
     reviewResults: 'review-results',                      // Per-loan ReviewTapeResult documents for large jobs
     // ── Construction Finance ──────────────────────────────────────────────
@@ -183,6 +187,7 @@ export class CosmosDbService {
       this.matchingCriteriaSetsContainer = this.database.container(this.containers.matchingCriteriaSets);
       this.rfbRequestsContainer = this.database.container(this.containers.rfbRequests);
       this.arvAnalysesContainer = this.database.container(this.containers.arvAnalyses);
+      this.engagementsContainer = this.database.container(this.containers.engagements);
       this.reviewProgramsContainer = this.database.container(this.containers.reviewPrograms);
       this.reviewResultsContainer = this.database.container(this.containers.reviewResults);
       // ── Construction Finance ───────────────────────────────────────────────
@@ -1033,64 +1038,105 @@ export class CosmosDbService {
         throw new Error('Required containers not initialized');
       }
 
-      // Get order statistics using separate queries
-      const totalOrdersQuery = 'SELECT VALUE COUNT(1) FROM c';
-      const completedOrdersQuery = 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "completed"';
-      const avgCompletionQuery = `
-        SELECT AVG(DateDiff('day', c.createdAt, c.completedAt)) as avgCompletionDays
-        FROM c 
-        WHERE c.status = 'completed' AND c.completedAt != null
-      `;
-
-      const [totalOrdersResult, completedOrdersResult, avgCompletionResult] = await Promise.all([
-        this.ordersContainer.items.query(totalOrdersQuery).fetchAll(),
-        this.ordersContainer.items.query(completedOrdersQuery).fetchAll(),
-        this.ordersContainer.items.query(avgCompletionQuery).fetchAll()
+      // --- Order statistics ---
+      const [totalRes, completedRes, activeRes, cancelledRes, avgCompRes, onTimeRes] = await Promise.all([
+        this.ordersContainer.items.query('SELECT VALUE COUNT(1) FROM c').fetchAll(),
+        this.ordersContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.status = 'completed'").fetchAll(),
+        this.ordersContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.status NOT IN ('completed','cancelled')").fetchAll(),
+        this.ordersContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.status = 'cancelled'").fetchAll(),
+        this.ordersContainer.items.query(`
+          SELECT AVG(DateDiff('day', c.createdAt, c.completedAt)) as avg
+          FROM c WHERE c.status = 'completed' AND c.completedAt != null
+        `).fetchAll(),
+        this.ordersContainer.items.query(`
+          SELECT VALUE COUNT(1) FROM c
+          WHERE c.status = 'completed' AND c.completedAt != null AND c.dueDate != null
+            AND c.completedAt <= c.dueDate
+        `).fetchAll(),
       ]);
 
-      const totalOrders = totalOrdersResult.resources[0] || 0;
-      const completedOrders = completedOrdersResult.resources[0] || 0;
-      const avgCompletionDays = avgCompletionResult.resources[0]?.avgCompletionDays || 0;
+      const totalOrders = totalRes.resources[0] || 0;
+      const completedOrders = completedRes.resources[0] || 0;
+      const activeOrders = activeRes.resources[0] || 0;
+      const cancelledOrders = cancelledRes.resources[0] || 0;
+      const avgCompletionDays = avgCompRes.resources[0]?.avg || 0;
+      const onTimeCount = onTimeRes.resources[0] || 0;
+      const onTimeRate = completedOrders > 0 ? (onTimeCount / completedOrders) * 100 : 0;
 
-      // Get QC pass rate using separate queries
-      const totalQcQuery = 'SELECT VALUE COUNT(1) FROM c';
-      const passCountQuery = 'SELECT VALUE COUNT(1) FROM c WHERE c.qcScore >= 85';
-      const avgQcQuery = 'SELECT AVG(c.qcScore) as avgQcScore FROM c';
-
-      const [totalQcResult, passCountResult, avgQcResult] = await Promise.all([
-        this.qcResultsContainer.items.query(totalQcQuery).fetchAll(),
-        this.qcResultsContainer.items.query(passCountQuery).fetchAll(),
-        this.qcResultsContainer.items.query(avgQcQuery).fetchAll()
+      // --- QC statistics ---
+      const [totalQcRes, passRes, avgQcRes, criticalRes, revisionRes] = await Promise.all([
+        this.qcResultsContainer.items.query('SELECT VALUE COUNT(1) FROM c').fetchAll(),
+        this.qcResultsContainer.items.query('SELECT VALUE COUNT(1) FROM c WHERE c.qcScore >= 85').fetchAll(),
+        this.qcResultsContainer.items.query('SELECT AVG(c.qcScore) as avg FROM c').fetchAll(),
+        this.qcResultsContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.hasCriticalIssues = true").fetchAll(),
+        this.qcResultsContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.revisionsRequested > 0").fetchAll(),
       ]);
 
-      const totalQc = totalQcResult.resources[0] || 0;
-      const passCount = passCountResult.resources[0] || 0;
-      const avgQcScore = avgQcResult.resources[0]?.avgQcScore || 0;
+      const totalQc = totalQcRes.resources[0] || 0;
+      const passCount = passRes.resources[0] || 0;
+      const avgQcScore = avgQcRes.resources[0]?.avg || 0;
+      const criticalCount = criticalRes.resources[0] || 0;
+      const revisionsCount = revisionRes.resources[0] || 0;
+      const qcPassRate = totalQc > 0 ? (passCount / totalQc) * 100 : 0;
 
-      // Get top vendors
-      const topVendorsQuery = `
-        SELECT TOP 5 
-          c.assignedVendorId,
-          COUNT(c) as completedOrders
-        FROM c 
-        WHERE c.status = 'completed' AND c.assignedVendorId != null
-        GROUP BY c.assignedVendorId
-        ORDER BY COUNT(c) DESC
-      `;
+      // --- Vendor statistics ---
+      const [totalVendorsRes, avgVendorScoreRes] = await Promise.all([
+        this.vendorsContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.status = 'active'").fetchAll(),
+        this.vendorsContainer.items.query('SELECT AVG(c.performanceScore) as avg FROM c').fetchAll(),
+      ]);
 
-      const { resources: topVendors } = await this.ordersContainer.items.query({
-        query: topVendorsQuery
-      }).fetchAll();
+      const totalActiveVendors = totalVendorsRes.resources[0] || 0;
+      const avgVendorScore = avgVendorScoreRes.resources[0]?.avg || 0;
+
+      // --- Financial statistics (order fees) ---
+      const [revenueRes, avgFeesRes] = await Promise.all([
+        this.ordersContainer.items.query("SELECT VALUE SUM(c.fee) FROM c WHERE c.status = 'completed' AND c.fee != null").fetchAll(),
+        this.ordersContainer.items.query("SELECT AVG(c.fee) as avg FROM c WHERE c.fee != null").fetchAll(),
+      ]);
+
+      const totalRevenue = revenueRes.resources[0] || 0;
+      const avgOrderValue = avgFeesRes.resources[0]?.avg || 0;
+
+      const now = new Date();
 
       return {
         success: true,
         data: {
-          totalOrders: totalOrders,
-          completedOrders: completedOrders,
-          averageCompletionTime: avgCompletionDays,
-          qcPassRate: totalQc > 0 ? (passCount / totalQc) * 100 : 0,
-          topVendors: await this.calculateTopVendorRatings(topVendors),
-          monthlyTrends: await this.calculateMonthlyTrends()
+          orders: {
+            total: totalOrders,
+            active: activeOrders,
+            completed: completedOrders,
+            cancelled: cancelledOrders,
+            averageTurnaroundDays: Math.round(avgCompletionDays * 10) / 10,
+            onTimeDeliveryRate: Math.round(onTimeRate * 10) / 10,
+          },
+          qc: {
+            totalReviews: totalQc,
+            passRate: Math.round(qcPassRate * 10) / 10,
+            averageScore: Math.round(avgQcScore * 10) / 10,
+            criticalIssuesFound: criticalCount,
+            revisionsRequested: revisionsCount,
+          },
+          vendors: {
+            totalActive: totalActiveVendors,
+            averagePerformanceScore: Math.round(avgVendorScore * 10) / 10,
+            topPerformers: 0,    // computed when vendor scoring is available
+            underPerforming: 0,  // computed when vendor scoring is available
+          },
+          fraud: {
+            totalAnalyses: 0,
+            alertsGenerated: 0,
+            criticalAlerts: 0,
+            averageRiskScore: 0,
+          },
+          financial: {
+            totalRevenue: totalRevenue,
+            averageOrderValue: Math.round(avgOrderValue * 100) / 100,
+            revenueGrowth: 0, // requires period comparison, deferred
+          },
+          periodStart: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+          periodEnd: now.toISOString(),
+          generatedAt: now.toISOString(),
         }
       };
 
@@ -1113,26 +1159,103 @@ export class CosmosDbService {
         throw new Error('Required containers not initialized');
       }
 
-      const { startDate, endDate, groupBy = 'day' } = params;
-      
-      // Mock implementation - in production, you'd build complex time-series queries
+      const { startDate, endDate } = params;
+
+      // Build optional date filter
+      const dateFilter = startDate && endDate
+        ? `AND c.createdAt >= '${startDate}' AND c.createdAt <= '${endDate}'`
+        : '';
+
+      // --- Efficiency: average processing time, capacity utilization ---
+      const [avgProcessRes, bottleneckRes] = await Promise.all([
+        this.ordersContainer.items.query(`
+          SELECT AVG(DateDiff('hour', c.createdAt, c.completedAt)) as avgHours
+          FROM c WHERE c.status = 'completed' AND c.completedAt != null ${dateFilter}
+        `).fetchAll(),
+        this.ordersContainer.items.query(`
+          SELECT c.status as stage, COUNT(1) as cnt,
+                 AVG(DateDiff('hour', c.statusChangedAt, c.updatedAt)) as avgTime
+          FROM c WHERE c.status NOT IN ('completed','cancelled') ${dateFilter}
+          GROUP BY c.status
+        `).fetchAll(),
+      ]);
+
+      const avgProcessingHours = avgProcessRes.resources[0]?.avgHours || 0;
+      const bottleneckStages = (bottleneckRes.resources || []).map((r: any) => ({
+        stage: r.stage,
+        averageTime: Math.round((r.avgTime || 0) * 10) / 10,
+        impactPercentage: 0,  // calculated below
+      }));
+      const totalBottleneckTime = bottleneckStages.reduce((s: number, b: any) => s + b.averageTime, 0);
+      for (const b of bottleneckStages) {
+        b.impactPercentage = totalBottleneckTime > 0
+          ? Math.round((b.averageTime / totalBottleneckTime) * 1000) / 10
+          : 0;
+      }
+
+      // --- Quality: first-time pass, revision rate, critical error rate ---
+      const [firstTimeRes, revisionRateRes, criticalRateRes, avgQcRes] = await Promise.all([
+        this.qcResultsContainer.items.query(`
+          SELECT VALUE COUNT(1) FROM c WHERE c.qcScore >= 85 AND c.revisionNumber = 1 ${dateFilter}
+        `).fetchAll(),
+        this.qcResultsContainer.items.query(`
+          SELECT VALUE COUNT(1) FROM c WHERE c.revisionsRequested > 0 ${dateFilter}
+        `).fetchAll(),
+        this.qcResultsContainer.items.query(`
+          SELECT VALUE COUNT(1) FROM c WHERE c.hasCriticalIssues = true ${dateFilter}
+        `).fetchAll(),
+        this.qcResultsContainer.items.query(`
+          SELECT AVG(c.qcScore) as avg FROM c ${dateFilter ? 'WHERE 1=1 ' + dateFilter : ''}
+        `).fetchAll(),
+      ]);
+
+      const totalQcForPeriod = await this.qcResultsContainer.items.query(
+        `SELECT VALUE COUNT(1) FROM c ${dateFilter ? 'WHERE 1=1 ' + dateFilter : ''}`
+      ).fetchAll();
+      const qcTotal = totalQcForPeriod.resources[0] || 0;
+      const firstTimePass = firstTimeRes.resources[0] || 0;
+      const revisionCount = revisionRateRes.resources[0] || 0;
+      const criticalCount = criticalRateRes.resources[0] || 0;
+      const avgScore = avgQcRes.resources[0]?.avg || 0;
+
+      // --- Vendor performance: top performers ---
+      const topVendorRes = await this.ordersContainer.items.query(`
+        SELECT TOP 5 c.assignedVendorId as vendorId,
+               c.assignedVendorName as vendorName,
+               AVG(c.qcScore) as score
+        FROM c WHERE c.status = 'completed' AND c.assignedVendorId != null ${dateFilter}
+        GROUP BY c.assignedVendorId, c.assignedVendorName
+        ORDER BY AVG(c.qcScore) DESC
+      `).fetchAll();
+
+      // --- Build PerformanceMetrics shape expected by FE ---
       return {
         success: true,
         data: {
-          timeframe: {
-            startDate,
-            endDate,
-            groupBy
+          efficiency: {
+            averageProcessingTime: Math.round(avgProcessingHours * 10) / 10,
+            bottleneckStages,
+            capacityUtilization: 0,  // requires capacity config
           },
-          metrics: {
-            orderVolume: [12, 15, 18, 22, 19, 25, 28],
-            completionTimes: [4.2, 4.8, 5.1, 4.9, 5.3, 4.7, 4.5],
-            qcScores: [94.2, 95.1, 93.8, 94.7, 94.5, 95.2, 94.8],
-            vendorPerformance: [
-              { vendorId: '1', avgCompletionTime: 4.2, qcScore: 95.1 },
-              { vendorId: '2', avgCompletionTime: 4.8, qcScore: 94.3 }
-            ]
-          }
+          quality: {
+            firstTimeQualityRate: qcTotal > 0 ? Math.round((firstTimePass / qcTotal) * 1000) / 10 : 0,
+            revisionRate: qcTotal > 0 ? Math.round((revisionCount / qcTotal) * 1000) / 10 : 0,
+            criticalErrorRate: qcTotal > 0 ? Math.round((criticalCount / qcTotal) * 1000) / 10 : 0,
+            customerSatisfactionScore: Math.round(avgScore * 10) / 10,
+          },
+          vendorPerformance: {
+            averageQCScore: Math.round(avgScore * 10) / 10,
+            onTimeDeliveryRate: 0,  // computed in overview already
+            topPerformers: (topVendorRes.resources || []).map((v: any) => ({
+              vendorId: v.vendorId || '',
+              vendorName: v.vendorName || v.vendorId || 'Unknown',
+              score: Math.round((v.score || 0) * 10) / 10,
+            })),
+          },
+          trends: {
+            weekOverWeek: { ordersChange: 0, qualityChange: 0, efficiencyChange: 0 },
+            monthOverMonth: { ordersChange: 0, qualityChange: 0, efficiencyChange: 0 },
+          },
         }
       };
 
@@ -2897,6 +3020,16 @@ export class CosmosDbService {
       throw new Error('review-results container not initialized');
     }
     return this.reviewResultsContainer;
+  }
+
+  /**
+   * Returns the engagements container reference.
+   */
+  getEngagementsContainer(): import('@azure/cosmos').Container {
+    if (!this.engagementsContainer) {
+      throw new Error('engagements container not initialized');
+    }
+    return this.engagementsContainer;
   }
 }
 

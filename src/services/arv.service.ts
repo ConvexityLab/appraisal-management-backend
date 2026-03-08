@@ -51,6 +51,7 @@ export class ArvService {
     const draft: ArvAnalysis = {
       id: generateArvId(),
       tenantId,
+      ...(request.engagementId !== undefined && { engagementId: request.engagementId }),
       ...(request.orderId !== undefined && { orderId: request.orderId }),
       dealType: request.dealType,
       mode: request.mode,

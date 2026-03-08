@@ -736,6 +736,69 @@ var containers = [
         ]
       ]
     }
+  }
+  // ROV Requests — reconsideration of value lifecycle, research, responses
+  {
+    name: 'rov-requests'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/timeline/*' }
+        { path: '/supportingEvidence/*' }
+        { path: '/research/comparables/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/priority', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  // E-Signature Requests — signing ceremony lifecycle + audit trail
+  {
+    name: 'esignature-requests'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/events/*' }
+        { path: '/signers/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/status', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
   }]
 
 // Cosmos DB Account with enterprise settings

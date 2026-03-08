@@ -106,7 +106,9 @@ export interface ArvDealAnalysis {
 export interface ArvAnalysis {
   id: string;
   tenantId: string;
-  /** Links to an AppraisalOrder. Null for standalone / pre-order analyses. */
+  /** Links to the parent Engagement. Preferred over orderId for new analyses. */
+  engagementId?: string;
+  /** Links to an AppraisalOrder (VendorOrder). Kept for backward compatibility. */
   orderId?: string;
   dealType: DealType;
   mode: ArvMode;
@@ -150,6 +152,8 @@ export interface ArvAnalysis {
 export interface CreateArvRequest {
   dealType: DealType;
   mode: ArvMode;
+  /** FK to parent Engagement — preferred over orderId for new analyses */
+  engagementId?: string;
   orderId?: string;
   propertyAddress: ArvAnalysis['propertyAddress'];
   asIsValue: number;

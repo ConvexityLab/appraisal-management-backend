@@ -1,5 +1,8 @@
 // Core domain types for the Appraisal Management System
 
+// ─── Engagement domain (aggregate root for lender-side work) ─────────────────
+export * from './engagement.types.js';
+
 // Import geospatial risk assessment types
 export * from './geospatial';
 import { PropertyRiskAssessment } from './geospatial';

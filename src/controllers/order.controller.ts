@@ -9,7 +9,9 @@
  *   GET    /                  → getOrders
  *   GET    /dashboard         → getOrderDashboard
  *   POST   /search            → searchOrders       (validated)
- *   POST   /batch-status      → batchUpdateStatus   (validated)
+ *   POST   /batch/status      → batchUpdateStatus   (validated)
+ *   POST   /batch/assign      → batchAssign          (validated)
+ *   POST   /export            → exportOrders          (validated)
  *   GET    /:orderId          → getOrder
  *   PUT    /:orderId/status   → updateOrderStatus
  *   POST   /:orderId/cancel   → cancelOrder         (validated)
@@ -35,6 +37,8 @@ import {
   validateCancelOrder,
   validateSearchOrders,
   validateBatchStatusUpdate,
+  validateBatchAssign,
+  validateExportOrders,
 } from '../middleware/order-validation.middleware.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
@@ -134,6 +138,9 @@ export class OrderController {
     this.router.post('/', ...validateCreateOrder(), this.createOrder.bind(this));
     this.router.post('/search', ...validateSearchOrders(), this.searchOrders.bind(this));
     this.router.post('/batch-status', ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
+    this.router.post('/batch/status', ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
+    this.router.post('/batch/assign', ...validateBatchAssign(), this.batchAssign.bind(this));
+    this.router.post('/export', ...validateExportOrders(), this.exportOrders.bind(this));
     this.router.get('/:orderId', this.getOrder.bind(this));
     this.router.put('/:orderId', this.updateOrder.bind(this));
     this.router.put('/:orderId/status', this.updateOrderStatus.bind(this));
@@ -1257,5 +1264,174 @@ export class OrderController {
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+  }
+
+  // ─── POST /batch/assign ──────────────────────────────────────────────────
+
+  private async batchAssign(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderIds, vendorId, assignedBy } = req.body;
+
+      // Verify vendor exists
+      const vendor = await this.dbService.getItem('vendors', vendorId, vendorId);
+      if (!vendor) {
+        res.status(404).json({ error: `Vendor ${vendorId} not found`, code: 'VENDOR_NOT_FOUND' });
+        return;
+      }
+      const vendorName = (vendor as any)?.companyName || (vendor as any)?.name || null;
+
+      const results: { orderId: string; success: boolean; error?: string }[] = [];
+
+      for (const orderId of orderIds as string[]) {
+        try {
+          const current = await this.dbService.findOrderById(orderId);
+          if (!current.success || !current.data) {
+            results.push({ orderId, success: false, error: 'Order not found' });
+            continue;
+          }
+
+          const currentStatus = normalizeOrderStatus(current.data.status as string);
+          if (!isValidStatusTransition(currentStatus, OrderStatus.ASSIGNED)) {
+            results.push({
+              orderId,
+              success: false,
+              error: `Cannot assign vendor to order in ${currentStatus} status`,
+            });
+            continue;
+          }
+
+          const result = await this.dbService.updateOrder(orderId, {
+            status: OrderStatus.ASSIGNED as unknown as AppraisalOrder['status'],
+            assignedVendorId: vendorId,
+            assignedVendorName: vendorName,
+            assignedAt: new Date().toISOString(),
+            assignedBy: assignedBy || req.user?.id || 'unknown',
+          } as Partial<AppraisalOrder>);
+
+          if (result.success) {
+            results.push({ orderId, success: true });
+            this.eventService.publishOrderStatusChanged(
+              orderId, currentStatus, OrderStatus.ASSIGNED, req.user?.id || 'unknown',
+            ).catch((err) =>
+              logger.error('Batch assign: failed to publish event', { orderId, error: err }),
+            );
+            this.auditService.log({
+              actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
+              action: 'order.assigned',
+              resource: { type: 'order', id: orderId },
+              before: { status: currentStatus },
+              after: { status: OrderStatus.ASSIGNED, vendorId, vendorName },
+              metadata: { batchOperation: true },
+            }).catch((err) =>
+              logger.error('Batch assign: failed to write audit log', { orderId, error: err }),
+            );
+            this.notificationService.notifyVendorAssigned(result.data!)
+              .catch((err) => logger.error('Batch assign: failed to send notification', { orderId, error: err }));
+          } else {
+            results.push({ orderId, success: false, error: String(result.error || 'Update failed') });
+          }
+        } catch (err) {
+          results.push({
+            orderId,
+            success: false,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length;
+      const failureCount = results.filter((r) => !r.success).length;
+
+      res.json({ successCount, failureCount, results });
+    } catch (error) {
+      logger.error('Batch assign failed', { error });
+      res.status(500).json({
+        error: 'Batch assign failed',
+        code: 'BATCH_ASSIGN_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /export ────────────────────────────────────────────────────────
+
+  private async exportOrders(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderIds, format, includeFields } = req.body;
+      const exportFormat = (format as string || 'CSV').toUpperCase();
+
+      // Fetch all requested orders
+      const orders: AppraisalOrder[] = [];
+      for (const orderId of orderIds as string[]) {
+        const result = await this.dbService.findOrderById(orderId);
+        if (result.success && result.data) {
+          orders.push(result.data as AppraisalOrder);
+        }
+      }
+
+      if (orders.length === 0) {
+        res.status(404).json({ error: 'No matching orders found', code: 'NO_ORDERS_FOUND' });
+        return;
+      }
+
+      // Determine fields to export
+      const defaultFields = [
+        'id', 'orderNumber', 'status', 'priority', 'orderType', 'productType',
+        'clientId', 'assignedVendorId', 'assignedVendorName', 'fee',
+        'dueDate', 'createdAt', 'updatedAt',
+        'propertyAddress.street', 'propertyAddress.city', 'propertyAddress.state', 'propertyAddress.zipCode',
+      ];
+      const fields = (includeFields as string[] | undefined) ?? defaultFields;
+
+      if (exportFormat === 'JSON') {
+        const data = orders.map((o) => this.pickFields(o, fields));
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="orders-export-${Date.now()}.json"`);
+        res.json({ data, exportedAt: new Date().toISOString(), count: data.length });
+        return;
+      }
+
+      // CSV / EXCEL (produce CSV — Excel opens CSV natively)
+      const header = fields.join(',');
+      const rows = orders.map((o) =>
+        fields.map((f) => {
+          const val = this.getNestedValue(o, f);
+          const str = val == null ? '' : String(val);
+          return str.includes(',') || str.includes('"') || str.includes('\n')
+            ? `"${str.replace(/"/g, '""')}"`
+            : str;
+        }).join(','),
+      );
+      const csv = [header, ...rows].join('\r\n');
+
+      const ext = exportFormat === 'EXCEL' ? 'csv' : 'csv';
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="orders-export-${Date.now()}.${ext}"`);
+      res.send(csv);
+    } catch (error) {
+      logger.error('Export orders failed', { error });
+      res.status(500).json({
+        error: 'Export failed',
+        code: 'EXPORT_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /** Resolve a dot-delimited path like "propertyAddress.city" on an object */
+  private getNestedValue(obj: Record<string, any>, path: string): unknown {
+    return path.split('.').reduce<unknown>((cur, key) => {
+      if (cur != null && typeof cur === 'object') return (cur as Record<string, unknown>)[key];
+      return undefined;
+    }, obj);
+  }
+
+  /** Pick only the requested fields from an order */
+  private pickFields(obj: Record<string, any>, fields: string[]): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const f of fields) {
+      result[f] = this.getNestedValue(obj, f);
+    }
+    return result;
   }
 }

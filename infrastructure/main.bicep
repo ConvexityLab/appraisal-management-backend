@@ -345,7 +345,6 @@ module keyVault 'modules/key-vault.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    appServicePrincipalId: appServices.outputs.containerAppPrincipalIds[0]
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }

@@ -163,7 +163,13 @@ export interface AppraisalOrder {
 
   // Valuation report link — set when a report is first saved for this order
   reportId?: string;
-  
+
+  // ── Engagement linkage (Phase 3 — required on all new VendorOrders) ────────
+  /** FK to the parent Engagement that this vendor order fulfills */
+  engagementId?: string;
+  /** FK to the specific EngagementProduct within the parent Engagement */
+  engagementProductId?: string;
+
   // Metadata
   createdBy: string;
   tags?: string[];

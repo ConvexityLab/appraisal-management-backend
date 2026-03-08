@@ -194,6 +194,8 @@ export interface ROVRequest {
   rovNumber: string; // Human-readable ID (e.g., ROV-2026-00123)
   
   // Related entities
+  /** FK to the parent Engagement. Preferred for all new RoV records. */
+  engagementId?: string;
   orderId: string;
   propertyAddress: string;
   loanNumber?: string;

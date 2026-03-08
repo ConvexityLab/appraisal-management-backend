@@ -374,6 +374,8 @@ async function testOnboardingWorkflow() {
   if (testApplicationId) {
     result = await apiRequest('POST', `/api/vendor-onboarding/applications/${testApplicationId}/background-check`, {
       applicantInfo: {
+        firstName: 'John',
+        lastName: 'Appraiser',
         ssn: '***-**-1234',
         dateOfBirth: '1980-01-15',
         address: {

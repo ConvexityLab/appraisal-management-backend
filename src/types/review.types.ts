@@ -51,6 +51,8 @@ export enum ReviewOutcome {
 export interface AppraisalReview {
   id: string;
   tenantId: string;
+  /** FK to the parent Engagement. Preferred for all new review records. */
+  engagementId?: string;
   orderId: string;
   originalAppraisalId: string;                    // Reference to original appraisal document
   

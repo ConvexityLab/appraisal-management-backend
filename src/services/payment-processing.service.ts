@@ -129,15 +129,19 @@ export class PaymentProcessingService {
       const vendor = await this.dbService.getItem('vendors', vendorId, vendorId);
       const vendorEmail = (vendor as any)?.email || '';
 
-      // Send email notification
-      await this.notificationService.sendEmail({
-        to: vendorEmail,
-        subject: `Invoice ${invoice.invoiceNumber} - Payment Due`,
-        body: this.generateInvoiceEmailBody(invoice),
-        priority: 'normal'
-      });
+      if (!vendorEmail) {
+        this.logger.warn('Vendor has no email address — invoice marked SENT but email not delivered', { invoiceId, vendorId });
+      } else {
+        // Send email notification
+        await this.notificationService.sendEmail({
+          to: vendorEmail,
+          subject: `Invoice ${invoice.invoiceNumber} - Payment Due`,
+          body: this.generateInvoiceEmailBody(invoice),
+          priority: 'normal'
+        });
+      }
 
-      this.logger.info('Invoice sent', { invoiceId, vendorEmail });
+      this.logger.info('Invoice sent', { invoiceId, vendorEmail: vendorEmail || '(none)' });
       return true;
 
     } catch (error) {

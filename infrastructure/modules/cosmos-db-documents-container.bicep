@@ -44,6 +44,15 @@ resource documentsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
             { path: '/category', order: 'ascending' }
             { path: '/uploadedAt', order: 'descending' }
           ]
+          [
+            { path: '/orderId', order: 'ascending' }
+            { path: '/isLatestVersion', order: 'ascending' }
+            { path: '/uploadedAt', order: 'descending' }
+          ]
+          [
+            { path: '/previousVersionId', order: 'ascending' }
+            { path: '/tenantId', order: 'ascending' }
+          ]
         ]
       }
     }

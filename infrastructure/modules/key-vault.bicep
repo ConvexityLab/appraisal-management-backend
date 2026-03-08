@@ -13,9 +13,6 @@ param environment string
 @description('Tags to apply to resources')
 param tags object
 
-@description('App Service managed identity principal ID')
-param appServicePrincipalId string
-
 @description('Log Analytics workspace ID for diagnostic settings')
 param logAnalyticsWorkspaceId string = ''
 
@@ -42,23 +39,15 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableSoftDelete: true
     softDeleteRetentionInDays: environment == 'prod' ? 90 : 7
     enablePurgeProtection: true
+    // Use Azure RBAC for secrets access — managed by keyvault-role-assignments.bicep.
+    // Access policies are not used; this prevents deployments from inadvertently
+    // wiping manually-added developer policies.
+    enableRbacAuthorization: true
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Allow'
       bypass: 'AzureServices'
     }
-    accessPolicies: [
-      {
-        tenantId: tenant().tenantId
-        objectId: appServicePrincipalId
-        permissions: {
-          secrets: [
-            'get'
-            'list'
-          ]
-        }
-      }
-    ]
   }
 }
 

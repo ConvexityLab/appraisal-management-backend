@@ -29,6 +29,26 @@ import {
   ROVSLATracking
 } from '../types/rov.types.js';
 
+/**
+ * Valid ROV status transitions — enforced by isValidROVTransition().
+ * Keys are the current status; values are the set of statuses reachable from it.
+ */
+const VALID_ROV_TRANSITIONS: Record<ROVStatus, ReadonlySet<ROVStatus>> = {
+  [ROVStatus.SUBMITTED]:        new Set([ROVStatus.UNDER_REVIEW, ROVStatus.WITHDRAWN]),
+  [ROVStatus.UNDER_REVIEW]:     new Set([ROVStatus.RESEARCHING, ROVStatus.ESCALATED, ROVStatus.WITHDRAWN]),
+  [ROVStatus.RESEARCHING]:      new Set([ROVStatus.PENDING_RESPONSE, ROVStatus.ESCALATED, ROVStatus.WITHDRAWN]),
+  [ROVStatus.PENDING_RESPONSE]: new Set([ROVStatus.RESPONDED, ROVStatus.ESCALATED]),
+  [ROVStatus.RESPONDED]:        new Set([ROVStatus.ACCEPTED, ROVStatus.REJECTED]),
+  [ROVStatus.ACCEPTED]:         new Set(),
+  [ROVStatus.REJECTED]:         new Set(),
+  [ROVStatus.WITHDRAWN]:        new Set(),
+  [ROVStatus.ESCALATED]:        new Set([ROVStatus.UNDER_REVIEW, ROVStatus.RESPONDED]),
+};
+
+function isValidROVTransition(from: ROVStatus, to: ROVStatus): boolean {
+  return VALID_ROV_TRANSITIONS[from]?.has(to) ?? false;
+}
+
 export class ROVManagementService {
   private logger: Logger;
   private dbService: CosmosDbService;
@@ -157,6 +177,10 @@ export class ROVManagementService {
         return { success: false, error: 'ROV request not found' };
       }
 
+      if (!isValidROVTransition(rov.data.status, ROVStatus.UNDER_REVIEW)) {
+        return { success: false, error: `Cannot assign ROV in ${rov.data.status} status` };
+      }
+
       const updated: Partial<ROVRequest> = {
         assignedTo,
         assignedToEmail,
@@ -195,6 +219,11 @@ export class ROVManagementService {
       const rov = await this.getROVById(input.rovId);
       if (!rov.success || !rov.data) {
         return { success: false, error: 'ROV request not found' };
+      }
+
+      // Allow research updates when UNDER_REVIEW → RESEARCHING (first time) or already RESEARCHING (subsequent)
+      if (rov.data.status !== ROVStatus.RESEARCHING && !isValidROVTransition(rov.data.status, ROVStatus.RESEARCHING)) {
+        return { success: false, error: `Cannot update research for ROV in ${rov.data.status} status` };
       }
 
       const updated: Partial<ROVRequest> = {
@@ -242,6 +271,13 @@ export class ROVManagementService {
         return { success: false, error: 'ROV request not found' };
       }
 
+      const finalStatus = this.determineStatusFromDecision(input.decision);
+      // The response may arrive from RESEARCHING or PENDING_RESPONSE via RESPONDED → terminal
+      const intermediateTarget = ROVStatus.RESPONDED;
+      if (rov.data.status !== intermediateTarget && !isValidROVTransition(rov.data.status, intermediateTarget)) {
+        return { success: false, error: `Cannot submit response for ROV in ${rov.data.status} status` };
+      }
+
       const originalValue = rov.data.originalAppraisalValue;
       const newValue = input.newValue || originalValue;
       const valueChangeAmount = newValue - originalValue;
@@ -261,8 +297,6 @@ export class ROVManagementService {
         respondedBy,
         deliveryMethod: input.deliveryMethod
       };
-
-      const finalStatus = this.determineStatusFromDecision(input.decision);
 
       const updated: Partial<ROVRequest> = {
         response,

@@ -14,7 +14,9 @@ export interface DocumentMetadata {
   mimeType: string;
   category?: string; // e.g., 'appraisal_report', 'photo', 'invoice', 'contract', 'license', 'certification', 'other'
   tags?: string[];
-  version?: number;
+  version: number;
+  previousVersionId?: string;  // Points to the document this version replaces
+  isLatestVersion: boolean;
   contentHash?: string;  // SHA-256 hex digest of file content — for dedup & integrity checks
   evaluationId?: string;  // Axiom AI evaluation ID — set when auto-submitted for analysis
   uploadedBy: string;

@@ -79,6 +79,7 @@ export class DocumentService {
         ...(category && { category }),
         ...(tags && { tags }),
         version: 1,
+        isLatestVersion: true,
         uploadedBy: userId,
         uploadedAt: new Date(),
         ...(metadata && { metadata }),
@@ -363,6 +364,194 @@ export class DocumentService {
         error: {
           code: 'DOWNLOAD_ERROR',
           message: error instanceof Error ? error.message : 'Failed to get download URL',
+          timestamp: new Date()
+        }
+      };
+    }
+  }
+
+  /**
+   * Upload a new version of an existing document.
+   * Creates a new document record with incremented version, links to the previous version,
+   * and marks the old version as no longer latest.
+   */
+  async uploadNewVersion(
+    existingDocumentId: string,
+    tenantId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    userId: string
+  ): Promise<ApiResponse<DocumentMetadata>> {
+    try {
+      // 1. Fetch existing document
+      const existingResult = await this.getDocument(existingDocumentId, tenantId);
+      if (!existingResult.success || !existingResult.data) {
+        return {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Cannot create new version: document '${existingDocumentId}' not found`,
+            timestamp: new Date()
+          }
+        };
+      }
+
+      const existing = existingResult.data;
+
+      // 2. Upload new blob
+      const extension = file.originalname.split('.').pop();
+      const blobPrefix = existing.orderId || `${existing.entityType}/${existing.entityId}`;
+      const blobName = `${blobPrefix}/${uuidv4()}.${extension}`;
+      const contentHash = createHash('sha256').update(file.buffer).digest('hex');
+
+      const uploadResult = await this.blobService.uploadBlob({
+        containerName: this.blobContainerName,
+        blobName,
+        data: file.buffer,
+        contentType: file.mimetype,
+        metadata: {
+          ...(existing.orderId && { orderId: existing.orderId }),
+          ...(existing.entityType && { entityType: existing.entityType }),
+          ...(existing.entityId && { entityId: existing.entityId }),
+          tenantId,
+          originalName: file.originalname,
+          uploadedBy: userId,
+          contentHash,
+          previousVersionId: existingDocumentId
+        }
+      });
+
+      // 3. Create new version document
+      const newVersion: DocumentMetadata = {
+        id: uuidv4(),
+        tenantId,
+        ...(existing.orderId && { orderId: existing.orderId }),
+        name: file.originalname,
+        blobUrl: uploadResult.url,
+        blobName: uploadResult.blobName,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        contentHash,
+        ...(existing.category && { category: existing.category }),
+        ...(existing.tags && { tags: existing.tags }),
+        version: (existing.version || 1) + 1,
+        previousVersionId: existingDocumentId,
+        isLatestVersion: true,
+        uploadedBy: userId,
+        uploadedAt: new Date(),
+        ...(existing.metadata && { metadata: existing.metadata }),
+        ...(existing.entityType && { entityType: existing.entityType }),
+        ...(existing.entityId && { entityId: existing.entityId })
+      };
+
+      // 4. Mark old version as not latest
+      const { resource: oldDoc } = await this.container.item(existingDocumentId, tenantId).read();
+      if (oldDoc) {
+        await this.container.item(existingDocumentId, tenantId).replace(
+          { ...oldDoc, isLatestVersion: false, updatedAt: new Date() }
+        );
+      }
+
+      // 5. Save new version to Cosmos DB
+      await this.container.items.create(newVersion);
+
+      return {
+        success: true,
+        data: newVersion
+      };
+    } catch (error) {
+      console.error('Error uploading new version:', error);
+      return {
+        success: false,
+        error: {
+          code: 'VERSION_UPLOAD_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to upload new version',
+          timestamp: new Date()
+        }
+      };
+    }
+  }
+
+  /**
+   * Get the version history chain for a document.
+   * Walks the previousVersionId chain from the given document back to version 1,
+   * and also finds any newer versions that reference this document.
+   */
+  async getVersionHistory(
+    documentId: string,
+    tenantId: string
+  ): Promise<ApiResponse<DocumentMetadata[]>> {
+    try {
+      // Strategy: find all documents in the same version chain.
+      // First get the target document, then find the root (version 1) and all descendants.
+      const targetResult = await this.getDocument(documentId, tenantId);
+      if (!targetResult.success || !targetResult.data) {
+        return {
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: `Document '${documentId}' not found`,
+            timestamp: new Date()
+          }
+        };
+      }
+
+      // Walk backwards to find root document ID
+      let rootId = documentId;
+      let current = targetResult.data;
+      const visited = new Set<string>([documentId]);
+
+      while (current.previousVersionId) {
+        if (visited.has(current.previousVersionId)) break; // safety: avoid cycles
+        visited.add(current.previousVersionId);
+        const prevResult = await this.getDocument(current.previousVersionId, tenantId);
+        if (!prevResult.success || !prevResult.data) break;
+        current = prevResult.data;
+        rootId = current.id;
+      }
+
+      // Now query all documents that have previousVersionId pointing to any doc in the chain,
+      // or that ARE the root doc. Simpler: query all docs with same orderId/category and walk.
+      // Most reliable: get all docs in the chain by querying previousVersionId references.
+      const chain: DocumentMetadata[] = [current]; // start with root
+      let currentId = rootId;
+      const chainVisited = new Set<string>([rootId]);
+
+      // Walk forward through the chain
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const nextQuery = 'SELECT * FROM c WHERE c.previousVersionId = @prevId AND c.tenantId = @tenantId';
+        const nextResult = await this.cosmosService.queryItems<DocumentMetadata>(
+          this.containerName,
+          nextQuery,
+          [
+            { name: '@prevId', value: currentId },
+            { name: '@tenantId', value: tenantId }
+          ]
+        );
+
+        if (!nextResult.success || !nextResult.data || nextResult.data.length === 0) break;
+
+        const nextDoc = nextResult.data[0];
+        if (!nextDoc || chainVisited.has(nextDoc.id)) break;
+        chainVisited.add(nextDoc.id);
+        chain.push(nextDoc);
+        currentId = nextDoc.id;
+      }
+
+      // Sort by version ascending
+      chain.sort((a, b) => (a.version || 1) - (b.version || 1));
+
+      return {
+        success: true,
+        data: chain
+      };
+    } catch (error) {
+      console.error('Error getting version history:', error);
+      return {
+        success: false,
+        error: {
+          code: 'VERSION_HISTORY_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to get version history',
           timestamp: new Date()
         }
       };
