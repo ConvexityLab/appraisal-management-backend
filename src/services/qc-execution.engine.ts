@@ -318,6 +318,8 @@ export class QCExecutionEngine {
       validationErrors: string[];
       answer?: any;
       aiAnalysisResult?: any;
+      /** Axiom criterion IDs from the question definition — passed through so the frontend bridge can match criteria to checklist items. */
+      axiomCriterionIds?: string[];
     }
 
     const questionResult: QuestionExecutionResult = {
@@ -327,7 +329,8 @@ export class QCExecutionEngine {
       passed: false,
       validationErrors: [],
       answer: undefined,
-      aiAnalysisResult: undefined
+      aiAnalysisResult: undefined,
+      ...(question.axiomCriterionIds ? { axiomCriterionIds: question.axiomCriterionIds } : {}),
     };
 
     try {

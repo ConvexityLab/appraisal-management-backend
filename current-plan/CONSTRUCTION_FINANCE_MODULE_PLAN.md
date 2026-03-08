@@ -1009,6 +1009,48 @@ src/services/ai/
 
 ---
 
+## Real-Time Collaboration via Azure Fluid Relay
+
+> The platform is already running Azure Fluid Relay with a production-ready stack: `CollaborationService` (Key Vault JWT, Managed Identity), `AzureClient` with `BackendTokenProvider`, `CollaborationProvider`, `CollaborativeTextField` (SharedMap sync + live pulse indicator), and `CollaboratorAvatars`. Construction finance surfaces are high-value targets for this capability because they are inherently multi-party workflows.
+
+### Container ID Conventions (extend existing pattern)
+
+| Container ID | Scope | Who collaborates |
+|---|---|---|
+| `construction-{loanId}` | Loan overview, milestones, notes | Underwriter + loan admin + reviewer |
+| `budget-{budgetId}` | Budget line items — reviewer notes, feasibility override | Multiple underwriters + risk team |
+| `draw-{drawId}` | Draw approval — per-line approvals, reviewer notes | Loan admin + approver dual review |
+| `inspection-{inspectionId}` | Inspection report — lender comments, AI override notes | Loan admin + risk reviewer |
+| `changeorder-{changeOrderId}` | Change order review — financial impact discussion | Underwriter + senior approver |
+| `feasibility-{loanId}` | Feasibility report — team override discussion | Risk team + credit officer |
+| `cpp-{loanId}` | CPP workout plan — co-authoring the recovery plan | Senior team + borrower rep |
+
+### Collaboration Touchpoints per Surface
+
+**Budget Review** — Multiple underwriters can simultaneously review budget line items. `CollaborativeTextField` drives notes per line item. `CollaboratorAvatars` in the `BudgetTable` header shows who's reviewing. A lender-configurable "Budget Approved" SharedMap key prevents conflicting approvals.
+
+**Draw Approval Workflow** — The dual-approval pattern (two authorized reviewers must approve) is a natural real-time collaboration scenario. Reviewer A approves their portion; Reviewer B sees the live updates via SharedMap before adding their approval. Line-item approval state is stored in the SharedMap alongside notes.
+
+**Inspection Report Review** — Inspector submits; lender team opens simultaneously. AI analysis results are visible to all. Notes and "Accept"/"Dispute" flags sync in real-time so two reviewers don't contradict each other.
+
+**Change Order Review** — The `ChangeOrderDiff` component wraps a `CollaborationProvider`. The requester and approver both see the live budget impact. Comment fields are `CollaborativeTextField` instances. Approval/rejection state in SharedMap prevents double-action.
+
+**CPP Workout Plan** — The highest-stakes collaboration surface. Senior lender + workout specialist co-author the recovery plan in real-time. `CollaborativeTextField` on every narrative section. `CollaboratorAvatars` shows all parties present.
+
+### New Shared Components Needed
+
+| Component | Purpose |
+|---|---|
+| `CollaborativeLineItemNotes` | `CollaborativeTextField` scoped to a budget/draw line item key |
+| `CollaborativeApprovalState` | SharedMap-backed approval button that shows other participants' live state |
+| `CollaborativeFeasibilityOverride` | Override verdict field with co-reviewer visibility |
+| `ConstructionCollaboratorBar` | `CollaboratorAvatars` + connection status, used as a standard header in all collaborative surfaces |
+
+### Graceful Degradation
+All construction finance surfaces must render fully without collaboration (when Fluid Relay env vars are absent or connection fails — existing `CollaborationProvider` behavior). Collaboration is additive, never blocking.
+
+---
+
 ## Competitive Comparison vs. CFSI (and beyond)
 
 | Capability | CFSI | Our Platform | Phase |
@@ -1035,7 +1077,10 @@ src/services/ai/
 | **Automated status reports** | ❌ | ✨ AI narrative reports on schedule, PDF export | 4 |
 | **Portfolio stress testing** | ❌ | ✨ What-if scenario modeling | 4 |
 | **Construction-to-perm readiness** | ❌ | ✨ Automated checklist + pre-populate perm order | 4 |
-| **ARV engine integration** | ❌ (separate) | ✨ Wired to existing ARV engine (Fix/Flip/Rehab) | 1 |
+| **Real-time collaborative budget review** | ❌ | ✨ Azure Fluid Relay — multi-user SharedMap, live presence | 5 |
+| **Collaborative draw approval (dual-auth)** | ❌ | ✨ SharedMap-backed per-line approval, live state sync | 5 |
+| **Collaborative inspection review** | ❌ | ✨ Real-time notes + accept/dispute, CollaboratorAvatars | 5 |
+| **CPP workout plan co-authoring** | ❌ | ✨ All parties co-edit workout plan in real-time | 5 |
 
 ---
 
@@ -1125,7 +1170,7 @@ export interface FeasibilityRule {
 | 4a | Feasibility Engine (Pillar 1: budget AI + lender rule engine + contractor check) | 2 sprints |
 | 4b | Ongoing Monitor AI (Pillar 2: draw anomaly, inspection AI, burn rate, forecasting, CPP) | 3 sprints |
 | 4c | Servicing AI (Pillar 3: interest reserve, maturity, status reports, stress testing, conversion) | 2 sprints |
-| 5 | Full UI (all pages, AI components, feasibility viewer, servicing dashboard) | 4-5 sprints |
+| 5 | Full UI (all pages, AI components, feasibility viewer, servicing dashboard, Fluid Relay collaboration on budget/draw/inspection/CPP surfaces) | 4-5 sprints |
 | **Total** | | **~18–20 sprints** |
 
 ---

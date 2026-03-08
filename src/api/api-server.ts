@@ -145,6 +145,18 @@ import { OrderController } from '../controllers/order.controller.js';
 // Import Client Controller (G10 — Lender / AMC / Broker management)
 import { ClientController } from '../controllers/client.controller.js';
 
+// Import Construction Finance Module controllers
+import { ConstructionLoanController } from '../controllers/construction-loan.controller.js';
+import { ConstructionContractorController } from '../controllers/construction-contractor.controller.js';
+import { ConstructionConfigController } from '../controllers/construction-config.controller.js';
+import { DrawInspectionController } from '../controllers/draw-inspection.controller.js';
+import { ChangeOrderController } from '../controllers/change-order.controller.js';
+import { ConstructionPortfolioController } from '../controllers/construction-portfolio.controller.js';
+import { ConstructionRiskController } from '../controllers/construction-risk.controller.js';
+import { ConstructionFeasibilityController } from '../controllers/construction-feasibility.controller.js';
+import { ConstructionServicingController } from '../controllers/construction-servicing.controller.js';
+import { ConstructionCostCatalogController } from '../controllers/construction-cost-catalog.controller.js';
+
 // Import Product Controller (G8/G9 — Product / fee configuration)
 import { ProductController } from '../controllers/product.controller.js';
 
@@ -720,6 +732,83 @@ export class AppraisalManagementAPIServer {
       clientController.router
     );
 
+    // Construction Finance Module — Loan management
+    const constructionLoanController = new ConstructionLoanController(this.dbService);
+    this.app.use('/api/construction/loans',
+      this.unifiedAuth.authenticate(),
+      constructionLoanController.router
+    );
+
+    // Construction Finance Module — Tenant configuration
+    const constructionConfigController = new ConstructionConfigController(this.dbService);
+    this.app.use('/api/construction/config',
+      this.unifiedAuth.authenticate(),
+      constructionConfigController.router
+    );
+
+    // Construction Finance Module — Draw inspections
+    const drawInspectionController = new DrawInspectionController(this.dbService);
+    this.app.use('/api/construction/draw-inspections',
+      this.unifiedAuth.authenticate(),
+      drawInspectionController.router
+    );
+
+    // Construction Finance Module — Change orders
+    const changeOrderController = new ChangeOrderController(this.dbService);
+    this.app.use('/api/construction/change-orders',
+      this.unifiedAuth.authenticate(),
+      changeOrderController.router
+    );
+
+    // Construction Finance Module — Portfolio analytics (Phase 3)
+    const constructionPortfolioController = new ConstructionPortfolioController(this.dbService);
+    this.app.use('/api/construction/portfolio',
+      this.unifiedAuth.authenticate(),
+      constructionPortfolioController.router
+    );
+
+    // Construction Finance Module — Per-loan risk flag management (Phase 3)
+    const constructionRiskController = new ConstructionRiskController(this.dbService);
+    this.app.use('/api/construction/risk',
+      this.unifiedAuth.authenticate(),
+      constructionRiskController.router
+    );
+
+    // Construction Finance Module — AI Feasibility Engine (Phase 4a)
+    const constructionFeasibilityController = new ConstructionFeasibilityController(this.dbService);
+    this.app.use('/api/construction/feasibility',
+      this.unifiedAuth.authenticate(),
+      constructionFeasibilityController.router
+    );
+
+    // Construction Finance Module — Contractor management
+    const constructionContractorController = new ConstructionContractorController(this.dbService);
+    this.app.use('/api/construction/contractors',
+      this.unifiedAuth.authenticate(),
+      constructionContractorController.router
+    );
+
+    // Construction Finance Module — AI Servicing & CPP (Phase 4c)
+    const constructionServicingController = new ConstructionServicingController(this.dbService);
+    this.app.use('/api/construction/servicing',
+      this.unifiedAuth.authenticate(),
+      constructionServicingController.router
+    );
+
+    // Construction Finance Module — Inspection queue alias
+    // Frontend calls /api/construction/inspections; mount the same controller at both paths
+    this.app.use('/api/construction/inspections',
+      this.unifiedAuth.authenticate(),
+      drawInspectionController.router
+    );
+
+    // Construction Finance Module — RSMeans-style unit cost catalog (read-only)
+    const constructionCostCatalogController = new ConstructionCostCatalogController(this.dbService);
+    this.app.use('/api/construction/catalog',
+      this.unifiedAuth.authenticate(),
+      constructionCostCatalogController.router
+    );
+
     // Product / fee configuration — G8/G9
     const productController = new ProductController(this.dbService);
     this.app.use('/api/products',
@@ -828,6 +917,11 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/property-intelligence/address/validate',
       this.unifiedAuth.authenticate(),
       this.propertyIntelligenceController.validateAddress
+    );
+
+    this.app.post('/api/property-intelligence/address/reverse-geocode',
+      this.unifiedAuth.authenticate(),
+      this.propertyIntelligenceController.reverseGeocode
     );
 
     this.app.post('/api/property-intelligence/analyze/comprehensive',

@@ -175,6 +175,17 @@ module cosmosCommunicationsContainer 'modules/cosmos-db-communications-container
   }
 }
 
+// Cosmos DB Construction Finance Containers (construction-loans, draws, contractors)
+// Required for the CFSI construction finance module.
+module cosmosConstructionContainers 'modules/cosmos-construction-containers.bicep' = {
+  name: 'cosmos-construction-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Review Containers (review-programs, review-results, bulk-portfolio-jobs)
 // Required for the Bulk Portfolio tape evaluation workflow (TAPE_EVALUATION mode).
 module cosmosReviewContainers 'modules/cosmos-review-containers.bicep' = {

@@ -1421,13 +1421,97 @@ export class QCResultsController {
   }
 
   private async calculatePerformanceMetrics(filters: QCResultsFilter, dimension: string, timeRange: string): Promise<any> {
-    // Mock implementation
+    // Calculate the date boundary from the timeRange string (e.g. '7d', '30d', '90d')
+    const days = parseInt(timeRange.replace(/\D/g, ''), 10) || 30;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Query completed QC results within the time range from Cosmos DB
+    const sql = `
+      SELECT
+        c.executedBy        AS reviewerId,
+        c.executedByName    AS reviewerName,
+        c.score             AS score,
+        c.startedAt         AS startedAt,
+        c.completedAt       AS completedAt
+      FROM c
+      WHERE c.status       = 'COMPLETED'
+        AND c.completedAt >= @since
+    `;
+    const parameters = [{ name: '@since', value: since.toISOString() }];
+
+    let rows: Array<{
+      reviewerId: string;
+      reviewerName: string;
+      score: number;
+      startedAt: string;
+      completedAt: string;
+    }> = [];
+
+    try {
+      const result = await this.cosmosService.queryItems<any>('results', sql, parameters);
+      rows = result.data ?? [];
+    } catch (err) {
+      this.logger.warn('Performance metrics Cosmos query fell back to empty set', {
+        error: err instanceof Error ? err.message : 'Unknown'
+      });
+    }
+
+    // Aggregate per reviewer
+    const byReviewer = new Map<string, {
+      reviewerId: string;
+      reviewerName: string;
+      completed: number;
+      totalScore: number;
+      totalTimeMinutes: number;
+    }>();
+
+    for (const row of rows) {
+      const key = row.reviewerId || 'unknown';
+      let entry = byReviewer.get(key);
+      if (!entry) {
+        entry = {
+          reviewerId: key,
+          reviewerName: row.reviewerName || key,
+          completed: 0,
+          totalScore: 0,
+          totalTimeMinutes: 0,
+        };
+        byReviewer.set(key, entry);
+      }
+      entry.completed += 1;
+      entry.totalScore += row.score ?? 0;
+
+      if (row.startedAt && row.completedAt) {
+        const ms = new Date(row.completedAt).getTime() - new Date(row.startedAt).getTime();
+        if (ms > 0) {
+          entry.totalTimeMinutes += ms / 60_000;
+        }
+      }
+    }
+
+    const metrics = Array.from(byReviewer.values()).map((e) => ({
+      reviewerId: e.reviewerId,
+      reviewerName: e.reviewerName,
+      completed: e.completed,
+      avgScore: e.completed > 0 ? Math.round((e.totalScore / e.completed) * 10) / 10 : 0,
+      avgTimeMinutes: e.completed > 0 ? Math.round(e.totalTimeMinutes / e.completed) : 0,
+    }));
+
+    // Sort by completed descending
+    metrics.sort((a, b) => b.completed - a.completed);
+
     return {
       dimension,
-      metrics: [],
-      benchmarks: {},
+      metrics,
+      benchmarks: {
+        avgScore: rows.length > 0
+          ? Math.round((rows.reduce((s, r) => s + (r.score ?? 0), 0) / rows.length) * 10) / 10
+          : 0,
+        totalReviews: rows.length,
+      },
       timeRange,
-      generatedAt: new Date()
+      generatedAt: new Date(),
     };
   }
 

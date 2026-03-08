@@ -160,6 +160,9 @@ export interface AppraisalOrder {
   qcReportId?: string;
   qcScore?: number;
   qcStatus?: 'PENDING' | 'PASSED' | 'FAILED' | 'REQUIRES_REVISION';
+
+  // Valuation report link — set when a report is first saved for this order
+  reportId?: string;
   
   // Metadata
   createdBy: string;

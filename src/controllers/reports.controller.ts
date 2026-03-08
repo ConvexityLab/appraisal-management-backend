@@ -29,6 +29,46 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
   // ============================================
 
   /**
+   * GET /api/reports?orderId=X
+   * Find a report by its associated order ID.
+   * Returns the first match (reports are 1:1 with orders in the reporting container).
+   */
+  router.get('/', async (req: Request, res: Response) => {
+    try {
+      const { orderId } = req.query;
+
+      if (!orderId || typeof orderId !== 'string') {
+        return res.status(400).json({ error: 'orderId query parameter is required' });
+      }
+
+      logger.info(`Fetching report by orderId: ${orderId}`);
+
+      const container = dbService.getContainer('reporting');
+      const querySpec = {
+        query: 'SELECT * FROM f WHERE f.orderId = @orderId',
+        parameters: [{ name: '@orderId', value: orderId }],
+      };
+
+      const { resources: results } = await container.items.query(querySpec).fetchAll();
+
+      if (!results || results.length === 0) {
+        logger.warn(`No report found for orderId: ${orderId}`);
+        return res.status(404).json({ error: 'Report not found for this order' });
+      }
+
+      logger.info(`Report found for orderId: ${orderId}, reportId: ${results[0].id}`);
+      return res.status(200).json(results[0]);
+
+    } catch (error: any) {
+      logger.error('Error fetching report by orderId:', error);
+      return res.status(500).json({
+        error: 'Failed to fetch report',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
    * GET /api/reports/:reportId
    * Get report by ID
    * Migrated from: getReport.js
@@ -111,6 +151,19 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
       // Upsert to Cosmos DB
       const container = dbService.getContainer('reporting');
       const { resource: upsertedReport } = await container.items.upsert(reportData);
+
+      // Write the reportId back to the linked order so it never needs a reverse lookup.
+      // orderId must be present on the report document for this to work.
+      const linkedOrderId: string | undefined = reportData.orderId;
+      if (linkedOrderId) {
+        const orderPatch = await dbService.updateOrder(linkedOrderId, { reportId: reportId });
+        if (!orderPatch.success) {
+          // Log but do not fail the request — the report was saved successfully.
+          logger.warn(`Report upserted but failed to write reportId back to order ${linkedOrderId}: ${orderPatch.error}`);
+        } else {
+          logger.info(`Order ${linkedOrderId} updated with reportId: ${reportId}`);
+        }
+      }
 
       logger.info(`Report upserted successfully: ${reportId}`);
 

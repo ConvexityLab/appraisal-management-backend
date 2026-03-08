@@ -706,6 +706,36 @@ var containers = [
         ]
       ]
     }
+  }
+  // Negotiations — vendor acceptance/rejection/counter-offer audit trail per order
+  {
+    name: 'negotiations'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/rounds/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/orderId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+        [
+          { path: '/vendorId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+        ]
+      ]
+    }
   }]
 
 // Cosmos DB Account with enterprise settings

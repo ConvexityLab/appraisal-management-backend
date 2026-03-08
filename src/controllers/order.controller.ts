@@ -27,6 +27,7 @@ import { QCReviewQueueService } from '../services/qc-review-queue.service.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { DocumentService } from '../services/document.service.js';
 import { BlobStorageService } from '../services/blob-storage.service.js';
+import { OrderNotificationService } from '../services/order-notification.service.js';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus, isValidStatusTransition } from '../types/order-status.js';
 import {
@@ -96,6 +97,7 @@ export class OrderController {
   private slaService: SLATrackingService;
   private qcQueueService: QCReviewQueueService;
   private axiomService: AxiomService;
+  private notificationService: OrderNotificationService;
   private _documentService: DocumentService | null = null;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
@@ -115,6 +117,7 @@ export class OrderController {
     this.slaService = new SLATrackingService();
     this.qcQueueService = new QCReviewQueueService();
     this.axiomService = new AxiomService(dbService);
+    this.notificationService = new OrderNotificationService();
     this.setupRoutes(authzMiddleware);
   }
 
@@ -137,6 +140,7 @@ export class OrderController {
     this.router.post('/:orderId/cancel', ...validateCancelOrder(), this.cancelOrder.bind(this));
     this.router.post('/:orderId/deliver', this.deliverOrder.bind(this));
     this.router.post('/:orderId/assign', this.assignVendor.bind(this));
+    this.router.post('/:orderId/unassign', this.unassignVendor.bind(this));
     this.router.post('/:orderId/payment', this.markPayment.bind(this));
     this.router.get('/:orderId/timeline', this.getOrderTimeline.bind(this));
   }
@@ -602,6 +606,8 @@ export class OrderController {
         }).catch((err) =>
           logger.error('Failed to write audit log for delivery', { orderId, error: err }),
         );
+        this.notificationService.notifyOrderDelivered(result.data!)
+          .catch((err) => logger.error('Failed to send order delivery notification', { orderId, error: err }));
         res.json(normalizeOrder(result.data!));
       } else {
         res.status(500).json({
@@ -678,6 +684,8 @@ export class OrderController {
         }).catch((err) =>
           logger.error('Failed to write audit log for assignment', { orderId, error: err }),
         );
+        this.notificationService.notifyVendorAssigned(result.data!)
+          .catch((err) => logger.error('Failed to send vendor assignment notification', { orderId, error: err }));
         res.json(normalizeOrder(result.data!));
       } else {
         res.status(500).json({
@@ -690,6 +698,76 @@ export class OrderController {
       res.status(500).json({
         error: 'Failed to assign vendor',
         code: 'ORDER_ASSIGNMENT_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /:orderId/unassign ────────────────────────────────────────────
+
+  private async unassignVendor(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+
+      if (!orderId) {
+        res.status(400).json({ error: 'Order ID is required', code: 'MISSING_ORDER_ID' });
+        return;
+      }
+
+      const current = await this.dbService.findOrderById(orderId);
+      if (!current.success || !current.data) {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+        return;
+      }
+
+      const currentStatus = normalizeOrderStatus(current.data.status as string);
+      if (!isValidStatusTransition(currentStatus, OrderStatus.PENDING_ASSIGNMENT)) {
+        res.status(422).json({
+          error: `Cannot unassign order in ${currentStatus} status`,
+          code: 'INVALID_STATUS_TRANSITION',
+          currentStatus,
+          targetStatus: OrderStatus.PENDING_ASSIGNMENT,
+        });
+        return;
+      }
+
+      const previousVendorId = current.data.assignedVendorId;
+
+      const result = await this.dbService.updateOrder(orderId, {
+        status: OrderStatus.PENDING_ASSIGNMENT as unknown as AppraisalOrder['status'],
+        assignedVendorId: undefined,
+        assignedVendorName: undefined,
+        assignedAt: undefined,
+        assignedBy: undefined,
+      } as unknown as Partial<AppraisalOrder>);
+
+      if (result.success) {
+        this.eventService.publishOrderStatusChanged(
+          orderId, currentStatus, OrderStatus.PENDING_ASSIGNMENT, req.user!.id,
+        ).catch((err) =>
+          logger.error('Failed to publish ORDER_STATUS_CHANGED for unassignment', { orderId, error: err }),
+        );
+        this.auditService.log({
+          actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
+          action: 'order.unassigned',
+          resource: { type: 'order', id: orderId },
+          before: { status: currentStatus, vendorId: previousVendorId },
+          after: { status: OrderStatus.PENDING_ASSIGNMENT },
+        }).catch((err) =>
+          logger.error('Failed to write audit log for unassignment', { orderId, error: err }),
+        );
+        res.json(normalizeOrder(result.data!));
+      } else {
+        res.status(500).json({
+          error: 'Failed to unassign vendor',
+          code: 'ORDER_UNASSIGNMENT_ERROR',
+          details: result.error,
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: 'Failed to unassign vendor',
+        code: 'ORDER_UNASSIGNMENT_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -811,6 +889,8 @@ export class OrderController {
         }).catch((err) =>
           logger.error('Failed to write audit log for cancellation', { orderId, error: err }),
         );
+        this.notificationService.notifyOrderCancelled(result.data!)
+          .catch((err) => logger.error('Failed to send order cancellation notification', { orderId, error: err }));
         res.json({
           success: true,
           orderId,

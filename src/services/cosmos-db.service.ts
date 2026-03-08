@@ -53,6 +53,10 @@ export class CosmosDbService {
   private arvAnalysesContainer: Container | null = null;
   private reviewProgramsContainer: Container | null = null;
   private reviewResultsContainer: Container | null = null;
+  // ── Construction Finance ─────────────────────────────────────────────────
+  private constructionLoansContainer: Container | null = null;
+  private drawsContainer: Container | null = null;
+  private contractorsContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -89,6 +93,10 @@ export class CosmosDbService {
     arvAnalyses: 'arv-analyses',                          // As-Repaired Value analyses
     reviewPrograms: 'review-programs',                   // Versioned criteria review programs (all programTypes)
     reviewResults: 'review-results',                      // Per-loan ReviewTapeResult documents for large jobs
+    // ── Construction Finance ──────────────────────────────────────────────
+    constructionLoans: 'construction-loans',               // ConstructionLoan, ConstructionBudget, ChangeOrder, FeasibilityReport, ConstructionStatusReport
+    draws: 'draws',                                        // DrawRequest, DrawInspectionReport (partition: /constructionLoanId)
+    contractors: 'contractors',                            // ContractorProfile (partition: /tenantId)
   };
 
   constructor(
@@ -96,17 +104,11 @@ export class CosmosDbService {
   ) {
     this.logger = new Logger();
     
-    // Validate required configuration
     if (!this.endpoint) {
-      const error = 'Cosmos DB endpoint is required. Set AZURE_COSMOS_ENDPOINT environment variable.';
-      this.logger.error(error);
-      
-      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
-        this.endpoint = 'https://localhost:8081';
-        this.logger.warn('Using Cosmos DB Emulator - set COSMOS_USE_EMULATOR=true only for local development');
-      } else {
-        throw new Error(error);
-      }
+      throw new Error(
+        'Cosmos DB endpoint is required. ' +
+        'Set COSMOS_ENDPOINT (or AZURE_COSMOS_ENDPOINT) to your production CosmosDB endpoint.'
+      );
     }
   }
 
@@ -183,6 +185,10 @@ export class CosmosDbService {
       this.arvAnalysesContainer = this.database.container(this.containers.arvAnalyses);
       this.reviewProgramsContainer = this.database.container(this.containers.reviewPrograms);
       this.reviewResultsContainer = this.database.container(this.containers.reviewResults);
+      // ── Construction Finance ───────────────────────────────────────────────
+      this.constructionLoansContainer = this.database.container(this.containers.constructionLoans);
+      this.drawsContainer = this.database.container(this.containers.draws);
+      this.contractorsContainer = this.database.container(this.containers.contractors);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {

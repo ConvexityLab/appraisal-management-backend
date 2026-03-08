@@ -40,13 +40,17 @@ export class ConsolidatedCosmosDbService {
 
   // Configuration from environment variables (set by Bicep deployment outputs)
   private readonly config = {
-    endpoint: process.env.COSMOS_ENDPOINT || (() => {
-      if (process.env.NODE_ENV === 'development' && process.env.COSMOS_USE_EMULATOR === 'true') {
-        return 'https://localhost:8081';
+    endpoint: (() => {
+      const ep = process.env.COSMOS_ENDPOINT;
+      if (!ep) {
+        throw new Error(
+          'COSMOS_ENDPOINT environment variable is required. ' +
+          'Set it to your production CosmosDB endpoint (e.g. https://<account>.documents.azure.com:443/).'
+        );
       }
-      throw new Error('COSMOS_ENDPOINT environment variable is required');
+      return ep;
     })(),
-    useDefaultCredential: !(process.env.COSMOS_ENDPOINT?.includes('localhost') || process.env.COSMOS_ENDPOINT?.includes('127.0.0.1')),
+    useDefaultCredential: true,
     databaseName: process.env.COSMOS_DATABASE_NAME || 'appraisal-management',
     containers: {
       orders: process.env.COSMOS_CONTAINER_ORDERS || 'orders',
@@ -58,10 +62,6 @@ export class ConsolidatedCosmosDbService {
 
   constructor() {
     this.logger = new Logger();
-    
-    if (this.config.endpoint === 'https://localhost:8081') {
-      this.logger.warn('Using Cosmos DB Emulator - development mode only');
-    }
   }
 
   /**

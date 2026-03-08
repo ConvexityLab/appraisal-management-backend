@@ -3,6 +3,18 @@
 // Import geospatial risk assessment types
 export * from './geospatial';
 import { PropertyRiskAssessment } from './geospatial';
+
+// ─── Construction Cost Catalog ────────────────────────────────────────────────
+export * from './construction-cost-catalog.types.js';
+
+// ─── Construction Finance Module ──────────────────────────────────────────────
+export * from './construction-loan.types.js';
+export * from './draw-request.types.js';
+export * from './change-order.types.js';
+export * from './construction-config.types.js';
+export * from './construction-risk.types.js';
+export * from './feasibility-report.types.js';
+export * from './construction-status-report.types.js';
 import { OrderStatus } from './order-status.js';
 import { FinalReport } from './final-report.types.js';
 
