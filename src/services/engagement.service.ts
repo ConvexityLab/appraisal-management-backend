@@ -51,10 +51,16 @@ function now(): string {
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export class EngagementService {
-  private readonly container: Container;
+  private _container: Container | null = null;
 
-  constructor(private readonly dbService: CosmosDbService) {
-    this.container = dbService.getEngagementsContainer();
+  constructor(private readonly dbService: CosmosDbService) {}
+
+  /** Lazily resolve the container — safe even if called before dbService.initialize() */
+  private get container(): Container {
+    if (!this._container) {
+      this._container = this.dbService.getEngagementsContainer();
+    }
+    return this._container;
   }
 
   // ── Create ─────────────────────────────────────────────────────────────────

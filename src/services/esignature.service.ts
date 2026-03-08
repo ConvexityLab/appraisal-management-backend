@@ -23,12 +23,19 @@ import { Logger } from '../utils/logger.js';
 
 export class ESignatureService {
   private readonly containerName = 'esignature-requests';
-  private container: Container;
+  private _container: Container | null = null;
   private readonly logger: Logger;
 
   constructor(private readonly cosmosService: CosmosDbService) {
-    this.container = this.cosmosService.getContainer(this.containerName);
     this.logger = new Logger();
+  }
+
+  /** Lazily resolve the container — safe even if called before cosmosService.initialize() */
+  private get container(): Container {
+    if (!this._container) {
+      this._container = this.cosmosService.getContainer(this.containerName);
+    }
+    return this._container;
   }
 
   /**
