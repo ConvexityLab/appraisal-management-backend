@@ -34,6 +34,7 @@ const QUEUE_CONTAINERS = new Set(['assignment-queue', 'acceptance-queue', 'arv-d
 /** Maps the prefix of a containerId to the Cosmos container name and ResourceType. */
 const PREFIX_MAP: Readonly<Record<string, { containerName: string; resourceType: ResourceType }>> = {
   order: { containerName: 'orders',       resourceType: 'order' },
+  comp:  { containerName: 'orders',       resourceType: 'order' },
   qc:    { containerName: 'qc-reviews',   resourceType: 'qc_review' },
   rov:   { containerName: 'rov-requests', resourceType: 'rov_request' },
   arv:   { containerName: 'arv-analyses', resourceType: 'arv_analysis' },
@@ -50,7 +51,7 @@ const authzService = new AuthorizationService();
  *  - `undefined` containerId (creating a new container): always allowed.
  *  - Queue containers (assignment-queue, acceptance-queue, arv-default): internal
  *    employees only — requires a matching UserProfile in Cosmos.
- *  - Per-record containers (`order-{id}`, `qc-{id}`, `rov-{id}`, `arv-{id}`):
+ *  - Per-record containers (`order-{id}`, `comp-{id}`, `qc-{id}`, `rov-{id}`, `arv-{id}`):
  *      1. Load record; 404 → deny.
  *      2. If UserProfile found → delegate to AuthorizationService.canAccess().
  *      3. No UserProfile (external vendor/client) → allow if the user's AAD object ID
@@ -76,7 +77,7 @@ async function authorizeContainerAccess(
   }
 
   // Per-record containers: parse the prefix and record ID.
-  const match = /^(order|qc|rov|arv)-(.+)$/.exec(containerId);
+  const match = /^(order|comp|qc|rov|arv)-(.+)$/.exec(containerId);
   if (!match) {
     // Unknown pattern — allow so future container types don't break.
     return { allowed: true };
