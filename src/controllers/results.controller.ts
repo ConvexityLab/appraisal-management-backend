@@ -340,6 +340,14 @@ export class QCResultsController {
         return;
       }
 
+      // Normalize categoriesResults so the frontend never gets undefined
+      if (result && !result.categoriesResults) {
+        result.categoriesResults = [];
+      }
+      if (result && !result.criticalIssues) {
+        result.criticalIssues = [];
+      }
+
       res.json(createApiResponse(result, 'QC result retrieved successfully'));
 
     } catch (error) {

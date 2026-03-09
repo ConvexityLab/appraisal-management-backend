@@ -40,6 +40,7 @@ export class ROVController {
 
       const input: CreateROVRequestInput = {
         orderId: req.body.orderId,
+        ...(req.body.engagementId !== undefined && { engagementId: req.body.engagementId }),
         requestorType: req.body.requestorType,
         requestorName: req.body.requestorName,
         requestorEmail: req.body.requestorEmail,

@@ -208,6 +208,16 @@ module cosmosMatchingRfbArvContainers 'modules/cosmos-matching-rfb-arv-container
   }
 }
 
+// Cosmos DB Engagements Container (LenderEngagement aggregate root domain)
+module cosmosEngagementsContainer 'modules/cosmos-engagements-container.bicep' = {
+  name: 'cosmos-engagements-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

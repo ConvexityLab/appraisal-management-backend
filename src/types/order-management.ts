@@ -167,6 +167,8 @@ export interface AppraisalOrder {
   // ── Engagement linkage (Phase 3 — required on all new VendorOrders) ────────
   /** FK to the parent Engagement that this vendor order fulfills */
   engagementId?: string;
+  /** FK to the specific EngagementLoan within the parent Engagement */
+  engagementLoanId?: string;
   /** FK to the specific EngagementProduct within the parent Engagement */
   engagementProductId?: string;
 

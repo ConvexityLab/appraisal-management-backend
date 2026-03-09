@@ -2,8 +2,12 @@
  * Engagement Service
  *
  * Manages CRUD for Engagement documents in Cosmos DB.
- * An Engagement represents a lender's inbound request for valuation services —
- * the aggregate root for all work product on a given loan.
+ *
+ * Hierarchy:
+ *   LenderEngagement (1)
+ *     └── EngagementLoan (1..MAX_EMBEDDED_LOANS) — embedded in document
+ *           └── EngagementProduct (1..N per loan)
+ *                 └── vendorOrderIds (0..N)
  *
  * Cosmos container: "engagements"
  * Partition key:    /tenantId
@@ -14,17 +18,33 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type {
   Engagement,
+  EngagementLoan,
   EngagementProduct,
-  EngagementStatus,
   CreateEngagementRequest,
+  CreateEngagementLoanRequest,
   UpdateEngagementRequest,
+  UpdateEngagementLoanRequest,
   EngagementListRequest,
   EngagementListResponse,
 } from '../types/engagement.types.js';
-import { EngagementProductStatus } from '../types/engagement.types.js';
+import {
+  EngagementStatus,
+  EngagementLoanStatus,
+  EngagementProductStatus,
+  EngagementType,
+} from '../types/engagement.types.js';
 import { OrderPriority } from '../types/order-management.js';
 
 const logger = new Logger('EngagementService');
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/**
+ * Maximum number of loans that may be embedded inside a single Engagement document.
+ * Cosmos DB has a 2 MB document limit; ~500 bytes × 1000 loans = 500 KB, safely under.
+ * Above this threshold the service throws a 400-class error rather than silently truncating.
+ */
+const MAX_EMBEDDED_LOANS = 1000;
 
 // ── ID helpers ────────────────────────────────────────────────────────────────
 
@@ -36,16 +56,64 @@ function generateProductId(): string {
   return `prod-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-let engagementCounter = 0;
+function generateLoanId(): string {
+  return `loan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
+/**
+ * Generate a collision-resistant engagement number that survives process restarts.
+ *
+ * Format: ENG-YYYY-<6-char base-36 timestamp><2-char random>
+ *   e.g.  ENG-2026-LK3R9MX2
+ *
+ * The base-36 millisecond timestamp gives ~46-bit uniqueness per year.
+ * The 2-char random suffix reduces same-millisecond collision probability to ~1/1296.
+ * No shared mutable state — safe under concurrent request handling.
+ */
 function generateEngagementNumber(): string {
   const year = new Date().getFullYear();
-  const seq = String(++engagementCounter).padStart(6, '0');
-  return `ENG-${year}-${seq}`;
+  const ts = Date.now().toString(36).toUpperCase().slice(-6);
+  const rand = Math.random().toString(36).slice(2, 4).toUpperCase();
+  return `ENG-${year}-${ts}${rand}`;
 }
 
 function now(): string {
   return new Date().toISOString();
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/** Build a fully-initialized EngagementProduct from the request shape. */
+function buildProduct(
+  p: Omit<EngagementProduct, 'id' | 'status' | 'vendorOrderIds'>,
+): EngagementProduct {
+  return {
+    id: generateProductId(),
+    productType: p.productType,
+    status: EngagementProductStatus.PENDING,
+    ...(p.instructions !== undefined && { instructions: p.instructions }),
+    ...(p.fee !== undefined && { fee: p.fee }),
+    ...(p.dueDate !== undefined && { dueDate: p.dueDate }),
+    vendorOrderIds: [],
+  };
+}
+
+/** Build a fully-initialized EngagementLoan from the create-request shape. */
+function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
+  return {
+    id: generateLoanId(),
+    loanNumber: l.loanNumber,
+    borrowerName: l.borrowerName,
+    ...(l.borrowerEmail !== undefined && { borrowerEmail: l.borrowerEmail }),
+    ...(l.loanOfficer !== undefined && { loanOfficer: l.loanOfficer }),
+    ...(l.loanOfficerEmail !== undefined && { loanOfficerEmail: l.loanOfficerEmail }),
+    ...(l.loanOfficerPhone !== undefined && { loanOfficerPhone: l.loanOfficerPhone }),
+    ...(l.loanType !== undefined && { loanType: l.loanType }),
+    ...(l.fhaCase !== undefined && { fhaCase: l.fhaCase }),
+    property: l.property,
+    status: EngagementLoanStatus.PENDING,
+    products: l.products.map(buildProduct),
+  };
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -75,31 +143,36 @@ export class EngagementService {
     if (!request.client?.clientId) {
       throw new Error('client.clientId is required to create an Engagement');
     }
-    if (!request.client?.loanNumber) {
-      throw new Error('client.loanNumber is required to create an Engagement');
+    if (!request.loans || request.loans.length === 0) {
+      throw new Error('At least one EngagementLoan is required');
     }
-    if (!request.products || request.products.length === 0) {
-      throw new Error('At least one EngagementProduct is required');
+    if (request.loans.length > MAX_EMBEDDED_LOANS) {
+      throw new Error(
+        `Large portfolio ingestion (>${MAX_EMBEDDED_LOANS} loans) is not yet supported. ` +
+        `Submitted: ${request.loans.length} loans. Contact support.`,
+      );
+    }
+    for (const loan of request.loans) {
+      if (!loan.products || loan.products.length === 0) {
+        throw new Error(
+          `Each loan must have at least one product. ` +
+          `Loan loanNumber="${loan.loanNumber}" has none.`,
+        );
+      }
     }
 
-    const products: EngagementProduct[] = request.products.map((p) => ({
-      id: generateProductId(),
-      productType: p.productType,
-      status: EngagementProductStatus.PENDING,
-      ...(p.instructions !== undefined && { instructions: p.instructions }),
-      ...(p.fee !== undefined && { fee: p.fee }),
-      ...(p.dueDate !== undefined && { dueDate: p.dueDate }),
-      vendorOrderIds: [],
-    }));
+    const loans = request.loans.map(buildLoan);
+    const engagementType = loans.length === 1 ? EngagementType.SINGLE : EngagementType.PORTFOLIO;
 
     const engagement: Engagement = {
       id: generateEngagementId(),
       engagementNumber: generateEngagementNumber(),
       tenantId: request.tenantId,
+      engagementType,
+      loansStoredExternally: false,
       client: request.client,
-      property: request.property,
-      products,
-      status: 'RECEIVED' as EngagementStatus,
+      loans,
+      status: EngagementStatus.RECEIVED,
       priority: request.priority ?? OrderPriority.ROUTINE,
       receivedAt: now(),
       ...(request.clientDueDate !== undefined && { clientDueDate: request.clientDueDate }),
@@ -118,7 +191,12 @@ export class EngagementService {
       throw new Error('Cosmos DB did not return a resource after creating the Engagement');
     }
 
-    logger.info('Engagement created', { id: engagement.id, engagementNumber: engagement.engagementNumber });
+    logger.info('Engagement created', {
+      id: engagement.id,
+      engagementNumber: engagement.engagementNumber,
+      engagementType,
+      loanCount: loans.length,
+    });
     return resource as Engagement;
   }
 
@@ -146,10 +224,8 @@ export class EngagementService {
       ...(updates.client !== undefined && {
         client: { ...existing.client, ...updates.client },
       }),
-      ...(updates.property !== undefined && {
-        property: { ...existing.property, ...updates.property },
-      }),
-      ...(updates.products !== undefined && { products: updates.products }),
+      ...(updates.loans !== undefined && { loans: updates.loans }),
+      ...(updates.engagementType !== undefined && { engagementType: updates.engagementType }),
       ...(updates.status !== undefined && { status: updates.status }),
       ...(updates.priority !== undefined && { priority: updates.priority }),
       ...(updates.clientDueDate !== undefined && { clientDueDate: updates.clientDueDate }),
@@ -179,7 +255,25 @@ export class EngagementService {
     return resource;
   }
 
-  // ── Change status ──────────────────────────────────────────────────────────
+  // ── Change engagement status ───────────────────────────────────────────────
+
+  /**
+   * Valid lifecycle transitions for a LenderEngagement.
+   *
+   * Terminal states: CANCELLED (no exit).
+   * ON_HOLD acts as a pause state reachable from — and resumable to — any
+   * active state except DELIVERED and CANCELLED.
+   */
+  private static readonly ALLOWED_TRANSITIONS: Readonly<Record<EngagementStatus, readonly EngagementStatus[]>> = {
+    [EngagementStatus.RECEIVED]:    [EngagementStatus.ACCEPTED,    EngagementStatus.CANCELLED, EngagementStatus.ON_HOLD],
+    [EngagementStatus.ACCEPTED]:    [EngagementStatus.IN_PROGRESS, EngagementStatus.CANCELLED, EngagementStatus.ON_HOLD],
+    [EngagementStatus.IN_PROGRESS]: [EngagementStatus.QC,          EngagementStatus.REVISION,  EngagementStatus.CANCELLED, EngagementStatus.ON_HOLD],
+    [EngagementStatus.QC]:          [EngagementStatus.REVISION,    EngagementStatus.DELIVERED, EngagementStatus.CANCELLED, EngagementStatus.ON_HOLD],
+    [EngagementStatus.REVISION]:    [EngagementStatus.IN_PROGRESS, EngagementStatus.QC,        EngagementStatus.CANCELLED, EngagementStatus.ON_HOLD],
+    [EngagementStatus.DELIVERED]:   [EngagementStatus.REVISION,    EngagementStatus.CANCELLED],
+    [EngagementStatus.ON_HOLD]:     [EngagementStatus.ACCEPTED,    EngagementStatus.IN_PROGRESS, EngagementStatus.CANCELLED],
+    [EngagementStatus.CANCELLED]:   [],
+  };
 
   async changeStatus(
     id: string,
@@ -187,32 +281,245 @@ export class EngagementService {
     newStatus: EngagementStatus,
     updatedBy: string,
   ): Promise<Engagement> {
+    const engagement = await this.getEngagement(id, tenantId);
+    const allowed = EngagementService.ALLOWED_TRANSITIONS[engagement.status];
+    if (!allowed.includes(newStatus)) {
+      throw new Error(
+        `Invalid status transition: ${engagement.status} → ${newStatus}. ` +
+        `Allowed transitions from ${engagement.status}: [${allowed.join(', ') || 'none'}]`,
+      );
+    }
     return this.updateEngagement(id, tenantId, { status: newStatus, updatedBy });
+  }
+
+  // ── Loan management ───────────────────────────────────────────────────────
+
+  /**
+   * Valid lifecycle transitions for a single EngagementLoan.
+   * Terminal states: DELIVERED, CANCELLED.
+   */
+  private static readonly ALLOWED_LOAN_TRANSITIONS: Readonly<Record<EngagementLoanStatus, readonly EngagementLoanStatus[]>> = {
+    [EngagementLoanStatus.PENDING]:     [EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.CANCELLED],
+    [EngagementLoanStatus.IN_PROGRESS]: [EngagementLoanStatus.QC,          EngagementLoanStatus.CANCELLED],
+    [EngagementLoanStatus.QC]:          [EngagementLoanStatus.DELIVERED,   EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.CANCELLED],
+    [EngagementLoanStatus.DELIVERED]:   [],
+    [EngagementLoanStatus.CANCELLED]:   [],
+  };
+
+  /**
+   * Return the loans array for an engagement.
+   * Currently always reads from the embedded document.
+   * When loansStoredExternally=true (future), this method will query the external container.
+   */
+  async getLoans(engagementId: string, tenantId: string): Promise<EngagementLoan[]> {
+    const engagement = await this.getEngagement(engagementId, tenantId);
+    // NOTE: loansStoredExternally=true path is not yet implemented.
+    // When needed, add: if (engagement.loansStoredExternally) { return this.queryExternalLoans(...); }
+    return engagement.loans;
+  }
+
+  /** Add a new loan to an existing engagement. */
+  async addLoanToEngagement(
+    engagementId: string,
+    tenantId: string,
+    loanData: CreateEngagementLoanRequest,
+    updatedBy: string,
+  ): Promise<Engagement> {
+    const engagement = await this.getEngagement(engagementId, tenantId);
+
+    if (engagement.loans.length >= MAX_EMBEDDED_LOANS) {
+      throw new Error(
+        `Large portfolio ingestion (>${MAX_EMBEDDED_LOANS} loans) is not yet supported. ` +
+        `Current loan count: ${engagement.loans.length}. Contact support.`,
+      );
+    }
+    if (!loanData.products || loanData.products.length === 0) {
+      throw new Error('Each loan must have at least one product');
+    }
+
+    const newLoan = buildLoan(loanData);
+    const updatedLoans = [...engagement.loans, newLoan];
+    const updatedType = updatedLoans.length > 1 ? EngagementType.PORTFOLIO : EngagementType.SINGLE;
+
+    return this.updateEngagement(engagementId, tenantId, {
+      loans: updatedLoans,
+      ...(updatedType !== engagement.engagementType && { engagementType: updatedType }),
+      updatedBy,
+    });
+  }
+
+  /** Update the scalar fields of an existing loan (not products, not status). */
+  async updateLoan(
+    engagementId: string,
+    tenantId: string,
+    loanId: string,
+    updates: UpdateEngagementLoanRequest,
+    updatedBy: string,
+  ): Promise<Engagement> {
+    const engagement = await this.getEngagement(engagementId, tenantId);
+    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    if (loanIndex === -1) {
+      throw new Error(
+        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+      );
+    }
+
+    const existing = engagement.loans[loanIndex] as EngagementLoan;
+    const updatedLoan: EngagementLoan = {
+      ...existing,
+      ...(updates.loanNumber !== undefined && { loanNumber: updates.loanNumber }),
+      ...(updates.borrowerName !== undefined && { borrowerName: updates.borrowerName }),
+      ...(updates.borrowerEmail !== undefined && { borrowerEmail: updates.borrowerEmail }),
+      ...(updates.loanOfficer !== undefined && { loanOfficer: updates.loanOfficer }),
+      ...(updates.loanOfficerEmail !== undefined && { loanOfficerEmail: updates.loanOfficerEmail }),
+      ...(updates.loanOfficerPhone !== undefined && { loanOfficerPhone: updates.loanOfficerPhone }),
+      ...(updates.loanType !== undefined && { loanType: updates.loanType }),
+      ...(updates.fhaCase !== undefined && { fhaCase: updates.fhaCase }),
+      ...(updates.property !== undefined && { property: updates.property }),
+    };
+
+    const updatedLoans = [...engagement.loans];
+    updatedLoans[loanIndex] = updatedLoan;
+
+    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+  }
+
+  /**
+   * Remove a loan from an engagement.
+   * Throws if the loan has any products with linked vendor orders — those must be unlinked first.
+   */
+  async removeLoan(
+    engagementId: string,
+    tenantId: string,
+    loanId: string,
+    updatedBy: string,
+  ): Promise<Engagement> {
+    const engagement = await this.getEngagement(engagementId, tenantId);
+    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    if (loanIndex === -1) {
+      throw new Error(
+        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+      );
+    }
+
+    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const hasLinkedOrders = loan.products.some((p) => p.vendorOrderIds.length > 0);
+    if (hasLinkedOrders) {
+      throw new Error(
+        `Cannot remove loan loanId=${loanId}: one or more products have linked vendor orders. ` +
+        `Unlink vendor orders before removing the loan.`,
+      );
+    }
+
+    const updatedLoans = engagement.loans.filter((l) => l.id !== loanId);
+    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+  }
+
+  /** Transition a single loan to a new status, enforcing ALLOWED_LOAN_TRANSITIONS. */
+  async changeLoanStatus(
+    engagementId: string,
+    tenantId: string,
+    loanId: string,
+    newStatus: EngagementLoanStatus,
+    updatedBy: string,
+  ): Promise<Engagement> {
+    const engagement = await this.getEngagement(engagementId, tenantId);
+    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    if (loanIndex === -1) {
+      throw new Error(
+        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+      );
+    }
+
+    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const allowed = EngagementService.ALLOWED_LOAN_TRANSITIONS[loan.status];
+    if (!allowed.includes(newStatus)) {
+      throw new Error(
+        `Invalid loan status transition: ${loan.status} → ${newStatus} ` +
+        `for loanId=${loanId}. ` +
+        `Allowed: [${allowed.join(', ') || 'none'}]`,
+      );
+    }
+
+    const updatedLoans = [...engagement.loans];
+    updatedLoans[loanIndex] = { ...loan, status: newStatus };
+    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+  }
+
+  /** Add a new product to an existing loan. */
+  async addProductToLoan(
+    engagementId: string,
+    tenantId: string,
+    loanId: string,
+    productData: Omit<EngagementProduct, 'id' | 'status' | 'vendorOrderIds'>,
+    updatedBy: string,
+  ): Promise<Engagement> {
+    const engagement = await this.getEngagement(engagementId, tenantId);
+    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    if (loanIndex === -1) {
+      throw new Error(
+        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+      );
+    }
+
+    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const newProduct = buildProduct(productData);
+    const updatedLoans = [...engagement.loans];
+    updatedLoans[loanIndex] = { ...loan, products: [...loan.products, newProduct] };
+
+    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
   }
 
   // ── Link VendorOrder to EngagementProduct ──────────────────────────────────
 
+  /**
+   * Link a VendorOrder ID to a specific product inside a specific loan.
+   * Idempotent — adding the same vendorOrderId twice is a no-op.
+   */
   async addVendorOrderToProduct(
     engagementId: string,
     tenantId: string,
+    loanId: string,
     productId: string,
     vendorOrderId: string,
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
-    const product = engagement.products.find((p) => p.id === productId);
+    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    if (loanIndex === -1) {
+      throw new Error(
+        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+      );
+    }
+
+    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const product = loan.products.find((p) => p.id === productId);
     if (!product) {
       throw new Error(
-        `EngagementProduct not found: engagementId=${engagementId} productId=${productId}`,
+        `EngagementProduct not found: engagementId=${engagementId} loanId=${loanId} productId=${productId}`,
       );
     }
     if (!product.vendorOrderIds.includes(vendorOrderId)) {
       product.vendorOrderIds.push(vendorOrderId);
     }
-    return this.updateEngagement(engagementId, tenantId, {
-      products: engagement.products,
-      updatedBy,
-    });
+
+    const updatedLoans = [...engagement.loans];
+    updatedLoans[loanIndex] = loan;
+    const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+
+    // Best-effort FK write-back: stamp engagementId, loanId, productId onto the order document.
+    // Non-fatal — the order may not exist yet if it is being created concurrently.
+    try {
+      await this.dbService.updateOrder(vendorOrderId, {
+        engagementId,
+        engagementLoanId: loanId,
+        engagementProductId: productId,
+      });
+    } catch (err) {
+      logger.warn('FK write-back to order failed (non-fatal)', { vendorOrderId, engagementId, loanId, err });
+    }
+
+    return result;
   }
 
   // ── List ───────────────────────────────────────────────────────────────────
@@ -243,26 +550,32 @@ export class EngagementService {
     }
 
     if (request.propertyState) {
-      conditions.push('c.property.state = @propertyState');
+      // Use loans[0] as representative property for SINGLE; PORTFOLIO multi-state search is v2.
+      conditions.push('c.loans[0].property.state = @propertyState');
       parameters.push({ name: '@propertyState', value: request.propertyState });
     }
 
     if (request.propertyZipCode) {
-      conditions.push('c.property.zipCode = @zipCode');
+      conditions.push('c.loans[0].property.zipCode = @zipCode');
       parameters.push({ name: '@zipCode', value: request.propertyZipCode });
     }
 
     if (request.searchText) {
       conditions.push(
-        '(CONTAINS(LOWER(c.client.loanNumber), LOWER(@search)) OR ' +
-        'CONTAINS(LOWER(c.client.borrowerName), LOWER(@search)) OR ' +
+        '(CONTAINS(LOWER(c.loans[0].loanNumber), LOWER(@search)) OR ' +
+        'CONTAINS(LOWER(c.loans[0].borrowerName), LOWER(@search)) OR ' +
         'CONTAINS(LOWER(c.engagementNumber), LOWER(@search)) OR ' +
-        'CONTAINS(LOWER(c.property.city), LOWER(@search)))',
+        'CONTAINS(LOWER(c.loans[0].property.city), LOWER(@search)))',
       );
       parameters.push({ name: '@search', value: request.searchText });
     }
 
-    const sortField = request.sortBy ?? 'createdAt';
+    const ALLOWED_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'engagementNumber', 'status', 'priority', 'receivedAt', 'clientDueDate', 'internalDueDate']);
+    const requestedSort = request.sortBy ?? 'createdAt';
+    if (!ALLOWED_SORT_FIELDS.has(requestedSort)) {
+      throw new Error(`Invalid sortBy value: "${requestedSort}". Allowed values: ${[...ALLOWED_SORT_FIELDS].join(', ')}`);
+    }
+    const sortField = requestedSort;
     const sortDir = request.sortDirection ?? 'DESC';
 
     const whereClause = conditions.join(' AND ');
@@ -302,11 +615,11 @@ export class EngagementService {
 
   async deleteEngagement(id: string, tenantId: string, deletedBy: string): Promise<void> {
     // Soft-delete: set status to CANCELLED rather than hard-deleting
-    await this.changeStatus(id, tenantId, 'CANCELLED' as EngagementStatus, deletedBy);
+    await this.changeStatus(id, tenantId, EngagementStatus.CANCELLED, deletedBy);
     logger.info('Engagement soft-deleted (set to CANCELLED)', { id, deletedBy });
   }
 
-  // ── Sub-resource queries (Phase 3 FK reads) ────────────────────────────────
+  // ── Sub-resource queries (FK reads) ───────────────────────────────────────
 
   /**
    * List VendorOrders (AppraisalOrders) linked to this engagement.

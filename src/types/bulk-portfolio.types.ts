@@ -104,6 +104,10 @@ export interface BulkPortfolioItem {
   loanType?: string;       // CONVENTIONAL | FHA | VA | USDA | JUMBO
   loanPurpose?: string;    // PURCHASE | REFINANCE | CASH_OUT | HELOC
 
+  // ── Engagement linkage (set when bulk intake creates via an engagement) ─────
+  /** Optional FK to a parent LenderEngagement that owns this item */
+  engagementId?: string;
+
   // ── Order config ──────────────────────────────────────────────────────────
   propertyType?: string;   // SFR | CONDO | TOWNHOME | MULTI_FAMILY | …
   priority?: 'NORMAL' | 'RUSH';
@@ -180,6 +184,8 @@ export interface BulkPortfolioJob {
   /** The review program used for evaluation (tape mode only) */
   reviewProgramId?: string;
   reviewProgramVersion?: string;
+  /** Optional FK to a parent LenderEngagement (Phase 5 bulk-intake bridge) */
+  engagementId?: string;
   /** Portfolio-level summary appended after tape evaluation completes */
   reviewSummary?: ReviewTapeJobSummary;
   items: BulkPortfolioItem[] | ReviewTapeResult[];

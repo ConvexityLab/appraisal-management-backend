@@ -71,6 +71,13 @@ export interface AppraisalOrder {
   axiomProgramId?: string;
   /** Version of the Axiom evaluation program */
   axiomProgramVersion?: string;
+  // ── Engagement FK fields ──────────────────────────────────────────────────
+  /** FK to the parent Engagement document */
+  engagementId?: string;
+  /** FK to the specific EngagementLoan within the engagement */
+  engagementLoanId?: string;
+  /** FK to the specific EngagementProduct within the loan */
+  engagementProductId?: string;
 }
 
 export interface PropertyAddress {

@@ -88,6 +88,7 @@ export class ROVManagementService {
         id: this.generateId(),
         rovNumber,
         orderId: input.orderId,
+        ...(input.engagementId ? { engagementId: input.engagementId } : {}),
         propertyAddress: `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`,
         ...(order.loanInformation?.loanAmount ? { loanNumber: order.loanInformation.loanAmount.toString() } : {}),
         borrowerName: `${order.borrowerInformation.firstName} ${order.borrowerInformation.lastName}`,

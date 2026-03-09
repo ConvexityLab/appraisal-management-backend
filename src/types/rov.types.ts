@@ -316,6 +316,8 @@ export interface ROVFilters {
  */
 export interface CreateROVRequestInput {
   orderId: string;
+  /** Optional — links this ROV to a LenderEngagement aggregate root */
+  engagementId?: string;
   requestorType: ROVRequestorType;
   requestorName: string;
   requestorEmail: string;

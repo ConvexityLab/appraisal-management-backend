@@ -3,12 +3,24 @@
  *
  * Routes (all tenant-authenticated):
  *
- *   GET    /api/engagements              → list engagements (search/filter/page)
- *   POST   /api/engagements              → create engagement
- *   GET    /api/engagements/:id          → get engagement
- *   PUT    /api/engagements/:id          → update engagement
- *   PATCH  /api/engagements/:id/status   → change engagement status
- *   DELETE /api/engagements/:id          → soft-delete (sets status=CANCELLED)
+ *   GET    /api/engagements                                                    → list engagements (search/filter/page)
+ *   POST   /api/engagements                                                    → create engagement
+ *   GET    /api/engagements/:id                                                → get engagement
+ *   PUT    /api/engagements/:id                                                → update engagement
+ *   PATCH  /api/engagements/:id/status                                         → change engagement status
+ *   DELETE /api/engagements/:id                                                → soft-delete (sets status=CANCELLED)
+ *   GET    /api/engagements/:id/vendor-orders                                  → list linked vendor orders
+ *   GET    /api/engagements/:id/arv                                            → list linked ARV analyses
+ *   GET    /api/engagements/:id/qc                                             → list linked QC reviews
+ *   GET    /api/engagements/:id/documents                                      → list linked documents
+ *   GET    /api/engagements/:id/loans                                          → list loans in engagement
+ *   POST   /api/engagements/:id/loans                                          → add a loan to engagement
+ *   GET    /api/engagements/:id/loans/:loanId                                  → get a specific loan
+ *   PUT    /api/engagements/:id/loans/:loanId                                  → update loan fields
+ *   PATCH  /api/engagements/:id/loans/:loanId/status                           → change loan status
+ *   DELETE /api/engagements/:id/loans/:loanId                                  → remove loan (no linked orders)
+ *   POST   /api/engagements/:id/loans/:loanId/products                         → add product to loan
+ *   POST   /api/engagements/:id/loans/:loanId/products/:productId/vendor-orders → link vendor order to product
  */
 
 import express, { Response } from 'express';
@@ -19,11 +31,14 @@ import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import {
   EngagementStatus,
+  EngagementLoanStatus,
   EngagementProductType,
 } from '../types/engagement.types.js';
 import type {
   CreateEngagementRequest,
   UpdateEngagementRequest,
+  CreateEngagementLoanRequest,
+  UpdateEngagementLoanRequest,
   EngagementListRequest,
 } from '../types/engagement.types.js';
 import { OrderPriority } from '../types/order-management.js';
@@ -55,21 +70,22 @@ function resolveUserId(req: UnifiedAuthRequest): string {
 
 const PRODUCT_TYPES = Object.values(EngagementProductType);
 const STATUSES = Object.values(EngagementStatus);
+const LOAN_STATUSES = Object.values(EngagementLoanStatus);
 const PRIORITIES = Object.values(OrderPriority);
 
 const validateCreate = [
   body('client').isObject().withMessage('client is required'),
   body('client.clientId').isString().notEmpty().withMessage('client.clientId is required'),
   body('client.clientName').isString().notEmpty().withMessage('client.clientName is required'),
-  body('client.loanNumber').isString().notEmpty().withMessage('client.loanNumber is required'),
-  body('client.borrowerName').isString().notEmpty().withMessage('client.borrowerName is required'),
-  body('property').isObject().withMessage('property is required'),
-  body('property.address').isString().notEmpty().withMessage('property.address is required'),
-  body('property.city').isString().notEmpty().withMessage('property.city is required'),
-  body('property.state').isString().isLength({ min: 2, max: 2 }).withMessage('property.state must be 2-char abbreviation'),
-  body('property.zipCode').matches(/^\d{5}(-\d{4})?$/).withMessage('property.zipCode must be 5 or 9 digits'),
-  body('products').isArray({ min: 1 }).withMessage('At least one product is required'),
-  body('products.*.productType')
+  body('loans').isArray({ min: 1 }).withMessage('At least one loan is required'),
+  body('loans.*.loanNumber').isString().notEmpty().withMessage('loans[*].loanNumber is required'),
+  body('loans.*.borrowerName').isString().notEmpty().withMessage('loans[*].borrowerName is required'),
+  body('loans.*.property').isObject().withMessage('loans[*].property is required'),
+  body('loans.*.property.address').isString().notEmpty().withMessage('loans[*].property.address is required'),
+  body('loans.*.property.state').isString().isLength({ min: 2, max: 2 }).withMessage('loans[*].property.state must be 2-char abbreviation'),
+  body('loans.*.property.zipCode').matches(/^\d{5}(-\d{4})?$/).withMessage('loans[*].property.zipCode must be 5 or 9 digits'),
+  body('loans.*.products').isArray({ min: 1 }).withMessage('Each loan must have at least one product'),
+  body('loans.*.products.*.productType')
     .isIn(PRODUCT_TYPES)
     .withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
   body('priority').optional().isIn(PRIORITIES).withMessage(`priority must be one of: ${PRIORITIES.join(', ')}`),
@@ -92,6 +108,33 @@ const validateStatusPatch = [
   body('status')
     .isIn(STATUSES)
     .withMessage(`status must be one of: ${STATUSES.join(', ')}`),
+];
+
+const validateAddVendorOrder = [
+  param('id').isString().notEmpty().withMessage('engagement id is required'),
+  param('loanId').isString().notEmpty().withMessage('loanId is required'),
+  param('productId').isString().notEmpty().withMessage('productId is required'),
+  body('vendorOrderId').isString().notEmpty().withMessage('vendorOrderId is required'),
+];
+
+const validateAddLoan = [
+  param('id').isString().notEmpty().withMessage('engagement id is required'),
+  body('loanNumber').isString().notEmpty().withMessage('loanNumber is required'),
+  body('borrowerName').isString().notEmpty().withMessage('borrowerName is required'),
+  body('property').isObject().withMessage('property is required'),
+  body('property.address').isString().notEmpty().withMessage('property.address is required'),
+  body('property.state').isString().isLength({ min: 2, max: 2 }).withMessage('property.state must be 2-char abbreviation'),
+  body('property.zipCode').matches(/^\d{5}(-\d{4})?$/).withMessage('property.zipCode must be 5 or 9 digits'),
+  body('products').isArray({ min: 1 }).withMessage('At least one product is required'),
+  body('products.*.productType').isIn(PRODUCT_TYPES).withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
+];
+
+const validateLoanStatusPatch = [
+  param('id').isString().notEmpty().withMessage('engagement id is required'),
+  param('loanId').isString().notEmpty().withMessage('loanId is required'),
+  body('status')
+    .isIn(LOAN_STATUSES)
+    .withMessage(`status must be one of: ${LOAN_STATUSES.join(', ')}`),
 ];
 
 const validateList = [
@@ -165,7 +208,15 @@ export function createEngagementRouter(dbService: CosmosDbService) {
         const createdBy = resolveUserId(req);
 
         const createRequest: CreateEngagementRequest = {
-          ...req.body,
+          client: req.body.client,
+          loans: req.body.loans as CreateEngagementLoanRequest[],
+          ...(req.body.priority !== undefined && { priority: req.body.priority }),
+          ...(req.body.clientDueDate !== undefined && { clientDueDate: req.body.clientDueDate }),
+          ...(req.body.internalDueDate !== undefined && { internalDueDate: req.body.internalDueDate }),
+          ...(req.body.totalEngagementFee !== undefined && { totalEngagementFee: req.body.totalEngagementFee }),
+          ...(req.body.accessInstructions !== undefined && { accessInstructions: req.body.accessInstructions }),
+          ...(req.body.specialInstructions !== undefined && { specialInstructions: req.body.specialInstructions }),
+          ...(req.body.engagementInstructions !== undefined && { engagementInstructions: req.body.engagementInstructions }),
           tenantId,
           createdBy,
         };
@@ -353,6 +404,224 @@ export function createEngagementRouter(dbService: CosmosDbService) {
       } catch (error) {
         logger.error('getDocuments failed', { error });
         return res.status(500).json({ success: false, error: 'Failed to get documents' });
+      }
+    },
+  );
+
+  // ── GET /:id/loans ─────────────────────────────────────────────────────────
+  router.get(
+    '/:id/loans',
+    param('id').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        const tenantId = resolveTenantId(req);
+        const loans = await service.getLoans(req.params['id'] as string, tenantId);
+        return res.json({ success: true, data: loans });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) {
+          return res.status(404).json({ success: false, error: msg });
+        }
+        logger.error('getLoans failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to get loans' });
+      }
+    },
+  );
+
+  // ── POST /:id/loans ────────────────────────────────────────────────────────
+  router.post(
+    '/:id/loans',
+    ...validateAddLoan,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+      try {
+        const tenantId = resolveTenantId(req);
+        const updatedBy = resolveUserId(req);
+        const engagement = await service.addLoanToEngagement(
+          req.params['id'] as string,
+          tenantId,
+          req.body as CreateEngagementLoanRequest,
+          updatedBy,
+        );
+        return res.status(201).json({ success: true, data: engagement });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
+        if (msg.includes('not yet supported')) return res.status(400).json({ success: false, error: msg });
+        logger.error('addLoanToEngagement failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to add loan' });
+      }
+    },
+  );
+
+  // ── GET /:id/loans/:loanId ─────────────────────────────────────────────────
+  router.get(
+    '/:id/loans/:loanId',
+    param('id').isString().notEmpty(),
+    param('loanId').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        const tenantId = resolveTenantId(req);
+        const loans = await service.getLoans(req.params['id'] as string, tenantId);
+        const loan = loans.find((l) => l.id === req.params['loanId']);
+        if (!loan) {
+          return res.status(404).json({ success: false, error: `Loan not found: loanId=${req.params['loanId']}` });
+        }
+        return res.json({ success: true, data: loan });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
+        logger.error('getLoan failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to get loan' });
+      }
+    },
+  );
+
+  // ── PUT /:id/loans/:loanId ─────────────────────────────────────────────────
+  router.put(
+    '/:id/loans/:loanId',
+    param('id').isString().notEmpty(),
+    param('loanId').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        const tenantId = resolveTenantId(req);
+        const updatedBy = resolveUserId(req);
+        const engagement = await service.updateLoan(
+          req.params['id'] as string,
+          tenantId,
+          req.params['loanId'] as string,
+          req.body as UpdateEngagementLoanRequest,
+          updatedBy,
+        );
+        return res.json({ success: true, data: engagement });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
+        logger.error('updateLoan failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to update loan' });
+      }
+    },
+  );
+
+  // ── PATCH /:id/loans/:loanId/status ───────────────────────────────────────
+  router.patch(
+    '/:id/loans/:loanId/status',
+    ...validateLoanStatusPatch,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+      try {
+        const tenantId = resolveTenantId(req);
+        const updatedBy = resolveUserId(req);
+        const engagement = await service.changeLoanStatus(
+          req.params['id'] as string,
+          tenantId,
+          req.params['loanId'] as string,
+          req.body.status as EngagementLoanStatus,
+          updatedBy,
+        );
+        return res.json({ success: true, data: engagement });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
+        if (msg.includes('Invalid loan status')) return res.status(422).json({ success: false, error: msg });
+        logger.error('changeLoanStatus failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to change loan status' });
+      }
+    },
+  );
+
+  // ── DELETE /:id/loans/:loanId ─────────────────────────────────────────────
+  router.delete(
+    '/:id/loans/:loanId',
+    param('id').isString().notEmpty(),
+    param('loanId').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        const tenantId = resolveTenantId(req);
+        const updatedBy = resolveUserId(req);
+        await service.removeLoan(
+          req.params['id'] as string,
+          tenantId,
+          req.params['loanId'] as string,
+          updatedBy,
+        );
+        return res.json({ success: true, message: 'Loan removed' });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
+        if (msg.includes('Cannot remove loan')) return res.status(409).json({ success: false, error: msg });
+        logger.error('removeLoan failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to remove loan' });
+      }
+    },
+  );
+
+  // ── POST /:id/loans/:loanId/products ──────────────────────────────────────
+  router.post(
+    '/:id/loans/:loanId/products',
+    param('id').isString().notEmpty(),
+    param('loanId').isString().notEmpty(),
+    body('productType').isIn(PRODUCT_TYPES).withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+      try {
+        const tenantId = resolveTenantId(req);
+        const updatedBy = resolveUserId(req);
+        const engagement = await service.addProductToLoan(
+          req.params['id'] as string,
+          tenantId,
+          req.params['loanId'] as string,
+          req.body,
+          updatedBy,
+        );
+        return res.status(201).json({ success: true, data: engagement });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
+        logger.error('addProductToLoan failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to add product to loan' });
+      }
+    },
+  );
+
+  // ── POST /:id/loans/:loanId/products/:productId/vendor-orders ─────────────
+  router.post(
+    '/:id/loans/:loanId/products/:productId/vendor-orders',
+    ...validateAddVendorOrder,
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      try {
+        const tenantId = resolveTenantId(req);
+        const updatedBy = resolveUserId(req);
+        const engagement = await service.addVendorOrderToProduct(
+          req.params['id'] as string,
+          tenantId,
+          req.params['loanId'] as string,
+          req.params['productId'] as string,
+          req.body.vendorOrderId as string,
+          updatedBy,
+        );
+        return res.json({ success: true, data: engagement });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('not found')) {
+          return res.status(404).json({ success: false, error: msg });
+        }
+        logger.error('addVendorOrderToProduct failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to link vendor order to product' });
       }
     },
   );
