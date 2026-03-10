@@ -217,3 +217,43 @@ export const STAFF_IDS = {
 export const PDF_TEMPLATE_IDS = {
   FORM_1004: 'seed-pdf-template-1004',
 } as const;
+
+// ─── Engagements ──────────────────────────────────────────────────────────────
+export const ENGAGEMENT_IDS = {
+  /** SINGLE, Full Appraisal, IN_PROGRESS — First Horizon */
+  SINGLE_FULL_APPRAISAL_001: 'seed-engagement-001',
+  /** SINGLE, BPO, IN_PROGRESS (BPO site visit awaiting) — Pacific Coast */
+  SINGLE_BPO_002: 'seed-engagement-002',
+  /** PORTFOLIO (2 loans: BPO + Drive-By), IN_PROGRESS — National AMC */
+  PORTFOLIO_BPO_DRIVEBY_003: 'seed-engagement-003',
+  /** SINGLE, Full Appraisal, DELIVERED — First Horizon */
+  SINGLE_DELIVERED_004: 'seed-engagement-004',
+  /** SINGLE, Hybrid, QC — ClearPath AMC */
+  SINGLE_HYBRID_005: 'seed-engagement-005',
+} as const;
+
+// ─── Reports (canonical reporting container) ──────────────────────────────────
+export const REPORT_IDS = {
+  /** Full 1004 — completed, all 6 comps selected */
+  FULL_1004_ORDER_001: 'seed-report-001',
+  /** Full 1004 — in progress, 3 sold + 2 candidates */
+  FULL_1004_ORDER_003: 'seed-report-003',
+} as const;
+
+// ─── Inspections (InspectionAppointment docs in 'orders' container) ────────────
+export const INSPECTION_IDS = {
+  /** Completed property inspection — Order 001 */
+  COMPLETED_ORDER_001: 'seed-inspection-001',
+  /** In-progress property inspection — Order 003 */
+  IN_PROGRESS_ORDER_003: 'seed-inspection-003',
+  /** Confirmed upcoming property inspection — Order 008 */
+  SCHEDULED_ORDER_008: 'seed-inspection-008',
+  /** Scheduled BPO site visit — Engagement 002 */
+  BPO_SITE_VISIT_004: 'seed-inspection-bpo-004',
+  /** Completed appraisal appointment — Order 009 / Engagement 005 */
+  APPRAISAL_APPT_005: 'seed-inspection-appraisal-005',
+  /** Cancelled inspection — Order 011 */
+  CANCELLED_ORDER_011: 'seed-inspection-cancelled-011',
+  /** Completed BPO site visit — Order 012 / Portfolio ENG-003 */
+  BPO_COMPLETED_007: 'seed-inspection-bpo-completed-007',
+} as const;

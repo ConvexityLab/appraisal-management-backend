@@ -44,6 +44,9 @@ import { module as escalationsModule } from './modules/escalations.js';
 import { module as revisionsModule } from './modules/revisions.js';
 import { module as slaConfigModule } from './modules/sla-config.js';
 import { module as propertiesModule } from './modules/properties.js';
+import { module as engagementsModule } from './modules/engagements.js';
+import { module as inspectionsModule } from './modules/inspections.js';
+import { module as reportsModule } from './modules/reports.js';
 
 /** Ordered list — phases run top-to-bottom. */
 const ALL_MODULES: SeedModule[] = [
@@ -66,6 +69,9 @@ const ALL_MODULES: SeedModule[] = [
   revisionsModule,      // Phase 17
   slaConfigModule,      // Phase 18
   propertiesModule,     // Phase 19
+  engagementsModule,    // Phase 20
+  inspectionsModule,    // Phase 21
+  reportsModule,        // Phase 22
 ];
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────

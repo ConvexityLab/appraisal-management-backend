@@ -18,6 +18,13 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { DefaultAzureCredential } from '@azure/identity';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { Logger } from '../utils/logger.js';
+import {
+  SCHEMA_VERSION,
+  type CanonicalReportDocument,
+  type CanonicalComp,
+  type CanonicalValuation,
+} from '../types/canonical-schema.js';
+import { normalizeReportDocument } from '../mappers/normalize-report.js';
 
 const logger = new Logger();
 
@@ -56,8 +63,9 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
         return res.status(404).json({ error: 'Report not found for this order' });
       }
 
-      logger.info(`Report found for orderId: ${orderId}, reportId: ${results[0].id}`);
-      return res.status(200).json(results[0]);
+      const normalized = normalizeReportDocument(results[0]);
+      logger.info(`Report found for orderId: ${orderId}, reportId: ${normalized.id}`);
+      return res.status(200).json(normalized);
 
     } catch (error: any) {
       logger.error('Error fetching report by orderId:', error);
@@ -99,7 +107,7 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
         return res.status(404).json({ error: 'Report not found' });
       }
 
-      const report = results[0];
+      const report = normalizeReportDocument(results[0]);
       logger.info(`Report retrieved successfully: ${reportId}`);
 
       return res.status(200).json(report);
@@ -133,12 +141,12 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
 
       logger.info(`Upserting report: ${reportId}`);
 
-      // Ensure id matches route parameter
+      // Enforce canonical id
       reportData.id = reportId;
 
-      // Ensure reportRecordId exists
-      if (!reportData.reportRecordId) {
-        reportData.reportRecordId = reportId;
+      // Stamp schema version if not already set
+      if (!reportData.schemaVersion) {
+        reportData.schemaVersion = SCHEMA_VERSION;
       }
 
       // Add timestamps
@@ -156,7 +164,7 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
       // orderId must be present on the report document for this to work.
       const linkedOrderId: string | undefined = reportData.orderId;
       if (linkedOrderId) {
-        const orderPatch = await dbService.updateOrder(linkedOrderId, { reportId: reportId });
+        const orderPatch = await dbService.updateOrder(linkedOrderId, { reportId: reportId } as Record<string, unknown>);
         if (!orderPatch.success) {
           // Log but do not fail the request — the report was saved successfully.
           logger.warn(`Report upserted but failed to write reportId back to order ${linkedOrderId}: ${orderPatch.error}`);
@@ -193,150 +201,119 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
         return res.status(400).json({ error: 'reportId is required' });
       }
 
-      if (!reportData || !reportData.compsData || !reportData.propertyData) {
-        return res.status(400).json({ error: 'reportData with compsData and propertyData is required' });
+      // Support both canonical (comps + subject) and legacy (compsData + propertyData)
+      const isCanonical = reportData.schemaVersion != null && Array.isArray(reportData.comps);
+
+      if (!isCanonical && (!reportData.compsData || !reportData.propertyData)) {
+        return res.status(400).json({
+          error: 'reportData must contain either canonical (comps + subject) or legacy (compsData + propertyData)',
+        });
       }
 
-      logger.info(`Running AVM for report: ${reportId}`);
+      logger.info(`Running AVM for report: ${reportId} (schema: ${isCanonical ? 'canonical' : 'legacy'})`);
 
-      // Extract data needed for valuation calculation
-      const subjectData = reportData.propertyData?.compAnalysis;
-      const subjectGla = subjectData?.dataValues?.livingArea;
+      const now = new Date().toISOString();
+
+      if (isCanonical) {
+        const doc = reportData as CanonicalReportDocument;
+        const subjectGla: number = doc.subject?.grossLivingArea ?? 0;
+
+        if (!subjectGla) {
+          return res.status(400).json({ error: 'subject.grossLivingArea is required for AVM' });
+        }
+
+        // Selected sold comps only (slotIndex 1-3)
+        const soldComps: CanonicalComp[] = (doc.comps ?? []).filter(
+          (c) => c.selected && c.slotIndex != null && c.slotIndex <= 3 && c.salePrice != null,
+        );
+
+        if (soldComps.length === 0) {
+          return res.status(400).json({ error: 'No selected sold comps found for AVM calculation' });
+        }
+
+        const adjustedPrices = soldComps.map((c) => {
+          const netAdj = c.adjustments?.netAdjustmentTotal ?? 0;
+          return (c.salePrice! + netAdj) / c.grossLivingArea;
+        });
+
+        const avgPsf = adjustedPrices.reduce((a, b) => a + b, 0) / adjustedPrices.length;
+        const minPsf = Math.min(...adjustedPrices);
+        const maxPsf = Math.max(...adjustedPrices);
+
+        const valuation: CanonicalValuation = {
+          estimatedValue: Math.round(avgPsf * subjectGla),
+          lowerBound: Math.round(minPsf * subjectGla),
+          upperBound: Math.round(maxPsf * subjectGla),
+          confidenceScore: null,
+          effectiveDate: now,
+          reconciliationNotes: null,
+          approachesUsed: ['sales_comparison'],
+          avmProvider: 'internal',
+          avmModelVersion: '1.0',
+        };
+
+        doc.valuation = valuation;
+        doc.updatedAt = now;
+        doc.schemaVersion = SCHEMA_VERSION;
+
+        const container = dbService.getContainer('reporting');
+        await container.items.upsert(doc as unknown as Record<string, unknown>);
+
+        logger.info(`AVM completed for report: ${reportId}, estimated value: $${valuation.estimatedValue}`);
+        return res.status(200).json(doc);
+      }
+
+      // ── Legacy path (kept for backward compat until all docs are migrated) ────
+      const subjectGla = reportData.propertyData?.compAnalysis?.dataValues?.livingArea;
       const compsData = reportData.compsData;
 
       if (!subjectGla || !compsData) {
         return res.status(400).json({ error: 'Missing required data for valuation' });
       }
 
-      // Initialize arrays for price calculations
-      const compsPricePerSqft: number[] = [];
-      const compsPricePerSqftMin: number[] = [];
-      const compsPricePerSqftMax: number[] = [];
-      const compsConfScore: number[] = [];
+      const compsPsf: number[] = [];
+      const compsPsfMin: number[] = [];
+      const compsPsfMax: number[] = [];
 
-      // Process each comp - ONLY SOLD comps (not List comps, not Subject)
-      compsData.forEach((comp: any) => {
-        // Skip if not a sold comp
-        if (
-          !comp.selectedCompFlag ||
-          comp.selectedCompFlag === '' ||
-          comp.selectedCompFlag === 'Subject' ||
-          comp.selectedCompFlag.startsWith('L')
-        ) {
-          return;
+      compsData.forEach((comp: Record<string, unknown>) => {
+        const flag = String(comp['selectedCompFlag'] ?? '');
+        if (!flag || flag === 'Subject' || flag.startsWith('L')) return;
+
+        const compGla = Number(((comp['compAnalysis'] as Record<string, unknown>)?.['dataValues'] as Record<string, unknown>)?.['livingArea']);
+        const compVal = comp['valuation'] as Record<string, unknown>;
+        const totalAdj = Number(((comp['compAnalysis'] as Record<string, unknown>)?.['adjustments'] as Record<string, unknown>)?.['totalAdj'] ?? 0);
+
+        if (!compVal || !compGla || isNaN(compGla)) return;
+
+        if (typeof compVal['estimatedValue'] === 'number') {
+          compsPsf.push((compVal['estimatedValue'] + totalAdj) / compGla);
         }
-
-        // Get comp data
-        const compLivingArea = comp.compAnalysis?.dataValues?.livingArea;
-        const compValuation = comp.valuation;
-
-        if (!compValuation || !compLivingArea || isNaN(compLivingArea)) {
-          return;
+        if (typeof compVal['priceRangeMin'] === 'number') {
+          compsPsfMin.push((compVal['priceRangeMin'] + totalAdj) / compGla);
         }
-
-        // Get Total Adjustment Value for this comp
-        let totalAdj = 0;
-        if (comp?.compAnalysis?.adjustments?.totalAdj) {
-          totalAdj = Number(comp.compAnalysis.adjustments.totalAdj);
-        }
-
-        // Calculate price per sqft with adjustments
-        // AVM value
-        if (typeof compValuation.estimatedValue === 'number' && !isNaN(compValuation.estimatedValue)) {
-          compsPricePerSqft.push(
-            (compValuation.estimatedValue + totalAdj) / compLivingArea
-          );
-        }
-
-        // Minimum AVM value
-        if (typeof compValuation.priceRangeMin === 'number' && !isNaN(compValuation.priceRangeMin)) {
-          compsPricePerSqftMin.push(
-            (compValuation.priceRangeMin + totalAdj) / compLivingArea
-          );
-        }
-
-        // Maximum AVM value
-        if (typeof compValuation.priceRangeMax === 'number' && !isNaN(compValuation.priceRangeMax)) {
-          compsPricePerSqftMax.push(
-            (compValuation.priceRangeMax + totalAdj) / compLivingArea
-          );
-        }
-
-        // Confidence score
-        if (typeof compValuation.confidenceScore === 'number' && !isNaN(compValuation.confidenceScore)) {
-          compsConfScore.push(compValuation.confidenceScore);
+        if (typeof compVal['priceRangeMax'] === 'number') {
+          compsPsfMax.push((compVal['priceRangeMax'] + totalAdj) / compGla);
         }
       });
 
-      // Calculate final valuation
-      const finalValuation: any = {};
+      const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
 
-      // Estimated Value (average price per sqft * subject GLA)
-      if (compsPricePerSqft.length > 0) {
-        const avgPricePerSqft = compsPricePerSqft.reduce((a, b) => a + b, 0) / compsPricePerSqft.length;
-        finalValuation.estimatedValue = (avgPricePerSqft * subjectGla).toFixed(2);
-      } else {
-        finalValuation.estimatedValue = null;
-      }
+      const legacyValuation: Record<string, unknown> = {
+        estimatedValue: avg(compsPsf) != null ? (avg(compsPsf)! * subjectGla).toFixed(2) : null,
+        lowerBound:     avg(compsPsfMin) != null ? (avg(compsPsfMin)! * subjectGla).toFixed(2) : null,
+        upperBound:     avg(compsPsfMax) != null ? (avg(compsPsfMax)! * subjectGla).toFixed(2) : null,
+        confidenceScore: null,
+        valuationEstimateDate: now,
+        createdBy: '',
+      };
 
-      // Lower Bound
-      if (compsPricePerSqftMin.length > 0) {
-        const avgPricePerSqftMin = compsPricePerSqftMin.reduce((a, b) => a + b, 0) / compsPricePerSqftMin.length;
-        finalValuation.lowerBound = (avgPricePerSqftMin * subjectGla).toFixed(2);
-      } else {
-        finalValuation.lowerBound = null;
-      }
+      reportData.valuationEstimate = legacyValuation;
+      reportData.updatedAt = now;
 
-      // Upper Bound
-      if (compsPricePerSqftMax.length > 0) {
-        const avgPricePerSqftMax = compsPricePerSqftMax.reduce((a, b) => a + b, 0) / compsPricePerSqftMax.length;
-        finalValuation.upperBound = (avgPricePerSqftMax * subjectGla).toFixed(2);
-      } else {
-        finalValuation.upperBound = null;
-      }
-
-      // Confidence Score
-      if (compsConfScore.length > 0) {
-        finalValuation.confidenceScore = (compsConfScore.reduce((a, b) => a + b, 0) / compsConfScore.length).toFixed(2);
-      } else {
-        finalValuation.confidenceScore = null;
-      }
-
-      // As-Repair value and rehab estimate
-      finalValuation.repairEstimate = 55000; // Default value from original
-      if (finalValuation.estimatedValue) {
-        finalValuation.estimatedValueAsRepair = (
-          (parseFloat(finalValuation.estimatedValue) + finalValuation.repairEstimate) * 1.15
-        ).toFixed(2);
-      } else {
-        finalValuation.estimatedValueAsRepair = null;
-      }
-
-      // Marketing time and fair market monthly rent (TODO: make dynamic)
-      finalValuation.marketingTime = 60;
-      finalValuation.fairMarketMonthlyRent = 2800;
-
-      // Valuation estimate date
-      finalValuation.valuationEstimateDate = new Date().toISOString();
-
-      // Update report with valuation results (keep selectedCompsIds if present)
-      const selectedCompsIds = reportData.valuationEstimate?.selectedCompsIds 
-        ? JSON.parse(JSON.stringify(reportData.valuationEstimate.selectedCompsIds))
-        : undefined;
-
-      reportData.valuationEstimate = finalValuation;
-      if (selectedCompsIds) {
-        reportData.valuationEstimate.selectedCompsIds = selectedCompsIds;
-      }
-      reportData.valuationEstimate.createdBy = '';
-      reportData.updatedAt = new Date().toISOString();
-
-      // Upsert to database
       const container = dbService.getContainer('reporting');
       await container.items.upsert(reportData);
 
-      logger.info(`AVM completed for report: ${reportId}, estimated value: $${finalValuation.estimatedValue}`);
-
+      logger.info(`AVM (legacy) completed for report: ${reportId}, estimated value: $${legacyValuation.estimatedValue}`);
       return res.status(200).json(reportData);
 
     } catch (error: any) {
@@ -505,13 +482,16 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
 
       const report = results[0];
 
-      // Initialize compsData if it doesn't exist
-      if (!report.compsData) {
-        report.compsData = [];
+      // Support canonical (comps[]) and legacy (compsData[])
+      const isCanonical = report.schemaVersion != null && Array.isArray(report.comps);
+
+      if (isCanonical) {
+        report.comps = [...(report.comps as unknown[]), newComp];
+      } else {
+        if (!report.compsData) { report.compsData = []; }
+        (report.compsData as unknown[]).push(newComp);
       }
 
-      // Add custom comp
-      report.compsData.push(newComp);
       report.updatedAt = new Date().toISOString();
 
       // Update report
