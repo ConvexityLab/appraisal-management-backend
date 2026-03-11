@@ -592,7 +592,7 @@ export class Urar1004Mapper implements IFieldMapper {
       hasCostApproach:     !!costCtx,
       hasIncomeApproach:   !!incomeCtx,
       hasCostDepreciationBreakdown,
-      hasRentComps:        (incomeCtx as Record<string, unknown> | null)?.['rentComps'] != null && (incomeCtx as { rentComps: unknown[] } | null)?.rentComps.length > 0,
+      hasRentComps:        ((incomeCtx as { rentComps?: unknown[] } | null)?.rentComps?.length ?? 0) > 0,
       hasSecondaryComps:   secondaryComps.some(c => !(c as { empty?: boolean }).empty),
       generatedAt:         new Date().toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric',
