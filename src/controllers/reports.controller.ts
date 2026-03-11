@@ -164,7 +164,7 @@ export function createReportsRouter(dbService: CosmosDbService): Router {
       // orderId must be present on the report document for this to work.
       const linkedOrderId: string | undefined = reportData.orderId;
       if (linkedOrderId) {
-        const orderPatch = await dbService.updateOrder(linkedOrderId, { reportId: reportId } as Record<string, unknown>);
+        const orderPatch = await dbService.updateOrder(linkedOrderId, { reportId });
         if (!orderPatch.success) {
           // Log but do not fail the request — the report was saved successfully.
           logger.warn(`Report upserted but failed to write reportId back to order ${linkedOrderId}: ${orderPatch.error}`);

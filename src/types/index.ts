@@ -78,6 +78,9 @@ export interface AppraisalOrder {
   engagementLoanId?: string;
   /** FK to the specific EngagementProduct within the loan */
   engagementProductId?: string;
+  // ── Report linkage ──────────────────────────────────────────────────────────
+  /** FK to the report document in the reporting container, written back on upsert. */
+  reportId?: string;
   // ── Auto-generation settings ──────────────────────────────────────────────────
   /** If true, a final report is auto-generated when QC review reaches APPROVED status. */
   autoGenerateReport?: boolean;
