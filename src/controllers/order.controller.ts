@@ -30,6 +30,10 @@ import { AxiomService } from '../services/axiom.service.js';
 import { DocumentService } from '../services/document.service.js';
 import { BlobStorageService } from '../services/blob-storage.service.js';
 import { OrderNotificationService } from '../services/order-notification.service.js';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
+import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus, isValidStatusTransition } from '../types/order-status.js';
 import {
@@ -102,6 +106,8 @@ export class OrderController {
   private qcQueueService: QCReviewQueueService;
   private axiomService: AxiomService;
   private notificationService: OrderNotificationService;
+  private publisher: ServiceBusEventPublisher;
+  private orchestrator: AutoAssignmentOrchestratorService;
   private _documentService: DocumentService | null = null;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
@@ -122,6 +128,9 @@ export class OrderController {
     this.qcQueueService = new QCReviewQueueService();
     this.axiomService = new AxiomService(dbService);
     this.notificationService = new OrderNotificationService();
+    this.publisher = new ServiceBusEventPublisher();
+    // Instantiated without start() — used only for triggerVendorAssignment() calls from REST endpoints.
+    this.orchestrator = new AutoAssignmentOrchestratorService(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -150,6 +159,10 @@ export class OrderController {
     this.router.post('/:orderId/unassign', this.unassignVendor.bind(this));
     this.router.post('/:orderId/payment', this.markPayment.bind(this));
     this.router.get('/:orderId/timeline', this.getOrderTimeline.bind(this));
+    this.router.get('/:orderId/auto-assignment', this.getAutoAssignmentStatus.bind(this));
+    this.router.post('/:orderId/trigger-auto-assignment', this.triggerAutoAssignment.bind(this));
+    this.router.post('/:orderId/vendor-bid/:bidId/accept', this.acceptVendorBid.bind(this));
+    this.router.post('/:orderId/vendor-bid/:bidId/decline', this.declineVendorBid.bind(this));
   }
 
   // ─── POST / ──────────────────────────────────────────────────────────────
@@ -172,6 +185,52 @@ export class OrderController {
         this.eventService.publishOrderCreated(created).catch((err) =>
           logger.error('Failed to publish ORDER_CREATED event', { orderId: created?.id, error: err }),
         );
+
+        // If this order belongs to an engagement, fire the engagement.order.created event
+        // so the AutoAssignmentOrchestratorService can kick off automated vendor selection.
+        const engagementId: string | undefined = (created as any).engagementId;
+        if (engagementId) {
+          const addr = (created as any).propertyAddress;
+          const addrString: string =
+            typeof addr === 'string'
+              ? addr
+              : addr?.streetAddress
+                  ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
+                  : '';
+          const orderPriority: string = (created as any).priority ?? 'STANDARD';
+          const priority: EventPriority =
+            orderPriority === 'EMERGENCY' ? EventPriority.CRITICAL
+            : orderPriority === 'RUSH'    ? EventPriority.HIGH
+            : EventPriority.NORMAL;
+
+          this.publisher.publish({
+            id: uuidv4(),
+            type: 'engagement.order.created',
+            timestamp: new Date(),
+            source: 'order-controller',
+            version: '1.0',
+            category: EventCategory.ASSIGNMENT,
+            data: {
+              engagementId,
+              orderId: created.id!,
+              orderNumber: (created as any).orderNumber ?? '',
+              tenantId: req.user!.tenantId,
+              productType: (created as any).productType ?? (created as any).orderType ?? '',
+              propertyAddress: addrString,
+              propertyState: (created as any).propertyAddress?.state ?? '',
+              clientId: (created as any).clientId ?? '',
+              loanAmount: (created as any).loanInformation?.loanAmount ?? 0,
+              priority,
+              dueDate: (created as any).dueDate ? new Date((created as any).dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            },
+          }).catch((err) =>
+            logger.error('Failed to publish engagement.order.created event', {
+              orderId: created?.id,
+              engagementId,
+              error: err,
+            }),
+          );
+        }
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
           action: 'order.created',
@@ -1415,6 +1474,268 @@ export class OrderController {
         code: 'EXPORT_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
+    }
+  }
+
+  // ─── GET /:orderId/auto-assignment ──────────────────────────────────────────
+
+  public async getAutoAssignmentStatus(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const orderId = req.params.orderId as string;
+      const tenantId = req.user!.tenantId as string;
+
+      const result = await this.dbService.getItem('orders', orderId, tenantId);
+      const order = (result as any)?.data ?? result;
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      // Load current bid document if one is pending
+      let currentBid: any = null;
+      const vendorState = order.autoVendorAssignment;
+      if (vendorState?.currentBidId) {
+        try {
+          const bidResult = await this.dbService.getItem('vendor-bids', vendorState.currentBidId, tenantId);
+          currentBid = (bidResult as any)?.data ?? bidResult ?? null;
+        } catch {
+          // bid may have been cleaned up — non-fatal
+        }
+      }
+
+      res.json({
+        orderId,
+        vendorAssignment: order.autoVendorAssignment ?? null,
+        reviewAssignment: order.autoReviewAssignment ?? null,
+        currentBid,
+        requiresHumanVendorAssignment: order.requiresHumanVendorAssignment ?? false,
+        requiresHumanReviewAssignment: order.requiresHumanReviewAssignment ?? false,
+      });
+    } catch (error) {
+      logger.error('getAutoAssignmentStatus failed', { error });
+      res.status(500).json({ error: 'Failed to get auto-assignment status', code: 'AUTO_ASSIGNMENT_STATUS_ERROR' });
+    }
+  }
+
+  // ─── POST /:orderId/trigger-auto-assignment ───────────────────────────────────
+
+  public async triggerAutoAssignment(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const orderId = req.params.orderId as string;
+      const tenantId = req.user!.tenantId as string;
+
+      const result = await this.dbService.getItem('orders', orderId, tenantId);
+      const order = (result as any)?.data ?? result;
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      // Guard: don't re-trigger if a vendor has already accepted
+      if (order.autoVendorAssignment?.status === 'ACCEPTED') {
+        res.status(409).json({
+          error: 'Vendor assignment is already accepted for this order — use Re-Trigger only after escalation or from an exhausted state',
+        });
+        return;
+      }
+
+      const addr = order.propertyAddress;
+      const addrString: string =
+        typeof addr === 'string'
+          ? addr
+          : addr?.streetAddress
+            ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
+            : '';
+
+      await this.orchestrator.triggerVendorAssignment({
+        orderId: order.id,
+        orderNumber: order.orderNumber ?? '',
+        tenantId,
+        engagementId: order.engagementId ?? orderId,
+        productType: order.productType ?? order.orderType ?? '',
+        propertyAddress: addrString,
+        propertyState: addr?.state ?? '',
+        clientId: order.clientId ?? '',
+        loanAmount: order.loanInformation?.loanAmount ?? 0,
+        priority: (order.priority as 'STANDARD' | 'RUSH' | 'EMERGENCY') ?? 'STANDARD',
+        dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+
+      res.json({ success: true, message: 'Auto-assignment triggered — vendor ranking and bid dispatch initiated' });
+    } catch (error) {
+      logger.error('triggerAutoAssignment failed', { error });
+      res.status(500).json({ error: 'Failed to trigger auto-assignment', code: 'AUTO_ASSIGNMENT_TRIGGER_ERROR' });
+    }
+  }
+
+  // ─── POST /:orderId/vendor-bid/:bidId/accept ──────────────────────────────────
+
+  public async acceptVendorBid(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const orderId = req.params.orderId as string;
+      const bidId = req.params.bidId as string;
+      const tenantId = req.user!.tenantId as string;
+
+      const bidResult = await this.dbService.getItem('vendor-bids', bidId, tenantId);
+      const bid = (bidResult as any)?.data ?? bidResult;
+      if (!bid) {
+        res.status(404).json({ error: 'Bid not found' });
+        return;
+      }
+      if (bid.status !== 'PENDING') {
+        res.status(409).json({ error: `Bid cannot be accepted — current status: ${bid.status}` });
+        return;
+      }
+
+      const orderResult = await this.dbService.getItem('orders', orderId, tenantId);
+      const order = (orderResult as any)?.data ?? orderResult;
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      // Guard: FSM must be in PENDING_BID and this must be the current active bid
+      if (order.autoVendorAssignment?.status !== 'PENDING_BID') {
+        res.status(409).json({
+          error: `Vendor assignment is not in PENDING_BID state (current: ${order.autoVendorAssignment?.status ?? 'none'}) — cannot accept bid`,
+        });
+        return;
+      }
+      if (order.autoVendorAssignment.currentBidId !== bidId) {
+        res.status(409).json({ error: `Bid ${bidId} is not the current active bid for this order` });
+        return;
+      }
+
+      // Mark bid ACCEPTED
+      await this.dbService.updateItem(
+        'vendor-bids',
+        bid.id,
+        { ...bid, status: 'ACCEPTED', acceptedAt: new Date().toISOString() },
+        tenantId,
+      );
+
+      // Update order: vendor assignment state → ACCEPTED, assign vendor fields, advance order status
+      const updatedVendorState = order.autoVendorAssignment
+        ? { ...order.autoVendorAssignment, status: 'ACCEPTED' }
+        : null;
+
+      await this.dbService.updateItem(
+        'orders',
+        order.id,
+        {
+          ...order,
+          autoVendorAssignment: updatedVendorState,
+          assignedVendorId: bid.vendorId,
+          assignedVendorName: bid.vendorName,
+          status: OrderStatus.ASSIGNED,
+          updatedAt: new Date().toISOString(),
+        },
+        tenantId,
+      );
+
+      // Publish vendor.bid.accepted — await so the notification service reliably receives it
+      await this.publisher.publish({
+        id: uuidv4(),
+        type: 'vendor.bid.accepted',
+        timestamp: new Date(),
+        source: 'order-controller',
+        version: '1.0',
+        category: EventCategory.VENDOR,
+        data: {
+          orderId,
+          orderNumber: order.orderNumber ?? '',
+          tenantId,
+          vendorId: bid.vendorId,
+          vendorName: bid.vendorName,
+          bidId,
+          acceptedAt: new Date(),
+          priority: EventPriority.NORMAL,
+        },
+      });
+
+      res.json({
+        success: true,
+        data: { orderId, bidId, vendorId: bid.vendorId, vendorName: bid.vendorName, status: 'ACCEPTED' },
+      });
+    } catch (error) {
+      logger.error('acceptVendorBid failed', { error });
+      res.status(500).json({ error: 'Failed to accept vendor bid', code: 'ACCEPT_BID_ERROR' });
+    }
+  }
+
+  // ─── POST /:orderId/vendor-bid/:bidId/decline ─────────────────────────────────
+
+  public async declineVendorBid(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const orderId = req.params.orderId as string;
+      const bidId = req.params.bidId as string;
+      const tenantId = req.user!.tenantId as string;
+      const { reason } = req.body as { reason?: string };
+
+      const bidResult = await this.dbService.getItem('vendor-bids', bidId, tenantId);
+      const bid = (bidResult as any)?.data ?? bidResult;
+      if (!bid) {
+        res.status(404).json({ error: 'Bid not found' });
+        return;
+      }
+      if (bid.status !== 'PENDING') {
+        res.status(409).json({ error: `Bid cannot be declined — current status: ${bid.status}` });
+        return;
+      }
+
+      const orderResult = await this.dbService.getItem('orders', orderId, tenantId);
+      const order = (orderResult as any)?.data ?? orderResult;
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      // Guard: FSM must be in PENDING_BID and this must be the current active bid
+      if (order.autoVendorAssignment?.status !== 'PENDING_BID') {
+        res.status(409).json({
+          error: `Vendor assignment is not in PENDING_BID state (current: ${order.autoVendorAssignment?.status ?? 'none'}) — cannot decline bid`,
+        });
+        return;
+      }
+      if (order.autoVendorAssignment.currentBidId !== bidId) {
+        res.status(409).json({ error: `Bid ${bidId} is not the current active bid for this order` });
+        return;
+      }
+
+      // Mark bid DECLINED
+      await this.dbService.updateItem(
+        'vendor-bids',
+        bid.id,
+        { ...bid, status: 'DECLINED', declinedAt: new Date().toISOString(), declineReason: reason ?? '' },
+        tenantId,
+      );
+
+      // Publish vendor.bid.declined — orchestrator will advance to the next vendor
+      await this.publisher.publish({
+        id: uuidv4(),
+        type: 'vendor.bid.declined',
+        timestamp: new Date(),
+        source: 'order-controller',
+        version: '1.0',
+        category: EventCategory.VENDOR,
+        data: {
+          orderId,
+          orderNumber: order?.orderNumber ?? '',
+          tenantId,
+          vendorId: bid.vendorId,
+          vendorName: (bid as any).vendorName ?? bid.vendorId,
+          bidId,
+          declineReason: reason ?? 'No reason provided',
+          attemptNumber: bid.attemptNumber ?? 1,
+          totalAttempts: order?.autoVendorAssignment?.rankedVendors?.length ?? 1,
+          priority: EventPriority.NORMAL,
+        },
+      });
+
+      res.json({ success: true, message: 'Bid declined — auto-assignment advancing to next vendor' });
+    } catch (error) {
+      logger.error('declineVendorBid failed', { error });
+      res.status(500).json({ error: 'Failed to decline vendor bid', code: 'DECLINE_BID_ERROR' });
     }
   }
 

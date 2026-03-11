@@ -83,6 +83,15 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+  // Service Bus SDK can leak rejections during reconnection attempts.
+  // Log but do NOT crash the process for these — the subscriber already
+  // handles MessagingEntityNotFound by closing the receiver.
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const isServiceBus = msg.includes('MessagingEntity') || msg.includes('ServiceBus');
+  if (isServiceBus) {
+    console.warn('⚠️  Service Bus unhandled rejection (non-fatal):', msg);
+    return;
+  }
   console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
   process.exit(1);
 });

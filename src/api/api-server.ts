@@ -128,6 +128,12 @@ import { createNegotiationRouter } from '../controllers/negotiation.controller';
 // Import Core Notification Service (Phase E - Event-Driven)
 import { NotificationService as EventNotificationOrchestrator } from '../services/core-notification.service';
 
+// Import Auto-Assignment Orchestrator (event-driven vendor + review staff assignment)
+import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service';
+
+// Import Review Assignment Timeout Job
+import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
+
 // Import Inspection Controller (Phase 4.4)
 import { InspectionController } from '../controllers/inspection.controller';
 
@@ -205,6 +211,8 @@ export class AppraisalManagementAPIServer {
   private slaMonitoringJob?: SLAMonitoringJob;
   private overdueDetectionJob?: OverdueOrderDetectionJob;
   private eventOrchestrator?: EventNotificationOrchestrator;
+  private autoAssignmentOrchestrator?: AutoAssignmentOrchestratorService;
+  private reviewTimeoutJob?: ReviewAssignmentTimeoutJob;
   private orderController!: OrderController;
   
   // QC routers
@@ -330,8 +338,15 @@ export class AppraisalManagementAPIServer {
     }));
 
     // CORS configuration
+    // In production, restrict to declared origins. In dev/test, reflect any origin (origin: true)
+    // so integration tests (which send no Origin header) still get the CORS headers back.
+    const corsOrigin = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : process.env.NODE_ENV === 'production'
+        ? []
+        : true;
     this.app.use(cors({
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3010']),
+      origin: corsOrigin,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id'],
@@ -1116,12 +1131,13 @@ export class AppraisalManagementAPIServer {
     );
 
     // QC Management routes - comprehensive quality control system
-    // Mount QC router modules with authentication
-    this.app.use('/api/qc/checklists', 
+    // NOTE: qcChecklistRouter has sub-paths like /checklists and /assignments,
+    // so it must be mounted at /api/qc (not /api/qc/checklists) to avoid path doubling.
+    this.app.use('/api/qc',
       this.unifiedAuth.authenticate(),
       this.qcChecklistRouter
     );
-    
+
     this.app.use('/api/qc/execution', 
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
@@ -3137,8 +3153,32 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Auto-Assignment Orchestrator (event-driven vendor + review staff assignment)
+    try {
+      this.autoAssignmentOrchestrator = new AutoAssignmentOrchestratorService(this.dbService);
+      this.autoAssignmentOrchestrator.start().catch(err => {
+        this.logger.warn('AutoAssignmentOrchestrator failed to start — auto-assignment events will not be processed', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AutoAssignmentOrchestrator could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Review Assignment Timeout Job
+    try {
+      this.reviewTimeoutJob = new ReviewAssignmentTimeoutJob(this.dbService);
+      this.reviewTimeoutJob.start();
+    } catch (err) {
+      this.logger.warn('ReviewAssignmentTimeoutJob could not be started', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout']
     });
   }
 
@@ -3157,6 +3197,12 @@ export class AppraisalManagementAPIServer {
     }
     if (this.eventOrchestrator) {
       this.eventOrchestrator.stop().catch(() => {});
+    }
+    if (this.autoAssignmentOrchestrator) {
+      this.autoAssignmentOrchestrator.stop().catch(() => {});
+    }
+    if (this.reviewTimeoutJob) {
+      this.reviewTimeoutJob.stop();
     }
     this.logger.info('Background jobs stopped');
   }
@@ -3204,6 +3250,15 @@ export class AppraisalManagementAPIServer {
 
   public getExpressApp(): express.Application {
     return this.app;
+  }
+
+  /**
+   * Initialize the database connection and DB-dependent routes.
+   * Call this in test beforeAll() when DB-dependent endpoints are needed.
+   * Do NOT call start() in tests — it binds a port and starts cron jobs.
+   */
+  public async initDb(): Promise<void> {
+    return this.initializeDatabase();
   }
 }
 

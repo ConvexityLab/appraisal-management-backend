@@ -227,6 +227,28 @@ export const createCollaborationRouter = (): Router => {
 
         res.json({ success: true, data: result });
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Key Vault unreachable (common in local dev without managed identity or VPN)
+        const isKeyVaultError =
+          msg.includes('Key Vault') ||
+          msg.includes('keyvault') ||
+          msg.includes('AuthenticationRequired') ||
+          msg.includes('CredentialUnavailableError') ||
+          msg.includes('ENOTFOUND') ||
+          msg.includes('secret');
+        if (isKeyVaultError) {
+          logger.warn('Fluid Relay Key Vault unreachable — collaboration unavailable', { err, userId: req.user.id });
+          res.status(503).json({
+            success: false,
+            error: {
+              code: 'KEYVAULT_UNAVAILABLE',
+              message:
+                'Cannot reach Key Vault to fetch the Fluid Relay signing key. ' +
+                'For local development set VITE_FLUID_RELAY_USE_LOCAL=true in .env and run `npx tinylicious`.',
+            },
+          });
+          return;
+        }
         logger.error('Failed to generate Fluid Relay token', { err, userId: req.user.id });
         res.status(500).json({
           success: false,
@@ -237,6 +259,74 @@ export const createCollaborationRouter = (): Router => {
         });
       }
     }
+  );
+
+  // ─── Container Registry ─────────────────────────────────────────────────────
+  //
+  // Maps logical container IDs (e.g. "comp-order-005") to service-assigned UUIDs
+  // (Tinylicious or Azure Fluid Relay both assign their own IDs on createContainer).
+  // Stored in-process for local dev. For production, move to Cosmos DB or Redis.
+  //
+  // This is the rendezvous mechanism that lets two different browsers (with
+  // separate localStorage) find the same Fluid document.
+
+  const containerRegistry = new Map<string, string>();
+
+  /**
+   * GET /container-registry/:logicalId
+   * Returns the service-assigned container ID for a logical ID, or 404.
+   */
+  router.get(
+    '/container-registry/:logicalId',
+    async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+      if (!req.user?.id) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED' } });
+        return;
+      }
+      const logicalId = req.params['logicalId'];
+      if (!logicalId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_LOGICAL_ID' } });
+        return;
+      }
+      const serviceId = containerRegistry.get(logicalId);
+      if (!serviceId) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+        return;
+      }
+      res.json({ success: true, data: { serviceId } });
+    },
+  );
+
+  /**
+   * PUT /container-registry/:logicalId
+   * Stores the service-assigned container ID for a logical ID.
+   * Body: { serviceId: string }
+   */
+  router.put(
+    '/container-registry/:logicalId',
+    async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+      if (!req.user?.id) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED' } });
+        return;
+      }
+      const logicalId = req.params['logicalId'];
+      if (!logicalId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_LOGICAL_ID' } });
+        return;
+      }
+      const body = req.body as { serviceId?: unknown };
+      const { serviceId } = body;
+      if (!serviceId || typeof serviceId !== 'string') {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_SERVICE_ID', message: 'serviceId must be a non-empty string' },
+        });
+        return;
+      }
+      containerRegistry.set(logicalId, serviceId);
+      logger.info('Container registry: registered', { logicalId, serviceId, userId: req.user.id });
+      res.json({ success: true, data: { serviceId } });
+    },
   );
 
   return router;

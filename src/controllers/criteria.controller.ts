@@ -770,8 +770,8 @@ export class QCChecklistController {
   private validateCreateChecklist() {
     return [
       body('name').notEmpty().withMessage('Checklist name is required'),
-      body('documentTypes').isArray().withMessage('Document types must be an array'),
-      body('categories').isArray().withMessage('Categories must be an array'),
+      body('documentType').optional().isString().withMessage('Document type must be a string'),
+      body('categories').optional().isArray().withMessage('Categories must be an array'),
       body('version').optional().isString()
     ];
   }
@@ -881,6 +881,9 @@ export class QCChecklistController {
 
     // System admin has access to all checklists
     if (user.role === 'admin' || user.role === 'system') return true;
+
+    // Unrestricted checklists (no clientId/organizationId) are globally accessible
+    if (!checklist.clientId && !checklist.organizationId) return true;
 
     // Check client/organization access
     if (checklist.clientId && user.clientId && checklist.clientId === user.clientId) {

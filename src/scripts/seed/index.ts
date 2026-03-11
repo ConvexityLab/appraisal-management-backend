@@ -47,6 +47,10 @@ import { module as propertiesModule } from './modules/properties.js';
 import { module as engagementsModule } from './modules/engagements.js';
 import { module as inspectionsModule } from './modules/inspections.js';
 import { module as reportsModule } from './modules/reports.js';
+import { module as arvAnalysesModule } from './modules/arv-analyses.js';
+import { module as communicationPlatformModule } from './modules/communication-platform.js';
+import { module as constructionCatalogModule } from './modules/construction-catalog.js';
+import { module as reportTemplatesModule } from './modules/report-templates.js';
 
 /** Ordered list — phases run top-to-bottom. */
 const ALL_MODULES: SeedModule[] = [
@@ -72,6 +76,10 @@ const ALL_MODULES: SeedModule[] = [
   engagementsModule,    // Phase 20
   inspectionsModule,    // Phase 21
   reportsModule,        // Phase 22
+  arvAnalysesModule,    // Phase 23
+  communicationPlatformModule, // Phase 24
+  constructionCatalogModule,   // Phase 25
+  reportTemplatesModule,        // Phase 26
 ];
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
@@ -153,6 +161,7 @@ async function main(): Promise<void> {
     tenantId,
     now: new Date().toISOString(),
     clean: opts.clean || opts.cleanOnly,
+    cleanOnly: opts.cleanOnly,
     storageAccountName,
   };
 

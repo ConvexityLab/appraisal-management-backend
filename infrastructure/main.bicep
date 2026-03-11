@@ -423,30 +423,6 @@ module communicationServices 'modules/communication-services-deployment.bicep' =
   }
 }
 
-// Azure API Management (APIM) - Gateway for Container Apps
-module apim 'modules/apim.bicep' = {
-  name: 'apim-deployment'
-  scope: resourceGroup
-  params: {
-    environment: environment
-    location: location
-    suffix: uniqueString(namingPrefix, environment, location)
-    tags: tags
-    apiContainerAppFqdn: appServices.outputs.containerAppFqdns[0]
-    functionContainerAppFqdn: appServices.outputs.containerAppFqdns[1]
-    publisherEmail: 'admin@appraisal.platform'
-    publisherName: 'Appraisal Management Platform'
-    skuName: environment == 'prod' ? 'Standard' : 'Consumption'
-    skuCapacity: environment == 'prod' ? 1 : 0
-    allowedOrigins: [
-      'http://localhost:3000'
-      'http://localhost:4200'
-      'http://localhost:5173'
-      'https://${staticWebApp.outputs.staticWebAppHostname}'
-    ]
-  }
-}
-
 // Outputs
 output resourceGroupName string = resourceGroup.name
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
@@ -459,10 +435,6 @@ output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
 output applicationInsightsName string = monitoring.outputs.applicationInsightsName
 output appServiceName string = appServices.outputs.containerAppNames[0]
 output appServiceUrl string = 'https://${appServices.outputs.containerAppFqdns[0]}'
-output apimName string = apim.outputs.apimName
-output apimGatewayUrl string = apim.outputs.apimGatewayUrl
-output apimApiUrl string = apim.outputs.apiUrl
-output apimFunctionUrl string = apim.outputs.functionUrl
 output deploymentSummary object = {
   resourceGroup: resourceGroup.name
   location: location
@@ -474,12 +446,6 @@ output deploymentSummary object = {
   cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
   keyVaultUri: keyVault.outputs.keyVaultUri
   monitoringWorkspace: monitoring.outputs.logAnalyticsWorkspaceName
-  apim: {
-    name: apim.outputs.apimName
-    gatewayUrl: apim.outputs.apimGatewayUrl
-    apiUrl: apim.outputs.apiUrl
-    functionUrl: apim.outputs.functionUrl
-  }
   staticWebApp: {
     name: staticWebApp.outputs.staticWebAppName
     url: staticWebApp.outputs.staticWebAppUrl

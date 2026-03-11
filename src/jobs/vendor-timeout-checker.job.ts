@@ -8,14 +8,21 @@
  * Runs every 5 minutes
  */
 
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AzureCommunicationService } from '../services/azure-communication.service.js';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+
+/** After this many sequential timeouts the order is escalated to a human. */
+const MAX_VENDOR_ATTEMPTS_BEFORE_ESCALATION = 5;
 
 export class VendorTimeoutCheckerJob {
   private logger: Logger;
   private cosmosService: CosmosDbService;
   private acsService: AzureCommunicationService;
+  private publisher: ServiceBusEventPublisher;
   private isRunning = false;
   private firewallBlocked = false;
   private intervalId?: NodeJS.Timeout;
@@ -27,6 +34,7 @@ export class VendorTimeoutCheckerJob {
     this.logger = new Logger();
     this.cosmosService = dbService || new CosmosDbService();
     this.acsService = new AzureCommunicationService();
+    this.publisher = new ServiceBusEventPublisher();
   }
 
   /**
@@ -197,6 +205,15 @@ export class VendorTimeoutCheckerJob {
         attemptNumber
       });
 
+      // Publish vendor.bid.timeout event — the AutoAssignmentOrchestrator
+      // subscribes to this and advances to the next vendor in the ranked list.
+      await this.publishBidTimeoutEvent(order, failedAttempt, attemptNumber);
+
+      // If we've exhausted the configured maximum, also fire the escalation event.
+      if (attemptNumber >= MAX_VENDOR_ATTEMPTS_BEFORE_ESCALATION) {
+        await this.publishAssignmentExhaustedEvent(order, attemptNumber);
+      }
+
       // Send notification to vendor about timeout
       await this.notifyVendorTimeout(order, failedAttempt.vendorId);
 
@@ -209,6 +226,92 @@ export class VendorTimeoutCheckerJob {
         error
       });
       throw error;
+    }
+  }
+
+  /**
+   * Publish vendor.bid.timeout event so the AutoAssignmentOrchestrator
+   * can advance to the next ranked vendor.
+   */
+  private async publishBidTimeoutEvent(
+    order: any,
+    failedAttempt: { vendorId: string; attemptNumber: number },
+    totalAttempts: number,
+  ): Promise<void> {
+    try {
+      const priority = order.priority === 'RUSH' || order.priority === 'EMERGENCY'
+        ? EventPriority.HIGH
+        : EventPriority.NORMAL;
+
+      await this.publisher.publish({
+        id: uuidv4(),
+        type: 'vendor.bid.timeout',
+        timestamp: new Date(),
+        source: 'vendor-timeout-checker-job',
+        version: '1.0',
+        category: EventCategory.VENDOR,
+        data: {
+          orderId: order.id,
+          orderNumber: order.orderNumber ?? '',
+          tenantId: order.tenantId ?? '',
+          vendorId: failedAttempt.vendorId,
+          bidId: '',  // bid record is cleared before we reach here
+          attemptNumber: failedAttempt.attemptNumber,
+          totalAttempts,
+          priority,
+        },
+      });
+
+      this.logger.info('Published vendor.bid.timeout event', {
+        orderId: order.id,
+        vendorId: failedAttempt.vendorId,
+        attemptNumber: failedAttempt.attemptNumber,
+      });
+    } catch (error) {
+      this.logger.error('Failed to publish vendor.bid.timeout event', {
+        orderId: order.id,
+        error,
+      });
+      // Non-fatal: the order is already marked for reassignment in the DB
+    }
+  }
+
+  /**
+   * Publish vendor.assignment.exhausted once all ranked vendors have timed out.
+   */
+  private async publishAssignmentExhaustedEvent(order: any, totalAttempts: number): Promise<void> {
+    try {
+      const vendorsContacted: string[] = (order.vendorAssignmentHistory ?? []).map(
+        (h: any) => h.vendorId as string,
+      );
+
+      await this.publisher.publish({
+        id: uuidv4(),
+        type: 'vendor.assignment.exhausted',
+        timestamp: new Date(),
+        source: 'vendor-timeout-checker-job',
+        version: '1.0',
+        category: EventCategory.ASSIGNMENT,
+        data: {
+          orderId: order.id,
+          orderNumber: order.orderNumber ?? '',
+          tenantId: order.tenantId ?? '',
+          attemptsCount: totalAttempts,
+          vendorsContacted,
+          priority: EventPriority.HIGH,
+          requiresHumanIntervention: true,
+        },
+      });
+
+      this.logger.warn('Published vendor.assignment.exhausted event', {
+        orderId: order.id,
+        totalAttempts,
+      });
+    } catch (error) {
+      this.logger.error('Failed to publish vendor.assignment.exhausted event', {
+        orderId: order.id,
+        error,
+      });
     }
   }
 

@@ -154,7 +154,7 @@ export class ServiceHealthCheckService {
   private async checkCommunicationServices() {
     const acsStatus = this.checkAzureCommunicationService();
     const acsIdentityStatus = this.checkAcsIdentityService();
-    const teamsStatus = this.checkTeamsService();
+    const teamsStatus = await this.checkTeamsService();
 
     return {
       acs: acsStatus,
@@ -290,14 +290,14 @@ export class ServiceHealthCheckService {
   /**
    * Check Teams Service
    */
-  private checkTeamsService(): ServiceHealthStatus {
+  private async checkTeamsService(): Promise<ServiceHealthStatus> {
     const requiredVars = ['AZURE_TENANT_ID'];
     const optionalVars = ['AZURE_CLIENT_ID'];
     const missingVars = requiredVars.filter(v => !process.env[v]);
 
     try {
       const teamsService = new TeamsService();
-      const isConfigured = teamsService.isServiceConfigured();
+      const isConfigured = await teamsService.isServiceConfigured();
 
       return {
         name: 'Microsoft Teams Service',

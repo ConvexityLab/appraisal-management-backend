@@ -509,6 +509,9 @@ export class FinalReportService {
   ): Promise<Uint8Array> {
     this.logger.info('Downloading template PDF', { blobName: template.blobName });
 
+    if (!template.blobName) {
+      throw new Error(`Report template '${template.id}' has no blobName — cannot download template PDF.`);
+    }
     const { readableStream } = await this.blob.downloadBlob(
       this.TEMPLATE_CONTAINER,
       template.blobName

@@ -45,6 +45,37 @@ export class ChatService {
   }
 
   /**
+   * Ensure a live chat session exists for the given Azure AD user.
+   * If the session doesn't exist (or the token has expired) it is bootstrapped
+   * automatically by exchanging the Azure AD user ID for an ACS token via
+   * AcsIdentityService — the same token that /api/acs/token returns.
+   * This removes the requirement for callers to explicitly call initializeUserChat.
+   */
+  private async ensureSession(azureAdUserId: string, tenantId: string): Promise<UserChatSession> {
+    const existing = this.userSessions.get(azureAdUserId);
+    if (existing && existing.expiresOn > new Date()) {
+      return existing;
+    }
+
+    this.logger.info('Bootstrapping ACS chat session', { azureAdUserId, tenantId });
+
+    const tokenResult = await this.identityService.exchangeUserToken(azureAdUserId, tenantId);
+    if (!tokenResult.success || !tokenResult.data) {
+      const msg = tokenResult.error?.message ?? 'unknown error';
+      throw new Error(`Failed to obtain ACS token for user ${azureAdUserId}: ${msg}`);
+    }
+
+    const { acsUserId, token, expiresOn } = tokenResult.data;
+    await this.initializeUserChat(azureAdUserId, acsUserId, token, expiresOn);
+
+    const session = this.userSessions.get(azureAdUserId);
+    if (!session) {
+      throw new Error(`initializeUserChat completed but session not stored for user ${azureAdUserId}`);
+    }
+    return session;
+  }
+
+  /**
    * Initialize chat for user - call once per user session
    * Creates ChatClient with user's token and starts real-time notifications
    */
@@ -141,18 +172,7 @@ export class ChatService {
     tenantId: string
   ): Promise<ApiResponse<ChatThread>> {
     try {
-      const session = this.userSessions.get(azureAdUserId);
-      if (!session) {
-        return {
-          success: false,
-          data: null as any,
-          error: { 
-            code: 'SESSION_NOT_INITIALIZED', 
-            message: 'Chat session not initialized. Call initializeUserChat first.', 
-            timestamp: new Date() 
-          }
-        };
-      }
+      const session = await this.ensureSession(azureAdUserId, tenantId);
 
       // Ensure all participants have ACS user IDs
       const participantsWithAcs = await Promise.all(
@@ -222,18 +242,7 @@ export class ChatService {
     tenantId: string
   ): Promise<ApiResponse<ChatMessage>> {
     try {
-      const session = this.userSessions.get(senderId);
-      if (!session) {
-        return {
-          success: false,
-          data: null as any,
-          error: { 
-            code: 'SESSION_NOT_INITIALIZED', 
-            message: 'Chat session not initialized', 
-            timestamp: new Date() 
-          }
-        };
-      }
+      const session = await this.ensureSession(senderId, tenantId);
 
       // Get or create thread client
       let threadClient = session.threadClients.get(threadId);

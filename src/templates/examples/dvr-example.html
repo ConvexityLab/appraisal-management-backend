@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DVR / BPO Report — Example — ORD-2025-002314</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7.5pt; color: #000; background: #fff; }
+
+  .page { page-break-after: always; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+
+  .form-header {
+    display: flex; align-items: center; justify-content: space-between;
+    border: 2px solid #1a3c6e; padding: 6px 10px; background: #1a3c6e;
+    margin-bottom: 3px;
+  }
+  .form-header-title { color: #fff; font-size: 12pt; font-weight: bold; letter-spacing: 0.5px; }
+  .form-header-sub   { color: #c8d8f0; font-size: 8pt; margin-top: 1px; }
+  .form-header-meta  { text-align: right; color: #fff; font-size: 7.5pt; line-height: 1.6; }
+
+  .section-header {
+    background: #1a3c6e; color: #fff; padding: 2px 6px;
+    font-weight: bold; font-size: 7.5pt; text-transform: uppercase;
+    letter-spacing: 0.4px; margin-top: 3px; margin-bottom: 1px;
+  }
+  .section-header.light {
+    background: #d0daea; color: #1a3c6e;
+  }
+
+  .grid { display: grid; border-left: 1px solid #8899bb; border-top: 1px solid #8899bb; width: 100%; }
+  .cell { border-right: 1px solid #8899bb; border-bottom: 1px solid #8899bb; padding: 1px 3px; min-height: 14px; }
+  .cell-label { font-size: 5.5pt; color: #555; display: block; text-transform: uppercase; letter-spacing: 0.2px; }
+  .cell-value  { font-size: 8pt; font-weight: bold; color: #111; }
+
+  .cols-2  { grid-template-columns: 1fr 1fr; }
+  .cols-3  { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4  { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .cols-5  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+  .cols-6  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2  { grid-column: span 2; }
+  .span-3  { grid-column: span 3; }
+  .span-4  { grid-column: span 4; }
+  .span-6  { grid-column: span 6; }
+  .tall    { min-height: 42px; }
+  .textarea-cell { min-height: 48px; white-space: pre-wrap; font-size: 7pt; }
+
+  /* Condition badge */
+  .badge {
+    display: inline-block; border-radius: 3px; padding: 1px 5px;
+    font-size: 7pt; font-weight: bold; color: #fff;
+  }
+  .badge-good      { background: #217a3b; }
+  .badge-average   { background: #6c7c2e; }
+  .badge-fair      { background: #c87020; }
+
+  /* Photos */
+  .photo-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+  .photo-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; }
+  .photo-slot {
+    border: 1px solid #8899bb;
+    height: 108px; display: flex; flex-direction: column;
+    overflow: hidden; position: relative;
+  }
+  .photo-img { flex: 1; min-height: 0; }
+  .photo-caption { font-size: 5.8pt; text-align: center; color: #333; padding: 1px 2px; background: #e8ecf4; border-top: 1px solid #ccd3e8; }
+
+  .mock-front  { background: linear-gradient(135deg, #b0c8e8 0%, #6898c0 100%); }
+  .mock-rear   { background: linear-gradient(135deg, #c0d8b0 0%, #70a060 100%); }
+  .mock-street { background: linear-gradient(135deg, #e8d8a0 0%, #c8a850 100%); }
+  .mock-aerial { background: linear-gradient(135deg, #c0d8c8 0%, #5a9878 100%); }
+  .mock-comp1  { background: linear-gradient(135deg, #d0c8e0 0%, #9080b8 100%); }
+  .mock-comp2  { background: linear-gradient(135deg, #e0c8c0 0%, #b07868 100%); }
+  .mock-comp3  { background: linear-gradient(135deg, #c8e0d0 0%, #68a888 100%); }
+  .mock-comp4  { background: linear-gradient(135deg, #e0d8c0 0%, #b09858 100%); }
+  .mock-comp5  { background: linear-gradient(135deg, #c0d0e8 0%, #6888c0 100%); }
+  .mock-comp6  { background: linear-gradient(135deg, #e0c8d8 0%, #b07898 100%); }
+
+  /* Comp table */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 7pt; }
+  .comp-table th { background: #1a3c6e; color: #fff; padding: 2px 4px; font-size: 6.5pt; text-align: left; border: 1px solid #8899bb; }
+  .comp-table td { border: 1px solid #8899bb; padding: 2px 4px; vertical-align: top; }
+  .comp-table tr:nth-child(even) td { background: #f2f4f8; }
+  .comp-table .num { text-align: right; }
+  .comp-table tfoot td { font-weight: bold; background: #d0daea; border: 1px solid #8899bb; }
+
+  /* Value box */
+  .value-box {
+    border: 2px solid #1a3c6e; border-radius: 4px; padding: 8px 14px;
+    text-align: center; background: #f0f5ff;
+  }
+  .value-box-label  { font-size: 8pt; color: #1a3c6e; text-transform: uppercase; font-weight: bold; }
+  .value-box-amount { font-size: 20pt; font-weight: bold; color: #1a3c6e; letter-spacing: 0.5px; }
+  .value-box-range  { font-size: 7.5pt; color: #555; margin-top: 2px; }
+
+  .sig-line  { border-bottom: 1px solid #000; min-height: 20px; margin: 5px 0 1px; }
+  .sig-label { font-size: 6pt; color: #444; }
+
+  .form-footer { font-size: 6pt; color: #666; text-align: center; margin-top: 4px; border-top: 1px solid #ddd; padding-top: 2px; }
+
+  /* preview banner */
+  .preview-banner {
+    background: #1a3c6e; color: #fff; text-align: center;
+    padding: 6px; font-size: 9pt; font-weight: bold;
+    letter-spacing: 0.5px; margin-bottom: 10px;
+  }
+  .preview-note {
+    background: #fff3cd; border: 1px solid #ffc107; padding: 4px 8px;
+    font-size: 7.5pt; color: #856404; margin-bottom: 8px; border-radius: 2px;
+  }
+  @media print { .preview-banner, .preview-note { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="preview-banner">EXAMPLE REPORT PREVIEW — Drive-By Valuation / Broker Price Opinion Report (DVR/BPO)</div>
+<div class="preview-note">
+  ⚠ This is a browser-preview of the exact HTML rendered by Playwright to produce the final PDF.
+  Photos use placeholder gradients. To print: Ctrl+P → "Save as PDF" → Letter size, 0.45in margins.
+</div>
+
+<!-- ═════════════════════════ PAGE 1 ════════════════════════════════ -->
+<div class="page">
+
+  <div class="form-header">
+    <div>
+      <div class="form-header-title">Drive-By Valuation Report</div>
+      <div class="form-header-sub">Broker Price Opinion / Vision Valuation</div>
+    </div>
+    <div class="form-header-meta">
+      Order #: ORD-2025-002314<br>
+      Effective: February 14, 2026<br>
+      Report Date: February 14, 2026
+    </div>
+  </div>
+
+  <!-- SUBJECT PROPERTY IDENTIFICATION -->
+  <div class="section-header">Subject Property</div>
+  <div class="grid cols-6">
+    <div class="cell span-4">
+      <span class="cell-label">Property Address</span>
+      <span class="cell-value">4521 Sunset Canyon Drive, Tarzana, CA 91356</span>
+    </div>
+    <div class="cell"><span class="cell-label">Loan Number</span><span class="cell-value">LN-0044872</span></div>
+    <div class="cell"><span class="cell-label">Client</span><span class="cell-value">Heritage Mortgage Corp.</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">City</span><span class="cell-value">Tarzana</span></div>
+    <div class="cell"><span class="cell-label">State</span><span class="cell-value">CA</span></div>
+    <div class="cell"><span class="cell-label">Zip</span><span class="cell-value">91356</span></div>
+    <div class="cell"><span class="cell-label">County</span><span class="cell-value">Los Angeles</span></div>
+    <div class="cell"><span class="cell-label">APN / Parcel</span><span class="cell-value">2162-048-019</span></div>
+    <div class="cell"><span class="cell-label">Occupancy</span><span class="cell-value">Owner Occupied</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Property Type</span><span class="cell-value">Single Family</span></div>
+    <div class="cell"><span class="cell-label">Year Built</span><span class="cell-value">1978</span></div>
+    <div class="cell"><span class="cell-label">Bedrooms</span><span class="cell-value">4</span></div>
+    <div class="cell"><span class="cell-label">Bathrooms</span><span class="cell-value">2.5</span></div>
+    <div class="cell"><span class="cell-label">GLA (SF)</span><span class="cell-value">2,284 SF</span></div>
+    <div class="cell"><span class="cell-label">Lot Size</span><span class="cell-value">10,640 SF</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Garage</span><span class="cell-value">Attached 2-car</span></div>
+    <div class="cell"><span class="cell-label">Pool</span><span class="cell-value">In-ground</span></div>
+    <div class="cell"><span class="cell-label">Legal Description</span><span class="cell-value">Lot 14 of Tarzana Hills Tract 22847</span></div>
+    <div class="cell"><span class="cell-label">Zoning</span><span class="cell-value">R-1 (LACC)</span></div>
+  </div>
+
+  <!-- CONDITION & RATINGS -->
+  <div class="section-header">Condition &amp; Ratings</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Overall Condition</span>
+      <span class="cell-value"><span class="badge badge-average">Average</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Exterior Condition</span>
+      <span class="cell-value"><span class="badge badge-good">Good</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Deferred Maintenance</span>
+      <span class="cell-value">Minor — Roof (est. 5 yrs remaining)</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Occupancy Status</span>
+      <span class="cell-value">Owner Occupied — Active</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Condition Comments</span>
+      Drive-by inspection reveals well-maintained exterior with fresh paint (approx. 2 years old), new front landscaping, and
+      driveway crack repair completed recently. Roof shows wear consistent with age and will require replacement within
+      estimated 4–6 years. Pool area appears maintained. No signs of structural issues, foundation distress, or deferred
+      exterior maintenance observed from the street.
+    </div>
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Listing / Market Comments</span>
+      Subject is currently not listed. No MLS activity in the past 36 months. Borrowers Robert &amp; Lisa Chen acquired
+      via estate in 2022. The Tarzana Hills micro-market has seen 5–8% appreciation over the past 18 months. San Fernando
+      Valley suburban demand remains elevated. Properties in this size range (2,000–2,500 SF) typically absorb within
+      21 days when priced at market.
+    </div>
+  </div>
+
+  <!-- NEIGHBORHOOD & MARKET -->
+  <div class="section-header">Neighborhood &amp; Market Conditions</div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Location Type</span><span class="cell-value">Suburban</span></div>
+    <div class="cell"><span class="cell-label">Built-Up</span><span class="cell-value">Over 75%</span></div>
+    <div class="cell"><span class="cell-label">Growth</span><span class="cell-value">Stable</span></div>
+    <div class="cell"><span class="cell-label">Property Values</span><span class="cell-value">Increasing</span></div>
+    <div class="cell"><span class="cell-label">Demand / Supply</span><span class="cell-value">In Balance</span></div>
+    <div class="cell"><span class="cell-label">Marketing Time</span><span class="cell-value">3–6 Months</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Price Range Low</span><span class="cell-value">$980,000</span></div>
+    <div class="cell"><span class="cell-label">Price Range High</span><span class="cell-value">$1,650,000</span></div>
+    <div class="cell"><span class="cell-label">Predominant Price</span><span class="cell-value">$1,100,000–$1,300,000</span></div>
+    <div class="cell"><span class="cell-label">Absorption Rate</span><span class="cell-value">~14 sales/mo (SFR 91356)</span></div>
+  </div>
+
+  <!-- SUBJECT PHOTOS -->
+  <div class="section-header">Subject Property Photos</div>
+  <div class="photo-grid-2" style="margin-top:3px;">
+    <div class="photo-slot mock-front">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Subject — Front View: 4521 Sunset Canyon Drive</div>
+    </div>
+    <div class="photo-slot mock-rear">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Subject — Rear View: Pool &amp; Patio Area</div>
+    </div>
+    <div class="photo-slot mock-street">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Street Scene — Sunset Canyon Drive</div>
+    </div>
+    <div class="photo-slot mock-aerial">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Aerial / Location Map — Subject (pin) in Tarzana Hills</div>
+    </div>
+  </div>
+
+  <div class="form-footer">Drive-By Valuation Report (DVR/BPO) — Order ORD-2025-002314 — Borrower: Robert &amp; Lisa Chen — Page 1 of 2</div>
+</div>
+<!-- END PAGE 1 -->
+
+<!-- ═════════════════════════ PAGE 2: COMPS & VALUATION ═══════════════ -->
+<div class="page">
+
+  <div class="form-header">
+    <div>
+      <div class="form-header-title">Sales Comparison &amp; Opinion of Value</div>
+      <div class="form-header-sub">4521 Sunset Canyon Drive, Tarzana, CA 91356</div>
+    </div>
+    <div class="form-header-meta">
+      Order #: ORD-2025-002314<br>
+      Effective: February 14, 2026
+    </div>
+  </div>
+
+  <!-- COMPARABLE SALES TABLE -->
+  <div class="section-header">Comparable Sales</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th style="width:3%;">#</th>
+        <th style="width:24%;">Address</th>
+        <th style="width:8%;">Proximity</th>
+        <th style="width:8%;">Sale Date</th>
+        <th style="width:9%;">Sale Price</th>
+        <th style="width:7%;">GLA (SF)</th>
+        <th style="width:7%;">Beds/Bths</th>
+        <th style="width:6%;">Yr Blt</th>
+        <th style="width:7%;">Condition</th>
+        <th style="width:5%;">DOM</th>
+        <th style="width:11%;">Adj. Sale Price</th>
+        <th style="width:5%;">Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:center; font-weight:bold;">1</td>
+        <td>4810 Oakwood Glen Rd, Tarzana, CA 91356</td>
+        <td>0.4 mi NW</td>
+        <td>Jan 8, 2026</td>
+        <td class="num">$1,125,000</td>
+        <td class="num">2,198 SF</td>
+        <td style="text-align:center;">4 / 2.5</td>
+        <td style="text-align:center;">1981</td>
+        <td style="text-align:center;"><span class="badge badge-good" style="font-size:6pt;">Good</span></td>
+        <td class="num">14</td>
+        <td class="num" style="font-weight:bold; color:#1a3c6e;">$1,110,500</td>
+        <td style="font-size:6pt;">MLS/CoStar</td>
+      </tr>
+      <tr>
+        <td style="text-align:center; font-weight:bold;">2</td>
+        <td>21842 Ventura Blvd, Woodland Hills, CA 91364</td>
+        <td>1.1 mi SW</td>
+        <td>Dec 3, 2025</td>
+        <td class="num">$1,089,000</td>
+        <td class="num">2,310 SF</td>
+        <td style="text-align:center;">4 / 3.0</td>
+        <td style="text-align:center;">1975</td>
+        <td style="text-align:center;"><span class="badge badge-average" style="font-size:6pt;">Avg</span></td>
+        <td class="num">28</td>
+        <td class="num" style="font-weight:bold; color:#1a3c6e;">$1,104,200</td>
+        <td style="font-size:6pt;">MLS/CoStar</td>
+      </tr>
+      <tr>
+        <td style="text-align:center; font-weight:bold;">3</td>
+        <td>5124 Topanga Canyon Ct, Tarzana, CA 91356</td>
+        <td>0.7 mi N</td>
+        <td>Jan 22, 2026</td>
+        <td class="num">$1,150,000</td>
+        <td class="num">2,410 SF</td>
+        <td style="text-align:center;">4 / 3.0</td>
+        <td style="text-align:center;">1980</td>
+        <td style="text-align:center;"><span class="badge badge-good" style="font-size:6pt;">Good</span></td>
+        <td class="num">9</td>
+        <td class="num" style="font-weight:bold; color:#1a3c6e;">$1,095,000</td>
+        <td style="font-size:6pt;">MLS/CoStar</td>
+      </tr>
+      <tr>
+        <td style="text-align:center; font-weight:bold;">4</td>
+        <td>4302 Ventura Canyon Ave, Sherman Oaks, CA 91423</td>
+        <td>2.0 mi E</td>
+        <td>Nov 14, 2025</td>
+        <td class="num">$1,185,000</td>
+        <td class="num">2,260 SF</td>
+        <td style="text-align:center;">4 / 2.5</td>
+        <td style="text-align:center;">1976</td>
+        <td style="text-align:center;"><span class="badge badge-good" style="font-size:6pt;">Good</span></td>
+        <td class="num">22</td>
+        <td class="num" style="font-weight:bold; color:#1a3c6e;">$1,128,000</td>
+        <td style="font-size:6pt;">MLS/CoStar</td>
+      </tr>
+      <tr>
+        <td style="text-align:center; font-weight:bold;">5</td>
+        <td>20815 Burbank Blvd, Woodland Hills, CA 91367</td>
+        <td>1.8 mi SE</td>
+        <td>Dec 20, 2025</td>
+        <td class="num">$1,065,000</td>
+        <td class="num">2,150 SF</td>
+        <td style="text-align:center;">3 / 2.0</td>
+        <td style="text-align:center;">1972</td>
+        <td style="text-align:center;"><span class="badge badge-average" style="font-size:6pt;">Avg</span></td>
+        <td class="num">41</td>
+        <td class="num" style="font-weight:bold; color:#1a3c6e;">$1,092,000</td>
+        <td style="font-size:6pt;">MLS</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" style="text-align:right; padding: 2px 4px;">Adjusted Value Range:</td>
+        <td colspan="5" style="padding: 2px 4px; color: #1a3c6e;">$1,092,000 – $1,128,000</td>
+        <td colspan="3"></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Comp photos - 2 rows of 3 -->
+  <div class="section-header light" style="margin-top:4px;">Comparable Photos</div>
+  <div class="photo-grid-3" style="margin-top:2px;">
+    <div class="photo-slot mock-comp1" style="height:85px;">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Comp #1 — 4810 Oakwood Glen Rd</div>
+    </div>
+    <div class="photo-slot mock-comp2" style="height:85px;">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Comp #2 — 21842 Ventura Blvd</div>
+    </div>
+    <div class="photo-slot mock-comp3" style="height:85px;">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Comp #3 — 5124 Topanga Canyon Ct</div>
+    </div>
+    <div class="photo-slot mock-comp4" style="height:85px;">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Comp #4 — 4302 Ventura Canyon Ave</div>
+    </div>
+    <div class="photo-slot mock-comp5" style="height:85px;">
+      <div class="photo-img"></div>
+      <div class="photo-caption">Comp #5 — 20815 Burbank Blvd</div>
+    </div>
+    <div class="photo-slot" style="height:85px; background:#f0f2f8; border: 1px dashed #aab; display:flex; align-items:center; justify-content:center;">
+      <div style="font-size:6pt; color:#aaa; text-align:center;">Comp #6 — Not Required</div>
+    </div>
+  </div>
+
+  <!-- OPINION OF VALUE -->
+  <div class="section-header" style="margin-top:3px;">Opinion of Value</div>
+  <div style="display:flex; gap:6px; align-items:flex-start; margin-top:4px;">
+    <div style="flex:1.2;">
+      <div class="value-box">
+        <div class="value-box-label">As-Is Market Value</div>
+        <div class="value-box-amount">$1,110,000</div>
+        <div class="value-box-range">Value Range: $1,092,000 – $1,128,000</div>
+      </div>
+    </div>
+    <div style="flex:2;">
+      <div class="grid cols-2" style="margin-top:0;">
+        <div class="cell"><span class="cell-label">Effective Date</span><span class="cell-value">February 14, 2026</span></div>
+        <div class="cell"><span class="cell-label">Report Date</span><span class="cell-value">February 14, 2026</span></div>
+        <div class="cell span-2 tall textarea-cell">
+          <span class="cell-label">Value Reconciliation / Methodology</span>
+          Five comparable sales were analyzed within a 2-mile radius, all closing within 90 days of the effective date.
+          Adjustments were made for differences in GLA (±$45/SF), condition, bedroom/bathroom count, and lot size.
+          The range of adjusted values is $1,092,000–$1,128,000. Weight was placed on Comps #1 and #4 due to closest
+          physical similarity. Pool value ($15,000–$20,000) is reflected within the market range.
+          <strong>Final Opinion of Value: $1,110,000.</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current Listing Info (the property is not currently listed, so we show a listing history note) -->
+  <div class="section-header light" style="margin-top:4px;">Listing History</div>
+  <div class="grid cols-4">
+    <div class="cell span-2"><span class="cell-label">Current List Price</span><span class="cell-value">Not Currently Listed</span></div>
+    <div class="cell"><span class="cell-label">Last MLS Activity</span><span class="cell-value">No recent MLS activity (36+ mo)</span></div>
+    <div class="cell"><span class="cell-label">Prior Sale</span><span class="cell-value">Aug 2022 — Estate Transfer</span></div>
+  </div>
+
+  <!-- APPRAISER CERTIFICATION & SIGNATURE -->
+  <div class="section-header">Agent / Appraiser Certification</div>
+  <div class="grid cols-6">
+    <div class="cell span-3"><span class="cell-label">Agent / Appraiser Name</span><span class="cell-value">Carlos E. Ramírez</span></div>
+    <div class="cell span-3"><span class="cell-label">Company Name</span><span class="cell-value">NVN Appraisal Services – West Region</span></div>
+    <div class="cell span-4"><span class="cell-label">Company Address</span><span class="cell-value">12001 Ventura Blvd, Suite 340, Studio City, CA 91604</span></div>
+    <div class="cell"><span class="cell-label">Phone</span><span class="cell-value">(818) 555-0247</span></div>
+    <div class="cell"><span class="cell-label">Email</span><span class="cell-value">c.ramirez@nvnappraisal.com</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">License Type</span><span class="cell-value">Certified Residential</span></div>
+    <div class="cell span-2"><span class="cell-label">License # / State / Exp.</span><span class="cell-value">AR072981 / CA &nbsp; exp. June 30, 2027</span></div>
+    <div class="cell"><span class="cell-label">Certification</span><span class="cell-value">Certified ✓</span></div>
+  </div>
+
+  <div class="grid cols-4" style="margin-top:8px;">
+    <div class="cell span-2">
+      <div class="sig-line" style="min-height:22px;"></div>
+      <div class="sig-label">Agent / Appraiser Signature &nbsp;(Carlos E. Ramírez)</div>
+    </div>
+    <div class="cell span-2">
+      <div class="sig-line" style="min-height:22px;"></div>
+      <div class="sig-label">Date: February 14, 2026</div>
+    </div>
+  </div>
+
+  <!-- Lender / Client -->
+  <div class="section-header light" style="margin-top:4px;">Lender / Client</div>
+  <div class="grid cols-4">
+    <div class="cell span-2"><span class="cell-label">Client Name</span><span class="cell-value">Jennifer K. Park, Loan Processing Manager</span></div>
+    <div class="cell"><span class="cell-label">Client Company</span><span class="cell-value">Heritage Mortgage Corp.</span></div>
+    <div class="cell"><span class="cell-label">Loan Number</span><span class="cell-value">LN-0044872</span></div>
+  </div>
+
+  <div class="form-footer">Drive-By Valuation Report (DVR/BPO) — Order ORD-2025-002314 — Borrower: Robert &amp; Lisa Chen — Appraiser: Carlos E. Ramírez — Page 2 of 2</div>
+</div>
+<!-- END PAGE 2 -->
+
+</body>
+</html>

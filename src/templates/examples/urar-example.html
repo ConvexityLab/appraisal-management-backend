@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URAR Form 1004 — Example Report — ORD-2025-001847</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7pt; color: #000; background: #fff; }
+
+  .page { page-break-after: always; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+
+  .form-title {
+    text-align: center; font-size: 9pt; font-weight: bold;
+    border: 1.5px solid #000; padding: 3px; margin-bottom: 2px;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .form-subtitle { text-align: center; font-size: 7pt; margin-bottom: 3px; }
+
+  .section-header {
+    background: #d0d0d0; border: 1px solid #000; padding: 1px 3px;
+    font-weight: bold; font-size: 7.5pt; text-transform: uppercase;
+    letter-spacing: 0.4px; margin-top: 1px;
+  }
+  .grid {
+    display: grid; border-left: 1px solid #000; border-top: 1px solid #000; width: 100%;
+  }
+  .cell {
+    border-right: 1px solid #000; border-bottom: 1px solid #000;
+    padding: 1px 3px; min-height: 13px;
+  }
+  .cell-label { font-size: 5.8pt; color: #555; display: block; }
+  .cell-value  { font-size: 7.5pt; font-weight: bold; }
+
+  .cols-2  { grid-template-columns: 1fr 1fr; }
+  .cols-3  { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4  { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .cols-5  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+  .cols-6  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2  { grid-column: span 2; }
+  .span-3  { grid-column: span 3; }
+  .span-4  { grid-column: span 4; }
+  .span-5  { grid-column: span 5; }
+  .span-6  { grid-column: span 6; }
+  .tall    { min-height: 42px; }
+  .textarea-cell { min-height: 48px; white-space: pre-wrap; font-size: 7pt; }
+  .right   { text-align: right; }
+  .center  { text-align: center; }
+
+  .cb { display: inline-block; width: 8px; height: 8px; border: 1px solid #000; margin-right: 2px; text-align: center; line-height: 7px; font-size: 7pt; }
+  .cb.checked::after { content: "✓"; font-weight: bold; }
+
+  .comp-grid { width: 100%; border-collapse: collapse; font-size: 6.5pt; }
+  .comp-grid th, .comp-grid td { border: 1px solid #000; padding: 1px 3px; vertical-align: top; }
+  .comp-grid th { background: #d8d8d8; font-size: 6.5pt; text-align: center; }
+  .comp-grid .row-label { background: #f0f0f0; font-weight: bold; font-size: 6pt; width: 22%; }
+  .comp-grid .subj-col  { width: 18%; }
+  .comp-grid .comp-col  { width: 20%; }
+
+  .photo-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; width: 100%; }
+  .photo-slot {
+    border: 1px solid #bbb; background: #e8e8ec;
+    height: 110px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden; position: relative;
+  }
+  .photo-slot img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-caption {
+    font-size: 5.8pt; text-align: center; color: #333;
+    border-top: 1px solid #ddd; padding: 1px;
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(255,255,255,0.9);
+  }
+  .photo-placeholder { font-size: 6.5pt; color: #888; text-align: center; padding: 4px; }
+
+  /* Photo mock — gradient placeholder rectangles */
+  .mock-photo-front  { background: linear-gradient(135deg, #b8cfe8 0%, #7fa8c8 100%); }
+  .mock-photo-rear   { background: linear-gradient(135deg, #c8d8b8 0%, #8aaa70 100%); }
+  .mock-photo-street { background: linear-gradient(135deg, #e8d8b8 0%, #c8a870 100%); }
+  .mock-photo-comp   { background: linear-gradient(135deg, #d8d0c8 0%, #a89880 100%); }
+
+  .sig-line  { border-bottom: 1px solid #000; min-height: 20px; margin: 5px 0 1px; }
+  .sig-label { font-size: 6pt; color: #444; }
+  .form-footer { font-size: 6pt; text-align: center; color: #666; margin-top: 3px; }
+
+  /* preview banner */
+  .preview-banner {
+    background: #1a3c6e; color: #fff; text-align: center;
+    padding: 6px; font-size: 9pt; font-weight: bold;
+    letter-spacing: 0.5px; margin-bottom: 10px;
+  }
+  .preview-note {
+    background: #fff3cd; border: 1px solid #ffc107; padding: 4px 8px;
+    font-size: 7.5pt; color: #856404; margin-bottom: 8px; border-radius: 2px;
+  }
+  @media print { .preview-banner, .preview-note { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="preview-banner">EXAMPLE REPORT PREVIEW — Uniform Residential Appraisal Report (URAR Form 1004)</div>
+<div class="preview-note">
+  ⚠ This is a browser-preview of the exact HTML rendered by Playwright to produce the final PDF.
+  Photos use placeholder gradients. To print: Ctrl+P → "Save as PDF" → Letter size, 0.45in margins.
+</div>
+
+<!-- ═══════════════════════════ PAGE 1 ═══════════════════════════════ -->
+<div class="page">
+
+  <div class="form-title">Uniform Residential Appraisal Report</div>
+  <div class="form-subtitle">File No. ORD-2025-001847 &nbsp;|&nbsp; Loan No. LN-0038271 &nbsp;|&nbsp; Effective Date: February 28, 2026</div>
+
+  <!-- SUBJECT -->
+  <div class="section-header">Subject</div>
+  <div class="grid cols-3">
+    <div class="cell span-3">
+      <span class="cell-label">Property Address</span>
+      <span class="cell-value">1842 Maple Ridge Drive</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">City</span><span class="cell-value">Castle Rock</span></div>
+    <div class="cell"><span class="cell-label">State</span><span class="cell-value">CO</span></div>
+    <div class="cell"><span class="cell-label">Zip Code</span><span class="cell-value">80109</span></div>
+    <div class="cell span-2"><span class="cell-label">County</span><span class="cell-value">Douglas</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">Borrower</span><span class="cell-value">James &amp; Sarah Williams</span></div>
+    <div class="cell span-2"><span class="cell-label">Owner of Public Record</span><span class="cell-value">James Williams</span></div>
+    <div class="cell"><span class="cell-label">Census Tract</span><span class="cell-value">108.04</span></div>
+    <div class="cell"><span class="cell-label">Map Reference</span><span class="cell-value">Sec 14 T7S R67W</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">Legal Description</span><span class="cell-value">Lot 12, Block 4, Founders Village FG-3, Douglas County, CO</span></div>
+    <div class="cell"><span class="cell-label">Assessor's Parcel #</span><span class="cell-value">2233-184-12-004</span></div>
+    <div class="cell"><span class="cell-label">Tax Year</span><span class="cell-value">2025</span></div>
+    <div class="cell"><span class="cell-label">R.E. Taxes $</span><span class="cell-value">$5,148/yr</span></div>
+    <div class="cell"><span class="cell-label">Special Assessments</span><span class="cell-value">None</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">Lender/Client</span><span class="cell-value">First National Bank</span></div>
+    <div class="cell span-2"><span class="cell-label">Address</span><span class="cell-value">8000 E. Belleview Ave, Greenwood Village, CO 80111</span></div>
+    <div class="cell"><span class="cell-label">Occupant</span><span class="cell-value">Owner</span></div>
+    <div class="cell"><span class="cell-label">Property Rights Appraised</span><span class="cell-value">Fee Simple</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Assignment Type</span>
+      <span class="cell-value"><span class="cb"></span> Purchase &nbsp; <span class="cb checked"></span> Refinance/Other</span>
+    </div>
+    <div class="cell"><span class="cell-label">Effective Date of Appraisal</span><span class="cell-value">February 28, 2026</span></div>
+    <div class="cell"><span class="cell-label">Contract Price</span><span class="cell-value">N/A</span></div>
+    <div class="cell"><span class="cell-label">Date of Contract</span><span class="cell-value">N/A</span></div>
+  </div>
+
+  <!-- NEIGHBORHOOD -->
+  <div class="section-header">Neighborhood Characteristics</div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Location</span>
+      <span class="cell-value"><span class="cb"></span> Urban &nbsp;<span class="cb checked"></span> Suburban &nbsp;<span class="cb"></span> Rural</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Property Values</span>
+      <span class="cell-value"><span class="cb checked"></span> Increasing &nbsp;<span class="cb"></span> Stable &nbsp;<span class="cb"></span> Declining</span>
+    </div>
+    <div class="cell"><span class="cell-label">Demand/Supply</span><span class="cell-value">Shortage</span></div>
+    <div class="cell"><span class="cell-label">Marketing Time</span><span class="cell-value">Under 3 Months</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Built-Up</span><span class="cell-value">Over 75%</span></div>
+    <div class="cell"><span class="cell-label">Growth</span><span class="cell-value">Rapid</span></div>
+    <div class="cell"><span class="cell-label">Price Range</span><span class="cell-value">$580,000 – $890,000</span></div>
+    <div class="cell"><span class="cell-label">Predominant</span><span class="cell-value">Owner</span></div>
+    <div class="cell"><span class="cell-label">Age Range</span><span class="cell-value">5–20 Yrs</span></div>
+    <div class="cell"><span class="cell-label">Land Use %</span><span class="cell-value">1-Fam: 88% Multi: 5% Comm: 7%</span></div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Neighborhood Description</span>
+      Founders Village is a well-established master-planned suburban community in Castle Rock, CO. The neighborhood features
+      consistent residential construction dating 2001–2018, with manicured streetscapes, community parks, and access to top-rated
+      Douglas County schools. Proximity to I-25 provides strong commuter connectivity to the Denver Tech Center (12 mi) and
+      downtown Denver (30 mi). Demand remains strong driven by population migration from Denver proper.
+    </div>
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Market Conditions</span>
+      The Castle Rock market continues to exhibit price appreciation (est. +6.2% YoY) and compressed marketing times (avg. 18 days).
+      Inventory remains constrained at approximately 1.4 months of supply. Multiple-offer situations are common for move-in-ready homes.
+      Interest rate sensitivity has modestly dampened buyer pool from 2022 peak but absorption remains favorable for sellers.
+    </div>
+  </div>
+
+  <!-- SITE -->
+  <div class="section-header">Site</div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">Area</span><span class="cell-value">9,148 SF</span></div>
+    <div class="cell"><span class="cell-label">Dimensions</span><span class="cell-value">72' × 127'</span></div>
+    <div class="cell"><span class="cell-label">Shape</span><span class="cell-value">Rectangular</span></div>
+    <div class="cell"><span class="cell-label">Zoning Classification</span><span class="cell-value">R-1 (SFR)</span></div>
+    <div class="cell"><span class="cell-label">Zoning Compliance</span><span class="cell-value">Legal Conforming</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">Flood Zone</span><span class="cell-value">Zone X (0.2%) &nbsp; Map # 08035C0318H &nbsp; Date 12/5/2019</span></div>
+    <div class="cell"><span class="cell-label">Electricity</span><span class="cell-value">Public</span></div>
+    <div class="cell"><span class="cell-label">Gas</span><span class="cell-value">Public</span></div>
+    <div class="cell"><span class="cell-label">Water</span><span class="cell-value">Public</span></div>
+    <div class="cell"><span class="cell-label">Sanitary Sewer</span><span class="cell-value">Public</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell span-2"><span class="cell-label">View</span><span class="cell-value">Neutral – Residential streetscape, partial Front Range mountain backdrop</span></div>
+    <div class="cell"><span class="cell-label">Highest &amp; Best Use</span><span class="cell-value">Present Use</span></div>
+    <div class="cell"><span class="cell-label">Zoning Description</span><span class="cell-value">Single Family Residential</span></div>
+  </div>
+
+  <!-- IMPROVEMENTS -->
+  <div class="section-header">Improvements</div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Units</span><span class="cell-value">1 Unit</span></div>
+    <div class="cell"><span class="cell-label"># of Stories</span><span class="cell-value">2</span></div>
+    <div class="cell"><span class="cell-label">Design (Style)</span><span class="cell-value">Two-Story / Colonial</span></div>
+    <div class="cell"><span class="cell-label">Year Built</span><span class="cell-value">2009</span></div>
+    <div class="cell"><span class="cell-label">Effective Age (Yrs)</span><span class="cell-value">8</span></div>
+    <div class="cell"><span class="cell-label">Attic</span><span class="cell-value">None</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Foundation</span><span class="cell-value">Poured Concrete</span></div>
+    <div class="cell"><span class="cell-label">Basement</span><span class="cell-value">Full</span></div>
+    <div class="cell"><span class="cell-label">Bsmt Area SF</span><span class="cell-value">1,040 SF</span></div>
+    <div class="cell"><span class="cell-label">Finished SF</span><span class="cell-value">520 SF</span></div>
+    <div class="cell"><span class="cell-label">Exterior Walls</span><span class="cell-value">Brick/Frame</span></div>
+    <div class="cell"><span class="cell-label">Roof Surface</span><span class="cell-value">Comp. Shingle</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Heating</span><span class="cell-value">FWA / Natural Gas</span></div>
+    <div class="cell"><span class="cell-label">Central Air</span><span class="cell-value">Central</span></div>
+    <div class="cell"><span class="cell-label"># Fireplaces</span><span class="cell-value">1</span></div>
+    <div class="cell"><span class="cell-label">Garage/Carport</span><span class="cell-value">Attached 3-car</span></div>
+    <div class="cell"><span class="cell-label">Porch/Patio/Deck</span><span class="cell-value">Covered Patio / Deck</span></div>
+    <div class="cell"><span class="cell-label">Pool</span><span class="cell-value">None</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Floors</span><span class="cell-value">Hardwood/Carpet</span></div>
+    <div class="cell"><span class="cell-label">Walls</span><span class="cell-value">Drywall</span></div>
+    <div class="cell"><span class="cell-label">Trim/Finish</span><span class="cell-value">Wood – Good</span></div>
+    <div class="cell"><span class="cell-label">Bath Floor</span><span class="cell-value">Tile</span></div>
+    <div class="cell"><span class="cell-label">Bath Wainscot</span><span class="cell-value">Tile</span></div>
+    <div class="cell"><span class="cell-label">Windows</span><span class="cell-value">Vinyl Double-Pane</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Condition (C1–C6)</span><span class="cell-value">C2</span></div>
+    <div class="cell"><span class="cell-label">Quality (Q1–Q6)</span><span class="cell-value">Q3</span></div>
+    <div class="cell span-2 tall textarea-cell">
+      <span class="cell-label">Additional Features / Condition Description</span>
+      Property presents in C2 condition. Recent updates include new HVAC (2023), refinished hardwood floors (2024), and updated kitchen
+      appliances (stainless, 2022). No deferred maintenance noted. Energy-efficient windows, Nest thermostat, EV charging outlet in garage.
+    </div>
+  </div>
+
+  <!-- SUBJECT PHOTOS -->
+  <div class="section-header">Subject Property Photos</div>
+  <div class="photo-grid" style="margin-top:3px;">
+    <div class="photo-slot mock-photo-front">
+      <div class="photo-caption">Front View — 1842 Maple Ridge Drive</div>
+    </div>
+    <div class="photo-slot mock-photo-rear">
+      <div class="photo-caption">Rear View — Covered Patio &amp; Deck</div>
+    </div>
+    <div class="photo-slot mock-photo-street">
+      <div class="photo-caption">Street Scene — Maple Ridge Drive</div>
+    </div>
+  </div>
+
+  <div class="form-footer">Uniform Residential Appraisal Report (URAR) — File No. ORD-2025-001847 — Borrower: James &amp; Sarah Williams — Page 1 of 3</div>
+</div>
+<!-- END PAGE 1 -->
+
+<!-- ═══════════════════════════ PAGE 2 ═══════════════════════════════ -->
+<div class="page">
+
+  <div class="form-title">Sales Comparison Approach</div>
+  <div class="form-subtitle">File No. ORD-2025-001847 &nbsp;|&nbsp; Subject: 1842 Maple Ridge Drive, Castle Rock, CO 80109</div>
+
+  <table class="comp-grid">
+    <thead>
+      <tr>
+        <th style="width:22%;">Feature</th>
+        <th class="subj-col">Subject</th>
+        <th class="comp-col">Comparable #1</th>
+        <th class="comp-col">Comparable #2</th>
+        <th class="comp-col">Comparable #3</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="row-label">Address</td>
+        <td class="subj-col">1842 Maple Ridge Dr, Castle Rock, CO 80109</td>
+        <td class="comp-col">2245 Copper Ridge Ct, Castle Rock, CO 80109</td>
+        <td class="comp-col">1640 Summit View Pl, Castle Rock, CO 80109</td>
+        <td class="comp-col">718 Sagebrush Dr, Castle Rock, CO 80104</td>
+      </tr>
+      <tr>
+        <td class="row-label">Proximity to Subject</td>
+        <td class="subj-col"></td>
+        <td class="comp-col">0.8 mi NE</td>
+        <td class="comp-col">1.1 mi N</td>
+        <td class="comp-col">1.4 mi SW</td>
+      </tr>
+      <tr>
+        <td class="row-label">Sale Price</td>
+        <td class="subj-col" style="text-align:right; font-weight:bold; font-size:8pt;">—</td>
+        <td class="comp-col" style="text-align:right; font-weight:bold;">$725,000</td>
+        <td class="comp-col" style="text-align:right; font-weight:bold;">$698,500</td>
+        <td class="comp-col" style="text-align:right; font-weight:bold;">$745,000</td>
+      </tr>
+      <tr>
+        <td class="row-label">Sale Price / GLA</td>
+        <td class="subj-col"></td>
+        <td class="comp-col" style="text-align:right;">$200.55/SF</td>
+        <td class="comp-col" style="text-align:right;">$192.48/SF</td>
+        <td class="comp-col" style="text-align:right;">$202.17/SF</td>
+      </tr>
+      <tr>
+        <td class="row-label">Data Source / Verification</td>
+        <td class="subj-col"></td>
+        <td class="comp-col">MLS #8834712, Public Records</td>
+        <td class="comp-col">MLS #8801293, Public Records</td>
+        <td class="comp-col">MLS #8822047, Public Records</td>
+      </tr>
+      <tr style="background:#e8e8e8;">
+        <td class="row-label" style="font-weight:bold; font-size:6pt; text-transform:uppercase;">VALUE ADJUSTMENTS</td>
+        <td class="subj-col" style="font-weight:bold; font-size:6pt; text-transform:uppercase;">DESCRIPTION</td>
+        <td class="comp-col" style="text-align:center; font-size:5.8pt;">DESCRIPTION &nbsp; (+/-) Adj</td>
+        <td class="comp-col" style="text-align:center; font-size:5.8pt;">DESCRIPTION &nbsp; (+/-) Adj</td>
+        <td class="comp-col" style="text-align:center; font-size:5.8pt;">DESCRIPTION &nbsp; (+/-) Adj</td>
+      </tr>
+      <tr>
+        <td class="row-label">Sale or Financing Concessions</td>
+        <td class="subj-col"></td>
+        <td class="comp-col">None &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">$5K seller credit &nbsp;<span style="float:right; color:#b00;">+$5,000</span></td>
+        <td class="comp-col">None &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Date of Sale / Time</td>
+        <td class="subj-col">Eff. 2/28/2026</td>
+        <td class="comp-col">1/15/2026 &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">12/8/2025 &nbsp; <span style="float:right; color:#060;">+$2,200</span></td>
+        <td class="comp-col">11/22/2025 &nbsp; <span style="float:right; color:#060;">+$3,700</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Location</td>
+        <td class="subj-col">Suburban – Good</td>
+        <td class="comp-col">Suburban – Good &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Suburban – Good &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Suburban – Avg &nbsp;<span style="float:right; color:#060;">+$5,000</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Leasehold / Fee Simple</td>
+        <td class="subj-col">Fee Simple</td>
+        <td class="comp-col">Fee Simple &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Fee Simple &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Fee Simple &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Site</td>
+        <td class="subj-col">9,148 SF</td>
+        <td class="comp-col">8,700 SF &nbsp; <span style="float:right; color:#060;">+$2,000</span></td>
+        <td class="comp-col">9,500 SF &nbsp; <span style="float:right; color:#b00;">-$1,500</span></td>
+        <td class="comp-col">10,200 SF &nbsp; <span style="float:right; color:#b00;">-$4,500</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">View</td>
+        <td class="subj-col">Neutral</td>
+        <td class="comp-col">Neutral &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Neutral &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Neutral &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Design (Style)</td>
+        <td class="subj-col">2-Story/Colonial</td>
+        <td class="comp-col">2-Story/Colonial &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">2-Story/Colonial &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">2-Story/Ranch &nbsp;<span style="float:right; color:#b00;">-$3,000</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Quality of Construction</td>
+        <td class="subj-col">Q3</td>
+        <td class="comp-col">Q3 &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Q3 &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Q3 &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Actual Age</td>
+        <td class="subj-col">2009</td>
+        <td class="comp-col">2011 &nbsp; <span style="float:right; color:#b00;">-$1,500</span></td>
+        <td class="comp-col">2008 &nbsp; <span style="float:right; color:#060;">+$1,000</span></td>
+        <td class="comp-col">2014 &nbsp; <span style="float:right; color:#b00;">-$3,000</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Condition</td>
+        <td class="subj-col">C2</td>
+        <td class="comp-col">C2 &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">C3 &nbsp; <span style="float:right; color:#060;">+$8,000</span></td>
+        <td class="comp-col">C2 &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Above Grade — Total / Bdrms / Baths</td>
+        <td class="subj-col">7 / 4 / 2.5</td>
+        <td class="comp-col">7 / 4 / 2.5 &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">7 / 4 / 2.5 &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">6 / 3 / 2.0 &nbsp; <span style="float:right; color:#060;">+$12,000</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Gross Living Area (SF)</td>
+        <td class="subj-col">3,614 SF</td>
+        <td class="comp-col">3,614 SF &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">3,628 SF &nbsp; <span style="float:right; color:#b00;">-$980</span></td>
+        <td class="comp-col">3,684 SF &nbsp; <span style="float:right; color:#b00;">-$4,900</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Basement &amp; Finished Rooms</td>
+        <td class="subj-col">Full 1,040 SF / 520 Fin</td>
+        <td class="comp-col">Full 1,040 SF / 520 Fin &nbsp;<span style="float:right;">$0</span></td>
+        <td class="comp-col">Full 1,100 SF / 600 Fin &nbsp;<span style="float:right; color:#b00;">-$2,000</span></td>
+        <td class="comp-col">Partial 640 SF / 0 Fin &nbsp;<span style="float:right; color:#060;">+$10,000</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Heating / Cooling</td>
+        <td class="subj-col">FWA / Central</td>
+        <td class="comp-col">FWA / Central &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">FWA / Central &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">FWA / Central &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Garage / Carport</td>
+        <td class="subj-col">Att. 3-car</td>
+        <td class="comp-col">Att. 3-car &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Att. 2-car &nbsp; <span style="float:right; color:#060;">+$5,000</span></td>
+        <td class="comp-col">Att. 3-car &nbsp; <span style="float:right;">$0</span></td>
+      </tr>
+      <tr>
+        <td class="row-label">Porch / Pool / Other</td>
+        <td class="subj-col">Covered Patio / Deck</td>
+        <td class="comp-col">Covered Patio &nbsp; <span style="float:right;">$0</span></td>
+        <td class="comp-col">Deck only &nbsp; <span style="float:right; color:#b00;">-$1,500</span></td>
+        <td class="comp-col">Covered Patio / Deck &nbsp;<span style="float:right;">$0</span></td>
+      </tr>
+      <tr style="background:#f5f5f5; font-weight:bold;">
+        <td class="row-label">Net Adjustment (Total)</td>
+        <td class="subj-col"></td>
+        <td class="comp-col" style="text-align:right; color:#060;">+$500</td>
+        <td class="comp-col" style="text-align:right; color:#060;">+$15,220</td>
+        <td class="comp-col" style="text-align:right; color:#060;">+$15,300</td>
+      </tr>
+      <tr style="background:#e6f4ea; font-weight:bold;">
+        <td class="row-label">Adjusted Sale Price of Comparable</td>
+        <td class="subj-col"></td>
+        <td class="comp-col" style="text-align:right; font-size:8pt;">$725,500</td>
+        <td class="comp-col" style="text-align:right; font-size:8pt;">$713,720</td>
+        <td class="comp-col" style="text-align:right; font-size:8pt;">$760,300</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Comp photos -->
+  <div class="photo-grid" style="margin-top:4px;">
+    <div class="photo-slot mock-photo-comp" style="height:95px;">
+      <div class="photo-caption">Comp #1 — 2245 Copper Ridge Ct</div>
+    </div>
+    <div class="photo-slot mock-photo-comp" style="height:95px; filter:hue-rotate(40deg);">
+      <div class="photo-caption">Comp #2 — 1640 Summit View Pl</div>
+    </div>
+    <div class="photo-slot mock-photo-comp" style="height:95px; filter:hue-rotate(80deg);">
+      <div class="photo-caption">Comp #3 — 718 Sagebrush Dr</div>
+    </div>
+  </div>
+
+  <!-- Prior Sales Analysis -->
+  <div class="section-header">Prior Sales Analysis</div>
+  <div class="grid cols-2" style="margin-top:1px;">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Subject — Prior Transfer History</span>
+      2021-03-15: $598,000 — Arms-length sale, MLS #7742183 (verified County records)
+      2009-11-22: $421,500 — New construction sale (builder, Richmond Homes)
+    </div>
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Analysis</span>
+      The subject's prior sale in March 2021 at $598,000 is consistent with market appreciation for the area.
+      No evidence of non-arms-length transactions. Current value opinion reflects current market conditions.
+    </div>
+  </div>
+
+  <div class="form-footer">Uniform Residential Appraisal Report (URAR) — File No. ORD-2025-001847 — Borrower: James &amp; Sarah Williams — Page 2 of 3</div>
+</div>
+<!-- END PAGE 2 -->
+
+<!-- ═══════════════════════════ PAGE 3 ═══════════════════════════════ -->
+<div class="page">
+
+  <div class="form-title">Reconciliation &amp; Conclusion of Value</div>
+  <div class="form-subtitle">File No. ORD-2025-001847 &nbsp;|&nbsp; Subject: 1842 Maple Ridge Drive, Castle Rock, CO 80109</div>
+
+  <!-- Cost Approach -->
+  <div class="section-header">Cost Approach to Value (Optional Addendum)</div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Est. Land Value</span><span class="cell-value">$145,000</span></div>
+    <div class="cell"><span class="cell-label">Source</span><span class="cell-value">Land Sales / Assessor</span></div>
+    <div class="cell"><span class="cell-label">Replacement Cost New</span><span class="cell-value">$662,500</span></div>
+    <div class="cell"><span class="cell-label">Depreciation</span><span class="cell-value">$68,470 (Physical / 10.3%)</span></div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell"><span class="cell-label">Depreciated Cost of Improvements</span><span class="cell-value">$594,030</span></div>
+    <div class="cell"><span class="cell-label">Indicated Value by Cost Approach</span><span class="cell-value" style="font-size:9pt;">$739,000</span></div>
+  </div>
+
+  <!-- Reconciliation -->
+  <div class="section-header">Reconciliation</div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Sales Comparison Approach</span><span class="cell-value">$725,000</span></div>
+    <div class="cell"><span class="cell-label">Cost Approach</span><span class="cell-value">$739,000</span></div>
+    <div class="cell"><span class="cell-label">Income Approach</span><span class="cell-value">N/A (SFR)</span></div>
+    <div class="cell" style="background:#e6f4ea; border: 2px solid #1a7a2b;">
+      <span class="cell-label">Final Opinion of Market Value</span>
+      <span class="cell-value" style="font-size:14pt; color:#1a3a0a;">$725,000</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Reconciliation Narrative</span>
+      The Sales Comparison Approach is given primary weight as it best reflects market participant behavior in this residential
+      market. Three comparable sales were selected within 1.5 miles of the subject, all closing within 4 months of the effective date.
+      Adjusted values ranged $713,720–$760,300 with a market-weighted conclusion at the lower end due to slight superior location
+      attributes of Comp #3. The Cost Approach was developed as a reasonableness check; replacement cost methodology supports
+      the sales comparison value. No income approach is applicable for an owner-occupied single family residence.
+
+      <strong>Final Opinion of Market Value as of February 28, 2026: $725,000</strong>
+    </div>
+    <div class="cell">
+      <div class="grid cols-2" style="border:none; margin-top:2px;">
+        <div class="cell"><span class="cell-label">Effective Date</span><span class="cell-value">February 28, 2026</span></div>
+        <div class="cell"><span class="cell-label">Inspection Date</span><span class="cell-value">February 27, 2026</span></div>
+        <div class="cell"><span class="cell-label">Exposure Time</span><span class="cell-value">30–60 Days</span></div>
+        <div class="cell"><span class="cell-label">Marketing Time</span><span class="cell-value">30–60 Days</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Appraiser Certification and Signature -->
+  <div class="section-header">Appraiser Certification &amp; Signature</div>
+  <div class="grid cols-6" style="margin-top:2px;">
+    <div class="cell span-3"><span class="cell-label">Appraiser Name</span><span class="cell-value">Michael T. Donovan, MAI</span></div>
+    <div class="cell span-3"><span class="cell-label">Company Name</span><span class="cell-value">Premier Appraisal Group, LLC</span></div>
+    <div class="cell span-4"><span class="cell-label">Company Address</span><span class="cell-value">5280 S. Syracuse St., Suite 200, Denver, CO 80237</span></div>
+    <div class="cell"><span class="cell-label">Phone</span><span class="cell-value">(303) 555-0182</span></div>
+    <div class="cell"><span class="cell-label">Email</span><span class="cell-value">m.donovan@premierappraisal.co</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2"><span class="cell-label">License Type</span><span class="cell-value">Certified Residential Appraiser</span></div>
+    <div class="cell span-2"><span class="cell-label">License # / State</span><span class="cell-value">CR100049827 / CO</span></div>
+    <div class="cell span-2"><span class="cell-label">Expiration Date</span><span class="cell-value">December 31, 2026</span></div>
+  </div>
+
+  <div class="grid cols-4" style="margin-top:10px;">
+    <div class="cell span-2">
+      <div class="sig-line" style="background: linear-gradient(90deg, transparent 70%, #333 70%); background-size: 100% 1px; background-repeat: no-repeat; background-position: bottom; min-height: 24px;"></div>
+      <div class="sig-label">Appraiser Signature &nbsp; (Michael T. Donovan, MAI)</div>
+    </div>
+    <div class="cell span-2">
+      <div class="sig-line" style="min-height: 24px;"></div>
+      <div class="sig-label">Date of Signature: February 28, 2026</div>
+    </div>
+  </div>
+
+  <!-- Aerial / Location Map placeholder -->
+  <div class="section-header" style="margin-top:6px;">Aerial / Location Map</div>
+  <div style="margin-top:2px; height:120px; border:1px solid #bbb; background: linear-gradient(145deg,#c8d8e8 0%,#a0b8cc 35%, #88a8bc 60%, #7898ac 100%); display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative;">
+    <!-- styled mock map -->
+    <div style="position:absolute; left:35%; top:20%; width:30%; height:60%; background:rgba(255,255,255,0.1); border-radius:2px;"></div>
+    <div style="position:absolute; left:10%; top:50%; width:80%; height:2px; background:rgba(255,255,220,0.6);"></div>
+    <div style="position:absolute; left:55%; top:10%; width:2px; height:80%; background:rgba(255,255,220,0.6);"></div>
+    <div style="background:rgba(0,0,0,0.5); color:#fff; font-size:7.5pt; padding:4px 10px; border-radius:2px; z-index:2;">
+      📍 1842 Maple Ridge Drive, Castle Rock, CO 80109 — Aerial Reference Map
+    </div>
+  </div>
+
+  <!-- Lender/Client -->
+  <div class="section-header" style="margin-top:4px;">Lender / Client</div>
+  <div class="grid cols-4">
+    <div class="cell span-2"><span class="cell-label">Lender/Client Name</span><span class="cell-value">Amy J. Robertson, Sr. Loan Officer</span></div>
+    <div class="cell span-2"><span class="cell-label">Client Company</span><span class="cell-value">First National Bank — Mortgage Division</span></div>
+  </div>
+
+  <div class="form-footer">Uniform Residential Appraisal Report (URAR) — File No. ORD-2025-001847 — Borrower: James &amp; Sarah Williams — Appraiser: Michael T. Donovan, MAI — Page 3 of 3</div>
+</div>
+<!-- END PAGE 3 -->
+
+</body>
+</html>

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { CosmosDbService } from '../../src/services/cosmos-db.service'
 import { OrderStatus, OrderType, ProductType, PropertyType, OccupancyType, Priority, VendorStatus } from '../../src/types'
 
-describe.skip('Cosmos DB Real Integration Tests', () => {
+describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not configured')('Cosmos DB Real Integration Tests', () => {
   let dbService: CosmosDbService
   let testOrderId: string
   let testVendorId: string

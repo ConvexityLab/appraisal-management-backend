@@ -205,7 +205,7 @@ export class OrderNotificationService {
       return;
     }
 
-    if (!this.teams.isServiceConfigured()) {
+    if (!await this.teams.isServiceConfigured()) {
       this.logger.warn('TeamsService not initialized — skipping ops channel post', { orderId });
       return;
     }

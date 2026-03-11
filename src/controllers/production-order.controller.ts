@@ -166,7 +166,7 @@ export class ProductionOrderController {
   deleteOrder = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { clientId } = req.query;
+      const { tenantId } = req.query;
 
       if (!id) {
         res.status(400).json({
@@ -176,17 +176,17 @@ export class ProductionOrderController {
         return;
       }
 
-      if (!clientId || typeof clientId !== 'string') {
+      if (!tenantId || typeof tenantId !== 'string') {
         res.status(400).json({
           success: false,
-          error: 'Client ID is required for deletion'
+          error: 'tenantId query parameter is required for deletion'
         });
         return;
       }
 
-      this.logger.info('Deleting order', { orderId: id, clientId });
+      this.logger.info('Deleting order', { orderId: id, tenantId });
 
-      const result = await this.dbService.deleteOrder(id, clientId);
+      const result = await this.dbService.deleteOrder(id, tenantId);
 
       if (result.success) {
         res.json({

@@ -56,6 +56,25 @@ export const BULK_ANALYSIS_LABELS: Record<BulkAnalysisType, string> = {
   ROV: 'ROV',
 };
 
+// ─── Multi-product support ────────────────────────────────────────────────────
+
+/** Maximum number of additional product slots (product_2 through product_5) */
+export const MAX_ADDITIONAL_PRODUCTS = 4;
+
+/**
+ * An additional product to order for the same property row.
+ * Parsed from product_2/fee_2 through product_5/fee_5 spreadsheet columns.
+ */
+export interface AdditionalProduct {
+  analysisType: BulkAnalysisType;
+  fee?: number;
+  /** Populated after order creation */
+  orderId?: string;
+  orderNumber?: string;
+  status?: BulkItemStatus;
+  errorMessage?: string;
+}
+
 // ─── Row-level item ───────────────────────────────────────────────────────────
 
 /**
@@ -144,6 +163,14 @@ export interface BulkPortfolioItem {
    * "appraisal url" / "pdf url" column in the tape CSV.
    */
   documentUrl?: string;
+
+  // ── Additional products (multi-product per row) ───────────────────────────
+  /**
+   * Additional products to order for the same property/borrower.
+   * Parsed from product_2/fee_2 through product_5/fee_5 spreadsheet columns.
+   * The primary product is still in `analysisType` (product_1).
+   */
+  additionalProducts?: AdditionalProduct[];
 
   // ── Result (populated by service after submission) ────────────────────────
   status?: BulkItemStatus;

@@ -268,7 +268,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Get order by ID
    */
-  async getOrder(id: string, status: string): Promise<ApiResponse<AppraisalOrder>> {
+  async getOrder(id: string, tenantId: string): Promise<ApiResponse<AppraisalOrder>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -277,7 +277,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const { resource } = await this.containers.orders.item(id, status).read<AppraisalOrder>();
+      const { resource } = await this.containers.orders.item(id, tenantId).read<AppraisalOrder>();
       
       if (!resource) {
         return {
@@ -379,7 +379,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Update an existing order
    */
-  async updateOrder(id: string, status: string, updates: Partial<AppraisalOrder>): Promise<ApiResponse<AppraisalOrder>> {
+  async updateOrder(id: string, tenantId: string, updates: Partial<AppraisalOrder>): Promise<ApiResponse<AppraisalOrder>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -388,7 +388,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const { resource: existingOrder } = await this.containers.orders.item(id, status).read<AppraisalOrder>();
+      const { resource: existingOrder } = await this.containers.orders.item(id, tenantId).read<AppraisalOrder>();
       
       if (!existingOrder) {
         return {
@@ -404,7 +404,7 @@ export class ConsolidatedCosmosDbService {
         updatedAt: new Date()
       };
 
-      const { resource } = await this.containers.orders.item(id, status).replace(updatedOrder);
+      const { resource } = await this.containers.orders.item(id, tenantId).replace(updatedOrder);
       
       this.logger.info('Order updated successfully', { orderId: id });
       
@@ -427,7 +427,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Delete an order
    */
-  async deleteOrder(id: string, status: string): Promise<ApiResponse<boolean>> {
+  async deleteOrder(id: string, tenantId: string): Promise<ApiResponse<boolean>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -436,7 +436,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      await this.containers.orders.item(id, status).delete();
+      await this.containers.orders.item(id, tenantId).delete();
       
       this.logger.info('Order deleted successfully', { orderId: id });
       
@@ -500,7 +500,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Get vendor by ID
    */
-  async getVendor(id: string, status: string): Promise<ApiResponse<Vendor>> {
+  async getVendor(id: string, tenantId: string): Promise<ApiResponse<Vendor>> {
     try {
       if (!this.containers.vendors) {
         return {
@@ -509,7 +509,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const { resource } = await this.containers.vendors.item(id, status).read<Vendor>();
+      const { resource } = await this.containers.vendors.item(id, tenantId).read<Vendor>();
       
       if (!resource) {
         return {

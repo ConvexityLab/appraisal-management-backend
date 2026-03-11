@@ -5,9 +5,13 @@
 
 import express, { Request, Response, NextFunction, Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { VendorMatchingEngine } from '../services/vendor-matching-engine.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
+import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service.js';
+import { EventCategory, EventPriority } from '../types/events.js';
 import {
   VendorMatchRequest,
   VendorMatchCriteria,
@@ -17,8 +21,9 @@ import {
 const logger = new Logger();
 const matchingEngine = new VendorMatchingEngine();
 const dbService = new CosmosDbService();
+const publisher = new ServiceBusEventPublisher();
 
-export const createAutoAssignmentRouter = (): Router => {
+export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestratorService): Router => {
   const router = express.Router();
 
   /**
@@ -465,6 +470,206 @@ export const createAutoAssignmentRouter = (): Router => {
 
       } catch (error: any) {
         logger.error('Failed to get order bids', error);
+        return next(error);
+      }
+    }
+  );
+
+  // ── Auto-Assignment Workflow Endpoints ──────────────────────────────────
+
+  /**
+   * GET /api/auto-assignment/orders/:orderId/status
+   * Returns the current autoVendorAssignment and autoReviewAssignment state
+   * embedded on the order document. Used by the UI status panel.
+   */
+  router.get(
+    '/orders/:orderId/status',
+    [param('orderId').notEmpty().withMessage('orderId is required')],
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ success: false, errors: errors.array() });
+        }
+
+        const tenantId = (req as any).user?.tenantId as string || 'default';
+        // express-validator has already validated orderId is present
+        const { orderId } = req.params as { orderId: string };
+
+        const result = await dbService.getItem('orders', orderId, tenantId) as any;
+        const order = result?.data ?? result;
+        if (!order) {
+          return res.status(404).json({ success: false, error: 'Order not found' });
+        }
+
+        // Also pull bid invitations for this order so the UI can show attempt history
+        const bidsResult = await dbService.queryItems(
+          'vendor-bids',
+          'SELECT * FROM c WHERE c.orderId = @orderId AND c.isAutoAssignment = true ORDER BY c.invitedAt ASC',
+          [{ name: '@orderId', value: orderId }]
+        ) as any;
+        const bids = bidsResult?.data ?? bidsResult?.resources ?? [];
+
+        return res.json({
+          success: true,
+          data: {
+            orderId,
+            orderNumber: order.orderNumber,
+            vendorAssignment: order.autoVendorAssignment ?? null,
+            reviewAssignment: order.autoReviewAssignment ?? null,
+            requiresHumanVendorAssignment: order.requiresHumanVendorAssignment ?? false,
+            requiresHumanReviewAssignment: order.requiresHumanReviewAssignment ?? false,
+            bidHistory: bids,
+          },
+        });
+      } catch (error: any) {
+        logger.error('Failed to get auto-assignment status', error);
+        return next(error);
+      }
+    }
+  );
+
+  /**
+   * POST /api/auto-assignment/orders/:orderId/trigger-vendor
+   * Manually (re-)trigger automated vendor assignment for an order.
+   * Useful when an engagement order was created before the orchestrator was running,
+   * or when an operator wants to restart the process.
+   */
+  router.post(
+    '/orders/:orderId/trigger-vendor',
+    [param('orderId').notEmpty().withMessage('orderId is required')],
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ success: false, errors: errors.array() });
+        }
+
+        const tenantId = (req as any).user?.tenantId as string || 'default';
+        // express-validator has already validated orderId is present
+        const { orderId } = req.params as { orderId: string };
+
+        const result = await dbService.getItem('orders', orderId, tenantId) as any;
+        const order = result?.data ?? result;
+        if (!order) {
+          return res.status(404).json({ success: false, error: 'Order not found' });
+        }
+
+        if (!orchestrator) {
+          return res.status(503).json({
+            success: false,
+            error: 'Auto-assignment orchestrator is not running',
+          });
+        }
+
+        const propertyAddress = order.propertyAddress
+          ? typeof order.propertyAddress === 'string'
+            ? order.propertyAddress
+            : `${order.propertyAddress.streetAddress ?? ''}, ${order.propertyAddress.city ?? ''}, ${order.propertyAddress.state ?? ''} ${order.propertyAddress.zipCode ?? ''}`.trim()
+          : '';
+
+        await orchestrator.triggerVendorAssignment({
+          orderId: order.id,
+          orderNumber: order.orderNumber ?? order.id,
+          tenantId,
+          engagementId: order.engagementId ?? '',
+          productType: order.productType ?? order.orderType ?? 'FULL_APPRAISAL',
+          propertyAddress,
+          propertyState: order.propertyAddress?.state ?? '',
+          clientId: order.clientId ?? '',
+          loanAmount: order.loanAmount ?? 0,
+          priority: order.priority ?? 'STANDARD',
+          dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 86400000),
+        });
+
+        logger.info('Manual vendor assignment trigger requested', { orderId, tenantId });
+
+        return res.json({
+          success: true,
+          message: 'Vendor assignment workflow triggered. Check /status for progress.',
+        });
+      } catch (error: any) {
+        logger.error('Failed to trigger vendor assignment', error);
+        return next(error);
+      }
+    }
+  );
+
+  /**
+   * POST /api/auto-assignment/orders/:orderId/vendor/decline
+   * Decline the currently active vendor bid, advancing to the next in the ranked list.
+   * Used by human operators to skip a vendor or by vendors themselves via the bid portal.
+   */
+  router.post(
+    '/orders/:orderId/vendor/decline',
+    [
+      param('orderId').notEmpty().withMessage('orderId is required'),
+      body('reason').optional().isString(),
+    ],
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ success: false, errors: errors.array() });
+        }
+
+        const tenantId = (req as any).user?.tenantId as string || 'default';
+        // express-validator has already validated orderId is present
+        const { orderId } = req.params as { orderId: string };
+        const { reason = 'Declined by operator' } = req.body as { reason?: string };
+
+        const result = await dbService.getItem('orders', orderId, tenantId) as any;
+        const order = result?.data ?? result;
+        if (!order) {
+          return res.status(404).json({ success: false, error: 'Order not found' });
+        }
+
+        const state = order.autoVendorAssignment;
+        if (!state || state.status !== 'PENDING_BID') {
+          return res.status(409).json({
+            success: false,
+            error: 'No active vendor bid to decline',
+            currentStatus: state?.status ?? 'NOT_STARTED',
+          });
+        }
+
+        const currentVendor = state.rankedVendors?.[state.currentAttempt];
+
+        // Publish event — auto-assignment orchestrator subscribes and advances the FSM
+        await publisher.publish({
+          id: uuidv4(),
+          type: 'vendor.bid.declined',
+          timestamp: new Date(),
+          source: 'auto-assignment-controller',
+          version: '1.0',
+          category: EventCategory.VENDOR,
+          data: {
+            orderId: order.id,
+            orderNumber: order.orderNumber ?? order.id,
+            tenantId,
+            vendorId: currentVendor?.vendorId ?? 'unknown',
+            vendorName: currentVendor?.vendorName ?? 'Unknown',
+            bidId: state.currentBidId ?? '',
+            declineReason: reason,
+            attemptNumber: (state.currentAttempt ?? 0) + 1,
+            totalAttempts: state.rankedVendors?.length ?? 0,
+            priority: EventPriority.NORMAL,
+          },
+        });
+
+        logger.info('Vendor bid declined by operator', {
+          orderId,
+          vendorId: currentVendor?.vendorId,
+          attempt: state.currentAttempt,
+          reason,
+        });
+
+        return res.json({
+          success: true,
+          message: 'Vendor bid declined. Advancing to next vendor.',
+        });
+      } catch (error: any) {
+        logger.error('Failed to decline vendor bid', error);
         return next(error);
       }
     }

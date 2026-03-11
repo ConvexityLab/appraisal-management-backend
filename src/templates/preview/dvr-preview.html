@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DVR/BPO Report — Preview (Order ORD-2024-001695)</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7.5pt; color: #000; background: #f4f4f4; }
+  .page { page-break-after: always; max-width: 7.7in; margin: 0 auto 40px; box-shadow: 0 2px 14px rgba(0,0,0,.22); background:#fff; padding: 0.45in 0.4in; }
+  .page:last-child { page-break-after: auto; }
+
+  .form-header { display:flex; align-items:center; justify-content:space-between; border:2px solid #1a3c6e; padding:6px 10px; background:#1a3c6e; margin-bottom:3px; }
+  .form-header-title { color:#fff; font-size:12pt; font-weight:bold; letter-spacing:.5px; }
+  .form-header-sub   { color:#c8d8f0; font-size:8pt; }
+  .form-header-meta  { text-align:right; color:#e0ecff; font-size:7.5pt; line-height:1.5; }
+
+  .section-header { background:#1a3c6e; color:#fff; padding:2px 6px; font-weight:bold; font-size:7.5pt; text-transform:uppercase; letter-spacing:.4px; margin-top:3px; margin-bottom:1px; }
+  .section-header.light { background:#d0daea; color:#1a3c6e; }
+
+  .grid { display:grid; border-left:1px solid #8899bb; border-top:1px solid #8899bb; width:100%; }
+  .cell { border-right:1px solid #8899bb; border-bottom:1px solid #8899bb; padding:2px 3px; min-height:14px; }
+  .cell-label { font-size:5.5pt; color:#555; display:block; text-transform:uppercase; letter-spacing:.2px; }
+  .cell-value  { font-size:8pt; font-weight:bold; color:#111; }
+  .cols-2 { grid-template-columns:1fr 1fr; }
+  .cols-3 { grid-template-columns:1fr 1fr 1fr; }
+  .cols-4 { grid-template-columns:1fr 1fr 1fr 1fr; }
+  .cols-5 { grid-template-columns:1fr 1fr 1fr 1fr 1fr; }
+  .cols-6 { grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2 { grid-column:span 2; }
+  .span-3 { grid-column:span 3; }
+  .span-4 { grid-column:span 4; }
+  .span-5 { grid-column:span 5; }
+  .span-6 { grid-column:span 6; }
+  .tall   { min-height:42px; }
+  .textarea-cell { min-height:48px; white-space:pre-wrap; font-size:7pt; line-height:1.35; }
+  .right  { text-align:right; }
+  .center { text-align:center; }
+
+  .badge { display:inline-block; border-radius:3px; padding:0 5px; line-height:13px; font-size:7pt; font-weight:bold; color:#fff; }
+  .badge-good    { background:#28a745; }
+  .badge-average { background:#6c7c2e; }
+  .badge-fair    { background:#e67e22; }
+
+  .photo-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+  .photo-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; }
+  .photo-slot { border:1px solid #8899bb; background:#f2f4f8; min-height:100px; max-height:130px; overflow:hidden; display:flex; flex-direction:column; }
+  .photo-inner { flex:1; display:flex; align-items:center; justify-content:center; }
+  .photo-caption { font-size:5.5pt; text-align:center; color:#333; padding:2px; background:#e8ecf4; border-top:1px solid #ccd3e8; }
+
+  .comp-table { width:100%; border-collapse:collapse; font-size:7pt; }
+  .comp-table th { background:#1a3c6e; color:#fff; padding:2px 4px; font-size:6.5pt; text-align:left; border:1px solid #8899bb; }
+  .comp-table td { border:1px solid #8899bb; padding:2px 4px; vertical-align:top; }
+  .comp-table tr:nth-child(even) td { background:#f2f4f8; }
+  .comp-table .num { text-align:right; }
+  .comp-table tfoot td { font-weight:bold; background:#d0daea; }
+
+  .value-box { border:2.5px solid #1a3c6e; border-radius:5px; padding:8px 16px; text-align:center; background:linear-gradient(135deg,#f0f5ff 0%,#e2ecff 100%); margin:4px 0; }
+  .value-box-label  { font-size:8pt; color:#1a3c6e; text-transform:uppercase; font-weight:bold; letter-spacing:.3px; }
+  .value-box-amount { font-size:20pt; font-weight:bold; color:#1a3c6e; letter-spacing:.5px; margin:3px 0; }
+  .value-box-range  { font-size:7.5pt; color:#555; }
+
+  .sig-line  { border-bottom:1px solid #000; min-height:20px; margin:4px 0 1px; }
+  .sig-label { font-size:6pt; color:#444; }
+
+  .form-footer { font-size:6pt; color:#666; text-align:center; margin-top:5px; border-top:1px solid #ddd; padding-top:2px; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     PAGE 1 — SUBJECT / CONDITION / NEIGHBORHOOD / PHOTOS
+     ============================================================ -->
+<div class="page">
+
+  <div class="form-header">
+    <div>
+      <div class="form-header-title">Drive-By Valuation Report</div>
+      <div class="form-header-sub">Broker Price Opinion / Vision Valuation — Exterior Inspection</div>
+    </div>
+    <div class="form-header-meta">
+      Order #: ORD-2024-001695<br>
+      Effective: March 7, 2026<br>
+      Report Date: March 11, 2026
+    </div>
+  </div>
+
+  <!-- SUBJECT PROPERTY -->
+  <div class="section-header">Subject Property</div>
+  <div class="grid cols-6">
+    <div class="cell span-4"><span class="cell-label">Property Address</span><span class="cell-value">2847 Lakewood Bend Drive, Houston, TX 77084</span></div>
+    <div class="cell"><span class="cell-label">Loan Number</span><span class="cell-value">LN-7734-2291</span></div>
+    <div class="cell"><span class="cell-label">Client</span><span class="cell-value">Heritage Mortgage Corp.</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">City</span><span class="cell-value">Houston</span></div>
+    <div class="cell"><span class="cell-label">State</span><span class="cell-value">TX</span></div>
+    <div class="cell"><span class="cell-label">Zip</span><span class="cell-value">77084</span></div>
+    <div class="cell"><span class="cell-label">County</span><span class="cell-value">Harris</span></div>
+    <div class="cell"><span class="cell-label">APN / Parcel</span><span class="cell-value">112-044-008-0029</span></div>
+    <div class="cell"><span class="cell-label">Occupancy</span><span class="cell-value">Owner-Occupied</span></div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Property Type</span><span class="cell-value">SFR</span></div>
+    <div class="cell"><span class="cell-label">Year Built</span><span class="cell-value">2004</span></div>
+    <div class="cell"><span class="cell-label">Bedrooms</span><span class="cell-value">4</span></div>
+    <div class="cell"><span class="cell-label">Bathrooms</span><span class="cell-value">3.0</span></div>
+    <div class="cell"><span class="cell-label">GLA (SF)</span><span class="cell-value">2,318</span></div>
+    <div class="cell"><span class="cell-label">Lot Size</span><span class="cell-value">7,405 SF</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Garage</span><span class="cell-value">Attached 2-car</span></div>
+    <div class="cell"><span class="cell-label">Pool</span><span class="cell-value">None</span></div>
+    <div class="cell"><span class="cell-label">Legal Description</span><span class="cell-value">Lot 29, Blk 4, Lakewood Bend Sec. 3</span></div>
+    <div class="cell"><span class="cell-label">Zoning</span><span class="cell-value">R-1 Single Family</span></div>
+  </div>
+
+  <!-- CONDITION & RATINGS -->
+  <div class="section-header">Condition &amp; Ratings</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Overall Condition</span>
+      <span class="cell-value"><span class="badge badge-good">Good</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Exterior Condition</span>
+      <span class="cell-value"><span class="badge badge-good">Good</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Deferred Maintenance</span>
+      <span class="cell-value">Minor — gutters, caulking</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Occupancy Status</span>
+      <span class="cell-value">Owner-occupied, maintained</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Condition Comments</span>
+      Property presents in good condition from the exterior. Brick veneer and HardiePlank in good repair. Roof appears to be 3–5 years old with no visible damage. Landscaping is neat and well maintained. 2-car attached garage functional. Minor caulking needed around windows. No signs of deferred maintenance that would negatively impact marketability. Driveway and flatwork in satisfactory condition.
+    </div>
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Listing Comments / Observations</span>
+      Property is not currently listed on MLS. No for-sale or for-rent signs visible. Vehicles present at time of inspection suggesting owner-occupied. Neighborhood is well maintained with consistent pride of ownership. No adverse external influences observed from street. HOA-maintained common areas visible at subdivision entrance. New construction in adjacent streets may offer slight competitive pressure.
+    </div>
+  </div>
+
+  <!-- NEIGHBORHOOD -->
+  <div class="section-header">Neighborhood &amp; Market Conditions</div>
+  <div class="grid cols-6">
+    <div class="cell"><span class="cell-label">Location Type</span><span class="cell-value">Suburban</span></div>
+    <div class="cell"><span class="cell-label">Built-Up</span><span class="cell-value">75–100%</span></div>
+    <div class="cell"><span class="cell-label">Growth</span><span class="cell-value">Stable</span></div>
+    <div class="cell"><span class="cell-label">Property Values</span><span class="cell-value">Stable (+1.8% YoY)</span></div>
+    <div class="cell"><span class="cell-label">Demand / Supply</span><span class="cell-value">Balanced</span></div>
+    <div class="cell"><span class="cell-label">Marketing Time</span><span class="cell-value">3–6 Months</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Price Range Low</span><span class="cell-value">$295,000</span></div>
+    <div class="cell"><span class="cell-label">Price Range High</span><span class="cell-value">$520,000</span></div>
+    <div class="cell"><span class="cell-label">Predominant Price</span><span class="cell-value">~$380,000 Owner</span></div>
+    <div class="cell"><span class="cell-label">Avg DOM (Similar Homes)</span><span class="cell-value">38 days</span></div>
+  </div>
+
+  <!-- SUBJECT PHOTOS — 4-up -->
+  <div class="section-header">Subject Property Photos</div>
+  <div class="photo-grid-2" style="margin-top:3px;">
+    <div class="photo-slot" style="background:linear-gradient(155deg,#c0d0e8 0%,#8aaccc 100%);min-height:110px;">
+      <div class="photo-inner"><div style="text-align:center;"><div style="font-size:20pt;">🏠</div><div style="font-size:6.5pt;color:#335;margin-top:5px;">2847 Lakewood Bend Dr<br>Brick / HardiePlank — Good Condition</div></div></div>
+      <div class="photo-caption">Subject — Front Elevation</div>
+    </div>
+    <div class="photo-slot" style="background:linear-gradient(155deg,#c0d8c0 0%,#88b088 100%);min-height:110px;">
+      <div class="photo-inner"><div style="text-align:center;"><div style="font-size:20pt;">🏡</div><div style="font-size:6.5pt;color:#334;margin-top:5px;">Rear yard — No pool<br>Covered patio, fenced</div></div></div>
+      <div class="photo-caption">Subject — Rear View</div>
+    </div>
+    <div class="photo-slot" style="background:linear-gradient(155deg,#d8d4c4 0%,#aca898 100%);min-height:110px;">
+      <div class="photo-inner"><div style="text-align:center;"><div style="font-size:20pt;">🛣️</div><div style="font-size:6.5pt;color:#335;margin-top:5px;">Lakewood Bend Dr<br>looking west</div></div></div>
+      <div class="photo-caption">Street Scene</div>
+    </div>
+    <div class="photo-slot" style="background:linear-gradient(160deg,#c8c4e0 0%,#9890c0 100%);min-height:110px;">
+      <div class="photo-inner"><div style="text-align:center;"><div style="font-size:20pt;">🗺️</div><div style="font-size:6.5pt;color:#334;margin-top:5px;">Aerial — Lakewood Bend<br>29.8034° N, 95.6432° W</div></div></div>
+      <div class="photo-caption">Aerial / Location Map</div>
+    </div>
+  </div>
+
+  <div class="form-footer">Drive-By Valuation Report (DVR/BPO) &nbsp;|&nbsp; Generated March 11, 2026 &nbsp;|&nbsp; Order ORD-2024-001695 &nbsp;|&nbsp; Page 1 of 2</div>
+</div>
+
+<!-- ============================================================
+     PAGE 2 — COMPS / VALUATION / SIGNATURE
+     ============================================================ -->
+<div class="page">
+
+  <div class="form-header">
+    <div>
+      <div class="form-header-title">Sales Comparison &amp; Opinion of Value</div>
+      <div class="form-header-sub">2847 Lakewood Bend Drive, Houston TX 77084</div>
+    </div>
+    <div class="form-header-meta">
+      Order #: ORD-2024-001695<br>
+      Effective: March 7, 2026
+    </div>
+  </div>
+
+  <!-- COMP TABLE -->
+  <div class="section-header">Comparable Sales</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th style="width:3%">#</th>
+        <th style="width:22%">Address</th>
+        <th style="width:7%">Proximity</th>
+        <th style="width:8%">Sale Date</th>
+        <th style="width:9%">Sale Price</th>
+        <th style="width:7%">GLA (SF)</th>
+        <th style="width:7%">Beds/Baths</th>
+        <th style="width:6%">Yr Blt</th>
+        <th style="width:7%">Condition</th>
+        <th style="width:5%">DOM</th>
+        <th style="width:9%">Adj. Price</th>
+        <th style="width:6%">Gross Adj %</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center" style="font-weight:bold;">1</td>
+        <td>3021 Heather Glen Ct<br><span style="font-size:6pt;color:#555">Houston TX 77084</span></td>
+        <td>0.44 mi NE</td>
+        <td>02/10/2026</td>
+        <td class="num">$372,000</td>
+        <td class="num">2,280</td>
+        <td class="center">4 / 2.5</td>
+        <td class="center">2003</td>
+        <td class="center"><span class="badge badge-good" style="font-size:6.5pt;">Good</span></td>
+        <td class="num">28</td>
+        <td class="num" style="font-weight:bold;color:#1a4020;">$380,200</td>
+        <td class="num">4.2%</td>
+      </tr>
+      <tr>
+        <td class="center" style="font-weight:bold;">2</td>
+        <td>2714 Stonegate Park Dr<br><span style="font-size:6pt;color:#555">Houston TX 77084</span></td>
+        <td>0.81 mi SW</td>
+        <td>01/22/2026</td>
+        <td class="num">$388,500</td>
+        <td class="num">2,410</td>
+        <td class="center">4 / 3.0</td>
+        <td class="center">2005</td>
+        <td class="center"><span class="badge badge-good" style="font-size:6.5pt;">Good</span></td>
+        <td class="num">19</td>
+        <td class="num" style="font-weight:bold;color:#1a4020;">$374,500</td>
+        <td class="num">5.6%</td>
+      </tr>
+      <tr>
+        <td class="center" style="font-weight:bold;">3</td>
+        <td>2988 Westridge Ranch Rd<br><span style="font-size:6pt;color:#555">Houston TX 77084</span></td>
+        <td>1.15 mi SE</td>
+        <td>02/28/2026</td>
+        <td class="num">$365,000</td>
+        <td class="num">2,245</td>
+        <td class="center">3 / 2.5</td>
+        <td class="center">2001</td>
+        <td class="center"><span class="badge badge-average" style="font-size:6.5pt;">Average</span></td>
+        <td class="num">44</td>
+        <td class="num" style="font-weight:bold;color:#1a4020;">$385,400</td>
+        <td class="num">8.1%</td>
+      </tr>
+      <tr>
+        <td class="center" style="font-weight:bold;">4</td>
+        <td>2605 Lakeshore Meadow Ln<br><span style="font-size:6pt;color:#555">Houston TX 77084</span></td>
+        <td>0.63 mi NW</td>
+        <td>01/05/2026</td>
+        <td class="num">$379,000</td>
+        <td class="num">2,302</td>
+        <td class="center">4 / 2.5</td>
+        <td class="center">2004</td>
+        <td class="center"><span class="badge badge-good" style="font-size:6.5pt;">Good</span></td>
+        <td class="num">33</td>
+        <td class="num" style="font-weight:bold;color:#1a4020;">$381,000</td>
+        <td class="num">3.1%</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" class="right" style="padding:2px 4px;">Indicated Value Range:</td>
+        <td colspan="3" style="font-size:8pt;">$374,500 – $385,400</td>
+        <td colspan="3" class="right">Midpoint:</td>
+        <td colspan="2" style="font-size:9pt;color:#1a3c6e;">$380,275</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- COMP PHOTOS -->
+  <div class="section-header light" style="margin-top:4px;">Comparable Photos</div>
+  <div class="photo-grid-3" style="margin-top:3px;">
+    <div class="photo-slot" style="background:linear-gradient(145deg,#c8c8b8 0%,#a0a088 100%);min-height:88px;">
+      <div class="photo-inner"><div style="text-align:center"><div style="font-size:15pt;">🏠</div><div style="font-size:6pt;color:#334">3021 Heather Glen Ct<br>Adj. $380,200 · DOM 28</div></div></div>
+      <div class="photo-caption">Comp #1 — 3021 Heather Glen Ct</div>
+    </div>
+    <div class="photo-slot" style="background:linear-gradient(145deg,#c8d0c0 0%,#98a890 100%);min-height:88px;">
+      <div class="photo-inner"><div style="text-align:center"><div style="font-size:15pt;">🏡</div><div style="font-size:6pt;color:#334">2714 Stonegate Park Dr<br>Adj. $374,500 · DOM 19</div></div></div>
+      <div class="photo-caption">Comp #2 — 2714 Stonegate Park Dr</div>
+    </div>
+    <div class="photo-slot" style="background:linear-gradient(145deg,#d0c8c0 0%,#a89890 100%);min-height:88px;">
+      <div class="photo-inner"><div style="text-align:center"><div style="font-size:15pt;">🏘️</div><div style="font-size:6pt;color:#334">2988 Westridge Ranch Rd<br>Adj. $385,400 · DOM 44</div></div></div>
+      <div class="photo-caption">Comp #3 — 2988 Westridge Ranch Rd</div>
+    </div>
+  </div>
+
+  <!-- VALUATION -->
+  <div class="section-header">Opinion of Value</div>
+  <div style="display:flex;gap:6px;align-items:flex-start;margin-top:4px;">
+    <div style="flex:0 0 220px;">
+      <div class="value-box">
+        <div class="value-box-label">As-Is Market Value</div>
+        <div class="value-box-amount">$381,000</div>
+        <div class="value-box-range">Range: $374,500 – $385,400</div>
+      </div>
+    </div>
+    <div style="flex:1;">
+      <div class="grid cols-2">
+        <div class="cell"><span class="cell-label">Effective Date</span><span class="cell-value">March 7, 2026</span></div>
+        <div class="cell"><span class="cell-label">Report Date</span><span class="cell-value">March 11, 2026</span></div>
+      </div>
+      <div class="grid cols-2">
+        <div class="cell span-2 tall textarea-cell" style="min-height:54px;">
+          <span class="cell-label">Value Opinion Summary / Methodology</span>
+          The sales comparison approach is the only approach considered appropriate for a drive-by exterior inspection. Four arm's-length sales were analyzed within a 0.44–1.15-mile radius of the subject. Adjusted sale prices ranged from $374,500 to $385,400, providing a well-bracketed indication of value. Primary weight is given to Comp #1 (closest proximity, same model year, best overall similarity) and Comp #4 (identical year built, same bedroom/bath count). After appropriate weighting of all four indicators, the final opinion of market value is $381,000.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LISTING INFO -->
+  <div class="section-header light" style="margin-top:4px;">Current Listing / MLS Information</div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">Current List Price</span><span class="cell-value">Not Listed</span></div>
+    <div class="cell"><span class="cell-label">List Date</span><span class="cell-value">N/A</span></div>
+    <div class="cell"><span class="cell-label">Active Days on Market</span><span class="cell-value">N/A</span></div>
+    <div class="cell"><span class="cell-label">MLS Number</span><span class="cell-value">N/A</span></div>
+  </div>
+
+  <!-- APPRAISER SIGNATURE -->
+  <div class="section-header">Agent / Appraiser Certification</div>
+  <div class="grid cols-6">
+    <div class="cell span-3"><span class="cell-label">Agent / Appraiser Name</span><span class="cell-value">David R. Nguyen, SRA</span></div>
+    <div class="cell span-3"><span class="cell-label">Company Name</span><span class="cell-value">Rocky Mountain Valuation Services, LLC</span></div>
+    <div class="cell span-4"><span class="cell-label">Company Address</span><span class="cell-value">14800 Galleria Drive, Suite 120, Houston TX 77056</span></div>
+    <div class="cell"><span class="cell-label">Phone</span><span class="cell-value">(713) 555-0267</span></div>
+    <div class="cell"><span class="cell-label">Email</span><span class="cell-value">d.nguyen@rmvs.com</span></div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell"><span class="cell-label">License Type</span><span class="cell-value">Certified Residential</span></div>
+    <div class="cell span-2"><span class="cell-label">License # / State / Exp.</span><span class="cell-value">TX-0887441-CR / TX &nbsp; exp. 06/30/2027</span></div>
+    <div class="cell"><span class="cell-label">Certification</span><span class="cell-value">Certified</span></div>
+  </div>
+  <div class="grid cols-4" style="margin-top:8px;">
+    <div class="cell span-2">
+      <div class="sig-line" style="border-bottom:2px solid #222;height:24px;"></div>
+      <div class="sig-label">Appraiser / Agent Signature</div>
+    </div>
+    <div class="cell span-2">
+      <div class="sig-line" style="border-bottom:2px solid #222;height:24px;"></div>
+      <div class="sig-label">Date of Signature: March 11, 2026</div>
+    </div>
+  </div>
+
+  <!-- LENDER/CLIENT -->
+  <div class="section-header light" style="margin-top:4px;">Lender / Client</div>
+  <div class="grid cols-4">
+    <div class="cell span-2"><span class="cell-label">Client Name</span><span class="cell-value">Robert &amp; Lisa Chen</span></div>
+    <div class="cell"><span class="cell-label">Client Company</span><span class="cell-value">Heritage Mortgage Corp.</span></div>
+    <div class="cell"><span class="cell-label">Loan Number</span><span class="cell-value">LN-7734-2291</span></div>
+  </div>
+
+  <div class="form-footer">Drive-By Valuation Report (DVR/BPO) &nbsp;|&nbsp; Generated March 11, 2026 &nbsp;|&nbsp; Order ORD-2024-001695 &nbsp;|&nbsp; Page 2 of 2</div>
+</div>
+
+</body>
+</html>

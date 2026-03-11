@@ -1,6 +1,11 @@
 // Test setup file for Vitest
 // This file runs before all tests
 
+// Load .env FIRST so that all Azure service env vars are available when
+// test files import their services (e.g. CosmosDbService, AcsIdentityService).
+import dotenv from 'dotenv';
+dotenv.config(); // reads .env from CWD (project root when running vitest)
+
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 
 // Global test configuration

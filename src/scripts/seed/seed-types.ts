@@ -19,6 +19,8 @@ export interface SeedContext {
   now: string;
   /** If true, delete seed data before upserting. */
   clean: boolean;
+  /** If true, only clean — skip all seeding (upserts become no-ops). */
+  cleanOnly: boolean;
   /** Storage account name for blob operations (may be empty). */
   storageAccountName: string;
 }
@@ -64,6 +66,7 @@ export async function upsert(
   item: Record<string, unknown>,
   result: SeedModuleResult,
 ): Promise<void> {
+  if (ctx.cleanOnly) return;
   try {
     const container = ctx.db.container(containerName);
     await container.items.upsert(item);
@@ -77,13 +80,14 @@ export async function upsert(
 }
 
 /**
- * Delete all documents with IDs starting with `seed-` from the given container.
+ * Delete all documents with IDs starting with the given prefix from the given container.
  * Uses a cross-partition query to find them, then deletes by id + partition key.
  */
 export async function cleanContainer(
   ctx: SeedContext,
   containerName: string,
   partitionKeyPath: string = '/tenantId',
+  idPrefix: string = 'seed-',
 ): Promise<number> {
   const container = ctx.db.container(containerName);
   let deleted = 0;
@@ -91,7 +95,8 @@ export async function cleanContainer(
   try {
     const { resources } = await container.items
       .query({
-        query: `SELECT c.id, c${partitionKeyPath.replace(/\//g, '.')} AS pk FROM c WHERE STARTSWITH(c.id, 'seed-')`,
+        query: `SELECT c.id, c${partitionKeyPath.replace(/\//g, '.')} AS pk FROM c WHERE STARTSWITH(c.id, @prefix)`,
+        parameters: [{ name: '@prefix', value: idPrefix }],
       })
       .fetchAll();
 

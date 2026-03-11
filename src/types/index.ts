@@ -78,6 +78,14 @@ export interface AppraisalOrder {
   engagementLoanId?: string;
   /** FK to the specific EngagementProduct within the loan */
   engagementProductId?: string;
+  // ── Auto-generation settings ──────────────────────────────────────────────────
+  /** If true, a final report is auto-generated when QC review reaches APPROVED status. */
+  autoGenerateReport?: boolean;
+  /**
+   * Template ID to use for auto-generation.
+   * Required when autoGenerateReport is true; not needed for on-demand generation.
+   */
+  defaultReportTemplateId?: string;
 }
 
 export interface PropertyAddress {
@@ -144,6 +152,7 @@ export interface ContactInfo {
 
 export interface Vendor {
   id: string;
+  tenantId: string;
   name: string;
   email: string;
   phone: string;

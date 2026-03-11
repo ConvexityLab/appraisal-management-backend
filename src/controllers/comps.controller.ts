@@ -9,8 +9,9 @@
  * keyed on lat/lng + radius + sale-date range.
  *
  * Routes:
- *   GET  /api/comps/search   — keyword/geo search for comparables
- *   POST /api/comps/suggest  — ranked suggestions for a specific order/subject
+ *   GET  /api/comps/search              — keyword/geo search for comparables
+ *   POST /api/comps/suggest             — ranked suggestions for a specific order/subject
+ *   POST /api/comps/suggest-adjustments — AI-generated per-attribute adjustments for a comp
  */
 
 import { Router, Request, Response } from 'express';
@@ -170,6 +171,167 @@ export function createCompsRouter(): Router {
     } catch (err: any) {
       logger.error('POST /api/comps/suggest error', err);
       return res.status(500).json({ error: 'Comp suggest failed', message: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/comps/suggest-adjustments
+  //
+  // AI-generated per-attribute adjustments for a single comp vs subject.
+  //
+  // Body:
+  //   orderId?       — optional order reference
+  //   subject        — { squareFootage, bedrooms, bathrooms, yearBuilt?, lotSize?, salePrice? }
+  //   comp           — { propertyRecordId, squareFootage, bedrooms, bathrooms, yearBuilt?,
+  //                      lotSize?, salePrice?, distance?, saleDate? }
+  //
+  // Returns: { adjustments[], totalAdjustment, adjustedValue, source, _mock }
+  // -------------------------------------------------------------------------
+  router.post('/suggest-adjustments', async (req: Request, res: Response) => {
+    try {
+      const { subject, comp } = req.body as {
+        orderId?: string;
+        subject?: {
+          squareFootage: number;
+          bedrooms: number;
+          bathrooms: number;
+          yearBuilt?: number;
+          lotSize?: number;
+          salePrice?: number;
+        };
+        comp?: {
+          propertyRecordId: string;
+          squareFootage: number;
+          bedrooms: number;
+          bathrooms: number;
+          yearBuilt?: number;
+          lotSize?: number;
+          salePrice?: number;
+          distance?: number;
+          saleDate?: string;
+        };
+      };
+
+      if (!subject) {
+        return res.status(400).json({ error: 'subject is required' });
+      }
+      if (!comp) {
+        return res.status(400).json({ error: 'comp is required' });
+      }
+
+      // Per-attribute adjustment calculation
+      const adjustments: Array<{
+        key: string;
+        amount: number;
+        confidence: 'high' | 'medium' | 'low';
+        reasoning: string;
+      }> = [];
+
+      // GLA adjustment — $50/sqft deviation
+      const glaDelta = (subject.squareFootage ?? 0) - (comp.squareFootage ?? 0);
+      if (glaDelta !== 0) {
+        const amount = Math.round(glaDelta * 50);
+        adjustments.push({
+          key: 'livingArea',
+          amount,
+          confidence: Math.abs(glaDelta) < 200 ? 'high' : Math.abs(glaDelta) < 500 ? 'medium' : 'low',
+          reasoning: `${Math.abs(glaDelta)} sqft difference × $50/sqft = ${amount > 0 ? '+' : ''}$${amount.toLocaleString()}`,
+        });
+      }
+
+      // Bedrooms — $5,000 per bedroom
+      const bedDelta = (subject.bedrooms ?? 0) - (comp.bedrooms ?? 0);
+      if (bedDelta !== 0) {
+        const amount = bedDelta * 5000;
+        adjustments.push({
+          key: 'bedrooms',
+          amount,
+          confidence: Math.abs(bedDelta) <= 1 ? 'high' : 'medium',
+          reasoning: `${Math.abs(bedDelta)} bedroom difference × $5,000 = ${amount > 0 ? '+' : ''}$${amount.toLocaleString()}`,
+        });
+      }
+
+      // Bathrooms — $7,500 per bathroom
+      const bathDelta = (subject.bathrooms ?? 0) - (comp.bathrooms ?? 0);
+      if (bathDelta !== 0) {
+        const amount = Math.round(bathDelta * 7500);
+        adjustments.push({
+          key: 'bathrooms',
+          amount,
+          confidence: Math.abs(bathDelta) <= 1 ? 'high' : 'medium',
+          reasoning: `${Math.abs(bathDelta)} bathroom difference × $7,500 = ${amount > 0 ? '+' : ''}$${amount.toLocaleString()}`,
+        });
+      }
+
+      // Year Built — $1,000 per year (age adjustment)
+      if (subject.yearBuilt && comp.yearBuilt) {
+        const ageDelta = subject.yearBuilt - comp.yearBuilt;
+        if (ageDelta !== 0) {
+          const amount = ageDelta * 1000;
+          adjustments.push({
+            key: 'yearBuilt',
+            amount,
+            confidence: Math.abs(ageDelta) <= 5 ? 'high' : Math.abs(ageDelta) <= 15 ? 'medium' : 'low',
+            reasoning: `${Math.abs(ageDelta)} year difference × $1,000 = ${amount > 0 ? '+' : ''}$${amount.toLocaleString()}`,
+          });
+        }
+      }
+
+      // Lot Size — $2/sqft for lot differences
+      if (subject.lotSize && comp.lotSize) {
+        const lotDelta = subject.lotSize - comp.lotSize;
+        if (Math.abs(lotDelta) > 500) {
+          const amount = Math.round(lotDelta * 2);
+          adjustments.push({
+            key: 'lotSize',
+            amount,
+            confidence: Math.abs(lotDelta) < 2000 ? 'high' : 'medium',
+            reasoning: `${Math.abs(lotDelta)} sqft lot difference × $2/sqft = ${amount > 0 ? '+' : ''}$${amount.toLocaleString()}`,
+          });
+        }
+      }
+
+      // Time (market conditions) — 0.3% per month
+      if (comp.saleDate) {
+        const monthsAgo = Math.round(
+          (Date.now() - new Date(comp.saleDate).getTime()) / (1000 * 60 * 60 * 24 * 30.44),
+        );
+        if (monthsAgo > 3 && comp.salePrice) {
+          const amount = Math.round(comp.salePrice * 0.003 * monthsAgo);
+          adjustments.push({
+            key: 'saleDate',
+            amount,
+            confidence: monthsAgo <= 12 ? 'high' : monthsAgo <= 18 ? 'medium' : 'low',
+            reasoning: `${monthsAgo} months × 0.3%/month market appreciation = +$${amount.toLocaleString()}`,
+          });
+        }
+      }
+
+      // Distance/location — $2,000 per 0.5 mile beyond first mile
+      if (comp.distance != null && comp.distance > 1.0) {
+        const excessMiles = comp.distance - 1.0;
+        const amount = -Math.round(excessMiles * 4000);
+        adjustments.push({
+          key: 'distance',
+          amount,
+          confidence: comp.distance < 3 ? 'medium' : 'low',
+          reasoning: `${excessMiles.toFixed(1)} excess miles × -$4,000/mi = $${amount.toLocaleString()}`,
+        });
+      }
+
+      const totalAdjustment = adjustments.reduce((sum, a) => sum + a.amount, 0);
+      const adjustedValue = comp.salePrice != null ? comp.salePrice + totalAdjustment : null;
+
+      return res.json({
+        adjustments,
+        totalAdjustment,
+        adjustedValue,
+        source: 'valuation-engine',
+        _mock: true,
+      });
+    } catch (err: any) {
+      logger.error('POST /api/comps/suggest-adjustments error', err);
+      return res.status(500).json({ error: 'Adjustment suggest failed', message: err.message });
     }
   });
 

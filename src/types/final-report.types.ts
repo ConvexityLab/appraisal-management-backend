@@ -117,25 +117,64 @@ export interface FinalReportGenerationRequest {
   notes?: string;
   /**
    * Base64-encoded custom addendum page PDFs (jsPDF output from frontend).
-   * Each entry is appended after the last filled URAR page in array order.
+   * Each entry is appended after the last filled URAR/DVR page in array order.
    * Example sources: photo addendum, market condition addendum, location map.
    */
   customPagePdfs?: string[];
+  /**
+   * Override the template's default sectionConfig for this specific generation.
+   * Only keys provided are overridden; the rest come from the template's sectionConfig.
+   */
+  sectionOverrides?: Partial<ReportSectionConfig>;
+}
+
+/**
+ * Controls which addenda / sections are required or optional for a given form type.
+ * Defined at template-registration time; user can override per-generation via
+ * FinalReportGenerationRequest.sectionOverrides.
+ */
+export interface ReportSectionConfig {
+  requiresSubjectPhotos: boolean;
+  requiresCompPhotos: boolean;
+  requiresAerialMap: boolean;
+  requiresMarketConditionsAddendum: boolean;
+  requiresLocationMap: boolean;
+  requiresFloorPlan: boolean;
 }
 
 /**
  * Metadata for one available report template.
- * Derived from listing the `pdf-report-templates` Blob container.
+ * Stored in Cosmos `document-templates` container with type='pdf-report-template'.
  */
 export interface ReportTemplate {
-  /** Unique identifier — typically the blobName without extension */
+  /** Unique identifier */
   id: string;
   /** Human-readable name, e.g. "Form 1004 — Uniform Residential Appraisal Report" */
   name: string;
-  /** Appraisal form type, e.g. 'FORM_1004' */
+  /** Form type key, e.g. 'URAR_1004', 'DVR', 'FORM_2055', 'FORM_1073' */
   formType: string;
-  /** Blob filename, e.g. "DVR_1_Value_NonOwner_Occupied_Desk_Review_10-template.pdf" */
-  blobName: string;
+  /**
+   * 'acroform'    — fill a fillable PDF template via pdf-lib AcroForm fields
+   * 'html-render' — compile a Handlebars template + render via Playwright headless Chromium
+   */
+  renderStrategy: 'acroform' | 'html-render';
+  /**
+   * AcroForm strategy only: Blob filename in the `pdf-report-templates` container.
+   * e.g. "form-1004-urar-v1.pdf"
+   */
+  blobName?: string;
+  /**
+   * HTML-render strategy only: Handlebars template blob filename in `pdf-report-templates`.
+   * e.g. "dvr-v1.hbs"
+   */
+  hbsTemplateName?: string;
+  /**
+   * Key resolved by the template registry to select the correct field mapper function.
+   * e.g. 'urar-1004' | 'dvr-bpo' | 'form-2055'
+   */
+  mapperKey: string;
+  /** Which addenda / sections are required for this form type. */
+  sectionConfig: ReportSectionConfig;
   description?: string;
   isActive: boolean;
 }

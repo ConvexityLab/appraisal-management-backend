@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drive-By / Vision BPO Report – {{metadata.orderNumber}}</title>
+<style>
+  /* ── Page Setup ─────────────────────────────────────────────── */
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7.5pt; color: #000; background: #fff; }
+
+  /* ── Layout ─────────────────────────────────────────────────── */
+  .page { page-break-after: always; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+
+  /* ── Form chrome ────────────────────────────────────────────── */
+  .form-header {
+    display: flex; align-items: center; justify-content: space-between;
+    border: 2px solid #1a3c6e; padding: 6px 10px; background: #1a3c6e;
+    margin-bottom: 3px;
+  }
+  .form-header-title { color: #fff; font-size: 12pt; font-weight: bold; letter-spacing: 0.5px; }
+  .form-header-sub   { color: #c8d8f0; font-size: 8pt; }
+  .form-header-meta  { text-align: right; color: #fff; font-size: 7.5pt; }
+
+  .section-header {
+    background: #1a3c6e; color: #fff; padding: 2px 6px;
+    font-weight: bold; font-size: 7.5pt; text-transform: uppercase;
+    letter-spacing: 0.4px; margin-top: 3px; margin-bottom: 1px;
+  }
+  .section-header.light {
+    background: #d0daea; color: #1a3c6e;
+  }
+
+  .grid { display: grid; border-left: 1px solid #8899bb; border-top: 1px solid #8899bb; width: 100%; }
+  .cell { border-right: 1px solid #8899bb; border-bottom: 1px solid #8899bb; padding: 1px 3px; min-height: 14px; }
+  .cell-label { font-size: 5.5pt; color: #555; display: block; text-transform: uppercase; letter-spacing: 0.2px; }
+  .cell-value  { font-size: 8pt; font-weight: bold; color: #111; }
+
+  .cols-2  { grid-template-columns: 1fr 1fr; }
+  .cols-3  { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4  { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .cols-5  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+  .cols-6  { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2  { grid-column: span 2; }
+  .span-3  { grid-column: span 3; }
+  .span-4  { grid-column: span 4; }
+  .span-5  { grid-column: span 5; }
+  .span-6  { grid-column: span 6; }
+  .tall    { min-height: 40px; }
+  .textarea-cell { min-height: 45px; white-space: pre-wrap; font-size: 7pt; }
+  .right   { text-align: right; }
+  .center  { text-align: center; }
+
+  /* ── Condition rating badge ─────────────────────────────────── */
+  .badge {
+    display: inline-block; border-radius: 3px; padding: 0 4px;
+    font-size: 7pt; font-weight: bold; color: #fff;
+  }
+  .badge-excellent { background: #1e7b34; }
+  .badge-good      { background: #28a745; }
+  .badge-average   { background: #6c7c2e; }
+  .badge-fair      { background: #e67e22; }
+  .badge-poor      { background: #c0392b; }
+
+  /* ── Photos ─────────────────────────────────────────────────── */
+  .photo-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+  .photo-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; }
+  .photo-slot {
+    border: 1px solid #8899bb; background: #f2f4f8;
+    min-height: 95px; max-height: 130px; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .photo-slot img { width: 100%; flex: 1; object-fit: cover; min-height: 0; }
+  .photo-caption { font-size: 5.5pt; text-align: center; color: #333; padding: 1px 2px; background: #e8ecf4; border-top: 1px solid #ccd3e8; }
+  .photo-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 6pt; color: #aaa; }
+
+  /* ── Comp table ─────────────────────────────────────────────── */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 7pt; }
+  .comp-table th { background: #1a3c6e; color: #fff; padding: 2px 4px; font-size: 6.5pt; text-align: left; border: 1px solid #8899bb; }
+  .comp-table td { border: 1px solid #8899bb; padding: 2px 4px; vertical-align: top; }
+  .comp-table tr:nth-child(even) td { background: #f2f4f8; }
+  .comp-table .num { text-align: right; }
+  .comp-table tfoot td { font-weight: bold; background: #d0daea; }
+
+  /* ── Value box ──────────────────────────────────────────────── */
+  .value-box {
+    border: 2px solid #1a3c6e; border-radius: 4px; padding: 6px 12px;
+    text-align: center; background: #f0f5ff; margin: 4px 0;
+  }
+  .value-box-label { font-size: 8pt; color: #1a3c6e; text-transform: uppercase; font-weight: bold; }
+  .value-box-amount { font-size: 18pt; font-weight: bold; color: #1a3c6e; letter-spacing: 0.5px; }
+  .value-box-range  { font-size: 7.5pt; color: #555; margin-top: 2px; }
+
+  /* ── Signature ──────────────────────────────────────────────── */
+  .sig-line  { border-bottom: 1px solid #000; min-height: 18px; margin: 4px 0 1px; }
+  .sig-label { font-size: 6pt; color: #444; }
+
+  /* ── Footer ─────────────────────────────────────────────────── */
+  .form-footer { font-size: 6pt; color: #666; text-align: center; margin-top: 4px; border-top: 1px solid #ddd; padding-top: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ═════════════════════════ PAGE 1 ════════════════════════════════ -->
+<div class="page">
+
+  <div class="form-header">
+    <div>
+      <div class="form-header-title">Drive-By Valuation Report</div>
+      <div class="form-header-sub">Broker Price Opinion / Vision Valuation</div>
+    </div>
+    <div class="form-header-meta">
+      Order #: {{metadata.orderNumber}}<br>
+      Effective: {{metadata.effectiveDate}}<br>
+      Report Date: {{reportDate}}
+    </div>
+  </div>
+
+  <!-- SUBJECT PROPERTY IDENTIFICATION -->
+  <div class="section-header">Subject Property</div>
+  <div class="grid cols-6">
+    <div class="cell span-4">
+      <span class="cell-label">Property Address</span>
+      <span class="cell-value">{{subject.fullAddress}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Loan Number</span>
+      <span class="cell-value">{{metadata.loanNumber}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Client</span>
+      <span class="cell-value">{{metadata.clientName}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">City</span><span class="cell-value">{{subject.city}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">State</span><span class="cell-value">{{subject.state}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Zip</span><span class="cell-value">{{subject.zipCode}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">County</span><span class="cell-value">{{subject.county}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">APN / Parcel</span><span class="cell-value">{{subject.parcelNumber}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Occupancy</span><span class="cell-value">{{subject.occupant}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Property Type</span><span class="cell-value">{{subject.propertyType}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Year Built</span><span class="cell-value">{{subject.yearBuilt}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Bedrooms</span><span class="cell-value">{{subject.bedrooms}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Bathrooms</span><span class="cell-value">{{subject.bathrooms}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">GLA (SF)</span><span class="cell-value">{{subject.grossLivingArea}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Lot Size</span><span class="cell-value">{{subject.lotSizeSqFt}} SF</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Garage</span><span class="cell-value">{{subject.garageType}} {{subject.garageSpaces}}-car</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Pool</span><span class="cell-value">{{subject.pool}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Legal Description</span><span class="cell-value">{{subject.legalDescription}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Zoning</span><span class="cell-value">{{subject.zoning}}</span>
+    </div>
+  </div>
+
+  <!-- CONDITION RATINGS -->
+  <div class="section-header">Condition &amp; Ratings</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Overall Condition</span>
+      <span class="cell-value">
+        {{#if dvr.overallCondition}}<span class="badge badge-{{dvr.overallConditionClass}}">{{dvr.overallCondition}}</span>{{else}}N/A{{/if}}
+      </span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Exterior Condition</span>
+      <span class="cell-value">
+        {{#if dvr.exteriorCondition}}<span class="badge badge-{{dvr.exteriorConditionClass}}">{{dvr.exteriorCondition}}</span>{{else}}N/A{{/if}}
+      </span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Deferred Maintenance</span>
+      <span class="cell-value">{{dvr.deferredMaintenance}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Occupancy Status</span>
+      <span class="cell-value">{{dvr.occupancyStatus}}</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Condition Comments</span>
+      {{dvr.conditionComments}}
+    </div>
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Listing Comments / Observations</span>
+      {{dvr.listingComments}}
+    </div>
+  </div>
+
+  <!-- NEIGHBORHOOD / MARKET SECTION -->
+  <div class="section-header">Neighborhood &amp; Market Conditions</div>
+  {{#if market}}
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Location Type</span><span class="cell-value">{{market.locationType}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Built-Up</span><span class="cell-value">{{market.builtUp}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Growth</span><span class="cell-value">{{market.growth}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Property Values</span><span class="cell-value">{{market.propertyValues}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Demand / Supply</span><span class="cell-value">{{market.demandSupply}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Marketing Time</span><span class="cell-value">{{market.marketingTime}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Price Range Low</span><span class="cell-value">{{market.priceLow}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Price Range High</span><span class="cell-value">{{market.priceHigh}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Predominant Price</span><span class="cell-value">{{market.predominantOccupancy}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Absorption Rate</span><span class="cell-value">{{market.absorptionRate}}</span>
+    </div>
+  </div>
+  {{else}}
+  <div class="grid cols-2">
+    <div class="cell tall"><span class="cell-label">Market data not available</span></div>
+    <div class="cell tall"></div>
+  </div>
+  {{/if}}
+
+  <!-- SUBJECT PHOTOS -->
+  <div class="section-header">Subject Property Photos</div>
+  <div class="photo-grid-2" style="margin-top:2px;">
+    <div class="photo-slot">
+      {{#if subjectFrontPhoto}}
+      <img src="{{subjectFrontPhoto.blobPath}}" alt="Front">
+      {{else}}<div class="photo-placeholder">Front Photo Not Available</div>{{/if}}
+      <div class="photo-caption">Subject – Front View</div>
+    </div>
+    <div class="photo-slot">
+      {{#if subjectRearPhoto}}
+      <img src="{{subjectRearPhoto.blobPath}}" alt="Rear">
+      {{else}}<div class="photo-placeholder">Rear Photo Not Available</div>{{/if}}
+      <div class="photo-caption">Subject – Rear View</div>
+    </div>
+    <div class="photo-slot">
+      {{#if subjectStreetPhoto}}
+      <img src="{{subjectStreetPhoto.blobPath}}" alt="Street">
+      {{else}}<div class="photo-placeholder">Street Scene Not Available</div>{{/if}}
+      <div class="photo-caption">Street Scene</div>
+    </div>
+    <div class="photo-slot">
+      {{#if aerialPhoto}}
+      <img src="{{aerialPhoto.blobPath}}" alt="Aerial">
+      {{else}}<div class="photo-placeholder">Aerial / Map Not Available</div>{{/if}}
+      <div class="photo-caption">Aerial / Location Map</div>
+    </div>
+  </div>
+
+  <div class="form-footer">Drive-By Valuation Report (DVR/BPO) &nbsp;|&nbsp; Generated {{reportDate}} &nbsp;|&nbsp; Order {{metadata.orderId}} &nbsp;|&nbsp; {{ metadata.orderNumber}} &nbsp;|&nbsp; Page 1</div>
+</div>
+<!-- END PAGE 1 -->
+
+<!-- ═════════════════════════ PAGE 2: COMPS & VALUATION ═══════════════ -->
+<div class="page">
+
+  <div class="form-header">
+    <div>
+      <div class="form-header-title">Sales Comparison &amp; Valuation</div>
+      <div class="form-header-sub">{{subject.fullAddress}}</div>
+    </div>
+    <div class="form-header-meta">
+      Order #: {{metadata.orderNumber}}<br>
+      Effective: {{metadata.effectiveDate}}
+    </div>
+  </div>
+
+  <!-- COMPARABLE SALES TABLE -->
+  <div class="section-header">Comparable Sales</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th style="width:3%;">#</th>
+        <th style="width:25%;">Address</th>
+        <th style="width:8%;">Proximity</th>
+        <th style="width:8%;">Sale Date</th>
+        <th style="width:9%;">Sale Price</th>
+        <th style="width:7%;">GLA (SF)</th>
+        <th style="width:7%;">Beds/Baths</th>
+        <th style="width:6%;">Year Blt</th>
+        <th style="width:7%;">Condition</th>
+        <th style="width:6%;">DOM</th>
+        <th style="width:9%;">Adj. Price</th>
+        <th style="width:5%;">Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each comps}}
+      <tr>
+        <td class="center">{{@index1}}</td>
+        <td>{{fullAddress}}</td>
+        <td>{{proximityToSubject}}</td>
+        <td>{{saleDate}}</td>
+        <td class="num">{{salePrice}}</td>
+        <td class="num">{{grossLivingArea}}</td>
+        <td class="center">{{bedrooms}} / {{bathrooms}}</td>
+        <td class="center">{{yearBuilt}}</td>
+        <td class="center">{{condition}}</td>
+        <td class="num">{{daysOnMarket}}</td>
+        <td class="num" style="font-weight:bold;">{{adjSalePrice}}</td>
+        <td>{{verificationSource}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="12" class="center" style="padding:8px; color:#999;">No comparable sales provided</td></tr>
+      {{/each}}
+    </tbody>
+    {{#if comps.length}}
+    <tfoot>
+      <tr>
+        <td colspan="4" class="right">Indicated Value Range:</td>
+        <td class="num" colspan="4">{{valuation.lowerBound}} – {{valuation.upperBound}}</td>
+        <td colspan="4"></td>
+      </tr>
+    </tfoot>
+    {{/if}}
+  </table>
+
+  <!-- COMP PHOTOS -->
+  {{#if compPhotos.length}}
+  <div class="section-header light" style="margin-top:4px;">Comparable Photos</div>
+  <div class="photo-grid-3" style="margin-top:2px;">
+    {{#each compPhotos}}
+    <div class="photo-slot">
+      {{#if this}}
+      <img src="{{this.blobPath}}" alt="Comp {{@index1}}">
+      {{else}}<div class="photo-placeholder">Comp {{@index1}} – No Photo</div>{{/if}}
+      <div class="photo-caption">Comparable {{@index1}}</div>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  <!-- VALUATION -->
+  <div class="section-header">Opinion of Value</div>
+  <div style="display:flex; gap:6px; align-items:flex-start; margin-top:4px;">
+    <div style="flex:1;">
+      <div class="value-box">
+        <div class="value-box-label">As-Is Market Value</div>
+        <div class="value-box-amount">{{valuation.indicatedValue}}</div>
+        {{#if valuation.lowerBound}}
+        <div class="value-box-range">Range: {{valuation.lowerBound}} – {{valuation.upperBound}}</div>
+        {{/if}}
+      </div>
+    </div>
+    <div style="flex:1;">
+      <div class="grid cols-2" style="margin-top:0;">
+        <div class="cell">
+          <span class="cell-label">Effective Date</span>
+          <span class="cell-value">{{metadata.effectiveDate}}</span>
+        </div>
+        <div class="cell">
+          <span class="cell-label">Report Date</span>
+          <span class="cell-value">{{reportDate}}</span>
+        </div>
+        <div class="cell span-2 tall textarea-cell">
+          <span class="cell-label">Value Opinion Summary / Methodology</span>
+          {{valuation.reconciliationNarrative}}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LISTING INFO (if present) -->
+  {{#if dvr.currentListingPrice}}
+  <div class="section-header light" style="margin-top:4px;">Current Listing Information</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Current List Price</span>
+      <span class="cell-value">{{dvr.currentListingPrice}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">List Date</span>
+      <span class="cell-value">{{dvr.listDate}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Days on Market</span>
+      <span class="cell-value">{{dvr.daysOnMarket}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">MLS Number</span>
+      <span class="cell-value">{{dvr.mlsNumber}}</span>
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- APPRAISER CERTIFICATION & SIGNATURE -->
+  <div class="section-header">Agent / Appraiser Certification</div>
+  {{#if appraiser}}
+  <div class="grid cols-6">
+    <div class="cell span-3">
+      <span class="cell-label">Agent / Appraiser Name</span>
+      <span class="cell-value">{{appraiser.name}}</span>
+    </div>
+    <div class="cell span-3">
+      <span class="cell-label">Company Name</span>
+      <span class="cell-value">{{appraiser.companyName}}</span>
+    </div>
+    <div class="cell span-4">
+      <span class="cell-label">Company Address</span>
+      <span class="cell-value">{{appraiser.companyAddress}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Phone</span>
+      <span class="cell-value">{{appraiser.phone}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Email</span>
+      <span class="cell-value">{{appraiser.email}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">License Type</span>
+      <span class="cell-value">{{appraiser.licenseType}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">License # / State / Exp.</span>
+      <span class="cell-value">{{appraiser.licenseNumber}} / {{appraiser.licenseState}} exp. {{appraiser.licenseExpirationDate}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Certification</span>
+      <span class="cell-value">{{#if appraiser.isCertified}}Certified{{else}}Licensed{{/if}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4" style="margin-top: 6px;">
+    <div class="cell span-2">
+      <div class="sig-line"></div>
+      <div class="sig-label">Agent / Appraiser Signature</div>
+    </div>
+    <div class="cell span-2">
+      <div class="sig-line"></div>
+      <div class="sig-label">Date: {{appraiser.signatureDate}}</div>
+    </div>
+  </div>
+  {{else}}
+  <div class="grid cols-2">
+    <div class="cell tall"><span class="cell-label">Appraiser information not available</span></div>
+    <div class="cell tall"></div>
+  </div>
+  {{/if}}
+
+  <!-- LENDER/CLIENT -->
+  <div class="section-header light" style="margin-top: 4px;">Lender / Client</div>
+  <div class="grid cols-4">
+    <div class="cell span-2">
+      <span class="cell-label">Client Name</span>
+      <span class="cell-value">{{metadata.clientName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Client Company</span>
+      <span class="cell-value">{{metadata.clientCompanyName}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Loan Number</span>
+      <span class="cell-value">{{metadata.loanNumber}}</span>
+    </div>
+  </div>
+
+  <div class="form-footer">Drive-By Valuation Report (DVR/BPO) &nbsp;|&nbsp; Generated {{reportDate}} &nbsp;|&nbsp; Order {{metadata.orderId}} &nbsp;|&nbsp; Page 2</div>
+</div>
+<!-- END PAGE 2 -->
+
+</body>
+</html>

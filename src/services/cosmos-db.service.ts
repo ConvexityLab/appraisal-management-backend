@@ -76,8 +76,8 @@ export class CosmosDbService {
     analytics: 'analytics',
     rovRequests: 'rov-requests',
     documentTemplates: 'document-templates',
-    reviews: 'appraisal-reviews',
-    comparableAnalyses: 'comparable-analyses',
+    reviews: 'revisions',          // Appraisal revision/review records — deployed as 'revisions' in cosmos-production.bicep
+    comparableAnalyses: 'comparable-analyses', // Requires 'comparable-analyses' container — defined in cosmos-production.bicep
     documents: 'documents',
     communications: 'communications',
     communicationContexts: 'communicationContexts',      // Unified communication platform
@@ -253,6 +253,7 @@ export class CosmosDbService {
       const orderWithId = {
         ...order,
         id: this.generateId(),
+        type: 'order' as const, // Required: findOrderById and findOrders filter by c.type = 'order'
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -413,23 +414,12 @@ export class CosmosDbService {
         updatedAt: new Date()
       };
 
-      // The orders container is partitioned by /status.
-      // When status changes, the document must move partitions: delete from the old
-      // partition then create in the new one. When status is unchanged, a simple replace works.
-      const oldStatus = (existingOrder.status ?? existingOrder.id) as string;
-      const newStatus = (updatedOrder.status ?? updatedOrder.id) as string;
+      // The orders container is partitioned by /tenantId (immutable).
+      // Status changes no longer require delete+create — just replace in place.
+      const tenantId = (existingOrder.tenantId ?? existingOrder.id) as string;
 
-      let resource: AppraisalOrder;
-      if (oldStatus !== newStatus) {
-        // Status change → delete from old partition, create in new partition
-        await this.ordersContainer.item(id, oldStatus).delete();
-        const createResponse = await this.ordersContainer.items.create(updatedOrder);
-        resource = createResponse.resource as AppraisalOrder;
-      } else {
-        // Same partition → in-place replace
-        const replaceResponse = await this.ordersContainer.item(id, oldStatus).replace(updatedOrder);
-        resource = replaceResponse.resource as AppraisalOrder;
-      }
+      const replaceResponse = await this.ordersContainer.item(id, tenantId).replace(updatedOrder);
+      const resource = replaceResponse.resource as AppraisalOrder;
 
       return {
         success: true,
@@ -1321,7 +1311,12 @@ export class CosmosDbService {
         lastActive: new Date()
       };
 
-      const { resource } = await this.vendorsContainer.item(id, updatedVendor.licenseState).replace(updatedVendor);
+      // Vendors container is partitioned by /tenantId (immutable).
+      // Status changes no longer require delete+create — just replace in place.
+      const tenantId = (existingResponse.data.tenantId ?? existingResponse.data.id) as string;
+
+      const replaceResponse = await this.vendorsContainer.item(id, tenantId).replace(updatedVendor);
+      const resource = replaceResponse.resource as Vendor;
 
       return {
         success: true,
@@ -1355,9 +1350,9 @@ export class CosmosDbService {
         WHERE c.assignedVendorId = @vendorId AND c.status = 'completed'
       `;
       const avgCompletionQuery = `
-        SELECT AVG(DateDiff('day', c.assignedAt, c.completedAt)) as avgCompletionDays
+        SELECT AVG(DateTimeDiff('day', c.assignedAt, c.completedAt)) as avgCompletionDays
         FROM c
-        WHERE c.assignedVendorId = @vendorId AND c.status = 'completed' AND c.completedAt != null
+        WHERE c.assignedVendorId = @vendorId AND c.status = 'completed' AND IS_DEFINED(c.completedAt) AND c.completedAt != null
       `;
 
       const [totalOrdersResult, completedOrdersResult, avgCompletionResult] = await Promise.all([

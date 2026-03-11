@@ -154,6 +154,70 @@ export class NotificationService {
       priority: EventPriority.HIGH
     });
 
+    // ── Auto-Assignment workflow notifications ──────────────────────────────
+
+    // Bid dispatched to a vendor — informational real-time update
+    this.addRule({
+      id: 'vendor-bid-sent-notification',
+      eventType: 'vendor.bid.sent',
+      channels: [NotificationChannel.WEBSOCKET],
+      template: {
+        title: 'Bid Sent: {{vendorName}}',
+        message: 'Bid invitation sent to {{vendorName}} for order {{orderNumber}} (attempt {{attemptNumber}}). Expires in 4 hours.'
+      },
+      priority: EventPriority.NORMAL
+    });
+
+    // All vendors exhausted — CRITICAL: human must intervene
+    this.addRule({
+      id: 'vendor-assignment-exhausted-notification',
+      eventType: 'vendor.assignment.exhausted',
+      channels: [NotificationChannel.WEBSOCKET, NotificationChannel.EMAIL, NotificationChannel.SMS],
+      template: {
+        title: 'ACTION REQUIRED: No Vendors Available — {{orderNumber}}',
+        message: 'All {{attemptsCount}} vendor(s) contacted for order {{orderNumber}} have timed out or declined. Manual vendor assignment is required immediately.'
+      },
+      priority: EventPriority.CRITICAL,
+      throttleMs: 60000 // suppress duplicate alerts within 1 minute per rule (not per order)
+    });
+
+    // Review assignment initiated — informational
+    this.addRule({
+      id: 'review-assignment-requested-notification',
+      eventType: 'review.assignment.requested',
+      channels: [NotificationChannel.WEBSOCKET],
+      template: {
+        title: 'Review Assignment Started — {{orderNumber}}',
+        message: 'Automated review assignment initiated for order {{orderNumber}}. Contacting QC staff.'
+      },
+      priority: EventPriority.NORMAL
+    });
+
+    // Reviewer assigned — notify via WebSocket + email so the reviewer knows
+    this.addRule({
+      id: 'review-assigned-notification',
+      eventType: 'review.assigned',
+      channels: [NotificationChannel.WEBSOCKET, NotificationChannel.EMAIL],
+      template: {
+        title: 'Review Assigned to {{reviewerName}}',
+        message: 'Order {{orderNumber}} review has been assigned to {{reviewerName}} (attempt {{attemptNumber}}). Acceptance window: 8 hours.'
+      },
+      priority: EventPriority.NORMAL
+    });
+
+    // All reviewers exhausted — CRITICAL: human must intervene
+    this.addRule({
+      id: 'review-assignment-exhausted-notification',
+      eventType: 'review.assignment.exhausted',
+      channels: [NotificationChannel.WEBSOCKET, NotificationChannel.EMAIL, NotificationChannel.SMS],
+      template: {
+        title: 'ACTION REQUIRED: No Reviewers Available — {{orderNumber}}',
+        message: 'All {{attemptsCount}} reviewer(s) contacted for order {{orderNumber}} have timed out. Manual reviewer assignment is required immediately.'
+      },
+      priority: EventPriority.CRITICAL,
+      throttleMs: 60000
+    });
+
     this.logger.info(`Set up ${this.getTotalRuleCount()} default notification rules`);
   }
 

@@ -41,7 +41,7 @@ var containers = [
   }
   {
     name: 'orders'
-    partitionKey: '/status'
+    partitionKey: '/tenantId'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -54,14 +54,17 @@ var containers = [
       ]
       compositeIndexes: [
         [
+          { path: '/tenantId', order: 'ascending' }
           { path: '/status', order: 'ascending' }
           { path: '/createdAt', order: 'descending' }
         ]
         [
+          { path: '/tenantId', order: 'ascending' }
           { path: '/assignedVendorId', order: 'ascending' }
           { path: '/dueDate', order: 'ascending' }
         ]
         [
+          { path: '/tenantId', order: 'ascending' }
           { path: '/productType', order: 'ascending' }
           { path: '/priority', order: 'ascending' }
         ]
@@ -70,7 +73,7 @@ var containers = [
   }
   {
     name: 'vendors'
-    partitionKey: '/status'
+    partitionKey: '/tenantId'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -84,10 +87,12 @@ var containers = [
       ]
       compositeIndexes: [
         [
+          { path: '/tenantId', order: 'ascending' }
           { path: '/status', order: 'ascending' }
           { path: '/performance/rating', order: 'descending' }
         ]
         [
+          { path: '/tenantId', order: 'ascending' }
           { path: '/licenseState', order: 'ascending' }
           { path: '/productTypes', order: 'ascending' }
         ]
@@ -348,6 +353,21 @@ var containers = [
       ]
     }
   }
+  // QC generated reports (analytics export) — keyed by the user who generated them
+  {
+    name: 'qc-reports'
+    partitionKey: '/generatedBy'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?'}
+      ]
+    }
+  }
   {
     name: 'revisions'
     partitionKey: '/orderId'
@@ -495,7 +515,35 @@ var containers = [
     }
   }
   {
-    name: 'reporting'
+    // Stores AI-generated comparable property analysis documents, keyed per appraisal review
+    name: 'comparable-analyses'
+    partitionKey: '/reviewId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {    // In-app notifications per user — TTL-enabled (90-day auto-expiry via item.ttl field)
+    name: 'in-app-notifications'
+    partitionKey: '/userId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?'  }
+      ]
+    }
+  }
+  {    name: 'reporting'
     partitionKey: '/id'
     indexingPolicy: {
       indexingMode: 'consistent'

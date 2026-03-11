@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uniform Residential Appraisal Report – {{metadata.orderNumber}}</title>
+<style>
+  /* ── Page Setup ─────────────────────────────────────────────── */
+  @page { size: letter; margin: 0.45in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
+  body { font-size: 7pt; color: #000; background: #fff; }
+
+  /* ── Layout helpers ─────────────────────────────────────────── */
+  .page { page-break-after: always; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+
+  /* ── Form chrome ────────────────────────────────────────────── */
+  .form-title {
+    text-align: center; font-size: 9pt; font-weight: bold;
+    border: 1.5px solid #000; padding: 3px; margin-bottom: 2px;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .form-subtitle {
+    text-align: center; font-size: 7pt; margin-bottom: 3px;
+  }
+  .section-header {
+    background: #d0d0d0; border: 1px solid #000; padding: 1px 3px;
+    font-weight: bold; font-size: 7.5pt; text-transform: uppercase;
+    letter-spacing: 0.4px; margin-top: 1px;
+  }
+  .grid {
+    display: grid; border-left: 1px solid #000; border-top: 1px solid #000;
+    width: 100%;
+  }
+  .cell {
+    border-right: 1px solid #000; border-bottom: 1px solid #000;
+    padding: 1px 2px; min-height: 13px;
+  }
+  .cell-label { font-size: 6pt; color: #444; display: block; }
+  .cell-value { font-size: 7.5pt; font-weight: bold; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .cols-5 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+  .cols-6 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+  .span-2 { grid-column: span 2; }
+  .span-3 { grid-column: span 3; }
+  .span-4 { grid-column: span 4; }
+  .span-5 { grid-column: span 5; }
+  .span-6 { grid-column: span 6; }
+  .tall { min-height: 40px; }
+  .textarea-cell { min-height: 50px; white-space: pre-wrap; font-size: 7pt; }
+  .right { text-align: right; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+
+  /* ── Checkbox ───────────────────────────────────────────────── */
+  .cb { display: inline-block; width: 8px; height: 8px; border: 1px solid #000; margin-right: 2px; text-align: center; line-height: 7px; font-size: 6pt; }
+  .cb.checked::after { content: "✓"; font-weight: bold; }
+
+  /* ── Comp Grid  ─────────────────────────────────────────────── */
+  .comp-grid { width: 100%; border-collapse: collapse; font-size: 6.5pt; }
+  .comp-grid th, .comp-grid td { border: 1px solid #000; padding: 1px 2px; vertical-align: top; }
+  .comp-grid th { background: #e0e0e0; font-weight: bold; text-align: center; font-size: 6pt; }
+  .comp-grid .row-label { background: #f0f0f0; font-weight: bold; font-size: 6pt; width: 22%; }
+  .comp-grid .desc { width: 12%; }
+  .comp-grid .adj  { width: 10%; text-align: right; }
+  .comp-grid .subj { width: 18%; }
+  .comp-grid .comp-col { width: 14%; }
+  .comp-grid .adj-col  { width: 10%; text-align: right; }
+
+  /* ── Photo slots ────────────────────────────────────────────── */
+  .photo-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; width: 100%; }
+  .photo-slot {
+    border: 1px solid #999; background: #f5f5f5;
+    min-height: 90px; max-height: 120px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .photo-slot img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-caption {
+    font-size: 6pt; text-align: center; color: #333;
+    border-top: 1px solid #ddd; padding: 1px;
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(255,255,255,0.85);
+  }
+  .photo-placeholder { font-size: 6.5pt; color: #999; text-align: center; }
+
+  /* ── Signature block ────────────────────────────────────────── */
+  .sig-line { border-bottom: 1px solid #000; min-height: 18px; margin: 4px 0 1px; }
+  .sig-label { font-size: 6pt; color: #444; }
+
+  /* ── Footer ─────────────────────────────────────────────────── */
+  .form-footer { font-size: 6pt; text-align: center; color: #666; margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ PAGE 1 ═══════════════════════════════ -->
+<div class="page">
+
+  <div class="form-title">Uniform Residential Appraisal Report</div>
+  <div class="form-subtitle">File No. {{metadata.orderNumber}} &nbsp;|&nbsp; Loan No. {{metadata.loanNumber}} &nbsp;|&nbsp; Effective Date: {{reconciliation.effectiveDateShort}}</div>
+
+  <!-- SUBJECT SECTION -->
+  <div class="section-header">Subject</div>
+  <div class="grid cols-3">
+    <div class="cell span-3">
+      <span class="cell-label">Property Address</span>
+      <span class="cell-value">{{subject.streetAddress}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">City</span><span class="cell-value">{{subject.city}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">State</span><span class="cell-value">{{subject.state}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Zip Code</span><span class="cell-value">{{subject.zipCode}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">County</span><span class="cell-value">{{subject.county}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Borrower</span><span class="cell-value">{{metadata.borrowerName}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Owner of Public Record</span><span class="cell-value">{{metadata.ownerOfPublicRecord}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Census Tract</span><span class="cell-value">{{subject.censusTract}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Map Reference</span><span class="cell-value">{{subject.mapReference}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Legal Description</span><span class="cell-value">{{subject.legalDescription}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Assessor's Parcel #</span><span class="cell-value">{{subject.parcelNumber}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Tax Year</span><span class="cell-value">{{subject.taxYear}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">R.E. Taxes $</span><span class="cell-value">{{subject.annualTaxes}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Special Assessments</span><span class="cell-value"></span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Lender/Client</span><span class="cell-value">{{metadata.clientName}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Address</span><span class="cell-value">{{metadata.clientAddress}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Occupant</span><span class="cell-value">{{subject.occupant}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Property Rights Appraised</span><span class="cell-value">{{subject.propertyRightsAppraised}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Assignment Type</span>
+      <span class="cell-value"><span class="cb {{#if metadata.isSubjectPurchase}}checked{{/if}}"></span> Purchase &nbsp; <span class="cb {{#unless metadata.isSubjectPurchase}}checked{{/unless}}"></span> Refinance/Other</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Effective Date of Appraisal</span><span class="cell-value">{{reconciliation.effectiveDate}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Contract Price</span><span class="cell-value">{{subject.contractPrice}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Date of Contract</span><span class="cell-value">{{subject.contractDate}}</span>
+    </div>
+  </div>
+
+  <!-- NEIGHBORHOOD SECTION -->
+  <div class="section-header">Neighborhood Characteristics</div>
+  {{#if market}}
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Location</span>
+      <span class="cell-value">
+        <span class="cb {{#if market.isUrban}}checked{{/if}}"></span> Urban &nbsp;
+        <span class="cb {{#if market.isSuburban}}checked{{/if}}"></span> Suburban &nbsp;
+        <span class="cb {{#if market.isRural}}checked{{/if}}"></span> Rural
+      </span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Property Values</span>
+      <span class="cell-value">
+        <span class="cb {{#if market.isIncreasing}}checked{{/if}}"></span> Increasing &nbsp;
+        <span class="cb {{#if market.isStable}}checked{{/if}}"></span> Stable &nbsp;
+        <span class="cb {{#if market.isDeclining}}checked{{/if}}"></span> Declining
+      </span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Demand/Supply</span><span class="cell-value">{{market.demandSupply}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Marketing Time</span><span class="cell-value">{{market.marketingTime}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Built-Up</span><span class="cell-value">{{market.builtUp}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Growth</span><span class="cell-value">{{market.growth}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Price Range</span><span class="cell-value">{{market.priceLow}} – {{market.priceHigh}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Predominant</span><span class="cell-value">{{market.predominantOccupancy}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Age Range</span><span class="cell-value">{{market.predominantAge}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Land Use %</span>
+      <span class="cell-value">1-fam: {{market.landUseSingleFamily}}% Multi: {{market.landUseMultifamily}}%</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Neighborhood Description</span>
+      {{market.neighborhoodDescription}}
+    </div>
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Market Conditions</span>
+      {{market.marketConditionsNotes}}
+    </div>
+  </div>
+  {{else}}
+  <div class="grid cols-2">
+    <div class="cell tall"><span class="cell-label">Neighborhood Description</span></div>
+    <div class="cell tall"><span class="cell-label">Market Conditions</span></div>
+  </div>
+  {{/if}}
+
+  <!-- SITE SECTION -->
+  <div class="section-header">Site</div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Area</span><span class="cell-value">{{subject.lotSizeSqFt}} {{subject.siteAreaUnit}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Dimensions</span><span class="cell-value">{{subject.siteDimensions}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Shape</span><span class="cell-value">{{subject.siteShape}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Zoning Classification</span><span class="cell-value">{{subject.zoning}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Zoning Compliance</span><span class="cell-value">{{subject.zoningCompliance}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">Flood Zone</span><span class="cell-value">{{subject.floodZone}} &nbsp; Map # {{subject.floodMapNumber}} &nbsp; Date {{subject.floodMapDate}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Electricity</span><span class="cell-value">{{subject.utilities.electricity}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Gas</span><span class="cell-value">{{subject.utilities.gas}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Water</span><span class="cell-value">{{subject.utilities.water}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Sanitary Sewer</span><span class="cell-value">{{subject.utilities.sewer}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell span-2">
+      <span class="cell-label">View</span><span class="cell-value">{{subject.view}} – {{subject.viewDescription}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Highest &amp; Best Use</span><span class="cell-value">{{subject.highestAndBestUse}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Zoning Description</span><span class="cell-value">{{subject.zoningDescription}}</span>
+    </div>
+  </div>
+
+  <!-- IMPROVEMENTS SECTION -->
+  <div class="section-header">Improvements</div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Units</span><span class="cell-value">{{subject.propertyType}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label"># of Stories</span><span class="cell-value">{{subject.stories}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Design (Style)</span><span class="cell-value">{{subject.design}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Year Built</span><span class="cell-value">{{subject.yearBuilt}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Effective Age (Yrs)</span><span class="cell-value">{{subject.effectiveAge}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Attic</span><span class="cell-value">{{subject.attic}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Foundation</span><span class="cell-value">{{subject.foundationType}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Basement</span><span class="cell-value">{{subject.basement}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Bsmt Area SF</span><span class="cell-value">{{subject.basementSqFt}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Finished SF</span><span class="cell-value">{{subject.basementFinishedSqFt}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Exterior Walls</span><span class="cell-value">{{subject.exteriorWalls}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Roof Surface</span><span class="cell-value">{{subject.roofSurface}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Heating</span><span class="cell-value">{{subject.heating}} / {{subject.heatingFuel}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Central Air</span><span class="cell-value">{{subject.cooling}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label"># Fireplaces</span><span class="cell-value">{{subject.fireplaces}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Garage/Carport</span><span class="cell-value">{{subject.garageType}} {{subject.garageSpaces}}-car</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Porch/Patio/Deck</span><span class="cell-value">{{subject.porchPatioDeck}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Pool</span><span class="cell-value">{{subject.pool}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell">
+      <span class="cell-label">Floors</span><span class="cell-value">{{subject.interiorFloors}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Walls</span><span class="cell-value">{{subject.interiorWalls}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Trim/Finish</span><span class="cell-value">{{subject.trimFinish}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Bath Floor</span><span class="cell-value">{{subject.bathFloor}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Bath Wainscot</span><span class="cell-value">{{subject.bathWainscot}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Windows</span><span class="cell-value">{{subject.windowType}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Condition (C1-C6)</span><span class="cell-value">{{subject.condition}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Quality (Q1-Q6)</span><span class="cell-value">{{subject.quality}}</span>
+    </div>
+    <div class="cell span-2 tall textarea-cell">
+      <span class="cell-label">Additional Features / Condition Description</span>
+      {{subject.conditionDescription}}{{#if subject.additionalFeatures}} | {{subject.additionalFeatures}}{{/if}}
+    </div>
+  </div>
+
+  <!-- SUBJECT PHOTO + STREET MAP -->
+  <div class="section-header">Subject Property Photos</div>
+  <div class="photo-grid" style="margin-top:2px;">
+    <div class="photo-slot">
+      {{#if photos.subjectFront}}
+      <img src="{{photos.subjectFront.blobPath}}" alt="Subject Front">
+      {{else}}<span class="photo-placeholder">Subject Front</span>{{/if}}
+      <div class="photo-caption">Front View</div>
+    </div>
+    <div class="photo-slot">
+      {{#if photos.subjectRear}}
+      <img src="{{photos.subjectRear.blobPath}}" alt="Subject Rear">
+      {{else}}<span class="photo-placeholder">Subject Rear</span>{{/if}}
+      <div class="photo-caption">Rear View</div>
+    </div>
+    <div class="photo-slot">
+      {{#if photos.subjectStreet}}
+      <img src="{{photos.subjectStreet.blobPath}}" alt="Street Scene">
+      {{else}}<span class="photo-placeholder">Street Scene</span>{{/if}}
+      <div class="photo-caption">Street Scene</div>
+    </div>
+  </div>
+
+  <div class="form-footer">Uniform Residential Appraisal Report (URAR) &nbsp;|&nbsp; Generated {{generatedAt}} &nbsp;|&nbsp; Order {{metadata.orderId}} &nbsp;|&nbsp; Page 1</div>
+</div>
+<!-- END PAGE 1 -->
+
+<!-- ═══════════════════════════ PAGE 2: SALES COMPARISON ══════════════════ -->
+<div class="page">
+
+  <div class="form-title">Sales Comparison Approach</div>
+  <div class="form-subtitle">Report: {{metadata.orderNumber}} &nbsp;|&nbsp; Subject: {{subject.fullAddress}}</div>
+
+  <table class="comp-grid">
+    <thead>
+      <tr>
+        <th class="row-label">Feature</th>
+        <th class="subj">Subject</th>
+        {{#each primaryComps}}
+        {{#unless empty}}
+        <th class="comp-col">{{slotLabel}}</th>
+        {{/unless}}
+        {{/each}}
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Addresses -->
+      <tr>
+        <td class="row-label">Address</td>
+        <td class="subj">{{subject.fullAddress}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}-{{else}}{{fullAddress}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Proximity -->
+      <tr>
+        <td class="row-label">Proximity to Subject</td>
+        <td class="subj"></td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}-{{else}}{{proximityToSubject}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Sale Price -->
+      <tr>
+        <td class="row-label">Sale Price</td>
+        <td class="subj right">{{reconciliation.finalOpinionOfValue}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col right">{{#if empty}}&nbsp;{{else}}{{salePrice}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Sale Price / GLA -->
+      <tr>
+        <td class="row-label">Sale Price / GLA</td>
+        <td class="subj"></td>
+        {{#each primaryComps}}
+        <td class="comp-col right">{{#if empty}}&nbsp;{{else}}—{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Data Source -->
+      <tr>
+        <td class="row-label">Data Source(s) / Verification</td>
+        <td class="subj"></td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{verificationSource}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Value Adjustments Header -->
+      <tr style="background:#e0e0e0;">
+        <td class="row-label bold">VALUE ADJUSTMENTS</td>
+        <td class="subj bold">DESCRIPTION</td>
+        {{#each primaryComps}}
+        <td class="comp-col" colspan="1" style="text-align:center;">
+          {{#if empty}}&nbsp;{{else}}<span style="font-size:5.5pt;">DESCRIPTION &nbsp; (+)(-) Adj</span>{{/if}}
+        </td>
+        {{/each}}
+      </tr>
+      <!-- Sale or Financing Concessions -->
+      <tr>
+        <td class="row-label">Sale or Financing Concessions</td>
+        <td class="subj"></td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{saleFinancingConcessions}} {{adjustments.saleOrFinancingConcessions}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Date of Sale -->
+      <tr>
+        <td class="row-label">Date of Sale / Time</td>
+        <td class="subj">{{metadata.inspectionDateShort}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{saleDate}} {{adjustments.dateOfSaleTime}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Location -->
+      <tr>
+        <td class="row-label">Location</td>
+        <td class="subj">{{subject.locationRating}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{locationRating}} {{adjustments.locationAdj}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Leasehold/Fee Simple -->
+      <tr>
+        <td class="row-label">Leasehold/Fee Simple</td>
+        <td class="subj">{{subject.propertyRightsAppraised}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{propertyRights}} {{adjustments.leaseholdFeeSimple}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Site -->
+      <tr>
+        <td class="row-label">Site</td>
+        <td class="subj">{{subject.lotSizeSqFt}} SF</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{lotSizeSqFt}} SF {{adjustments.site}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- View -->
+      <tr>
+        <td class="row-label">View</td>
+        <td class="subj">{{subject.view}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{view}} {{adjustments.viewAdj}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Design/Style -->
+      <tr>
+        <td class="row-label">Design (Style)</td>
+        <td class="subj">{{subject.design}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{design}} {{adjustments.designAndAppeal}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Quality -->
+      <tr>
+        <td class="row-label">Quality of Construction</td>
+        <td class="subj">{{subject.quality}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{quality}} {{adjustments.qualityOfConstruction}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Actual Age -->
+      <tr>
+        <td class="row-label">Actual Age</td>
+        <td class="subj">{{subject.yearBuilt}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{yearBuilt}} {{adjustments.actualAge}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Condition -->
+      <tr>
+        <td class="row-label">Condition</td>
+        <td class="subj">{{subject.condition}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{condition}} {{adjustments.conditionAdj}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Above Grade Room Count -->
+      <tr>
+        <td class="row-label">Above Grade Rooms Total/Beds/Baths</td>
+        <td class="subj">{{subject.totalRooms}} / {{subject.bedrooms}} / {{subject.bathrooms}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{totalRooms}} / {{bedrooms}} / {{bathrooms}} {{adjustments.aboveGradeRoomCount}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- GLA -->
+      <tr>
+        <td class="row-label">Gross Living Area (SF)</td>
+        <td class="subj">{{subject.grossLivingArea}} SF</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{grossLivingArea}} SF {{adjustments.grossLivingAreaAdj}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Basement -->
+      <tr>
+        <td class="row-label">Basement &amp; Finished Rooms</td>
+        <td class="subj">{{subject.basement}} {{subject.basementSqFt}} SF</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{basement}} {{adjustments.basementAndFinishedRooms}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Heating/Cooling -->
+      <tr>
+        <td class="row-label">Heating/Cooling</td>
+        <td class="subj">{{subject.heating}} / {{subject.cooling}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{heating}} / {{cooling}} {{adjustments.heatingCooling}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Garage -->
+      <tr>
+        <td class="row-label">Garage/Carport</td>
+        <td class="subj">{{subject.garageType}} {{subject.garageSpaces}}-car</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{garageType}} {{garageSpaces}}-car {{adjustments.garageCarport}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Porch/Pool -->
+      <tr>
+        <td class="row-label">Porch/Patio/Pool</td>
+        <td class="subj">{{subject.porchPatioDeck}} Pool: {{subject.pool}}</td>
+        {{#each primaryComps}}
+        <td class="comp-col">{{#if empty}}&nbsp;{{else}}{{porchPatioDeck}} Pool: {{pool}} {{adjustments.porchPatioPool}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Net Adjustment -->
+      <tr style="background:#f5f5f5; font-weight:bold;">
+        <td class="row-label">Net Adjustment (Total)</td>
+        <td class="subj"></td>
+        {{#each primaryComps}}
+        <td class="comp-col right">{{#if empty}}&nbsp;{{else}}{{adjustments.netAdjustmentTotal}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      <!-- Adjusted Sale Price -->
+      <tr style="background:#e8f5e9; font-weight:bold;">
+        <td class="row-label">Adjusted Sale Price of Comparable</td>
+        <td class="subj"></td>
+        {{#each primaryComps}}
+        <td class="comp-col right">{{#if empty}}&nbsp;{{else}}{{adjustments.adjustedSalePrice}}{{/if}}</td>
+        {{/each}}
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Comp photos row -->
+  <div class="photo-grid" style="margin-top:4px;">
+    {{#each primaryComps}}
+    <div class="photo-slot">
+      {{#unless empty}}
+      {{#with (lookup ../photos.comp @index)}}
+      <img src="{{this.blobPath}}" alt="{{../slotLabel}}">
+      {{else}}<span class="photo-placeholder">{{slotLabel}}</span>
+      {{/with}}
+      {{else}}<span class="photo-placeholder">–</span>{{/unless}}
+      <div class="photo-caption">{{#unless empty}}{{slotLabel}} – {{fullAddress}}{{/unless}}</div>
+    </div>
+    {{/each}}
+  </div>
+
+  <!-- Prior sales analysis -->
+  <div class="section-header">Prior Sales Analysis</div>
+  <div class="grid cols-2" style="margin-top:1px;">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Subject – Prior Transfer History</span>
+      {{#each priorSalesAnalysisLines}}{{this}}<br>{{/each}}
+    </div>
+    <div class="cell tall"></div>
+  </div>
+
+  <div class="form-footer">Uniform Residential Appraisal Report (URAR) &nbsp;|&nbsp; Generated {{generatedAt}} &nbsp;|&nbsp; Order {{metadata.orderId}} &nbsp;|&nbsp; Page 2</div>
+</div>
+<!-- END PAGE 2 -->
+
+<!-- ═══════════════════════════ PAGE 3: RECONCILIATION + SIGNATURES ══════ -->
+<div class="page">
+
+  <div class="form-title">Reconciliation &amp; Conclusion of Value</div>
+  <div class="form-subtitle">Report: {{metadata.orderNumber}} &nbsp;|&nbsp; Subject: {{subject.fullAddress}}</div>
+
+  <!-- Cost Approach (optional) -->
+  {{#if hasCostApproach}}
+  <div class="section-header">Cost Approach to Value (Not Required by Fannie Mae, Optional)</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Est. Land Value</span>
+      <span class="cell-value">{{costApproach.estimatedLandValue}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Source</span>
+      <span class="cell-value">{{costApproach.landValueSource}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Replacement Cost New</span>
+      <span class="cell-value">{{costApproach.replacementCostNew}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Depreciation</span>
+      <span class="cell-value">{{costApproach.depreciationAmount}} ({{costApproach.depreciationType}})</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell">
+      <span class="cell-label">Depreciated Cost of Improvements</span>
+      <span class="cell-value">{{costApproach.depreciatedCostOfImprovements}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Indicated Value by Cost Approach</span>
+      <span class="cell-value bold">{{costApproach.indicatedValueByCostApproach}}</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Comments</span>{{costApproach.comments}}
+    </div>
+    <div class="cell"></div>
+  </div>
+  {{/if}}
+
+  <!-- Income Approach (optional) -->
+  {{#if hasIncomeApproach}}
+  <div class="section-header">Income Approach to Value (Not Required by Fannie Mae, Optional)</div>
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Est. Monthly Market Rent</span>
+      <span class="cell-value">{{incomeApproach.estimatedMonthlyMarketRent}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Gross Rent Multiplier</span>
+      <span class="cell-value">{{incomeApproach.grossRentMultiplier}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Indicated Value by Income Approach</span>
+      <span class="cell-value bold">{{incomeApproach.indicatedValueByIncomeApproach}}</span>
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- Reconciliation -->
+  <div class="section-header">Reconciliation</div>
+  {{#if reconciliation}}
+  <div class="grid cols-4">
+    <div class="cell">
+      <span class="cell-label">Sales Comparison Approach</span>
+      <span class="cell-value">{{reconciliation.salesCompApproachValue}}</span>
+    </div>
+    {{#if hasCostApproach}}
+    <div class="cell">
+      <span class="cell-label">Cost Approach</span>
+      <span class="cell-value">{{reconciliation.costApproachValue}}</span>
+    </div>
+    {{/if}}
+    {{#if hasIncomeApproach}}
+    <div class="cell">
+      <span class="cell-label">Income Approach</span>
+      <span class="cell-value">{{reconciliation.incomeApproachValue}}</span>
+    </div>
+    {{/if}}
+    <div class="cell" style="background:#e8f5e9;">
+      <span class="cell-label">Final Opinion of Value</span>
+      <span class="cell-value bold" style="font-size:11pt;">{{reconciliation.finalOpinionOfValue}}</span>
+    </div>
+  </div>
+  <div class="grid cols-2">
+    <div class="cell tall textarea-cell">
+      <span class="cell-label">Reconciliation Narrative</span>
+      {{reconciliation.reconciliationNarrative}}
+    </div>
+    <div class="cell">
+      <div class="grid cols-2" style="border:none;">
+        <div class="cell">
+          <span class="cell-label">Effective Date</span>
+          <span class="cell-value">{{reconciliation.effectiveDate}}</span>
+        </div>
+        <div class="cell">
+          <span class="cell-label">Exposure Time</span>
+          <span class="cell-value">{{reconciliation.exposureTime}}</span>
+        </div>
+        <div class="cell span-2">
+          <span class="cell-label">Marketing Time</span>
+          <span class="cell-value">{{reconciliation.marketingTime}}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{else}}
+  <div class="grid cols-2">
+    <div class="cell tall"><span class="cell-label">No valuation data available</span></div>
+    <div class="cell tall"></div>
+  </div>
+  {{/if}}
+
+  <!-- Appraiser Certification & Signature -->
+  <div class="section-header">Appraiser Certification &amp; Signature</div>
+  {{#if appraiser}}
+  <div class="grid cols-6" style="margin-top:4px;">
+    <div class="cell span-3">
+      <span class="cell-label">Appraiser Name</span>
+      <span class="cell-value">{{appraiser.name}}</span>
+    </div>
+    <div class="cell span-3">
+      <span class="cell-label">Company Name</span>
+      <span class="cell-value">{{appraiser.companyName}}</span>
+    </div>
+    <div class="cell span-4">
+      <span class="cell-label">Company Address</span>
+      <span class="cell-value">{{appraiser.companyAddress}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Phone</span>
+      <span class="cell-value">{{appraiser.phone}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Email</span>
+      <span class="cell-value">{{appraiser.email}}</span>
+    </div>
+  </div>
+  <div class="grid cols-6">
+    <div class="cell span-2">
+      <span class="cell-label">License Type</span>
+      <span class="cell-value">{{appraiser.licenseType}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">License # / State</span>
+      <span class="cell-value">{{appraiser.licenseNumber}} / {{appraiser.licenseState}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Expiration Date</span>
+      <span class="cell-value">{{appraiser.licenseExpirationDate}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4" style="margin-top: 8px;">
+    <div class="cell span-2">
+      <div class="sig-line"></div>
+      <div class="sig-label">Appraiser Signature</div>
+    </div>
+    <div class="cell span-2">
+      <div class="sig-line"></div>
+      <div class="sig-label">Date of Signature: {{appraiser.signatureDate}}</div>
+    </div>
+  </div>
+
+  <!-- Supervisory Appraiser -->
+  {{#if appraiser.supervisory}}
+  <div class="section-header">Supervisory Appraiser</div>
+  <div class="grid cols-6">
+    <div class="cell span-3">
+      <span class="cell-label">Supervisory Appraiser Name</span>
+      <span class="cell-value">{{appraiser.supervisory.name}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">License # / State</span>
+      <span class="cell-value">{{appraiser.supervisory.licenseNumber}} / {{appraiser.supervisory.licenseState}}</span>
+    </div>
+    <div class="cell">
+      <span class="cell-label">Expiration</span>
+      <span class="cell-value">{{appraiser.supervisory.licenseExpirationDate}}</span>
+    </div>
+  </div>
+  <div class="grid cols-4" style="margin-top: 8px;">
+    <div class="cell span-2">
+      <div class="sig-line"></div>
+      <div class="sig-label">Supervisory Appraiser Signature</div>
+    </div>
+    <div class="cell span-2">
+      <div class="sig-line"></div>
+      <div class="sig-label">Date of Signature: {{appraiser.supervisory.signatureDate}}</div>
+    </div>
+  </div>
+  {{/if}}
+
+  {{else}}
+  <div class="grid cols-2">
+    <div class="cell tall"><span class="cell-label">Appraiser information not available</span></div>
+    <div class="cell tall"></div>
+  </div>
+  {{/if}}
+
+  <!-- Aerial photo if present -->
+  {{#if photos.aerial}}
+  <div class="section-header">Aerial / Location Map</div>
+  <div style="margin-top:2px; max-height: 120px; overflow:hidden; border: 1px solid #999;">
+    <img src="{{photos.aerial.blobPath}}" style="width:100%; object-fit:cover;" alt="Aerial View">
+  </div>
+  {{/if}}
+
+  <!-- Lender/Client information -->
+  <div class="section-header">Lender/Client</div>
+  <div class="grid cols-4">
+    <div class="cell span-2">
+      <span class="cell-label">Lender/Client Name</span>
+      <span class="cell-value">{{metadata.clientName}}</span>
+    </div>
+    <div class="cell span-2">
+      <span class="cell-label">Client Company</span>
+      <span class="cell-value">{{metadata.clientCompanyName}}</span>
+    </div>
+  </div>
+
+  <div class="form-footer">Uniform Residential Appraisal Report (URAR) &nbsp;|&nbsp; Generated {{generatedAt}} &nbsp;|&nbsp; Order {{metadata.orderId}} &nbsp;|&nbsp; Page 3</div>
+</div>
+<!-- END PAGE 3 -->
+
+</body>
+</html>

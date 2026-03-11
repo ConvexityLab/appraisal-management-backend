@@ -230,12 +230,12 @@ export class BulkPortfolioService {
         const result = await this.dbService.createOrder(orderPayload as any);
 
         if (result.success && result.data) {
-          results.push({
+          const resultItem: BulkPortfolioItem = {
             ...item,
             status: 'CREATED',
             orderId: result.data.id,
             orderNumber: (result.data as any).orderNumber,
-          });
+          };
           successCount++;
           const createdOrderId = result.data.id;
 
@@ -287,6 +287,58 @@ export class BulkPortfolioService {
                 }),
               );
           });
+
+          // ── Additional products (product_2 through product_5) ─────────────
+          if (item.additionalProducts && item.additionalProducts.length > 0) {
+            const additionalResults: import('../types/bulk-portfolio.types.js').AdditionalProduct[] = [];
+            for (const addlProduct of item.additionalProducts) {
+              const addlDueDate = new Date();
+              addlDueDate.setDate(addlDueDate.getDate() + (DEFAULT_TURN_TIME_DAYS[addlProduct.analysisType] ?? 5));
+              const addlPayload = {
+                ...orderPayload,
+                orderNumber: this._generateOrderNumber({ ...item, analysisType: addlProduct.analysisType }),
+                productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[addlProduct.analysisType],
+                dueDate: addlDueDate,
+                metadata: { ...orderPayload.metadata, analysisType: addlProduct.analysisType },
+              };
+              try {
+                const addlResult = await this.dbService.createOrder(addlPayload as any);
+                if (addlResult.success && addlResult.data) {
+                  additionalResults.push({
+                    ...addlProduct,
+                    status: 'CREATED',
+                    orderId: addlResult.data.id,
+                    orderNumber: (addlResult.data as any).orderNumber,
+                  });
+                  successCount++;
+
+                  // Axiom auto-submit for additional product order
+                  const addlOrderId = addlResult.data.id;
+                  setImmediate(() => {
+                    this.axiomService
+                      .submitOrderEvaluation(addlOrderId, this._orderToLoanData(item), undefined, tenantId, request.clientId)
+                      .catch((err: Error) =>
+                        this.logger.warn('Axiom auto-submit failed for additional product order', {
+                          orderId: addlOrderId,
+                          error: err.message,
+                        }),
+                      );
+                  });
+                } else {
+                  const addlMsg = addlResult.error?.message ?? 'Order creation failed';
+                  additionalResults.push({ ...addlProduct, status: 'FAILED', errorMessage: addlMsg });
+                  failCount++;
+                }
+              } catch (addlErr) {
+                const addlMsg = addlErr instanceof Error ? addlErr.message : 'Unknown error';
+                additionalResults.push({ ...addlProduct, status: 'FAILED', errorMessage: addlMsg });
+                failCount++;
+              }
+            }
+            resultItem.additionalProducts = additionalResults;
+          }
+
+          results.push(resultItem);
         } else {
           const msg = result.error?.message ?? 'Order creation failed';
           this.logger.warn('Failed to create order for bulk row', {

@@ -56,7 +56,7 @@ export const createTeamsRouter = (): Router => {
     handleValidationErrors,
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -269,7 +269,7 @@ export const createTeamsRouter = (): Router => {
     '/list-teams',
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -486,7 +486,7 @@ export const createTeamsRouter = (): Router => {
     handleValidationErrors,
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -531,7 +531,7 @@ export const createTeamsRouter = (): Router => {
     handleValidationErrors,
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -580,7 +580,7 @@ export const createTeamsRouter = (): Router => {
     '/channels/:teamId/:channelId/email',
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -641,7 +641,7 @@ export const createTeamsRouter = (): Router => {
     handleValidationErrors,
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -686,7 +686,7 @@ export const createTeamsRouter = (): Router => {
     handleValidationErrors,
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',
@@ -743,7 +743,7 @@ export const createTeamsRouter = (): Router => {
     handleValidationErrors,
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
-        if (!teamsService.isServiceConfigured()) {
+        if (!await teamsService.isServiceConfigured()) {
           return res.status(503).json({
             success: false,
             error: 'SERVICE_NOT_CONFIGURED',

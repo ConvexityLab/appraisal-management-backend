@@ -27,7 +27,8 @@ export enum EventCategory {
   QC = 'qc',
   VENDOR = 'vendor',
   SYSTEM = 'system',
-  NOTIFICATION = 'notification'
+  NOTIFICATION = 'notification',
+  ASSIGNMENT = 'assignment',
 }
 
 // Order-related events
@@ -50,6 +51,8 @@ export interface OrderStatusChangedEvent extends BaseEvent {
   category: EventCategory.ORDER;
   data: {
     orderId: string;
+    /** Required so subscribers can perform tenant-scoped DB lookups without a cross-partition query. */
+    tenantId: string;
     previousStatus: string;
     newStatus: string;
     changedBy: string;
@@ -167,7 +170,174 @@ export interface SystemAlertEvent extends BaseEvent {
   };
 }
 
-// Union type of all possible events
+// ── Auto-Assignment Workflow Events ──────────────────────────────────────────
+
+/** Fired when an order linked to an engagement is created — triggers auto vendor selection. */
+export interface EngagementOrderCreatedEvent extends BaseEvent {
+  type: 'engagement.order.created';
+  category: EventCategory.ASSIGNMENT;
+  data: {
+    engagementId: string;
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    productType: string;
+    propertyAddress: string;
+    propertyState: string;
+    clientId: string;
+    loanAmount: number;
+    priority: EventPriority;
+    dueDate: Date;
+  };
+}
+
+/** Fired when a bid request is sent to a specific vendor. */
+export interface VendorBidSentEvent extends BaseEvent {
+  type: 'vendor.bid.sent';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    vendorName: string;
+    bidId: string;
+    expiresAt: Date;
+    attemptNumber: number;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when a vendor explicitly accepts a bid invitation. */
+export interface VendorBidAcceptedEvent extends BaseEvent {
+  type: 'vendor.bid.accepted';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    vendorName: string;
+    bidId: string;
+    acceptedAt: Date;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when a vendor did not respond to a bid within the timeout window. */
+export interface VendorBidTimedOutEvent extends BaseEvent {
+  type: 'vendor.bid.timeout';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    bidId: string;
+    attemptNumber: number;
+    totalAttempts: number;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when a vendor explicitly declines a bid. */
+export interface VendorBidDeclinedEvent extends BaseEvent {
+  type: 'vendor.bid.declined';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    vendorName: string;
+    bidId: string;
+    declineReason: string;
+    attemptNumber: number;
+    totalAttempts: number;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when all vendors have timed out or declined — human intervention required. */
+export interface VendorAssignmentExhaustedEvent extends BaseEvent {
+  type: 'vendor.assignment.exhausted';
+  category: EventCategory.ASSIGNMENT;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    attemptsCount: number;
+    vendorsContacted: string[];
+    priority: EventPriority;
+    requiresHumanIntervention: true;
+  };
+}
+
+/** Fired when an order is delivered and needs to enter the review queue. */
+export interface ReviewAssignmentRequestedEvent extends BaseEvent {
+  type: 'review.assignment.requested';
+  category: EventCategory.ASSIGNMENT;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    qcReviewId: string;
+    priority: EventPriority;
+    dueDate: Date;
+  };
+}
+
+/** Fired when a review is assigned to a specific staff member. */
+export interface ReviewAssignedEvent extends BaseEvent {
+  type: 'review.assigned';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    qcReviewId: string;
+    reviewerId: string;
+    reviewerName: string;
+    attemptNumber: number;
+    assignedAt: Date;
+    expiresAt: Date;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when a staff reviewer did not accept within the timeout window. */
+export interface ReviewAssignmentTimedOutEvent extends BaseEvent {
+  type: 'review.assignment.timeout';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    qcReviewId: string;
+    reviewerId: string;
+    attemptNumber: number;
+    totalAttempts: number;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when all reviewers have timed out — human intervention required. */
+export interface ReviewAssignmentExhaustedEvent extends BaseEvent {
+  type: 'review.assignment.exhausted';
+  category: EventCategory.ASSIGNMENT;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    qcReviewId: string;
+    attemptsCount: number;
+    reviewersContacted: string[];
+    priority: EventPriority;
+    requiresHumanIntervention: true;
+  };
+}
+
+
 export type AppEvent = 
   | OrderCreatedEvent
   | OrderStatusChangedEvent
@@ -178,7 +348,18 @@ export type AppEvent =
   | QCIssueDetectedEvent
   | VendorPerformanceUpdatedEvent
   | VendorAvailabilityChangedEvent
-  | SystemAlertEvent;
+  | SystemAlertEvent
+  // Auto-assignment workflow events
+  | EngagementOrderCreatedEvent
+  | VendorBidSentEvent
+  | VendorBidAcceptedEvent
+  | VendorBidTimedOutEvent
+  | VendorBidDeclinedEvent
+  | VendorAssignmentExhaustedEvent
+  | ReviewAssignmentRequestedEvent
+  | ReviewAssignedEvent
+  | ReviewAssignmentTimedOutEvent
+  | ReviewAssignmentExhaustedEvent;
 
 // Event handler interface
 export interface EventHandler<T extends BaseEvent = BaseEvent> {

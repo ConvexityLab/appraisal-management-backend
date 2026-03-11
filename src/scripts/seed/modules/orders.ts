@@ -11,6 +11,7 @@ import { upsert, cleanContainer, daysAgo, hoursAgo } from '../seed-types.js';
 import {
   ORDER_IDS, ORDER_NUMBERS,
   CLIENT_IDS, PRODUCT_IDS, VENDOR_IDS, APPRAISER_IDS, PROPERTY_IDS,
+  REPORT_IDS,
 } from '../seed-ids.js';
 
 const CONTAINER = 'orders';
@@ -33,6 +34,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       inspectionDate: daysAgo(22), submittedDate: daysAgo(18), completedDate: daysAgo(10),
       dueDate: daysAgo(8), fee: 500, paidAmount: 500,
       appraiserFee: 375, appraisedValue: 425000,
+      reportId: REPORT_IDS.FULL_1004_ORDER_001,
       qcStatus: 'PASSED', qcScore: 94,
       createdAt: daysAgo(30), updatedAt: daysAgo(10),
     },
@@ -71,6 +73,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       inspectionDate: daysAgo(3),
       dueDate: daysAgo(-1), fee: 700, paidAmount: 0,
       appraiserFee: 500,
+      reportId: REPORT_IDS.FULL_1004_ORDER_003,
       createdAt: daysAgo(7), updatedAt: hoursAgo(6),
     },
     // 4 — PENDING_ASSIGNMENT

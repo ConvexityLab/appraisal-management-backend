@@ -18,7 +18,7 @@ import {
 // Test timeout for async operations
 const TEST_TIMEOUT = 10000;
 
-describe.skip('Event-Driven Architecture', () => {
+describe('Event-Driven Architecture', () => {
   let publisher: ServiceBusEventPublisher;
   let subscriber: ServiceBusEventSubscriber;
   let notificationService: NotificationService;

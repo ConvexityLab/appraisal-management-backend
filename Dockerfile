@@ -24,8 +24,22 @@ FROM node:22-alpine AS production
 
 RUN npm install -g pnpm@9
 
-# Install security updates
-RUN apk update && apk upgrade && apk add --no-cache dumb-init
+# Install security updates + Chromium system deps for Playwright headless PDF rendering
+RUN apk update && apk upgrade && apk add --no-cache \
+    dumb-init \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    font-noto-emoji
+
+# Tell Playwright to use the system Chromium instead of downloading its own binaries
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV CHROMIUM_FLAGS="--disable-software-rasterizer --disable-dev-shm-usage"
 
 # Create app directory
 WORKDIR /usr/src/app

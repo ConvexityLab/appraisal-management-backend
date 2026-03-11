@@ -1,13 +1,9 @@
-/**
- * External Services Integration Test Suite
- * Tests for FEMA, Google Places, Census Bureau, and other external APIs
- * Validates real external service integrations beyond basic property intelligence
- */
-
 import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { AppraisalManagementAPIServer } from '../../src/api/api-server';
+import type { Application } from 'express';
 
 // Test configuration
-const API_BASE_URL = 'http://localhost:3000';
 const TEST_TIMEOUT = 20000;
 
 // Test coordinates for Google headquarters (good test location with known data)
@@ -23,19 +19,15 @@ const FLOOD_ZONE_COORDINATES = {
   longitude: -95.3698
 };
 
-describe.skip('External Services Integration Tests', () => {
+describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set � skipping in-process API server tests')('External Services Integration Tests', () => {
+  let serverInstance;
+  let app;
+
   beforeAll(async () => {
-    // Verify server connectivity
-    try {
-      const response = await fetch(`${API_BASE_URL}/health`);
-      if (!response.ok) {
-        throw new Error(`Server not available: ${response.status}`);
-      }
-      console.log('🔗 Connected to production server for external services testing');
-    } catch (error) {
-      throw new Error(`❌ Cannot connect to server at ${API_BASE_URL}`);
-    }
-  }, TEST_TIMEOUT);
+    serverInstance = new AppraisalManagementAPIServer(0);
+    app = serverInstance.getExpressApp();
+    // No initDb() needed — property intelligence does not use the DB
+  }, 60_000);
 
   describe('FEMA Flood Risk Integration', () => {
     it('should integrate with FEMA flood zone data via risk assessment', async () => {
@@ -47,20 +39,18 @@ describe.skip('External Services Integration Tests', () => {
       };
 
       // Use comprehensive analysis endpoint which includes risk assessment
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(riskData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/comprehensive')
+        .send(riskData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for FEMA-specific data in response
-      if (result.data && result.data.riskFactors) {
+      if (response.body.data && response.body.data.riskFactors) {
         console.log('✅ FEMA flood risk data integration working');
       }
 
@@ -75,16 +65,14 @@ describe.skip('External Services Integration Tests', () => {
         assessFloodInsurance: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(analysisData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/comprehensive')
+        .send(analysisData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
       console.log('✅ Flood insurance assessment completed');
     }, TEST_TIMEOUT);
@@ -99,23 +87,21 @@ describe.skip('External Services Integration Tests', () => {
         type: 'restaurant'
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/places/nearby`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(placesData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/places/nearby')
+        .send(placesData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(Array.isArray(result.data)).toBe(true);
+      expect(response.body.success).toBe(true);
+      expect(Array.isArray(response.body.data)).toBe(true);
 
-      console.log(`✅ Google Places API: Found ${result.data.length} nearby restaurants`);
+      console.log(`✅ Google Places API: Found ${response.body.data.length} nearby restaurants`);
       
       // Verify Google Places specific data structure
-      if (result.data.length > 0) {
-        const place = result.data[0];
+      if (response.body.data.length > 0) {
+        const place = response.body.data[0];
         if (place.place_id) {
           console.log(`   📍 Sample Place ID: ${place.place_id}`);
         }
@@ -133,18 +119,16 @@ describe.skip('External Services Integration Tests', () => {
         keyword: 'Starbucks'
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/places/nearby`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(starbucksData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/places/nearby')
+        .send(starbucksData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
-      console.log(`✅ Google Places API: Found ${result.data.length} Starbucks locations nearby`);
+      console.log(`✅ Google Places API: Found ${response.body.data.length} Starbucks locations nearby`);
     }, TEST_TIMEOUT);
 
     it('should provide detailed place information', async () => {
@@ -156,18 +140,16 @@ describe.skip('External Services Integration Tests', () => {
         includeDetails: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/places/nearby`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(placesData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/places/nearby')
+        .send(placesData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
-      console.log(`✅ Google Places API: Found ${result.data.length} schools with detailed info`);
+      console.log(`✅ Google Places API: Found ${response.body.data.length} schools with detailed info`);
     }, TEST_TIMEOUT);
   });
 
@@ -179,27 +161,25 @@ describe.skip('External Services Integration Tests', () => {
         includeDetailedDemographics: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/demographics`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(censusData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/census/demographics')
+        .send(censusData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for Census Bureau specific data
-      if (result.data.population) {
-        console.log(`   👥 Population: ${result.data.population}`);
+      if (response.body.data.population) {
+        console.log(`   👥 Population: ${response.body.data.population}`);
       }
-      if (result.data.medianHouseholdIncome) {
-        console.log(`   💰 Median Household Income: $${result.data.medianHouseholdIncome}`);
+      if (response.body.data.medianHouseholdIncome) {
+        console.log(`   💰 Median Household Income: $${response.body.data.medianHouseholdIncome}`);
       }
-      if (result.data.medianAge) {
-        console.log(`   📅 Median Age: ${result.data.medianAge}`);
+      if (response.body.data.medianAge) {
+        console.log(`   📅 Median Age: ${response.body.data.medianAge}`);
       }
 
       console.log('✅ US Census Bureau demographic data retrieved');
@@ -213,24 +193,22 @@ describe.skip('External Services Integration Tests', () => {
         includeEmploymentData: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/economic`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(economicData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/census/economic')
+        .send(economicData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for economic indicators
-      if (result.data.unemploymentRate) {
-        console.log(`   📊 Unemployment Rate: ${result.data.unemploymentRate}%`);
+      if (response.body.data.unemploymentRate) {
+        console.log(`   📊 Unemployment Rate: ${response.body.data.unemploymentRate}%`);
       }
-      if (result.data.medianIncome) {
-        console.log(`   💵 Median Income: $${result.data.medianIncome}`);
+      if (response.body.data.medianIncome) {
+        console.log(`   💵 Median Income: $${response.body.data.medianIncome}`);
       }
 
       console.log('✅ US Census Bureau economic data retrieved');
@@ -244,27 +222,25 @@ describe.skip('External Services Integration Tests', () => {
         includeOccupancyData: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/housing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(housingData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/census/housing')
+        .send(housingData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for housing-specific data
-      if (result.data.medianHomeValue) {
-        console.log(`   🏠 Median Home Value: $${result.data.medianHomeValue}`);
+      if (response.body.data.medianHomeValue) {
+        console.log(`   🏠 Median Home Value: $${response.body.data.medianHomeValue}`);
       }
-      if (result.data.ownerOccupiedRate) {
-        console.log(`   🔑 Owner Occupied Rate: ${result.data.ownerOccupiedRate}%`);
+      if (response.body.data.ownerOccupiedRate) {
+        console.log(`   🔑 Owner Occupied Rate: ${response.body.data.ownerOccupiedRate}%`);
       }
-      if (result.data.vacancyRate) {
-        console.log(`   📋 Vacancy Rate: ${result.data.vacancyRate}%`);
+      if (response.body.data.vacancyRate) {
+        console.log(`   📋 Vacancy Rate: ${response.body.data.vacancyRate}%`);
       }
 
       console.log('✅ US Census Bureau housing data retrieved');
@@ -277,20 +253,18 @@ describe.skip('External Services Integration Tests', () => {
         includeAllDatasets: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/comprehensive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(comprehensiveData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/census/comprehensive')
+        .send(comprehensiveData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Should include demographics, economics, and housing
-      const dataKeys = Object.keys(result.data);
+      const dataKeys = Object.keys(response.body.data);
       console.log(`✅ Comprehensive census data includes: ${dataKeys.join(', ')}`);
     }, TEST_TIMEOUT);
   });
@@ -305,21 +279,19 @@ describe.skip('External Services Integration Tests', () => {
         useMultipleProviders: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/address/validate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addressData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/address/validate')
+        .send(addressData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for multiple provider validation
-      if (result.metadata && result.metadata.dataSourcesUsed) {
-        console.log(`✅ Address validation used providers: ${result.metadata.dataSourcesUsed.join(', ')}`);
+      if (response.body.metadata && response.body.metadata.dataSourcesUsed) {
+        console.log(`✅ Address validation used providers: ${response.body.metadata.dataSourcesUsed.join(', ')}`);
       }
 
       console.log('✅ Multi-provider address validation completed');
@@ -332,19 +304,17 @@ describe.skip('External Services Integration Tests', () => {
         validateUSPS: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/address/standardize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addressData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/address/standardize')
+        .send(addressData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
-      if (result.data.standardizedAddress) {
-        console.log(`✅ Standardized: ${result.data.standardizedAddress}`);
+      if (response.body.data.standardizedAddress) {
+        console.log(`✅ Standardized: ${response.body.data.standardizedAddress}`);
       }
 
       console.log('✅ Address standardization completed');
@@ -357,21 +327,19 @@ describe.skip('External Services Integration Tests', () => {
         validateComponents: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/address/components`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addressData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/address/components')
+        .send(addressData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for detailed components
-      if (result.data.components) {
-        const components = result.data.components;
+      if (response.body.data.components) {
+        const components = response.body.data.components;
         if (components.streetNumber) console.log(`   🏠 Street Number: ${components.streetNumber}`);
         if (components.streetName) console.log(`   🛣️  Street Name: ${components.streetName}`);
         if (components.city) console.log(`   🏙️  City: ${components.city}`);
@@ -395,27 +363,25 @@ describe.skip('External Services Integration Tests', () => {
         includeWildfireRisk: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/risk-assessment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(riskData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/risk-assessment')
+        .send(riskData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Check for various risk assessments
-      if (result.data.seismicRisk) {
-        console.log(`   🌍 Seismic Risk Score: ${result.data.seismicRisk.riskScore}/10`);
+      if (response.body.data.seismicRisk) {
+        console.log(`   🌍 Seismic Risk Score: ${response.body.data.seismicRisk.riskScore}/10`);
       }
-      if (result.data.floodRisk) {
-        console.log(`   🌊 Flood Risk Score: ${result.data.floodRisk.floodRiskScore}/10`);
+      if (response.body.data.floodRisk) {
+        console.log(`   🌊 Flood Risk Score: ${response.body.data.floodRisk.floodRiskScore}/10`);
       }
-      if (result.data.wildfireRisk) {
-        console.log(`   🔥 Wildfire Risk Score: ${result.data.wildfireRisk.riskScore}/10`);
+      if (response.body.data.wildfireRisk) {
+        console.log(`   🔥 Wildfire Risk Score: ${response.body.data.wildfireRisk.riskScore}/10`);
       }
 
       console.log('✅ Environmental hazard assessment completed');
@@ -429,16 +395,14 @@ describe.skip('External Services Integration Tests', () => {
         includeDetailedSeismicHistory: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/risk-assessment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(earthquakeData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/risk-assessment')
+        .send(earthquakeData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
       console.log('✅ USGS earthquake risk assessment completed');
     }, TEST_TIMEOUT);
@@ -446,15 +410,16 @@ describe.skip('External Services Integration Tests', () => {
 
   describe('Property Intelligence Service Health', () => {
     it('should report external service connectivity status', async () => {
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/health`);
+      const response = await request(app)
+        .get('/api/property-intelligence/health');
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.status).toBe('healthy');
-      expect(result.services).toBeDefined();
+      expect(response.body.status).toBe('healthy');
+      expect(response.body.services).toBeDefined();
 
       // Check individual service status
-      const services = result.services;
+      const services = response.body.services;
       console.log('\n📊 External Service Status:');
       
       if (services.googleMaps) {
@@ -490,21 +455,19 @@ describe.skip('External Services Integration Tests', () => {
         radius: 2000
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/creative-features`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(coffeeData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/creative-features')
+        .send(coffeeData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
-      if (result.data.coffeeCulture) {
-        console.log(`✅ Coffee shop analysis: ${result.data.coffeeCulture.totalShops} shops found`);
-        if (result.data.coffeeCulture.starbucksCount) {
-          console.log(`   ☕ Starbucks locations: ${result.data.coffeeCulture.starbucksCount}`);
+      if (response.body.data.coffeeCulture) {
+        console.log(`✅ Coffee shop analysis: ${response.body.data.coffeeCulture.totalShops} shops found`);
+        if (response.body.data.coffeeCulture.starbucksCount) {
+          console.log(`   ☕ Starbucks locations: ${response.body.data.coffeeCulture.starbucksCount}`);
         }
       }
 
@@ -520,19 +483,17 @@ describe.skip('External Services Integration Tests', () => {
         includeAmenities: true
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/creative-features`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(walkabilityData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/creative-features')
+        .send(walkabilityData);
 
       expect(response.status).toBe(200);
       
       const result = await response.json();
-      expect(result.success).toBe(true);
+      expect(response.body.success).toBe(true);
 
-      if (result.data.walkability) {
-        console.log(`✅ Walkability score: ${result.data.walkability.score}/100`);
+      if (response.body.data.walkability) {
+        console.log(`✅ Walkability score: ${response.body.data.walkability.score}/100`);
       }
 
       console.log('✅ Walkability analysis using external data completed');

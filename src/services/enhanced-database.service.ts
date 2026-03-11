@@ -507,6 +507,7 @@ export class EnhancedDatabaseService {
     const sampleVendors: Vendor[] = [
       {
         id: 'vendor-001',
+        tenantId: 'test-tenant-123',
         name: 'Apex Appraisal Services',
         email: 'contact@apexappraisal.com',
         phone: '555-0101',

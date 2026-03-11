@@ -64,6 +64,8 @@ export class TeamsService {
   private acsService!: AzureCommunicationService;
   private logger: Logger;
   private isConfigured: boolean = false;
+  // Stored so async callers can await initialization before the first Graph call.
+  private readonly initPromise: Promise<void>;
 
   constructor() {
     this.logger = new Logger();
@@ -73,6 +75,7 @@ export class TeamsService {
     if (!tenantId) {
       this.logger.warn('Teams service not configured: AZURE_TENANT_ID missing');
       this.isConfigured = false;
+      this.initPromise = Promise.resolve();
       return;
     }
 
@@ -83,10 +86,21 @@ export class TeamsService {
     } catch (error) {
       this.logger.warn('Failed to initialize Teams service dependencies', { error });
       this.isConfigured = false;
+      this.initPromise = Promise.resolve();
       return;
     }
 
-    this.initialize();
+    this.initPromise = this.initialize();
+  }
+
+  /**
+   * Await the async initialization that runs in the constructor.
+   * Call this at the start of any method that uses this.graphClient so that
+   * a request arriving before initialize() resolves gets a consistent error
+   * instead of a misleading "Teams service not configured" message.
+   */
+  private async ensureInitialized(): Promise<void> {
+    await this.initPromise;
   }
 
   /**
@@ -128,6 +142,7 @@ export class TeamsService {
    * External users (ACS) can join via link without Teams license
    */
   async createOrderMeeting(options: CreateMeetingOptions): Promise<TeamsMeeting> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
       throw new Error('Teams service not configured');
     }
@@ -363,6 +378,7 @@ export class TeamsService {
    * Cancel a Teams meeting
    */
   async cancelMeeting(meetingId: string, tenantId: string): Promise<void> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
       throw new Error('Teams service not configured');
     }
@@ -397,6 +413,7 @@ export class TeamsService {
     updates: Partial<Pick<TeamsMeeting, 'subject' | 'startDateTime' | 'endDateTime'>>,
     tenantId: string
   ): Promise<TeamsMeeting> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
       throw new Error('Teams service not configured');
     }
@@ -437,6 +454,7 @@ export class TeamsService {
     teamId: string,
     channelId: string
   ): Promise<string | null> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
       throw new Error('Teams service not configured');
     }
@@ -472,6 +490,7 @@ export class TeamsService {
     subject: string,
     htmlContent: string
   ): Promise<{ success: boolean; channelEmail: string; messageId?: string; error?: string }> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
       throw new Error('Teams service not configured');
     }
@@ -544,8 +563,9 @@ export class TeamsService {
     message: string,
     subject?: string
   ): Promise<{ messageId: string }> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
-      throw new Error('Teams service not configured');
+      throw new Error('Teams service not configured. Ensure AZURE_TENANT_ID is set and the app registration has the ChannelMessage.Send application permission with admin consent.');
     }
 
     try {
@@ -596,6 +616,7 @@ export class TeamsService {
     message: string,
     senderUserId?: string
   ): Promise<{ chatId: string; messageId: string }> {
+    await this.ensureInitialized();
     if (!this.isConfigured || !this.graphClient) {
       throw new Error('Teams service not configured');
     }
@@ -684,9 +705,10 @@ export class TeamsService {
   }
 
   /**
-   * Check if service is configured
+   * Check if service is configured (awaits async initialization).
    */
-  isServiceConfigured(): boolean {
+  async isServiceConfigured(): Promise<boolean> {
+    await this.initPromise;
     return this.isConfigured;
   }
 }

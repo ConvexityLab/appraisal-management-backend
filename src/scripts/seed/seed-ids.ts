@@ -36,9 +36,16 @@ export const VENDOR_IDS = {
   TX_PROPERTY: 'seed-vendor-003',
   METROPLEX: 'seed-vendor-004',
   NVN: 'seed-vendor-005',
-  // CA/FL extended vendors (from seed-vendors.ts)
+  // CA vendors
   JAMES_WILLIAMS_CA: 'seed-vendor-ca-james-williams',
   MARIA_RODRIGUEZ_CA: 'seed-vendor-ca-maria-rodriguez',
+  DAVID_CHEN_CA: 'seed-vendor-ca-david-chen',
+  SARAH_THOMPSON_CA: 'seed-vendor-ca-sarah-thompson',
+  ROBERT_MARTINEZ_CA: 'seed-vendor-ca-robert-martinez',
+  // TX extended
+  JENNIFER_LEE_TX: 'seed-vendor-tx-jennifer-lee',
+  MICHAEL_JOHNSON_TX: 'seed-vendor-tx-michael-johnson',
+  // FL vendors
   AMANDA_WILSON_FL: 'seed-vendor-fl-amanda-wilson',
 } as const;
 
@@ -48,7 +55,10 @@ export const APPRAISER_IDS = {
   PATRICIA_NGUYEN: 'seed-appraiser-002',
   KEVIN_OKAFOR: 'seed-appraiser-003',
   ANGELA_REEVES_CA: 'seed-appraiser-ca-001',
+  BRIAN_KOWALSKI_CA: 'seed-appraiser-ca-002',
+  FRANK_MORRISON_CA: 'seed-appraiser-ca-003',
   CARMEN_DELGADO_TX: 'seed-appraiser-tx-001',
+  DANIEL_PARK_TX: 'seed-appraiser-tx-002',
   ELENA_VASQUEZ_FL: 'seed-appraiser-fl-001',
 } as const;
 
@@ -104,6 +114,7 @@ export const QC_REVIEW_IDS = {
   REVIEW_ORDER_001: 'seed-qc-review-001',
   REVIEW_ORDER_002: 'seed-qc-review-002',
   REVIEW_ORDER_009: 'seed-qc-review-009',
+  ENHANCED_AI_REVIEW: 'seed-qc-review-enhanced-001',
 } as const;
 
 // ─── Documents ────────────────────────────────────────────────────────────────
@@ -113,6 +124,13 @@ export const DOCUMENT_IDS = {
   PHOTOS_ORDER_003: 'seed-doc-photos-003',
   REPORT_ORDER_009: 'seed-doc-report-009',
   REPORT_ORDER_012: 'seed-doc-report-012',
+  // Vendor-scoped
+  VENDOR_LICENSE: 'seed-doc-vendor-license',
+  VENDOR_INSURANCE: 'seed-doc-vendor-insurance',
+  VENDOR_W9: 'seed-doc-vendor-w9',
+  // Appraiser-scoped
+  APPRAISER_LICENSE: 'seed-doc-appraiser-license',
+  APPRAISER_COMPLIANCE: 'seed-doc-appraiser-compliance',
 } as const;
 
 // ─── Communications ───────────────────────────────────────────────────────────
@@ -144,16 +162,48 @@ export const ARV_IDS = {
   ARV_ORDER_006: 'seed-arv-001',
 } as const;
 
+// ─── Communication Platform ──────────────────────────────────────────────────
+export const COMM_PLATFORM_IDS = {
+  ACS_USER_COORDINATOR: 'seed-acs-user-coordinator',
+  ACS_USER_VENDOR_001: 'seed-acs-user-vendor-001',
+  ACS_USER_VENDOR_002: 'seed-acs-user-vendor-002',
+  ACS_USER_APPRAISER_001: 'seed-acs-user-appraiser-001',
+  ACS_USER_APPRAISER_002: 'seed-acs-user-appraiser-002',
+  ACS_USER_APPRAISER_003: 'seed-acs-user-appraiser-003',
+  CTX_ORDER_001: 'seed-ctx-order-001',
+  CTX_ORDER_002: 'seed-ctx-order-002',
+  CTX_ORDER_003: 'seed-ctx-order-003',
+  CTX_ORDER_005: 'seed-ctx-order-005',
+  MTG_ORDER_002: 'seed-teams-mtg-order-002',
+  MTG_ORDER_003: 'seed-teams-mtg-order-003',
+  MTG_ORDER_005: 'seed-teams-mtg-order-005',
+} as const;
+
 // ─── Construction ─────────────────────────────────────────────────────────────
 export const CONTRACTOR_IDS = {
   APEX_BUILD: 'seed-gc-001',
   SWIFT_RENO: 'seed-gc-002',
+  RIDGELINE: 'seed-gc-003',
+  SUMMIT_PEAK: 'seed-gc-004',
+  CLEARWATER: 'seed-gc-005',
+  FRONT_RANGE_ELEC: 'seed-sub-001',
+  ROCKY_MTN_PLUMBING: 'seed-sub-002',
 } as const;
 
 export const CONSTRUCTION_LOAN_IDS = {
   GROUND_UP: 'seed-cloan-ground-up-001',
   FIX_FLIP: 'seed-cloan-fix-flip-002',
   REHAB: 'seed-cloan-rehab-003',
+  MULTIFAMILY: 'seed-cloan-multifam-004',
+  COMPLETED: 'seed-cloan-completed-005',
+} as const;
+
+export const BUDGET_IDS = {
+  GROUND_UP: 'seed-budget-001',
+  FIX_FLIP: 'seed-budget-002',
+  MULTIFAMILY: 'seed-budget-003',
+  REHAB: 'seed-budget-004',
+  COMPLETED: 'seed-budget-005',
 } as const;
 
 export const DRAW_IDS = {
@@ -161,6 +211,10 @@ export const DRAW_IDS = {
   DRAW_2_GROUND_UP: 'seed-draw-002',
   DRAW_1_FIX_FLIP: 'seed-draw-003',
   DRAW_1_REHAB: 'seed-draw-004',
+  DRAW_2_FIX_FLIP: 'seed-draw-005',
+  DRAW_1_MULTIFAMILY: 'seed-draw-006',
+  DRAW_2_MULTIFAMILY: 'seed-draw-007',
+  DRAW_3_GROUND_UP: 'seed-draw-008',
 } as const;
 
 // ─── Bulk Portfolios ─────────────────────────────────────────────────────────
@@ -213,9 +267,30 @@ export const STAFF_IDS = {
   COORDINATOR_1: 'seed-user-coordinator-001',
 } as const;
 
-// ─── PDF Templates ────────────────────────────────────────────────────────────
+// ─── PDF Templates (legacy AcroForm template) ─────────────────────────────────
 export const PDF_TEMPLATE_IDS = {
   FORM_1004: 'seed-pdf-template-1004',
+} as const;
+
+// ─── HTML Report Templates (html-render strategy via Playwright/Handlebars) ────
+export const REPORT_TEMPLATE_IDS = {
+  URAR_1004_V1: 'seed-report-template-urar-1004-v1',
+  /** Vision VMC-branded redesign with UAD 3.6 conditional sections. */
+  URAR_1004_V2: 'seed-report-template-urar-1004-v2',
+  DVR_BPO_V1:   'seed-report-template-dvr-bpo-v1',
+} as const;
+
+// ─── Negotiation (Phase2 — round-by-round) ────────────────────────────────────
+export const NEGOTIATION_IDS = {
+  ACCEPTED_DIRECT: 'seed-negotiation-phase2-accepted-001',
+  ACCEPTED_COUNTERED: 'seed-negotiation-phase2-countered-001',
+  REJECTED: 'seed-negotiation-phase2-rejected-001',
+  ACTIVE_COUNTER: 'seed-negotiation-phase2-active-001',
+} as const;
+
+// ─── Construction Cost Catalog (division-based IDs) ───────────────────────────
+export const TENANT_CONFIG_IDS = {
+  CONSTRUCTION: 'seed-tenant-construction-config',
 } as const;
 
 // ─── Engagements ──────────────────────────────────────────────────────────────

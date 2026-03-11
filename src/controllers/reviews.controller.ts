@@ -1474,6 +1474,8 @@ export class QCExecutionController {
   private hasChecklistExecuteAccess(user: any, checklist: any): boolean {
     if (!user) return false;
     if (user.role === 'admin' || user.role === 'system') return true;
+    // Unrestricted checklists (no clientId/organizationId) are globally executable
+    if (!checklist.clientId && !checklist.organizationId) return true;
     if (checklist.clientId && user.clientId && checklist.clientId === user.clientId) return true;
     if (checklist.organizationId && user.organizationId && checklist.organizationId === user.organizationId) return true;
     return false;

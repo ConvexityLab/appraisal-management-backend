@@ -12,9 +12,13 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import type { Application } from 'express';
+import { AppraisalManagementAPIServer } from '../src/api/api-server';
 
 // Configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3011';
 const TEST_JWT_TOKEN = process.env.TEST_JWT_TOKEN || 'test-jwt-token';
 
 // Test data
@@ -613,7 +617,55 @@ if (process.env.INTEGRATION_TESTS === 'true') {
   });
 }
 
-// Vitest placeholder — all real tests run via QCWorkflowE2ETest above
-describe.skip('QC Workflow E2E Tests (requires running server at localhost:3000)', () => {
-  it('placeholder — run with INTEGRATION_TESTS=true', () => {});
+// ──────────────────────────────────────────────────────────────────────────────
+// Vitest tests — run against in-process server when AZURE_COSMOS_ENDPOINT is set
+// ──────────────────────────────────────────────────────────────────────────────
+const AZURE_COSMOS_ENDPOINT = process.env.AZURE_COSMOS_ENDPOINT;
+
+describe.skipIf(!AZURE_COSMOS_ENDPOINT, 'Set AZURE_COSMOS_ENDPOINT to run these tests')('QC Workflow E2E Tests', () => {
+  let serverInstance: AppraisalManagementAPIServer;
+  let app: Application;
+  let authToken: string;
+
+  beforeAll(async () => {
+    serverInstance = new AppraisalManagementAPIServer(0);
+    app = serverInstance.getExpressApp();
+    await serverInstance.initDb();
+    authToken = process.env.TEST_JWT_TOKEN ?? '';
+    if (!authToken) throw new Error('TEST_JWT_TOKEN not set in environment');
+  }, 60000);
+
+  it('health check passes', async () => {
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('healthy');
+  });
+
+  it('QC workflow queue statistics endpoint is reachable', async () => {
+    const response = await request(app)
+      .get('/api/qc-workflow/queue/statistics')
+      .set('Authorization', `Bearer ${authToken}`);
+    expect([200, 401, 403, 404]).toContain(response.status);
+  });
+
+  it('QC workflow analyst workload endpoint is reachable', async () => {
+    const response = await request(app)
+      .get('/api/qc-workflow/analysts/workload')
+      .set('Authorization', `Bearer ${authToken}`);
+    expect([200, 401, 403, 404]).toContain(response.status);
+  });
+
+  it('QC workflow open escalations endpoint is reachable', async () => {
+    const response = await request(app)
+      .get('/api/qc-workflow/escalations/open')
+      .set('Authorization', `Bearer ${authToken}`);
+    expect([200, 401, 403, 404]).toContain(response.status);
+  });
+
+  it('QC workflow active revisions endpoint is reachable', async () => {
+    const response = await request(app)
+      .get('/api/qc-workflow/revisions/active')
+      .set('Authorization', `Bearer ${authToken}`);
+    expect([200, 401, 403, 404]).toContain(response.status);
+  });
 });

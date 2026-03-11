@@ -228,4 +228,25 @@ export class BlobStorageService {
       return false;
     }
   }
+
+  /**
+   * Lists all blob names under the given prefix in a container.
+   * Returns an empty array if the container is empty or the prefix yields no results.
+   * Used by PhotoResolverService to enumerate order photo assets.
+   */
+  async listBlobs(containerName: string, prefix?: string): Promise<string[]> {
+    if (!this.client) {
+      throw new Error('Blob storage not initialized - set AZURE_STORAGE_ACCOUNT_NAME');
+    }
+
+    const containerClient = this.client.getContainerClient(containerName);
+    const names: string[] = [];
+
+    const options = prefix ? { prefix } : undefined;
+    for await (const blob of containerClient.listBlobsFlat(options)) {
+      names.push(blob.name);
+    }
+
+    return names;
+  }
 }

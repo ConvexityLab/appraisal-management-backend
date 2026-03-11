@@ -1,8 +1,30 @@
-# Phase 7 — Final Report Generation: Implementation Plan
+# Report Generation Platform: Master Plan
 
-> Created: February 22, 2026
-> Status: ✅ COMPLETE
+> Phase 7 (URAR AcroForm baseline): ✅ COMPLETE — February 22, 2026
+> Phase 8 (Multi-Report-Type Engine): 🔴 NOT STARTED — March 11, 2026
 > Repos: `appraisal-management-backend` · `l1-valuation-platform-ui`
+
+---
+
+## THIS DOCUMENT SUPERSEDES THE ORIGINAL PHASE 7 PLAN
+
+Phase 7 delivered a working but minimal proof-of-concept: AcroForm field-fill for a synthetic URAR placeholder PDF.
+Phase 8 evolves that foundation into a **production-grade, multi-report-type generation platform** capable of producing:
+
+| Form | Name | Render Strategy |
+|---|---|---|
+| DVR | Desktop Valuation Review (BPO-style) | HTML → PDF (Handlebars + Chromium) |
+| URAR / Form 1004 | Uniform Residential Appraisal Report | AcroForm fill (real FNMA template) with photo addenda |
+| Form 2055 | Exterior-Only Inspection Residential Appraisal | AcroForm fill |
+| Form 1004D | Appraisal Update and/or Completion | AcroForm fill |
+| Form 1073 | Individual Condo Appraisal | AcroForm fill |
+| Form 1025 | Small Residential Income Property Appraisal | AcroForm fill |
+| Letter Review | Narrative review letter | HTML → PDF |
+| Custom Addenda | Photo, Market Conditions, Location Map | jsPDF (frontend-generated, appended) |
+
+---
+
+## ─── PART A: WHAT WE ALREADY HAVE ───────────────────────────────────────────
 
 ---
 
@@ -408,3 +430,354 @@ _Update status: ⬜ Not started → 🔄 In progress → ✅ Complete → ❌ Bl
 | MISMO wiring | Full `MismoXmlGenerator` call | Logged + `mismoQueued = true` stub (full wiring deferred — generator exists but integration TBD) |
 | Underwriting push | Stub only (planned) | Stub only — logs + `underwritingQueued = true` |
 | `useUser()` hook | `user?.uid` | `(user as any)?.id` (hook returns `{ data: user }`) |
+
+
+---
+
+---
+
+# PART B: PHASE 8 — MULTI-REPORT-TYPE ENGINE
+
+> Status: NOT STARTED
+> Updated: March 11, 2026
+
+---
+
+## B.1  What Is Wrong With the Phase 7 Baseline
+
+Phase 7 delivered a working proof-of-concept with three critical deficiencies:
+
+1. **Synthetic placeholder template** — the seed build creates a 14-field AcroForm stub. The real FNMA Form 1004 has ~200 fields across 6 pages. We are currently filling ~7% of the actual form.
+
+2. **AcroForm-only strategy** — the DVR/BPO report (see Vision sample `docs/samples/VisionBPOReport.pdf`) is a richly designed multi-page document with subject photos, comp photos, color-coded grids, aerial maps, and branded headers. This CANNOT be produced by filling AcroForm fields. A different render strategy is required.
+
+3. **No photo integration** — `photo.service.ts` and image-processing utilities already exist and store photos in Blob. The report pipeline never calls them. Every deliverable URAR and every DVR requires embedded photos.
+
+4. **No background/auto generation** — every report requires a human to click "Generate" in the UI. The architecture to auto-trigger on QC approval does not exist.
+
+5. **FinalReportPanel UI is incomplete** — the field override editor, section selector, inline preview, and generation history table were described in the Phase 7 spec but not fully built.
+
+6. **MISMO XML is stubbed** — the post-generation flow logs "MISMO queued" but never actually generates or uploads the XML.
+
+---
+
+## B.2  Report Formats and Their Requirements
+
+### B.2.1  DVR — Desktop Valuation Review (BPO-Style)
+
+Render strategy: **HTML -> PDF** (Handlebars template + headless Chromium)
+
+The Vision BPO sample establishes the section anatomy. Below is a field-by-field gap analysis.
+
+**Cover / Subject Summary**
+
+| Field | Source | Gap |
+|---|---|---|
+| Property address | order.propertyAddress | None |
+| As-Is market value | qcReview.appraisedValue | None |
+| As-Repaired value | order.arvDetails or arv.service.ts | ARV exists; needs routing to report |
+| Subject photos (3-6) | photo.service.ts -> Blob orders/{id}/photos/ | Not wired into report generation |
+| Aerial map image | google-maps-property-intelligence.service.ts | Not wired into report |
+| Occupancy status | order.occupancyStatus | Present on order |
+| Borrower / client / lender | order.borrowerInformation, order.contactInformation | None |
+| Loan number | order.loanInformation.loanNumber | None |
+| Condition rating (BPO scale: Excellent/Good/Fair/Poor) | Not in canonical schema | Must add DvrSubjectDetail type |
+| Interior / Exterior rating | Not in canonical schema | BPO-specific; needs new sub-model |
+| Repair cost estimate | arv.service.ts / construction-budget.service.ts | Exists for construction orders; needs bridge for DVR |
+
+**Sold Comps Grid (up to 6) and Listing Comps Grid (up to 6)**
+
+All core comp fields (address, price, date, GLA, beds, baths, condition, adjustments, adjusted sale price, distance, DOM) are fully modeled in CanonicalComp and CanonicalAdjustment. The only gap is comp photos — these are stored in Blob but not wired to the report.
+
+**Neighborhood / Market Analysis**
+
+CanonicalNeighborhood covers all required fields: supply/demand, DOM trend, price range, marketing time, land use percentages, and narrative text. Flood zone and zoning are on CanonicalSubject. Gap: 12-month median price trend is computed by qc-market-validation.service.ts but not mapped into CanonicalNeighborhood.
+
+### B.2.2  URAR — Form 1004
+
+Render strategy: **AcroForm fill** (real FNMA template PDF + custom photo addenda appended)
+
+**The real FNMA Form 1004 must be downloaded from Fannie Mae's forms repository (free, public domain) and uploaded to the pdf-report-templates Blob container. The current seed-generated placeholder is not suitable for production delivery.**
+
+Full field coverage gap analysis:
+
+| URAR Section | Status |
+|---|---|
+| Subject (address, county, parcel, census tract, owner, occupant, legal description) | Canonical has all fields |
+| Contract (price, date, concessions, personal property items) | CanonicalSubject.contractInfo has all fields |
+| Neighborhood (location type, built-up, growth, prop values trend, demand/supply, marketing time, price range, land use %) | CanonicalNeighborhood has all fields |
+| Site (lot size, shape, zoning, utilities, flood zone) | CanonicalSubject + CanonicalUtilities has all fields |
+| Improvements (GLA, rooms, beds, baths, year, quality, condition, heating, cooling, garage, basement, features) | CanonicalPropertyCore has all fields |
+| Sales Comparison Grid (6 comps x ~30 fields each) | CanonicalComp[] + CanonicalAdjustment[] has all fields |
+| Reconciliation (final value, effective date, approaches used, narrative) | MISSING — CanonicalReconciliation sub-object must be added |
+| Cost Approach (RCN, depreciation, land value) | Not modeled — optional section for 1004 |
+| Income Approach (GRM, monthly rent) | Not modeled — optional section for 1004 |
+| Appraiser certification (name, cert #, state, license expiry, signature date, company) | Not joined — appraiser profile in appraiser.service.ts but not pulled into report |
+| Supervisory appraiser | Not tracked on order — must be added |
+
+Photo addenda: FNMA requires subject photos (front, rear, street scene) and comparable photos (front of each comp). The existing _appendCustomPages() mechanism accepts base64 jsPDF pages from the frontend. The UI needs a Photo Addendum Builder component (see B.6.2).
+
+### B.2.3  Other Forms (Future)
+
+Form 2055 (Exterior-Only), Form 1004D (Update/Completion), Form 1073 (Condo), Form 1025 (Small Income Property), and narrative Letter Review will use the same engine with different mappers and templates. They are out of scope for Phase 8 but the architecture must accommodate them.
+
+---
+
+## B.3  Architecture: Report Engine Abstraction
+
+The current FinalReportService directly executes one strategy. It must be refactored before adding new report types.
+
+### B.3.1  New Service Structure
+
+```
+src/services/report-engine/
+  report-engine.service.ts            <- orchestrator (replaces direct PDF logic)
+  strategies/
+    acroform-fill.strategy.ts         <- extracted from current FinalReportService
+    html-render.strategy.ts           <- NEW: Handlebars + Chromium/pdfkit
+  field-mappers/
+    urar-1004.mapper.ts               <- NEW: full 200-field URAR mapping
+    dvr-bpo.mapper.ts                 <- NEW: DVR field assembly
+  template-registry/
+    template-registry.service.ts     <- maps formType -> strategy + mapper
+  photo-resolver.service.ts           <- NEW: fetches photo bytes for report assets
+```
+
+### B.3.2  Strategy Interface
+
+```typescript
+interface ReportRenderStrategy {
+  render(
+    fieldMap: Record<string, string | boolean | number>,
+    template: ReportTemplate,
+    assets: ReportAssets
+  ): Promise<Uint8Array>;
+}
+
+interface ReportAssets {
+  subjectPhotos: PhotoAsset[];
+  compPhotos:    PhotoAsset[];
+  aerialMapPng?: Buffer;
+  customAddendaPdfs?: Buffer[];
+}
+
+type PhotoAsset = {
+  photoType: 'SUBJECT_FRONT' | 'SUBJECT_REAR' | 'SUBJECT_STREET' | 'SUBJECT_INTERIOR'
+           | 'COMP_FRONT' | 'AERIAL' | 'FLOOR_PLAN' | 'ADDITIONAL';
+  bytes: Buffer;
+  caption?: string;
+  compIndex?: number;
+};
+```
+
+### B.3.3  Extended ReportTemplate Type
+
+Add to ReportTemplate in both repos:
+
+```typescript
+interface ReportTemplate {
+  // ... existing fields ...
+  renderStrategy: 'acroform' | 'html-render';
+  hbsTemplateName?: string;     // only for html-render (e.g. 'dvr-v1.hbs')
+  mapperKey: string;            // matches template-registry -> field mapper
+  sectionConfig: {
+    requiresSubjectPhotos: boolean;
+    requiresCompPhotos: boolean;
+    requiresAerialMap: boolean;
+    requiresMarketConditionsAddendum: boolean;
+    requiresLocationMap: boolean;
+    requiresFloorPlan: boolean;
+  };
+}
+```
+
+---
+
+## B.4  Data Model Gaps — What Must Be Added
+
+### Frontend + Backend (both copies of canonical-schema.ts)
+
+```typescript
+// Add to CanonicalReportDocument:
+reconciliation?: CanonicalReconciliation;
+appraiserInfo?: CanonicalAppraiserInfo;
+dvrDetail?: DvrSubjectDetail;
+costApproach?: CanonicalCostApproach;       // optional URAR section
+incomeApproach?: CanonicalIncomeApproach;   // optional URAR section
+
+interface CanonicalReconciliation {
+  salesCompApproachValue: number | null;
+  costApproachValue: number | null;
+  incomeApproachValue: number | null;
+  finalOpinionOfValue: number;
+  effectiveDate: string;
+  reconciliationNarrative: string | null;
+  exposureTime: string | null;
+  marketingTime: string | null;
+}
+
+interface CanonicalAppraiserInfo {
+  name: string;
+  licenseNumber: string;
+  licenseState: string;
+  licenseType: 'Certified Residential' | 'Certified General' | 'Licensed' | 'Trainee';
+  licenseExpirationDate: string;
+  companyName: string;
+  companyAddress: string;
+  phone: string;
+  email: string;
+  signatureDate: string;
+  supervisoryAppraiser?: Omit<CanonicalAppraiserInfo, 'supervisoryAppraiser'>;
+}
+
+interface DvrSubjectDetail {
+  overallCondition: 'Excellent' | 'Good' | 'Average' | 'Fair' | 'Poor';
+  interiorCondition: 'Excellent' | 'Good' | 'Average' | 'Fair' | 'Poor';
+  exteriorCondition: 'Excellent' | 'Good' | 'Average' | 'Fair' | 'Poor';
+  estimatedRepairCostLow: number | null;
+  estimatedRepairCostHigh: number | null;
+  majorRepairsNeeded: string | null;
+  occupancyStatus: 'Owner Occupied' | 'Tenant Occupied' | 'Vacant' | 'Unknown';
+  occupantCooperation: 'Cooperative' | 'Uncooperative' | 'No Contact' | null;
+  accessType: 'Interior' | 'Exterior Only' | 'Drive-By';
+  daysToSell: number | null;
+  listingPriceRecommendation: number | null;
+  quickSaleDiscount: number | null;
+}
+```
+
+### AppraisalOrder additions (both repos)
+
+```typescript
+autoGenerateReport?: boolean;          // trigger background generation on QC approval
+defaultReportTemplateId?: string;      // template to use for auto-generation
+```
+
+---
+
+## B.5  Backend — Build List
+
+| # | File | Action | Phase |
+|---|---|---|---|
+| 1 | src/services/report-engine/strategies/acroform-fill.strategy.ts | EXTRACT from FinalReportService | 8a |
+| 2 | src/services/report-engine/report-engine.service.ts | NEW orchestrator with ReportRenderStrategy interface | 8a |
+| 3 | src/services/report-engine/field-mappers/urar-1004.mapper.ts | NEW full 200-field URAR mapper | 8a |
+| 4 | src/services/report-engine/template-registry/template-registry.service.ts | NEW registry: formType -> strategy + mapper | 8a |
+| 5 | src/types/canonical-schema.ts | ADD reconciliation, appraiserInfo, dvrDetail sub-types | 8a |
+| 6 | src/types/final-report.types.ts | ADD renderStrategy, sectionConfig, hbsTemplateName to ReportTemplate | 8a |
+| 7 | src/scripts/seed/modules/pdf-templates.ts | UPDATE to reference real FNMA Form 1004 PDF (or upload once manually) | 8a |
+| 8 | src/templates/dvr-v1.hbs | NEW Handlebars HTML template for DVR | 8b |
+| 9 | src/services/report-engine/strategies/html-render.strategy.ts | NEW Puppeteer/pdfkit renderer | 8b |
+| 10 | src/services/report-engine/field-mappers/dvr-bpo.mapper.ts | NEW DVR field assembly with photos + ARV | 8b |
+| 11 | src/services/report-engine/photo-resolver.service.ts | NEW fetch photo bytes from Blob for ReportAssets | 8b |
+| 12 | src/scripts/seed/modules/dvr-template.ts | NEW seed DVR template metadata record | 8b |
+| 13 | src/jobs/auto-report-generation.job.ts | NEW Service Bus consumer for auto-generation | 8e |
+| 14 | src/services/qc-execution.engine.ts | ADD post-approval hook that publishes QC_REVIEW_APPROVED event | 8e |
+| 15 | src/services/final-report.service.ts | Replace MISMO stub with real MismoXmlGenerator call | 8f |
+
+**New dependency (needs approval):** `puppeteer` — required for HTML->PDF rendering of DVR. Alternatively, use `pdfkit` (already installed) for programmatic layout if Chromium is blocked in the Azure hosting environment. Decision must be made before Phase 8b begins.
+
+**New dependency (needs approval):** `sharp` — image resizing before embedding photos in PDFs (raw photos may be 4-8 MB each; resize to ~300KB before embed).
+
+---
+
+## B.6  Frontend — Build List
+
+| # | Component / File | Action | Phase |
+|---|---|---|---|
+| 1 | src/components/delivery/FinalReportPanel.tsx | ADD field override editor dialog (table + Add Override button + dialog with fieldKey, originalValue, overrideValue, narrativeComment, source) | 8d |
+| 2 | src/components/delivery/FinalReportPanel.tsx | ADD section selector checkboxes driven by template.sectionConfig | 8d |
+| 3 | src/components/delivery/FinalReportPanel.tsx | ADD inline PDF preview via PDFViewerPanel after generation succeeds | 8d |
+| 4 | src/components/delivery/FinalReportPanel.tsx | ADD generation history table (all FinalReport[] for order, newest-first) | 8d |
+| 5 | src/components/delivery/FinalReportPanel.tsx | ADD auto-generate toggle (PATCH order.autoGenerateReport) | 8d |
+| 6 | src/components/orders/PhotoAddendumBuilder.tsx | NEW photo grid with role assignment slots (SUBJECT_FRONT, SUBJECT_REAR, COMP_1..6), produces base64 jsPDF payload for customPagePdfs[] | 8c |
+| 7 | src/store/api/finalReportApi.ts | ADD getOrderReportHistory endpoint (all FinalReport[] for order) | 8d |
+| 8 | src/types/canonical-schema.ts | ADD reconciliation, appraiserInfo, dvrDetail (mirror of backend) | 8a |
+| 9 | src/types/backend/final-report.types.ts | ADD renderStrategy, sectionConfig, hbsTemplateName to ReportTemplate | 8a |
+| 10 | src/types/backend/order-management.types.ts | ADD autoGenerateReport, defaultReportTemplateId to AppraisalOrder | 8e |
+
+---
+
+## B.7  Template Library Strategy
+
+**AcroForm templates:** Stored as fillable PDF files in Blob container `pdf-report-templates`. Metadata record in Cosmos `document-templates` container. The `blobName` field points to the PDF file. The `mapperKey` field names the field mapper to use.
+
+**HTML templates:** Stored as Handlebars `.hbs` files in the same Blob container. The `hbsTemplateName` field names the .hbs file. No static PDF template needed — the render strategy compiles the template with data and renders via Chromium.
+
+**Acquiring the real URAR Form 1004:**
+Download from https://singlefamily.fanniemae.com/delivering/selling-guide/forms (free, public domain). Upload to `pdf-report-templates` Blob container. Inspect AcroForm field names using `pdf-lib` before writing the field mapper, as Fannie Mae field names may differ from the seed placeholder field names.
+
+**Adding a new report type (ongoing process):**
+1. Create template file (PDF AcroForm or .hbs) and upload to Blob
+2. Write a field mapper in src/services/report-engine/field-mappers/
+3. Register in template-registry.service.ts
+4. Seed a document-templates Cosmos record
+
+No changes to the controller or service layer are required for new types.
+
+---
+
+## B.8  Dependencies
+
+### New Backend Dependencies (require approval before installing)
+
+| Package | Purpose | Alternative if blocked |
+|---|---|---|
+| puppeteer | Headless Chromium for HTML->PDF rendering of DVR | Use pdfkit programmatic layout (already installed) |
+| sharp | Image resize before PDF embed | Resize with jimp (pure JS, no native binary) |
+
+### Existing Backend (no changes)
+
+pdf-lib, pdfkit, @types/pdfkit, handlebars, @azure/storage-blob, @azure/identity — all already installed and used.
+
+### New Frontend Dependencies
+
+None required. jspdf, jspdf-autotable, and @syncfusion/ej2-react-pdfviewer are already installed and sufficient.
+
+---
+
+## B.9  Implementation Phases
+
+### Phase 8a — Engine Foundation (2-3 days)
+Extract AcroForm strategy, create ReportEngine orchestrator, write full URAR field mapper, extend ReportTemplate type, add canonical schema sub-types, acquire real FNMA Form 1004 PDF. Gate: tsc clean in both repos.
+
+### Phase 8b — DVR Report (3-4 days)
+Add DvrSubjectDetail to canonical schema, create dvr-v1.hbs Handlebars template, build html-render.strategy.ts, write dvr-bpo.mapper.ts, build photo-resolver.service.ts, wire photos into ReportAssets, seed DVR template metadata. Gate: generate a DVR PDF for a seeded order and verify it matches Vision sample quality.
+
+### Phase 8c — Photo Addendum Builder UI (2 days)
+Build PhotoAddendumBuilder.tsx component with photo grid and role assignment slots, wire customPagePdfs into generate mutation, add photo list RTK endpoint.
+
+### Phase 8d — FinalReportPanel UX Polish (1-2 days)
+Field override editor dialog, section selector, inline PDF preview, generation history table, auto-generate toggle.
+
+### Phase 8e — Background Auto-Generation (2 days)
+Add autoGenerateReport flag to order, add QC approval hook in qc-execution.engine.ts, create auto-report-generation.job.ts Service Bus consumer, add ENABLE_AUTO_REPORT_GENERATION env var.
+
+### Phase 8f — MISMO XML Completion (1 day)
+Replace MISMO stub with real MismoXmlGenerator call in _firePostGenerationEvents.
+
+---
+
+## B.10  Risk Register
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Puppeteer blocked in Azure Functions sandbox | HIGH | HIGH | Use pdfkit programmatic layout as fallback; or deploy report generation to Azure Container App |
+| Real FNMA Form 1004 AcroForm field names differ from seed placeholder names | MEDIUM | MEDIUM | Inspect the real form's field names with pdf-lib before writing the mapper |
+| Photo Blob paths inconsistent across order types | MEDIUM | MEDIUM | photo-resolver must handle missing photos gracefully — use blank placeholder for required slots |
+| DVR orders created before DvrSubjectDetail fields are added will have nulls | HIGH | MEDIUM | All DVR mapper values must use null-coalescing; render blank rather than crash |
+| URAR has 200+ fields — many orders will have partial data | HIGH | LOW | Partial fill is acceptable; empty AcroForm fields render as blank on the form |
+
+---
+
+## B.11  Definition of Done (Phase 8 Complete)
+
+- [ ] POST /api/final-reports/orders/:orderId/generate with formType DVR produces a multi-page styled PDF with subject photos, comp grids, and neighborhood analysis matching Vision BPO sample quality
+- [ ] POST /api/final-reports/orders/:orderId/generate with formType URAR_1004 produces a fully populated real FNMA Form 1004 PDF with all available fields filled from CanonicalReportDocument
+- [ ] No "field not found" warnings in logs for known fields on either form type
+- [ ] customPagePdfs with subject and comp photo addenda append correctly to both DVR and URAR
+- [ ] MISMO 3.4 XML is actually generated and uploaded (not stubbed) when ENABLE_MISMO_ON_DELIVERY=true
+- [ ] With autoGenerateReport: true on an order, approving the QC review triggers background report generation within 60 seconds
+- [ ] FinalReportPanel shows: field override editor, section selector, inline PDF preview via Syncfusion viewer, generation history table, auto-generate toggle
+- [ ] Both repos tsc --noEmit exit 0
+- [ ] All pre-Phase-8 tests still pass

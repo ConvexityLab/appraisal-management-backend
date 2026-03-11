@@ -7,6 +7,7 @@ import { EmailClient } from '@azure/communication-email';
 import { SmsClient } from '@azure/communication-sms';
 import { ChatClient } from '@azure/communication-chat';
 import { DefaultAzureCredential } from '@azure/identity';
+import { AzureKeyCredential } from '@azure/core-auth';
 import { Logger } from '../utils/logger.js';
 
 // Define CommunicationTokenCredential interface
@@ -24,7 +25,9 @@ export class AzureCommunicationService {
   private readonly endpoint: string;
   private readonly emailDomain: string;
   private readonly smsNumber: string;
-  private readonly credential: DefaultAzureCredential;
+  // API key credential used in local dev; undefined in production where Managed Identity is preferred.
+  private readonly keyCredential?: AzureKeyCredential;
+  private readonly managedIdentityCredential: DefaultAzureCredential;
 
   constructor() {
     this.logger = new Logger();
@@ -34,8 +37,14 @@ export class AzureCommunicationService {
     this.emailDomain = process.env.AZURE_COMMUNICATION_EMAIL_DOMAIN || '';
     this.smsNumber = process.env.AZURE_COMMUNICATION_SMS_NUMBER || '';
     
-    // Use Managed Identity for authentication
-    this.credential = new DefaultAzureCredential();
+    // Prefer API key in local dev (same pattern as AcsIdentityService).
+    // In Azure, AZURE_COMMUNICATION_API_KEY is absent and Managed Identity is used.
+    const apiKey = process.env.AZURE_COMMUNICATION_API_KEY;
+    if (apiKey) {
+      this.keyCredential = new AzureKeyCredential(apiKey);
+      this.logger.info('AzureCommunicationService: using API key credential');
+    }
+    this.managedIdentityCredential = new DefaultAzureCredential();
     
     // Validate configuration
     if (!this.endpoint) {
@@ -53,7 +62,10 @@ export class AzureCommunicationService {
       }
       
       this.logger.info('Initializing Azure Communication Services Email client');
-      this.emailClient = new EmailClient(this.endpoint, this.credential);
+      // Branch on credential type — ACS SDK overloads require a concrete type, not a union.
+      this.emailClient = this.keyCredential
+        ? new EmailClient(this.endpoint, this.keyCredential)
+        : new EmailClient(this.endpoint, this.managedIdentityCredential);
     }
     
     return this.emailClient;
@@ -69,7 +81,10 @@ export class AzureCommunicationService {
       }
       
       this.logger.info('Initializing Azure Communication Services SMS client');
-      this.smsClient = new SmsClient(this.endpoint, this.credential);
+      // Branch on credential type — ACS SDK overloads require a concrete type, not a union.
+      this.smsClient = this.keyCredential
+        ? new SmsClient(this.endpoint, this.keyCredential)
+        : new SmsClient(this.endpoint, this.managedIdentityCredential);
     }
     
     return this.smsClient;

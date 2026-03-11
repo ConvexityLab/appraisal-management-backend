@@ -8,9 +8,11 @@
  * 3. Checking for live data indicators
  */
 
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { AppraisalManagementAPIServer } from '../../src/api/api-server';
+import type { Application } from 'express';
 
-const API_BASE_URL = 'http://localhost:3000';
 const TEST_TIMEOUT = 30000;
 
 // Test coordinates - different locations to avoid cache hits
@@ -21,52 +23,61 @@ const UNIQUE_COORDINATES = [
   { lat: 34.0522, lng: -118.2437, name: 'Los Angeles' }
 ];
 
-describe.skip('Real API Validation Tests', () => {
+describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Real API Validation Tests', () => {
+  let serverInstance: AppraisalManagementAPIServer;
+  let app: Application;
+  let authToken: string;
+
+  beforeAll(async () => {
+    serverInstance = new AppraisalManagementAPIServer(0);
+    app = serverInstance.getExpressApp();
+    await serverInstance.initDb();
+
+    // Get auth token for protected endpoints
+    const tokenRes = await request(app)
+      .post('/api/auth/test-token')
+      .send({ email: 'real-api-test@appraisal.com', role: 'admin', name: 'Real API Test' });
+    authToken = tokenRes.body.token ?? '';
+  }, 60_000);
+
   
   describe('US Census Bureau - Real API Verification', () => {
     test('should fetch unique demographic data from live Census API', async () => {
       const coords = UNIQUE_COORDINATES[2]; // NYC
       const timestamp = Date.now();
       
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/demographics`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Test-Timestamp': timestamp.toString(),
-          'X-Cache-Bypass': 'true'
-        },
-        body: JSON.stringify({
+      // Census demographics endpoint is GET with query params (not POST)
+      const response = await request(app)
+        .get('/api/property-intelligence/census/demographics')
+        .set('Authorization', `Bearer ${authToken}`)
+        .query({
           latitude: coords.lat,
-          longitude: coords.lng,
-          timestamp,
-          bypassCache: true
-        })
-      });
+          longitude: coords.lng
+        });
 
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       // Verify real Census API characteristics
-      if (result.data.demographics) {
+      if (response.body.data.demographics) {
         console.log(`📊 Live Census Data for ${coords.name}:`);
-        
+
         // Check for real Census data indicators
-        if (result.data.demographics.totalPopulation) {
-          console.log(`   👥 Population: ${result.data.demographics.totalPopulation}`);
+        if (response.body.data.demographics.totalPopulation) {
+          console.log(`   👥 Population: ${response.body.data.demographics.totalPopulation}`);
         }
-        if (result.data.demographics.medianHouseholdIncome) {
-          console.log(`   💰 Median Income: $${result.data.demographics.medianHouseholdIncome}`);
+        if (response.body.data.demographics.medianHouseholdIncome) {
+          console.log(`   💰 Median Income: $${response.body.data.demographics.medianHouseholdIncome}`);
         }
-        if (result.data.demographics.educationLevel) {
-          console.log(`   🎓 Education: ${JSON.stringify(result.data.demographics.educationLevel)}`);
+        if (response.body.data.demographics.educationLevel) {
+          console.log(`   🎓 Education: ${JSON.stringify(response.body.data.demographics.educationLevel)}`);
         }
-        
+
         // Real Census data should have specific numeric ranges
-        expect(typeof result.data.demographics.totalPopulation).toBe('number');
-        expect(result.data.demographics.totalPopulation).toBeGreaterThan(0);
+        expect(typeof response.body.data.demographics.totalPopulation).toBe('number');
+        expect(response.body.data.demographics.totalPopulation).toBeGreaterThan(0);
       }
 
       console.log('✅ Live US Census Bureau API validation successful');
@@ -75,38 +86,32 @@ describe.skip('Real API Validation Tests', () => {
     test('should fetch real economic data with current year indicators', async () => {
       const coords = UNIQUE_COORDINATES[3]; // LA
       
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/economics`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Cache-Bypass': 'true'
-        },
-        body: JSON.stringify({
+      // Census economics endpoint is GET with query params (not POST)
+      const response = await request(app)
+        .get('/api/property-intelligence/census/economics')
+        .set('Authorization', `Bearer ${authToken}`)
+        .query({
           latitude: coords.lat,
-          longitude: coords.lng,
-          bypassCache: true,
-          requestId: `test-${Date.now()}`
-        })
-      });
+          longitude: coords.lng
+        });
 
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
+
+      expect(response.body.success).toBe(true);
 
       // Verify real economic data
-      if (result.data && result.data.economics) {
+      if (response.body.data && response.body.data.economics) {
         console.log(`💼 Live Economic Data for ${coords.name}:`);
-        
-        if (result.data.economics.unemploymentRate !== undefined) {
-          console.log(`   📈 Unemployment Rate: ${result.data.economics.unemploymentRate}%`);
+
+        if (response.body.data.economics.unemploymentRate !== undefined) {
+          console.log(`   📈 Unemployment Rate: ${response.body.data.economics.unemploymentRate}%`);
           // Real unemployment data should be within realistic bounds
-          expect(result.data.economics.unemploymentRate).toBeGreaterThanOrEqual(0);
-          expect(result.data.economics.unemploymentRate).toBeLessThan(50);
+          expect(response.body.data.economics.unemploymentRate).toBeGreaterThanOrEqual(0);
+          expect(response.body.data.economics.unemploymentRate).toBeLessThan(50);
         }
-        
-        if (result.data.economics.medianIncome) {
-          console.log(`   💵 Median Income: $${result.data.economics.medianIncome}`);
+
+        if (response.body.data.economics.medianIncome) {
+          console.log(`   💵 Median Income: $${response.body.data.economics.medianIncome}`);
         }
       }
 
@@ -118,32 +123,28 @@ describe.skip('Real API Validation Tests', () => {
     test('should fetch live FEMA flood zone data with real indicators', async () => {
       const coords = UNIQUE_COORDINATES[1]; // Houston (known flood area)
       
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Cache-Bypass': 'true'
-        },
-        body: JSON.stringify({
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/comprehensive')
+        .set('Authorization', `Bearer ${authToken}`)
+        .set('X-Cache-Bypass', 'true')
+        .send({
           latitude: coords.lat,
           longitude: coords.lng,
           includeFloodRisk: true,
           forceLiveData: true,
           testId: `fema-live-${Date.now()}`
-        })
-      });
+        });
 
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
+
+      expect(response.body.success).toBe(true);
 
       console.log(`🌊 Live FEMA Data for ${coords.name}:`);
-      
+
       // Check for real FEMA API response characteristics
-      if (result.data && result.data.riskFactors) {
-        if (result.data.riskFactors.floodRisk) {
-          const floodData = result.data.riskFactors.floodRisk;
+      if (response.body.data && response.body.data.riskFactors) {
+        if (response.body.data.riskFactors.floodRisk) {
+          const floodData = response.body.data.riskFactors.floodRisk;
           console.log(`   🏠 Flood Zone: ${floodData.femaFloodZone || 'Not in flood zone'}`);
           console.log(`   💧 Insurance Required: ${floodData.floodInsuranceRequired ? 'Yes' : 'No'}`);
           console.log(`   📊 Risk Score: ${floodData.floodRiskScore}/10`);
@@ -170,42 +171,35 @@ describe.skip('Real API Validation Tests', () => {
       const location2 = UNIQUE_COORDINATES[0]; // Google HQ
       
       const [response1, response2] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        request(app)
+          .post('/api/property-intelligence/analyze/comprehensive')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
             latitude: location1.lat,
             longitude: location1.lng,
             includeFloodRisk: true,
             uniqueId: `test1-${Date.now()}`
-          })
-        }),
-        fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          }),
+        request(app)
+          .post('/api/property-intelligence/analyze/comprehensive')
+          .set('Authorization', `Bearer ${authToken}`)
+          .send({
             latitude: location2.lat,
             longitude: location2.lng,
             includeFloodRisk: true,
             uniqueId: `test2-${Date.now()}`
           })
-        })
       ]);
 
       expect(response1.status).toBe(200);
       expect(response2.status).toBe(200);
-      
-      const [result1, result2] = await Promise.all([
-        response1.json(),
-        response2.json()
-      ]);
 
       console.log(`🔍 Comparing flood data: ${location1.name} vs ${location2.name}`);
-      
+
       // Results should be different for different locations (proves live data)
-      if (result1.data?.riskFactors?.floodRisk && result2.data?.riskFactors?.floodRisk) {
-        const flood1 = result1.data.riskFactors.floodRisk;
-        const flood2 = result2.data.riskFactors.floodRisk;
+      if (response1.body.data?.riskFactors?.floodRisk && response2.body.data?.riskFactors?.floodRisk) {
+        const flood1 = response1.body.data.riskFactors.floodRisk;
+        const flood2 = response2.body.data.riskFactors.floodRisk;
         
         console.log(`   ${location1.name}: Risk ${flood1.floodRiskScore}, Zone: ${flood1.femaFloodZone || 'None'}`);
         console.log(`   ${location2.name}: Risk ${flood2.floodRiskScore}, Zone: ${flood2.femaFloodZone || 'None'}`);
@@ -229,36 +223,32 @@ describe.skip('Real API Validation Tests', () => {
       ];
 
       for (const address of testAddresses) {
-        const response = await fetch(`${API_BASE_URL}/api/property-intelligence/address/validate`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-Cache-Bypass': 'true'
-          },
-          body: JSON.stringify({
+        const response = await request(app)
+          .post('/api/property-intelligence/address/validate')
+          .set('Authorization', `Bearer ${authToken}`)
+          .set('X-Cache-Bypass', 'true')
+          .send({
             address,
             validateComponents: true,
             timestamp: Date.now()
-          })
-        });
+          });
 
         expect(response.status).toBe(200);
-        
-        const result = await response.json();
-        expect(result.success).toBe(true);
+
+        expect(response.body.success).toBe(true);
 
         console.log(`📍 Live Address Validation: ${address}`);
-        
-        if (result.data) {
+
+        if (response.body.data) {
           // Real address validation should return specific components
-          if (result.data.coordinates) {
-            console.log(`   🌐 Coordinates: ${result.data.coordinates.latitude}, ${result.data.coordinates.longitude}`);
-            expect(typeof result.data.coordinates.latitude).toBe('number');
-            expect(typeof result.data.coordinates.longitude).toBe('number');
+          if (response.body.data.coordinates) {
+            console.log(`   🌐 Coordinates: ${response.body.data.coordinates.latitude}, ${response.body.data.coordinates.longitude}`);
+            expect(typeof response.body.data.coordinates.latitude).toBe('number');
+            expect(typeof response.body.data.coordinates.longitude).toBe('number');
           }
-          
-          if (result.data.standardizedAddress) {
-            console.log(`   ✅ Standardized: ${result.data.standardizedAddress}`);
+
+          if (response.body.data.standardizedAddress) {
+            console.log(`   ✅ Standardized: ${response.body.data.standardizedAddress}`);
           }
         }
       }
@@ -276,18 +266,15 @@ describe.skip('Real API Validation Tests', () => {
       for (let i = 0; i < 3; i++) {
         const startTime = Date.now();
         
-        const response = await fetch(`${API_BASE_URL}/api/property-intelligence/census/demographics`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-Request-Id': `perf-test-${i}-${Date.now()}`
-          },
-          body: JSON.stringify({
+        // Census demographics is a GET endpoint with query params
+        const response = await request(app)
+          .get('/api/property-intelligence/census/demographics')
+          .set('Authorization', `Bearer ${authToken}`)
+          .set('X-Request-Id', `perf-test-${i}-${Date.now()}`)
+          .query({
             latitude: coords.lat + (i * 0.001), // Slightly different coordinates
-            longitude: coords.lng + (i * 0.001),
-            requestId: `test-${i}-${Date.now()}`
-          })
-        });
+            longitude: coords.lng + (i * 0.001)
+          });
 
         const endTime = Date.now();
         const responseTime = endTime - startTime;

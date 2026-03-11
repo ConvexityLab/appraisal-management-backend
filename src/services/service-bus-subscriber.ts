@@ -150,9 +150,28 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
         },
         processError: async (args: any) => {
           const err = args.error;
+          const code = err?.code || 'UNKNOWN';
+
+          // MessagingEntityNotFound means the topic or subscription doesn't exist
+          // in Azure. The SDK will retry forever, creating a hot error loop that
+          // can destabilise the whole process. Close the receiver and give up.
+          if (code === 'MessagingEntityNotFoundError' || err?.message?.includes('MessagingEntityNotFound')) {
+            this.logger.error(
+              `Service Bus subscription not found — closing receiver to stop retry loop. ` +
+              `Topic: ${this.topicName}, Subscription: ${this.subscriptionName}. ` +
+              `Create the subscription in Azure before restarting.`,
+              { code, entityPath: args.entityPath }
+            );
+            this.isListening = false;
+            // Close asynchronously — don't await inside processError to avoid SDK deadlock
+            receiver.close().catch(() => {});
+            this.receivers.delete('default');
+            return;
+          }
+
           this.logger.error('Service Bus message processing error', { 
             message: err?.message || 'Unknown error',
-            code: err?.code || 'UNKNOWN',
+            code,
             name: err?.name || 'Error',
             source: args.errorSource,
             entityPath: args.entityPath
@@ -160,7 +179,10 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
         }
       });
 
-      this.logger.info('Started listening for Service Bus messages');
+      this.logger.info('Started listening for Service Bus messages', {
+        topic: this.topicName,
+        subscription: this.subscriptionName
+      });
     } catch (error) {
       this.logger.error('Failed to start listening', { error });
       this.isListening = false;
@@ -192,22 +214,25 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
 
     this.logger.info(`Processing event: ${event.type}`, { eventId: event.id });
 
-    // Process all handlers concurrently
-    const handlerPromises = handlers.map(async (handler) => {
-      try {
-        await handler.handle(event);
-      } catch (error) {
-        this.logger.error('Event handler failed', { 
-          error,
+    // Run all handlers so none are skipped due to an earlier failure.
+    // Rethrow afterward so Service Bus abandons the message for retry /
+    // dead-letter once max delivery count is exceeded.
+    const results = await Promise.allSettled(
+      handlers.map((handler) => handler.handle(event))
+    );
+
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failures.length > 0) {
+      failures.forEach((f) => {
+        this.logger.error('Event handler failed', {
           eventType: event.type,
           eventId: event.id,
-          handlerName: handler.constructor.name
+          reason: f.reason,
         });
-        // Don't rethrow - we want other handlers to still process
-      }
-    });
-
-    await Promise.allSettled(handlerPromises);
+      });
+      // Rethrow first failure — Service Bus SDK will abandon the message
+      throw failures[0]!.reason as Error;
+    }
   }
 
   async close(): Promise<void> {

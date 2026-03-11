@@ -5,6 +5,10 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import { AppraisalManagementAPIServer } from '../../src/api/api-server';
+import type { Application } from 'express';
+import { TestTokenGenerator } from '../../src/utils/test-token-generator.js';
 import { 
   OrderStatus, 
   Priority, 
@@ -15,25 +19,23 @@ import {
   VendorStatus 
 } from '../../src/types/index';
 
-// Test configuration
-const API_BASE_URL = 'http://localhost:3000';
-
-describe.skip('Live Production API Integration Tests', () => {
+describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Live Production API Integration Tests', () => {
+  let serverInstance: AppraisalManagementAPIServer;
+  let app: Application;
+  let adminToken: string;
   let testOrderId: string;
   let testVendorId: string;
 
   beforeAll(async () => {
-    // Quick connectivity test
-    try {
-      const response = await fetch(`${API_BASE_URL}/health`);
-      if (!response.ok) {
-        throw new Error(`Server not available: ${response.status}`);
-      }
-      console.log('✅ Connected to production server');
-    } catch (error) {
-      throw new Error(`❌ Cannot connect to server at ${API_BASE_URL}. Make sure the production server is running.`);
-    }
-  });
+    serverInstance = new AppraisalManagementAPIServer(0);
+    app = serverInstance.getExpressApp();
+    await serverInstance.initDb();
+
+    const tokenGen = new TestTokenGenerator();
+    adminToken = tokenGen.generateToken({ id: 'test-admin', email: 'admin@appraisal.com', name: 'Test Admin', role: 'admin' as const, tenantId: 'test-tenant' });
+
+    console.log('✅ In-process server ready');
+  }, 60_000);
 
   describe('Order Management Integration', () => {
     it('should create a new order with real database persistence', async () => {
@@ -60,7 +62,7 @@ describe.skip('Live Production API Integration Tests', () => {
           firstName: 'Integration',
           lastName: 'Test',
           email: 'integration@test.com',
-          phone: '555-0123'
+          phone: '415-555-0123'
         },
         loanInformation: {
           loanAmount: 850000,
@@ -71,7 +73,7 @@ describe.skip('Live Production API Integration Tests', () => {
           lenderName: 'Integration Test Bank',
           lenderContact: 'Test Manager',
           lenderEmail: 'test@integrationbank.com',
-          lenderPhone: '555-0456'
+          lenderPhone: '415-555-0456'
         },
         status: OrderStatus.NEW,
         priority: Priority.NORMAL,
@@ -83,41 +85,35 @@ describe.skip('Live Production API Integration Tests', () => {
         }
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(orderData)
-      });
+      const response = await request(app)
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(orderData);
 
       expect(response.status).toBe(201);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
-      expect(result.data.id).toBeDefined();
-      expect(result.data.orderNumber).toBe(orderData.orderNumber);
-      expect(result.data.propertyAddress.streetAddress).toBe('1600 Amphitheatre Parkway');
 
-      testOrderId = result.data.id;
-      
-      console.log(`✅ Created order: ${result.data.orderNumber} (ID: ${testOrderId})`);
+      expect(response.body.id).toBeDefined();
+      expect(response.body.orderNumber).toBe(orderData.orderNumber);
+      expect(response.body.propertyAddress.streetAddress).toBe('1600 Amphitheatre Parkway');
+
+      testOrderId = response.body.id;
+
+      console.log(`✅ Created order: ${response.body.orderNumber} (ID: ${testOrderId})`);
     });
 
     it('should retrieve the created order proving database persistence', async () => {
       expect(testOrderId).toBeDefined();
 
-      const response = await fetch(`${API_BASE_URL}/api/orders/${testOrderId}`);
+      const response = await request(app)
+        .get(`/api/orders/${testOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data.id).toBe(testOrderId);
-      expect(result.data.propertyAddress.city).toBe('Mountain View');
-      expect(result.data.borrowerInformation.firstName).toBe('Integration');
 
-      console.log(`✅ Retrieved order from database: ${result.data.orderNumber}`);
+      expect(response.body.id).toBe(testOrderId);
+      expect(response.body.propertyAddress.city).toBe('Mountain View');
+      expect(response.body.borrowerInformation.firstName).toBe('Integration');
+
+      console.log(`✅ Retrieved order from database: ${response.body.orderNumber}`);
     });
 
     it('should update the order and persist changes', async () => {
@@ -129,150 +125,106 @@ describe.skip('Live Production API Integration Tests', () => {
         assignedVendorId: 'integration-test-vendor'
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/orders/${testOrderId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(updateData)
-      });
+      const response = await request(app)
+        .put(`/api/orders/${testOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(updateData);
 
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data.status).toBe(OrderStatus.IN_PROGRESS);
-      expect(result.data.assignedVendorId).toBe('integration-test-vendor');
 
-      console.log(`✅ Updated order status: ${result.data.status}`);
+      expect(response.body.status).toBe(OrderStatus.IN_PROGRESS);
+      expect(response.body.assignedVendorId).toBe('integration-test-vendor');
+
+      console.log(`✅ Updated order status: ${response.body.status}`);
     });
 
     it('should list orders with filters from real database', async () => {
-      const response = await fetch(`${API_BASE_URL}/api/orders?status=${OrderStatus.IN_PROGRESS}&limit=10`);
+      const response = await request(app)
+        .get(`/api/orders?status=${OrderStatus.IN_PROGRESS}&limit=10`)
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(Array.isArray(result.data)).toBe(true);
+
+      expect(Array.isArray(response.body.orders)).toBe(true);
 
       // Our test order should be in the results
-      const testOrder = result.data.find((order: any) => order.id === testOrderId);
+      const testOrder = response.body.orders.find((order: any) => order.id === testOrderId);
       expect(testOrder).toBeDefined();
       expect(testOrder.status).toBe(OrderStatus.IN_PROGRESS);
 
-      console.log(`✅ Found ${result.data.length} orders in database, including our test order`);
+      console.log(`✅ Found ${response.body.orders.length} orders in database, including our test order`);
     });
   });
 
   describe('Vendor Management Integration', () => {
     it('should create a new vendor with real database persistence', async () => {
+      // VendorController requires: name (string), email (valid email).
+      // Optional: phone (mobile phone), serviceTypes (array), serviceAreas (array).
+      const vendorName = `Integration Test Appraisals ${Date.now()}`;
       const vendorData = {
-        companyName: `Integration Test Appraisals ${Date.now()}`,
-        contactPerson: {
-          firstName: 'Integration',
-          lastName: 'Tester',
-          email: 'integration@testappraisals.com',
-          phone: '555-0789'
-        },
-        businessAddress: {
-          streetAddress: '123 Integration Street',
-          city: 'Test City',
-          state: 'CA',
-          zipCode: '90210'
-        },
-        licenseInformation: {
-          licenseNumber: `INT-${Date.now()}`,
-          licenseState: 'CA',
-          expirationDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-        },
-        serviceAreas: [
-          {
-            state: 'CA',
-            counties: ['Santa Clara', 'San Mateo'],
-            zipCodes: ['94043', '94301']
-          }
-        ],
-        specialties: ['single_family', 'condominiums'],
-        certifications: [
-          {
-            type: 'Certified Residential Appraiser',
-            number: `CRA-INT-${Date.now()}`,
-            issuingBody: 'Integration Test Board',
-            expirationDate: new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000)
-          }
-        ],
-        status: VendorStatus.ACTIVE,
-        onboardingDate: new Date(),
-        metadata: {
-          testVendor: true,
-          source: 'integration-test',
-          timestamp: new Date().toISOString()
-        }
+        name: vendorName,
+        email: 'integration@testappraisals.com',
+        phone: '415-555-0789',
+        serviceTypes: ['appraisal'],
+        serviceAreas: ['CA'],
+        status: VendorStatus.ACTIVE
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/vendors`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(vendorData)
-      });
+      const response = await request(app)
+        .post('/api/vendors')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(vendorData);
 
       expect(response.status).toBe(201);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
-      expect(result.data.id).toBeDefined();
-      expect(result.data.companyName).toContain('Integration Test Appraisals');
 
-      testVendorId = result.data.id;
-      
-      console.log(`✅ Created vendor: ${result.data.companyName} (ID: ${testVendorId})`);
+      expect(response.body.id).toBeDefined();
+      expect(response.body.businessName).toContain('Integration Test Appraisals');
+
+      testVendorId = response.body.id;
+
+      console.log(`✅ Created vendor: ${response.body.businessName} (ID: ${testVendorId})`);
     });
 
     it('should retrieve the created vendor proving database persistence', async () => {
       expect(testVendorId).toBeDefined();
 
-      const response = await fetch(`${API_BASE_URL}/api/vendors/${testVendorId}`);
+      const response = await request(app)
+        .get(`/api/vendors/${testVendorId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data.id).toBe(testVendorId);
-      expect(result.data.contactPerson.firstName).toBe('Integration');
-      expect(result.data.businessAddress.city).toBe('Test City');
 
-      console.log(`✅ Retrieved vendor from database: ${result.data.companyName}`);
+      expect(response.body.id).toBe(testVendorId);
+      expect(response.body.email).toBe('integration@testappraisals.com');
+      expect(response.body.businessName).toContain('Integration Test Appraisals');
+
+      console.log(`✅ Retrieved vendor from database: ${response.body.businessName}`);
     });
 
     it('should list vendors from real database', async () => {
-      const response = await fetch(`${API_BASE_URL}/api/vendors?limit=10`);
+      const response = await request(app)
+        .get('/api/vendors?limit=10')
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(Array.isArray(result.data)).toBe(true);
+
+      expect(Array.isArray(response.body)).toBe(true);
 
       // Our test vendor should be in the results
-      const testVendor = result.data.find((vendor: any) => vendor.id === testVendorId);
+      const testVendor = response.body.find((vendor: any) => vendor.id === testVendorId);
       expect(testVendor).toBeDefined();
 
-      console.log(`✅ Found ${result.data.length} vendors in database, including our test vendor`);
+      console.log(`✅ Found ${response.body.length} vendors in database, including our test vendor`);
     });
   });
 
   describe('Property Intelligence Integration', () => {
     it('should check property intelligence service health', async () => {
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/health`);
+      const response = await request(app).get('/api/property-intelligence/health');
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.status).toBe('healthy');
-      expect(result.services).toBeDefined();
+
+      expect(response.body.status).toBe('healthy');
+      expect(response.body.services).toBeDefined();
 
       console.log('✅ Property intelligence service is healthy');
-      console.log(`Services available: ${Object.keys(result.services).join(', ')}`);
+      console.log(`Services available: ${Object.keys(response.body.services).join(', ')}`);
     });
 
     it('should geocode an address using property intelligence', async () => {
@@ -280,21 +232,16 @@ describe.skip('Live Production API Integration Tests', () => {
         address: '1600 Amphitheatre Parkway, Mountain View, CA 94043'
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/address/geocode`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(addressData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/address/geocode')
+        .send(addressData);
 
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(Array.isArray(result.data)).toBe(true);
 
-      console.log(`✅ Geocoded address successfully: ${result.data.length} results found`);
+      expect(response.body.success).toBe(true);
+      expect(Array.isArray(response.body.data)).toBe(true);
+
+      console.log(`✅ Geocoded address successfully: ${response.body.data.length} results found`);
     });
 
     it('should perform comprehensive property analysis', async () => {
@@ -304,22 +251,17 @@ describe.skip('Live Production API Integration Tests', () => {
         strategy: 'quality_first'
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(analysisData)
-      });
+      const response = await request(app)
+        .post('/api/property-intelligence/analyze/comprehensive')
+        .send(analysisData);
 
       expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.success).toBe(true);
-      expect(result.data).toBeDefined();
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toBeDefined();
 
       console.log(`✅ Comprehensive property analysis completed`);
-      console.log(`Analysis components: ${Object.keys(result.data).join(', ')}`);
+      console.log(`Analysis components: ${Object.keys(response.body.data).join(', ')}`);
     });
   });
 
@@ -339,37 +281,29 @@ describe.skip('Live Production API Integration Tests', () => {
         notes: 'Vendor assigned via end-to-end integration test'
       };
 
-      const assignResponse = await fetch(`${API_BASE_URL}/api/orders/${testOrderId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(assignmentData)
-      });
+      const assignResponse = await request(app)
+        .put(`/api/orders/${testOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(assignmentData);
 
       expect(assignResponse.status).toBe(200);
-      const assignResult = await assignResponse.json();
-      expect(assignResult.data.assignedVendorId).toBe(testVendorId);
-      expect(assignResult.data.status).toBe(OrderStatus.ASSIGNED);
+      expect(assignResponse.body.assignedVendorId).toBe(testVendorId);
+      expect(assignResponse.body.status).toBe(OrderStatus.ASSIGNED);
       console.log('✅ Vendor assigned successfully');
-      
+
       // Step 2: Perform property analysis
       console.log('Step 2: Performing property analysis...');
-      const propertyAnalysis = await fetch(`${API_BASE_URL}/api/property-intelligence/analyze/comprehensive`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      const propertyAnalysis = await request(app)
+        .post('/api/property-intelligence/analyze/comprehensive')
+        .send({
           latitude: 37.4224764,
           longitude: -122.0842499,
           propertyId: testOrderId
-        })
-      });
+        });
 
       expect(propertyAnalysis.status).toBe(200);
       console.log('✅ Property analysis completed');
-      
+
       // Step 3: Complete the order
       console.log('Step 3: Completing the order...');
       const completionData = {
@@ -379,28 +313,25 @@ describe.skip('Live Production API Integration Tests', () => {
         notes: 'Order completed via end-to-end integration test'
       };
 
-      const completionResponse = await fetch(`${API_BASE_URL}/api/orders/${testOrderId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(completionData)
-      });
+      const completionResponse = await request(app)
+        .put(`/api/orders/${testOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(completionData);
 
       expect(completionResponse.status).toBe(200);
-      const completionResult = await completionResponse.json();
-      expect(completionResult.data.status).toBe(OrderStatus.COMPLETED);
-      expect(completionResult.data.finalValue).toBe(875000);
+      expect(completionResponse.body.status).toBe(OrderStatus.COMPLETED);
+      expect(completionResponse.body.finalValue).toBe(875000);
       console.log('✅ Order completed successfully');
-      
+
       // Step 4: Verify final state
       console.log('Step 4: Verifying final state...');
-      const finalCheck = await fetch(`${API_BASE_URL}/api/orders/${testOrderId}`);
-      const finalResult = await finalCheck.json();
-      
-      expect(finalResult.data.status).toBe(OrderStatus.COMPLETED);
-      expect(finalResult.data.assignedVendorId).toBe(testVendorId);
-      expect(finalResult.data.finalValue).toBe(875000);
+      const finalCheck = await request(app)
+        .get(`/api/orders/${testOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(finalCheck.body.status).toBe(OrderStatus.COMPLETED);
+      expect(finalCheck.body.assignedVendorId).toBe(testVendorId);
+      expect(finalCheck.body.finalValue).toBe(875000);
       console.log('✅ Final state verified in database');
       
       console.log('🎉 End-to-End Workflow Test PASSED!');

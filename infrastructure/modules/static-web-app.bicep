@@ -55,18 +55,11 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
   }
 }
 
-// Configure API backend integration
-resource staticWebAppConfig 'Microsoft.Web/staticSites/config@2023-01-01' = {
-  parent: staticWebApp
-  name: 'appsettings'
-  properties: {
-    // Environment variables available to frontend at build time
-    VITE_API_URL: backendApiUrl
-    REACT_APP_API_URL: backendApiUrl
-    NEXT_PUBLIC_API_URL: backendApiUrl
-    API_URL: backendApiUrl
-  }
-}
+// NOTE: No appsettings resource here.
+// VITE_* variables are baked at BUILD TIME by Vite — they cannot be injected at runtime
+// via SWA appsettings. The frontend CI workflow resolves the Container App FQDN dynamically
+// using `az containerapp list` and passes it as VITE_API_BASE_URL during `pnpm run build`.
+// The backendApiUrl param is retained so frontendRepoSecrets can surface the URL for ops use.
 
 // Custom domain configuration (example - add your domains)
 // resource customDomain 'Microsoft.Web/staticSites/customDomains@2023-01-01' = {

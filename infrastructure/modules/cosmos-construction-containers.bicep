@@ -151,6 +151,47 @@ resource contractorsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
   }
 }
 
+// ── construction-cost-catalog ─────────────────────────────────────────────────
+// RSMeans-style CSI MasterFormat unit-cost items partitioned by CSI division code.
+// Used for AI budget-reasonability analysis and feasibility reviews.
+resource constructionCostCatalogContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: database
+  name: 'construction-cost-catalog'
+  properties: {
+    resource: {
+      id: 'construction-cost-catalog'
+      partitionKey: {
+        paths: ['/division']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/"_etag"/?' }
+        ]
+        compositeIndexes: [
+          // Browse catalog items by division + section
+          [
+            { path: '/division', order: 'ascending' }
+            { path: '/sectionCode', order: 'ascending' }
+          ]
+          // Filter by division and total cost
+          [
+            { path: '/division', order: 'ascending' }
+            { path: '/totalCost', order: 'descending' }
+          ]
+        ]
+      }
+      defaultTtl: -1
+    }
+  }
+}
+
 output constructionLoansContainerId string = constructionLoansContainer.properties.resource.id
 output drawsContainerId string = drawsContainer.properties.resource.id
 output contractorsContainerId string = contractorsContainer.properties.resource.id
+output constructionCostCatalogContainerId string = constructionCostCatalogContainer.properties.resource.id

@@ -54,6 +54,8 @@ export interface PropertyAccess {
 export interface InspectionAppointment {
   id: string;
   type: 'inspection';                 // Cosmos document type
+  /** Discriminates the kind of site appointment stored in this container. */
+  appointmentType?: 'property_inspection' | 'appraisal_appointment' | 'bpo_site_visit';
   tenantId: string;
   
   // Order relationship
@@ -118,6 +120,8 @@ export interface ScheduleInspectionRequest {
   propertyAccess: PropertyAccess;
   requestedBy: InspectionRequestedBy;
   inspectionNotes?: string;
+  /** Which kind of appointment to create — defaults to 'property_inspection'. */
+  appointmentType?: 'property_inspection' | 'appraisal_appointment' | 'bpo_site_visit';
 }
 
 /**

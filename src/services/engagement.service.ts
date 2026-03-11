@@ -678,9 +678,11 @@ export class EngagementService {
 
   /**
    * List documents linked to this engagement.
+   * Aggregates both engagement-level documents and documents from all linked vendor orders.
    */
   async getDocuments<T = unknown>(engagementId: string, tenantId: string): Promise<T[]> {
-    const result = await this.dbService.queryItems<T>(
+    // 1. Engagement-level docs
+    const engResult = await this.dbService.queryItems<T>(
       'documents',
       'SELECT * FROM c WHERE c.engagementId = @engagementId AND c.tenantId = @tenantId ORDER BY c.createdAt DESC',
       [
@@ -688,9 +690,44 @@ export class EngagementService {
         { name: '@tenantId', value: tenantId },
       ],
     );
-    if (!result.success || !result.data) {
+    if (!engResult.success || !engResult.data) {
       throw new Error(`Failed to query documents for engagement ${engagementId}`);
     }
-    return result.data;
+
+    // 2. Collect all vendor order IDs from the engagement hierarchy
+    let orderIds: string[] = [];
+    try {
+      const engagement = await this.getEngagement(engagementId, tenantId);
+      orderIds = engagement.loans.flatMap((loan) =>
+        loan.products.flatMap((product) => product.vendorOrderIds ?? []),
+      );
+    } catch {
+      // If engagement lookup fails, return only engagement-level docs
+      return engResult.data;
+    }
+
+    if (orderIds.length === 0) {
+      return engResult.data;
+    }
+
+    // 3. Fetch docs from linked orders (batched query — Cosmos supports IN with up to ~256 items)
+    const paramList = orderIds.map((id, i) => `@oid${i}`).join(', ');
+    const params = orderIds.map((id, i) => ({ name: `@oid${i}`, value: id }));
+    params.push({ name: '@tenantId', value: tenantId });
+
+    const orderResult = await this.dbService.queryItems<T>(
+      'documents',
+      `SELECT * FROM c WHERE c.orderId IN (${paramList}) AND c.tenantId = @tenantId ORDER BY c.createdAt DESC`,
+      params,
+    );
+
+    // 4. Merge and deduplicate by document id
+    const all = [...engResult.data, ...(orderResult.success && orderResult.data ? orderResult.data : [])];
+    const seen = new Set<string>();
+    return all.filter((doc: any) => {
+      if (seen.has(doc.id)) return false;
+      seen.add(doc.id);
+      return true;
+    });
   }
 }

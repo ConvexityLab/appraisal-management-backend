@@ -53,11 +53,15 @@ export class InspectionService {
   /**
    * Get inspection by ID
    */
-  async getInspectionById(inspectionId: string, status: string = 'scheduled'): Promise<InspectionAppointment | null> {
+  async getInspectionById(inspectionId: string): Promise<InspectionAppointment | null> {
     try {
       const container = this.cosmosService.getContainer('orders');
-      const { resource } = await container.item(inspectionId, status).read<InspectionAppointment>();
-      return resource || null;
+      // Cross-partition query — orders container is partitioned by /tenantId
+      const { resources } = await container.items.query<InspectionAppointment>({
+        query: 'SELECT * FROM c WHERE c.id = @id',
+        parameters: [{ name: '@id', value: inspectionId }],
+      }).fetchAll();
+      return resources[0] ?? null;
     } catch (error: any) {
       if (error.code === 404) {
         return null;
@@ -140,6 +144,7 @@ export class InspectionService {
     const inspection: InspectionAppointment = {
       id: `inspection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'inspection',
+      appointmentType: request.appointmentType ?? 'property_inspection',
       tenantId,
       orderId: request.orderId,
       orderNumber: order.orderNumber,
