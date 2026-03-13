@@ -7,7 +7,7 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo, hoursAgo } from '../seed-types.js';
-import { COMM_IDS, ORDER_IDS, ORDER_NUMBERS, VENDOR_IDS, APPRAISER_IDS } from '../seed-ids.js';
+import { COMM_IDS, ORDER_IDS, ORDER_NUMBERS, VENDOR_IDS, APPRAISER_IDS, ENGAGEMENT_IDS } from '../seed-ids.js';
 
 const CONTAINER = 'communications';
 
@@ -82,6 +82,67 @@ function buildCommunications(tenantId: string): Record<string, unknown>[] {
       sentAt: daysAgo(10),
       deliveredAt: daysAgo(10),
       createdAt: daysAgo(10), updatedAt: daysAgo(10),
+    },
+    // ── Engagement-level communications (primaryEntity.type = 'engagement') ──
+    // Kickoff email for engagement 004 (SEED-ENG-2026-00204 — Sarah Johnson / First Horizon)
+    {
+      id: COMM_IDS.EMAIL_ENG_KICKOFF_004, tenantId, type: 'communication',
+      primaryEntity: { type: 'engagement', id: ENGAGEMENT_IDS.SINGLE_DELIVERED_004, name: 'SEED-ENG-2026-00204' },
+      relatedEntities: [],
+      channel: 'email',
+      direction: 'outbound',
+      from: { name: 'Appraisal Management Platform', email: 'noreply@amp.example.com' },
+      to: [{ name: 'Sarah Johnson — First Horizon Bank', email: 'loans@firsthorizonbank.example.com' }],
+      subject: 'Engagement Opened — SEED-ENG-2026-00204 | 5432 Mockingbird Ln, Dallas TX',
+      body: 'Your appraisal engagement SEED-ENG-2026-00204 has been accepted and assigned. A licensed appraiser will be in contact within 24 hours to schedule the inspection.',
+      bodyFormat: 'text',
+      status: 'delivered',
+      category: 'order_assignment',
+      priority: 'normal',
+      sentAt: daysAgo(12),
+      deliveredAt: daysAgo(12),
+      createdBy: 'system',
+      createdAt: daysAgo(12), updatedAt: daysAgo(12),
+    },
+    // Status update email for engagement 004
+    {
+      id: COMM_IDS.EMAIL_ENG_STATUS_004, tenantId, type: 'communication',
+      primaryEntity: { type: 'engagement', id: ENGAGEMENT_IDS.SINGLE_DELIVERED_004, name: 'SEED-ENG-2026-00204' },
+      relatedEntities: [],
+      channel: 'email',
+      direction: 'outbound',
+      from: { name: 'Appraisal Management Platform', email: 'noreply@amp.example.com' },
+      to: [{ name: 'Sarah Johnson — First Horizon Bank', email: 'loans@firsthorizonbank.example.com' }],
+      subject: 'Appraisal Delivered — SEED-ENG-2026-00204',
+      body: 'The appraisal report for engagement SEED-ENG-2026-00204 (5432 Mockingbird Ln, Dallas TX 75206) has been completed and delivered. Please log in to download the report.',
+      bodyFormat: 'text',
+      status: 'delivered',
+      category: 'order_discussion',
+      priority: 'normal',
+      sentAt: daysAgo(10),
+      deliveredAt: daysAgo(10),
+      createdBy: 'system',
+      createdAt: daysAgo(10), updatedAt: daysAgo(10),
+    },
+    // SMS reminder for engagement 004
+    {
+      id: COMM_IDS.SMS_ENG_REMINDER_004, tenantId, type: 'communication',
+      primaryEntity: { type: 'engagement', id: ENGAGEMENT_IDS.SINGLE_DELIVERED_004, name: 'SEED-ENG-2026-00204' },
+      relatedEntities: [],
+      channel: 'sms',
+      direction: 'outbound',
+      from: { name: 'AMP Notifications' },
+      to: [{ name: 'Sarah Johnson', phone: '+1-214-555-0101' }],
+      subject: null,
+      body: 'Reminder: Your appraisal engagement SEED-ENG-2026-00204 inspection is scheduled for tomorrow 9–11am. Reply HELP for assistance.',
+      bodyFormat: 'text',
+      status: 'delivered',
+      category: 'deadline_reminder',
+      priority: 'normal',
+      sentAt: daysAgo(11),
+      deliveredAt: daysAgo(11),
+      createdBy: 'system',
+      createdAt: daysAgo(11), updatedAt: daysAgo(11),
     },
   ];
 }

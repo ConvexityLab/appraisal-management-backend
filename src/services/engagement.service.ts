@@ -17,6 +17,7 @@ import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { Logger } from '../utils/logger.js';
+import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
   Engagement,
   EngagementLoan,
@@ -752,5 +753,53 @@ export class EngagementService {
       seen.add(doc.id);
       return true;
     });
+  }
+
+  /**
+   * Get all communications for an engagement.
+   * Returns engagement-level comms (primaryEntity.type='engagement')
+   * plus rolled-up comms from all linked vendor orders, sorted newest-first.
+   */
+  async getCommunications(engagementId: string, tenantId: string): Promise<CommunicationRecord[]> {
+    const params: { name: string; value: string }[] = [
+      { name: '@tenantId', value: tenantId },
+      { name: '@engagementId', value: engagementId },
+    ];
+
+    let orderCondition = '';
+    try {
+      const engagement = await this.getEngagement(engagementId, tenantId);
+      const orderIds = engagement.loans.flatMap((loan) =>
+        loan.products.flatMap((product) => product.vendorOrderIds ?? []),
+      );
+      if (orderIds.length > 0) {
+        const paramNames = orderIds.map((_, i) => `@oid${i}`).join(', ');
+        orderIds.forEach((id, i) => params.push({ name: `@oid${i}`, value: id }));
+        orderCondition = ` OR (c.primaryEntity.type = 'order' AND c.primaryEntity.id IN (${paramNames}))`;
+      }
+    } catch {
+      // Engagement lookup failed — fall back to engagement-level comms only
+    }
+
+    const query = `
+      SELECT * FROM c
+      WHERE c.type = 'communication'
+        AND c.tenantId = @tenantId
+        AND (
+          (c.primaryEntity.type = 'engagement' AND c.primaryEntity.id = @engagementId)
+          ${orderCondition}
+        )
+      ORDER BY c.createdAt DESC
+    `;
+
+    const result = await this.dbService.queryItems<CommunicationRecord>(
+      'communications',
+      query,
+      params,
+    );
+    if (!result.success || !result.data) {
+      throw new Error(`Failed to query communications for engagement ${engagementId}`);
+    }
+    return result.data;
   }
 }

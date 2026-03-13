@@ -7,7 +7,7 @@
 // COMMUNICATION RECORD (UNIFIED STORAGE)
 // ============================================================================
 
-export type CommunicationEntityType = 'order' | 'vendor' | 'appraiser' | 'client' | 'user' | 'general';
+export type CommunicationEntityType = 'order' | 'vendor' | 'appraiser' | 'client' | 'user' | 'general' | 'engagement';
 export type CommunicationChannel = 'email' | 'sms' | 'teams' | 'chat' | 'phone' | 'in_app';
 export type CommunicationDirection = 'outbound' | 'inbound';
 export type CommunicationStatus = 'draft' | 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'bounced';

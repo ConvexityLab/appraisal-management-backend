@@ -143,6 +143,10 @@ export const COMM_IDS = {
   SMS_CONFIRM_003: 'seed-comm-sms-002',
   EMAIL_DELIVERED_001: 'seed-comm-email-001',
   EMAIL_QC_PASS_001: 'seed-comm-email-002',
+  // Engagement-level communications (not tied to a specific order)
+  EMAIL_ENG_KICKOFF_004: 'seed-comm-email-eng-001',
+  EMAIL_ENG_STATUS_004: 'seed-comm-email-eng-002',
+  SMS_ENG_REMINDER_004: 'seed-comm-sms-eng-003',
 } as const;
 
 // ─── Matching Criteria ────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@
  *   GET    /api/engagements/:id/arv                                            → list linked ARV analyses
  *   GET    /api/engagements/:id/qc                                             → list linked QC reviews
  *   GET    /api/engagements/:id/documents                                      → list linked documents
+ *   GET    /api/engagements/:id/communications                                 → list engagement + rolled-up order comms
  *   GET    /api/engagements/:id/loans                                          → list loans in engagement
  *   POST   /api/engagements/:id/loans                                          → add a loan to engagement
  *   GET    /api/engagements/:id/loans/:loanId                                  → get a specific loan
@@ -405,6 +406,36 @@ export function createEngagementRouter(dbService: CosmosDbService) {
       } catch (error) {
         logger.error('getDocuments failed', { error });
         return res.status(500).json({ success: false, error: 'Failed to get documents' });
+      }
+    },
+  );
+
+  // ── GET /:id/communications ────────────────────────────────────────────────
+  router.get(
+    '/:id/communications',
+    param('id').isString().notEmpty(),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      try {
+        const tenantId = resolveTenantId(req);
+        const records = await service.getCommunications(req.params['id'] as string, tenantId);
+        // Map to a consistent CommunicationHistoryItem-shaped response
+        const data = records.map((m: any) => ({
+          id: m.id,
+          type: m.channel,
+          direction: m.direction,
+          from: m.from?.name ?? m.from ?? '',
+          to: Array.isArray(m.to) ? (m.to[0]?.email ?? m.to[0]?.name ?? '') : (m.to ?? ''),
+          subject: m.subject,
+          body: m.body,
+          status: m.status,
+          timestamp: m.sentAt ?? m.createdAt,
+          primaryEntity: m.primaryEntity,
+          metadata: m.metadata,
+        }));
+        return res.json({ success: true, data });
+      } catch (error) {
+        logger.error('getCommunications failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to get communications' });
       }
     },
   );
