@@ -52,6 +52,7 @@ import type {
   VendorStaffAssignedEvent,
   OrderStatusChangedEvent,
   ReviewAssignmentTimedOutEvent,
+  QCAIScoredEvent,
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -170,6 +171,12 @@ export class AutoAssignmentOrchestratorService {
         'review.assignment.timeout',
         this.makeHandler('review.assignment.timeout', this.onReviewAssignmentTimedOut.bind(this)),
       ),
+      // AI QC gate: routes needs_review / needs_supervision to human QC;
+      // auto_pass is handled by AutoDeliveryService directly.
+      this.subscriber.subscribe<QCAIScoredEvent>(
+        'qc.ai.scored',
+        this.makeHandler('qc.ai.scored', this.onQCAIScored.bind(this)),
+      ),
     ]);
 
     this.isStarted = true;
@@ -184,6 +191,7 @@ export class AutoAssignmentOrchestratorService {
       this.subscriber.unsubscribe('vendor.bid.declined'),
       this.subscriber.unsubscribe('order.status.changed'),
       this.subscriber.unsubscribe('review.assignment.timeout'),
+      this.subscriber.unsubscribe('qc.ai.scored'),
     ]);
     this.isStarted = false;
     this.logger.info('AutoAssignmentOrchestrator stopped');
@@ -377,19 +385,93 @@ export class AutoAssignmentOrchestratorService {
   /**
    * Triggered when an order status changes.
    * React to SUBMITTED (vendor delivered) → kick off review assignment.
+   *
+   * When aiQcEnabled is true for the tenant, the AIQCGateService intercepts
+   * this event on its own subscription and publishes qc.ai.scored. The
+   * orchestrator then routes from there (see onQCAIScored below). Returning
+   * early here avoids starting review assignment twice.
    */
   private async onOrderStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
     if (event.data.newStatus !== 'SUBMITTED') return;
 
     const { orderId, tenantId, priority } = event.data;
+
+    // Defer to the AI QC gate when it is enabled — routing happens in onQCAIScored.
+    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    if (tenantConfig.aiQcEnabled) {
+      this.logger.info(
+        'AI QC gate enabled — deferring review routing to qc.ai.scored event',
+        { orderId, tenantId },
+      );
+      return;
+    }
+
     const order = await this.loadOrder(orderId, tenantId);
     if (!order) {
       this.logger.warn('order.status.changed(SUBMITTED): order not found', { orderId });
       return;
     }
 
-    this.logger.info('Order SUBMITTED — initiating review assignment', { orderId, tenantId });
-    await this.initiateReviewAssignment(order, tenantId, event.data.priority);
+    this.logger.info('Order SUBMITTED — initiating review assignment (no AI gate)', {
+      orderId,
+      tenantId,
+    });
+    await this.initiateReviewAssignment(order, tenantId, priority);
+  }
+
+  /**
+   * Triggered after the AI QC gate scores a submitted order.
+   *
+   * auto_pass        → AutoDeliveryService handles delivery; nothing to do here.
+   * needs_review     → route to human QC analyst.
+   * needs_supervision → route to human QC analyst AND request supervisory co-sign.
+   */
+  private async onQCAIScored(event: QCAIScoredEvent): Promise<void> {
+    const { orderId, tenantId, decision, priority, score } = event.data;
+
+    this.logger.info('qc.ai.scored received', { orderId, score, decision });
+
+    if (decision === 'auto_pass') {
+      // AutoDeliveryService (separate subscription) handles this path.
+      return;
+    }
+
+    const order = await this.loadOrder(orderId, tenantId);
+    if (!order) {
+      this.logger.warn('qc.ai.scored: order not found', { orderId });
+      return;
+    }
+
+    // Route to human QC regardless of decision (both need_review + needs_supervision).
+    await this.initiateReviewAssignment(order, tenantId, priority);
+
+    // For needs_supervision, also request a supervisory co-sign.
+    if (decision === 'needs_supervision') {
+      const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+      if (tenantConfig.defaultSupervisorId) {
+        try {
+          await this.supervisoryReviewService.requestSupervision({
+            orderId,
+            tenantId,
+            supervisorId: tenantConfig.defaultSupervisorId,
+            reason: 'ai_flag',
+            requestedBy: 'ai-qc-gate',
+          });
+          this.logger.info('Supervisory review requested (AI flag)', { orderId, score });
+        } catch (err) {
+          // Non-fatal: human QC is still assigned; supervisor can be added manually.
+          this.logger.error('Failed to auto-request supervision after AI flag', {
+            orderId,
+            error: err,
+          });
+        }
+      } else {
+        this.logger.warn(
+          'AI flagged supervision required but no defaultSupervisorId configured',
+          { orderId, tenantId },
+        );
+      }
+    }
   }
 
   /**

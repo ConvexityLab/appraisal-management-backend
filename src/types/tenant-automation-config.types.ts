@@ -89,6 +89,46 @@ export interface TenantAutomationConfig {
    */
   escalationRecipients: string[];
 
+  // ── AI QC gate ────────────────────────────────────────────────────────────
+
+  /**
+   * When true, every SUBMITTED order is scored by the AI QC gate before human
+   * routing.  Orders scoring >= aiQcPassThreshold skip human review entirely.
+   * @default false
+   */
+  aiQcEnabled: boolean;
+
+  /**
+   * AI QC score (0-100) at or above which an order is automatically passed
+   * without human review.
+   * @default 90
+   */
+  aiQcPassThreshold: number;
+
+  /**
+   * AI QC score (0-100) below which an order is flagged for supervisory review
+   * in addition to human QC.  Scores between this and aiQcPassThreshold route
+   * to a standard QC analyst.
+   * @default 70
+   */
+  aiQcFlagThreshold: number;
+
+  // ── Auto-delivery & engagement lifecycle ──────────────────────────────────
+
+  /**
+   * When true, the system auto-generates the report PDF and delivers it to
+   * the client portal after QC/supervision clears (or after an AI auto-pass).
+   * @default false
+   */
+  autoDeliveryEnabled: boolean;
+
+  /**
+   * When true, the engagement is automatically closed (status → COMPLETED)
+   * once every child order reaches DELIVERED status.
+   * @default false
+   */
+  autoCloseEngagementEnabled: boolean;
+
   // ── Metadata ──────────────────────────────────────────────────────────────
 
   updatedAt: string; // ISO
@@ -117,5 +157,10 @@ export const DEFAULT_TENANT_AUTOMATION_CONFIG: Omit<
   supervisoryReviewForAllOrders: false,
   supervisoryReviewValueThreshold: 0,
   escalationRecipients: [],
+  aiQcEnabled: false,
+  aiQcPassThreshold: 90,
+  aiQcFlagThreshold: 70,
+  autoDeliveryEnabled: false,
+  autoCloseEngagementEnabled: false,
   entityType: 'tenant-automation-config',
 };

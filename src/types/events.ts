@@ -87,6 +87,38 @@ export interface OrderCompletedEvent extends BaseEvent {
   };
 }
 
+/** Fired when an order report has been delivered to the client portal. */
+export interface OrderDeliveredEvent extends BaseEvent {
+  type: 'order.delivered';
+  category: EventCategory.ORDER;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    /** Engagement this order belongs to — used for engagement roll-up. */
+    engagementId?: string;
+    tenantId: string;
+    clientId: string;
+    deliveredAt: Date;
+    deliveryMethod: 'portal' | 'email' | 'manual';
+    priority: EventPriority;
+  };
+}
+
+/** Fired when an engagement's derived status changes (e.g. all orders delivered → COMPLETED). */
+export interface EngagementStatusChangedEvent extends BaseEvent {
+  type: 'engagement.status.changed';
+  category: EventCategory.ORDER;
+  data: {
+    engagementId: string;
+    tenantId: string;
+    previousStatus: string;
+    newStatus: string;
+    /** Human-readable reason for the transition. */
+    reason: string;
+    priority: EventPriority;
+  };
+}
+
 // QC-related events
 export interface QCStartedEvent extends BaseEvent {
   type: 'qc.started';
@@ -124,6 +156,26 @@ export interface QCIssueDetectedEvent extends BaseEvent {
     severity: 'low' | 'medium' | 'high' | 'critical';
     description: string;
     requiresAction: boolean;
+    priority: EventPriority;
+  };
+}
+
+/**
+ * Fired by the AI QC gate after scoring a submitted order.
+ * The 'decision' field drives downstream routing.
+ */
+export interface QCAIScoredEvent extends BaseEvent {
+  type: 'qc.ai.scored';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    score: number;
+    /** auto_pass → skip human QC; needs_review → route to analyst; needs_supervision → route + flag supervisor. */
+    decision: 'auto_pass' | 'needs_review' | 'needs_supervision';
+    findings: Array<{ category: string; severity: string; description: string }>;
+    passFailStatus: 'pass' | 'fail' | 'conditional';
     priority: EventPriority;
   };
 }
@@ -404,9 +456,12 @@ export type AppEvent =
   | OrderStatusChangedEvent
   | OrderAssignedEvent
   | OrderCompletedEvent
+  | OrderDeliveredEvent
+  | EngagementStatusChangedEvent
   | QCStartedEvent
   | QCCompletedEvent
   | QCIssueDetectedEvent
+  | QCAIScoredEvent
   | VendorPerformanceUpdatedEvent
   | VendorAvailabilityChangedEvent
   | SystemAlertEvent

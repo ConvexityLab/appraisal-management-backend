@@ -146,6 +146,12 @@ import { NotificationService as EventNotificationOrchestrator } from '../service
 // Import Auto-Assignment Orchestrator (event-driven vendor + review staff assignment)
 import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service';
 
+// Import Autonomous E2E Pipeline services
+import { AIQCGateService } from '../services/ai-qc-gate.service';
+import { AutoDeliveryService } from '../services/auto-delivery.service';
+import { EngagementLifecycleService } from '../services/engagement-lifecycle.service';
+import { CommunicationEventHandler } from '../services/communication-event-handler.service';
+
 // Import Review Assignment Timeout Job
 import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
 
@@ -242,6 +248,10 @@ export class AppraisalManagementAPIServer {
   private eventOrchestrator?: EventNotificationOrchestrator;
   private autoAssignmentOrchestrator?: AutoAssignmentOrchestratorService;
   private reviewTimeoutJob?: ReviewAssignmentTimeoutJob;
+  private aiQcGateService?: AIQCGateService;
+  private autoDeliveryService?: AutoDeliveryService;
+  private engagementLifecycleService?: EngagementLifecycleService;
+  private communicationEventHandler?: CommunicationEventHandler;
   private orderController!: OrderController;
   
   // QC routers
@@ -3302,8 +3312,64 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start AI QC Gate (scores submitted orders; publishes qc.ai.scored)
+    try {
+      this.aiQcGateService = new AIQCGateService(this.dbService);
+      this.aiQcGateService.start().catch(err => {
+        this.logger.warn('AIQCGateService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AIQCGateService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Auto-Delivery Service (delivers orders after AI auto-pass or supervision cosign)
+    try {
+      this.autoDeliveryService = new AutoDeliveryService(this.dbService);
+      this.autoDeliveryService.start().catch(err => {
+        this.logger.warn('AutoDeliveryService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AutoDeliveryService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Engagement Lifecycle Service (auto-closes engagement when all orders delivered)
+    try {
+      this.engagementLifecycleService = new EngagementLifecycleService(this.dbService);
+      this.engagementLifecycleService.start().catch(err => {
+        this.logger.warn('EngagementLifecycleService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('EngagementLifecycleService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Communication Event Handler (fires email/SMS on lifecycle events)
+    try {
+      this.communicationEventHandler = new CommunicationEventHandler(this.dbService);
+      this.communicationEventHandler.start().catch(err => {
+        this.logger.warn('CommunicationEventHandler failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('CommunicationEventHandler could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler']
     });
   }
 
@@ -3328,6 +3394,18 @@ export class AppraisalManagementAPIServer {
     }
     if (this.reviewTimeoutJob) {
       this.reviewTimeoutJob.stop();
+    }
+    if (this.aiQcGateService) {
+      this.aiQcGateService.stop().catch(() => {});
+    }
+    if (this.autoDeliveryService) {
+      this.autoDeliveryService.stop().catch(() => {});
+    }
+    if (this.engagementLifecycleService) {
+      this.engagementLifecycleService.stop().catch(() => {});
+    }
+    if (this.communicationEventHandler) {
+      this.communicationEventHandler.stop().catch(() => {});
     }
     this.logger.info('Background jobs stopped');
   }
