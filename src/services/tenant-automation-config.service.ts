@@ -44,19 +44,27 @@ export class TenantAutomationConfigService {
 
     const result = await this.db.queryItems<TenantAutomationConfig>(
       CONTAINER,
-      'SELECT * FROM c WHERE c.tenantId = @tenantId AND c.documentType = @documentType',
+      'SELECT * FROM c WHERE c.tenantId = @tenantId AND c.entityType = @entityType',
       [
         { name: '@tenantId', value: tenantId },
-        { name: '@documentType', value: 'tenant-automation-config' },
+        { name: '@entityType', value: 'tenant-automation-config' },
       ],
     );
 
     if (!result.success || !result.data || result.data.length === 0) {
       this.logger.info('No config found — returning defaults', { tenantId });
-      return { ...DEFAULT_TENANT_AUTOMATION_CONFIG, tenantId };
+      const now = new Date().toISOString();
+      return {
+        ...DEFAULT_TENANT_AUTOMATION_CONFIG,
+        id: `automation-config-${tenantId}`,
+        tenantId,
+        updatedAt: now,
+        updatedBy: 'system',
+        createdAt: now,
+      };
     }
 
-    return result.data[0];
+    return result.data[0]!
   }
 
   /**
@@ -80,7 +88,7 @@ export class TenantAutomationConfigService {
       ...existing,
       ...update,
       tenantId,
-      documentType: 'tenant-automation-config' as const,
+      entityType: 'tenant-automation-config' as const,
       id: existing.id ?? `automation-config-${tenantId}`,
       updatedAt: now,
       updatedBy,

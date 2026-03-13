@@ -53,9 +53,12 @@ router.get('/messages', async (req: Request, res: Response) => {
 
 router.post('/messages/:messageId/reprocess', async (req: Request, res: Response) => {
   try {
-    const { messageId } = req.params;
+    const messageId: string = req.params['messageId'] ?? '';
     const { subscription } = req.body;
 
+    if (!messageId) {
+      return res.status(400).json({ error: 'messageId is required' });
+    }
     if (!subscription) {
       return res.status(400).json({ error: 'subscription is required in request body' });
     }
@@ -75,9 +78,12 @@ router.post('/messages/:messageId/reprocess', async (req: Request, res: Response
 
 router.delete('/messages/:messageId', async (req: Request, res: Response) => {
   try {
-    const { messageId } = req.params;
+    const messageId: string = req.params['messageId'] ?? '';
     const { subscription } = req.body;
 
+    if (!messageId) {
+      return res.status(400).json({ error: 'messageId is required' });
+    }
     if (!subscription) {
       return res.status(400).json({ error: 'subscription is required in request body' });
     }

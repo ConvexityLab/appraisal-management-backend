@@ -113,7 +113,7 @@ export const DEFAULT_TENANT_AUTOMATION_CONFIG: Omit<
   bidExpiryHours: 4,
   reviewExpiryHours: 8,
   preferredVendorIds: [],
-  defaultSupervisorId: undefined,
+  // defaultSupervisorId omitted — undefined not allowed with exactOptionalPropertyTypes
   supervisoryReviewForAllOrders: false,
   supervisoryReviewValueThreshold: 0,
   escalationRecipients: [],

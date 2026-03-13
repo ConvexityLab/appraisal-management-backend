@@ -23,8 +23,9 @@ const logger = new Logger('SupervisoryReviewController');
  * Extract tenantId from the JWT (req.user, via unifiedAuth) with x-tenant-id header as fallback.
  * Callers must validate that the returned value is non-empty before use.
  */
-function resolveTenantId(req: Req): string {
-  return (req.user?.tenantId ?? (req.headers['x-tenant-id'] as string | undefined) ?? '') as string;
+function resolveTenantId(req: Req): string | undefined {
+  const id = req.user?.tenantId ?? (req.headers['x-tenant-id'] as string | undefined);
+  return id || undefined;
 }
 
 // ── GET /api/supervisory-review/pending ──────────────────────────────────────
@@ -52,7 +53,7 @@ router.get('/pending', async (req: Req, res: Response) => {
 
 router.get('/:orderId', async (req: Req, res: Response) => {
   try {
-    const { orderId } = req.params;
+    const orderId = req.params['orderId'] as string;
     const tenantId = resolveTenantId(req);
 
     if (!tenantId) {
@@ -74,7 +75,7 @@ router.get('/:orderId', async (req: Req, res: Response) => {
 
 router.post('/:orderId/request', async (req: Req, res: Response) => {
   try {
-    const { orderId } = req.params;
+    const orderId = req.params['orderId'] as string;
     const tenantId = resolveTenantId(req);
     const { supervisorId, supervisorName, reason, requestedBy, priority } = req.body;
 
@@ -112,7 +113,7 @@ router.post('/:orderId/request', async (req: Req, res: Response) => {
 
 router.post('/:orderId/cosign', async (req: Req, res: Response) => {
   try {
-    const { orderId } = req.params;
+    const orderId = req.params['orderId'] as string;
     const tenantId = resolveTenantId(req);
     const { supervisorId, supervisorName, notes } = req.body;
 

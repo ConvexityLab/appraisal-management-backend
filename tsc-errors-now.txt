@@ -1,0 +1,29 @@
+﻿src/controllers/dead-letter-queue-monitor.controller.ts(63,36): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/dead-letter-queue-monitor.controller.ts(85,34): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/supervisory-review.controller.ts(62,44): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/supervisory-review.controller.ts(92,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/controllers/supervisory-review.controller.ts(130,7): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/services/auto-assignment-orchestrator.service.ts(293,11): error TS2375: Type '{ excludedVendors: never[]; preferredVendors: string[] | undefined; }' is not assignable to type '{ preferredVendors?: string[]; excludedVendors?: string[]; minTier?: VendorTier; maxDistance?: number; maxFee?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'preferredVendors' are incompatible.
+    Type 'string[] | undefined' is not assignable to type 'string[]'.
+      Type 'undefined' is not assignable to type 'string[]'.
+src/services/dead-letter-queue-monitor.service.ts(174,13): error TS2375: Type '{ messageId: string | number | Buffer<ArrayBufferLike> | undefined; subject: string | undefined; body: any; applicationProperties: { dlqReprocessedAt: string; dlqOriginalSubscription: string; }; }' is not assignable to type 'ServiceBusMessage' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'messageId' are incompatible.
+    Type 'string | number | Buffer<ArrayBufferLike> | undefined' is not assignable to type 'string | number | Buffer<ArrayBufferLike>'.
+      Type 'undefined' is not assignable to type 'string | number | Buffer<ArrayBufferLike>'.
+src/services/supervisory-review.service.ts(180,7): error TS2375: Type '{ orderId: string; orderNumber: any; tenantId: string; supervisorId: string; supervisorName: string; cosignedAt: Date; notes: string | undefined; priority: EventPriority.NORMAL; }' is not assignable to type '{ orderId: string; orderNumber: string; tenantId: string; supervisorId: string; supervisorName: string; cosignedAt: Date; notes?: string; priority: EventPriority; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'notes' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/services/tenant-automation-config.service.ts(56,7): error TS2739: Type '{ tenantId: string; entityType: "tenant-automation-config"; autoAssignmentEnabled: boolean; bidLoopEnabled: boolean; maxVendorAttempts: number; bidExpiryHours: number; reviewExpiryHours: number; ... 4 more ...; escalationRecipients: string[]; }' is missing the following properties from type 'TenantAutomationConfig': id, updatedAt, updatedBy, createdAt
+src/services/tenant-automation-config.service.ts(59,5): error TS2322: Type 'TenantAutomationConfig | undefined' is not assignable to type 'TenantAutomationConfig'.
+  Type 'undefined' is not assignable to type 'TenantAutomationConfig'.
+src/services/tenant-automation-config.service.ts(83,7): error TS2353: Object literal may only specify known properties, and 'documentType' does not exist in type 'TenantAutomationConfig'.
+src/types/tenant-automation-config.types.ts(106,14): error TS2375: Type '{ autoAssignmentEnabled: true; bidLoopEnabled: true; maxVendorAttempts: number; bidExpiryHours: number; reviewExpiryHours: number; preferredVendorIds: never[]; defaultSupervisorId: undefined; supervisoryReviewForAllOrders: false; supervisoryReviewValueThreshold: number; escalationRecipients: never[]; entityType: "te...' is not assignable to type 'Omit<TenantAutomationConfig, "id" | "tenantId" | "createdAt" | "updatedAt" | "updatedBy">' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'defaultSupervisorId' are incompatible.
+    Type 'undefined' is not assignable to type 'string'.

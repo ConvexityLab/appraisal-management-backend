@@ -172,14 +172,14 @@ export class DeadLetterQueueMonitorService {
       await Promise.all(messages.filter((m) => m.messageId !== messageId).map((m) => receiver.abandonMessage(m)));
 
       const requeued: ServiceBusMessage = {
-        messageId: target.messageId,
-        subject: target.subject,
         body: target.body,
         applicationProperties: {
           ...(target.applicationProperties ?? {}),
           dlqReprocessedAt: new Date().toISOString(),
           dlqOriginalSubscription: subscription,
         },
+        ...(target.messageId !== undefined ? { messageId: target.messageId } : {}),
+        ...(target.subject !== undefined ? { subject: target.subject } : {}),
       };
 
       await sender.sendMessages(requeued);

@@ -291,8 +291,10 @@ export class AutoAssignmentOrchestratorService {
           ...(productId ? { productId } : {}),
           ...(requiredCapabilities?.length ? { requiredCapabilities } : {}),
           clientPreferences: {
-            excludedVendors: [],
-            preferredVendors: tenantConfig.preferredVendorIds,
+            excludedVendors: [] as string[],
+            ...(tenantConfig.preferredVendorIds?.length
+              ? { preferredVendors: tenantConfig.preferredVendorIds }
+              : {}),
           },
         },
         maxAttempts,

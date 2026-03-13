@@ -184,7 +184,7 @@ export class SupervisoryReviewService {
         supervisorId,
         supervisorName,
         cosignedAt: new Date(cosignedAt),
-        notes,
+        ...(notes !== undefined ? { notes } : {}),
         priority: EventPriority.NORMAL,
       },
     };
