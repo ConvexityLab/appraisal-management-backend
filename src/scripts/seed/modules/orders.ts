@@ -7,11 +7,12 @@
  */
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
-import { upsert, cleanContainer, daysAgo, hoursAgo } from '../seed-types.js';
+import { upsert, cleanContainer, daysAgo, daysFromNow, hoursAgo } from '../seed-types.js';
 import {
   ORDER_IDS, ORDER_NUMBERS,
   CLIENT_IDS, PRODUCT_IDS, VENDOR_IDS, APPRAISER_IDS, PROPERTY_IDS,
-  REPORT_IDS,
+  REPORT_IDS, ENGAGEMENT_IDS,
+  INTERNAL_STAFF_IDS, STAFF_IDS, QC_REVIEW_IDS,
 } from '../seed-ids.js';
 
 const CONTAINER = 'orders';
@@ -36,9 +37,35 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       appraiserFee: 375, appraisedValue: 425000,
       reportId: REPORT_IDS.FULL_1004_ORDER_001,
       qcStatus: 'PASSED', qcScore: 94,
+      engagementId: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
+      engagementLoanId: 'seed-loan-eng004-001',
+      engagementProductId: 'seed-prod-eng004-001',
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group', score: 95 },
+          { vendorId: VENDOR_IDS.ROCKY_MOUNTAIN, vendorName: 'Rocky Mountain Valuations', score: 81 },
+          { vendorId: VENDOR_IDS.NVN, vendorName: 'National Valuation Network', score: 72 },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(28),
+      },
+      autoReviewAssignment: {
+        qcReviewId: QC_REVIEW_IDS.REVIEW_ORDER_001,
+        status: 'ACCEPTED',
+        rankedReviewers: [
+          { reviewerId: STAFF_IDS.QC_ANALYST_1, reviewerName: 'Alex Rivera (QC Analyst)', workloadPct: 45 },
+          { reviewerId: STAFF_IDS.QC_ANALYST_2, reviewerName: 'Jordan Lee (QC Analyst)', workloadPct: 60 },
+        ],
+        currentAttempt: 0,
+        currentAssignmentExpiresAt: null,
+        initiatedAt: daysAgo(18),
+      },
       createdAt: daysAgo(30), updatedAt: daysAgo(10),
     },
-    // 2 — QC_REVIEW
+    // 2 — QC_REVIEW — PREMIER timed out on attempt 0, ROCKY_MOUNTAIN accepted on attempt 1
     {
       id: ORDER_IDS.QC_REVIEW_002, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.QC_REVIEW_002],
@@ -55,9 +82,31 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       dueDate: daysAgo(-2), fee: 550, paidAmount: 0,
       appraiserFee: 400, appraisedValue: 385000,
       qcStatus: 'IN_REVIEW',
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group', score: 91 },
+          { vendorId: VENDOR_IDS.ROCKY_MOUNTAIN, vendorName: 'Rocky Mountain Valuations', score: 88 },
+        ],
+        currentAttempt: 1,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(12),
+      },
+      autoReviewAssignment: {
+        qcReviewId: QC_REVIEW_IDS.REVIEW_ORDER_002,
+        status: 'PENDING_ACCEPTANCE',
+        rankedReviewers: [
+          { reviewerId: STAFF_IDS.QC_ANALYST_1, reviewerName: 'Alex Rivera (QC Analyst)', workloadPct: 65 },
+          { reviewerId: STAFF_IDS.QC_ANALYST_2, reviewerName: 'Jordan Lee (QC Analyst)', workloadPct: 50 },
+        ],
+        currentAttempt: 0,
+        currentAssignmentExpiresAt: daysFromNow(1),
+        initiatedAt: daysAgo(3),
+      },
       createdAt: daysAgo(14), updatedAt: daysAgo(3),
     },
-    // 3 — IN_PROGRESS, rush
+    // 3 — IN_PROGRESS, rush — TX_PROPERTY scored highest for rush; Sarah Chen (internal) ranked 3rd
     {
       id: ORDER_IDS.IN_PROGRESS_003, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.IN_PROGRESS_003],
@@ -74,9 +123,21 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       dueDate: daysAgo(-1), fee: 700, paidAmount: 0,
       appraiserFee: 500,
       reportId: REPORT_IDS.FULL_1004_ORDER_003,
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC', score: 97 },
+          { vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group', score: 85 },
+          { vendorId: INTERNAL_STAFF_IDS.SARAH_CHEN_TX_APPRAISER, vendorName: 'Sarah Chen', score: 84, staffType: 'internal', staffRole: 'appraiser_internal' },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(6),
+      },
       createdAt: daysAgo(7), updatedAt: hoursAgo(6),
     },
-    // 4 — PENDING_ASSIGNMENT
+    // 4 — PENDING_ASSIGNMENT — PREMIER timed out, NVN is current live bid
     {
       id: ORDER_IDS.PENDING_004, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.PENDING_004],
@@ -88,9 +149,21 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       loanNumber: 'CP-2026-99401', borrowerName: 'Rebecca Torres',
       orderedDate: daysAgo(2),
       dueDate: daysAgo(-12), fee: 475, paidAmount: 0,
+      autoVendorAssignment: {
+        status: 'PENDING_BID',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group', score: 90 },
+          { vendorId: VENDOR_IDS.NVN, vendorName: 'National Valuation Network', score: 83 },
+          { vendorId: VENDOR_IDS.METROPLEX, vendorName: 'Metroplex Appraisal Services', score: 77 },
+        ],
+        currentAttempt: 1,
+        currentBidId: 'seed-bid-order-004-nvn',
+        currentBidExpiresAt: daysFromNow(1),
+        initiatedAt: daysAgo(2),
+      },
       createdAt: daysAgo(2), updatedAt: daysAgo(2),
     },
-    // 5 — NEW
+    // 5 — NEW / Desktop — internal direct assignment in progress for Sarah Chen (no bid loop)
     {
       id: ORDER_IDS.NEW_005, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.NEW_005],
@@ -101,6 +174,17 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       loanNumber: 'SCB-2026-10501', borrowerName: 'James Franklin',
       orderedDate: hoursAgo(4),
       dueDate: daysAgo(-14), fee: 350, paidAmount: 0,
+      autoVendorAssignment: {
+        status: 'PENDING_BID',
+        rankedVendors: [
+          { vendorId: INTERNAL_STAFF_IDS.SARAH_CHEN_TX_APPRAISER, vendorName: 'Sarah Chen', score: 98, staffType: 'internal', staffRole: 'appraiser_internal' },
+          { vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC', score: 82 },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: hoursAgo(2),
+      },
       createdAt: hoursAgo(4), updatedAt: hoursAgo(4),
     },
     // 6 — FIX_AND_FLIP, in progress with ARV
@@ -121,9 +205,20 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       dueDate: daysAgo(-5), fee: 650, paidAmount: 0,
       appraiserFee: 475,
       arvAnalysisId: 'seed-arv-001',
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.METROPLEX, vendorName: 'Metroplex Appraisal Services', score: 92 },
+          { vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC', score: 84 },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(18),
+      },
       createdAt: daysAgo(20), updatedAt: daysAgo(5),
     },
-    // 7 — ASSIGNED
+    // 7 — ASSIGNED — NVN is current live bid, expires in ~4 hours
     {
       id: ORDER_IDS.ASSIGNED_007, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ASSIGNED_007],
@@ -136,9 +231,20 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderedDate: daysAgo(3), assignedDate: daysAgo(1),
       dueDate: daysAgo(-9), fee: 350, paidAmount: 0,
       appraiserFee: 250,
+      autoVendorAssignment: {
+        status: 'PENDING_BID',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.NVN, vendorName: 'National Valuation Network', score: 88 },
+          { vendorId: VENDOR_IDS.METROPLEX, vendorName: 'Metroplex Appraisal Services', score: 76 },
+        ],
+        currentAttempt: 0,
+        currentBidId: 'seed-bid-order-007-nvn',
+        currentBidExpiresAt: hoursAgo(-4),
+        initiatedAt: daysAgo(1),
+      },
       createdAt: daysAgo(3), updatedAt: daysAgo(1),
     },
-    // 8 — ACCEPTED
+    // 8 — ACCEPTED — PREMIER ranked first, James Okonkwo (internal reviewer) ranked 3rd as fallback
     {
       id: ORDER_IDS.ACCEPTED_008, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ACCEPTED_008],
@@ -153,9 +259,21 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderedDate: daysAgo(5), assignedDate: daysAgo(4), acceptedDate: daysAgo(3),
       dueDate: daysAgo(-8), fee: 525, paidAmount: 0,
       appraiserFee: 390,
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group', score: 96 },
+          { vendorId: VENDOR_IDS.ROCKY_MOUNTAIN, vendorName: 'Rocky Mountain Valuations', score: 82 },
+          { vendorId: INTERNAL_STAFF_IDS.JAMES_OKONKWO_TX_REVIEWER, vendorName: 'James Okonkwo', score: 79, staffType: 'internal', staffRole: 'reviewer' },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(4),
+      },
       createdAt: daysAgo(5), updatedAt: daysAgo(3),
     },
-    // 9 — SUBMITTED
+    // 9 — SUBMITTED — QC review assignment pending for Jordan Lee (QC Analyst 2)
     {
       id: ORDER_IDS.SUBMITTED_009, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.SUBMITTED_009],
@@ -170,9 +288,31 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       inspectionDate: daysAgo(6), submittedDate: daysAgo(2),
       dueDate: daysAgo(-3), fee: 800, paidAmount: 0,
       appraiserFee: 600, appraisedValue: 720000,
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.ROCKY_MOUNTAIN, vendorName: 'Rocky Mountain Valuations', score: 94 },
+          { vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC', score: 79 },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(10),
+      },
+      autoReviewAssignment: {
+        qcReviewId: QC_REVIEW_IDS.REVIEW_ORDER_009,
+        status: 'PENDING_ACCEPTANCE',
+        rankedReviewers: [
+          { reviewerId: STAFF_IDS.QC_ANALYST_2, reviewerName: 'Jordan Lee (QC Analyst)', workloadPct: 55 },
+          { reviewerId: STAFF_IDS.QC_ANALYST_1, reviewerName: 'Alex Rivera (QC Analyst)', workloadPct: 70 },
+        ],
+        currentAttempt: 0,
+        currentAssignmentExpiresAt: hoursAgo(-6),
+        initiatedAt: daysAgo(2),
+      },
       createdAt: daysAgo(12), updatedAt: daysAgo(2),
     },
-    // 10 — REVISION_REQUESTED
+    // 10 — REVISION_REQUESTED — QC review accepted and completed, then revision triggered
     {
       id: ORDER_IDS.REVISION_010, tenantId, type: 'order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.REVISION_010],
@@ -190,6 +330,28 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       qcStatus: 'REVISION_REQUIRED', qcScore: 68,
       revisionRequestedDate: daysAgo(4),
       revisionNotes: 'Comparable #2 is not appropriate — different zoning; GLA adjustment exceeds 25% threshold per UAD guidelines.',
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC', score: 89 },
+          { vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group', score: 81 },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(16),
+      },
+      autoReviewAssignment: {
+        qcReviewId: QC_REVIEW_IDS.REVIEW_ORDER_010,
+        status: 'ACCEPTED',
+        rankedReviewers: [
+          { reviewerId: STAFF_IDS.QC_ANALYST_1, reviewerName: 'Alex Rivera (QC Analyst)', workloadPct: 60 },
+          { reviewerId: STAFF_IDS.QC_ANALYST_2, reviewerName: 'Jordan Lee (QC Analyst)', workloadPct: 55 },
+        ],
+        currentAttempt: 0,
+        currentAssignmentExpiresAt: null,
+        initiatedAt: daysAgo(7),
+      },
       createdAt: daysAgo(18), updatedAt: daysAgo(4),
     },
     // 11 — CANCELLED
@@ -222,6 +384,29 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       dueDate: daysAgo(14), fee: 325, paidAmount: 325,
       appraiserFee: 225, appraisedValue: 195000,
       qcStatus: 'PASSED', qcScore: 97,
+      autoVendorAssignment: {
+        status: 'ACCEPTED',
+        rankedVendors: [
+          { vendorId: VENDOR_IDS.METROPLEX, vendorName: 'Metroplex Appraisal Services', score: 95 },
+          { vendorId: VENDOR_IDS.NVN, vendorName: 'National Valuation Network', score: 74 },
+          { vendorId: INTERNAL_STAFF_IDS.DIANA_MORALES_TX_SUPERVISOR, vendorName: 'Diana Morales', score: 71, staffType: 'internal', staffRole: 'supervisor' },
+        ],
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: daysAgo(24),
+      },
+      autoReviewAssignment: {
+        qcReviewId: 'seed-qc-review-012',
+        status: 'ACCEPTED',
+        rankedReviewers: [
+          { reviewerId: STAFF_IDS.QC_ANALYST_2, reviewerName: 'Jordan Lee (QC Analyst)', workloadPct: 40 },
+          { reviewerId: STAFF_IDS.QC_ANALYST_1, reviewerName: 'Alex Rivera (QC Analyst)', workloadPct: 55 },
+        ],
+        currentAttempt: 0,
+        currentAssignmentExpiresAt: null,
+        initiatedAt: daysAgo(19),
+      },
       createdAt: daysAgo(25), updatedAt: daysAgo(15),
     },
   ];

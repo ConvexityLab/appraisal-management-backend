@@ -19,6 +19,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EngagementService } from '../../src/services/engagement.service.js';
 import type { CosmosDbService } from '../../src/services/cosmos-db.service.js';
+import type { PropertyRecordService } from '../../src/services/property-record.service.js';
 import {
   EngagementStatus,
   EngagementProductStatus,
@@ -90,6 +91,16 @@ function makeDbService(container: ReturnType<typeof makeMockContainer>): CosmosD
   } as unknown as CosmosDbService;
 }
 
+function makePropertyRecordService(): PropertyRecordService {
+  return {
+    resolveOrCreate: vi.fn().mockResolvedValue({
+      propertyId: 'prop-test-001',
+      isNew:      false,
+      method:     'ADDRESS_NORM' as const,
+    }),
+  } as unknown as PropertyRecordService;
+}
+
 /** Minimal valid CreateEngagementRequest */
 function makeCreateRequest(loanOverride: Record<string, unknown> = {}) {
   return {
@@ -123,7 +134,7 @@ describe('generateEngagementNumber', () => {
       return { resource: d };
     });
 
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await svc.createEngagement(makeCreateRequest());
 
     const num = capturedDoc!.engagementNumber;
@@ -142,7 +153,7 @@ describe('generateEngagementNumber', () => {
         return { resource: d };
       });
 
-      const svc = new EngagementService(makeDbService(container));
+      const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
       await svc.createEngagement(makeCreateRequest({ products: [{ productType: EngagementProductType.DRIVE_BY }] }));
       numbers.push(capturedDoc!.engagementNumber);
     }
@@ -165,7 +176,7 @@ describe('createEngagement', () => {
       return { resource: d };
     });
 
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await svc.createEngagement(makeCreateRequest());
 
     expect(capturedDoc!.loans).toHaveLength(1);
@@ -185,7 +196,7 @@ describe('createEngagement', () => {
       return { resource: d };
     });
 
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await svc.createEngagement(makeCreateRequest());
     expect(capturedDoc!.engagementType).toBe(EngagementType.SINGLE);
   });
@@ -198,7 +209,7 @@ describe('createEngagement', () => {
       return { resource: d };
     });
 
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await svc.createEngagement({
       ...makeCreateRequest(),
       loans: [
@@ -212,7 +223,7 @@ describe('createEngagement', () => {
 
   it('rejects with a clear error when loans is empty', async () => {
     const container = makeMockContainer(makeEngagement());
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.createEngagement({ ...makeCreateRequest(), loans: [] }),
     ).rejects.toThrow(/At least one EngagementLoan is required/);
@@ -258,7 +269,7 @@ describe('changeStatus — transition guard', () => {
         read:    vi.fn().mockResolvedValue({ resource: doc }),
         replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
       });
-      const svc = new EngagementService(makeDbService(container));
+      const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
       await expect(svc.changeStatus('eng-test-001', 'tenant-001', to, 'user-001')).resolves.not.toThrow();
     });
   }
@@ -271,7 +282,7 @@ describe('changeStatus — transition guard', () => {
         read:    vi.fn().mockResolvedValue({ resource: doc }),
         replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
       });
-      const svc = new EngagementService(makeDbService(container));
+      const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
       await expect(svc.changeStatus('eng-test-001', 'tenant-001', to, 'user-001')).rejects.toThrow(
         /Invalid status transition/,
       );
@@ -293,7 +304,7 @@ describe('getLoans', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.getLoans('eng-test-001', 'tenant-001');
     expect(result).toHaveLength(2);
     expect(result[0]!.loanNumber).toBe('LN-001');
@@ -313,7 +324,7 @@ describe('addLoanToEngagement', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
       loanNumber:   'LN-NEW',
       borrowerName: 'New Borrower',
@@ -335,7 +346,7 @@ describe('addLoanToEngagement', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
         loanNumber:   'LN-OVERFLOW',
@@ -359,7 +370,7 @@ describe('updateLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', { borrowerName: 'Updated Name' }, 'user');
     expect(result.loans[0]!.borrowerName).toBe('Updated Name');
   });
@@ -371,7 +382,7 @@ describe('updateLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.updateLoan('eng-test-001', 'tenant-001', 'loan-nonexistent', {}, 'user'),
     ).rejects.toThrow(/EngagementLoan not found/);
@@ -392,7 +403,7 @@ describe('removeLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user');
     expect(result.loans).toHaveLength(1);
     expect(result.loans[0]!.id).toBe('loan-002');
@@ -411,7 +422,7 @@ describe('removeLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user'),
     ).rejects.toThrow(/Cannot remove loan/);
@@ -448,7 +459,7 @@ describe('changeLoanStatus', () => {
         read:    vi.fn().mockResolvedValue({ resource: doc }),
         replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
       });
-      const svc = new EngagementService(makeDbService(container));
+      const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
       await expect(svc.changeLoanStatus('eng-test-001', 'tenant-001', 'loan-001', to, 'user')).resolves.not.toThrow();
     });
   }
@@ -461,7 +472,7 @@ describe('changeLoanStatus', () => {
         read:    vi.fn().mockResolvedValue({ resource: doc }),
         replace: vi.fn(),
       });
-      const svc = new EngagementService(makeDbService(container));
+      const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
       await expect(svc.changeLoanStatus('eng-test-001', 'tenant-001', 'loan-001', to, 'user')).rejects.toThrow(
         /Invalid loan status transition/,
       );
@@ -493,7 +504,7 @@ describe('addVendorOrderToProduct', () => {
       replace: vi.fn().mockImplementation(async (d: Engagement) => { saved = d; return { resource: d }; }),
     });
 
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.addVendorOrderToProduct('eng-test-001', 'tenant-001', 'loan-001', 'prod-001', 'ord-xyz', 'user');
 
     expect(result.loans[0]!.products[0]!.vendorOrderIds).toContain('ord-xyz');
@@ -518,7 +529,7 @@ describe('addVendorOrderToProduct', () => {
       replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
     });
 
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.addVendorOrderToProduct('eng-test-001', 'tenant-001', 'loan-001', 'prod-001', 'ord-xyz', 'user');
     expect(result.loans[0]!.products[0]!.vendorOrderIds.filter((id) => id === 'ord-xyz')).toHaveLength(1);
   });
@@ -530,7 +541,7 @@ describe('addVendorOrderToProduct', () => {
       read:    vi.fn().mockResolvedValue({ resource: engagement }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.addVendorOrderToProduct('eng-test-001', 'tenant-001', 'loan-nonexistent', 'prod-001', 'ord-xyz', 'user'),
     ).rejects.toThrow(/EngagementLoan not found/);
@@ -543,7 +554,7 @@ describe('addVendorOrderToProduct', () => {
       read:    vi.fn().mockResolvedValue({ resource: engagement }),
       replace: vi.fn(),
     });
-    const svc = new EngagementService(makeDbService(container));
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.addVendorOrderToProduct('eng-test-001', 'tenant-001', 'loan-001', 'prod-nonexistent', 'ord-xyz', 'user'),
     ).rejects.toThrow(/EngagementProduct not found/);

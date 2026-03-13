@@ -33,11 +33,20 @@ export class UnifiedCommunicationService {
     this.logger = new Logger();
   }
 
+  private dbInitialized = false;
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
+  }
+
   /**
    * Create a new communication context
    */
   async createContext(params: CreateContextParams): Promise<CommunicationContext> {
     try {
+      await this.ensureDbInitialized();
       // Generate ACS user IDs for all participants
       const participantsWithAcs: CommunicationParticipant[] = await Promise.all(
         params.participants.map(async (p) => {
@@ -115,6 +124,7 @@ export class UnifiedCommunicationService {
    */
   async getContextByEntity(type: string, entityId: string, tenantId: string): Promise<CommunicationContext | null> {
     try {
+      await this.ensureDbInitialized();
       const query = 'SELECT * FROM c WHERE c.type = @type AND c.entityId = @entityId AND c.tenantId = @tenantId';
       const parameters = [
         { name: '@type', value: type },
@@ -144,6 +154,7 @@ export class UnifiedCommunicationService {
    */
   async getContext(contextId: string, tenantId?: string): Promise<CommunicationContext | null> {
     try {
+      await this.ensureDbInitialized();
       if (tenantId) {
         // Fast path: direct read with partition key
         const response = await this.dbService.getItem<CommunicationContext>(
@@ -178,6 +189,7 @@ export class UnifiedCommunicationService {
    */
   async listUserContexts(userId: string, tenantId: string): Promise<CommunicationContext[]> {
     try {
+      await this.ensureDbInitialized();
       const query = 'SELECT * FROM c WHERE c.tenantId = @tenantId AND ARRAY_CONTAINS(c.participants, {"userId": @userId}, true)';
       const parameters = [
         { name: '@tenantId', value: tenantId },
@@ -200,6 +212,7 @@ export class UnifiedCommunicationService {
    */
   async initializeChatThread(contextId: string, tenantId: string, userId: string): Promise<string> {
     try {
+      await this.ensureDbInitialized();
       const context = await this.getContext(contextId, tenantId);
       if (!context) {
         throw new Error('Context not found');
@@ -283,6 +296,7 @@ export class UnifiedCommunicationService {
    */
   async startCall(contextId: string, participants: string[]): Promise<CallDetails> {
     try {
+      await this.ensureDbInitialized();
       const context = await this.getContext(contextId);
       if (!context) {
         throw new Error('Context not found');
@@ -338,6 +352,7 @@ export class UnifiedCommunicationService {
     organizerUserId: string
   ): Promise<CallDetails> {
     try {
+      await this.ensureDbInitialized();
       const context = await this.getContext(contextId);
       if (!context) {
         throw new Error('Context not found');
@@ -410,6 +425,7 @@ export class UnifiedCommunicationService {
     }
   ): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       const context = await this.getContext(contextId);
       if (!context) {
         throw new Error('Context not found');
@@ -488,6 +504,7 @@ export class UnifiedCommunicationService {
    */
   async removeParticipant(contextId: string, userId: string): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       const context = await this.getContext(contextId);
       if (!context) {
         throw new Error('Context not found');
@@ -540,6 +557,7 @@ export class UnifiedCommunicationService {
    */
   async endCall(contextId: string, callId: string): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       const context = await this.getContext(contextId);
       if (!context) {
         throw new Error('Context not found');

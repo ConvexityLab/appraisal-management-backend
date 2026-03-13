@@ -61,6 +61,18 @@ import qcChecklistNewRouter from '../controllers/qc-checklist.controller.js';
 // Import QC Rules controller
 import qcRulesRouter from '../controllers/qc-rules.controller.js';
 
+// Import Substantive Review (Phase 2) controller
+import substantiveReviewRouter from '../controllers/substantive-review.controller.js';
+
+// Import Phase 1.5.6 Supervisory Review controller
+import supervisoryReviewRouter from '../controllers/supervisory-review.controller.js';
+
+// Import Phase 1.5.7 Tenant Automation Config controller
+import tenantAutomationConfigRouter from '../controllers/tenant-automation-config.controller.js';
+
+// Import Phase 1.5.8 Dead Letter Queue Monitor controller
+import dlqMonitorRouter from '../controllers/dead-letter-queue-monitor.controller.js';
+
 // Import Correlation ID middleware
 import { correlationIdMiddleware, requestLoggingMiddleware } from '../middleware/correlation-id.middleware.js';
 
@@ -121,6 +133,9 @@ import { AppraiserController } from '../controllers/appraiser.controller';
 
 // Import Vendor Controller (Phase A - Live Data)
 import { VendorController } from '../controllers/production-vendor.controller';
+
+// Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
+import { StaffRosterController } from '../controllers/staff-roster.controller';
 
 // Import Negotiation Controller (Phase C1 - Live Data)
 import { createNegotiationRouter } from '../controllers/negotiation.controller';
@@ -185,6 +200,20 @@ import { notificationRulesRouter } from '../controllers/notification-rules.contr
 
 // Import Calendar Controller (G1 — iCal feed)
 import { calendarRouter } from '../controllers/calendar.controller.js';
+
+// Import Phase 1 Controllers — Core Workflow services
+import {
+  createEngagementLetterRouter,
+  createMISMOValidationRouter,
+  createSubmissionRouter,
+  createPostDeliveryRouter,
+  createClientConfigRouter,
+  createInspectionEnhancementRouter,
+  createBillingEnhancementRouter,
+  createWIPBoardRouter,
+  createFieldReviewTriggerRouter,
+  createArchivingRetentionRouter,
+} from '../controllers/phase1.controller.js';
 
 import { 
   authenticateJWT, 
@@ -348,8 +377,8 @@ export class AppraisalManagementAPIServer {
     this.app.use(cors({
       origin: corsOrigin,
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id', 'x-bypass-auth', 'x-user-id', 'x-user-name'],
     }));
 
     // Correlation ID - must be early in middleware chain
@@ -509,6 +538,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/vendors',
       this.unifiedAuth.authenticate(),
       vendorController.router
+    );
+
+    // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)
+    // GET /api/staff/roster — merged internal+external vendor roster enriched with schedule/workload
+    const staffRosterController = new StaffRosterController(this.dbService);
+    this.app.use('/api/staff',
+      this.unifiedAuth.authenticate(),
+      staffRosterController.router
     );
 
     // Negotiations - Accept, reject, counter-offer, respond (Phase C1 - Live Data)
@@ -677,6 +714,70 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/health',
       createServiceHealthRouter()
     );
+
+    // ===== PHASE 1 — CORE WORKFLOW SERVICES =====
+
+    // Engagement Letters — template selection, content building, e-signature flow (Phase 1.1)
+    this.app.use('/api/engagement-letters',
+      this.unifiedAuth.authenticate(),
+      createEngagementLetterRouter(this.dbService)
+    );
+
+    // Client Configuration — per-client SLA, fees, delivery, ROV, waiver overrides (Phase 1.3)
+    this.app.use('/api/client-config',
+      this.unifiedAuth.authenticate(),
+      createClientConfigRouter(this.dbService)
+    );
+
+    // MISMO XML Validation — inbound MISMO 3.4 XML validation (Phase 1.4)
+    this.app.use('/api/mismo',
+      this.unifiedAuth.authenticate(),
+      createMISMOValidationRouter()
+    );
+
+    // UCDP/EAD Submission — GSE portal submission and status tracking (Phase 1.5/1.6)
+    this.app.use('/api/gse-submissions',
+      this.unifiedAuth.authenticate(),
+      createSubmissionRouter(this.dbService)
+    );
+
+    // Inspection Enhancements — borrower contact tracking, SLA enforcement (Phase 1.7)
+    this.app.use('/api/inspection-tracking',
+      this.unifiedAuth.authenticate(),
+      createInspectionEnhancementRouter(this.dbService)
+    );
+
+    // Billing Enhancements — aging, batch invoicing, 1099, refunds (Phase 1.8)
+    this.app.use('/api/billing',
+      this.unifiedAuth.authenticate(),
+      createBillingEnhancementRouter(this.dbService)
+    );
+
+    // WIP Status Board — Kanban board status aggregation (Phase 1.9)
+    this.app.use('/api/wip-board',
+      this.unifiedAuth.authenticate(),
+      createWIPBoardRouter(this.dbService)
+    );
+
+    // Post-Delivery Tasks — 1004D tracking, archiving, follow-ups (Phase 1.10)
+    this.app.use('/api/post-delivery',
+      this.unifiedAuth.authenticate(),
+      createPostDeliveryRouter(this.dbService)
+    );
+
+    // Field/Desk Review Triggers — configurable rules for review determination (Phase 1.10)
+    this.app.use('/api/review-triggers',
+      this.unifiedAuth.authenticate(),
+      createFieldReviewTriggerRouter(this.dbService)
+    );
+
+    // Archiving & Retention — policy management, archive/purge lifecycle (Phase 1.10)
+    this.app.use('/api/archiving',
+      this.unifiedAuth.authenticate(),
+      createArchivingRetentionRouter(this.dbService)
+    );
+
+    // ===== END PHASE 1 =====
 
     this.logger.info('✅ Authorization routes registered successfully');
   }
@@ -1158,6 +1259,30 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/qc-rules',
       this.unifiedAuth.authenticate(),
       qcRulesRouter
+    );
+
+    // Substantive Review (Phase 2) - 12 review services for appraisal report analysis
+    this.app.use('/api/substantive-review',
+      this.unifiedAuth.authenticate(),
+      substantiveReviewRouter
+    );
+
+    // Phase 1.5.6 — Supervisory Review: request supervision, co-sign, status
+    this.app.use('/api/supervisory-review',
+      this.unifiedAuth.authenticate(),
+      supervisoryReviewRouter
+    );
+
+    // Phase 1.5.7 — Tenant Automation Config: get/update per-tenant automation settings
+    this.app.use('/api/tenant-automation-config',
+      this.unifiedAuth.authenticate(),
+      tenantAutomationConfigRouter
+    );
+
+    // Phase 1.5.8 — DLQ Monitor: stats, peek, reprocess, discard dead-letter messages
+    this.app.use('/api/dlq-monitor',
+      this.unifiedAuth.authenticate(),
+      dlqMonitorRouter
     );
 
     // Appraisal Review routes - review assignment, workflow, comparable analysis, reports

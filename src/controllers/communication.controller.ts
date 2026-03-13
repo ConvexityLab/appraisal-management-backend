@@ -4,7 +4,7 @@
  * Frontend handles all template rendering - backend just sends messages
  */
 
-import express, { Request, Response, Router } from 'express';
+import express, { Request, Response, Router, NextFunction } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { AzureCommunicationService } from '../services/azure-communication.service.js';
 import { TeamsService } from '../services/teams.service.js';
@@ -22,6 +22,12 @@ const logger = new Logger();
 const acsService = new AzureCommunicationService();
 const teamsService = new TeamsService();
 const cosmosService = new CosmosDbService();
+
+let _cosmosInitPromise: Promise<void> | null = null;
+function ensureCosmosInit(): Promise<void> {
+  if (!_cosmosInitPromise) _cosmosInitPromise = cosmosService.initialize();
+  return _cosmosInitPromise;
+}
 
 /**
  * Store communication record in Cosmos DB with rich structure
@@ -42,6 +48,7 @@ async function storeCommunication(params: {
   metadata?: any;
 }): Promise<CommunicationRecord> {
   try {
+    await ensureCosmosInit();
     const toArray = Array.isArray(params.to) ? params.to : [params.to];
     
     const record: CommunicationRecord = {
@@ -96,6 +103,16 @@ async function storeCommunication(params: {
 
 export const createCommunicationRouter = (): Router => {
   const router = express.Router();
+
+  // Ensure Cosmos DB is initialized before handling any request in this router
+  router.use(async (_req: Request, _res: Response, next: NextFunction) => {
+    try {
+      await ensureCosmosInit();
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
 
   /**
    * POST /api/communications/email

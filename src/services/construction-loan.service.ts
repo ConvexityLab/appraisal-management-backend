@@ -14,6 +14,7 @@
  */
 
 import { CosmosDbService } from './cosmos-db.service.js';
+import { PropertyRecordService } from './property-record.service.js';
 import { Logger } from '../utils/logger.js';
 import type {
   ConstructionLoan,
@@ -97,7 +98,10 @@ export interface LoanListFilter {
 export class ConstructionLoanService {
   private readonly logger = new Logger('ConstructionLoanService');
 
-  constructor(private readonly cosmosService: CosmosDbService) {}
+  constructor(
+    private readonly cosmosService: CosmosDbService,
+    private readonly propertyRecordService: PropertyRecordService,
+  ) {}
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -148,9 +152,22 @@ export class ConstructionLoanService {
     const now = new Date().toISOString();
     const id = this.generateId();
 
+    // Resolve canonical PropertyRecord from the supplied property address (Phase R2).
+    const resolution = await this.propertyRecordService.resolveOrCreate({
+      address: {
+        street: input.propertyAddress.street,
+        city: input.propertyAddress.city,
+        state: input.propertyAddress.state,
+        zip: input.propertyAddress.zipCode,
+      },
+      tenantId: input.tenantId,
+      createdBy: input.createdBy,
+    });
+
     const loan: ConstructionLoan = {
       id,
       tenantId: input.tenantId,
+      propertyId: resolution.propertyId,
       loanNumber: input.loanNumber,
       loanType: input.loanType,
       status: 'UNDERWRITING',

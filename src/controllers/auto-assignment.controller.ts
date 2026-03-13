@@ -70,7 +70,14 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           propertyType: order.propertyType || order.productType || 'Standard',
           ...(order.dueDate ? { dueDate: new Date(order.dueDate) } : {}),
           ...(order.urgency || order.priority ? { urgency: order.urgency || order.priority?.toUpperCase() } : {}),
-          ...(order.fee != null ? { budget: order.fee } : {})
+          ...(order.fee != null ? { budget: order.fee } : {}),
+          // Eligibility gates: pulled from order record
+          ...(order.productId ?? order.engagementProductId
+            ? { productId: (order.productId ?? order.engagementProductId) as string }
+            : {}),
+          ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
+            ? { requiredCapabilities: order.requiredCapabilities as string[] }
+            : {})
         };
 
         logger.info('Getting vendor suggestions', { orderId, limit });
@@ -126,7 +133,10 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
       body('dueDate').optional().isISO8601(),
       body('urgency').optional().isIn(['STANDARD', 'RUSH', 'SUPER_RUSH']),
       body('budget').optional().isNumeric(),
-      body('topN').optional().isInt({ min: 1, max: 50 })
+      body('topN').optional().isInt({ min: 1, max: 50 }),
+      body('productId').optional().isString(),
+      body('requiredCapabilities').optional().isArray(),
+      body('requiredCapabilities.*').optional().isString()
     ],
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -149,7 +159,11 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           dueDate: req.body.dueDate ? new Date(req.body.dueDate) : new Date(),
           urgency: req.body.urgency,
           budget: req.body.budget,
-          clientPreferences: req.body.clientPreferences
+          clientPreferences: req.body.clientPreferences,
+          ...(req.body.productId ? { productId: req.body.productId as string } : {}),
+          ...(Array.isArray(req.body.requiredCapabilities) && req.body.requiredCapabilities.length
+            ? { requiredCapabilities: req.body.requiredCapabilities as string[] }
+            : {})
         };
 
         logger.info('Finding vendor matches', { 
@@ -192,7 +206,10 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
       body('criteria.minMatchScore').optional().isInt({ min: 0, max: 100 }),
       body('criteria.maxDistance').optional().isNumeric(),
       body('criteria.requiredTier').optional().isIn(['PLATINUM', 'GOLD', 'SILVER', 'BRONZE']),
-      body('criteria.requireAvailability').optional().isBoolean()
+      body('criteria.requireAvailability').optional().isBoolean(),
+      body('productId').optional().isString(),
+      body('requiredCapabilities').optional().isArray(),
+      body('requiredCapabilities.*').optional().isString()
     ],
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -215,7 +232,11 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           dueDate: req.body.dueDate ? new Date(req.body.dueDate) : new Date(),
           urgency: req.body.urgency,
           budget: req.body.budget,
-          clientPreferences: req.body.clientPreferences
+          clientPreferences: req.body.clientPreferences,
+          ...(req.body.productId ? { productId: req.body.productId as string } : {}),
+          ...(Array.isArray(req.body.requiredCapabilities) && req.body.requiredCapabilities.length
+            ? { requiredCapabilities: req.body.requiredCapabilities as string[] }
+            : {})
         };
 
         const criteria: VendorMatchCriteria = {
@@ -273,7 +294,10 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
       body('urgency').optional().isIn(['STANDARD', 'RUSH', 'SUPER_RUSH']),
       body('budget').optional().isNumeric(),
       body('vendorCount').optional().isInt({ min: 1, max: 20 }),
-      body('expirationHours').optional().isInt({ min: 1, max: 72 })
+      body('expirationHours').optional().isInt({ min: 1, max: 72 }),
+      body('productId').optional().isString(),
+      body('requiredCapabilities').optional().isArray(),
+      body('requiredCapabilities.*').optional().isString()
     ],
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -298,7 +322,11 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           dueDate: req.body.dueDate ? new Date(req.body.dueDate) : new Date(),
           urgency: req.body.urgency,
           budget: req.body.budget,
-          clientPreferences: req.body.clientPreferences
+          clientPreferences: req.body.clientPreferences,
+          ...(req.body.productId ? { productId: req.body.productId as string } : {}),
+          ...(Array.isArray(req.body.requiredCapabilities) && req.body.requiredCapabilities.length
+            ? { requiredCapabilities: req.body.requiredCapabilities as string[] }
+            : {})
         };
 
         logger.info('Broadcasting order to vendors', { 
@@ -580,6 +608,11 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           loanAmount: order.loanAmount ?? 0,
           priority: order.priority ?? 'STANDARD',
           dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 86400000),
+          // Eligibility gates — carried from the order record into the matching engine
+          ...(order.productId ? { productId: order.productId as string } : {}),
+          ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
+            ? { requiredCapabilities: order.requiredCapabilities as string[] }
+            : {}),
         });
 
         logger.info('Manual vendor assignment trigger requested', { orderId, tenantId });

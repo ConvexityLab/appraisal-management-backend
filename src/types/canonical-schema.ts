@@ -226,6 +226,12 @@ export interface CanonicalPropertyCore {
  *       + Improvements Section
  */
 export interface CanonicalSubject extends CanonicalPropertyCore {
+  /** FK → PropertyRecord.id — the canonical property record this subject maps to. Added Phase R0.3.
+   *  Populated at report creation time by PropertyRecordService. */
+  propertyId?: string;
+  /** Which PropertyRecord.recordVersion was current on the effective date.
+   *  Allows reports to be reproduced against the property as it was. Added Phase R0.3. */
+  propertyRecordVersion?: number;
   // â”€â”€ Identification (URAR: Subject) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   parcelNumber?: string | null; // APN / Assessor's Parcel Number
   censusTract?: string | null;
@@ -332,6 +338,12 @@ export interface CanonicalContractInfo {
  */
 export interface CanonicalComp extends CanonicalPropertyCore {
   compId: string; // stable unique ID
+  /** FK → PropertyRecord.id for this comp's physical address. Added Phase R0.3.
+   *  Resolved at comp-selection time via PropertyRecordService. */
+  propertyId?: string;
+  /** FK → PropertyComparableSale.id — the specific sale event this comp represents.
+   *  Populated when a comp is selected from the persistent comparable-sales container. Added Phase R0.3. */
+  comparableSaleId?: string;
 
   // â”€â”€ Sale Information (URAR: Sale grid columns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   salePrice: number | null;
@@ -492,8 +504,13 @@ export interface CanonicalValuation {
   avmProvider: string | null;
   avmModelVersion: string | null;
   /** The value type(s) this valuation addresses (e.g. AS_IS, PROSPECTIVE_AS_COMPLETED). */
-  valueType?: ValueType | null;
-}
+  valueType?: ValueType | null;  // ── Broker DVR/BPO supplemental fields ────────────────────────────────────
+  /** Prospective as-repaired value (rehab / DVR assignments). */
+  estimatedValueAsRepaired?: number | null;
+  /** Broker's estimated cost to bring the property to repaired condition. */
+  repairEstimate?: number | null;
+  /** Broker's recommended list price. */
+  recommendedListPrice?: number | null;}
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // CANONICAL REPORT METADATA  (report-generation context, not stored in vendor data)
@@ -525,6 +542,11 @@ export interface CanonicalReportMetadata {
   subjectPriorSalePrice1: number | null;
   subjectPriorSaleDate2: string | null;
   subjectPriorSalePrice2: number | null;
+  /**
+   * Reviewer-assigned appraisal quality grade (A=Superior, B=Acceptable,
+   * C=Marginal, D=Unacceptable). Only populated for DVR review report types.
+   */
+  appraisalGrade?: 'A' | 'B' | 'C' | 'D' | null;
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -542,6 +564,10 @@ export interface CanonicalReportDocument {
   id: string; // Cosmos document ID
   reportId: string; // business-level report identifier
   orderId: string; // FK to orders container
+  /** FK → PropertyRecord — the physical subject property. Added Phase R0.3. */
+  propertyId?: string;
+  /** FK → Engagement that produced this report. Added Phase R0.3. */
+  engagementId?: string;
   reportType: string; // "1004", "1073", "2055", etc.
   status: string;
   schemaVersion: string; // must equal SCHEMA_VERSION
@@ -637,6 +663,13 @@ export interface CanonicalReconciliation {
   // — Extraordinary assumptions & hypothetical conditions —————————
   extraordinaryAssumptions?: string[] | null;
   hypotheticalConditions?: string[] | null;
+  // ── Reviewer override fields (Phase UI) ────────────────────────────────────
+  /** Reviewer's override for the as-repaired value (distinct from appraiser's as-repaired). */
+  reviewerAsRepairedValue?: number | null;
+  /** Reviewer's repair estimate override. */
+  reviewerRepairEstimate?: number | null;
+  /** Fair market monthly rent opinion (income approach). */
+  fairMarketMonthlyRent?: number | null;
 }
 
 /**

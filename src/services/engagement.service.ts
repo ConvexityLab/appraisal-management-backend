@@ -15,6 +15,7 @@
 
 import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { PropertyRecordService } from './property-record.service.js';
 import { Logger } from '../utils/logger.js';
 import type {
   Engagement,
@@ -121,7 +122,10 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
 export class EngagementService {
   private _container: Container | null = null;
 
-  constructor(private readonly dbService: CosmosDbService) {}
+  constructor(
+    private readonly dbService: CosmosDbService,
+    private readonly propertyRecordService: PropertyRecordService,
+  ) {}
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
   private get container(): Container {
@@ -161,7 +165,26 @@ export class EngagementService {
       }
     }
 
-    const loans = request.loans.map(buildLoan);
+    // Resolve a canonical PropertyRecord for each loan's collateral (Phase R2).
+    const resolvedPropertyIds = await Promise.all(
+      request.loans.map(l =>
+        this.propertyRecordService.resolveOrCreate({
+          address: {
+            street: l.property.address,
+            city: l.property.city,
+            state: l.property.state,
+            zip: l.property.zipCode,
+          },
+          tenantId: request.tenantId,
+          createdBy: request.createdBy,
+        }),
+      ),
+    );
+
+    const loans = request.loans.map((l, i) => ({
+      ...buildLoan(l),
+      propertyId: resolvedPropertyIds[i]!.propertyId,
+    }));
     const engagementType = loans.length === 1 ? EngagementType.SINGLE : EngagementType.PORTFOLIO;
 
     const engagement: Engagement = {

@@ -4,7 +4,11 @@ import { ValuationEngine } from '../services/valuation-engine.service.js';
 import { QualityControlEngine } from '../services/quality-control-engine.service.js';
 import { PortfolioAnalyticsService } from '../services/portfolio-analytics.service.js';
 import { PerligoProductionService } from '../services/perligo-production.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { validateRequest, handleError } from '../middleware/validation.js';
+
+// Module-level CosmosDbService for the portfolio analytics queries.
+const portfolioDbService = new CosmosDbService();
 
 /**
  * AI/ML Integration Controller
@@ -21,7 +25,7 @@ export class AIMLController {
     this.logger = new Logger();
     this.valuationEngine = new ValuationEngine();
     this.qualityControlEngine = new QualityControlEngine();
-    this.portfolioAnalytics = new PortfolioAnalyticsService();
+    this.portfolioAnalytics = new PortfolioAnalyticsService(portfolioDbService);
     this.perligoService = new PerligoProductionService();
   }
 

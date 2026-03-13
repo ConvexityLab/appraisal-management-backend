@@ -68,6 +68,51 @@ export class ReportEngineService {
     return strategy.generate(ctx);
   }
 
+  /**
+   * Renders the Handlebars template to an HTML string without launching Playwright.
+   * Only valid for html-render templates — throws for acroform templates.
+   */
+  async generateHtml(
+    request: FinalReportGenerationRequest,
+    canonicalDoc: CanonicalReportDocument,
+  ): Promise<string> {
+    const template = await this.templateRegistry.getTemplate(request.templateId);
+
+    if (template.renderStrategy !== 'html-render') {
+      throw new Error(
+        `HTML preview is only available for html-render templates. ` +
+        `Template "${template.id}" uses strategy "${template.renderStrategy}".`,
+      );
+    }
+
+    const effectiveSectionConfig: ReportSectionConfig = {
+      ...template.sectionConfig,
+      ...(request.sectionOverrides ?? {}),
+    };
+
+    let docWithPhotos = canonicalDoc;
+    if (
+      effectiveSectionConfig.requiresSubjectPhotos ||
+      effectiveSectionConfig.requiresCompPhotos ||
+      effectiveSectionConfig.requiresAerialMap
+    ) {
+      const photos = await this.photoResolver.resolveForOrder(
+        canonicalDoc.metadata.orderId,
+        effectiveSectionConfig,
+      );
+      docWithPhotos = { ...canonicalDoc, photos };
+    }
+
+    const ctx: ReportGenerationContext = {
+      request,
+      template,
+      effectiveSectionConfig,
+      canonicalDoc: docWithPhotos,
+    };
+
+    return this.htmlRenderStrategy.renderHtml(ctx);
+  }
+
   private _pickStrategy(template: ReportTemplate): IReportStrategy {
     switch (template.renderStrategy) {
       case 'acroform':

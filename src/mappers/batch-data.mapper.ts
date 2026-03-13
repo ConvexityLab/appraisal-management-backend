@@ -37,6 +37,9 @@ import {
   type CanonicalComp,
   type CanonicalSubject,
   type CanonicalValuation,
+  type CanonicalCostApproach,
+  type CanonicalIncomeApproach,
+  type CanonicalReconciliation,
   type CanonicalReportDocument,
   type MlsExtension,
   type VendorMapper,
@@ -410,6 +413,145 @@ function mapValuation(raw: RawObj | null | undefined): CanonicalValuation | null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// COST / INCOME / RECONCILIATION MAPPING  (Phase 0.1)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Maps a raw cost-approach block from the legacy BatchData doc.
+ * Returns undefined when the block is absent or contains no recognisable values
+ * (BatchData rarely carries cost-approach data — map defensively).
+ *
+ * Expected legacy keys (best-effort — vendor shape is untyped):
+ *   landValue / estimatedLandValue
+ *   replacementCostNew / replacementCost
+ *   depreciation / depreciationAmount
+ *   depreciationType / deprecMethod
+ *   depreciatedCost / depreciatedCostOfImprovements
+ *   indicatedValue / indicatedValueByCostApproach
+ *   comments
+ */
+function mapCostApproach(raw: RawObj): CanonicalCostApproach | undefined {
+  const landValue = numOrNull(raw['landValue'] ?? raw['estimatedLandValue']);
+  const replacementCost = numOrNull(raw['replacementCostNew'] ?? raw['replacementCost']);
+  const indicatedValue = numOrNull(
+    raw['indicatedValueByCostApproach'] ?? raw['indicatedValue'] ?? raw['costApproachValue'],
+  );
+
+  // If there's nothing meaningful in the block, skip it entirely.
+  if (landValue == null && replacementCost == null && indicatedValue == null) return undefined;
+
+  const depreciationAmount = numOrNull(raw['depreciationAmount'] ?? raw['depreciation']);
+  const depreciatedCost = numOrNull(
+    raw['depreciatedCostOfImprovements'] ?? raw['depreciatedCost'],
+  );
+
+  return {
+    estimatedLandValue: landValue,
+    landValueSource: strOrNull(raw['landValueSource']),
+    landValueMethod: strOrNull(raw['landValueMethod']),
+    replacementCostNew: replacementCost,
+    costFactorSource: strOrNull(raw['costFactorSource']),
+    softCosts: numOrNull(raw['softCosts']),
+    entrepreneurialProfit: numOrNull(raw['entrepreneurialProfit']),
+    siteImprovementsCost: numOrNull(raw['siteImprovementsCost']),
+    depreciationAmount,
+    depreciationType: strOrNull(raw['depreciationType'] ?? raw['deprecMethod']),
+    physicalDepreciationCurable: numOrNull(raw['physicalDepreciationCurable']),
+    physicalDepreciationIncurable: numOrNull(raw['physicalDepreciationIncurable']),
+    functionalObsolescence: numOrNull(raw['functionalObsolescence']),
+    externalObsolescence: numOrNull(raw['externalObsolescence']),
+    effectiveAge: numOrNull(raw['effectiveAge']),
+    economicLife: numOrNull(raw['economicLife']),
+    depreciatedCostOfImprovements: depreciatedCost,
+    indicatedValueByCostApproach: indicatedValue,
+    comments: strOrNull(raw['comments']),
+  };
+}
+
+/**
+ * Maps a raw income-approach block from the legacy BatchData doc.
+ * Returns undefined when the block is absent or contains no recognisable values.
+ *
+ * Expected legacy keys:
+ *   monthlyRent / estimatedMonthlyMarketRent
+ *   grossRentMultiplier / grm
+ *   indicatedValue / indicatedValueByIncomeApproach
+ *   comments
+ */
+function mapIncomeApproach(raw: RawObj): CanonicalIncomeApproach | undefined {
+  const monthlyRent = numOrNull(
+    raw['estimatedMonthlyMarketRent'] ?? raw['monthlyRent'] ?? raw['marketRent'],
+  );
+  const grm = numOrNull(raw['grossRentMultiplier'] ?? raw['grm']);
+  const indicatedValue = numOrNull(
+    raw['indicatedValueByIncomeApproach'] ?? raw['indicatedValue'] ?? raw['incomeApproachValue'],
+  );
+
+  if (monthlyRent == null && grm == null && indicatedValue == null) return undefined;
+
+  return {
+    estimatedMonthlyMarketRent: monthlyRent,
+    grossRentMultiplier: grm,
+    potentialGrossIncome: numOrNull(raw['potentialGrossIncome'] ?? raw['pgi']),
+    vacancyRate: numOrNull(raw['vacancyRate'] ?? raw['vacancy']),
+    effectiveGrossIncome: numOrNull(raw['effectiveGrossIncome'] ?? raw['egi']),
+    operatingExpenses: numOrNull(raw['operatingExpenses'] ?? raw['expenses']),
+    netOperatingIncome: numOrNull(raw['netOperatingIncome'] ?? raw['noi']),
+    capRate: numOrNull(raw['capRate'] ?? raw['capitalizationRate']),
+    capRateSource: strOrNull(raw['capRateSource']),
+    indicatedValueByIncomeApproach: indicatedValue,
+    comments: strOrNull(raw['comments']),
+  };
+}
+
+/**
+ * Maps a raw reconciliation block from the legacy BatchData doc.
+ * Returns undefined when neither a finalOpinionOfValue nor any approach value exists.
+ *
+ * Expected legacy keys:
+ *   finalOpinionOfValue / finalValue / indicatedValue
+ *   salesCompValue / salesCompApproachValue
+ *   costValue / costApproachValue
+ *   incomeValue / incomeApproachValue
+ *   effectiveDate
+ *   reconciliationNarrative / narrative
+ *   exposureTime
+ *   marketingTime
+ */
+function mapReconciliation(
+  raw: RawObj,
+  fallbackValuation: CanonicalValuation | null,
+): CanonicalReconciliation | undefined {
+  const finalValue = numOrNull(
+    raw['finalOpinionOfValue'] ?? raw['finalValue'] ?? raw['indicatedValue'],
+  ) ?? fallbackValuation?.estimatedValue ?? null;
+
+  if (finalValue == null) return undefined;
+
+  return {
+    salesCompApproachValue: numOrNull(
+      raw['salesCompApproachValue'] ?? raw['salesCompValue'] ?? raw['salesCompIndicatedValue'],
+    ) ?? fallbackValuation?.estimatedValue ?? null,
+    costApproachValue: numOrNull(raw['costApproachValue'] ?? raw['costValue']),
+    incomeApproachValue: numOrNull(raw['incomeApproachValue'] ?? raw['incomeValue']),
+    finalOpinionOfValue: finalValue,
+    effectiveDate: str(
+      raw['effectiveDate'] ?? new Date().toISOString().substring(0, 10),
+    ),
+    reconciliationNarrative: strOrNull(raw['reconciliationNarrative'] ?? raw['narrative']),
+    exposureTime: strOrNull(raw['exposureTime']),
+    marketingTime: strOrNull(raw['marketingTime']),
+    salesCompWeight: numOrNull(raw['salesCompWeight']),
+    costWeight: numOrNull(raw['costWeight']),
+    incomeWeight: numOrNull(raw['incomeWeight']),
+    confidenceScore: numOrNull(raw['confidenceScore']),
+    approachSpreadPct: null,
+    extraordinaryAssumptions: null,
+    hypotheticalConditions: null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FULL REPORT DOCUMENT MAPPING
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -430,6 +572,15 @@ export function mapBatchDataReport(legacyDoc: RawObj): CanonicalReportDocument {
   const valuation = mapValuation(
     Object.keys(valuationEstimate).length > 0 ? valuationEstimate : null,
   );
+
+  // — Phase 0.1 tail: optional approach sections ————————————————————————————
+  const rawCostApproach = obj(legacyDoc['costApproach'] ?? legacyDoc['cost_approach']);
+  const rawIncomeApproach = obj(legacyDoc['incomeApproach'] ?? legacyDoc['income_approach']);
+  const rawReconciliation = obj(legacyDoc['reconciliation']);
+
+  const costApproach = mapCostApproach(rawCostApproach);
+  const incomeApproach = mapIncomeApproach(rawIncomeApproach);
+  const reconciliation = mapReconciliation(rawReconciliation, valuation);
 
   return {
     id: str(legacyDoc['id'] ?? legacyDoc['reportRecordId']),
@@ -461,6 +612,9 @@ export function mapBatchDataReport(legacyDoc: RawObj): CanonicalReportDocument {
     subject,
     comps,
     valuation,
+    ...(reconciliation !== undefined && { reconciliation }),
+    ...(costApproach !== undefined && { costApproach }),
+    ...(incomeApproach !== undefined && { incomeApproach }),
     createdAt: str(legacyDoc['createdAt'] ?? legacyDoc['dateCreated'] ?? new Date().toISOString()),
     updatedAt: str(legacyDoc['updatedAt'] ?? new Date().toISOString()),
     createdBy: str(legacyDoc['createdBy'] ?? 'system'),

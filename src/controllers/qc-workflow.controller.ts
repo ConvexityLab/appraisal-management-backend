@@ -32,6 +32,13 @@ const slaService = new SLATrackingService();
 const dbService = new CosmosDbService();
 const axiomService = new AxiomService();
 
+/** Lazy-init: resolved once for the controller-level CosmosDB instance */
+let _controllerDbInit: Promise<void> | null = null;
+function ensureControllerDb(): Promise<void> {
+  if (!_controllerDbInit) _controllerDbInit = dbService.initialize();
+  return _controllerDbInit;
+}
+
 /** Map a QC score to a RevisionSeverity for the revision request */
 function mapScoreToSeverity(score?: number): RevisionSeverity {
   if (score == null) return RevisionSeverity.MODERATE;
@@ -1118,6 +1125,7 @@ router.post(
   handleValidationErrors,
   async (req: Request, res: Response) => {
     try {
+      await ensureControllerDb();
       // Resolve the orderId before calling completeWithDecision so we can fetch
       // the Axiom evaluation snapshot to stamp onto the completed record.
       const queueItemPreview = await qcQueueService.getQueueItem(req.params.queueItemId!);

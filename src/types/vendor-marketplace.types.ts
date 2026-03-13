@@ -64,6 +64,19 @@ export type VendorTier = 'PLATINUM' | 'GOLD' | 'SILVER' | 'BRONZE' | 'PROBATION'
 
 export type VendorStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'VACATION';
 
+// ── Phase 1.5.5 — Internal staff classification ───────────────────────────────
+export type StaffType = 'internal' | 'external';
+export type StaffRole = 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
+
+/** Capacity snapshot fields present on vendor docs for internal staff members. */
+export interface InternalStaffCapacity {
+  staffType: StaffType;
+  staffRole?: StaffRole;
+  maxConcurrentOrders: number;
+  activeOrderCount: number;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface VendorAvailability {
   id: string;
   vendorId: string;
@@ -159,6 +172,10 @@ export interface VendorMatchRequest {
   dueDate?: Date;
   urgency?: 'STANDARD' | 'RUSH' | 'SUPER_RUSH';
   budget?: number;
+  /** Product being ordered — used for eligibility hard-gate and grade bonus */
+  productId?: string;
+  /** Vendor must have ALL listed capabilities or is scored 0 */
+  requiredCapabilities?: string[];
   clientPreferences?: {
     preferredVendors?: string[];
     excludedVendors?: string[];

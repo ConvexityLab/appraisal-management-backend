@@ -164,6 +164,10 @@ export interface AppraisalOrder {
   // Valuation report link — set when a report is first saved for this order
   reportId?: string;
 
+  // ── Property FK (Phase R0.4) ─────────────────────────────────────────────
+  /** FK → PropertyRecord.id — the canonical physical property. Added Phase R0.4. */
+  propertyId?: string;
+
   // ── Engagement linkage (Phase 3 — required on all new VendorOrders) ────────
   /** FK to the parent Engagement that this vendor order fulfills */
   engagementId?: string;
@@ -176,6 +180,24 @@ export interface AppraisalOrder {
   createdBy: string;
   tags?: string[];
   notes?: string;
+
+  // ── Supervisory review ────────────────────────────────────────────────────
+  /**
+   * Set to true when the order requires a supervisor to co-sign before delivery.
+   * Driven by tenant automation config or manual escalation.
+   */
+  requiresSupervisoryReview?: boolean;
+  /** The staff member (staffRole: 'supervisor') assigned to co-sign. */
+  supervisorId?: string;
+  supervisorName?: string;
+  /** ISO date when the supervisor co-signed. null = not yet co-signed. */
+  supervisoryCosignedAt?: string;
+  supervisoryCosignedBy?: string;
+  /**
+   * Why supervision was triggered.
+   * Examples: 'high_value', 'policy_requirement', 'ai_flag', 'manual_request'
+   */
+  supervisoryReviewReason?: string;
 }
 
 export interface OrderAssignment {
@@ -292,6 +314,56 @@ export interface VendorProfile {
   
   notes?: string;
   tags?: string[];
+
+  // ── Staff / Internal assignment ───────────────────────────────────────────
+  /**
+   * 'internal' = staff member assigned directly (no bid loop).
+   * 'external' = fee-panel vendor that goes through the bid loop.
+   * Defaults to 'external' when absent for backward compatibility.
+   */
+  staffType?: 'internal' | 'external';
+  /**
+   * Specific role — only set when staffType === 'internal'.
+   */
+  staffRole?: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
+  /**
+   * Capacity cap for internal staff (default: 5).
+   */
+  maxConcurrentOrders?: number;
+  /**
+   * Live count updated atomically when orders are assigned / completed.
+   */
+  activeOrderCount?: number;
+
+  // ── Extended profile (Increment 1) ────────────────────────────────────────
+  /** Weekly recurring availability blocks — see WorkScheduleBlock in index.ts */
+  workSchedule?: {
+    dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+    startTime: string;
+    endTime: string;
+    timezone?: string;
+  }[];
+  /**
+   * Three-zone geographic coverage: licensed / preferred / extended.
+   * The matching engine uses licensed as a hard gate and preferred for a score bonus.
+   */
+  geographicCoverage?: {
+    licensed:  { states: string[]; counties?: string[]; zipCodes?: string[] };
+    preferred?: { states: string[]; counties?: string[]; zipCodes?: string[]; radiusMiles?: number };
+    extended?:  { states: string[]; counties?: string[]; travelFeePerMile?: number };
+  };
+  /** Capability flags used as hard gates in the matching engine. */
+  capabilities?: string[];
+  /** Product catalog IDs this vendor is eligible to be assigned. */
+  eligibleProductIds?: string[];
+  /** Per-product proficiency grades certified by a supervisor. */
+  productGrades?: {
+    productId: string;
+    grade: 'trainee' | 'proficient' | 'expert' | 'lead';
+    certifiedBy: string;
+    certifiedAt: string;
+    notes?: string;
+  }[];
 }
 
 export interface VendorServiceArea {

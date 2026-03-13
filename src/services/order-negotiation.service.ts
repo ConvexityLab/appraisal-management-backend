@@ -50,11 +50,20 @@ export class OrderNegotiationService {
     this.auditService = new AuditTrailService();
   }
 
+  private dbInitialized = false;
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
+  }
+
   /**
    * Vendor accepts order assignment
    */
   async acceptOrder(orderId: string, vendorId: string, tenantId: string): Promise<any> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Vendor accepting order', { orderId, vendorId });
 
       // Get order
@@ -180,6 +189,7 @@ export class OrderNegotiationService {
     tenantId: string
   ): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Vendor rejecting order', { orderId, vendorId, reason });
 
       // Get order
@@ -266,6 +276,7 @@ export class OrderNegotiationService {
     tenantId: string
   ): Promise<OrderNegotiation> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Vendor submitting counter-offer', { orderId, vendorId, terms });
 
       // Get order
@@ -362,6 +373,7 @@ export class OrderNegotiationService {
     tenantId: string
   ): Promise<any> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Client accepting counter-offer', { negotiationId, clientId });
 
       // Get negotiation
@@ -479,6 +491,7 @@ export class OrderNegotiationService {
     tenantId: string
   ): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Client rejecting counter-offer', { negotiationId, clientId, reason });
 
       // Get negotiation
@@ -544,6 +557,7 @@ export class OrderNegotiationService {
     tenantId: string
   ): Promise<OrderNegotiation> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Client countering vendor offer', { negotiationId, terms });
 
       // Get negotiation
@@ -583,6 +597,7 @@ export class OrderNegotiationService {
    */
   async expireNegotiation(negotiationId: string, tenantId: string): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Expiring negotiation', { negotiationId });
 
       // Get negotiation
@@ -641,6 +656,7 @@ export class OrderNegotiationService {
     tenantId: string
   ): Promise<any | null> {
     try {
+      await this.ensureDbInitialized();
       // Get negotiation
       const negotiationResponse = await this.dbService.getItem('negotiations', negotiationId, tenantId) as ApiResponse<OrderNegotiation>;
       const negotiation = negotiationResponse.data;
@@ -721,6 +737,7 @@ export class OrderNegotiationService {
    */
   async getActiveNegotiation(orderId: string, tenantId: string): Promise<OrderNegotiation | null> {
     try {
+      await this.ensureDbInitialized();
       const query = `
         SELECT * FROM c 
         WHERE c.orderId = @orderId 
@@ -748,6 +765,7 @@ export class OrderNegotiationService {
    */
   async getNegotiationHistory(orderId: string, tenantId: string): Promise<OrderNegotiation[]> {
     try {
+      await this.ensureDbInitialized();
       const query = `
         SELECT * FROM c 
         WHERE c.orderId = @orderId 
@@ -773,6 +791,7 @@ export class OrderNegotiationService {
    */
   async getPendingCounterOffers(tenantId: string): Promise<OrderNegotiation[]> {
     try {
+      await this.ensureDbInitialized();
       const query = `
         SELECT * FROM c 
         WHERE c.tenantId = @tenantId
@@ -794,6 +813,7 @@ export class OrderNegotiationService {
    */
   async checkExpiredNegotiations(tenantId: string): Promise<number> {
     try {
+      await this.ensureDbInitialized();
       const query = `
         SELECT * FROM c 
         WHERE c.tenantId = @tenantId

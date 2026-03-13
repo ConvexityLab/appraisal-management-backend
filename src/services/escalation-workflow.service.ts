@@ -48,6 +48,15 @@ export class EscalationWorkflowService {
     this.notificationService = new NotificationService();
   }
 
+  private dbInitialized = false;
+
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
+  }
+
   // ===========================
   // ESCALATION CREATION
   // ===========================
@@ -57,6 +66,7 @@ export class EscalationWorkflowService {
    */
   async createEscalation(request: CreateEscalationRequest): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Creating escalation case', {
         orderId: request.orderId,
         type: request.escalationType,
@@ -158,6 +168,7 @@ export class EscalationWorkflowService {
     reason: string
   ): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       const escalation = await this.getEscalation(escalationId);
       if (!escalation) {
         throw new Error('Escalation not found');
@@ -215,6 +226,7 @@ export class EscalationWorkflowService {
     visibility: 'INTERNAL' | 'VENDOR' | 'CLIENT' = 'INTERNAL'
   ): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       const escalation = await this.getEscalation(escalationId);
       if (!escalation) {
         throw new Error('Escalation not found');
@@ -260,6 +272,7 @@ export class EscalationWorkflowService {
     resolution: DisputeResolution
   ): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Resolving QC dispute', {
         escalationId,
         resolution: resolution.resolution
@@ -321,6 +334,7 @@ export class EscalationWorkflowService {
     reasoning: string
   ): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       const escalation = await this.getEscalation(escalationId);
       if (!escalation) {
         throw new Error('Escalation not found');
@@ -365,6 +379,7 @@ export class EscalationWorkflowService {
     justification: string
   ): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       const escalation = await this.getEscalation(escalationId);
       if (!escalation) {
         throw new Error('Escalation not found');
@@ -407,6 +422,7 @@ export class EscalationWorkflowService {
    */
   async resolveEscalation(request: ResolveEscalationRequest): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       const escalation = await this.getEscalation(request.escalationId);
       if (!escalation) {
         throw new Error('Escalation not found');
@@ -453,6 +469,7 @@ export class EscalationWorkflowService {
    */
   async closeEscalation(escalationId: string, closedBy: string, notes?: string): Promise<EscalationCase> {
     try {
+      await this.ensureDbInitialized();
       const escalation = await this.getEscalation(escalationId);
       if (!escalation) {
         throw new Error('Escalation not found');
@@ -497,6 +514,7 @@ export class EscalationWorkflowService {
    */
   async getOpenEscalations(): Promise<EscalationCase[]> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('escalations');
       const { resources } = await container.items
         .query({
@@ -521,6 +539,7 @@ export class EscalationWorkflowService {
    */
   async getEscalationsByManager(managerId: string): Promise<EscalationCase[]> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('escalations');
       const { resources } = await container.items
         .query({
@@ -545,6 +564,7 @@ export class EscalationWorkflowService {
    */
   async getEscalationMetrics(startDate: Date, endDate: Date): Promise<EscalationMetrics> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('escalations');
       const { resources } = await container.items
         .query({

@@ -164,6 +164,43 @@ export function createFinalReportsRouter(dbService: CosmosDbService): Router {
   );
 
   // ==========================================================================
+  // GET /orders/:orderId/preview-html?templateId=...
+  // Renders the Handlebars template with live order data and returns raw HTML.
+  // No Playwright — instant response for browser preview.
+  // ==========================================================================
+  router.get(
+    '/orders/:orderId/preview-html',
+    [param('orderId').notEmpty().withMessage('orderId is required')],
+    handleValidation,
+    async (req: Request, res: Response) => {
+      const orderId = req.params['orderId']!;
+      const templateId = req.query['templateId'] as string | undefined;
+
+      if (!templateId) {
+        res.status(400).json({ error: 'templateId query parameter is required' });
+        return;
+      }
+
+      try {
+        const html = await service.previewReportHtml(orderId, templateId);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.status(200).send(html);
+      } catch (error: any) {
+        const isPrecondition =
+          error.message?.includes('not found') ||
+          error.message?.includes('html-render') ||
+          error.message?.includes('inactive');
+        if (isPrecondition) {
+          res.status(422).json({ error: 'Precondition failed', message: error.message });
+        } else {
+          logger.error('HTML preview failed', { orderId, templateId, error: error.message });
+          res.status(500).json({ error: 'HTML preview failed', message: error.message });
+        }
+      }
+    }
+  );
+
+  // ==========================================================================
   // POST /orders/:orderId/mismo-xml
   // On-demand MISMO XML generation. Idempotent: returns existing blob path if
   // the XML was already generated for the most-recent GENERATED report.

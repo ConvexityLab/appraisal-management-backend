@@ -178,6 +178,7 @@ export class VendorController {
     try {
       const vendorData = {
         ...req.body,
+        tenantId: req.user?.tenantId,
         createdBy: req.user?.id,
         status: req.body.status || VendorStatus.ACTIVE,
         licenseState: req.body.licenseState || req.body.serviceAreas?.[0] || 'Unknown',
@@ -487,7 +488,20 @@ export class VendorController {
       // Availability
       isBusy: vendor.isBusy ?? false,
       vacationStartDate: vendor.vacationStartDate ?? null,
-      vacationEndDate: vendor.vacationEndDate ?? null
+      vacationEndDate: vendor.vacationEndDate ?? null,
+
+      // Phase 1.5.5 — staff classification
+      staffType: vendor.staffType,
+      staffRole: vendor.staffRole,
+      maxConcurrentOrders: vendor.maxConcurrentOrders,
+      activeOrderCount: vendor.activeOrderCount,
+
+      // Increment 1 — workload visibility & intelligent assignment
+      workSchedule: vendor.workSchedule,
+      geographicCoverage: vendor.geographicCoverage,
+      capabilities: vendor.capabilities,
+      eligibleProductIds: vendor.eligibleProductIds,
+      productGrades: vendor.productGrades
     };
   }
 }

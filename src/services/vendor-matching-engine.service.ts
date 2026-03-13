@@ -224,20 +224,61 @@ export class VendorMatchingEngine {
     request: VendorMatchRequest,
     propertyCoords: GeoCoordinates
   ): Promise<VendorMatchResult> {
+    // Hard gate: required capabilities — vendor scored 0 if any are missing
+    if (request.requiredCapabilities?.length) {
+      const vendorCaps: string[] = vendor.capabilities ?? [];
+      const missing = request.requiredCapabilities.filter(c => !vendorCaps.includes(c));
+      if (missing.length > 0) {
+        return {
+          vendorId: vendor.id,
+          matchScore: 0,
+          scoreBreakdown: { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 },
+          distance: null,
+          estimatedTurnaround: 0,
+          estimatedFee: null,
+          matchReasons: [`Missing required capabilities: ${missing.join(', ')}`],
+          vendor: {
+            id: vendor.id,
+            name: vendor.name || vendor.businessName,
+            tier: 'BRONZE' as const,
+            overallScore: 0
+          }
+        };
+      }
+    }
+
     // Get vendor data
     const [performance, availability] = await Promise.all([
       this.getVendorPerformance(vendor.id, request.tenantId),
       this.getVendorAvailability(vendor.id)
     ]);
 
+    const propertyState = this.extractStateFromAddress(request.propertyAddress);
+
+    // Phase 1.5.5: Internal staff have no vendor-availability container docs.
+    // Synthesize an availability snapshot from their vendor doc capacity fields
+    // so they aren't unfairly penalised with a 0 on the 25% availability weight.
+    let effectiveAvailability = availability;
+    if (!effectiveAvailability && (vendor as any).staffType === 'internal') {
+      const active: number = (vendor as any).activeOrderCount ?? (vendor as any).currentActiveOrders ?? 0;
+      const max: number = (vendor as any).maxConcurrentOrders ?? (vendor as any).maxActiveOrders ?? 5;
+      effectiveAvailability = {
+        currentLoad: active,
+        maxCapacity: max,
+        availableSlots: Math.max(0, max - active),
+        isAcceptingOrders: active < max,
+      } as any;
+    }
+
     // Calculate individual scores
     const performanceScore = this.calculatePerformanceScore(performance);
-    const availabilityScore = this.calculateAvailabilityScore(availability);
-    const proximityScore = await this.calculateProximityScore(vendor, propertyCoords);
+    const availabilityScore = this.calculateAvailabilityScore(effectiveAvailability);
+    const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState);
     const experienceScore = this.calculateExperienceScore(
       vendor,
       request.propertyType,
-      performance
+      performance,
+      request.productId
     );
     const costScore = this.calculateCostScore(
       vendor,
@@ -265,7 +306,7 @@ export class VendorMatchingEngine {
         cost: costScore
       },
       distance: proximityScore.distance,
-      estimatedTurnaround: this.estimateTurnaround(performance, availability),
+      estimatedTurnaround: this.estimateTurnaround(performance, effectiveAvailability),
       estimatedFee: vendor.typicalFees?.[request.propertyType] || null,
       matchReasons: [],
       vendor: {
@@ -315,7 +356,8 @@ export class VendorMatchingEngine {
    */
   private async calculateProximityScore(
     vendor: any,
-    propertyCoords: GeoCoordinates
+    propertyCoords: GeoCoordinates,
+    propertyState?: string
   ): Promise<{ score: number; distance: number | null }> {
     try {
       // Get vendor location
@@ -346,6 +388,11 @@ export class VendorMatchingEngine {
         score = 0;
       }
 
+      // Preferred area bonus: vendor has explicitly listed this state as preferred
+      if (propertyState && vendor.geographicCoverage?.preferred?.states?.includes(propertyState)) {
+        score = Math.min(100, score + 10);
+      }
+
       return { score, distance };
 
     } catch (error) {
@@ -360,7 +407,8 @@ export class VendorMatchingEngine {
   private calculateExperienceScore(
     vendor: any,
     propertyType: string,
-    performance: VendorPerformanceMetrics | null
+    performance: VendorPerformanceMetrics | null,
+    productId?: string
   ): number {
     let score = 50; // Base score
 
@@ -380,6 +428,16 @@ export class VendorMatchingEngine {
       score += 15; // Good experience
     } else if (ordersForType >= 5) {
       score += 10; // Some experience
+    }
+
+    // Product grade bonus: reward vendors with proven competency on this product
+    if (productId) {
+      const gradeEntry = (vendor.productGrades as Array<{ productId: string; grade: string }> | undefined)
+        ?.find(g => g.productId === productId);
+      if (gradeEntry) {
+        const gradeBonus: Record<string, number> = { trainee: 0, proficient: 5, expert: 10, lead: 15 };
+        score += gradeBonus[gradeEntry.grade] ?? 0;
+      }
     }
 
     return Math.min(score, 100);
@@ -485,7 +543,16 @@ export class VendorMatchingEngine {
       ]
     ) as any;
 
-    return result.resources || [];
+    let vendors: any[] = result.resources || [];
+
+    // Hard gate: product eligibility — if vendor has an explicit allow-list, order's product must be in it
+    if (request.productId) {
+      vendors = vendors.filter((v: any) =>
+        !v.eligibleProductIds?.length || v.eligibleProductIds.includes(request.productId)
+      );
+    }
+
+    return vendors;
   }
 
   /**

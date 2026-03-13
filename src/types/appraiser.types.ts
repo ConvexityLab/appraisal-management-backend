@@ -38,7 +38,40 @@ export interface Appraiser {
   
   // Conflict of Interest
   conflictProperties: ConflictProperty[];
-  
+
+  // ── Extended profile (Increment 1) ────────────────────────────────────────
+  /**
+   * Weekly recurring work schedule blocks (same shape as VendorProfile.workSchedule).
+   * Used by the supervisor roster "Available now" column and assignment UI.
+   */
+  workSchedule?: {
+    dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+    startTime: string;
+    endTime: string;
+    timezone?: string;
+  }[];
+  /**
+   * Three-zone geographic coverage: licensed / preferred / extended.
+   * Takes precedence over the flat `serviceArea` for matching engine scoring.
+   */
+  geographicCoverage?: {
+    licensed:  { states: string[]; counties?: string[]; zipCodes?: string[] };
+    preferred?: { states: string[]; counties?: string[]; zipCodes?: string[]; radiusMiles?: number };
+    extended?:  { states: string[]; counties?: string[]; travelFeePerMile?: number };
+  };
+  /** Structured capability flags (mirrors VendorCapability union in index.ts). */
+  capabilities?: string[];
+  /** Product catalog IDs this appraiser is eligible for. */
+  eligibleProductIds?: string[];
+  /** Per-product proficiency grades. */
+  productGrades?: {
+    productId: string;
+    grade: 'trainee' | 'proficient' | 'expert' | 'lead';
+    certifiedBy: string;
+    certifiedAt: string;
+    notes?: string;
+  }[];
+
   // Timestamps
   createdAt: string;
   updatedAt: string;

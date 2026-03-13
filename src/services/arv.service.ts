@@ -9,6 +9,7 @@
 
 import type { Container } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { PropertyRecordService } from './property-record.service.js';
 import { calculateArv, calculateDealMetrics } from './arv-engine.service.js';
 import { AccessControlHelper } from './access-control-helper.service.js';
 import type {
@@ -41,16 +42,32 @@ const accessControlHelper = new AccessControlHelper();
 export class ArvService {
   private readonly container: Container;
 
-  constructor(private readonly dbService: CosmosDbService) {
+  constructor(
+    private readonly dbService: CosmosDbService,
+    private readonly propertyRecordService: PropertyRecordService,
+  ) {
     this.container = dbService.getArvAnalysesContainer();
   }
 
   // ── Create draft ──────────────────────────────────────────────────────────
 
   async createAnalysis(request: CreateArvRequest, tenantId: string, createdBy: string): Promise<ArvAnalysis> {
+    // Resolve canonical PropertyRecord from the supplied property address (Phase R2).
+    const resolution = await this.propertyRecordService.resolveOrCreate({
+      address: {
+        street: request.propertyAddress.street,
+        city: request.propertyAddress.city,
+        state: request.propertyAddress.state,
+        zip: request.propertyAddress.zipCode,
+      },
+      tenantId,
+      createdBy,
+    });
+
     const draft: ArvAnalysis = {
       id: generateArvId(),
       tenantId,
+      propertyId: resolution.propertyId,
       ...(request.engagementId !== undefined && { engagementId: request.engagementId }),
       ...(request.orderId !== undefined && { orderId: request.orderId }),
       dealType: request.dealType,

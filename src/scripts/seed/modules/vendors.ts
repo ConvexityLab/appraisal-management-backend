@@ -9,7 +9,7 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo, daysFromNow } from '../seed-types.js';
-import { VENDOR_IDS, APPRAISER_IDS } from '../seed-ids.js';
+import { VENDOR_IDS, APPRAISER_IDS, INTERNAL_STAFF_IDS } from '../seed-ids.js';
 
 const CONTAINER = 'vendors';
 
@@ -369,6 +369,105 @@ function buildMultiStateAppraisers(tenantId: string): Record<string, unknown>[] 
   ];
 }
 
+// ── Phase 1.5.5 — Internal Staff (stored in vendors container, staffType='internal') ──
+function buildInternalStaff(tenantId: string): Record<string, unknown>[] {
+  return [
+    {
+      id: INTERNAL_STAFF_IDS.SARAH_CHEN_TX_APPRAISER,
+      type: 'vendor', tenantId,
+      businessName: 'Sarah Chen (Internal Appraiser)',
+      contactName: 'Sarah Chen',
+      email: 'sarah.chen@internal.com',
+      phone: '(555) 100-0001',
+      status: 'ACTIVE',
+      vendorType: 'INTERNAL',
+      staffType: 'internal',
+      staffRole: 'appraiser_internal',
+      licenseNumber: 'TX-INT-APR-001',
+      licenseState: 'TX',
+      licenseExpiration: daysFromNow(730),
+      certificationTypes: ['Certified Residential'],
+      specialties: ['FULL_APPRAISAL', 'DESK_REVIEW', 'HYBRID'],
+      serviceAreas: [{ state: 'TX', counties: ['Dallas', 'Tarrant', 'Collin', 'Denton'], maxDistance: 50, travelFee: 0 }],
+      rating: 4.8, averageQCScore: 94, onTimeDeliveryRate: 0.97, revisionRate: 0.02, performanceScore: 95,
+      totalOrdersCompleted: 340, currentActiveOrders: 2, maxActiveOrders: 8,
+      activeOrderCount: 2, maxConcurrentOrders: 8, isBusy: false,
+      standardFee: 0, rushFee: 0, averageTurnaroundDays: 3.0,
+      workSchedule: [
+        { dayOfWeek: 1, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 2, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 3, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 4, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 5, startTime: '08:00', endTime: '17:00' },
+      ],
+      timezone: 'America/Chicago',
+      createdAt: daysAgo(900), updatedAt: daysAgo(1),
+    },
+    {
+      id: INTERNAL_STAFF_IDS.JAMES_OKONKWO_TX_REVIEWER,
+      type: 'vendor', tenantId,
+      businessName: 'James Okonkwo (Internal Reviewer)',
+      contactName: 'James Okonkwo',
+      email: 'james.okonkwo@internal.com',
+      phone: '(555) 100-0002',
+      status: 'ACTIVE',
+      vendorType: 'INTERNAL',
+      staffType: 'internal',
+      staffRole: 'reviewer',
+      licenseNumber: 'TX-INT-REV-001',
+      licenseState: 'TX',
+      licenseExpiration: daysFromNow(730),
+      certificationTypes: ['MAI'],
+      specialties: ['DESK_REVIEW', 'FIELD_REVIEW'],
+      serviceAreas: [{ state: 'TX', counties: ['Dallas', 'Tarrant', 'Collin', 'Denton', 'Rockwall'], maxDistance: 60, travelFee: 0 }],
+      rating: 4.9, averageQCScore: 97, onTimeDeliveryRate: 0.99, revisionRate: 0.01, performanceScore: 98,
+      totalOrdersCompleted: 520, currentActiveOrders: 3, maxActiveOrders: 10,
+      activeOrderCount: 3, maxConcurrentOrders: 10, isBusy: false,
+      standardFee: 0, rushFee: 0, averageTurnaroundDays: 2.0,
+      workSchedule: [
+        { dayOfWeek: 1, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 2, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 3, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 4, startTime: '08:00', endTime: '17:00' },
+        { dayOfWeek: 5, startTime: '08:00', endTime: '17:00' },
+      ],
+      timezone: 'America/Chicago',
+      createdAt: daysAgo(1100), updatedAt: daysAgo(1),
+    },
+    {
+      id: INTERNAL_STAFF_IDS.DIANA_MORALES_TX_SUPERVISOR,
+      type: 'vendor', tenantId,
+      businessName: 'Diana Morales (Internal Supervisor)',
+      contactName: 'Diana Morales',
+      email: 'diana.morales@internal.com',
+      phone: '(555) 100-0003',
+      status: 'ACTIVE',
+      vendorType: 'INTERNAL',
+      staffType: 'internal',
+      staffRole: 'supervisor',
+      licenseNumber: 'TX-INT-SUP-001',
+      licenseState: 'TX',
+      licenseExpiration: daysFromNow(730),
+      certificationTypes: ['SRA', 'MAI'],
+      specialties: ['FULL_APPRAISAL', 'DESK_REVIEW', 'FIELD_REVIEW', 'SUPERVISORY'],
+      serviceAreas: [{ state: 'TX', counties: ['Dallas', 'Tarrant', 'Collin', 'Denton', 'Rockwall', 'Ellis'], maxDistance: 65, travelFee: 0 }],
+      rating: 5.0, averageQCScore: 99, onTimeDeliveryRate: 1.0, revisionRate: 0.005, performanceScore: 99,
+      totalOrdersCompleted: 820, currentActiveOrders: 1, maxActiveOrders: 6,
+      activeOrderCount: 1, maxConcurrentOrders: 6, isBusy: false,
+      standardFee: 0, rushFee: 0, averageTurnaroundDays: 2.5,
+      workSchedule: [
+        { dayOfWeek: 1, startTime: '08:00', endTime: '18:00' },
+        { dayOfWeek: 2, startTime: '08:00', endTime: '18:00' },
+        { dayOfWeek: 3, startTime: '08:00', endTime: '18:00' },
+        { dayOfWeek: 4, startTime: '08:00', endTime: '18:00' },
+        { dayOfWeek: 5, startTime: '08:00', endTime: '18:00' },
+      ],
+      timezone: 'America/Chicago',
+      createdAt: daysAgo(1200), updatedAt: daysAgo(1),
+    },
+  ];
+}
+
 export const module: SeedModule = {
   name: 'vendors',
   containers: [CONTAINER],
@@ -391,6 +490,9 @@ export const module: SeedModule = {
     }
     for (const appraiser of buildMultiStateAppraisers(ctx.tenantId)) {
       await upsert(ctx, CONTAINER, appraiser, result);
+    }
+    for (const staff of buildInternalStaff(ctx.tenantId)) {
+      await upsert(ctx, CONTAINER, staff, result);
     }
 
     return result;

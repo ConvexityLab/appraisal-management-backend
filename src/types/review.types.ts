@@ -54,6 +54,8 @@ export interface AppraisalReview {
   /** FK to the parent Engagement. Preferred for all new review records. */
   engagementId?: string;
   orderId: string;
+  /** FK → PropertyRecord.id — the physical property subject of this review. Added Phase R0.4. */
+  propertyId?: string;
   originalAppraisalId: string;                    // Reference to original appraisal document
   
   // Review Request Details
@@ -243,6 +245,11 @@ export interface ReviewDocument {
 
 export interface ComparableAnalysis {
   reviewId: string;
+  /** FK → AppraisalOrder.id — which order this comp analysis was performed for. Added Phase R0.4. */
+  orderId?: string;
+  /** FK → PropertyRecord.id — the subject property this analysis is about. Added Phase R0.4. */
+  propertyId?: string;
+  /** @deprecated Use propertyId + PropertyRecordService to resolve address. Retained for display. */
   propertyAddress: string;
   subjectProperty: SubjectPropertySummary;
   comparables: ComparableVerification[];

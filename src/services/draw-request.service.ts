@@ -20,6 +20,7 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+import type { ConstructionLoan } from '../types/construction-loan.types.js';
 import type {
   DrawRequest,
   DrawRequestStatus,
@@ -160,6 +161,13 @@ export class DrawRequestService {
     const allDraws = await this.listDrawsForLoan(constructionLoanId, tenantId);
     const drawNumber = allDraws.length + 1;
 
+    // Inherit propertyId and engagementId from the parent ConstructionLoan (Phase R2).
+    const parentLoan = await this.cosmosService.getDocument<ConstructionLoan>(
+      'construction-loans',
+      constructionLoanId,
+      tenantId,
+    );
+
     const draw: DrawRequest = {
       id: this.generateId(),
       drawNumber,
@@ -174,6 +182,8 @@ export class DrawRequestService {
       lienWaiverStatus: 'PENDING',
       titleUpdateRequired: false,
       ...(input.notes !== undefined && { notes: input.notes }),
+      ...(parentLoan?.propertyId !== undefined && { propertyId: parentLoan.propertyId }),
+      ...(parentLoan?.engagementId !== undefined && { engagementId: parentLoan.engagementId }),
       createdAt: now,
       updatedAt: now,
     };

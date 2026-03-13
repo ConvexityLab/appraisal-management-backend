@@ -1,5 +1,6 @@
 import { Logger } from '../utils/logger.js';
 import { AppraisalOrder, QualityControlResult } from '../types/index.js';
+import { SubstantiveReviewEngine, type SubstantiveReviewResult } from './substantive-review-engine.service.js';
 
 /**
  * Advanced Quality Control System with ML-powered automation
@@ -9,10 +10,12 @@ export class QualityControlEngine {
   private logger: Logger;
   private mlQCEndpoint: string;
   private complianceRules: ComplianceRule[] = [];
+  private substantiveReview: SubstantiveReviewEngine;
 
   constructor() {
     this.logger = new Logger();
     this.mlQCEndpoint = process.env.AZURE_ML_QC_ENDPOINT || '';
+    this.substantiveReview = new SubstantiveReviewEngine();
     this.initializeComplianceRules();
   }
 
@@ -30,14 +33,16 @@ export class QualityControlEngine {
         analyticalQC,
         documentQC,
         photoQC,
-        dataConsistencyQC
+        dataConsistencyQC,
+        substantiveReviewQC
       ] = await Promise.all([
         this.performTechnicalQC(reportData),
         this.performComplianceQC(reportData, order),
         this.performAnalyticalQC(reportData, order),
         this.performDocumentQC(reportData),
         this.performPhotoQC(reportData),
-        this.performDataConsistencyQC(reportData, order)
+        this.performDataConsistencyQC(reportData, order),
+        this.performSubstantiveReview(order.id, reportData)
       ]);
 
       // ML-powered overall assessment
@@ -59,6 +64,7 @@ export class QualityControlEngine {
         document: documentQC,
         photo: photoQC,
         consistency: dataConsistencyQC,
+        substantiveReview: substantiveReviewQC,
         mlAssessment: mlAssessment
       });
 
@@ -321,6 +327,60 @@ export class QualityControlEngine {
   }
 
   /**
+   * Substantive Review — Phase 2 aggregate running all 12 review services
+   */
+  private async performSubstantiveReview(orderId: string, reportData: AppraisalReportData): Promise<SubstantiveReviewQCResult> {
+    try {
+      const result = await this.substantiveReview.performFullReview(orderId, reportData);
+      return {
+        category: 'substantive',
+        score: result.overallScore,
+        status: result.overallScore >= 75 ? 'pass' : result.overallScore >= 60 ? 'conditional' : 'fail',
+        issues: this.convertSubstantiveIssues(result),
+        substantiveResult: result,
+      };
+    } catch (error) {
+      this.logger.error('Substantive review sub-check failed', { orderId, error });
+      return {
+        category: 'substantive',
+        score: 0,
+        status: 'fail',
+        issues: [{
+          severity: 'high',
+          category: 'substantive',
+          description: `Substantive review failed: ${error instanceof Error ? error.message : String(error)}`,
+          code: 'SUBSTANTIVE_ERROR',
+          recommendation: 'Investigate and re-run substantive review',
+        }],
+        substantiveResult: null,
+      };
+    }
+  }
+
+  /**
+   * Convert Phase 2 review issues into QCIssue format for integration.
+   */
+  private convertSubstantiveIssues(result: SubstantiveReviewResult): QCIssue[] {
+    const issues: QCIssue[] = [];
+    for (const review of result.reviews) {
+      if (review.report) {
+        for (const check of review.report.checks) {
+          if (!check.passed) {
+            issues.push({
+              severity: check.severity,
+              category: `substantive:${review.reviewType}`,
+              description: check.message,
+              code: `PHASE2_${review.reviewType.toUpperCase().replace(/-/g, '_')}_${check.evaluatorName}`,
+              recommendation: check.details?.recommendation as string ?? 'Review and address the identified issue',
+            });
+          }
+        }
+      }
+    }
+    return issues;
+  }
+
+  /**
    * ML-powered quality assessment using Azure ML models
    */
   private async performMLQualityAssessment(reportData: AppraisalReportData, qcResults: any): Promise<MLQualityAssessment> {
@@ -371,17 +431,19 @@ export class QualityControlEngine {
       ...results.analytical.issues,
       ...results.document.issues,
       ...results.photo.issues,
-      ...results.consistency.issues
+      ...results.consistency.issues,
+      ...results.substantiveReview.issues
     ];
 
-    // Weight different QC categories
+    // Weight different QC categories (adjusted to include substantive review)
     const weights = {
-      technical: 0.25,
-      compliance: 0.25,
-      analytical: 0.20,
-      document: 0.15,
-      photo: 0.10,
-      consistency: 0.05
+      technical: 0.20,
+      compliance: 0.20,
+      analytical: 0.15,
+      document: 0.10,
+      photo: 0.08,
+      consistency: 0.05,
+      substantive: 0.22
     };
 
     const weightedScore = (
@@ -390,7 +452,8 @@ export class QualityControlEngine {
       results.analytical.score * weights.analytical +
       results.document.score * weights.document +
       results.photo.score * weights.photo +
-      results.consistency.score * weights.consistency
+      results.consistency.score * weights.consistency +
+      results.substantiveReview.score * weights.substantive
     );
 
     // Determine overall status
@@ -420,7 +483,8 @@ export class QualityControlEngine {
         analytical: results.analytical,
         document: results.document,
         photo: results.photo,
-        consistency: results.consistency
+        consistency: results.consistency,
+        substantiveReview: results.substantiveReview
       },
       mlAssessment: results.mlAssessment,
       allIssues: allIssues,
@@ -722,6 +786,7 @@ export interface QCResult {
     document: DocumentQCResult;
     photo: PhotoQCResult;
     consistency: DataConsistencyQCResult;
+    substantiveReview: SubstantiveReviewQCResult;
   };
   mlAssessment: MLQualityAssessment;
   allIssues: QCIssue[];
@@ -830,7 +895,16 @@ export interface QCResultInputs {
   document: DocumentQCResult;
   photo: PhotoQCResult;
   consistency: DataConsistencyQCResult;
+  substantiveReview: SubstantiveReviewQCResult;
   mlAssessment: MLQualityAssessment;
+}
+
+export interface SubstantiveReviewQCResult {
+  category: string;
+  score: number;
+  status: string;
+  issues: QCIssue[];
+  substantiveResult: SubstantiveReviewResult | null;
 }
 
 export type QCStatus = 'pass' | 'conditional' | 'fail';

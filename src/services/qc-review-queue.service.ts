@@ -76,8 +76,7 @@ export class QCReviewQueueService {
     submittedAt?: Date;
   }): Promise<QCReviewQueueItem> {
     
-    try {
-      this.logger.info('Adding appraisal to QC review queue', {
+    try {      await this.ensureDbInitialized();      this.logger.info('Adding appraisal to QC review queue', {
         orderId: orderData.orderId,
         orderNumber: orderData.orderNumber
       });
@@ -137,6 +136,7 @@ export class QCReviewQueueService {
    */
   async getNextReview(analystId: string): Promise<QCReviewQueueItem | null> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Getting next review for analyst', { analystId });
 
       // Check analyst workload
@@ -184,6 +184,7 @@ export class QCReviewQueueService {
    */
   async assignReview(queueItemId: string, analystId: string, notes?: string): Promise<QCReviewQueueItem> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Assigning QC review', { queueItemId, analystId });
 
       const queueItem = await this.getQueueItem(queueItemId);
@@ -227,6 +228,7 @@ export class QCReviewQueueService {
    */
   async completeReview(queueItemId: string, qcReportId: string): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Completing QC review', { queueItemId, qcReportId });
 
       const queueItem = await this.getQueueItem(queueItemId);
@@ -257,6 +259,7 @@ export class QCReviewQueueService {
    */
   async returnToQueue(queueItemId: string, reason: string, returnedBy: string): Promise<QCReviewQueueItem> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Returning QC review to queue', { queueItemId, reason, returnedBy });
 
       const queueItem = await this.getQueueItem(queueItemId);
@@ -311,6 +314,7 @@ export class QCReviewQueueService {
     }
   ): Promise<QCReviewQueueItem> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Completing QC review with decision', { queueItemId, outcome: decision.outcome });
 
       const queueItem = await this.getQueueItem(queueItemId);
@@ -578,6 +582,7 @@ export class QCReviewQueueService {
    */
   async getAnalystWorkload(analystId: string): Promise<QCAnalystWorkload> {
     try {
+      await this.ensureDbInitialized();
       // Check cache first
       if (this.analysts.has(analystId)) {
         return this.analysts.get(analystId)!;
@@ -633,6 +638,7 @@ export class QCReviewQueueService {
    */
   async autoAssignReviews(): Promise<number> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Starting auto-assignment process');
 
       // Get pending reviews
@@ -778,6 +784,7 @@ export class QCReviewQueueService {
    */
   async getQueueStatistics(): Promise<QueueStatistics> {
     try {
+      await this.ensureDbInitialized();
       const allItems = await this.searchQueue({ limit: 10000 });
 
       const stats: QueueStatistics = {
@@ -831,6 +838,7 @@ export class QCReviewQueueService {
 
   async getQueueItem(queueItemId: string): Promise<QCReviewQueueItem | null> {
     try {
+      await this.ensureDbInitialized();
       const result = await this.dbService.getDocument('qc-reviews', queueItemId);
       return result as QCReviewQueueItem;
     } catch {

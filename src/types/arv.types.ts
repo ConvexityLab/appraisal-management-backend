@@ -110,6 +110,12 @@ export interface ArvAnalysis {
   engagementId?: string;
   /** Links to an AppraisalOrder (VendorOrder). Kept for backward compatibility. */
   orderId?: string;
+  /** FK → PropertyRecord.id — the physical property being valued. Added Phase R0.4. */
+  propertyId?: string;
+  /** FK → ConstructionLoan.id — when this ARV supports a construction loan.
+   *  When set, scopeOfWork is READ from the linked ConstructionBudget.lineItems
+   *  and must NOT be re-entered here. Added Phase R0.4. */
+  constructionLoanId?: string;
   dealType: DealType;
   mode: ArvMode;
   status: ArvStatus;
@@ -124,6 +130,11 @@ export interface ArvAnalysis {
   asIsValue: number;
   asIsSource: AsIsSource;
 
+  /**
+   * @deprecated Phase R0.4 — When constructionLoanId is set, scope is read from
+   * ConstructionBudget.lineItems via ArvService.getScopeOfWork(). Do not re-enter here.
+   * Will be removed in Phase R5 after data migration.
+   */
   scopeOfWork: ScopeOfWorkItem[];
   comps: ArvComp[];
 

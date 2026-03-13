@@ -1,0 +1,515 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DVR Non-Owner Occupied Review</title>
+<style>
+  @page { size: letter; margin: 0.35in 0.4in 0.3in 0.4in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; color: #000; background: #fff; }
+
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  .banner {
+    background: #1a3f6e; color: #fff; text-align: center;
+    font-size: 13pt; font-weight: bold; letter-spacing: 1px;
+    padding: 5px 0 4px; margin-bottom: 3px;
+  }
+
+  .top-layout { display: flex; gap: 4px; margin-bottom: 3px; }
+  .col-left  { flex: 0 0 44%; }
+  .col-right { flex: 1; }
+
+  .photo-box {
+    border: 1px solid #aaa; background: #e8edf2;
+    height: 130px; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 3px; overflow: hidden;
+  }
+  .photo-box img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-box-placeholder { font-size: 7pt; color: #888; text-align: center; }
+
+  .sec-teal {
+    color: #1a7a7a; font-size: 8pt; font-weight: bold;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid #1a7a7a; margin-bottom: 2px; padding-bottom: 1px;
+  }
+  .sec-orange {
+    color: #c95d00; font-size: 8pt; font-weight: bold;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid #c95d00; margin-bottom: 2px; padding-bottom: 1px;
+  }
+  .sec-blue {
+    background: #1a3f6e; color: #fff; font-size: 8pt; font-weight: bold;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 2px 5px; margin-bottom: 0;
+  }
+
+  .field-row { display: flex; gap: 4px; margin-bottom: 2px; }
+  .field { flex: 1; }
+  .field-label { font-size: 5.5pt; color: #555; text-transform: uppercase; letter-spacing: 0.2px; display: block; }
+  .field-line { border-bottom: 1px solid #333; min-height: 12px; font-size: 7.5pt; padding: 1px 1px 0; }
+
+  .val-block { margin-bottom: 4px; }
+  .val-row { display: flex; gap: 6px; margin-bottom: 2px; align-items: flex-end; }
+  .val-row .f-main { flex: 1.4; }
+  .val-row .f-sm   { flex: 0.8; }
+
+  .grade-section {
+    background: #c8e6e6; border: 1px solid #1a7a7a;
+    padding: 4px 6px; margin-bottom: 0;
+  }
+  .grade-row { display: flex; gap: 8px; margin-bottom: 3px; }
+  .grade-box { display: flex; align-items: center; gap: 2px; font-size: 9pt; font-weight: bold; }
+  .ltr { font-size: 10pt; font-weight: bold; }
+  .grade-A .ltr { color: #228b22; }
+  .grade-B .ltr { color: #1a3f9e; }
+  .grade-C .ltr { color: #cc6600; }
+  .grade-D .ltr { color: #cc0000; }
+  .checkbox {
+    width: 10px; height: 10px; border: 1.5px solid currentColor;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9pt; vertical-align: middle;
+  }
+  .grade-desc { font-size: 5.5pt; color: #333; line-height: 1.3; margin-bottom: 1px; }
+  .addl-analysis { font-size: 6.5pt; margin-top: 3px; }
+
+  .prop-details { margin-bottom: 3px; }
+
+  .loan-row {
+    border: 1px solid #aaa; padding: 3px 5px; margin-bottom: 1px;
+    display: flex; gap: 10px; align-items: flex-end;
+  }
+  .footnote { font-size: 5.5pt; color: #444; font-style: italic; margin-bottom: 3px; line-height: 1.4; }
+
+  .stats-layout { display: flex; gap: 6px; margin-bottom: 3px; }
+  .stats-col { flex: 1; }
+
+  .admin-q {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 1px 4px; border-bottom: 1px solid #ddd; font-size: 6.5pt;
+  }
+  .admin-q:last-child { border-bottom: none; }
+  .admin-q-text { flex: 1; padding-right: 6px; }
+  .yn { display: flex; gap: 5px; flex-shrink: 0; }
+  .yn-item { display: inline-flex; align-items: center; gap: 2px; font-size: 6.5pt; }
+  .yn-box {
+    width: 9px; height: 9px; border: 1px solid #555;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 7pt; font-weight: bold;
+  }
+
+  .form-footer {
+    display: flex; justify-content: space-between;
+    font-size: 5.5pt; color: #555; border-top: 1px solid #ccc;
+    margin-top: 4px; padding-top: 2px;
+  }
+
+  .doc-title { font-size: 8pt; font-weight: bold; text-align: center; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .doc-label { font-weight: bold; }
+  .doc-text  { font-size: 6.5pt; line-height: 1.5; margin-bottom: 4px; }
+  .doc-text ol { padding-left: 16px; }
+  .doc-text ol li { margin-bottom: 3px; }
+  .comments-box {
+    border: 1px solid #aaa; min-height: 140px; padding: 4px;
+    font-size: 7pt; white-space: pre-wrap; margin-bottom: 6px;
+  }
+  .comments-label { font-size: 7.5pt; font-weight: bold; margin-bottom: 1px; }
+
+  .sig-block { margin-top: 8px; }
+  .sig-row { display: flex; gap: 12px; margin-bottom: 8px; }
+  .sig-field { flex: 1; }
+  .sig-line { border-bottom: 1px solid #000; min-height: 18px; margin-bottom: 2px; font-size: 8pt; padding: 1px 2px; }
+  .sig-label-text { font-size: 6pt; color: #555; }
+  .continued { font-size: 7pt; font-weight: bold; text-align: center; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<!-- PAGE 1 -->
+<div class="page">
+
+  <div class="banner">DVR NON-OWNER OCCUPIED REVIEW</div>
+
+  <div class="top-layout">
+
+    <!-- LEFT: Photo + Property Details -->
+    <div class="col-left">
+      <div class="photo-box">
+        {{#if subjectPhoto}}
+        <img src="{{subjectPhoto.dataUri}}" alt="Subject Property">
+        {{else}}
+        <div class="photo-box-placeholder">SUBJECT PROPERTY PHOTO<br>Not Available</div>
+        {{/if}}
+      </div>
+
+      <div class="prop-details">
+        <div class="sec-orange">Property Details</div>
+        <div class="field-row" style="margin-bottom:3px;">
+          <div class="field">
+            <span class="field-label">Loan ID</span>
+            <div class="field-line">{{property.loanId}}</div>
+          </div>
+        </div>
+        <div class="field-row" style="margin-bottom:3px;">
+          <div class="field">
+            <span class="field-label">Street Address</span>
+            <div class="field-line">{{property.streetAddress}}</div>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field" style="flex:1.4;">
+            <span class="field-label">City</span>
+            <div class="field-line">{{property.city}}</div>
+          </div>
+          <div class="field" style="flex:0.5;">
+            <span class="field-label">State</span>
+            <div class="field-line">{{property.state}}</div>
+          </div>
+          <div class="field" style="flex:0.8;">
+            <span class="field-label">Zip Code</span>
+            <div class="field-line">{{property.zipCode}}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Original Appraisal, Review, Grade -->
+    <div class="col-right">
+
+      <div class="val-block">
+        <div class="sec-teal">Original Appraisal</div>
+        <div class="val-row">
+          <div class="field f-main">
+            <span class="field-label">Value</span>
+            <div class="field-line">{{originalAppraisal.value}}</div>
+          </div>
+        </div>
+        <div class="val-row">
+          <div class="field f-sm">
+            <span class="field-label">Date</span>
+            <div class="field-line">{{originalAppraisal.date}}</div>
+          </div>
+          <div class="field f-sm">
+            <span class="field-label">Form Type</span>
+            <div class="field-line">{{originalAppraisal.formType}}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="val-block">
+        <div class="sec-teal">Appraisal Review</div>
+        <div class="val-row">
+          <div class="field f-main">
+            <span class="field-label">Value</span>
+            <div class="field-line">{{reviewAppraisal.value}}</div>
+          </div>
+        </div>
+        <div class="val-row">
+          <div class="field f-sm">
+            <span class="field-label">Date</span>
+            <div class="field-line">{{reviewAppraisal.date}}</div>
+          </div>
+          <div class="field f-sm">
+            <span class="field-label">% Variance</span>
+            <div class="field-line">{{reviewAppraisal.percentVariance}}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grade-section">
+        <div class="sec-teal">Appraisal Grade</div>
+        <div class="grade-row">
+          <div class="grade-box grade-A">
+            <span class="ltr">A</span>
+            <span class="checkbox" style="color:#228b22; border-color:#228b22;">{{#if (eq appraisalGrade "A")}}&#x2713;{{/if}}</span>
+          </div>
+          <div class="grade-box grade-B">
+            <span class="ltr">B</span>
+            <span class="checkbox" style="color:#1a3f9e; border-color:#1a3f9e;">{{#if (eq appraisalGrade "B")}}&#x2713;{{/if}}</span>
+          </div>
+          <div class="grade-box grade-C">
+            <span class="ltr">C</span>
+            <span class="checkbox" style="color:#cc6600; border-color:#cc6600;">{{#if (eq appraisalGrade "C")}}&#x2713;{{/if}}</span>
+          </div>
+          <div class="grade-box grade-D">
+            <span class="ltr">D</span>
+            <span class="checkbox" style="color:#cc0000; border-color:#cc0000;">{{#if (eq appraisalGrade "D")}}&#x2713;{{/if}}</span>
+          </div>
+        </div>
+        <div class="grade-desc"><span style="color:#228b22; font-weight:bold;">A</span> Market value is well supported and typically sale within 5%.</div>
+        <div class="grade-desc"><span style="color:#1a3f9e; font-weight:bold;">B</span> Market value is reasonably supported within 10%.</div>
+        <div class="grade-desc"><span style="color:#cc6600; font-weight:bold;">C</span> Market value is not supported within 10%.</div>
+        <div class="grade-desc"><span style="color:#cc0000; font-weight:bold;">D</span> The appraisal report is not complete, contains significant errors and/or misrepresentations, and is not investment grade quality</div>
+        <div class="addl-analysis">
+          Additional Analysis Recommended?&nbsp;&nbsp;
+          <span class="yn-item">Y&nbsp;<span class="yn-box">{{#if admin.additionalAnalysisRecommended}}&#x2713;{{/if}}</span></span>
+          &nbsp;&nbsp;
+          <span class="yn-item">N&nbsp;<span class="yn-box">{{#unless admin.additionalAnalysisRecommended}}&#x2713;{{/unless}}</span></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="loan-row">
+    <div class="field" style="flex:1.2;">
+      <span class="field-label">Loan Purpose</span>
+      <div class="field-line">{{property.loanPurpose}}</div>
+    </div>
+    <div class="field" style="flex:1.7;">
+      <span class="field-label">Prior Sales Price*</span>
+      <div class="field-line">{{property.priorSalePrice}}</div>
+    </div>
+    <div class="field" style="flex:1.7;">
+      <span class="field-label">Date of Prior Sale</span>
+      <div class="field-line">{{property.priorSaleDate}}</div>
+    </div>
+  </div>
+  <div class="footnote">*If the home price appreciation is notably significant, please comment on page two as to whether the appreciation is due to market conditions and/or improvements made to the subject property.</div>
+
+  <div class="stats-layout">
+
+    <div class="stats-col">
+      <div class="sec-orange">Property Stats</div>
+      <div class="field-row" style="margin-bottom:3px;">
+        <div class="field">
+          <span class="field-label">Property Type</span>
+          <div class="field-line">{{property.type}}</div>
+        </div>
+      </div>
+      <div class="field-row" style="margin-bottom:3px;">
+        <div class="field">
+          <span class="field-label">Condition</span>
+          <div class="field-line">{{property.condition}}</div>
+        </div>
+      </div>
+      <div class="field-row" style="margin-bottom:3px;">
+        <div class="field" style="flex:0.6;">
+          <span class="field-label">Units</span>
+          <div class="field-line">{{property.units}}</div>
+        </div>
+        <div class="field" style="flex:0.8;">
+          <span class="field-label">Year Built</span>
+          <div class="field-line">{{property.yearBuilt}}</div>
+        </div>
+        <div class="field" style="flex:1;">
+          <span class="field-label">Lot Size (Acres)</span>
+          <div class="field-line">{{property.lotSizeAcres}}</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <span class="field-label">Rooms</span>
+          <div class="field-line">{{property.rooms}}</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Beds</span>
+          <div class="field-line">{{property.beds}}</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Baths</span>
+          <div class="field-line">{{property.baths}}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-col">
+      <div class="sec-orange">Neighborhood</div>
+      <div class="field-row" style="margin-bottom:3px;">
+        <div class="field">
+          <span class="field-label">Location Type</span>
+          <div class="field-line">{{neighborhood.locationType}}</div>
+        </div>
+      </div>
+      <div class="field-row" style="margin-bottom:3px;">
+        <div class="field">
+          <span class="field-label">Values</span>
+          <div class="field-line">{{neighborhood.values}}</div>
+        </div>
+      </div>
+      <div class="field-row" style="margin-bottom:3px;">
+        <div class="field">
+          <span class="field-label">Demand/Supply</span>
+          <div class="field-line">{{neighborhood.demandSupply}}</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <span class="field-label">Marketing Time</span>
+          <div class="field-line">{{neighborhood.marketingTime}}</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Quality</span>
+          <div class="field-line">{{neighborhood.quality}}</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sec-blue">Administrative Appraisal Review</div>
+  <div style="border: 1px solid #aaa; border-top: none;">
+    <div class="admin-q">
+      <div class="admin-q-text">1. Is the opinion of market value provided in the report adequately supported? ...........</div>
+      <div class="yn">
+        <div class="yn-item">Y&nbsp;<div class="yn-box">{{#if admin.q1Yes}}&#x2713;{{/if}}</div></div>
+        <div class="yn-item">N&nbsp;<div class="yn-box">{{#if admin.q1No}}&#x2713;{{/if}}</div></div>
+      </div>
+    </div>
+    <div class="admin-q">
+      <div class="admin-q-text">2. Are the comparable sales similar to the subject location, characteristics, and functionality? .....</div>
+      <div class="yn">
+        <div class="yn-item">Y&nbsp;<div class="yn-box">{{#if admin.q2Yes}}&#x2713;{{/if}}</div></div>
+        <div class="yn-item">N&nbsp;<div class="yn-box">{{#if admin.q2No}}&#x2713;{{/if}}</div></div>
+      </div>
+    </div>
+    <div class="admin-q">
+      <div class="admin-q-text">3. Are the adjustments consistent and supported? .....................................</div>
+      <div class="yn">
+        <div class="yn-item">Y&nbsp;<div class="yn-box">{{#if admin.q3Yes}}&#x2713;{{/if}}</div></div>
+        <div class="yn-item">N&nbsp;<div class="yn-box">{{#if admin.q3No}}&#x2713;{{/if}}</div></div>
+      </div>
+    </div>
+    <div class="admin-q">
+      <div class="admin-q-text">4. Are there any concerns with external influences? ..............................</div>
+      <div class="yn">
+        <div class="yn-item">Y&nbsp;<div class="yn-box">{{#if admin.q4Yes}}&#x2713;{{/if}}</div></div>
+        <div class="yn-item">N&nbsp;<div class="yn-box">{{#if admin.q4No}}&#x2713;{{/if}}</div></div>
+      </div>
+    </div>
+    <div class="admin-q">
+      <div class="admin-q-text">5. Is the information in the improvements section complete and accurate? ..............</div>
+      <div class="yn">
+        <div class="yn-item">Y&nbsp;<div class="yn-box">{{#if admin.q5Yes}}&#x2713;{{/if}}</div></div>
+        <div class="yn-item">N&nbsp;<div class="yn-box">{{#if admin.q5No}}&#x2713;{{/if}}</div></div>
+      </div>
+    </div>
+    <div class="admin-q">
+      <div class="admin-q-text">6. Does the neighborhood section reflect any negative attributes that would affect value?<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;(comment required if yes) .....................................................</div>
+      <div class="yn">
+        <div class="yn-item">Y&nbsp;<div class="yn-box">{{#if admin.q6Yes}}&#x2713;{{/if}}</div></div>
+        <div class="yn-item">N&nbsp;<div class="yn-box">{{#if admin.q6No}}&#x2713;{{/if}}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-footer">
+    <span>Vision, VMC, LLC | Owner Occupied Appraisal Review</span>
+    <span>11/22-01</span>
+  </div>
+</div>
+<!-- END PAGE 1 -->
+
+
+<!-- PAGE 2 -->
+<div class="page">
+
+  <div class="comments-label">COMMENTS <span style="font-weight:normal; font-size:6.5pt; font-style:italic;">If answers from page one impact value please comment below.</span></div>
+  <div class="comments-box">{{comments}}</div>
+
+  <div class="doc-title">Review Appraiser's Scope of Work, Limiting Conditions, and Certification</div>
+
+  <div class="doc-text"><span class="doc-label">Intended Use:</span> The intended use of this desk review is to determine whether the appraisal value is supported within 10%, to provide a review value and a percentage variance between the two values (if there is one), and to identify/comment on any deficiencies evident in the original appraisal.</div>
+  <div class="doc-text"><span class="doc-label">Intended User:</span> The intended user of this desk review is the lender/client.</div>
+
+  <div class="doc-text"><span class="doc-label">DEFINITION OF MARKET VALUE:</span> The most probable price which a property should bring in a competitive and open market under all conditions requisite to a fair sale, the buyer and seller, each acting prudently, knowledgeably and assuming the price is not affected by undue stimulus. Implicit in this definition is the consummation of a sale as of a specified date and the passing of title from seller to buyer under conditions whereby:</div>
+  <div class="doc-text">
+    (1) buyer and seller are typically motivated.<br>
+    (2) both parties are well informed or well advised, and each acting in what he or she considers his or her own best interest.<br>
+    (3) a reasonable time is allowed for exposure in the open market.<br>
+    (4) payment is made in terms of cash in U.S. dollars or in terms of financial arrangements comparable thereto<br>
+    (5) the price represents the normal consideration for the property sold unaffected by special or creative financing or sales concessions* granted by anyone associated with the sale.
+  </div>
+  <div class="doc-text">*Adjustments to the comparables must be made for special or creative financing or sales concessions. No adjustments are necessary for those costs which are normally paid by sellers as a result of tradition or law in a market area; these costs are readily identifiable since the seller pays these costs in virtually all sales transactions. Special or creative financing adjustments can be made to the comparable property by comparisons to financing terms offered by a third-party institutional lender that is not already involved with the property or transaction. Any adjustment should not be calculated</div>
+
+  <div class="continued">CONTINUED ON NEXT PAGE</div>
+
+  <div class="form-footer">
+    <span>Vision, VMC, LLC | Owner Occupied Appraisal Review</span>
+    <span>11/22-01</span>
+  </div>
+</div>
+<!-- END PAGE 2 -->
+
+
+<!-- PAGE 3 -->
+<div class="page">
+
+  <div class="doc-text">on a mechanical dollar for dollar cost of the financing or concession, but the dollar amount of any adjustment should approximate the market's reaction to the financing or concessions based on the appraiser's judgment.</div>
+
+  <div class="doc-text"><span class="doc-label">SCOPE OF WORK:</span> My scope of work included the review of appraisal reports and other documents. This appraisal review is intended to comply with Standards Rule 3 of the Uniform Standards of Professional Appraisal Practice (USPAP). Appraisal reports under review, real estate and real property interests appraised, date of reports and effective dates of value estimates, date of review, identity of appraisers, and identity of the internal reviewer are all contained within the internal review report. All known pertinent information was included. The purpose of this review was to assess the reasonableness of the value estimate(s) and determine compliance with USPAP. Appraisal reports subject to review have been read and analyzed to form an opinion as to: I. Completeness of the report under review within the scope of work applicable in the review assignment. a. Apparent adequacy, relevance, and appropriateness of data and adjustments; and, b. Whether the analyses, methods, opinions, and conclusions in the reports under review are appropriate and reasonable. Reasons for any disagreement are contained within this review report. c. Additional Valuation Reports such as BPOs (Broker Price Opinions), AVMs and various additional valuation products could be included in this review and analysis.</div>
+  <div class="doc-text">If the scope of this internal appraisal review includes an independent value conclusion, it is developed and reported in compliance with USPAP, SR 3. The purpose of such an internal review appraisal is to estimate market value of the fee simple interest in the subject and intended to assist the underwriter in determining possible appraisal deficiencies.</div>
+  <div class="doc-text">Vision VMC, its subsidiaries, and its direct clients are the only intended users.</div>
+  <div class="doc-text">I have extended, by way of Extraordinary Assumption, those portions of the original appraisal that are considered credible and developed in compliance with USPAP Standard I. Portions of the reviewed reports that are not considered credible and developed in compliance with USPAP Standard I are described in this internal appraisal review report. Supplemental review information may include but is not limited to information from public records, multiple listing services, national vendors, real estate professionals, referenced appraiser(s) and/or peers, file information, and cost estimating resources. The scope of analysis may include reconsideration and reconciliation of value indications from the cost, sales comparison, and income approaches to value for the subject real property. Personal property values are excluded.</div>
+
+  <div class="doc-text"><span class="doc-label">EXTRAORDINARY ASSUMPTIONS AND HYPOTHETICAL CONDITIONS:</span> This review appraisal is based on the extraordinary assumption that the original appraisal report contained accurate location, condition and physical characteristic information on the subject property from an exterior and interior observation (if interior observation is applicable), and the comparable properties based on exterior observation. The review appraiser did not perform a physical observation of the exterior or the interior of the subject property, or any of the comparable sales in the original appraisal with the extraordinary assumption made that the information regarding these properties is accurate as of the date of the original appraisal. The use of extraordinary assumptions could significantly impact the conclusions and findings in the review appraisal if the information relied on for the extraordinary assumptions is found to be inaccurate.</div>
+  <div class="doc-text"><span class="doc-label">HYPOTHETICAL CONDITIONS:</span> Hypothetical conditions are contrary to what is known to exist but are asserted for the purpose of analysis. No hypothetical conditions were made as part of this appraisal review assignment.</div>
+
+  <div class="doc-text" style="font-weight:bold;">LIMITING CONDITIONS: Certificate of Limiting Conditions:</div>
+  <div class="doc-text">
+    <ol>
+      <li>The Review appraiser did not perform a physical inspection, interior or exterior, of the subject property or any of the comparable sales found in the appraisal under review or of the additional comparable sales provided to the Client.</li>
+      <li>The Review appraiser assumes no responsibility for the matters of a legal nature affecting the property which is the subject of this assignment or the title thereto, nor does the review appraiser render any opinion as to the title, which is assumed to be good and marketable.</li>
+      <li>The review appraiser assumes that there are no hidden or unapparent conditions of the property, subsoil, or structures, which would render it more or less valuable. The review appraiser assumes no responsibility for such conditions, or for the engineering which might be required to discover such factors.</li>
+      <li>Information, estimates, and opinions furnished to the review appraiser, and contained in the appraisal under review, were obtained from sources considered reliable and believed to be true and correct, unless stated elsewhere. If contradictory information is obtained and deemed reliable, and believed to be true and correct, the review appraiser will cite that source and the assumptions associated with that information. However, no responsibility for accuracy of such items furnished to the review appraiser can be assumed by the review appraiser.</li>
+      <li>Disclosure of the contents of the review report is governed by the USPAP and the Bylaws and Regulations of the professional appraisal organizations with which the review appraiser is affiliated.</li>
+      <li>No change of any item in the review report shall be made by anyone other the review appraiser and the review appraiser shall have no responsibility for any such unauthorized change.</li>
+    </ol>
+  </div>
+
+  <div class="form-footer">
+    <span>Vision, VMC, LLC | Owner Occupied Appraisal Review</span>
+    <span>11/22-01</span>
+  </div>
+</div>
+<!-- END PAGE 3 -->
+
+
+<!-- PAGE 4 -->
+<div class="page">
+
+  <div class="doc-text">
+    <ol start="7">
+      <li>The use of this review report is restricted to the client named within this report. Unless written consent is provided by the client and the review appraiser, use of this report by any other party is strictly prohibited.</li>
+      <li>The geographic competency to complete this limited scope review appraisal was acquired by the review appraiser's review and analysis of the original appraisal, the review and analysis of the supporting data that included both relevant area sales information, listing information and market information provided by additional recognized sources of real estate information.</li>
+    </ol>
+  </div>
+
+  <div class="sig-block">
+    <div class="sig-row">
+      <div class="sig-field" style="flex:2;">
+        <div class="sig-line">{{reviewer.signature}}</div>
+        <div class="sig-label-text">Review Appraiser Signature</div>
+      </div>
+      <div class="sig-field" style="flex:1.5;">
+        <div class="sig-line">{{reviewer.name}}</div>
+        <div class="sig-label-text">Review Appraiser Name</div>
+      </div>
+    </div>
+    <div class="sig-row">
+      <div class="sig-field" style="flex:2;">
+        <div class="sig-line">{{reviewer.stateLicenseNumber}}</div>
+        <div class="sig-label-text">State License Number</div>
+      </div>
+      <div class="sig-field" style="flex:0.6;">
+        <div class="sig-line">{{reviewer.state}}</div>
+        <div class="sig-label-text">State</div>
+      </div>
+      <div class="sig-field" style="flex:0.8;">
+        <div class="sig-line">{{reviewer.expirationDate}}</div>
+        <div class="sig-label-text">Expiration Date</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-footer" style="margin-top:12px;">
+    <span>Vision, VMC, LLC | Owner Occupied Appraisal Review</span>
+    <span>11/22-01</span>
+  </div>
+</div>
+<!-- END PAGE 4 -->
+
+</body>
+</html>

@@ -334,6 +334,7 @@ function buildReport001(now: string): CanonicalReportDocument {
       subjectPriorSalePrice1: 385000,
       subjectPriorSaleDate2: null,
       subjectPriorSalePrice2: null,
+      appraisalGrade: 'B',
     },
     subject: SUBJECT_4521,
     comps: ALL_COMPS,
@@ -396,6 +397,7 @@ function buildReport003(now: string): CanonicalReportDocument {
       subjectPriorSalePrice1: 310000,
       subjectPriorSaleDate2: null,
       subjectPriorSalePrice2: null,
+      appraisalGrade: 'C',
     },
     subject: {
       ...SUBJECT_4521,

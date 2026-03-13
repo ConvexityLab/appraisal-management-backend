@@ -297,6 +297,10 @@ export interface DrawRequest {
   drawNumber: number;
 
   constructionLoanId: string;
+  /** FK → PropertyRecord.id — propagated from parent ConstructionLoan at creation time. Added Phase R0.4. */
+  propertyId?: string;
+  /** FK → Engagement.id — propagated from parent ConstructionLoan at creation time. Added Phase R0.4. */
+  engagementId?: string;
 
   /** ID of the ConstructionBudget version in effect when this draw was submitted. */
   budgetId: string;

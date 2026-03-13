@@ -47,6 +47,8 @@ import {
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 import type { AppraisalOrder } from '../types/index.js';
+import { DuplicateOrderDetectionService } from '../services/duplicate-order-detection.service.js';
+import { WaiverScreeningService } from '../services/waiver-screening.service.js';
 
 const logger = new Logger('OrderController');
 
@@ -109,6 +111,8 @@ export class OrderController {
   private publisher: ServiceBusEventPublisher;
   private orchestrator: AutoAssignmentOrchestratorService;
   private _documentService: DocumentService | null = null;
+  private duplicateDetection: DuplicateOrderDetectionService;
+  private waiverScreening: WaiverScreeningService;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -131,6 +135,8 @@ export class OrderController {
     this.publisher = new ServiceBusEventPublisher();
     // Instantiated without start() — used only for triggerVendorAssignment() calls from REST endpoints.
     this.orchestrator = new AutoAssignmentOrchestratorService(dbService);
+    this.duplicateDetection = new DuplicateOrderDetectionService(dbService);
+    this.waiverScreening = new WaiverScreeningService(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -150,6 +156,8 @@ export class OrderController {
     this.router.post('/batch/status', ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
     this.router.post('/batch/assign', ...validateBatchAssign(), this.batchAssign.bind(this));
     this.router.post('/export', ...validateExportOrders(), this.exportOrders.bind(this));
+    this.router.post('/duplicate-check', this.checkDuplicates.bind(this));
+    this.router.post('/waiver-screening', this.screenWaiver.bind(this));
     this.router.get('/:orderId', this.getOrder.bind(this));
     this.router.put('/:orderId', this.updateOrder.bind(this));
     this.router.put('/:orderId/status', this.updateOrderStatus.bind(this));
@@ -251,6 +259,63 @@ export class OrderController {
       res.status(500).json({
         error: 'Order creation failed',
         code: 'ORDER_CREATION_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /duplicate-check ────────────────────────────────────────────────
+
+  /**
+   * Standalone duplicate order check — advisory only.
+   * Called from the frontend intake wizard before final submission.
+   */
+  public async checkDuplicates(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { propertyAddress, city, state, zipCode, borrowerFirstName, borrowerLastName, excludeOrderId } = req.body;
+      if (!propertyAddress) {
+        res.status(400).json({ error: 'propertyAddress is required', code: 'VALIDATION_ERROR' });
+        return;
+      }
+      const result = await this.duplicateDetection.checkForDuplicates({
+        propertyAddress,
+        city,
+        state,
+        zipCode,
+        borrowerFirstName,
+        borrowerLastName,
+        tenantId: req.user!.tenantId,
+        excludeOrderId,
+      });
+      res.json(result);
+    } catch (error) {
+      logger.error('Duplicate check endpoint failed', { error });
+      res.status(500).json({
+        error: 'Duplicate check failed',
+        code: 'DUPLICATE_CHECK_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /waiver-screening ───────────────────────────────────────────────
+
+  /**
+   * PIW/ACE/Waiver eligibility screening — advisory only.
+   * Called from the frontend intake wizard before final submission.
+   */
+  public async screenWaiver(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const result = await this.waiverScreening.screenOrder({
+        ...req.body,
+        tenantId: req.user!.tenantId,
+      });
+      res.json(result);
+    } catch (error) {
+      logger.error('Waiver screening endpoint failed', { error });
+      res.status(500).json({
+        error: 'Waiver screening failed',
+        code: 'WAIVER_SCREENING_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -1559,6 +1624,11 @@ export class OrderController {
         loanAmount: order.loanInformation?.loanAmount ?? 0,
         priority: (order.priority as 'STANDARD' | 'RUSH' | 'EMERGENCY') ?? 'STANDARD',
         dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        // Eligibility gates — carried from the order record into the event envelope
+        ...(order.productId ? { productId: order.productId as string } : {}),
+        ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
+          ? { requiredCapabilities: order.requiredCapabilities as string[] }
+          : {}),
       });
 
       res.json({ success: true, message: 'Auto-assignment triggered — vendor ranking and bid dispatch initiated' });

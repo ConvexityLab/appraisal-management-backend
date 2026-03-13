@@ -114,7 +114,11 @@ export const QC_REVIEW_IDS = {
   REVIEW_ORDER_001: 'seed-qc-review-001',
   REVIEW_ORDER_002: 'seed-qc-review-002',
   REVIEW_ORDER_009: 'seed-qc-review-009',
+  /** REVISION_REQUESTED order — completed QC with REVISION_REQUIRED result that triggered the revision */
+  REVIEW_ORDER_010: 'seed-qc-review-010',
   ENHANCED_AI_REVIEW: 'seed-qc-review-enhanced-001',
+  /** Full QCValidationReport with questions[], evidence, and criteria — drives the rich Evidence Panel */
+  FULL_VALIDATION_REPORT_001: 'seed-qc-review-full-report-001',
 } as const;
 
 // ─── Documents ────────────────────────────────────────────────────────────────
@@ -267,6 +271,13 @@ export const STAFF_IDS = {
   COORDINATOR_1: 'seed-user-coordinator-001',
 } as const;
 
+// ─── Internal Staff (vendors container, staffType='internal') ─────────────────
+export const INTERNAL_STAFF_IDS = {
+  SARAH_CHEN_TX_APPRAISER: 'seed-staff-internal-appraiser-001',
+  JAMES_OKONKWO_TX_REVIEWER: 'seed-staff-internal-reviewer-001',
+  DIANA_MORALES_TX_SUPERVISOR: 'seed-staff-internal-supervisor-001',
+} as const;
+
 // ─── PDF Templates (legacy AcroForm template) ─────────────────────────────────
 export const PDF_TEMPLATE_IDS = {
   FORM_1004: 'seed-pdf-template-1004',
@@ -274,10 +285,16 @@ export const PDF_TEMPLATE_IDS = {
 
 // ─── HTML Report Templates (html-render strategy via Playwright/Handlebars) ────
 export const REPORT_TEMPLATE_IDS = {
-  URAR_1004_V1: 'seed-report-template-urar-1004-v1',
+  URAR_1004_V1:     'seed-report-template-urar-1004-v1',
   /** Vision VMC-branded redesign with UAD 3.6 conditional sections. */
-  URAR_1004_V2: 'seed-report-template-urar-1004-v2',
-  DVR_BPO_V1:   'seed-report-template-dvr-bpo-v1',
+  URAR_1004_V2:     'seed-report-template-urar-1004-v2',
+  DVR_BPO_V1:       'seed-report-template-dvr-bpo-v1',
+  /** Desk Review – Non-Owner Occupied (DVR-10) — desktop-only, no physical inspection. */
+  DVR_DESK_REVIEW_V1: 'seed-report-template-dvr-desk-review-v1',
+  /** DVR Non-Owner Occupied Review — appraisal review form matching actual DVR-10 Vision VMC PDF. */
+  DVR_NOO_REVIEW_V1: 'seed-report-template-dvr-noo-review-v1',
+  /** DVR NOO Desktop Review — same appraisal review fields, URAR v2 navy/gold design system. */
+  DVR_NOO_DESKTOP_V1: 'seed-report-template-dvr-noo-desktop-v1',
 } as const;
 
 // ─── Negotiation (Phase2 — round-by-round) ────────────────────────────────────

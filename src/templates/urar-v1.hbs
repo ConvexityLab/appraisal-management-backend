@@ -398,19 +398,19 @@
   <div class="photo-grid" style="margin-top:2px;">
     <div class="photo-slot">
       {{#if photos.subjectFront}}
-      <img src="{{photos.subjectFront.blobPath}}" alt="Subject Front">
+      <img src="{{photos.subjectFront.dataUri}}" alt="Subject Front">
       {{else}}<span class="photo-placeholder">Subject Front</span>{{/if}}
       <div class="photo-caption">Front View</div>
     </div>
     <div class="photo-slot">
       {{#if photos.subjectRear}}
-      <img src="{{photos.subjectRear.blobPath}}" alt="Subject Rear">
+      <img src="{{photos.subjectRear.dataUri}}" alt="Subject Rear">
       {{else}}<span class="photo-placeholder">Subject Rear</span>{{/if}}
       <div class="photo-caption">Rear View</div>
     </div>
     <div class="photo-slot">
       {{#if photos.subjectStreet}}
-      <img src="{{photos.subjectStreet.blobPath}}" alt="Street Scene">
+      <img src="{{photos.subjectStreet.dataUri}}" alt="Street Scene">
       {{else}}<span class="photo-placeholder">Street Scene</span>{{/if}}
       <div class="photo-caption">Street Scene</div>
     </div>
@@ -642,7 +642,7 @@
     <div class="photo-slot">
       {{#unless empty}}
       {{#with (lookup ../photos.comp @index)}}
-      <img src="{{this.blobPath}}" alt="{{../slotLabel}}">
+      <img src="{{this.dataUri}}" alt="{{../slotLabel}}">
       {{else}}<span class="photo-placeholder">{{slotLabel}}</span>
       {{/with}}
       {{else}}<span class="photo-placeholder">–</span>{{/unless}}
@@ -873,7 +873,7 @@
   {{#if photos.aerial}}
   <div class="section-header">Aerial / Location Map</div>
   <div style="margin-top:2px; max-height: 120px; overflow:hidden; border: 1px solid #999;">
-    <img src="{{photos.aerial.blobPath}}" style="width:100%; object-fit:cover;" alt="Aerial View">
+    <img src="{{photos.aerial.dataUri}}" style="width:100%; object-fit:cover;" alt="Aerial View">
   </div>
   {{/if}}
 

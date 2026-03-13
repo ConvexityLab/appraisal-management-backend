@@ -19,6 +19,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'FNMA/FHLMC-compliant single-family interior and exterior inspection appraisal. Includes comparable grid, market condition addendum, and digital signature.',
       defaultFee: 450, rushFeeMultiplier: 1.5, techFee: 25, feeSplitPercent: 20,
       turnTimeDays: 5, rushTurnTimeDays: 2,
+      requiredCapabilities: ['can_sign_reports', 'uad36_compliant'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -27,6 +28,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Exterior drive-by inspection only. Suitable for low-LTV refinances and portfolio review orders where interior access is unavailable.',
       defaultFee: 275, rushFeeMultiplier: 1.5, techFee: 25, feeSplitPercent: 18,
       turnTimeDays: 3, rushTurnTimeDays: 1,
+      requiredCapabilities: ['can_sign_reports'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -35,6 +37,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Desk review using MLS data, public records, and prior appraisal report. No physical inspection. Suitable for low-risk recertifications.',
       defaultFee: 150, rushFeeMultiplier: 1.4, techFee: 15, feeSplitPercent: 15,
       turnTimeDays: 2, rushTurnTimeDays: 1,
+      requiredCapabilities: ['can_sign_reports', 'desktop_qualified'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -43,6 +46,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Full interior/exterior appraisal for condominium units. Includes project analysis and PUD addendum where applicable.',
       defaultFee: 500, rushFeeMultiplier: 1.5, techFee: 25, feeSplitPercent: 20,
       turnTimeDays: 6, rushTurnTimeDays: 3,
+      requiredCapabilities: ['can_sign_reports', 'uad36_compliant'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -51,6 +55,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Small income-producing property appraisal for 2-4 unit residential buildings. Includes rental analysis addendum.',
       defaultFee: 650, rushFeeMultiplier: 1.5, techFee: 30, feeSplitPercent: 22,
       turnTimeDays: 7, rushTurnTimeDays: 4,
+      requiredCapabilities: ['can_sign_reports', 'uad36_compliant', 'complex_assignments'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -59,6 +64,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Second-opinion field review of an existing appraisal. Exterior inspection only with comparable analysis.',
       defaultFee: 325, rushFeeMultiplier: 1.4, techFee: 20, feeSplitPercent: 18,
       turnTimeDays: 4, rushTurnTimeDays: 2,
+      requiredCapabilities: ['can_sign_reports'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -67,6 +73,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Confirms whether the property condition and value remain consistent with the original appraisal. Required for expired commitments.',
       defaultFee: 125, rushFeeMultiplier: 1.3, techFee: 10, feeSplitPercent: 12,
       turnTimeDays: 2, rushTurnTimeDays: 1,
+      requiredCapabilities: ['can_sign_reports', 'desktop_qualified'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
     {
@@ -75,6 +82,7 @@ function buildProducts(tenantId: string, now: string): Record<string, unknown>[]
       description: 'Formal reconsideration of value submission per FHFA ROV guidance (Jan 2024). Requires lender-submitted comparable evidence.',
       defaultFee: 95, rushFeeMultiplier: 1.0, techFee: 10, feeSplitPercent: 10,
       turnTimeDays: 3, rushTurnTimeDays: 3,
+      requiredCapabilities: ['can_sign_reports'],
       isActive: true, status: 'ACTIVE', createdAt: now, updatedAt: now, createdBy: 'seed-orchestrator',
     },
   ];

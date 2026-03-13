@@ -27,6 +27,7 @@ import express, { Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { EngagementService } from '../services/engagement.service.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import {
@@ -153,7 +154,7 @@ const validateList = [
 
 export function createEngagementRouter(dbService: CosmosDbService) {
   const router = express.Router();
-  const service = new EngagementService(dbService);
+  const service = new EngagementService(dbService, new PropertyRecordService(dbService));
 
   // ── GET /  (list) ──────────────────────────────────────────────────────────
   router.get(

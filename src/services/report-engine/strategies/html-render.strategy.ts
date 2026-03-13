@@ -26,6 +26,13 @@ import { CanonicalReportDocument } from '../../../types/canonical-schema';
 /** Container in Azure Blob where Handlebars templates (.hbs) are stored. */
 const PDF_TEMPLATES_CONTAINER = 'pdf-report-templates';
 
+// ── Handlebars helpers ────────────────────────────────────────────────────────
+// Register once at module load — safe because Handlebars.registerHelper is
+// idempotent (re-registering under the same name replaces the previous entry).
+Handlebars.registerHelper('add', (a: unknown, b: unknown) => Number(a) + Number(b));
+Handlebars.registerHelper('sub', (a: unknown, b: unknown) => Number(a) - Number(b));
+Handlebars.registerHelper('eq',  (a: unknown, b: unknown) => a === b);
+
 /** Minimal Playwright PDF print options. Override per template via sectionConfig if needed. */
 const DEFAULT_PDF_OPTIONS = {
   format: 'Letter' as const,
@@ -40,6 +47,16 @@ export class HtmlRenderStrategy implements IReportStrategy {
   ) {}
 
   async generate(ctx: ReportGenerationContext): Promise<Buffer> {
+    const html = await this.renderHtml(ctx);
+    const pdfBuffer = await this._renderToPdf(html);
+    return pdfBuffer;
+  }
+
+  /**
+   * Renders the Handlebars template to an HTML string WITHOUT launching Playwright.
+   * Use for instant browser previews — the caller can open the HTML in a new tab.
+   */
+  async renderHtml(ctx: ReportGenerationContext): Promise<string> {
     const { template, canonicalDoc } = ctx;
 
     if (!template.hbsTemplateName) {
@@ -73,11 +90,7 @@ export class HtmlRenderStrategy implements IReportStrategy {
 
     // 4. Compile + render HTML
     const compiledTemplate = Handlebars.compile(hbsSource);
-    const html = compiledTemplate(contextWithPhotos);
-
-    // 5. Render to PDF via Playwright
-    const pdfBuffer = await this._renderToPdf(html);
-    return pdfBuffer;
+    return compiledTemplate(contextWithPhotos);
   }
 
   private async _embedPhotos(

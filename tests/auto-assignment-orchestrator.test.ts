@@ -448,6 +448,171 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe('AutoAssignmentOrchestratorService — Internal Staff Assignment', () => {
+  let db: ReturnType<typeof createMockDbService>;
+  let orchestrator: AutoAssignmentOrchestratorService;
+  let publisher: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db = createMockDbService();
+    orchestrator = new AutoAssignmentOrchestratorService(db as any);
+    publisher = getPublisher();
+    // Default: matching engine returns 3 ranked vendors (external by default)
+    getMatchingEngine().findMatchingVendors.mockResolvedValue(makeVendorResults());
+  });
+
+  // ── 1. Happy path: top vendor is internal → direct assignment ─────────────
+
+  it('assigns internal staff directly and publishes vendor.staff.assigned', async () => {
+    const order = makeOrder();
+    db._orders.set(order.id, order);
+
+    // Make the DB return an internal staff document for vendor 'v1'
+    const originalGetItem = db.getItem.getMockImplementation();
+    db.getItem.mockImplementation(async (container: string, id: string, partitionKey?: string) => {
+      if (container === 'vendors' && id === 'v1') {
+        return { data: { id: 'v1', staffType: 'internal', staffRole: 'appraiser_internal' } };
+      }
+      // Fall through to original implementation for other containers
+      if (originalGetItem) return originalGetItem(container, id, partitionKey);
+      const stores: Record<string, Map<string, any>> = {
+        orders: db._orders,
+        'vendor-bids': db._bids,
+        'qc-reviews': db._qcItems,
+      };
+      const item = (stores[container] ?? new Map()).get(id);
+      return item ? { data: item } : null;
+    });
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-001',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    // No bid invitation document created — staff assigned directly
+    expect(db.createItem).not.toHaveBeenCalledWith('vendor-bids', expect.anything());
+
+    // Order updated with ACCEPTED state and assignedVendorId
+    expect(db.updateItem).toHaveBeenCalledWith(
+      'orders',
+      order.id,
+      expect.objectContaining({
+        assignedVendorId: 'v1',
+        assignedVendorName: 'Vendor One',
+        autoVendorAssignment: expect.objectContaining({
+          status: 'ACCEPTED',
+        }),
+      }),
+      TENANT_ID,
+    );
+
+    // vendor.staff.assigned event published — NOT vendor.bid.sent
+    expect(publishedEventTypes(publisher)).toContain('vendor.staff.assigned');
+    expect(publishedEventTypes(publisher)).not.toContain('vendor.bid.sent');
+
+    const staffEvent = publishedEvent(publisher, 'vendor.staff.assigned');
+    expect(staffEvent.data.vendorId).toBe('v1');
+    expect(staffEvent.data.staffRole).toBe('appraiser_internal');
+  });
+
+  // ── 2. Mixed list: first vendor is internal, rest external ────────────────
+
+  it('direct-assigns the first vendor and does not continue to the bid loop', async () => {
+    const order = makeOrder();
+    db._orders.set(order.id, order);
+
+    // Only v1 is internal; v2 and v3 are external
+    db.getItem.mockImplementation(async (container: string, id: string) => {
+      if (container === 'vendors') {
+        const staffTypeMap: Record<string, string> = {
+          v1: 'internal',
+          v2: 'external',
+          v3: 'external',
+        };
+        return { data: { id, staffType: staffTypeMap[id] ?? 'external', staffRole: 'appraiser_internal' } };
+      }
+      const stores: Record<string, Map<string, any>> = {
+        orders: db._orders,
+        'vendor-bids': db._bids,
+        'qc-reviews': db._qcItems,
+      };
+      const item = (stores[container] ?? new Map()).get(id);
+      return item ? { data: item } : null;
+    });
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-001',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    // Only one event published and it's vendor.staff.assigned
+    expect(publishedEventTypes(publisher)).toEqual(['vendor.staff.assigned']);
+    // No further bids to v2 or v3
+    expect(db.createItem).not.toHaveBeenCalledWith('vendor-bids', expect.anything());
+  });
+
+  // ── 3. Graceful degradation: vendor DB lookup fails → fall back to bid loop
+
+  it('falls back to the bid loop when the vendor lookup fails (graceful degradation)', async () => {
+    const order = makeOrder();
+    db._orders.set(order.id, order);
+
+    // Vendor lookup throws for all vendors (e.g., DB unavailable)
+    db.getItem.mockImplementation(async (container: string, id: string) => {
+      if (container === 'vendors') {
+        throw new Error('Simulated DB timeout');
+      }
+      const stores: Record<string, Map<string, any>> = {
+        orders: db._orders,
+        'vendor-bids': db._bids,
+        'qc-reviews': db._qcItems,
+      };
+      const item = (stores[container] ?? new Map()).get(id);
+      return item ? { data: item } : null;
+    });
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-001',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    // All vendors treated as external → normal bid loop proceeds
+    expect(publishedEventTypes(publisher)).toContain('vendor.bid.sent');
+    expect(publishedEventTypes(publisher)).not.toContain('vendor.staff.assigned');
+    expect(db.createItem).toHaveBeenCalledWith('vendor-bids', expect.objectContaining({ vendorId: 'v1' }));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 describe('AutoAssignmentOrchestratorService — Review Assignment FSM', () => {
   let db: ReturnType<typeof createMockDbService>;
   let orchestrator: AutoAssignmentOrchestratorService;

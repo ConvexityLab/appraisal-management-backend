@@ -33,6 +33,18 @@ import {
   FieldOverride,
   ReportTemplate
 } from '../types/final-report.types.js';
+import { ReportEngineService } from './report-engine/report-engine.service.js';
+import { HtmlRenderStrategy } from './report-engine/strategies/html-render.strategy.js';
+import { AcroFormFillStrategy } from './report-engine/strategies/acroform-fill.strategy.js';
+import { TemplateRegistryService } from './report-engine/template-registry/template-registry.service.js';
+import { PhotoResolverService } from './report-engine/photo-resolver.service.js';
+import { Urar1004Mapper } from './report-engine/field-mappers/urar-1004.mapper.js';
+import { DvrBpoMapper } from './report-engine/field-mappers/dvr-bpo.mapper.js';
+import { DvrDeskReviewMapper } from './report-engine/field-mappers/dvr-desk-review.mapper.js';
+import { DvrNooReviewMapper } from './report-engine/field-mappers/dvr-noo-review.mapper.js';
+import { DvrNooDesktopMapper } from './report-engine/field-mappers/dvr-noo-desktop.mapper.js';
+import type { IFieldMapper } from './report-engine/field-mappers/field-mapper.interface.js';
+import type { CanonicalReportDocument } from '../types/canonical-schema.js';
 import { AppraisalOrder } from '../types/index.js';
 import type { UadAppraisalReport } from '../types/uad-3.6.js';
 import { QCReview, QCDecision } from '../types/qc-workflow.js';
@@ -58,6 +70,7 @@ export class FinalReportService {
   private readonly logger = new Logger('FinalReportService');
   private readonly blob: BlobStorageService;
   private readonly notification: NotificationService;
+  private readonly reportEngine: ReportEngineService;
 
   /** Blob container that holds blank template PDFs — must pre-exist */
   private readonly TEMPLATE_CONTAINER = 'pdf-report-templates';
@@ -65,10 +78,31 @@ export class FinalReportService {
   private readonly ORDERS_CONTAINER = 'orders';
   /** Cosmos container where ReportTemplate metadata is stored */
   private readonly DOCUMENT_TEMPLATES_CONTAINER = 'document-templates';
+  /** Cosmos container where CanonicalReportDocument records are stored */
+  private readonly REPORTING_CONTAINER = 'reporting';
 
   constructor(private readonly db: CosmosDbService) {
     this.blob = new BlobStorageService();
     this.notification = new NotificationService();
+
+    // ── Report Engine (html-render + acroform strategy dispatcher) ──────────
+    const mappers: ReadonlyMap<string, IFieldMapper> = new Map<string, IFieldMapper>([
+      ['urar-1004',       new Urar1004Mapper()],
+      ['dvr-bpo',         new DvrBpoMapper()],
+      ['dvr-desk-review', new DvrDeskReviewMapper()],
+      ['dvr-noo-review',   new DvrNooReviewMapper()],
+      ['dvr-noo-desktop',  new DvrNooDesktopMapper()],
+    ]);
+    const htmlRenderStrategy   = new HtmlRenderStrategy(this.blob, mappers);
+    const acroformFillStrategy = new AcroFormFillStrategy(this.blob, mappers);
+    const templateRegistry     = new TemplateRegistryService(this.db);
+    const photoResolver        = new PhotoResolverService(this.blob);
+    this.reportEngine = new ReportEngineService(
+      templateRegistry,
+      photoResolver,
+      acroformFillStrategy,
+      htmlRenderStrategy,
+    );
   }
 
   // =========================================================================
@@ -192,7 +226,14 @@ export class FinalReportService {
     // ------------------------------------------------------------------
     let filledPdfBytes: Uint8Array;
     try {
-      filledPdfBytes = await this._generatePdf(template, fieldMap);
+      if (template.renderStrategy === 'html-render') {
+        // HTML engine: Handlebars template compiled + Playwright → PDF buffer
+        const pdfBuffer = await this._generatePdfViaHtmlEngine(template, request, orderId);
+        filledPdfBytes = new Uint8Array(pdfBuffer);
+      } else {
+        // AcroForm engine: pdf-lib field fill on a blank fillable PDF
+        filledPdfBytes = await this._generatePdf(template, fieldMap);
+      }
       if (request.customPagePdfs?.length) {
         filledPdfBytes = await this._appendCustomPages(filledPdfBytes, request.customPagePdfs);
       }
@@ -498,6 +539,72 @@ export class FinalReportService {
       addendumCount: customPagePdfs.length
     });
     return merged.save();
+  }
+
+  /**
+   * Returns the rendered HTML string for an html-render template.
+   * No Playwright launch — instant response suitable for browser preview.
+   * Opens the same Handlebars pipeline as generateReport() up to step 4,
+   * then returns the HTML string instead of converting it to PDF.
+   */
+  async previewReportHtml(orderId: string, templateId: string): Promise<string> {
+    this.logger.info('Generating HTML preview', { orderId, templateId });
+
+    const canonicalDocs = await this.db.queryDocuments<CanonicalReportDocument>(
+      this.REPORTING_CONTAINER,
+      'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+      [{ name: '@orderId', value: orderId }],
+    );
+
+    const canonicalDoc = canonicalDocs[0];
+    if (!canonicalDoc) {
+      throw new Error(
+        `No canonical report document found for order '${orderId}' in the '${this.REPORTING_CONTAINER}' container. ` +
+        `The appraiser must save the valuation workspace before a preview can be generated.`,
+      );
+    }
+
+    return this.reportEngine.generateHtml(
+      { orderId, templateId, requestedBy: 'preview' },
+      canonicalDoc,
+    );
+  }
+
+  /**
+   * HTML-render path: loads the CanonicalReportDocument for this order from the
+   * `reporting` Cosmos container, then dispatches to ReportEngineService which
+   * picks HtmlRenderStrategy (Handlebars → Playwright → PDF).
+   *
+   * The CanonicalReportDocument must already exist — it is created/updated whenever
+   * the appraiser saves work in the valuation workspace. If one is not found, the
+   * caller receives a clear error explaining what action is needed.
+   */
+  private async _generatePdfViaHtmlEngine(
+    _template: ReportTemplate,
+    request: FinalReportGenerationRequest,
+    orderId: string,
+  ): Promise<Buffer> {
+    this.logger.info('Generating report via HTML engine', {
+      orderId,
+      templateId: request.templateId,
+    });
+
+    // Load the canonical report document for this order (newest first)
+    const canonicalDocs = await this.db.queryDocuments<CanonicalReportDocument>(
+      this.REPORTING_CONTAINER,
+      'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+      [{ name: '@orderId', value: orderId }],
+    );
+
+    const canonicalDoc = canonicalDocs[0];
+    if (!canonicalDoc) {
+      throw new Error(
+        `No canonical report document found for order '${orderId}' in the '${this.REPORTING_CONTAINER}' container. ` +
+        `The appraiser must save the valuation workspace (subject data + comps) before a final report can be generated.`,
+      );
+    }
+
+    return this.reportEngine.generate(request, canonicalDoc);
   }
 
   /**

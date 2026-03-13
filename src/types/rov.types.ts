@@ -197,6 +197,9 @@ export interface ROVRequest {
   /** FK to the parent Engagement. Preferred for all new RoV records. */
   engagementId?: string;
   orderId: string;
+  /** FK → PropertyRecord.id — the physical property subject of this reconsideration. Added Phase R0.4. */
+  propertyId?: string;
+  /** @deprecated Use propertyId + PropertyRecordService to resolve address. Retained for display. */
   propertyAddress: string;
   loanNumber?: string;
   borrowerName?: string;

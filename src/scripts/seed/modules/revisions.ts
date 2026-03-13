@@ -20,7 +20,7 @@ function buildRevisions(tenantId: string): Record<string, unknown>[] {
       id: REVISION_IDS.REVISION_ORDER_010, tenantId, type: 'revision-request',
       orderId: ORDER_IDS.REVISION_010,
       orderNumber: ORDER_NUMBERS[ORDER_IDS.REVISION_010],
-      qcReviewId: null, // Pre-dates formal QC link
+      qcReviewId: QC_REVIEW_IDS.REVIEW_ORDER_010,
       vendorId: VENDOR_IDS.TX_PROPERTY,
       appraiserId: APPRAISER_IDS.KEVIN_OKAFOR,
       requestedBy: STAFF_IDS.QC_ANALYST_2,

@@ -1,5 +1,12 @@
 // Core domain types for the Appraisal Management System
 
+// ─── Property Data Layer (aggregate root) ────────────────────────────────────
+// PropertyRecord: canonical physical asset — the root of all work entities
+// PropertyComparableSale: persisted market transaction events (our comp database)
+// Phase R0 — see PROPERTY_DATA_REFACTOR_PLAN.md
+export * from './property-record.types.js';
+export * from './comparable-sale.types.js';
+
 // ─── Engagement domain (aggregate root for lender-side work) ─────────────────
 export * from './engagement.types.js';
 
@@ -71,6 +78,9 @@ export interface AppraisalOrder {
   axiomProgramId?: string;
   /** Version of the Axiom evaluation program */
   axiomProgramVersion?: string;
+  // ── Property FK ──────────────────────────────────────────────────────────────
+  /** FK → PropertyRecord.id — the canonical physical property. Added Phase R0.4. */
+  propertyId?: string;
   // ── Engagement FK fields ──────────────────────────────────────────────────
   /** FK to the parent Engagement document */
   engagementId?: string;
@@ -178,6 +188,56 @@ export interface Vendor {
   preferences: VendorPreferences;
   paymentHistory?: PaymentRecord[]; // Recent payment history (last 6 months)
   invoiceHistory?: InvoiceRecord[]; // Recent invoices (last 6 months)
+
+  // ── Staff / Internal assignment ───────────────────────────────────────────
+  /**
+   * 'internal' = staff member who is assigned directly (no bid loop).
+   * 'external' = fee-panel vendor who goes through the bid loop.
+   * Defaults to 'external' when absent for backward compatibility.
+   */
+  staffType?: StaffType;
+  /**
+   * Specific role — only set when staffType === 'internal'.
+   */
+  staffRole?: StaffRole;
+  /**
+   * Capacity cap for internal staff.  External vendors have their own
+   * capacity managed through VendorAvailability.  Default: 5 for internal.
+   */
+  maxConcurrentOrders?: number;
+  /**
+   * Live count used by the orchestrator to avoid over-loading a staff member.
+   * Updated atomically whenever an order is directly assigned or completed.
+   */
+  activeOrderCount?: number;
+
+  // ── Extended profile (Increment 1) ────────────────────────────────────────
+  /**
+   * Weekly work schedule.  Used by the supervisor roster to show "Available now"
+   * and by the matching engine to prefer vendors reachable for urgent orders.
+   */
+  workSchedule?: WorkScheduleBlock[];
+  /**
+   * Geographic coverage split into three zones:
+   *   licensed  — states/counties the vendor is legally allowed to work in
+   *   preferred  — areas they actively want work (used for score bonus)
+   *   extended   — areas they will cover with a travel fee
+   */
+  geographicCoverage?: GeographicCoverageZones;
+  /**
+   * Structured capability flags used by the matching engine as hard gates
+   * (e.g. order requires fha_approved → only eligible vendors are sent bids).
+   */
+  capabilities?: VendorCapability[];
+  /**
+   * Explicit list of Product catalog IDs this vendor / staff member can be
+   * assigned to.  The matching engine uses this as a hard gate.
+   */
+  eligibleProductIds?: string[];
+  /**
+   * Per-product proficiency grades certified by a supervisor.
+   */
+  productGrades?: ProductGrade[];
 }
 
 export interface VendorPerformance {
@@ -352,6 +412,97 @@ export enum VendorStatus {
   SUSPENDED = 'suspended',
   PENDING_APPROVAL = 'pending_approval',
   UNDER_REVIEW = 'under_review'
+}
+
+/**
+ * Whether this vendor entry represents an internal staff member or an
+ * external fee-panel appraiser.  Internal staff bypass the bid loop and
+ * are assigned directly by the auto-assignment orchestrator.
+ */
+export type StaffType = 'internal' | 'external';
+
+/**
+ * Role of an internal staff member.
+ * Only meaningful when staffType === 'internal'.
+ */
+export type StaffRole =
+  | 'appraiser_internal'
+  | 'inspector_internal'
+  | 'reviewer'
+  | 'supervisor';
+
+/**
+ * A single block of availability within a weekly recurring schedule.
+ * dayOfWeek follows JS convention: 0 = Sunday … 6 = Saturday.
+ * startTime / endTime are 24-hour 'HH:mm' strings.
+ */
+export interface WorkScheduleBlock {
+  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  startTime: string;   // 'HH:mm'
+  endTime: string;     // 'HH:mm'
+  timezone?: string;   // IANA tz string, e.g. 'America/Chicago'
+}
+
+/**
+ * Three-zone geographic coverage model.
+ * Separates legal authorization (licensed) from operational preference
+ * (preferred) and occasional extended reach (extended, may add a fee).
+ */
+export interface GeographicCoverageZones {
+  /** States/counties where the vendor holds a valid license. */
+  licensed: {
+    states: string[];
+    counties?: string[];
+    zipCodes?: string[];
+  };
+  /** Areas the vendor actively wants work — score bonus in matching engine. */
+  preferred?: {
+    states: string[];
+    counties?: string[];
+    zipCodes?: string[];
+    radiusMiles?: number;
+  };
+  /** Areas covered with a travel fee. */
+  extended?: {
+    states: string[];
+    counties?: string[];
+    travelFeePerMile?: number;
+  };
+}
+
+/**
+ * Structured capability flags.  Add new values here as the platform grows;
+ * the matching engine and UI both key off this union.
+ */
+export type VendorCapability =
+  | 'fha_approved'
+  | 'va_panel'
+  | 'uad36_compliant'
+  | 'drone_certified'
+  | 'luxury_over_1m'
+  | 'luxury_over_2m'
+  | 'manufactured_housing'
+  | 'green_building'
+  | 'historical_property'
+  | 'can_sign_reports'
+  | 'commercial_mai'
+  | 'complex_assignments'
+  | 'amc_certified'
+  | 'desktop_qualified'
+  | 'hybrid_qualified';
+
+/** Proficiency level for a specific product type, certified by a supervisor. */
+export type ProductGradeLevel = 'trainee' | 'proficient' | 'expert' | 'lead';
+
+export interface ProductGrade {
+  /** ID from the Product catalog. */
+  productId: string;
+  grade: ProductGradeLevel;
+  /** userId of the supervisor who certified this grade. */
+  certifiedBy: string;
+  /** ISO 8601 timestamp. */
+  certifiedAt: string;
+  notes?: string;
 }
 
 export enum PropertyCondition {

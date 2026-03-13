@@ -376,6 +376,14 @@ export interface ConstructionLoan {
   interestReserveDrawn: number;
 
   // ── Property ──────────────────────────────────────────────────────────────
+  /** FK → PropertyRecord.id — the physical collateral property. Added Phase R0.4. */
+  propertyId?: string;
+  /** FK → Engagement.id — the valuation engagement on this same property, if any. Added Phase R0.4. */
+  engagementId?: string;
+  /**
+   * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
+   * Retained as a display cache during Phase R0–R2 migration.
+   */
   propertyAddress: {
     street: string;
     city: string;

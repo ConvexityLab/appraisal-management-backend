@@ -12,7 +12,8 @@ import {
   QC_REVIEW_IDS, QC_CHECKLIST_IDS,
   ORDER_IDS, ORDER_NUMBERS,
   DOCUMENT_IDS, STAFF_IDS,
-  VENDOR_IDS,
+  VENDOR_IDS, ENGAGEMENT_IDS,
+  REVISION_IDS,
 } from '../seed-ids.js';
 
 const CONTAINER = 'qc-reviews';
@@ -21,8 +22,8 @@ function buildQcReviews(tenantId: string): Record<string, unknown>[] {
   return [
     {
       id: QC_REVIEW_IDS.REVIEW_ORDER_001, tenantId, type: 'qc-review',
-      orderId: ORDER_IDS.COMPLETED_001,
-      orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_001],
+      orderId: ORDER_IDS.COMPLETED_DRIVEBY_012,
+      orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_DRIVEBY_012],
       documentId: DOCUMENT_IDS.REPORT_ORDER_001,
       checklistId: QC_CHECKLIST_IDS.UAD_STANDARD,
       reviewerId: STAFF_IDS.QC_ANALYST_1,
@@ -37,6 +38,31 @@ function buildQcReviews(tenantId: string): Record<string, unknown>[] {
           questionId: 'q-subj-02', category: 'Subject Property',
           severity: 'LOW', score: 8, maxScore: 10,
           note: 'Lot dimensions slightly inconsistent with county records — minor variance of 2ft.',
+        },
+        {
+          questionId: 'q-subj-05', category: 'Subject Property',
+          severity: 'MEDIUM', score: 5, maxScore: 10,
+          note: 'Effective age listed as 15 years but property shows deferred maintenance consistent with 20+ years.',
+        },
+        {
+          questionId: 'q-neigh-03', category: 'Neighborhood Analysis',
+          severity: 'MEDIUM', score: 4, maxScore: 10,
+          note: "Market conditions section does not address the neighborhood's increasing supply of new construction within 0.5 miles.",
+        },
+        {
+          questionId: 'q-comp-04', category: 'Comparable Selection',
+          severity: 'HIGH', score: 2, maxScore: 10,
+          note: 'Comparable #3 closed 13 months prior to inspection — exceeds UAD 12-month recency guideline without justification.',
+        },
+        {
+          questionId: 'q-comp-07', category: 'Comparable Selection',
+          severity: 'HIGH', score: 3, maxScore: 10,
+          note: 'Net adjustment on comparable #1 is 28% of sale price (UAD threshold is 25%). No explanation provided.',
+        },
+        {
+          questionId: 'q-val-03', category: 'Reconciliation & Value',
+          severity: 'MEDIUM', score: 6, maxScore: 10,
+          note: 'Reconciliation narrative is two sentences — insufficient to justify the $525,000 conclusion given the adjustment spread across comparables.',
         },
       ],
       summary: 'Report meets all UAD requirements. Minor lot dimension variance noted but within tolerance.',
@@ -91,8 +117,8 @@ function buildQcReviews(tenantId: string): Record<string, unknown>[] {
     // Enhanced AI-prescreened review with full QC workflow detail
     {
       id: QC_REVIEW_IDS.ENHANCED_AI_REVIEW, tenantId, type: 'qc-review',
-      orderId: ORDER_IDS.COMPLETED_001,
-      orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_001],
+      orderId: ORDER_IDS.IN_PROGRESS_003,
+      orderNumber: ORDER_NUMBERS[ORDER_IDS.IN_PROGRESS_003],
       documentId: DOCUMENT_IDS.REPORT_ORDER_001,
       appraisalId: 'appr-001',
       status: 'IN_PROGRESS',
@@ -219,6 +245,464 @@ function buildQcReviews(tenantId: string): Record<string, unknown>[] {
       version: 5,
       createdAt: daysAgo(3), updatedAt: daysAgo(3),
     },
+
+    // ── Full QCValidationReport (proper Shape 1: categoriesResults[].questions[]) ──
+    // This is the document that drives the rich Evidence Panel in the UI:
+    // Issue Description, Evidence (actual/expected), Validation Criteria, document links.
+    {
+      id: QC_REVIEW_IDS.FULL_VALIDATION_REPORT_001, tenantId, type: 'qc-review',
+      orderId: ORDER_IDS.COMPLETED_001,
+      orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_001],
+      engagementId: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
+      sessionId: 'session-full-001',
+      checklistId: QC_CHECKLIST_IDS.UAD_STANDARD,
+      checklistName: 'UAD Standard Residential QC Checklist (2026)',
+      checklistVersion: '2026.1',
+      propertyAddress: '1234 Maple Street, Sacramento, CA 95814',
+      appraisedValue: 525_000,
+      status: 'COMPLETED',
+      overallScore: 88,
+      passFailStatus: 'CONDITIONAL_PASS',
+      reviewedBy: STAFF_IDS.QC_ANALYST_1,
+      reviewedByName: 'Alex Kim',
+      summary: {
+        totalCategories: 4, totalQuestions: 12, totalAnswered: 12,
+        totalErrors: 2, totalWarnings: 2, criticalIssues: 1, averageConfidence: 0.91,
+      },
+      // Top-level categoriesResults — this is the Shape 1 that mapToChecklistItem() uses
+      categoriesResults: [
+        {
+          categoryId: 'subject', categoryName: 'Subject Property', categoryCode: 'SUBJECT',
+          score: 78, passed: false,
+          summary: { totalQuestions: 5, questionsAnswered: 5, errors: 1, warnings: 1, averageConfidence: 0.89 },
+          questions: [
+            {
+              questionId: 'PROPERTY_ADDRESS_CORRECT',
+              questionCode: 'PROPERTY_ADDRESS_CORRECT',
+              questionText: 'Is the property address accurate and matches title documents?',
+              questionType: 'PASS_FAIL',
+              passed: false,
+              severity: 'high',
+              verificationStatus: 'pending',
+              issue: {
+                code: 'ADDR_MISMATCH',
+                title: 'Property Address Discrepancy',
+                description: 'Issue detected: Verify street address, city, state, ZIP match title documents and public records',
+                category: 'subject',
+                source: 'system',
+                recommendedAction: 'Cross-reference with title commitment and public records to confirm correct address.',
+              },
+              criteria: {
+                ruleId: 'RULE-PROPERTY-ADDRESS-CORRECT',
+                description: 'Verify street address, city, state, ZIP match title documents and public records',
+                sourceDocument: {
+                  documentId: 'doc-uspap-standards',
+                  documentName: 'USPAP Standards',
+                  documentType: 'guideline',
+                  pageNumber: 14,
+                  sectionReference: 'Standards Rule 1-2(e)',
+                },
+              },
+              answer: {
+                questionId: 'PROPERTY_ADDRESS_CORRECT',
+                value: false,
+                confidence: 0.95,
+                source: 'ai',
+                evidence: { actual: 'Issue detected', expected: 'Compliant' },
+                citations: [
+                  {
+                    documentId: 'e2b2bc5f-a46d-49af-bfd2-eb40bac0b89e', // 17 David Dr.pdf (uploaded)
+                    documentName: '17 David Dr.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 1,
+                    sectionReference: 'Property Identification & Description',
+                    highlightText: '1234 Maple Street',
+                  },
+                ],
+              },
+            },
+            {
+              questionId: 'LEGAL_DESCRIPTION',
+              questionCode: 'LEGAL_DESCRIPTION',
+              questionText: 'Is the legal description complete and accurate?',
+              questionType: 'PASS_FAIL',
+              passed: true,
+              severity: 'low',
+              verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-LEGAL-DESCRIPTION',
+                description: 'Legal description must match county assessor records and title commitment',
+                sourceDocument: {
+                  documentId: 'doc-uspap-standards',
+                  documentName: 'USPAP Standards',
+                  documentType: 'guideline',
+                  pageNumber: 14,
+                },
+              },
+              answer: {
+                questionId: 'LEGAL_DESCRIPTION',
+                value: true, confidence: 0.97, source: 'ai',
+                evidence: { actual: 'Compliant', expected: 'Compliant' },
+                citations: [
+                  {
+                    documentId: 'e2b2bc5f-a46d-49af-bfd2-eb40bac0b89e', // 17 David Dr.pdf (uploaded)
+                    documentName: '17 David Dr.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 1,
+                    sectionReference: 'Property Identification & Description',
+                  },
+                ],
+              },
+            },
+            {
+              questionId: 'EXTERIOR_PHOTOS_ADEQUATE',
+              questionCode: 'EXTERIOR_PHOTOS_ADEQUATE',
+              questionText: 'Are exterior photos clear and show all required views?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-PHOTO-EXTERIOR',
+                description: 'Front, rear, and street scene photos required per UAD photo standards',
+                sourceDocument: {
+                  documentId: 'doc-uad-guidelines',
+                  documentName: 'UAD Implementation Guidelines',
+                  documentType: 'guideline',
+                  pageNumber: 22,
+                },
+              },
+              answer: {
+                questionId: 'EXTERIOR_PHOTOS_ADEQUATE',
+                value: true, confidence: 0.93, source: 'ai',
+                evidence: { actual: 'Compliant', expected: 'Compliant' },
+              },
+            },
+            {
+              questionId: 'INTERIOR_PHOTOS_ADEQUATE',
+              questionCode: 'INTERIOR_PHOTOS_ADEQUATE',
+              questionText: 'Are interior photos clear and show all major rooms?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-PHOTO-INTERIOR',
+                description: 'Kitchen, bathrooms, living areas, and all bedrooms must be photographed',
+                sourceDocument: {
+                  documentId: 'doc-uad-guidelines',
+                  documentName: 'UAD Implementation Guidelines',
+                  documentType: 'guideline',
+                  pageNumber: 23,
+                },
+              },
+              answer: {
+                questionId: 'INTERIOR_PHOTOS_ADEQUATE',
+                value: true, confidence: 0.91, source: 'ai',
+                evidence: { actual: 'Compliant', expected: 'Compliant' },
+              },
+            },
+            {
+              questionId: 'CONDITION_RATING_SUPPORTED',
+              questionCode: 'CONDITION_RATING_SUPPORTED',
+              questionText: 'Is the condition rating supported by photos and description?',
+              questionType: 'SCORED',
+              passed: false, severity: 'medium', verificationStatus: 'pending',
+              issue: {
+                code: 'CONDITION_UNSUPPORTED',
+                title: 'Condition Rating Not Fully Supported',
+                description: 'C3 condition rating is assigned but photos show evidence of deferred maintenance inconsistent with C3. Description does not address the condition of the HVAC system or roof.',
+                category: 'subject',
+                source: 'ai',
+                recommendedAction: 'Add specific description of HVAC and roof condition or revise condition rating to C4.',
+              },
+              criteria: {
+                ruleId: 'RULE-CONDITION-SUPPORT',
+                description: 'Condition rating must be supported by evidence in the property description and photos',
+                sourceDocument: {
+                  documentId: 'doc-uad-guidelines',
+                  documentName: 'UAD Implementation Guidelines',
+                  documentType: 'guideline',
+                  pageNumber: 18,
+                },
+              },
+              answer: {
+                questionId: 'CONDITION_RATING_SUPPORTED',
+                value: 6, confidence: 0.82, source: 'ai',
+                evidence: { actual: 'C3 — partially supported', expected: 'C3 — fully supported with description', variance: 0 },
+                citations: [
+                  {
+                    documentId: 'e2b2bc5f-a46d-49af-bfd2-eb40bac0b89e', // 17 David Dr.pdf (uploaded)
+                    documentName: '17 David Dr.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 3,
+                    sectionReference: 'Improvements Section',
+                    highlightText: 'C3',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          categoryId: 'salesComparison', categoryName: 'Sales Comparison', categoryCode: 'SALES_COMP',
+          score: 82, passed: true,
+          summary: { totalQuestions: 3, questionsAnswered: 3, errors: 1, warnings: 0, averageConfidence: 0.90 },
+          questions: [
+            {
+              questionId: 'COMP_MIN_THREE_CLOSED',
+              questionCode: 'COMP_MIN_THREE_CLOSED',
+              questionText: 'Are at least 3 closed comparables within 1 mile used?',
+              questionType: 'PASS_FAIL',
+              passed: false, severity: 'critical', verificationStatus: 'disputed',
+              issue: {
+                code: 'COMP_DISTANCE_EXCEEDED',
+                title: 'Comparable #2 Distance Exceeds Guidelines',
+                description: 'Comparable sale #2 is located 1.5 miles from the subject property, exceeding the 1-mile guideline for urban areas.',
+                category: 'salesComparison',
+                source: 'ai',
+                recommendedAction: 'Replace comparable #2 with a sale within 1 mile or provide detailed market support for the expanded search.',
+              },
+              criteria: {
+                ruleId: 'RULE-COMP-DISTANCE-URBAN',
+                description: 'Urban properties require at least 3 closed comparables within 1 mile absent market condition justification',
+                sourceDocument: {
+                  documentId: 'doc-fnma-guidelines',
+                  documentName: 'FNMA Selling Guide',
+                  documentType: 'guideline',
+                  pageNumber: 47,
+                  sectionReference: 'B4-1.3-09',
+                },
+              },
+              answer: {
+                questionId: 'COMP_MIN_THREE_CLOSED',
+                value: false, confidence: 0.96, source: 'ai',
+                evidence: { actual: 'Comparable #2 at 1.5 mi', expected: '≤ 1.0 mi for urban market', variance: 0.5 },
+                citations: [
+                  {
+                    documentId: 'e2b2bc5f-a46d-49af-bfd2-eb40bac0b89e', // 17 David Dr.pdf (uploaded)
+                    documentName: '17 David Dr.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 5,
+                    sectionReference: 'Sales Comparison Grid',
+                    highlightText: '1.50 miles',
+                  },
+                ],
+              },
+            },
+            {
+              questionId: 'COMP_DATE_WITHIN_12MO',
+              questionCode: 'COMP_DATE_WITHIN_12MO',
+              questionText: 'Are all comparables within the 12-month sale date guideline?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-COMP-RECENCY',
+                description: 'Comparable sales should be within 12 months of effective date without market justification',
+              },
+              answer: {
+                questionId: 'COMP_DATE_WITHIN_12MO',
+                value: true, confidence: 0.99, source: 'ai',
+                evidence: { actual: 'All within 10 months', expected: '≤ 12 months' },
+              },
+            },
+            {
+              questionId: 'COMP_ADJUSTMENTS_WITHIN_THRESHOLD',
+              questionCode: 'COMP_ADJUSTMENTS_WITHIN_THRESHOLD',
+              questionText: 'Are gross adjustments within 25% and net adjustments within 15%?',
+              questionType: 'SCORED',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-COMP-ADJUSTMENT-LIMITS',
+                description: 'UAD requires gross adjustments ≤25% and net adjustments ≤15% of sale price without explanation',
+                sourceDocument: {
+                  documentId: 'doc-fnma-guidelines',
+                  documentName: 'FNMA Selling Guide',
+                  documentType: 'guideline',
+                  pageNumber: 49,
+                },
+              },
+              answer: {
+                questionId: 'COMP_ADJUSTMENTS_WITHIN_THRESHOLD',
+                value: 9, confidence: 0.88, source: 'ai',
+                evidence: { actual: 'Max gross 22%; max net 12%', expected: '≤25% gross / ≤15% net' },
+              },
+            },
+          ],
+        },
+        {
+          categoryId: 'appraiser', categoryName: 'Appraiser', categoryCode: 'APPRAISER',
+          score: 100, passed: true,
+          summary: { totalQuestions: 2, questionsAnswered: 2, errors: 0, warnings: 0, averageConfidence: 0.98 },
+          questions: [
+            {
+              questionId: 'APPRAISER_LICENSE_ACTIVE',
+              questionCode: 'APPRAISER_LICENSE_ACTIVE',
+              questionText: 'Is the appraiser license current and appropriate for this assignment?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-APPRAISER-LICENSE',
+                description: 'Appraiser must hold a valid Certified Residential or Certified General license for the subject state',
+              },
+              answer: {
+                questionId: 'APPRAISER_LICENSE_ACTIVE',
+                value: true, confidence: 0.99, source: 'system',
+                evidence: { actual: 'License AR-CA-2024-98765 — Active, exp 2026-12-31', expected: 'Active state license' },
+              },
+            },
+            {
+              questionId: 'APPRAISER_COMPETENCY',
+              questionCode: 'APPRAISER_COMPETENCY',
+              questionText: 'Does the appraiser demonstrate competency for the subject property type?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-COMPETENCY',
+                description: 'Appraiser must certify competency per USPAP Competency Rule',
+                sourceDocument: {
+                  documentId: 'doc-uspap-standards',
+                  documentName: 'USPAP Standards',
+                  documentType: 'guideline',
+                  pageNumber: 5,
+                  sectionReference: 'Competency Rule',
+                },
+              },
+              answer: {
+                questionId: 'APPRAISER_COMPETENCY',
+                value: true, confidence: 0.97, source: 'ai',
+                evidence: { actual: 'Competency certified in report', expected: 'USPAP competency certification present' },
+              },
+            },
+          ],
+        },
+        {
+          categoryId: 'neighborhood', categoryName: 'Neighborhood Analysis', categoryCode: 'NEIGHBORHOOD',
+          score: 90, passed: true,
+          summary: { totalQuestions: 2, questionsAnswered: 2, errors: 0, warnings: 1, averageConfidence: 0.87 },
+          questions: [
+            {
+              questionId: 'NEIGHBORHOOD_TREND_REPORTED',
+              questionCode: 'NEIGHBORHOOD_TREND_REPORTED',
+              questionText: 'Are neighborhood market trends (supply, demand, pricing) correctly reported?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-NEIGH-TRENDS',
+                description: 'Neighborhood section must address supply, demand, and price trend direction',
+              },
+              answer: {
+                questionId: 'NEIGHBORHOOD_TREND_REPORTED',
+                value: true, confidence: 0.91, source: 'ai',
+                evidence: { actual: 'Stable — supported', expected: 'Trend reported and supported' },
+              },
+            },
+            {
+              questionId: 'NEIGHBORHOOD_BOUNDARIES_DEFINED',
+              questionCode: 'NEIGHBORHOOD_BOUNDARIES_DEFINED',
+              questionText: 'Are neighborhood boundaries clearly defined and consistent with MLS data?',
+              questionType: 'SCORED',
+              passed: true, severity: 'medium', verificationStatus: 'pending',
+              issue: {
+                code: 'NEIGH_BOUNDARY_MINOR',
+                title: 'Neighborhood Boundary Vague',
+                description: 'Neighborhood boundaries described as "East Sacramento" — suggest adding cardinal direction boundaries for precision.',
+                category: 'neighborhood',
+                source: 'ai',
+                recommendedAction: 'Define boundaries as street names or census boundaries for compliance with UAD best practices.',
+              },
+              criteria: {
+                ruleId: 'RULE-NEIGH-BOUNDARIES',
+                description: 'Boundaries should be defined by physical features, jurisdictions, or specific streets',
+              },
+              answer: {
+                questionId: 'NEIGHBORHOOD_BOUNDARIES_DEFINED',
+                value: 7, confidence: 0.82, source: 'ai',
+                evidence: { actual: 'Defined — somewhat vague', expected: 'Specific boundary definition' },
+              },
+            },
+          ],
+        },
+      ],
+      criticalIssues: [
+        {
+          questionId: 'COMP_MIN_THREE_CLOSED',
+          code: 'COMP_DISTANCE_EXCEEDED',
+          title: 'Comparable #2 Distance Exceeds Guidelines',
+          description: 'Comparable sale #2 is located 1.5 miles from the subject property, exceeding the 1-mile guideline for urban areas.',
+          severity: 'critical',
+          category: 'salesComparison',
+          source: 'ai',
+          verificationStatus: 'disputed',
+          recommendedAction: 'Replace with a comparable within 1 mile or provide detailed justification for distance.',
+        },
+      ],
+      startedAt: daysAgo(10),
+      completedAt: daysAgo(10),
+      createdAt: daysAgo(10), updatedAt: daysAgo(10),
+    },
+
+    // ── Order 010 — REVISION_REQUESTED ──────────────────────────────────────────
+    // Full QC review that resulted in REVISION_REQUIRED. This is the primary review
+    // record that triggered the revision request documents in revisions.ts.
+    {
+      id: QC_REVIEW_IDS.REVIEW_ORDER_010, tenantId, type: 'qc-review',
+      orderId: ORDER_IDS.REVISION_010,
+      orderNumber: ORDER_NUMBERS[ORDER_IDS.REVISION_010],
+      checklistId: QC_CHECKLIST_IDS.UAD_STANDARD,
+      reviewerId: STAFF_IDS.QC_ANALYST_1,
+      reviewerName: 'Alex Rivera',
+      status: 'COMPLETED',
+      result: 'REVISION_REQUIRED',
+      overallScore: 68,
+      propertyAddress: '2350 McKinney Ave, Dallas, TX 75201',
+      appraisedValue: 510_000,
+      vendorId: VENDOR_IDS.TX_PROPERTY,
+      vendorName: 'Texas Property Experts LLC',
+      startedAt: daysAgo(7),
+      completedAt: daysAgo(4),
+      findings: [
+        {
+          questionId: 'q-comp-02',
+          category: 'Comparable Selection',
+          severity: 'HIGH',
+          score: 0,
+          maxScore: 10,
+          note: 'Comparable #2 (2280 Commerce St) is commercially zoned — fundamentally incompatible with a residential subject. Must be replaced.',
+        },
+        {
+          questionId: 'q-comp-05',
+          category: 'Comparable Selection',
+          severity: 'HIGH',
+          score: 2,
+          maxScore: 10,
+          note: 'GLA adjustment on Comparable #2 is 31% of sale price, exceeding the UAD 25% gross adjustment threshold. No explanatory addendum provided.',
+        },
+        {
+          questionId: 'q-comp-07',
+          category: 'Comparable Selection',
+          severity: 'MEDIUM',
+          score: 5,
+          maxScore: 10,
+          note: 'Net adjustment on Comparable #3 is 22% — approaching threshold. Appraiser should add a brief narrative justifying the condition differential.',
+        },
+        {
+          questionId: 'q-val-02',
+          category: 'Reconciliation & Value',
+          severity: 'MEDIUM',
+          score: 6,
+          maxScore: 10,
+          note: 'Reconciliation narrative relies heavily on Comparable #2 to support the $510K conclusion. With #2 requiring replacement the reconciliation must be redone.',
+        },
+        {
+          questionId: 'q-subj-04',
+          category: 'Subject Property',
+          severity: 'LOW',
+          score: 7,
+          maxScore: 10,
+          note: 'Effective age listed as 12 years on a 2008-built property — lower than expected given cosmetic deferred maintenance observed in photos.',
+        },
+      ],
+      summary: 'Two HIGH-severity findings require mandatory correction: inappropriate zoning on Comparable #2 and a GLA adjustment exceeding UAD thresholds. Revision required before delivery.',
+      revisionItemIds: [REVISION_IDS.REVISION_ORDER_010],
+      createdAt: daysAgo(7), updatedAt: daysAgo(4),
+    },
   ];
 }
 
@@ -230,7 +714,7 @@ export const module: SeedModule = {
     const result: SeedModuleResult = { created: 0, failed: 0, skipped: 0, cleaned: 0 };
 
     if (ctx.clean) {
-      result.cleaned = await cleanContainer(ctx, CONTAINER);
+      result.cleaned = await cleanContainer(ctx, CONTAINER, '/orderId');
     }
 
     for (const review of buildQcReviews(ctx.tenantId)) {

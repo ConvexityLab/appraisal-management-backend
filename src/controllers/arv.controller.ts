@@ -20,6 +20,7 @@ import express, { Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { ArvService } from '../services/arv.service.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type {
@@ -87,7 +88,7 @@ let _arvService: ArvService | null = null;
 
 function getArvService(dbService: CosmosDbService): ArvService {
   if (!_arvService) {
-    _arvService = new ArvService(dbService);
+    _arvService = new ArvService(dbService, new PropertyRecordService(dbService));
   }
   return _arvService;
 }

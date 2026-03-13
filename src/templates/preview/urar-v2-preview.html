@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>URAR Form 1004 v2 — Vision VMC Preview</title>
+<style>
+  /* ── Design tokens ─────────────────────────────────────────── */
+  :root{
+    --navy:#0C2340; --navy-mid:#163D6B; --navy-light:#1F5499;
+    --gold:#C49A1A; --gold-bg:#FBF5E0; --gold-light:#F7ECC8;
+    --text:#1A1A1A; --muted:#6B7280; --border:#CBD5E1;
+    --green:#155F2A; --red:#9B1C1C; --page-w:8.5in;
+  }
+
+  /* ── Base ──────────────────────────────────────────────────── */
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#E5E7EB;font-family:'Segoe UI',Arial,sans-serif;font-size:8pt;color:var(--text);print-color-adjust:exact}
+
+  /* ── Page shell ────────────────────────────────────────────── */
+  .page{width:var(--page-w);min-height:11in;background:#fff;margin:0 auto 32px;padding:0.45in 0.5in 0.4in;box-shadow:0 4px 24px rgba(0,0,0,.15);page-break-after:always}
+  @media print{.page{margin:0;box-shadow:none}}
+
+  /* ── Brand header ──────────────────────────────────────────── */
+  .brand-bar{background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:8px 14px;margin:0 -0.5in 10px;width:calc(100% + 1in);border-bottom:3px solid var(--gold)}
+  .brand-left{display:flex;flex-direction:column}
+  .brand-name{font-size:15pt;font-weight:800;letter-spacing:.08em;color:#fff}
+  .brand-name span{color:var(--gold)}
+  .brand-sub{font-size:7.5pt;color:#B8C9E0;letter-spacing:.12em;text-transform:uppercase;margin-top:1px}
+  .brand-badges{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  .brand-badge{font-size:6.5pt;color:var(--gold-light);letter-spacing:.1em;text-transform:uppercase;border:1px solid rgba(196,154,26,.45);padding:1px 6px;border-radius:10px}
+  .brand-contact{font-size:6.5pt;color:#B8C9E0;margin-top:2px}
+
+  /* ── Form title bar ────────────────────────────────────────── */
+  .form-title-bar{background:var(--gold);color:var(--navy);text-align:center;padding:5px 0;margin-bottom:8px;border-radius:2px}
+  .form-title-bar h1{font-size:11pt;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  .form-title-bar p{font-size:7.5pt;font-weight:600;color:var(--navy-mid);margin-top:1px}
+
+  /* ── Section headers ────────────────────────────────────────── */
+  .section-hdr{background:var(--navy);color:#fff;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:3px 8px;margin:7px 0 3px;border-left:4px solid var(--gold)}
+  .section-hdr.gold{background:var(--gold-bg);color:var(--navy);border-left:4px solid var(--gold)}
+
+  /* ── Grid utilities ─────────────────────────────────────────── */
+  .row{display:grid;gap:0;margin-bottom:0}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:1fr 1fr 1fr}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .cell{border:1px solid var(--border);padding:2px 5px;line-height:1.4}
+  .cell+.cell{border-left:none}
+  .lbl{font-size:6.5pt;color:var(--muted);font-weight:600;text-transform:uppercase;display:block;margin-bottom:1px}
+  .val{font-size:8pt;color:var(--text)}
+
+  /* ── Photo grid ─────────────────────────────────────────────── */
+  .photo-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0}
+  .photo-box{border:1px solid var(--border);border-radius:3px;overflow:hidden;background:#F1F5F9}
+  .photo-box img{width:100%;height:100px;object-fit:cover;display:block}
+  .photo-cap{font-size:6.5pt;text-align:center;color:var(--muted);padding:2px 0;border-top:1px solid var(--border)}
+
+  /* ── Sales comp grid ────────────────────────────────────────── */
+  .comp-table{width:100%;border-collapse:collapse;font-size:7pt;margin-top:4px}
+  .comp-table th{background:var(--navy);color:#fff;padding:3px 5px;text-align:left;font-size:6.5pt;font-weight:700;text-transform:uppercase;border:1px solid var(--navy-mid)}
+  .comp-table td{border:1px solid var(--border);padding:2px 5px;vertical-align:top}
+  .comp-table tr:nth-child(even) td{background:#F8FAFC}
+  .comp-hdr-gold td{background:var(--gold-bg)!important;font-weight:700;font-size:7pt;color:var(--navy)}
+  .adj-p{color:var(--green);font-weight:700}
+  .adj-n{color:var(--red);font-weight:700}
+  .fin-val{background:var(--gold-bg);font-weight:800;color:var(--navy);font-size:8pt}
+
+  /* ── HBU table ───────────────────────────────────────────────── */
+  .hbu-table{width:100%;border-collapse:collapse;font-size:7pt;margin-top:4px}
+  .hbu-table th{background:var(--navy-mid);color:#fff;padding:3px 6px;font-size:6.5pt;font-weight:700;text-transform:uppercase;border:1px solid var(--border)}
+  .hbu-table td{border:1px solid var(--border);padding:3px 6px}
+  .hbu-pass{color:var(--green);font-weight:700}
+  .hbu-fail{color:var(--red);font-weight:700}
+  .hbu-na{color:var(--muted)}
+
+  /* ── Approach weight bars ───────────────────────────────────── */
+  .weight-row{display:flex;align-items:center;gap:8px;margin:3px 0}
+  .weight-lbl{font-size:7pt;color:var(--navy);font-weight:700;width:130px;flex-shrink:0}
+  .weight-track{flex:1;height:10px;background:#E5E7EB;border-radius:4px;overflow:hidden}
+  .weight-fill{height:100%;border-radius:4px;background:var(--navy-light)}
+  .weight-pct{font-size:7pt;font-weight:700;color:var(--navy);width:30px;text-align:right}
+
+  /* ── Confidence badge ───────────────────────────────────────── */
+  .conf-badge{display:inline-block;padding:3px 12px;border-radius:12px;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin:4px 0}
+  .conf-high{background:#DCFCE7;color:var(--green);border:1px solid #86EFAC}
+  .conf-medium{background:#FEF9C3;color:#854D0E;border:1px solid #FDE047}
+  .conf-low{background:#FEE2E2;color:var(--red);border:1px solid #FCA5A5}
+
+  /* ── Opinion value box ──────────────────────────────────────── */
+  .opinion-box{border:2px solid var(--gold);background:var(--gold-bg);padding:8px 14px;margin:6px 0;border-radius:4px;display:flex;align-items:baseline;justify-content:space-between}
+  .opinion-label{font-size:8pt;font-weight:700;color:var(--navy);text-transform:uppercase}
+  .opinion-value{font-size:18pt;font-weight:900;color:var(--navy);letter-spacing:.04em}
+  .opinion-date{font-size:7.5pt;color:var(--navy-mid)}
+
+  /* ── EA / HC disclosure ─────────────────────────────────────── */
+  .disclosure-box{border-left:4px solid var(--gold);background:var(--gold-bg);padding:6px 10px;margin:5px 0;border-radius:0 4px 4px 0}
+  .disclosure-box.hc{border-left-color:#9B1C1C;background:#FFF0F0}
+  .disclosure-hdr{font-size:7.5pt;font-weight:800;text-transform:uppercase;color:var(--navy);margin-bottom:2px}
+  .disclosure-box.hc .disclosure-hdr{color:#7F1D1D}
+  .disclosure-item{font-size:7.5pt;color:var(--text);margin:1px 0;padding-left:10px}
+  .disclosure-item::before{content:"▸ ";color:var(--gold);font-size:7pt}
+  .disclosure-box.hc .disclosure-item::before{color:#9B1C1C}
+
+  /* ── Multi-value-type ───────────────────────────────────────── */
+  .vt-table{width:100%;border-collapse:collapse;font-size:7.5pt;margin-top:4px}
+  .vt-table th{background:var(--navy);color:#fff;padding:3px 8px;font-size:6.5pt;font-weight:700;text-transform:uppercase;border:1px solid var(--border)}
+  .vt-table td{border:1px solid var(--border);padding:3px 8px}
+  .vt-as-is{background:#EFF6FF;font-weight:700}
+  .vt-as-repaired{background:#F0FDF4;font-weight:700}
+  .vt-as-completed{background:var(--gold-bg);font-weight:700}
+  .vt-retrospective{background:#F5F0FF;font-weight:700}
+  .vt-prospective{background:#FFF7F0;font-weight:700}
+
+  /* ── Rent comps table ───────────────────────────────────────── */
+  .rent-table{width:100%;border-collapse:collapse;font-size:7pt;margin-top:4px}
+  .rent-table th{background:var(--navy-light);color:#fff;padding:3px 5px;font-size:6.5pt;font-weight:700;text-transform:uppercase;border:1px solid var(--border)}
+  .rent-table td{border:1px solid var(--border);padding:2px 5px}
+  .rent-table tr:nth-child(even) td{background:#F8FAFC}
+
+  /* ── Signature block ────────────────────────────────────────── */
+  .sig-block{border:1px solid var(--border);padding:7px 10px;margin:5px 0;border-radius:3px;background:#FAFBFC}
+  .sig-label{font-size:6.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:1px}
+  .sig-name{font-size:9pt;font-weight:700;color:var(--navy);font-style:italic;border-bottom:1px solid var(--border);margin-bottom:4px;padding-bottom:4px}
+  .sig-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  .sig-item{font-size:7pt}
+  .sig-item b{color:var(--navy)}
+
+  /* ── Footer ─────────────────────────────────────────────────── */
+  .page-footer{border-top:2px solid var(--navy);margin-top:6px;padding-top:4px;display:flex;justify-content:space-between;align-items:center}
+  .page-footer-left{font-size:6.5pt;color:var(--muted)}
+  .page-footer-brand{font-size:7pt;font-weight:700;color:var(--navy);letter-spacing:.06em}
+  .page-footer-brand span{color:var(--gold)}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 1 — Subject, Neighborhood, Site, Improvements, Photos
+═══════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <!-- Brand header -->
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Uniform Residential Appraisal Report</span>
+      <span class="brand-badge">UAD 3.6 Compliant</span>
+      <span class="brand-contact">info@visionvmc.com &bull; 425 Town Plaza Ave., Ponte Vedra, FL 32081</span>
+    </div>
+  </div>
+
+  <!-- Form title -->
+  <div class="form-title-bar">
+    <h1>Uniform Residential Appraisal Report &mdash; Form 1004</h1>
+    <p>File No. VMC-2025-10847 &bull; UAD Edition &bull; Fannie Mae / Freddie Mac Compliant</p>
+  </div>
+
+  <!-- SUBJECT -->
+  <div class="section-hdr">Subject</div>
+  <div class="row g2">
+    <div class="cell">
+      <span class="lbl">Property Address</span>
+      <span class="val">2847 Laurel Oak Drive, Jacksonville, FL 32223</span>
+    </div>
+    <div class="cell">
+      <span class="lbl">Legal Description</span>
+      <span class="val">Lot 14, Block 3, Laurel Oak Estates, PB 47, PG 22-24</span>
+    </div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">City</span><span class="val">Jacksonville</span></div>
+    <div class="cell"><span class="lbl">County</span><span class="val">Duval</span></div>
+    <div class="cell"><span class="lbl">State</span><span class="val">Florida</span></div>
+    <div class="cell"><span class="lbl">Zip</span><span class="val">32223</span></div>
+  </div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Borrower</span><span class="val">Marcus &amp; Elena Whitfield</span></div>
+    <div class="cell"><span class="lbl">Owner of Public Record</span><span class="val">Marcus &amp; Elena Whitfield</span></div>
+    <div class="cell"><span class="lbl">Census Tract</span><span class="val">0128.04</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Occupant</span><span class="val">Owner</span></div>
+    <div class="cell"><span class="lbl">Special Assessments</span><span class="val">$0.00</span></div>
+    <div class="cell"><span class="lbl">PUD</span><span class="val">No</span></div>
+    <div class="cell"><span class="lbl">HOA / yr</span><span class="val">$1,440</span></div>
+  </div>
+
+  <!-- NEIGHBORHOOD -->
+  <div class="section-hdr">Neighborhood Characteristics</div>
+  <div class="row g3">
+    <div class="cell">
+      <span class="lbl">Location</span>
+      <div style="font-size:7.5pt;line-height:1.9">
+        <span style="color:var(--navy);font-weight:700">&#10003; Urban</span> &nbsp; Suburban &nbsp; Rural
+      </div>
+    </div>
+    <div class="cell">
+      <span class="lbl">Built-Up</span>
+      <div style="font-size:7.5pt;line-height:1.9">
+        Over 75% &nbsp; <span style="color:var(--navy);font-weight:700">&#10003; 25-75%</span> &nbsp; Under 25%
+      </div>
+    </div>
+    <div class="cell">
+      <span class="lbl">Growth</span>
+      <div style="font-size:7.5pt;line-height:1.9">
+        Rapid &nbsp; <span style="color:var(--navy);font-weight:700">&#10003; Stable</span> &nbsp; Slow
+      </div>
+    </div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Property Values</span><span class="val">&#10003; Increasing &nbsp; Stable &nbsp; Declining</span></div>
+    <div class="cell"><span class="lbl">Demand / Supply</span><span class="val">Shortage &nbsp; &#10003; In Balance &nbsp; Over Supply</span></div>
+    <div class="cell"><span class="lbl">Mktg Time</span><span class="val">Under 3 Mo &nbsp; &#10003; 3-6 Mo &nbsp; Over 6 Mo</span></div>
+    <div class="cell"><span class="lbl">Neighborhood Bounds</span><span class="val">I-295 / St. Johns River / Mandarin Rd / Old St. Aug Rd</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell">
+      <span class="lbl">Neighborhood Description</span>
+      <span class="val">Established suburban residential area with good access to employment, retail, and schools. Mature oak canopy, minimal investor activity. Low crime index. Proximate to top-rated Duval County schools.</span>
+    </div>
+    <div class="cell">
+      <span class="lbl">Market Conditions</span>
+      <span class="val">Moderate seller's market with stable appreciation of ~3%/yr. Days on market averaging 28. Mortgage rates elevated but demand remains consistent among move-up buyers.</span>
+    </div>
+  </div>
+
+  <!-- SITE -->
+  <div class="section-hdr">Site</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Area (sq ft)</span><span class="val">10,454</span></div>
+    <div class="cell"><span class="lbl">Shape</span><span class="val">Rectangular</span></div>
+    <div class="cell"><span class="lbl">View</span><span class="val">Neutral;Res;</span></div>
+    <div class="cell"><span class="lbl">Specific Zoning</span><span class="val">RLD-60</span></div>
+  </div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Utilities — Electric</span><span class="val">Public</span></div>
+    <div class="cell"><span class="lbl">Water</span><span class="val">Public</span></div>
+    <div class="cell"><span class="lbl">Sanitary Sewer</span><span class="val">Public</span></div>
+  </div>
+
+  <!-- IMPROVEMENTS -->
+  <div class="section-hdr">Improvements</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Year Built</span><span class="val">2003</span></div>
+    <div class="cell"><span class="lbl">Effective Age</span><span class="val">8 yrs</span></div>
+    <div class="cell"><span class="lbl">GLA (sq ft)</span><span class="val">2,184</span></div>
+    <div class="cell"><span class="lbl">Total Rooms</span><span class="val">8</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Bedrooms</span><span class="val">4</span></div>
+    <div class="cell"><span class="lbl">Bathrooms</span><span class="val">2.1</span></div>
+    <div class="cell"><span class="lbl">Garage / Carport</span><span class="val">2-Car Att Gar</span></div>
+    <div class="cell"><span class="lbl">Basement</span><span class="val">None</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Foundation</span><span class="val">Slab-on-grade; No evidence of settlement or moisture intrusion</span></div>
+    <div class="cell"><span class="lbl">Exterior Description</span><span class="val">Concrete block stucco; architectural shingle roof; double-pane insulated windows; 2022</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Heating/Cooling</span><span class="val">Central forced-air, electric; 2019 A/C replacement; functioning at inspection</span></div>
+    <div class="cell"><span class="lbl">Interior Finishes</span><span class="val">Engineered hardwood; granite counters; updated kitchen 2021; ceramic tile baths</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Condition</span><span class="val">C2 — Well-maintained; updates evident throughout; no deferred maintenance observed</span></div>
+    <div class="cell"><span class="lbl">Quality</span><span class="val">Q3 — Dwellings with above-average quality; upgraded features; fine craftsmanship</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Additional Features</span><span class="val">Screened lanai 300 sq ft; in-ground pool/spa; security system; irrigation system</span></div>
+    <div class="cell"><span class="lbl">Adverse Conditions / Deficiencies</span><span class="val">None observed. No apparent physical deficiencies affecting soundness.</span></div>
+  </div>
+
+  <!-- Subject photos -->
+  <div class="section-hdr gold">Subject Property Photos</div>
+  <div class="photo-row">
+    <div class="photo-box">
+      <div style="height:100px;background:linear-gradient(135deg,#B8C9E0,#E8EFF7);display:flex;align-items:center;justify-content:center">
+        <span style="font-size:7.5pt;color:var(--navy-mid);font-weight:600">Front Elevation</span>
+      </div>
+      <div class="photo-cap">Subject Front &bull; 2847 Laurel Oak Dr</div>
+    </div>
+    <div class="photo-box">
+      <div style="height:100px;background:linear-gradient(135deg,#D0E8D0,#EFF9EF);display:flex;align-items:center;justify-content:center">
+        <span style="font-size:7.5pt;color:var(--navy-mid);font-weight:600">Rear Elevation</span>
+      </div>
+      <div class="photo-cap">Subject Rear &bull; Pool / Lanai</div>
+    </div>
+    <div class="photo-box">
+      <div style="height:100px;background:linear-gradient(135deg,#E8E0D0,#F9F5EF);display:flex;align-items:center;justify-content:center">
+        <span style="font-size:7.5pt;color:var(--navy-mid);font-weight:600">Street Scene</span>
+      </div>
+      <div class="photo-cap">Street Scene &bull; Laurel Oak Dr</div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="page-footer-left">Uniform Residential Appraisal Report &bull; File VMC-2025-10847 &bull; Page 1 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 2 — Sales Comparison, Comp Photos, H&BU 4-Test
+═══════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Sales Comparison &amp; H&amp;BU Analysis</span>
+      <span class="brand-contact">File No. VMC-2025-10847</span>
+    </div>
+  </div>
+
+  <!-- Sales Comparison Grid -->
+  <div class="section-hdr">Sales Comparison Analysis</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th style="width:28%">Feature</th>
+        <th style="width:18%">Subject</th>
+        <th style="width:18%">Comparable 1</th>
+        <th style="width:18%">Comparable 2</th>
+        <th style="width:18%">Comparable 3</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="comp-hdr-gold">
+        <td><b>Address</b></td>
+        <td>2847 Laurel Oak Dr Jacksonville FL 32223</td>
+        <td>4112 Magnolia Bend Ct Jacksonville FL 32223</td>
+        <td>3308 Cypress Hollow Dr Jacksonville FL 32223</td>
+        <td>1945 River Bluff Ln Jacksonville FL 32223</td>
+      </tr>
+      <tr>
+        <td>Sale Price</td>
+        <td>—</td>
+        <td>$465,000</td>
+        <td>$479,500</td>
+        <td>$451,000</td>
+      </tr>
+      <tr>
+        <td>Proximity to Subject</td>
+        <td>—</td>
+        <td>0.4 mi N</td>
+        <td>0.9 mi SE</td>
+        <td>1.2 mi W</td>
+      </tr>
+      <tr>
+        <td>Sale Date / DOM</td>
+        <td>—</td>
+        <td>06/2025 / 22</td>
+        <td>05/2025 / 31</td>
+        <td>04/2025 / 18</td>
+      </tr>
+      <tr>
+        <td>Data Source</td>
+        <td>—</td>
+        <td>MLS#2041877</td>
+        <td>MLS#2038532</td>
+        <td>MLS#2034215</td>
+      </tr>
+      <tr>
+        <td>Financing / COF</td>
+        <td>—</td>
+        <td>Conv / Arm's Length</td>
+        <td>Conv / Arm's Length</td>
+        <td>Cash / Arm's Length</td>
+      </tr>
+      <tr class="comp-hdr-gold">
+        <td><b>Adj. Sale Price / GLA</b></td>
+        <td>Est. $213/sq ft</td>
+        <td>$213/sq ft</td>
+        <td>$207/sq ft</td>
+        <td>$218/sq ft</td>
+      </tr>
+      <tr>
+        <td>Location</td>
+        <td>Suburban;Res;</td>
+        <td>Suburban;Res; <span class="adj-p">+$0</span></td>
+        <td>Suburban;Res; <span class="adj-p">+$0</span></td>
+        <td>Suburban;Res; <span class="adj-p">+$0</span></td>
+      </tr>
+      <tr>
+        <td>Leasehold / Fee Simple</td>
+        <td>Fee Simple</td>
+        <td>Fee Simple <span>$0</span></td>
+        <td>Fee Simple <span>$0</span></td>
+        <td>Fee Simple <span>$0</span></td>
+      </tr>
+      <tr>
+        <td>Site (sq ft)</td>
+        <td>10,454</td>
+        <td>9,800 <span class="adj-p">+$2,000</span></td>
+        <td>11,200 <span class="adj-n">-$2,000</span></td>
+        <td>10,100 <span class="adj-p">+$1,000</span></td>
+      </tr>
+      <tr>
+        <td>View</td>
+        <td>Neutral;Res;</td>
+        <td>Neutral;Res; $0</td>
+        <td>Neutral;Res; $0</td>
+        <td>Neutral;Res; $0</td>
+      </tr>
+      <tr>
+        <td>Design (Style)</td>
+        <td>DT2;TwnHs;</td>
+        <td>DT2;TwnHs; $0</td>
+        <td>DT2;TwnHs; $0</td>
+        <td>DT2;TwnHs; $0</td>
+      </tr>
+      <tr>
+        <td>Quality</td>
+        <td>Q3</td>
+        <td>Q3 $0</td>
+        <td>Q3 $0</td>
+        <td>Q3 $0</td>
+      </tr>
+      <tr>
+        <td>Actual Age / Effective Age</td>
+        <td>22 yr / 8 yr</td>
+        <td>20 yr / 7 yr $0</td>
+        <td>19 yr / 8 yr $0</td>
+        <td>25 yr / 9 yr <span class="adj-p">+$3,000</span></td>
+      </tr>
+      <tr>
+        <td>Condition</td>
+        <td>C2</td>
+        <td>C2 $0</td>
+        <td>C2 $0</td>
+        <td>C2 $0</td>
+      </tr>
+      <tr>
+        <td>GLA (sq ft)</td>
+        <td>2,184</td>
+        <td>2,105 <span class="adj-p">+$7,900</span></td>
+        <td>2,296 <span class="adj-n">-$11,200</span></td>
+        <td>2,052 <span class="adj-p">+$13,200</span></td>
+      </tr>
+      <tr>
+        <td>Basement / Finished</td>
+        <td>None</td>
+        <td>None $0</td>
+        <td>None $0</td>
+        <td>None $0</td>
+      </tr>
+      <tr>
+        <td>Rooms — Bed/Bath</td>
+        <td>4 / 2.1</td>
+        <td>4 / 2.1 $0</td>
+        <td>4 / 2.1 $0</td>
+        <td>3 / 2.0 <span class="adj-p">+$8,000</span></td>
+      </tr>
+      <tr>
+        <td>Garage / Carport</td>
+        <td>2-Car Att</td>
+        <td>2-Car Att $0</td>
+        <td>2-Car Att $0</td>
+        <td>2-Car Att $0</td>
+      </tr>
+      <tr>
+        <td>Pool / Patio / Porch</td>
+        <td>Pool+Lanai</td>
+        <td>Pool+Patio $0</td>
+        <td>No Pool <span class="adj-p">+$12,000</span></td>
+        <td>Pool+Lanai $0</td>
+      </tr>
+      <tr>
+        <td>Net Adj. (Total)</td>
+        <td></td>
+        <td>+$9,900</td>
+        <td>-$1,200</td>
+        <td>+$25,200</td>
+      </tr>
+      <tr>
+        <td>Adj. Sale Price</td>
+        <td></td>
+        <td class="fin-val">$474,900</td>
+        <td class="fin-val">$478,300</td>
+        <td class="fin-val">$476,200</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Comp photos -->
+  <div class="section-hdr gold">Comparable Property Photos</div>
+  <div class="photo-row">
+    <div class="photo-box">
+      <div style="height:90px;background:linear-gradient(135deg,#C8D8EC,#EAF0F9);display:flex;align-items:center;justify-content:center">
+        <span style="font-size:7pt;color:var(--navy-mid);font-weight:600">Comp 1 Exterior</span>
+      </div>
+      <div class="photo-cap">Comp 1 &bull; 4112 Magnolia Bend Ct &bull; $465,000</div>
+    </div>
+    <div class="photo-box">
+      <div style="height:90px;background:linear-gradient(135deg,#C8D8EC,#EAF0F9);display:flex;align-items:center;justify-content:center">
+        <span style="font-size:7pt;color:var(--navy-mid);font-weight:600">Comp 2 Exterior</span>
+      </div>
+      <div class="photo-cap">Comp 2 &bull; 3308 Cypress Hollow Dr &bull; $479,500</div>
+    </div>
+    <div class="photo-box">
+      <div style="height:90px;background:linear-gradient(135deg,#C8D8EC,#EAF0F9);display:flex;align-items:center;justify-content:center">
+        <span style="font-size:7pt;color:var(--navy-mid);font-weight:600">Comp 3 Exterior</span>
+      </div>
+      <div class="photo-cap">Comp 3 &bull; 1945 River Bluff Ln &bull; $451,000</div>
+    </div>
+  </div>
+
+  <!-- HIGHEST & BEST USE — 4-Test Framework (UAD 3.6 conditional) -->
+  <div class="section-hdr">Highest &amp; Best Use — UAD 3.6 Four-Test Framework</div>
+  <table class="hbu-table">
+    <thead>
+      <tr>
+        <th style="width:35%">Test</th>
+        <th style="width:22%">As Vacant</th>
+        <th style="width:22%">As Improved</th>
+        <th style="width:21%">Conclusion</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>1. Legally Permissible</b><br><span style="color:var(--muted);font-size:6.5pt">Zoning, deed restrictions, flood zone</span></td>
+        <td><span class="hbu-pass">&#10003; SFR Permitted</span><br><span style="font-size:6.5pt">RLD-60; no deed restrictions prohibiting SFR use at this density</span></td>
+        <td><span class="hbu-pass">&#10003; Conforms</span><br><span style="font-size:6.5pt">Existing use is legally conforming SFR</span></td>
+        <td>Legally permissible for SFR as both vacant and improved</td>
+      </tr>
+      <tr>
+        <td><b>2. Physically Possible</b><br><span style="color:var(--muted);font-size:6.5pt">Size, shape, utilities, topography</span></td>
+        <td><span class="hbu-pass">&#10003; Supportable</span><br><span style="font-size:6.5pt">10,454 sq ft site; all public utilities; level topography</span></td>
+        <td><span class="hbu-pass">&#10003; Existing Improvements</span><br><span style="font-size:6.5pt">Block construction on slab; no geotech issues observed</span></td>
+        <td>SFR development physically possible; no constraints</td>
+      </tr>
+      <tr>
+        <td><b>3. Financially Feasible</b><br><span style="color:var(--muted);font-size:6.5pt">Market demand, investment return</span></td>
+        <td><span class="hbu-pass">&#10003; Feasible</span><br><span style="font-size:6.5pt">SFR demand strong; lot value ~$68,000 supports development</span></td>
+        <td><span class="hbu-pass">&#10003; Feasible</span><br><span style="font-size:6.5pt">Income &amp; appreciation support continued residential use</span></td>
+        <td>SFR use financially feasible in current market</td>
+      </tr>
+      <tr>
+        <td><b>4. Maximally Productive</b><br><span style="color:var(--muted);font-size:6.5pt">Highest return among legal, physical, feasible uses</span></td>
+        <td><span class="hbu-pass">&#10003; SFR Development</span><br><span style="font-size:6.5pt">No alternative uses produce superior return on land</span></td>
+        <td><span class="hbu-pass">&#10003; Continued SFR</span><br><span style="font-size:6.5pt">No demolition/alternative use provides greater value</span></td>
+        <td><b>SFR is maximally productive; continuation of use as improved</b></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="font-size:7.5pt;margin-top:4px;padding:4px 8px;background:var(--gold-bg);border-radius:3px">
+    <b>H&amp;BU Conclusion:</b> The highest and best use of the subject site as vacant is for single-family residential development consistent with zoning. As improved, continuation of the existing single-family residential use is the highest and best use. The existing improvements contribute positively to site value.
+  </div>
+
+  <!-- Prior sales analysis -->
+  <div class="section-hdr">Prior Sales History — Subject &amp; Comparables (3-Year)</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Subject Prior Sale</span><span class="val">02/2019 / $324,000 / Conv / Arms Length (MLS)</span></div>
+    <div class="cell"><span class="lbl">Comp 1 Prior Sale</span><span class="val">No transfers within 12 months prior to sale date</span></div>
+    <div class="cell"><span class="lbl">Comp 2 Prior Sale</span><span class="val">No transfers within 12 months prior to sale date</span></div>
+    <div class="cell"><span class="lbl">Comp 3 Prior Sale</span><span class="val">12/2023 / $415,000 / Estate Sale / Arms Length</span></div>
+  </div>
+
+  <div class="page-footer">
+    <span class="page-footer-left">Uniform Residential Appraisal Report &bull; File VMC-2025-10847 &bull; Page 2 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════
+     PAGE 3 — Cost, Income, Reconciliation, EA/HC, Value Types
+═════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Cost &bull; Income &bull; Reconciliation</span>
+      <span class="brand-contact">File No. VMC-2025-10847</span>
+    </div>
+  </div>
+
+  <!-- COST APPROACH (with depreciation breakdown — UAD 3.6 conditional) -->
+  <div class="section-hdr">Cost Approach to Value (Not Required by Fannie Mae)</div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Source of Cost Data</span><span class="val">Marshall &amp; Swift Residential Cost Handbook</span></div>
+    <div class="cell"><span class="lbl">Effective Date of Cost Data</span><span class="val">Q2 2025 Edition</span></div>
+    <div class="cell"><span class="lbl">Cost Factor Source</span><span class="val">M&amp;S Local Cost Multiplier — Duval County, FL</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Land Value Method</span><span class="val">Sales Comparison — 4 land sales within 0.75 mi, 2023-2024</span></div>
+    <div class="cell"><span class="lbl">Land Value Evidence</span><span class="val">Sales range $58,000–$78,000; mean $67,500; median $68,000 (adj for size/location)</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Est. Land Value</span><span class="val">$68,000</span></div>
+    <div class="cell"><span class="lbl">Dwelling (2,184 sq ft @ $148/sf)</span><span class="val">$323,232</span></div>
+    <div class="cell"><span class="lbl">Soft Costs</span><span class="val">$10,500</span></div>
+    <div class="cell"><span class="lbl">Entrepreneurial Profit</span><span class="val">$16,200</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Garage / Carport</span><span class="val">$18,400</span></div>
+    <div class="cell"><span class="lbl">Pool / Lanai</span><span class="val">$28,500</span></div>
+    <div class="cell"><span class="lbl">Site Improvements</span><span class="val">$9,200</span></div>
+    <div class="cell"><span class="lbl">Total Cost New</span><span class="val"><b>$474,032</b></span></div>
+  </div>
+
+  <!-- Depreciation breakdown (UAD 3.6 conditional sub-section) -->
+  <div style="border:1px solid var(--border);border-radius:4px;margin:4px 0;overflow:hidden">
+    <div style="background:var(--gold-bg);border-bottom:1px solid var(--border);padding:3px 8px">
+      <span style="font-size:7pt;font-weight:700;text-transform:uppercase;color:var(--navy);letter-spacing:.06em">Depreciation Breakdown (UAD 3.6 — Optional Detail)</span>
+    </div>
+    <div class="row g4" style="margin:0">
+      <div class="cell" style="border:none;border-right:1px solid var(--border)"><span class="lbl">Physical — Curable</span><span class="val">$4,800 (deferred paint, caulk)</span></div>
+      <div class="cell" style="border:none;border-right:1px solid var(--border)"><span class="lbl">Physical — Incurable</span><span class="val">$31,400 (long-lived items, 8 yr eff age)</span></div>
+      <div class="cell" style="border:none;border-right:1px solid var(--border)"><span class="lbl">Functional Obsolescence</span><span class="val">$0 (no functional deficiencies)</span></div>
+      <div class="cell" style="border:none"><span class="lbl">External Obsolescence</span><span class="val">$0 (no adverse external factors)</span></div>
+    </div>
+    <div class="row g3" style="margin:0">
+      <div class="cell" style="border:none;border-top:1px solid var(--border);border-right:1px solid var(--border)"><span class="lbl">Total Accrued Depreciation</span><span class="val"><b>$36,200</b></span></div>
+      <div class="cell" style="border:none;border-top:1px solid var(--border);border-right:1px solid var(--border)"><span class="lbl">Effective Age</span><span class="val">8 years</span></div>
+      <div class="cell" style="border:none;border-top:1px solid var(--border)"><span class="lbl">Economic Life</span><span class="val">55 years</span></div>
+    </div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Depreciated Value of Improvements</span><span class="val">$437,832</span></div>
+    <div class="cell"><span class="lbl">"As Is" Value by Cost Approach</span><span class="val" style="font-size:10pt;font-weight:800;color:var(--navy)">$505,000</span></div>
+  </div>
+
+  <!-- INCOME APPROACH with rent comps (UAD 3.6 conditional) -->
+  <div class="section-hdr">Income Approach to Value (Not Required by Fannie Mae)</div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Indicated Monthly Gross Rent</span><span class="val">$2,650 / mo</span></div>
+    <div class="cell"><span class="lbl">Gross Rent Multiplier</span><span class="val">172.6</span></div>
+    <div class="cell"><span class="lbl">Indicated Value by Income</span><span class="val" style="font-size:10pt;font-weight:800;color:var(--navy)">$457,000</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Vacancy &amp; Loss Rate</span><span class="val">5.0%</span></div>
+    <div class="cell"><span class="lbl">Potential Gross Income</span><span class="val">$33,480 / yr</span></div>
+    <div class="cell"><span class="lbl">Effective Gross Income</span><span class="val">$31,806 / yr</span></div>
+    <div class="cell"><span class="lbl">Net Operating Income</span><span class="val">$21,200 / yr</span></div>
+  </div>
+
+  <!-- Rent comps table (UAD 3.6 conditional) -->
+  <table class="rent-table">
+    <thead>
+      <tr>
+        <th>Rental Comparable</th>
+        <th>Address</th>
+        <th>Bed/Bath</th>
+        <th>GLA</th>
+        <th>Mo. Rent</th>
+        <th>Adj. Rent</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Subject</td>
+        <td>2847 Laurel Oak Dr, Jacksonville 32223</td>
+        <td>4/2.1</td>
+        <td>2,184</td>
+        <td>—</td>
+        <td><b>$2,650</b></td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Rental Comp 1</td>
+        <td>4009 Sundance Ct, Jacksonville 32223</td>
+        <td>4/2.0</td>
+        <td>2,050</td>
+        <td>$2,495</td>
+        <td>$2,620</td>
+        <td>MLS Rental Portal</td>
+      </tr>
+      <tr>
+        <td>Rental Comp 2</td>
+        <td>3205 Pecan Grove Ln, Jacksonville 32223</td>
+        <td>4/2.1</td>
+        <td>2,210</td>
+        <td>$2,695</td>
+        <td>$2,670</td>
+        <td>AppFolio Listings</td>
+      </tr>
+      <tr>
+        <td>Rental Comp 3</td>
+        <td>1880 Bayberry Run, Jacksonville 32223</td>
+        <td>3/2.0</td>
+        <td>1,980</td>
+        <td>$2,350</td>
+        <td>$2,660</td>
+        <td>CoStar Residential</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- RECONCILIATION -->
+  <div class="section-hdr">Reconciliation &amp; Final Value</div>
+
+  <!-- Approach weights (UAD 3.6 conditional) -->
+  <div style="padding:6px 10px;background:#F8FAFC;border:1px solid var(--border);border-radius:4px;margin-bottom:6px">
+    <div style="font-size:7.5pt;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Approach Weighting</div>
+    <div class="weight-row">
+      <span class="weight-lbl">Sales Comparison</span>
+      <div class="weight-track"><div class="weight-fill" style="width:75%"></div></div>
+      <span class="weight-pct">75%</span>
+    </div>
+    <div class="weight-row">
+      <span class="weight-lbl">Cost Approach</span>
+      <div class="weight-track"><div class="weight-fill" style="width:10%"></div></div>
+      <span class="weight-pct">10%</span>
+    </div>
+    <div class="weight-row">
+      <span class="weight-lbl">Income Approach</span>
+      <div class="weight-track"><div class="weight-fill" style="width:15%"></div></div>
+      <span class="weight-pct">15%</span>
+    </div>
+    <div style="margin-top:4px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:7pt;color:var(--muted)">Approach spread: 10.5% &nbsp;|&nbsp; Confidence:</span>
+      <span class="conf-badge conf-high">High &mdash; 91 / 100</span>
+    </div>
+  </div>
+
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Reconciliation Comments</span>
+      <span class="val">The Sales Comparison Approach is given primary weight (75%) as it best reflects buyer/seller behavior in this market, with three recent, proximate, and highly similar arm's-length sales. The Cost Approach (10%) provides a supported upper
+boundary check; reproduction costs exceed market at this price tier. The Income Approach (15%) is secondary; the subject is owner-occupied and not held for investment, though rental data is available. All three approaches produce a tight range ($457K–$505K), indicating consistent evidence of value.</span>
+    </div>
+    <div class="cell">
+      <div class="opinion-box">
+        <div>
+          <div class="opinion-label">Opinion of Market Value</div>
+          <div class="opinion-date">Effective Date: July 22, 2025</div>
+        </div>
+        <div class="opinion-value">$475,000</div>
+      </div>
+      <div style="font-size:7pt;color:var(--muted);margin-top:3px">As-Is &bull; Fee Simple Estate &bull; 100% Interest</div>
+    </div>
+  </div>
+
+  <!-- Extraordinary Assumptions (UAD 3.6 conditional) -->
+  <div class="disclosure-box">
+    <div class="disclosure-hdr">Extraordinary Assumptions</div>
+    <div class="disclosure-item">Pool / spa mechanical equipment is assumed to be in functional working order; not inspected per limited scope. If found to require repair exceeding $5,000, value may be affected.</div>
+    <div class="disclosure-item">Roof was represented by owner as replaced in 2022; no permit verification was performed. Value is predicated on this representation being accurate.</div>
+  </div>
+
+  <!-- Hypothetical Conditions (UAD 3.6 conditional) -->
+  <div class="disclosure-box hc">
+    <div class="disclosure-hdr">Hypothetical Conditions</div>
+    <div class="disclosure-item">None identified. No hypothetical conditions were applied in the development of this opinion of value.</div>
+  </div>
+
+  <!-- Multi-Value-Type block (UAD 3.6 conditional) -->
+  <div class="section-hdr">Value Type Disclosure (UAD 3.6 — Multi-Value Report)</div>
+  <table class="vt-table">
+    <thead>
+      <tr>
+        <th>Value Type</th>
+        <th>Effective Date</th>
+        <th>Opinion of Value</th>
+        <th>Interest</th>
+        <th>Applicable Premise / Condition</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span style="background:#EFF6FF;color:#1D4ED8;font-weight:700;padding:1px 6px;border-radius:3px;font-size:6.5pt">As-Is</span></td>
+        <td>July 22, 2025</td>
+        <td style="font-weight:800;color:var(--navy)">$475,000</td>
+        <td>Fee Simple</td>
+        <td>Current condition, no repairs assumed</td>
+      </tr>
+      <tr>
+        <td><span style="background:#F0FDF4;color:#15803D;font-weight:700;padding:1px 6px;border-radius:3px;font-size:6.5pt">As-Repaired</span></td>
+        <td>July 22, 2025</td>
+        <td style="font-weight:800;color:var(--navy)">$479,500</td>
+        <td>Fee Simple</td>
+        <td>Subject to completion of pool equipment repair (~$4,200 bid); extraordinary assumption lifted</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span class="page-footer-left">Uniform Residential Appraisal Report &bull; File VMC-2025-10847 &bull; Page 3 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 4 — Appraiser Certification, Signatures, Aerial, Lender
+═══════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Certification &amp; Signatures</span>
+      <span class="brand-contact">File No. VMC-2025-10847</span>
+    </div>
+  </div>
+
+  <div class="section-hdr">Appraiser Certification</div>
+  <div style="font-size:7.5pt;line-height:1.65;padding:6px 8px;background:#FAFBFC;border:1px solid var(--border);border-radius:3px;margin-bottom:6px">
+    I certify that, to the best of my knowledge and belief:
+    The statements of fact contained in this report are true and correct. The reported analyses, opinions, and conclusions are limited only by the reported assumptions and limiting conditions and are my personal, impartial, and unbiased professional analyses, opinions, and conclusions. I have no present or prospective interest in the property that is the subject of this report and no personal interest with respect to the parties involved. I have performed no services, as an appraiser or in any other capacity, regarding the property that is the subject of this report within the three-year period immediately preceding acceptance of this assignment. I have no bias with respect to the property that is the subject of this report or the parties involved. <b>The appraisal was performed in conformance with the Uniform Standards of Professional Appraisal Practice (USPAP), UAD 3.6, and applicable Fannie Mae/Freddie Mac guidelines.</b>
+  </div>
+
+  <!-- Scope of Work -->
+  <div class="section-hdr">Scope of Work</div>
+  <div style="font-size:7.5pt;line-height:1.6;padding:5px 8px;background:#F8FAFC;border:1px solid var(--border);border-radius:3px;margin-bottom:6px">
+    Interior and exterior inspection performed July 22, 2025. Public records searched (Duval County Property Appraiser, FEMA FIRM Panel 12031C0220J, effective 11/2020 — Zone X). MLS sales data reviewed through CoStar / RETS feed. Sales Comparison, Cost, and Income Approaches developed. Three sales comparables selected within 1.2 miles of subject; all within 90 days. Market conditions analyzed per Fannie Mae Market Conditions Addendum guidance.
+  </div>
+
+  <!-- Appraiser signature block -->
+  <div class="section-hdr">Appraiser Signature</div>
+  <div class="sig-block">
+    <div class="sig-label">Appraiser Signature</div>
+    <div class="sig-name">Priya L. Venkataraman, MAI, SRA</div>
+    <div class="sig-grid">
+      <div class="sig-item"><b>Name:</b> Priya L. Venkataraman</div>
+      <div class="sig-item"><b>Company:</b> Vision VMC, LLC</div>
+      <div class="sig-item"><b>Date Signed:</b> July 23, 2025</div>
+      <div class="sig-item"><b>State Certification #:</b> RCert-FL-12948</div>
+      <div class="sig-item"><b>State:</b> Florida</div>
+      <div class="sig-item"><b>Expiration:</b> 09/30/2026</div>
+      <div class="sig-item" style="grid-column:span 3"><b>Address:</b> 425 Town Plaza Ave., Ponte Vedra, FL 32081 &bull; info@visionvmc.com</div>
+    </div>
+  </div>
+
+  <!-- Supervisory Appraiser (conditional — shown in preview) -->
+  <div class="section-hdr">Supervisory Appraiser (if applicable)</div>
+  <div class="sig-block" style="background:#FAF8F5">
+    <div class="sig-label">Supervisory Appraiser Signature (Required for non-certified appraiser trainees only)</div>
+    <div class="sig-name">— Not Applicable —</div>
+    <div style="font-size:7pt;color:var(--muted)">Signing appraiser holds state-certified residential classification; supervisory signature not required.</div>
+  </div>
+
+  <!-- Lender/Client info -->
+  <div class="section-hdr">Lender / Client &amp; Intended Use</div>
+  <div class="row g2">
+    <div class="cell">
+      <span class="lbl">Lender / Client Name</span>
+      <span class="val">First Coast Mortgage Corporation</span>
+    </div>
+    <div class="cell">
+      <span class="lbl">Client Address</span>
+      <span class="val">8800 Baymeadows Rd, Suite 300, Jacksonville, FL 32256</span>
+    </div>
+  </div>
+  <div class="row g2">
+    <div class="cell">
+      <span class="lbl">Intended Use</span>
+      <span class="val">Mortgage origination — conventional conforming loan underwriting (FNMA/FHLMC)</span>
+    </div>
+    <div class="cell">
+      <span class="lbl">Intended Users</span>
+      <span class="val">First Coast Mortgage Corporation; Fannie Mae / Freddie Mac as secondary market investors</span>
+    </div>
+  </div>
+
+  <!-- Aerial map placeholder -->
+  <div class="section-hdr gold">Aerial / Location Map</div>
+  <div style="border:1px solid var(--border);border-radius:4px;height:130px;background:linear-gradient(135deg,#C8D8EC 0%,#D9E8D4 50%,#E8EFF7 100%);display:flex;align-items:center;justify-content:center;margin:4px 0">
+    <div style="text-align:center">
+      <div style="font-size:9pt;font-weight:700;color:var(--navy)">Aerial Photograph / Location Map</div>
+      <div style="font-size:7.5pt;color:var(--navy-mid);margin-top:3px">2847 Laurel Oak Drive, Jacksonville, FL 32223</div>
+      <div style="font-size:7pt;color:var(--muted);margin-top:2px">[Satellite imagery &ndash; attached separately in production render]</div>
+    </div>
+  </div>
+
+  <!-- Addenda list -->
+  <div class="section-hdr">Addenda Attached</div>
+  <div class="row g2">
+    <div class="cell" style="font-size:7.5pt;line-height:2">
+      &#10003; Market Conditions Addendum (Form 1004MC)<br>
+      &#10003; Subject Interior Photographs (12 photos)<br>
+      &#10003; Flood Certification — FEMA Zone X<br>
+      &#10003; License Certificate — Priya L. Venkataraman
+    </div>
+    <div class="cell" style="font-size:7.5pt;line-height:2">
+      &#10003; Plat Map — Laurel Oak Estates<br>
+      &#10003; Comparable Location Map<br>
+      &#10618; Appraiser Comments &amp; Limiting Conditions<br>
+      &#10618; Pool Inspection Quote (EA support documentation)
+    </div>
+  </div>
+
+  <!-- Final footer brand block -->
+  <div style="margin-top:10px;background:var(--navy);color:#fff;padding:10px 14px;border-radius:4px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-size:13pt;font-weight:800;letter-spacing:.08em">VISION <span style="color:var(--gold)">VMC</span></div>
+      <div style="font-size:7pt;color:#B8C9E0;letter-spacing:.1em;text-transform:uppercase;margin-top:2px">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div style="text-align:right;font-size:7pt;color:#B8C9E0;line-height:1.7">
+      425 Town Plaza Ave., Ponte Vedra, FL 32081<br>
+      info@visionvmc.com<br>
+      File No. VMC-2025-10847 &bull; UAD 3.6
+    </div>
+  </div>
+
+  <div class="page-footer" style="margin-top:6px">
+    <span class="page-footer-left">Uniform Residential Appraisal Report &bull; File VMC-2025-10847 &bull; Page 4 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+</body>
+</html>

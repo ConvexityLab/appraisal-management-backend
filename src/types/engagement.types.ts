@@ -144,6 +144,12 @@ export interface EngagementLoan {
   loanOfficerPhone?: string | undefined;
   loanType?: string | undefined;
   fhaCase?: string | undefined;
+  /** FK → PropertyRecord.id — the canonical property record for this loan's collateral. Added Phase R0.4. */
+  propertyId?: string;
+  /**
+   * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
+   * Retained as a display cache during Phase R0–R2 migration.
+   */
   property: PropertyDetails;
   status: EngagementLoanStatus;
   /** Products ordered for this specific loan (1..N) */

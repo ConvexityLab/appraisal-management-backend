@@ -188,6 +188,10 @@ export interface EngagementOrderCreatedEvent extends BaseEvent {
     loanAmount: number;
     priority: EventPriority;
     dueDate: Date;
+    /** Product being ordered — forwarded to matching engine eligibility gate */
+    productId?: string;
+    /** Vendor must support ALL of these capabilities to be eligible */
+    requiredCapabilities?: string[];
   };
 }
 
@@ -204,6 +208,25 @@ export interface VendorBidSentEvent extends BaseEvent {
     bidId: string;
     expiresAt: Date;
     attemptNumber: number;
+    priority: EventPriority;
+  };
+}
+
+/**
+ * Fired when an internal staff member is assigned directly to an order
+ * (bypasses the bid loop entirely).
+ */
+export interface VendorStaffAssignedEvent extends BaseEvent {
+  type: 'vendor.staff.assigned';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    vendorName: string;
+    staffRole: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
+    assignedAt: Date;
     priority: EventPriority;
   };
 }
@@ -336,7 +359,45 @@ export interface ReviewAssignmentExhaustedEvent extends BaseEvent {
     requiresHumanIntervention: true;
   };
 }
+/**
+ * Fired when an order requires supervisory co-sign before it can be delivered.
+ * Published by the supervisory review service or the orchestrator when
+ * `tenantAutomationConfig.supervisoryReviewForAllOrders === true`.
+ */
+export interface SupervisionRequiredEvent extends BaseEvent {
+  type: 'supervision.required';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    /** The staff member assigned to co-sign. */
+    supervisorId: string;
+    /** Why supervision was triggered (e.g. 'high_value', 'policy', 'ai_flag'). */
+    reason: string;
+    requestedBy: string;
+    requestedAt: Date;
+    priority: EventPriority;
+  };
+}
 
+/**
+ * Fired when a supervisor co-signs an order, completing the supervisory review.
+ */
+export interface SupervisionCosignedEvent extends BaseEvent {
+  type: 'supervision.cosigned';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    supervisorId: string;
+    supervisorName: string;
+    cosignedAt: Date;
+    notes?: string;
+    priority: EventPriority;
+  };
+}
 
 export type AppEvent = 
   | OrderCreatedEvent
@@ -352,6 +413,7 @@ export type AppEvent =
   // Auto-assignment workflow events
   | EngagementOrderCreatedEvent
   | VendorBidSentEvent
+  | VendorStaffAssignedEvent
   | VendorBidAcceptedEvent
   | VendorBidTimedOutEvent
   | VendorBidDeclinedEvent
@@ -359,7 +421,9 @@ export type AppEvent =
   | ReviewAssignmentRequestedEvent
   | ReviewAssignedEvent
   | ReviewAssignmentTimedOutEvent
-  | ReviewAssignmentExhaustedEvent;
+  | ReviewAssignmentExhaustedEvent
+  | SupervisionRequiredEvent
+  | SupervisionCosignedEvent;
 
 // Event handler interface
 export interface EventHandler<T extends BaseEvent = BaseEvent> {

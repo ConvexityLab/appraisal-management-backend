@@ -24,6 +24,14 @@ export class ComparableAnalysisService {
     this.dbService = new CosmosDbService();
   }
 
+  private dbInitialized = false;
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
+  }
+
   /**
    * Perform comprehensive comparable analysis
    */
@@ -32,6 +40,7 @@ export class ComparableAnalysisService {
     subjectProperty: SubjectPropertySummary,
     comparables: any[]
   ): Promise<ComparableAnalysis> {
+    await this.ensureDbInitialized();
     this.logger.info('Analyzing comparables', { 
       reviewId, 
       comparableCount: comparables.length 
@@ -80,6 +89,7 @@ export class ComparableAnalysisService {
     comparable: any,
     subjectProperty: SubjectPropertySummary
   ): Promise<ComparableVerification> {
+    await this.ensureDbInitialized();
     this.logger.info('Verifying comparable', { reviewId, compNumber });
 
     // Calculate distance to subject
@@ -405,6 +415,7 @@ export class ComparableAnalysisService {
     subjectProperty: SubjectPropertySummary,
     excludeAddresses: string[]
   ): Promise<AlternativeComparable[]> {
+    await this.ensureDbInitialized();
     this.logger.info('Searching for alternative comparables');
 
     // In production, would query MLS, public records, etc.

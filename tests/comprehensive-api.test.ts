@@ -68,6 +68,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
           propertyAddress: { streetAddress: '123 Main St', city: 'Anytown', state: 'CA', zipCode: '12345' },
           clientId: '123e4567-e89b-12d3-a456-426614174000',
           orderType: 'purchase',
+          productType: 'URAR',
           priority: 'standard',
           dueDate: '2024-12-31T23:59:59.000Z'
         });

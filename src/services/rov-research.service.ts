@@ -1,13 +1,73 @@
 /**
  * ROV (Reconsideration of Value) Research Service
- * 
+ *
  * Provides intelligent comparable property research, automated adjustment calculations,
  * and market trend analysis for ROV responses.
+ *
+ * Phase 0.8 — De-stubbed 2026-03-11:
+ *   - Wired searchComparables() and analyzeMarketTrends() to generic MlsDataProvider
+ *   - Added mapMlsListingToROVComparable() mapping function
+ *   - Default provider: SeededMlsDataProvider (swap to Bridge/CoreLogic via constructor)
  */
 
 import { Logger } from '../utils/logger.js';
 import { EnhancedPropertyIntelligenceV2Service } from './enhanced-property-intelligence-v2.service';
 import { ROVComparable } from '../types/rov.types.js';
+import type { MlsDataProvider, MlsListing } from '../types/mls-data.types.js';
+import { SeededMlsDataProvider } from './seeded-mls-data-provider.js';
+
+// ─── Haversine distance (miles) ──────────────────────────────────────────────
+
+function haversineDistanceMiles(
+  lat1: number, lon1: number,
+  lat2: number, lon2: number,
+): number {
+  const R = 3958.8; // Earth's radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 100) / 100;
+}
+
+// ─── MlsListing → ROVComparable mapper ───────────────────────────────────────
+
+/**
+ * Map a generic MlsListing to an ROVComparable.
+ * Exported for testability.
+ */
+export function mapMlsListingToROVComparable(
+  listing: MlsListing,
+  subjectLat: number,
+  subjectLon: number,
+): ROVComparable {
+  const distance = haversineDistanceMiles(
+    subjectLat, subjectLon, listing.latitude, listing.longitude,
+  );
+  return {
+    id: listing.id,
+    address: listing.address,
+    city: listing.city,
+    state: listing.state,
+    zipCode: listing.zipCode,
+    salePrice: listing.salePrice,
+    saleDate: new Date(listing.saleDate),
+    distanceFromSubject: distance,
+    squareFootage: listing.squareFootage,
+    bedrooms: listing.bedrooms,
+    bathrooms: listing.bathrooms,
+    yearBuilt: listing.yearBuilt,
+    condition: 'average', // MLS data does not carry a normalized condition field
+    adjustments: { location: 0, size: 0, condition: 0, features: 0, total: 0 },
+    adjustedValue: listing.salePrice, // pre-adjustment value equals sale price
+    source: listing.source,
+    ...(listing.listingId !== undefined && { listingId: listing.listingId }),
+    selected: false,
+  };
+}
 
 /**
  * Criteria for comparable property search
@@ -126,11 +186,16 @@ const DEFAULT_ADJUSTMENT_FACTORS: AdjustmentFactors = {
 export class ROVResearchService {
   private logger: Logger;
   private propertyIntelligenceService: EnhancedPropertyIntelligenceV2Service;
+  private mlsProvider: MlsDataProvider;
   private adjustmentFactors: AdjustmentFactors;
 
-  constructor(customAdjustmentFactors?: Partial<AdjustmentFactors>) {
+  constructor(
+    customAdjustmentFactors?: Partial<AdjustmentFactors>,
+    mlsProvider?: MlsDataProvider,
+  ) {
     this.logger = new Logger();
     this.propertyIntelligenceService = new EnhancedPropertyIntelligenceV2Service();
+    this.mlsProvider = mlsProvider ?? new SeededMlsDataProvider();
     this.adjustmentFactors = {
       ...DEFAULT_ADJUSTMENT_FACTORS,
       ...customAdjustmentFactors
@@ -138,7 +203,7 @@ export class ROVResearchService {
   }
 
   /**
-   * Search for comparable properties
+   * Search for comparable properties via the configured MLS data provider.
    */
   async searchComparables(
     criteria: ComparableSearchCriteria
@@ -149,29 +214,36 @@ export class ROVResearchService {
         radius: criteria.radiusMiles
       });
 
-      // TODO: Integrate with MLS data source or property database
-      // For now, use mock data structure
-      const mockComparables: ROVComparable[] = [];
+      // Convert saleDateStart → soldWithinDays if provided
+      let soldWithinDays = 180; // default 6 months
+      if (criteria.saleDateStart) {
+        const msAgo = Date.now() - new Date(criteria.saleDateStart).getTime();
+        soldWithinDays = Math.max(1, Math.round(msAgo / (24 * 60 * 60 * 1000)));
+      }
 
-      // In production, this would query:
-      // 1. MLS APIs (Multiple Listing Service)
-      // 2. Public records databases
-      // 3. Third-party property data providers (CoreLogic, Zillow, etc.)
-      // 4. Internal property database
-
-      // Search criteria would include:
-      // - Geographic radius from subject property
-      // - Similar square footage (±20%)
-      // - Same number of bedrooms/bathrooms (±1)
-      // - Recent sales (last 6 months preferred)
-      // - Similar property type
-      // - Similar age (±10 years)
-
-      this.logger.info('Found comparable properties', {
-        count: mockComparables.length
+      const mlsListings = await this.mlsProvider.searchSoldListings({
+        latitude: criteria.latitude,
+        longitude: criteria.longitude,
+        ...(criteria.radiusMiles !== undefined && { radiusMiles: criteria.radiusMiles }),
+        ...(criteria.maxResults !== undefined && { limit: criteria.maxResults }),
+        ...(criteria.minBedrooms !== undefined && { minBeds: criteria.minBedrooms }),
+        ...(criteria.maxBedrooms !== undefined && { maxBeds: criteria.maxBedrooms }),
+        ...(criteria.minBathrooms !== undefined && { minBaths: criteria.minBathrooms }),
+        ...(criteria.maxBathrooms !== undefined && { maxBaths: criteria.maxBathrooms }),
+        ...(criteria.minSquareFeet !== undefined && { minSqft: criteria.minSquareFeet }),
+        ...(criteria.maxSquareFeet !== undefined && { maxSqft: criteria.maxSquareFeet }),
+        soldWithinDays,
       });
 
-      return mockComparables;
+      const comparables: ROVComparable[] = mlsListings.map(
+        (listing) => mapMlsListingToROVComparable(listing, criteria.latitude, criteria.longitude),
+      );
+
+      this.logger.info('Found comparable properties', {
+        count: comparables.length
+      });
+
+      return comparables;
 
     } catch (error) {
       this.logger.error('Error searching for comparables', { error, criteria });
@@ -351,7 +423,7 @@ export class ROVResearchService {
   }
 
   /**
-   * Analyze market trends for a location
+   * Analyze market trends for a location using MLS sold data.
    */
   async analyzeMarketTrends(
     address: string,
@@ -365,9 +437,21 @@ export class ROVResearchService {
       const endDate = new Date();
       const startDate = new Date(Date.now() - analysisWindowDays * 24 * 60 * 60 * 1000);
 
-      // TODO: Query recent sales in the area
-      // This would integrate with MLS data or property databases
-      const recentSales: any[] = []; // Mock data
+      // Fetch recent sales from MLS provider
+      const mlsListings = await this.mlsProvider.searchSoldListings({
+        latitude,
+        longitude,
+        radiusMiles: 1.0,
+        soldWithinDays: analysisWindowDays,
+        limit: 100,
+      });
+
+      const recentSales: { salePrice: number; saleDate: string }[] = mlsListings
+        .filter(l => l.salePrice > 0 && l.saleDate)
+        .map(l => ({
+          salePrice: l.salePrice,
+          saleDate: l.saleDate,
+        }));
 
       if (recentSales.length === 0) {
         this.logger.warn('No recent sales data available for market analysis');
@@ -387,7 +471,7 @@ export class ROVResearchService {
       // Calculate basic statistics
       const prices = recentSales.map(s => s.salePrice).sort((a, b) => a - b);
       const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
-      const medianPrice = prices[Math.floor(prices.length / 2)];
+      const medianPrice = prices[Math.floor(prices.length / 2)] ?? 0;
 
       // Calculate trend (compare first half vs second half of time period)
       const midDate = new Date((startDate.getTime() + endDate.getTime()) / 2);

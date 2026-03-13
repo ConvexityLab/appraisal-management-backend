@@ -160,8 +160,8 @@ export class VendorPerformanceCalculatorService {
     ).length;
     const complianceScore = (compliantOrders / completedOrders.length) * 100;
 
-    // Accuracy score (placeholder - would compare to final values)
-    const accuracyScore = 95; // TODO: Implement actual accuracy calculation
+    // Accuracy score — computed from QC review AVM/appraisal variance
+    const accuracyScore = this.calculateAccuracyScore(completedOrders);
 
     // Overall quality score (lower revision rate = higher quality)
     const qualityScore = (
@@ -253,15 +253,32 @@ export class VendorPerformanceCalculatorService {
   }
 
   /**
-   * Calculate communication metrics
+   * Calculate communication metrics from real response-time data.
    */
   private calculateCommunicationMetrics(orders: AppraisalOrder[]) {
-    // Placeholder - would analyze message response times
-    // For now, use a derived score based on other metrics
-    const communicationScore = 85;
+    // Measure average response time to status-change requests
+    const responseTimes = orders
+      .filter(o => (o as any).lastResponseTimeHours !== undefined)
+      .map(o => (o as any).lastResponseTimeHours as number);
+
+    // Measure borrower-contact attempt compliance (inspection scheduling)
+    const inspectionOrders = orders.filter(o => (o as any).inspectionContactAttempts !== undefined);
+    const contactCompliance = inspectionOrders.length > 0
+      ? inspectionOrders.filter(o => ((o as any).inspectionContactAttempts ?? 0) >= 1).length / inspectionOrders.length
+      : 1; // No inspection orders → no penalty
+
+    // If we have real response-time data, score it (target: < 4 hours)
+    let responseScore = 85; // default when no data
+    if (responseTimes.length > 0) {
+      const avgResponseHours = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+      // 0 hrs → 100, 4 hrs → 80, 8+ hrs → 60
+      responseScore = Math.max(60, Math.min(100, 100 - (avgResponseHours * 5)));
+    }
+
+    const communicationScore = Math.round(responseScore * 0.6 + contactCompliance * 100 * 0.4);
 
     return {
-      communicationScore
+      communicationScore: Math.min(100, Math.max(0, communicationScore))
     };
   }
 
@@ -419,6 +436,152 @@ export class VendorPerformanceCalculatorService {
       lastUpdated: new Date(),
       calculatedAt: new Date(),
       dataPointsCount: 0
+    };
+  }
+
+  /**
+   * Calculate accuracy score from QC review data.
+   * Uses CU risk score from UCDP submissions + AVM variance when available.
+   */
+  private calculateAccuracyScore(completedOrders: AppraisalOrder[]): number {
+    let totalScore = 0;
+    let dataPoints = 0;
+
+    for (const o of completedOrders) {
+      const order = o as any;
+
+      // 1. CU risk score from GSE/UCDP submission (0-5 scale, lower = better)
+      const cuScore = order.cuRiskScore ?? order.ucdpCuScore ?? order.gseSubmission?.cuRiskScore;
+      if (typeof cuScore === 'number' && cuScore >= 0) {
+        // Map CU 0-5 → accuracy 100-50: score 0 = 100, score 5 = 50
+        const cuAccuracy = Math.max(50, 100 - (cuScore * 10));
+        totalScore += cuAccuracy;
+        dataPoints++;
+      }
+
+      // 2. SSR severity penalty — hard stops significantly lower accuracy
+      const ssrHardStops = order.ssrHardStopCount ?? order.gseSubmission?.hardStopCount ?? 0;
+      const ssrWarnings = order.ssrWarningCount ?? order.gseSubmission?.warningCount ?? 0;
+      if (ssrHardStops > 0 || ssrWarnings > 0) {
+        // Each hard stop = -15 from 100, each warning = -5
+        const ssrAccuracy = Math.max(40, 100 - (ssrHardStops * 15) - (ssrWarnings * 5));
+        totalScore += ssrAccuracy;
+        dataPoints++;
+      }
+
+      // 3. QC review score from internal review engine
+      const qc = order.qcResult || order.qcReview;
+      if (qc && typeof qc.score === 'number') {
+        totalScore += Math.min(100, Math.max(0, qc.score));
+        dataPoints++;
+      }
+
+      // 4. AVM/Axiom risk score fallback
+      if (typeof order.axiomRiskScore === 'number' && !cuScore) {
+        // Low axiom risk score = high accuracy
+        const avmAccuracy = Math.max(60, 100 - order.axiomRiskScore);
+        totalScore += avmAccuracy;
+        dataPoints++;
+      }
+    }
+
+    if (dataPoints === 0) return 80; // New vendor, no data
+
+    return Math.round(totalScore / dataPoints);
+  }
+
+  /**
+   * Check if vendor should be auto-suspended based on performance.
+   * Triggers when vendor drops to PROBATION tier.
+   */
+  async checkAutoSuspension(vendorId: string, tenantId: string, metrics: VendorPerformanceMetrics): Promise<{
+    shouldSuspend: boolean;
+    reason?: string;
+  }> {
+    if (metrics.tier !== 'PROBATION') {
+      return { shouldSuspend: false };
+    }
+
+    // Only suspend if vendor has enough data points to judge
+    if (metrics.dataPointsCount < 5) {
+      return { shouldSuspend: false };
+    }
+
+    const reasons: string[] = [];
+    if (metrics.revisionRate > 50) reasons.push(`High revision rate: ${metrics.revisionRate}%`);
+    if (metrics.onTimeDeliveryRate < 50) reasons.push(`Low on-time delivery: ${metrics.onTimeDeliveryRate}%`);
+    if (metrics.completionRate < 60) reasons.push(`Low completion rate: ${metrics.completionRate}%`);
+    if (metrics.cancellationRate > 30) reasons.push(`High cancellation rate: ${metrics.cancellationRate}%`);
+
+    if (reasons.length >= 2) {
+      this.logger.warn('Auto-suspension triggered for vendor', {
+        vendorId,
+        tier: metrics.tier,
+        overallScore: metrics.overallScore,
+        reasons,
+      });
+      return {
+        shouldSuspend: true,
+        reason: `Performance dropped to PROBATION tier with ${reasons.length} critical issues: ${reasons.join('; ')}`,
+      };
+    }
+
+    return { shouldSuspend: false };
+  }
+
+  /**
+   * Generate a coaching/defect-pattern report for a vendor.
+   * Summarizes recurring issues for quarterly scorecard delivery.
+   */
+  async generateCoachingReport(vendorId: string, tenantId: string): Promise<{
+    vendorId: string;
+    period: string;
+    strengths: string[];
+    improvements: string[];
+    tier: string;
+    overallScore: number;
+    recommendations: string[];
+  }> {
+    const metrics = await this.calculateVendorMetrics(vendorId, tenantId);
+
+    const strengths: string[] = [];
+    const improvements: string[] = [];
+    const recommendations: string[] = [];
+
+    // Quality
+    if (metrics.revisionRate <= 10) strengths.push('Excellent revision rate — rarely needs corrections');
+    else if (metrics.revisionRate > 30) improvements.push(`High revision rate (${metrics.revisionRate}%) — review common QC findings`);
+
+    // Speed
+    if (metrics.onTimeDeliveryRate >= 95) strengths.push('Outstanding on-time delivery');
+    else if (metrics.onTimeDeliveryRate < 80) improvements.push(`On-time delivery at ${metrics.onTimeDeliveryRate}% — target is 95%`);
+
+    // Reliability
+    if (metrics.completionRate >= 98) strengths.push('Exceptional completion rate');
+    else if (metrics.completionRate < 90) improvements.push(`Completion rate at ${metrics.completionRate}% — investigate declined/cancelled orders`);
+
+    // Compliance
+    if (metrics.complianceScore >= 95) strengths.push('Strong compliance track record');
+    else if (metrics.complianceScore < 80) improvements.push(`Compliance score at ${metrics.complianceScore}% — review USPAP and AIR requirements`);
+
+    // Recommendations
+    if (metrics.tier === 'PLATINUM' || metrics.tier === 'GOLD') {
+      recommendations.push('Consider expanding geographic coverage — eligible for priority assignments');
+      recommendations.push('Eligible for complex property and high-value order routing');
+    }
+    if (metrics.tier === 'BRONZE' || metrics.tier === 'PROBATION') {
+      recommendations.push('Attend refresher training on common QC findings');
+      recommendations.push('Focus on accepting only orders within capacity to improve completion rate');
+    }
+
+    return {
+      vendorId,
+      period: `${new Date().toISOString().slice(0, 7)} Quarterly Report`,
+      strengths,
+      improvements,
+      tier: metrics.tier,
+      overallScore: metrics.overallScore,
+      recommendations,
     };
   }
 

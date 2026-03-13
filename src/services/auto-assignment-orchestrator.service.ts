@@ -40,6 +40,8 @@ import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { VendorMatchingEngine } from './vendor-matching-engine.service.js';
 import { QCReviewQueueService } from './qc-review-queue.service.js';
+import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
+import { SupervisoryReviewService } from './supervisory-review.service.js';
 import type {
   AppEvent,
   BaseEvent,
@@ -47,6 +49,7 @@ import type {
   EngagementOrderCreatedEvent,
   VendorBidTimedOutEvent,
   VendorBidDeclinedEvent,
+  VendorStaffAssignedEvent,
   OrderStatusChangedEvent,
   ReviewAssignmentTimedOutEvent,
 } from '../types/events.js';
@@ -72,6 +75,16 @@ export interface RankedVendorEntry {
   vendorId: string;
   vendorName: string;
   score: number;
+  /**
+   * Whether this entry is an internal staff member.
+   * When 'internal', the orchestrator skips the bid loop and assigns directly.
+   * Absent / 'external' = normal bid flow.
+   */
+  staffType?: 'internal' | 'external';
+  /**
+   * Role of the internal staff member — only set when staffType === 'internal'.
+   */
+  staffRole?: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
 }
 
 export interface AutoVendorAssignmentState {
@@ -107,6 +120,8 @@ export class AutoAssignmentOrchestratorService {
   private readonly dbService: CosmosDbService;
   private readonly matchingEngine: VendorMatchingEngine;
   private readonly qcQueueService: QCReviewQueueService;
+  private readonly tenantConfigService: TenantAutomationConfigService;
+  private readonly supervisoryReviewService: SupervisoryReviewService;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
@@ -120,6 +135,8 @@ export class AutoAssignmentOrchestratorService {
     );
     this.matchingEngine = new VendorMatchingEngine();
     this.qcQueueService = new QCReviewQueueService();
+    this.tenantConfigService = new TenantAutomationConfigService();
+    this.supervisoryReviewService = new SupervisoryReviewService();
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -191,6 +208,10 @@ export class AutoAssignmentOrchestratorService {
     loanAmount: number;
     priority: 'STANDARD' | 'RUSH' | 'EMERGENCY';
     dueDate: Date;
+    /** Product being ordered — enables matching engine eligibility gate */
+    productId?: string;
+    /** Vendor must support ALL of these capabilities to be eligible */
+    requiredCapabilities?: string[];
   }): Promise<void> {
     const event: EngagementOrderCreatedEvent = {
       id: uuidv4(),
@@ -211,6 +232,8 @@ export class AutoAssignmentOrchestratorService {
         loanAmount: params.loanAmount,
         priority: this.mapPriority(params.priority),
         dueDate: params.dueDate,
+        ...(params.productId ? { productId: params.productId } : {}),
+        ...(params.requiredCapabilities?.length ? { requiredCapabilities: params.requiredCapabilities } : {}),
       },
     };
     await this.onEngagementOrderCreated(event);
@@ -223,8 +246,8 @@ export class AutoAssignmentOrchestratorService {
    * Ranks vendors and sends the first bid request.
    */
   private async onEngagementOrderCreated(event: EngagementOrderCreatedEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, propertyAddress, productType, dueDate, priority, clientId } =
-      event.data;
+    const { orderId, orderNumber, tenantId, propertyAddress, productType, dueDate, priority, clientId,
+      productId, requiredCapabilities } = event.data;
 
     this.logger.info('Processing engagement.order.created', { orderId, orderNumber });
 
@@ -239,6 +262,18 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
+    // --- Load tenant automation config ---
+    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+
+    // --- Respect autoAssignmentEnabled flag ---
+    if (!tenantConfig.autoAssignmentEnabled) {
+      this.logger.info('Auto-assignment disabled by tenant config — escalating to human', { orderId, tenantId });
+      await this.escalateVendorAssignment(order, tenantId, []);
+      return;
+    }
+
+    const maxAttempts = tenantConfig.maxVendorAttempts;
+
     // --- Rank vendors ---
     let rankedVendors: RankedVendorEntry[] = [];
     try {
@@ -252,9 +287,15 @@ export class AutoAssignmentOrchestratorService {
           urgency: priority === EventPriority.CRITICAL ? 'SUPER_RUSH'
             : priority === EventPriority.HIGH ? 'RUSH'
             : 'STANDARD',
-          clientPreferences: { excludedVendors: [] },
+          // Hard gates: only vendors eligible for this product + capabilities flow through
+          ...(productId ? { productId } : {}),
+          ...(requiredCapabilities?.length ? { requiredCapabilities } : {}),
+          clientPreferences: {
+            excludedVendors: [],
+            preferredVendors: tenantConfig.preferredVendorIds,
+          },
         },
-        MAX_VENDOR_ATTEMPTS,
+        maxAttempts,
       );
 
       rankedVendors = results.map((r) => ({
@@ -273,7 +314,11 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
-    // --- Initialise state and send first bid ---
+    // --- Enrich ranked vendors with staffType so the FSM can short-circuit
+    //     for internal staff without extra DB lookups on each retry. ---
+    rankedVendors = await this.enrichWithStaffType(rankedVendors, tenantId);
+
+    // --- Initialise state and send first bid (or direct staff assignment) ---
     const state: AutoVendorAssignmentState = {
       status: 'PENDING_BID',
       rankedVendors,
@@ -284,6 +329,29 @@ export class AutoAssignmentOrchestratorService {
     };
 
     await this.sendBidToVendor(order, state, tenantId, priority);
+
+    // --- Post-assignment: trigger supervisory review if tenant policy requires it ---
+    const loanAmount = typeof (order as any).loanAmount === 'number' ? (order as any).loanAmount : 0;
+    const needsSupervision =
+      tenantConfig.supervisoryReviewForAllOrders ||
+      (tenantConfig.supervisoryReviewValueThreshold > 0 && loanAmount > tenantConfig.supervisoryReviewValueThreshold);
+
+    if (needsSupervision && tenantConfig.defaultSupervisorId) {
+      try {
+        await this.supervisoryReviewService.requestSupervision({
+          orderId,
+          tenantId,
+          supervisorId: tenantConfig.defaultSupervisorId,
+          reason: tenantConfig.supervisoryReviewForAllOrders ? 'policy_requirement' : 'high_value',
+          requestedBy: 'auto-assignment-orchestrator',
+        });
+        this.logger.info('Supervisory review requested by orchestrator', { orderId, tenantId });
+      } catch (supervisionErr) {
+        // Do not block the assignment workflow if supervision request fails.
+        // Log and continue — the coordinator can request it manually.
+        this.logger.error('Failed to auto-request supervisory review', { orderId, error: supervisionErr });
+      }
+    }
   }
 
   /**
@@ -350,6 +418,12 @@ export class AutoAssignmentOrchestratorService {
         attempt: state.currentAttempt,
         listLength: state.rankedVendors.length,
       });
+      return;
+    }
+
+    // Internal staff bypass the bid loop entirely.
+    if (vendor.staffType === 'internal') {
+      await this.assignStaffDirectly(order, state, vendor, tenantId, priority);
       return;
     }
 
@@ -530,6 +604,99 @@ export class AutoAssignmentOrchestratorService {
   }
 
   // ── Review Assignment FSM ─────────────────────────────────────────────────
+
+  /**
+   * Directly assign an internal staff member to an order, bypassing the bid
+   * loop.  The order is marked ACCEPTED immediately and a
+   * `vendor.staff.assigned` event is published so that downstream consumers
+   * (notifications, audit trail) can react without special-casing.
+   *
+   * Capacity enforcement: the vendor's activeOrderCount is incremented
+   * immediately after the order is marked ACCEPTED so that subsequent scoring
+   * cycles see the updated load without waiting for a background job.
+   */
+  private async assignStaffDirectly(
+    order: any,
+    state: AutoVendorAssignmentState,
+    vendor: RankedVendorEntry,
+    tenantId: string,
+    priority: EventPriority,
+  ): Promise<void> {
+    const acceptedState: AutoVendorAssignmentState = {
+      ...state,
+      status: 'ACCEPTED',
+      currentBidId: null,
+      currentBidExpiresAt: null,
+    };
+
+    await this.dbService.updateItem(
+      'orders',
+      order.id,
+      {
+        ...order,
+        autoVendorAssignment: acceptedState,
+        assignedVendorId: vendor.vendorId,
+        assignedVendorName: vendor.vendorName,
+        assignedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      tenantId,
+    );
+
+    // Increment the vendor's active order count so subsequent matching cycles
+    // see the correct load. Non-fatal: a failure here is logged but does not
+    // roll back the assignment — the order is already ACCEPTED.
+    try {
+      const vendorResult = await this.dbService.getItem('vendors', vendor.vendorId, tenantId);
+      const vendorDoc: Record<string, unknown> | null =
+        (vendorResult as any)?.data ?? vendorResult ?? null;
+      if (vendorDoc) {
+        const currentCount =
+          (vendorDoc['activeOrderCount'] as number | undefined) ??
+          (vendorDoc['currentActiveOrders'] as number | undefined) ??
+          0;
+        await this.dbService.updateItem(
+          'vendors',
+          vendor.vendorId,
+          { ...vendorDoc, activeOrderCount: currentCount + 1, updatedAt: new Date().toISOString() },
+          tenantId,
+        );
+      }
+    } catch (capacityErr) {
+      this.logger.warn('Failed to increment activeOrderCount on staff vendor', {
+        vendorId: vendor.vendorId,
+        error: capacityErr,
+      });
+    }
+
+    const staffAssignedEvent: VendorStaffAssignedEvent = {
+      id: uuidv4(),
+      type: 'vendor.staff.assigned',
+      timestamp: new Date(),
+      source: 'auto-assignment-orchestrator',
+      version: '1.0',
+      category: EventCategory.VENDOR,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        tenantId,
+        vendorId: vendor.vendorId,
+        vendorName: vendor.vendorName,
+        staffRole: vendor.staffRole ?? 'appraiser_internal',
+        assignedAt: new Date(),
+        priority,
+      },
+    };
+
+    await this.publisher.publish(staffAssignedEvent);
+
+    this.logger.info('Internal staff assigned directly (bid loop bypassed)', {
+      orderId: order.id,
+      vendorId: vendor.vendorId,
+      vendorName: vendor.vendorName,
+      staffRole: vendor.staffRole,
+    });
+  }
 
   /**
    * Bootstrap the review assignment flow for a newly SUBMITTED order.
@@ -802,6 +969,35 @@ export class AutoAssignmentOrchestratorService {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Enrich a ranked vendor list with staffType / staffRole by doing parallel
+   * reads of the vendor documents.  Any lookup failure gracefully falls back
+   * to 'external' so the bid loop proceeds normally.
+   */
+  private async enrichWithStaffType(
+    vendors: RankedVendorEntry[],
+    tenantId: string,
+  ): Promise<RankedVendorEntry[]> {
+    const enriched = await Promise.all(
+      vendors.map(async (v): Promise<RankedVendorEntry> => {
+        try {
+          const result = await this.dbService.getItem('vendors', v.vendorId, tenantId);
+          const doc = (result as any)?.data ?? result;
+          if (!doc) return v;
+          return {
+            ...v,
+            staffType: doc.staffType ?? 'external',
+            staffRole: doc.staffRole,
+          };
+        } catch {
+          // Non-critical: if we can't fetch the vendor, treat as external.
+          return v;
+        }
+      }),
+    );
+    return enriched;
+  }
 
   private async loadOrder(orderId: string, tenantId: string): Promise<any | null> {
     try {

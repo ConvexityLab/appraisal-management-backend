@@ -1,4 +1,4 @@
-import { CosmosClient, Database, Container, ItemResponse, FeedResponse } from '@azure/cosmos';
+import { CosmosClient, Database, Container, ItemResponse, FeedResponse, SqlQuerySpec } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import { 
   AppraisalOrder, 
@@ -59,6 +59,9 @@ export class CosmosDbService {
   private constructionLoansContainer: Container | null = null;
   private drawsContainer: Container | null = null;
   private contractorsContainer: Container | null = null;
+  // ── Property Aggregate Root (Phase R1) ──────────────────────────────────
+  private propertyRecordsContainer: Container | null = null;
+  private comparableSalesContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -101,6 +104,9 @@ export class CosmosDbService {
     constructionLoans: 'construction-loans',               // ConstructionLoan, ConstructionBudget, ChangeOrder, FeasibilityReport, ConstructionStatusReport
     draws: 'draws',                                        // DrawRequest, DrawInspectionReport (partition: /constructionLoanId)
     contractors: 'contractors',                            // ContractorProfile (partition: /tenantId)
+    // ── Property Aggregate Root (Phase R1) ────────────────────────────────
+    propertyRecords: 'property-records',                   // PropertyRecord (partition: /tenantId)
+    comparableSales: 'comparable-sales',                   // PropertyComparableSale (partition: /zipCode)
   };
 
   constructor(
@@ -194,6 +200,9 @@ export class CosmosDbService {
       this.constructionLoansContainer = this.database.container(this.containers.constructionLoans);
       this.drawsContainer = this.database.container(this.containers.draws);
       this.contractorsContainer = this.database.container(this.containers.contractors);
+      // ── Property Aggregate Root (Phase R1) ─────────────────────────────────
+      this.propertyRecordsContainer = this.database.container(this.containers.propertyRecords);
+      this.comparableSalesContainer = this.database.container(this.containers.comparableSales);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
@@ -1313,9 +1322,11 @@ export class CosmosDbService {
 
       // Vendors container is partitioned by /tenantId (immutable).
       // Status changes no longer require delete+create — just replace in place.
-      const tenantId = (existingResponse.data.tenantId ?? existingResponse.data.id) as string;
+      // Use the stored tenantId as partition key; if absent, pass null so Cosmos
+      // resolves the null-partition-key slot (avoids using the wrong shard).
+      const tenantId = existingResponse.data.tenantId ?? null;
 
-      const replaceResponse = await this.vendorsContainer.item(id, tenantId).replace(updatedVendor);
+      const replaceResponse = await this.vendorsContainer.item(id, tenantId as any).replace(updatedVendor);
       const resource = replaceResponse.resource as Vendor;
 
       return {
@@ -1642,6 +1653,25 @@ export class CosmosDbService {
         error: createApiError('GET_RECENT_ORDERS_FAILED', error instanceof Error ? error.message : 'Unknown error')
       };
     }
+  }
+
+  // ===============================
+  // Analytics raw query access
+  // ===============================
+
+  /**
+   * Execute an arbitrary SQL query against the orders container and return
+   * the raw result resources. Used by PortfolioAnalyticsService to run
+   * dashboard/reporting aggregations without coupling them to specific typed methods.
+   *
+   * Throws if the database has not been initialized.
+   */
+  async runOrdersQuery(spec: SqlQuerySpec): Promise<any[]> {
+    if (!this.ordersContainer) {
+      throw new Error('CosmosDbService.runOrdersQuery: database not initialized. Call initialize() first.');
+    }
+    const { resources } = await this.ordersContainer.items.query(spec).fetchAll();
+    return resources;
   }
 
   // ===============================

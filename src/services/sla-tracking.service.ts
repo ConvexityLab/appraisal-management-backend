@@ -45,6 +45,15 @@ export class SLATrackingService {
     this.escalationService = new EscalationWorkflowService();
   }
 
+  private dbInitialized = false;
+
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
+  }
+
   // ===========================
   // SLA CONFIGURATION
   // ===========================
@@ -54,6 +63,7 @@ export class SLATrackingService {
    */
   async createSLAConfiguration(config: Omit<SLAConfiguration, 'id' | 'createdAt' | 'updatedAt'>): Promise<SLAConfiguration> {
     try {
+      await this.ensureDbInitialized();
       const slaConfig: SLAConfiguration = {
         ...config,
         id: `sla-config-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -85,6 +95,7 @@ export class SLATrackingService {
     orderType?: string
   ): Promise<SLAConfiguration | null> {
     try {
+      await this.ensureDbInitialized();
       // Try to find client-specific config first
       if (clientId) {
         const container = this.dbService.getContainer('sla-configurations');
@@ -144,6 +155,7 @@ export class SLATrackingService {
    */
   async getSLAsByOrderId(orderId: string): Promise<SLATracking[]> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('sla-tracking');
       const query = 'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.createdAt DESC';
       const { resources } = await container.items.query<SLATracking>({
@@ -169,6 +181,7 @@ export class SLATrackingService {
     clientId?: string
   ): Promise<SLATracking> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Starting SLA tracking', {
         entityType,
         entityId,
@@ -229,6 +242,7 @@ export class SLATrackingService {
    */
   async updateSLAStatus(trackingId: string): Promise<SLATracking> {
     try {
+      await this.ensureDbInitialized();
       const tracking = await this.getSLATracking(trackingId);
       if (!tracking) {
         throw new Error('SLA tracking not found');
@@ -274,6 +288,7 @@ export class SLATrackingService {
    */
   async completeSLATracking(trackingId: string): Promise<SLATracking> {
     try {
+      await this.ensureDbInitialized();
       const tracking = await this.updateSLAStatus(trackingId);
       tracking.endTime = new Date();
       tracking.updatedAt = new Date();
@@ -416,6 +431,7 @@ export class SLATrackingService {
    */
   async extendSLA(request: ExtendSLARequest): Promise<SLATracking> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Extending SLA', {
         trackingId: request.slaTrackingId,
         extensionMinutes: request.extensionMinutes
@@ -455,6 +471,7 @@ export class SLATrackingService {
    */
   async waiveSLA(request: WaiveSLARequest): Promise<SLATracking> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Waiving SLA', {
         trackingId: request.slaTrackingId,
         reason: request.reason
@@ -534,6 +551,7 @@ export class SLATrackingService {
     entityType?: 'QC_REVIEW' | 'REVISION' | 'ESCALATION'
   ): Promise<SLAMetrics> {
     try {
+      await this.ensureDbInitialized();
       const { startDate, endDate } = this.getPeriodDates(period);
 
       const container = this.dbService.getContainer('sla-tracking');
@@ -620,6 +638,7 @@ export class SLATrackingService {
    */
   async checkActiveSLAs(): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('sla-tracking');
       const { resources } = await container.items
         .query({

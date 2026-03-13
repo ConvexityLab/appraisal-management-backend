@@ -273,25 +273,25 @@
   <div class="photo-grid-2" style="margin-top:2px;">
     <div class="photo-slot">
       {{#if subjectFrontPhoto}}
-      <img src="{{subjectFrontPhoto.blobPath}}" alt="Front">
+      <img src="{{subjectFrontPhoto.dataUri}}" alt="Front">
       {{else}}<div class="photo-placeholder">Front Photo Not Available</div>{{/if}}
       <div class="photo-caption">Subject – Front View</div>
     </div>
     <div class="photo-slot">
       {{#if subjectRearPhoto}}
-      <img src="{{subjectRearPhoto.blobPath}}" alt="Rear">
+      <img src="{{subjectRearPhoto.dataUri}}" alt="Rear">
       {{else}}<div class="photo-placeholder">Rear Photo Not Available</div>{{/if}}
       <div class="photo-caption">Subject – Rear View</div>
     </div>
     <div class="photo-slot">
       {{#if subjectStreetPhoto}}
-      <img src="{{subjectStreetPhoto.blobPath}}" alt="Street">
+      <img src="{{subjectStreetPhoto.dataUri}}" alt="Street">
       {{else}}<div class="photo-placeholder">Street Scene Not Available</div>{{/if}}
       <div class="photo-caption">Street Scene</div>
     </div>
     <div class="photo-slot">
       {{#if aerialPhoto}}
-      <img src="{{aerialPhoto.blobPath}}" alt="Aerial">
+      <img src="{{aerialPhoto.dataUri}}" alt="Aerial">
       {{else}}<div class="photo-placeholder">Aerial / Map Not Available</div>{{/if}}
       <div class="photo-caption">Aerial / Location Map</div>
     </div>
@@ -372,9 +372,9 @@
     {{#each compPhotos}}
     <div class="photo-slot">
       {{#if this}}
-      <img src="{{this.blobPath}}" alt="Comp {{@index1}}">
-      {{else}}<div class="photo-placeholder">Comp {{@index1}} – No Photo</div>{{/if}}
-      <div class="photo-caption">Comparable {{@index1}}</div>
+      <img src="{{this.dataUri}}" alt="Comp {{add @index 1}}">
+      {{else}}<div class="photo-placeholder">Comp {{add @index 1}} – No Photo</div>{{/if}}
+      <div class="photo-caption">Comparable {{add @index 1}}</div>
     </div>
     {{/each}}
   </div>

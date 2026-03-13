@@ -149,6 +149,8 @@ export interface ReportSectionConfig {
 export interface ReportTemplate {
   /** Unique identifier */
   id: string;
+  /** Cosmos document type discriminator — always 'pdf-report-template' */
+  type: 'pdf-report-template';
   /** Human-readable name, e.g. "Form 1004 — Uniform Residential Appraisal Report" */
   name: string;
   /** Form type key, e.g. 'URAR_1004', 'DVR', 'FORM_2055', 'FORM_1073' */

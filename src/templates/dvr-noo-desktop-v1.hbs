@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DVR Desktop Review — NOO — {{metadata.orderNumber}}</title>
+<style>
+  /* ── Design tokens (matched to URAR v2) ───────────────────────────────── */
+  :root{
+    --navy:#0C2340; --navy-mid:#163D6B; --navy-light:#1F5499;
+    --gold:#C49A1A; --gold-bg:#FBF5E0; --gold-light:#F7ECC8;
+    --text:#1A1A1A; --muted:#6B7280; --border:#CBD5E1;
+    --green:#155F2A; --red:#9B1C1C; --page-w:8.5in;
+  }
+
+  /* ── Base ──────────────────────────────────────────────────────────────── */
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#E5E7EB;font-family:'Segoe UI',Arial,sans-serif;font-size:8pt;color:var(--text);print-color-adjust:exact}
+
+  /* ── Page shell ──────────────────────────────────────────────────────────*/
+  .page{width:var(--page-w);min-height:11in;background:#fff;margin:0 auto 32px;padding:0.45in 0.5in 0.55in;box-shadow:0 4px 24px rgba(0,0,0,.15);page-break-after:always;position:relative}
+  .page:last-child{page-break-after:auto}
+  @media print{.page{margin:0;box-shadow:none}}
+
+  /* ── Brand header ─────────────────────────────────────────────────────── */
+  .brand-bar{background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:8px 14px;margin:0 -0.5in 10px;width:calc(100% + 1in);border-bottom:3px solid var(--gold)}
+  .brand-left{display:flex;flex-direction:column}
+  .brand-name{font-size:15pt;font-weight:800;letter-spacing:.08em;color:#fff}
+  .brand-name span{color:var(--gold)}
+  .brand-sub{font-size:7.5pt;color:#B8C9E0;letter-spacing:.12em;text-transform:uppercase;margin-top:1px}
+  .brand-badges{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  .brand-badge{font-size:6.5pt;color:var(--gold-light);letter-spacing:.1em;text-transform:uppercase;border:1px solid rgba(196,154,26,.45);padding:1px 6px;border-radius:10px}
+  .brand-contact{font-size:6.5pt;color:#B8C9E0;margin-top:2px}
+
+  /* ── Form title bar ───────────────────────────────────────────────────── */
+  .form-title-bar{background:var(--gold);color:var(--navy);text-align:center;padding:5px 0;margin-bottom:8px;border-radius:2px}
+  .form-title-bar h1{font-size:11pt;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  .form-title-bar p{font-size:7.5pt;font-weight:600;color:var(--navy-mid);margin-top:1px}
+
+  /* ── Section headers ──────────────────────────────────────────────────── */
+  .section-hdr{background:var(--navy);color:#fff;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:3px 8px;margin:7px 0 3px;border-left:4px solid var(--gold)}
+  .section-hdr.gold{background:var(--gold-bg);color:var(--navy);border-left:4px solid var(--gold)}
+
+  /* ── Grid utilities ───────────────────────────────────────────────────── */
+  .row{display:grid;gap:0;margin-bottom:0}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:1fr 1fr 1fr}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g5{grid-template-columns:repeat(5,1fr)}
+  .cell{border:1px solid var(--border);padding:3px 6px;line-height:1.4}
+  .cell+.cell{border-left:none}
+  .lbl{font-size:6.5pt;color:var(--muted);font-weight:600;text-transform:uppercase;display:block;margin-bottom:1px}
+  .val{font-size:8pt;color:var(--text)}
+
+  /* ── Photo box ────────────────────────────────────────────────────────── */
+  .photo-box{border:1px solid var(--border);border-radius:3px;overflow:hidden;background:#F1F5F9;min-height:150px;max-height:170px;display:flex;align-items:center;justify-content:center}
+  .photo-box img{width:100%;height:100%;object-fit:cover;display:block}
+  .photo-placeholder{font-size:7.5pt;color:var(--muted);text-align:center;padding:8px}
+
+  /* ── Values + grade panel ─────────────────────────────────────────────── */
+  .top-grid{display:grid;grid-template-columns:40% 60%;gap:8px;margin-bottom:6px}
+  .value-row{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid var(--border)}
+  .value-row:last-child{border-bottom:none}
+  .value-lbl{font-size:6.5pt;color:var(--muted);font-weight:600;text-transform:uppercase;white-space:nowrap;flex-shrink:0}
+  .value-val{font-size:9pt;font-weight:800;color:var(--navy);text-align:right}
+  .value-sub{font-size:6.5pt;color:var(--muted);text-align:right}
+  .value-panel{border:1px solid var(--border);border-radius:3px;padding:6px 8px;background:#FAFBFC}
+  .value-panel-hdr{background:var(--navy);color:#fff;font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;margin:-6px -8px 5px;border-radius:2px 2px 0 0}
+
+  /* ── Grade badges ─────────────────────────────────────────────────────── */
+  .grade-section{margin-top:5px;border:1px solid var(--border);border-radius:3px;overflow:hidden}
+  .grade-hdr{background:var(--navy);color:#fff;font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px}
+  .grade-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+  .grade-badge{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px;border-right:1px solid rgba(255,255,255,.2);cursor:default}
+  .grade-badge:last-child{border-right:none}
+  .grade-badge{background:#9e9e9e}
+  .grade-badge .grade-letter{font-size:14pt;font-weight:900;color:rgba(255,255,255,.4);line-height:1}
+  .grade-badge .grade-tick{font-size:7pt;color:rgba(255,255,255,.35);margin-top:1px}
+  .grade-badge.selected.grade-A{background:#1B5E20}
+  .grade-badge.selected.grade-B{background:#0D47A1}
+  .grade-badge.selected.grade-C{background:#E65100}
+  .grade-badge.selected.grade-D{background:#B71C1C}
+  .grade-badge.selected .grade-letter{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .grade-badge.selected .grade-tick{color:#fff}
+  .grade-desc{background:var(--gold-bg);padding:3px 6px;font-size:6pt;color:var(--navy-mid);line-height:1.45}
+  .grade-desc span{display:block}
+
+  /* ── Y/N checkboxes ───────────────────────────────────────────────────── */
+  .yn-box{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border:1.5px solid var(--border);font-size:7.5pt;font-weight:900;color:transparent;border-radius:2px;vertical-align:middle}
+  .yn-box.checked{background:var(--navy);border-color:var(--navy);color:#fff}
+  .yn-pair{display:inline-flex;align-items:center;gap:3px;font-size:7.5pt;white-space:nowrap}
+
+  /* ── Admin question rows ──────────────────────────────────────────────── */
+  .admin-row{display:flex;align-items:flex-start;gap:6px;padding:3px 6px;border:1px solid var(--border);border-top:none;font-size:7.5pt;line-height:1.4}
+  .admin-row:first-of-type{border-top:none}
+  .admin-row:nth-child(even){background:#F8FAFC}
+  .admin-q-num{font-weight:700;color:var(--navy);width:12px;flex-shrink:0;padding-top:1px}
+  .admin-q-text{flex:1;color:var(--text)}
+  .admin-yn{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:1px}
+
+  /* ── Comments / text areas ────────────────────────────────────────────── */
+  .comments-box{border:1px solid var(--border);min-height:220px;padding:6px 8px;font-size:7.5pt;color:var(--text);white-space:pre-wrap;background:#FAFBFC;border-radius:2px;margin-bottom:8px}
+
+  /* ── Scope paragraphs ─────────────────────────────────────────────────── */
+  .scope-para{font-size:7.5pt;line-height:1.55;margin-bottom:5px;text-align:justify;color:var(--text)}
+  .scope-para strong{font-weight:700;color:var(--navy)}
+  .scope-para em{font-style:italic}
+  .scope-para.indent{padding-left:14px}
+
+  /* ── Limiting conditions list ─────────────────────────────────────────── */
+  .condition-list{list-style:none;padding:0;margin-bottom:4px}
+  .condition-list li{font-size:7.5pt;line-height:1.5;margin-bottom:4px;text-align:justify;padding-left:18px;position:relative}
+  .condition-list li::before{content:attr(data-n) ".";position:absolute;left:0;font-weight:700;color:var(--navy)}
+
+  /* ── iAVM disclosure box ──────────────────────────────────────────────── */
+  .iavm-box{border:1px solid var(--border);padding:7px 10px;font-size:7.5pt;line-height:1.5;text-align:justify;margin-bottom:8px;background:#FAFBFC;border-radius:2px}
+
+  /* ── Signature block ──────────────────────────────────────────────────── */
+  .sig-block{border:1px solid var(--border);padding:7px 10px;margin:5px 0;border-radius:3px;background:#FAFBFC}
+  .sig-label{font-size:6.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:1px}
+  .sig-name{font-size:9pt;font-weight:700;color:var(--navy);font-style:italic;border-bottom:1px solid var(--border);margin-bottom:4px;padding-bottom:4px}
+  .sig-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  .sig-item{font-size:7pt;color:var(--text)}
+  .sig-item b{color:var(--navy)}
+
+  /* ── Continued marker ─────────────────────────────────────────────────── */
+  .continued{text-align:center;font-size:7.5pt;font-style:italic;color:var(--muted);margin-top:10px}
+
+  /* ── Page footer ──────────────────────────────────────────────────────── */
+  .page-footer{border-top:2px solid var(--navy);margin-top:8px;padding-top:4px;display:flex;justify-content:space-between;align-items:center}
+  .page-footer-left{font-size:6.5pt;color:var(--muted)}
+  .page-footer-brand{font-size:7pt;font-weight:700;color:var(--navy);letter-spacing:.06em}
+  .page-footer-brand span{color:var(--gold)}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════ PAGE 1 ══════════════════════════════════════════
+     Subject, Appraisal Values, Grade, Property Stats, Neighborhood, Admin Review
+═══════════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <!-- Brand header -->
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Desktop Appraisal Review — Non-Owner Occupied</span>
+      <span class="brand-badge">Vision DVR-10 Form</span>
+      <span class="brand-contact">info@visionvmc.com &bull; 425 Town Plaza Ave., Ponte Vedra, FL 32081</span>
+    </div>
+  </div>
+
+  <!-- Form title -->
+  <div class="form-title-bar">
+    <h1>Desktop Appraisal Review &mdash; Non-Owner Occupied</h1>
+    <p>File No. {{metadata.orderNumber}} &bull; Loan No. {{metadata.loanNumber}} &bull; Vision VMC DVR-10</p>
+  </div>
+
+  <!-- SUBJECT -->
+  <div class="section-hdr">Subject Property</div>
+  <div class="row g2">
+    <div class="cell">
+      <span class="lbl">Street Address</span>
+      <span class="val">{{streetAddress}}</span>
+    </div>
+    <div class="cell">
+      <span class="lbl">Loan ID / File No.</span>
+      <span class="val">{{loanId}}</span>
+    </div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">City</span><span class="val">{{city}}</span></div>
+    <div class="cell"><span class="lbl">State</span><span class="val">{{state}}</span></div>
+    <div class="cell"><span class="lbl">Zip Code</span><span class="val">{{zipCode}}</span></div>
+    <div class="cell">
+      <span class="lbl">Additional Analysis Recommended?</span>
+      <span class="val">
+        <span class="yn-pair">
+          <span class="yn-box{{#if additionalAnalysisYes}} checked{{/if}}">&#10003;</span> Y
+        </span>
+        &nbsp;
+        <span class="yn-pair">
+          <span class="yn-box{{#unless additionalAnalysisYes}} checked{{/unless}}">&#10003;</span> N
+        </span>
+      </span>
+    </div>
+  </div>
+  <div class="row g3">
+    <div class="cell"><span class="lbl">Loan Purpose</span><span class="val">{{loanPurpose}}</span></div>
+    <div class="cell"><span class="lbl">Prior Sale Price</span><span class="val">{{priorSalesPrice}}</span></div>
+    <div class="cell"><span class="lbl">Date of Prior Sale</span><span class="val">{{priorSaleDate}}</span></div>
+  </div>
+  <div style="font-size:6pt;font-style:italic;color:var(--muted);padding:2px 6px;margin-bottom:4px">
+    *If home price appreciation is notably significant, please comment on page two regarding whether appreciation is due to market conditions and/or improvements to the subject property.
+  </div>
+
+  <!-- TOP: Photo + Values/Grade -->
+  <div class="top-grid">
+
+    <!-- LEFT: Subject photo -->
+    <div>
+      <div class="section-hdr gold" style="margin-top:0">Subject Photo</div>
+      <div class="photo-box">
+        {{#if subjectPhoto}}
+        <img src="{{subjectPhoto.dataUri}}" alt="Subject Front">
+        {{else}}
+        <div class="photo-placeholder">SUBJECT<br>PROPERTY PHOTO</div>
+        {{/if}}
+      </div>
+    </div>
+
+    <!-- RIGHT: Appraisal values + grade -->
+    <div>
+      <div class="section-hdr gold" style="margin-top:0">Appraisal Values &amp; Grade</div>
+
+      <!-- Original Appraisal -->
+      <div class="value-panel" style="margin-bottom:5px">
+        <div class="value-panel-hdr">Original Appraisal</div>
+        <div class="value-row">
+          <span class="value-lbl">Opinion of Value</span>
+          <div>
+            <div class="value-val">{{originalAppraisalValue}}</div>
+          </div>
+        </div>
+        <div class="value-row">
+          <span class="value-lbl">Effective Date</span>
+          <span class="value-val" style="font-size:8pt">{{originalAppraisalDate}}</span>
+        </div>
+        <div class="value-row">
+          <span class="value-lbl">Form Type</span>
+          <span class="value-val" style="font-size:8pt">{{originalFormType}}</span>
+        </div>
+      </div>
+
+      <!-- Review Value -->
+      <div class="value-panel" style="margin-bottom:5px">
+        <div class="value-panel-hdr">Review Opinion of Value</div>
+        <div class="value-row">
+          <span class="value-lbl">Review Value</span>
+          <div>
+            <div class="value-val">{{reviewValue}}</div>
+          </div>
+        </div>
+        <div class="value-row">
+          <span class="value-lbl">Review Date</span>
+          <span class="value-val" style="font-size:8pt">{{reviewDate}}</span>
+        </div>
+        <div class="value-row">
+          <span class="value-lbl">% Variance</span>
+          <span class="value-val" style="font-size:8pt">{{variancePct}}</span>
+        </div>
+      </div>
+
+      <!-- Appraisal Grade A–D -->
+      <div class="grade-section">
+        <div class="grade-hdr">Appraisal Grade</div>
+        <div class="grade-row">
+          <div class="grade-badge grade-A{{#if gradeIsA}} selected{{/if}}">
+            <span class="grade-letter">A</span>
+            <span class="grade-tick">{{#if gradeIsA}}&#10003;{{else}}&mdash;{{/if}}</span>
+          </div>
+          <div class="grade-badge grade-B{{#if gradeIsB}} selected{{/if}}">
+            <span class="grade-letter">B</span>
+            <span class="grade-tick">{{#if gradeIsB}}&#10003;{{else}}&mdash;{{/if}}</span>
+          </div>
+          <div class="grade-badge grade-C{{#if gradeIsC}} selected{{/if}}">
+            <span class="grade-letter">C</span>
+            <span class="grade-tick">{{#if gradeIsC}}&#10003;{{else}}&mdash;{{/if}}</span>
+          </div>
+          <div class="grade-badge grade-D{{#if gradeIsD}} selected{{/if}}">
+            <span class="grade-letter">D</span>
+            <span class="grade-tick">{{#if gradeIsD}}&#10003;{{else}}&mdash;{{/if}}</span>
+          </div>
+        </div>
+        <div class="grade-desc">
+          <span><b>A</b> — Market value well supported; typically within 5%</span>
+          <span><b>B</b> — Market value reasonably supported; within 10%</span>
+          <span><b>C</b> — Market value not supported within 10%</span>
+          <span><b>D</b> — Report incomplete / significant errors / not investment grade</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- PROPERTY CHARACTERISTICS -->
+  <div class="section-hdr">Property Characteristics</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Property Type</span><span class="val">{{propertyType}}</span></div>
+    <div class="cell"><span class="lbl">Condition</span><span class="val">{{condition}}</span></div>
+    <div class="cell"><span class="lbl">Year Built</span><span class="val">{{yearBuilt}}</span></div>
+    <div class="cell"><span class="lbl">Units</span><span class="val">{{units}}</span></div>
+  </div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Total Rooms</span><span class="val">{{rooms}}</span></div>
+    <div class="cell"><span class="lbl">Bedrooms</span><span class="val">{{bedrooms}}</span></div>
+    <div class="cell"><span class="lbl">Bathrooms</span><span class="val">{{bathrooms}}</span></div>
+    <div class="cell"><span class="lbl">Lot Size (Acres)</span><span class="val">{{lotSizeAcres}}</span></div>
+  </div>
+
+  <!-- NEIGHBORHOOD -->
+  <div class="section-hdr">Neighborhood Characteristics</div>
+  <div class="row g4">
+    <div class="cell"><span class="lbl">Location Type</span><span class="val">{{locationType}}</span></div>
+    <div class="cell"><span class="lbl">Property Values</span><span class="val">{{propertyValues}}</span></div>
+    <div class="cell"><span class="lbl">Demand / Supply</span><span class="val">{{demandSupply}}</span></div>
+    <div class="cell"><span class="lbl">Marketing Time</span><span class="val">{{marketingTime}}</span></div>
+  </div>
+  <div class="row g2">
+    <div class="cell"><span class="lbl">Quality</span><span class="val">{{quality}}</span></div>
+    <div class="cell"><span class="lbl">Report Date</span><span class="val">{{reportDate}}</span></div>
+  </div>
+
+  <!-- ADMINISTRATIVE APPRAISAL REVIEW -->
+  <div class="section-hdr">Administrative Appraisal Review</div>
+  <div class="admin-row">
+    <span class="admin-q-num">1</span>
+    <span class="admin-q-text">Is the opinion of market value provided in the report adequately supported?</span>
+    <span class="admin-yn">
+      <span class="yn-pair"><span class="yn-box{{#if adminQ1}} checked{{/if}}">&#10003;</span> Y</span>
+      <span class="yn-pair"><span class="yn-box{{#unless adminQ1}} checked{{/unless}}">&#10003;</span> N</span>
+    </span>
+  </div>
+  <div class="admin-row">
+    <span class="admin-q-num">2</span>
+    <span class="admin-q-text">Are the comparable sales similar to the subject location, characteristics, and functionality?</span>
+    <span class="admin-yn">
+      <span class="yn-pair"><span class="yn-box{{#if adminQ2}} checked{{/if}}">&#10003;</span> Y</span>
+      <span class="yn-pair"><span class="yn-box{{#unless adminQ2}} checked{{/unless}}">&#10003;</span> N</span>
+    </span>
+  </div>
+  <div class="admin-row">
+    <span class="admin-q-num">3</span>
+    <span class="admin-q-text">Are the adjustments consistent and supported?</span>
+    <span class="admin-yn">
+      <span class="yn-pair"><span class="yn-box{{#if adminQ3}} checked{{/if}}">&#10003;</span> Y</span>
+      <span class="yn-pair"><span class="yn-box{{#unless adminQ3}} checked{{/unless}}">&#10003;</span> N</span>
+    </span>
+  </div>
+  <div class="admin-row">
+    <span class="admin-q-num">4</span>
+    <span class="admin-q-text">Are there any concerns with external influences?</span>
+    <span class="admin-yn">
+      <span class="yn-pair"><span class="yn-box{{#if adminQ4}} checked{{/if}}">&#10003;</span> Y</span>
+      <span class="yn-pair"><span class="yn-box{{#unless adminQ4}} checked{{/unless}}">&#10003;</span> N</span>
+    </span>
+  </div>
+  <div class="admin-row">
+    <span class="admin-q-num">5</span>
+    <span class="admin-q-text">Is the information in the improvements section complete and accurate?</span>
+    <span class="admin-yn">
+      <span class="yn-pair"><span class="yn-box{{#if adminQ5}} checked{{/if}}">&#10003;</span> Y</span>
+      <span class="yn-pair"><span class="yn-box{{#unless adminQ5}} checked{{/unless}}">&#10003;</span> N</span>
+    </span>
+  </div>
+  <div class="admin-row">
+    <span class="admin-q-num">6</span>
+    <span class="admin-q-text">Does the neighborhood section reflect any negative attributes that would affect value? (comment required if yes)</span>
+    <span class="admin-yn">
+      <span class="yn-pair"><span class="yn-box{{#if adminQ6}} checked{{/if}}">&#10003;</span> Y</span>
+      <span class="yn-pair"><span class="yn-box{{#unless adminQ6}} checked{{/unless}}">&#10003;</span> N</span>
+    </span>
+  </div>
+
+  <div class="page-footer">
+    <span class="page-footer-left">Desktop Appraisal Review &mdash; NOO &bull; File {{metadata.orderNumber}} &bull; Page 1 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════ PAGE 2 ══════════════════════════════════════════
+     Reviewer Comments + Scope of Work (Part 1)
+═══════════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Reviewer Comments &amp; Scope of Work</span>
+      <span class="brand-contact">File No. {{metadata.orderNumber}}</span>
+    </div>
+  </div>
+
+  <div class="section-hdr">Reviewer Comments</div>
+  <div style="font-size:7pt;font-style:italic;color:var(--muted);margin-bottom:4px">
+    If answers from page one impact value please comment below.
+  </div>
+  <div class="comments-box">{{comments}}</div>
+
+  <div class="section-hdr">Review Appraiser's Scope of Work, Limiting Conditions &amp; Certification</div>
+
+  <div class="scope-para">
+    <strong>Intended Use:</strong> The intended use of this desk review is to determine whether the appraisal value is supported within 10%, to provide a review value and a percentage variance between the two values (if there is one), and to identify/comment on any deficiencies evident in the original appraisal.
+  </div>
+
+  <div class="scope-para">
+    <strong>Intended User:</strong> The intended user of this desk review is the lender/client.
+  </div>
+
+  <div class="scope-para">
+    <strong>Definition of Market Value:</strong> The most probable price which a property should bring in a competitive and open market under all conditions requisite to a fair sale, the buyer and seller, each acting prudently, knowledgeably and assuming the price is not affected by undue stimulus. Implicit in this definition is the consummation of a sale as of a specified date and the passing of title from seller to buyer under conditions whereby:
+  </div>
+
+  <div class="scope-para indent">
+    (1) buyer and seller are typically motivated.<br>
+    (2) both parties are well informed or well advised, and each acting in what he or she considers his or her own best interest.<br>
+    (3) a reasonable time is allowed for exposure in the open market.<br>
+    (4) payment is made in terms of cash in U.S. dollars or in terms of financial arrangements comparable thereto.<br>
+    (5) the price represents the normal consideration for the property sold unaffected by special or creative financing or sales concessions* granted by anyone associated with the sale.
+  </div>
+
+  <div class="scope-para">
+    *Adjustments to the comparables must be made for special or creative financing or sales concessions. No adjustments are necessary for those costs which are normally paid by sellers as a result of tradition or law in a market area; these costs are readily identifiable since the seller pays these costs in virtually all sales transactions. Special or creative financing adjustments can be made to the comparable property by comparisons to financing terms offered by a third-party institutional lender that is not already involved with the property or transaction. Any adjustment should not be calculated
+  </div>
+
+  <div class="continued">— Continued on next page —</div>
+
+  <div class="page-footer">
+    <span class="page-footer-left">Desktop Appraisal Review &mdash; NOO &bull; File {{metadata.orderNumber}} &bull; Page 2 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════ PAGE 3 ══════════════════════════════════════════
+     Scope of Work (continued) — Extraordinary Assumptions, Limiting Conditions 1–6
+═══════════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Scope of Work — Continued</span>
+      <span class="brand-contact">File No. {{metadata.orderNumber}}</span>
+    </div>
+  </div>
+
+  <div class="scope-para">
+    on a mechanical dollar for dollar cost of the financing or concession, but the dollar amount of any adjustment should approximate the market's reaction to the financing or concessions based on the appraiser's judgment.
+  </div>
+
+  <div class="scope-para">
+    <strong>Scope of Work:</strong> My scope of work included the review of appraisal reports and other documents. This appraisal review is intended to comply with Standards Rule 3 of the Uniform Standards of Professional Appraisal Practice (USPAP). Appraisal reports under review, real estate and real property interests appraised, date of reports and effective dates of value estimates, date of review, identity of appraisers, and identity of the internal reviewer are all contained within the internal review report. All known pertinent information was included. The purpose of this review was to assess the reasonableness of the value estimate(s) and determine compliance with USPAP. Appraisal reports subject to review have been read and analyzed to form an opinion as to: I. Completeness of the report under review within the scope of work applicable in the review assignment. a. Apparent adequacy, relevance, and appropriateness of data and adjustments; and, b. Whether the analyses, methods, opinions, and conclusions in the reports under review are appropriate and reasonable. Reasons for any disagreement are contained within this review report. c. Additional Valuation Reports such as BPOs (Broker Price Opinions), AVMs and various additional valuation products could be included in this review and analysis.
+  </div>
+
+  <div class="scope-para">
+    If the scope of this internal appraisal review includes an independent value conclusion, it is developed and reported in compliance with USPAP, SR 3. The purpose of such an internal review appraisal is to estimate market value of the fee simple interest in the subject and intended to assist the underwriter in determining possible appraisal deficiencies.
+  </div>
+
+  <div class="scope-para">
+    <em><strong>Vision VMC, its subsidiaries, and its direct clients are the only intended users.</strong></em>
+  </div>
+
+  <div class="scope-para">
+    I have extended, by way of Extraordinary Assumption, those portions of the original appraisal that are considered credible and developed in compliance with USPAP Standard I. Portions of the reviewed reports that are not considered credible and developed in compliance with USPAP Standard I are described in this internal appraisal review report. Supplemental review information may include but is not limited to information from public records, multiple listing services, national vendors, real estate professionals, referenced appraiser(s) and/or peers, file information, and cost estimating resources. The scope of analysis may include reconsideration and reconciliation of value indications from the cost, sales comparison, and income approaches to value for the subject real property. Personal property values are excluded.
+  </div>
+
+  <div class="scope-para">
+    <strong>Extraordinary Assumptions and Hypothetical Conditions:</strong> This review appraisal is based on the extraordinary assumption that the original appraisal report contained accurate location, condition and physical characteristic information on the subject property from an exterior and interior observation (if interior observation is applicable), and the comparable properties based on exterior observation. The review appraiser did not perform a physical observation of the exterior or the interior of the subject property, or any of the comparable sales in the original appraisal with the extraordinary assumption made that the information regarding these properties is accurate as of the date of the original appraisal. The use of extraordinary assumptions could significantly impact the conclusions and findings in the review appraisal if the information relied on for the extraordinary assumptions is found to be inaccurate.
+  </div>
+
+  <div class="scope-para">
+    <strong>Hypothetical Conditions:</strong> Hypothetical conditions are contrary to what is known to exist but are asserted for the purpose of analysis. No hypothetical conditions were made as part of this appraisal review assignment.
+  </div>
+
+  <div class="section-hdr">Limiting Conditions</div>
+  <ul class="condition-list">
+    <li data-n="1">The Review appraiser did not perform a physical inspection, interior or exterior, of the subject property or any of the comparable sales found in the appraisal under review or of the additional comparable sales provided to the Client.</li>
+    <li data-n="2">The Review appraiser assumes no responsibility for the matters of a legal nature affecting the property which is the subject of this assignment or the title thereto, nor does the review appraiser render any opinion as to the title, which is assumed to be good and marketable.</li>
+    <li data-n="3">The review appraiser assumes that there are no hidden or unapparent conditions of the property, subsoil, or structures, which would render it more or less valuable. The review appraiser assumes no responsibility for such conditions, or for the engineering which might be required to discover such factors.</li>
+    <li data-n="4">Information, estimates, and opinions furnished to the review appraiser, and contained in the appraisal under review, were obtained from sources considered reliable and believed to be true and correct, unless stated elsewhere. If contradictory information is obtained and deemed reliable, and believed to be true and correct, the review appraiser will cite that source and the assumptions associated with that information. However, no responsibility for accuracy of such items furnished to the review appraiser can be assumed by the review appraiser.</li>
+    <li data-n="5">Disclosure of the contents of the review report is governed by the USPAP and the Bylaws and Regulations of the professional appraisal organizations with which the review appraiser is affiliated.</li>
+    <li data-n="6">No change of any item in the review report shall be made by anyone other than the review appraiser and the review appraiser shall have no responsibility for any such unauthorized change.</li>
+  </ul>
+
+  <div class="continued">— Continued on next page —</div>
+
+  <div class="page-footer">
+    <span class="page-footer-left">Desktop Appraisal Review &mdash; NOO &bull; File {{metadata.orderNumber}} &bull; Page 3 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════ PAGE 4 ══════════════════════════════════════════
+     Limiting Conditions 7–8, iAVM Disclosure, Reviewer Certification & Signature
+═══════════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+
+  <div class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-name">VISION <span>VMC</span></div>
+      <div class="brand-sub">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div class="brand-badges">
+      <span class="brand-badge">Certification &amp; Reviewer Signature</span>
+      <span class="brand-contact">File No. {{metadata.orderNumber}}</span>
+    </div>
+  </div>
+
+  <div class="section-hdr">Limiting Conditions (continued)</div>
+  <ul class="condition-list">
+    <li data-n="7">The use of this review report is restricted to the client named within this report. Unless written consent is provided by the client and the review appraiser, use of this report by any other party is strictly prohibited.</li>
+    <li data-n="8">The geographic competency to complete this limited scope review appraisal was acquired by the review appraiser's review and analysis of the original appraisal, the review and analysis of the supporting data that included both relevant area sales information, listing information and market information provided by additional recognized sources of real estate information.</li>
+  </ul>
+
+  <div class="section-hdr">iAVM Disclosure</div>
+  <div class="iavm-box">
+    The iAVM included in this review represents local sales located through the Public Records National MLS data service, and that were analyzed by the appraiser. However, it is important to note that the attachment is not representative of the appraiser's analysis or any conclusions, values, or value ranges. The conclusion of the review appraiser's findings is associated to page 1 of the DVR report. Any difference or variance associated to the attachment is a result of the iAVM being used as reference of area sales reviewed and included as support of diligence completed not to reflect the review appraiser's conclusion.
+  </div>
+
+  <div class="section-hdr">Reviewer Certification &amp; Signature</div>
+  <div class="sig-block">
+    <div class="sig-label">Review Appraiser Signature</div>
+    <div class="sig-name">{{reviewerName}}</div>
+    <div class="sig-grid">
+      <div class="sig-item"><b>Name:</b> {{reviewerName}}</div>
+      <div class="sig-item"><b>State License #:</b> {{reviewerLicenseNumber}}</div>
+      <div class="sig-item"><b>State:</b> {{reviewerLicenseState}}</div>
+      <div class="sig-item" style="grid-column:span 2"><b>License Expiration:</b> {{reviewerLicenseExpiration}}</div>
+      <div class="sig-item"><b>Date Signed:</b> {{reviewDate}}</div>
+    </div>
+  </div>
+
+  <!-- Final brand footer bar -->
+  <div style="margin-top:14px;background:var(--navy);color:#fff;padding:10px 14px;border-radius:4px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-size:13pt;font-weight:800;letter-spacing:.08em">VISION <span style="color:var(--gold)">VMC</span></div>
+      <div style="font-size:7pt;color:#B8C9E0;letter-spacing:.1em;text-transform:uppercase;margin-top:2px">Real Estate Valuation Experts &bull; Licensed Nationally</div>
+    </div>
+    <div style="text-align:right;font-size:7pt;color:#B8C9E0;line-height:1.7">
+      425 Town Plaza Ave., Ponte Vedra, FL 32081<br>
+      info@visionvmc.com<br>
+      File No. {{metadata.orderNumber}} &bull; Vision DVR-10
+    </div>
+  </div>
+
+  <div class="page-footer" style="margin-top:6px">
+    <span class="page-footer-left">Desktop Appraisal Review &mdash; NOO &bull; File {{metadata.orderNumber}} &bull; Page 4 of 4</span>
+    <span class="page-footer-brand">VISION <span>VMC</span> &bull; Real Estate Valuation Experts</span>
+  </div>
+</div>
+
+</body>
+</html>

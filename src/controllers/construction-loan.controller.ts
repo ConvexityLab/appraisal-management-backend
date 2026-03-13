@@ -26,6 +26,7 @@ import { Router, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { ConstructionLoanService } from '../services/construction-loan.service.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
 import { DrawRequestService } from '../services/draw-request.service.js';
 import { DrawInspectionService } from '../services/draw-inspection.service.js';
 import { ChangeOrderService } from '../services/change-order.service.js';
@@ -61,7 +62,7 @@ export class ConstructionLoanController {
   private readonly configService: ConstructionConfigService;
 
   constructor(private readonly dbService: CosmosDbService) {
-    this.loanService = new ConstructionLoanService(dbService);
+    this.loanService = new ConstructionLoanService(dbService, new PropertyRecordService(dbService));
     this.drawService = new DrawRequestService(dbService);
     this.drawInspectionService = new DrawInspectionService(dbService);
     this.changeOrderService = new ChangeOrderService(dbService);

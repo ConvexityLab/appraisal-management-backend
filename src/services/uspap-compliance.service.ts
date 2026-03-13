@@ -1,10 +1,308 @@
 /**
  * USPAP Compliance Service
  * Enforces Uniform Standards of Professional Appraisal Practice (USPAP) rules
+ *
+ * Phase 0.4 — De-stubbed 2026-03-11:
+ *   - Replaced always-pass executeAutomatedCheck stub with real evaluators
+ *   - Added CHECKPOINT_EVALUATORS map with 11 named evaluator functions
+ *   - Added automationScript names to previously-uncovered checkpoints
+ *   - Added REQUIRED_CERTIFICATION_ELEMENTS for SR2-3 23-point check
  */
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Evaluator types and registry
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface CheckpointEvaluatorResult {
+  passed: boolean;
+  message: string;
+  details?: Record<string, any>;
+}
+
+export type CheckpointEvaluator = (orderData: Record<string, any>) => CheckpointEvaluatorResult;
+
+/**
+ * USPAP 2024-2025 Edition — 23 required certification elements.
+ * Used by check23PointCertification to verify completeness.
+ */
+export const REQUIRED_CERTIFICATION_ELEMENTS: readonly string[] = [
+  'statements_of_fact_true',
+  'analysis_opinions_conclusions_limited_by_assumptions',
+  'no_present_or_prospective_interest',
+  'no_personal_interest_or_bias',
+  'compensation_not_contingent_on_value',
+  'compensation_not_contingent_on_predetermined_value',
+  'analysis_conformity_with_uspap',
+  'personal_inspection_disclosure',
+  'no_significant_assistance_or_disclosure',
+  'appraiser_license_certification',
+  'education_experience_requirements',
+  'effective_date_of_appraisal',
+  'property_appraised_identified',
+  'intended_use_stated',
+  'intended_users_stated',
+  'type_and_definition_of_value',
+  'extraordinary_assumptions_disclosed',
+  'hypothetical_conditions_disclosed',
+  'scope_of_work_disclosure',
+  'prior_services_disclosure',
+  'subject_property_sales_history',
+  'current_agreement_of_sale',
+  'reconciliation_support',
+] as const;
+
+// ─── Placeholder-detection patterns for checkMisleadingStatements ────────────
+
+const MISLEADING_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /\[INSERT[^\]]*\]/i, label: 'placeholder bracket' },
+  { pattern: /\bTBD\b/i, label: 'TBD marker' },
+  { pattern: /\bXXX+\b/i, label: 'XXX placeholder' },
+  { pattern: /\bN\/A\b/i, label: 'N/A marker' },
+  { pattern: /lorem\s+ipsum/i, label: 'lorem ipsum' },
+  { pattern: /\bSAMPLE\b/i, label: 'SAMPLE marker' },
+  { pattern: /\bDRAFT\b/i, label: 'DRAFT marker' },
+  { pattern: /\bTODO\b/i, label: 'TODO marker' },
+  { pattern: /\bFIXME\b/i, label: 'FIXME marker' },
+  { pattern: /_{3,}/i, label: 'blank-fill underscores' },
+];
+
+// ─── Helper: check string is non-empty after trimming ─────────────────────────
+
+function isNonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Checkpoint evaluator implementations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Exported evaluator registry. Keys correspond to automationScript names
+ * on USPAPRule checkpoints. Each function is pure: (orderData) => result.
+ */
+export const CHECKPOINT_EVALUATORS: Readonly<Record<string, CheckpointEvaluator>> = {
+
+  /**
+   * SR2-1-1: Verify the subject property is clearly identified.
+   * Checks: propertyDetails.{address, city, state, zipCode}
+   */
+  checkPropertyIdentification(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const pd = orderData.propertyDetails;
+    if (!pd || typeof pd !== 'object') {
+      return { passed: false, message: 'Property details are missing entirely.', details: { missingFields: ['propertyDetails'] } };
+    }
+    const required = ['address', 'city', 'state', 'zipCode'] as const;
+    const missing = required.filter(f => !isNonEmpty(pd[f]));
+    if (missing.length > 0) {
+      return {
+        passed: false,
+        message: `Property identification incomplete — missing: ${missing.join(', ')}.`,
+        details: { missingFields: [...missing] },
+      };
+    }
+    return { passed: true, message: 'Property is clearly identified.' };
+  },
+
+  /**
+   * SR1-1-1: Verify intended use is identified.
+   */
+  checkIntendedUse(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    if (!isNonEmpty(orderData.intendedUse)) {
+      return { passed: false, message: 'Intended use is not identified.' };
+    }
+    return { passed: true, message: 'Intended use is identified.' };
+  },
+
+  /**
+   * SR1-1-2: Verify intended users are identified.
+   */
+  checkIntendedUsers(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const users = orderData.intendedUsers;
+    if (Array.isArray(users)) {
+      if (users.length === 0) {
+        return { passed: false, message: 'Intended users list is empty.' };
+      }
+      return { passed: true, message: 'Intended users are identified.' };
+    }
+    if (!isNonEmpty(users)) {
+      return { passed: false, message: 'Intended users are not identified.' };
+    }
+    return { passed: true, message: 'Intended users are identified.' };
+  },
+
+  /**
+   * SR2-1-2: Verify effective date of appraisal is stated.
+   */
+  checkEffectiveDate(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const ed = orderData.effectiveDate;
+    if (ed === undefined || ed === null || ed === '') {
+      return { passed: false, message: 'Effective date of appraisal is not stated.' };
+    }
+    return { passed: true, message: 'Effective date is stated.' };
+  },
+
+  /**
+   * COMP-1: Verify appraiser competency for property type and geographic area.
+   * Checks: appraiser.{licenseNumber, licenseExpiration, licenseState/serviceStates vs propertyState}
+   */
+  checkAppraiserCompetency(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const appraiser = orderData.appraiser;
+    if (!appraiser || typeof appraiser !== 'object') {
+      return { passed: false, message: 'Appraiser information is missing.', details: { reason: 'No appraiser data provided' } };
+    }
+    if (!isNonEmpty(appraiser.licenseNumber)) {
+      return { passed: false, message: 'Appraiser license number is missing.', details: { reason: 'Missing license number' } };
+    }
+    // Check license expiration
+    if (isNonEmpty(appraiser.licenseExpiration)) {
+      const expDate = new Date(appraiser.licenseExpiration);
+      if (!isNaN(expDate.getTime()) && expDate < new Date()) {
+        return {
+          passed: false,
+          message: `Appraiser license expired on ${appraiser.licenseExpiration}.`,
+          details: { reason: 'License expired', expirationDate: appraiser.licenseExpiration },
+        };
+      }
+    }
+    // Check geographic coverage
+    const propState = orderData.propertyState ?? orderData.propertyDetails?.state;
+    if (isNonEmpty(propState)) {
+      const serviceStates: string[] | undefined = appraiser.serviceStates;
+      const licenseState: string | undefined = appraiser.licenseState;
+      const coveredStates = serviceStates ?? (licenseState ? [licenseState] : []);
+      if (coveredStates.length > 0 && !coveredStates.includes(propState)) {
+        return {
+          passed: false,
+          message: `Appraiser not licensed/competent in property state ${propState}.`,
+          details: { reason: `License state mismatch — appraiser covers [${coveredStates.join(', ')}], property in ${propState}` },
+        };
+      }
+    }
+    return { passed: true, message: 'Appraiser competency verified.' };
+  },
+
+  /**
+   * COMP-2: Check for competency disclosure in certification.
+   */
+  checkCompetencyDisclosure(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const cert = orderData.certification;
+    if (!cert || typeof cert !== 'object') {
+      return { passed: false, message: 'Certification block is missing — cannot verify competency disclosure.' };
+    }
+    if (!isNonEmpty(cert.competencyDisclosure)) {
+      return { passed: false, message: 'Competency disclosure is missing from certification.' };
+    }
+    return { passed: true, message: 'Competency disclosure is present.' };
+  },
+
+  /**
+   * SR2-3-2: Verify appraiser signature present.
+   */
+  checkAppraiserSignature(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const cert = orderData.certification;
+    if (!cert || typeof cert !== 'object') {
+      return { passed: false, message: 'Certification block is missing — cannot verify signature.' };
+    }
+    if (!cert.signaturePresent) {
+      return { passed: false, message: 'Appraiser signature is not present in certification.' };
+    }
+    return { passed: true, message: 'Appraiser signature is present.' };
+  },
+
+  /**
+   * SR2-3-3: Verify license number is present in certification.
+   */
+  checkLicenseNumber(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const cert = orderData.certification;
+    if (!cert || typeof cert !== 'object') {
+      return { passed: false, message: 'Certification block is missing — cannot verify license number.' };
+    }
+    if (!isNonEmpty(cert.licenseNumber)) {
+      return { passed: false, message: 'License number is missing from certification.' };
+    }
+    return { passed: true, message: 'License number is present in certification.' };
+  },
+
+  /**
+   * SR2-3-1: Verify all 23 required USPAP certification elements are present.
+   */
+  check23PointCertification(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const cert = orderData.certification;
+    if (!cert || typeof cert !== 'object') {
+      return {
+        passed: false,
+        message: 'Certification block is missing.',
+        details: { missingCount: REQUIRED_CERTIFICATION_ELEMENTS.length, missingElements: [...REQUIRED_CERTIFICATION_ELEMENTS] },
+      };
+    }
+    const elements: string[] = Array.isArray(cert.elements) ? cert.elements : [];
+    const missing = REQUIRED_CERTIFICATION_ELEMENTS.filter(el => !elements.includes(el));
+    if (missing.length > 0) {
+      return {
+        passed: false,
+        message: `${missing.length} of 23 required certification elements are missing.`,
+        details: { missingCount: missing.length, missingElements: missing },
+      };
+    }
+    return { passed: true, message: 'All 23 certification elements are present.' };
+  },
+
+  /**
+   * RECORD-1: Verify workfile retention period tracking is enabled.
+   * USPAP requires retention for at least 5 years (or 2 years after final disposition).
+   */
+  checkRetentionTracking(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const wf = orderData.workfile;
+    if (!wf || typeof wf !== 'object') {
+      return { passed: false, message: 'Workfile/retention tracking information is missing.' };
+    }
+    if (!wf.retentionEnabled) {
+      return { passed: false, message: 'Retention tracking is not enabled on the workfile.' };
+    }
+    if (!wf.retentionDate) {
+      return { passed: false, message: 'Retention date is not set on the workfile.' };
+    }
+    return { passed: true, message: 'Retention tracking is enabled with a retention date.' };
+  },
+
+  /**
+   * ETHICS-MGMT-1: Scan report text sections for placeholder, sample, or
+   * obviously-unfinished content that could indicate a misleading report.
+   */
+  checkMisleadingStatements(orderData: Record<string, any>): CheckpointEvaluatorResult {
+    const sections = orderData.reportSections;
+    if (!sections || typeof sections !== 'object' || Object.keys(sections).length === 0) {
+      return { passed: true, message: 'No report sections provided to scan — skipping misleading-statement check.' };
+    }
+    const flagged: Array<{ section: string; pattern: string; snippet: string }> = [];
+    for (const [sectionName, text] of Object.entries(sections)) {
+      if (typeof text !== 'string') continue;
+      for (const { pattern, label } of MISLEADING_PATTERNS) {
+        const match = pattern.exec(text);
+        if (match) {
+          const start = Math.max(0, match.index - 20);
+          const end = Math.min(text.length, match.index + match[0].length + 20);
+          flagged.push({ section: sectionName, pattern: label, snippet: text.slice(start, end) });
+        }
+      }
+    }
+    if (flagged.length > 0) {
+      return {
+        passed: false,
+        message: `Found ${flagged.length} suspicious pattern(s) in report text.`,
+        details: { flaggedPatterns: flagged },
+      };
+    }
+    return { passed: true, message: 'No misleading statements detected.' };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Service interfaces
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export interface USPAPRule {
   id: string;
@@ -148,7 +446,7 @@ export class USPAPComplianceService {
   }
 
   /**
-   * Execute automated compliance check
+   * Execute automated compliance check by dispatching to the evaluator registry.
    */
   private async executeAutomatedCheck(
     rule: USPAPRule,
@@ -156,14 +454,36 @@ export class USPAPComplianceService {
     orderData: Record<string, any>
   ): Promise<ComplianceCheck> {
     try {
-      // TODO: Integrate with dynamic-code-execution.service.ts
-      // For now, return placeholder
+      const scriptName = checkpoint.automationScript;
+      if (!scriptName) {
+        return {
+          ruleId: rule.id,
+          ruleNumber: rule.ruleNumber,
+          passed: false,
+          message: `Checkpoint ${checkpoint.id} has no automationScript defined.`,
+          severity: rule.severity,
+        };
+      }
+
+      const evaluator = CHECKPOINT_EVALUATORS[scriptName];
+      if (!evaluator) {
+        return {
+          ruleId: rule.id,
+          ruleNumber: rule.ruleNumber,
+          passed: false,
+          message: `No evaluator found for checkpoint script: ${scriptName}`,
+          severity: rule.severity,
+        };
+      }
+
+      const result = evaluator(orderData);
       return {
         ruleId: rule.id,
         ruleNumber: rule.ruleNumber,
-        passed: true,
-        message: `Check passed: ${checkpoint.description}`,
+        passed: result.passed,
+        message: result.message,
         severity: rule.severity,
+        ...(result.details !== undefined && { details: result.details }),
       };
     } catch (error) {
       return {
@@ -253,7 +573,8 @@ export class USPAPComplianceService {
           {
             id: 'COMP-2',
             description: 'Check for competency disclosure in certification',
-            validation: 'automated'
+            validation: 'automated',
+            automationScript: 'checkCompetencyDisclosure'
           }
         ]
       },
@@ -285,7 +606,8 @@ export class USPAPComplianceService {
           {
             id: 'SR1-1-2',
             description: 'Verify intended users are identified',
-            validation: 'automated'
+            validation: 'automated',
+            automationScript: 'checkIntendedUsers'
           },
           {
             id: 'SR1-1-3',
@@ -323,7 +645,8 @@ export class USPAPComplianceService {
           {
             id: 'SR2-1-2',
             description: 'Verify effective date is stated',
-            validation: 'automated'
+            validation: 'automated',
+            automationScript: 'checkEffectiveDate'
           },
           {
             id: 'SR2-1-3',
@@ -360,12 +683,14 @@ export class USPAPComplianceService {
           {
             id: 'SR2-3-2',
             description: 'Verify appraiser signature present',
-            validation: 'automated'
+            validation: 'automated',
+            automationScript: 'checkAppraiserSignature'
           },
           {
             id: 'SR2-3-3',
             description: 'Verify license number present',
-            validation: 'automated'
+            validation: 'automated',
+            automationScript: 'checkLicenseNumber'
           }
         ]
       },

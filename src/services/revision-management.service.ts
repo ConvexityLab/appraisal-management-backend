@@ -59,6 +59,15 @@ export class RevisionManagementService {
     this.qcValidationService = new ComprehensiveQCValidationService();
   }
 
+  private dbInitialized = false;
+
+  private async ensureDbInitialized(): Promise<void> {
+    if (!this.dbInitialized) {
+      await this.dbService.initialize();
+      this.dbInitialized = true;
+    }
+  }
+
   // ===========================
   // REVISION CREATION
   // ===========================
@@ -68,6 +77,7 @@ export class RevisionManagementService {
    */
   async createRevisionRequest(request: CreateRevisionRequest): Promise<RevisionRequest> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Creating revision request', {
         orderId: request.orderId,
         severity: request.severity,
@@ -137,6 +147,7 @@ export class RevisionManagementService {
    */
   async submitRevision(request: SubmitRevisionRequest): Promise<RevisionRequest> {
     try {
+      await this.ensureDbInitialized();
       this.logger.info('Submitting revision', {
         revisionId: request.revisionId
       });
@@ -189,6 +200,7 @@ export class RevisionManagementService {
    */
   async acceptRevision(revisionId: string, acceptedBy: string, notes?: string): Promise<RevisionRequest> {
     try {
+      await this.ensureDbInitialized();
       const revision = await this.getRevision(revisionId);
       if (!revision) {
         throw new Error('Revision not found');
@@ -222,6 +234,7 @@ export class RevisionManagementService {
    */
   async rejectRevision(revisionId: string, rejectedBy: string, reason: string): Promise<RevisionRequest> {
     try {
+      await this.ensureDbInitialized();
       const revision = await this.getRevision(revisionId);
       if (!revision) {
         throw new Error('Revision not found');
@@ -334,6 +347,7 @@ export class RevisionManagementService {
    */
   async sendRevisionReminder(revisionId: string): Promise<void> {
     try {
+      await this.ensureDbInitialized();
       const revision = await this.getRevision(revisionId);
       if (!revision) return;
 
@@ -423,6 +437,7 @@ export class RevisionManagementService {
    */
   async getRevisionHistory(orderId: string): Promise<RevisionHistory> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('revisions');
       const { resources } = await container.items
         .query({
@@ -460,6 +475,7 @@ export class RevisionManagementService {
    */
   async getActiveRevisions(): Promise<RevisionRequest[]> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('revisions');
       const { resources } = await container.items
         .query({
@@ -498,6 +514,7 @@ export class RevisionManagementService {
    */
   async getRevisionAnalytics(startDate: Date, endDate: Date): Promise<RevisionAnalytics> {
     try {
+      await this.ensureDbInitialized();
       const container = this.dbService.getContainer('revisions');
       const { resources } = await container.items
         .query({
