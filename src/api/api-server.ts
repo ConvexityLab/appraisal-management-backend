@@ -157,6 +157,7 @@ import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service'
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
 import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.service.js';
+import { MismoAutoGenerateService } from '../services/mismo-auto-generate.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
 
 // Import Audit Event Sink + Engagement Audit Controller
@@ -267,6 +268,7 @@ export class AppraisalManagementAPIServer {
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
   private ucdpEadAutoSubmitService?: UcdpEadAutoSubmitService;
+  private mismoAutoGenerateService?: MismoAutoGenerateService;
   private reviewSLAWatcherJob?: ReviewSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
   private axiomTimeoutWatcherJob?: AxiomTimeoutWatcherJob;
@@ -3493,8 +3495,22 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start MISMO Auto-Generate Service (auto-generates MISMO 3.4 XML when an order is SUBMITTED)
+    try {
+      this.mismoAutoGenerateService = new MismoAutoGenerateService(this.dbService);
+      this.mismoAutoGenerateService.start().catch(err => {
+        this.logger.warn('MismoAutoGenerateService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('MismoAutoGenerateService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
     });
   }
 
@@ -3549,6 +3565,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.ucdpEadAutoSubmitService) {
       this.ucdpEadAutoSubmitService.stop().catch(() => {});
+    }
+    if (this.mismoAutoGenerateService) {
+      this.mismoAutoGenerateService.stop().catch(() => {});
     }
     this.logger.info('Background jobs stopped');
   }

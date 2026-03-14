@@ -1,248 +1,166 @@
 /**
- * Vendor Acceptance Timeout Checker Job
- * 
- * Monitors vendor assignments and auto-reassigns orders when:
- * - Vendor hasn't accepted within 4 hours of assignment
- * - Vendor explicitly declined the order
- * 
- * Runs every 5 minutes
+ * Vendor Bid Timeout Checker Job
+ *
+ * Runs on a fixed interval and scans for orders where the current
+ * vendor bid has expired without an acceptance or decline.
+ *
+ * When a timeout is detected it publishes `vendor.bid.timeout` to the
+ * Service Bus topic.  The AutoAssignmentOrchestratorService subscribes
+ * to that event and advances to the next vendor in the ranked list
+ * (or escalates to a human if the list is exhausted).
+ *
+ * This job does NOT mutate any order documents — state transitions are
+ * the orchestrator's responsibility.
+ *
+ * Interval: 5 minutes
+ * Timeout window: controlled by order.autoVendorAssignment.currentBidExpiresAt
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
-import { AzureCommunicationService } from '../services/azure-communication.service.js';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { EventCategory, EventPriority } from '../types/events.js';
-
-/** After this many sequential timeouts the order is escalated to a human. */
-const MAX_VENDOR_ATTEMPTS_BEFORE_ESCALATION = 5;
+import type { AutoVendorAssignmentState } from '../services/auto-assignment-orchestrator.service.js';
 
 export class VendorTimeoutCheckerJob {
-  private logger: Logger;
-  private cosmosService: CosmosDbService;
-  private acsService: AzureCommunicationService;
-  private publisher: ServiceBusEventPublisher;
+  private readonly logger = new Logger('VendorTimeoutCheckerJob');
+  private readonly cosmosService: CosmosDbService;
+  private readonly publisher: ServiceBusEventPublisher;
   private isRunning = false;
   private firewallBlocked = false;
   private intervalId?: NodeJS.Timeout;
-  
-  private readonly TIMEOUT_HOURS = 4;
+
   private readonly CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor(dbService?: CosmosDbService) {
-    this.logger = new Logger();
-    this.cosmosService = dbService || new CosmosDbService();
-    this.acsService = new AzureCommunicationService();
+    this.cosmosService = dbService ?? new CosmosDbService();
     this.publisher = new ServiceBusEventPublisher();
   }
 
-  /**
-   * Start the timeout checker job
-   */
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
   start(): void {
     if (this.isRunning) {
-      this.logger.warn('Vendor timeout checker already running');
+      this.logger.warn('VendorTimeoutCheckerJob already running');
       return;
     }
 
-    // Reset firewall block status on each start attempt (e.g., after IP allowlist updates)
     this.firewallBlocked = false;
 
-    this.logger.info('Starting vendor timeout checker job', {
-      intervalMinutes: this.CHECK_INTERVAL_MS / 60000,
-      timeoutHours: this.TIMEOUT_HOURS
+    this.logger.info('Starting VendorTimeoutCheckerJob', {
+      intervalMinutes: this.CHECK_INTERVAL_MS / 60_000,
     });
 
     this.isRunning = true;
-    
-    // Run immediately on start
-    this.checkTimeouts().catch(err => 
-      this.logger.error('Error in initial timeout check', { error: err })
+
+    // Run immediately on start, then on the interval.
+    this.checkTimeouts().catch((err) =>
+      this.logger.error('Error in initial vendor timeout check', { error: err }),
     );
 
-    // Then run on interval
     this.intervalId = setInterval(() => {
-      this.checkTimeouts().catch(err =>
-        this.logger.error('Error in timeout check', { error: err })
+      this.checkTimeouts().catch((err) =>
+        this.logger.error('Error in vendor timeout check', { error: err }),
       );
     }, this.CHECK_INTERVAL_MS);
   }
 
-  /**
-   * Stop the timeout checker job
-   */
   stop(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null as any;
     }
     this.isRunning = false;
-    this.logger.info('Vendor timeout checker stopped');
+    this.logger.info('VendorTimeoutCheckerJob stopped');
   }
 
-  /**
-   * Check for timed-out vendor assignments
-   */
-  private async checkTimeouts(): Promise<void> {
+  getStatus(): { running: boolean; intervalMs: number } {
+    return { running: this.isRunning, intervalMs: this.CHECK_INTERVAL_MS };
+  }
+
+  // ── Core scan ─────────────────────────────────────────────────────────────
+
+  async checkTimeouts(): Promise<void> {
+    if (this.firewallBlocked) return;
+
     try {
-      if (this.firewallBlocked) {
-        // Skip work if Cosmos firewall blocked us earlier to avoid noisy logs
-        return;
-      }
+      this.logger.info('Scanning for expired vendor bids...');
 
-      this.logger.info('Checking for vendor assignment timeouts...');
+      const now = new Date().toISOString();
 
-      // Query for orders in 'vendor_assigned' or 'pending_vendor_acceptance' state
-      const container = this.cosmosService.getContainer('orders');
-      const query = {
-        query: `
-          SELECT * FROM c 
-          WHERE c.type = 'order' 
-          AND (c.status = 'vendor_assigned' OR c.status = 'pending_vendor_acceptance')
-          AND c.vendorAssignment != null
-          AND c.vendorAssignment.status = 'pending'
-        `
-      };
+      // Find orders where the orchestrator is waiting for a vendor bid response
+      // and the expiry timestamp has passed.
+      const orders = await this.cosmosService.queryDocuments<any>(
+        'orders',
+        `SELECT c.id, c.orderNumber, c.tenantId, c.priority, c.autoVendorAssignment
+         FROM c
+         WHERE c.autoVendorAssignment.status = 'PENDING_BID'
+           AND IS_STRING(c.autoVendorAssignment.currentBidExpiresAt)
+           AND c.autoVendorAssignment.currentBidExpiresAt <= @now`,
+        [{ name: '@now', value: now }],
+      );
 
-      const { resources: orders } = await container.items.query(query).fetchAll();
-      
       if (orders.length === 0) {
-        this.logger.info('No pending vendor assignments found');
+        this.logger.info('No expired vendor bids found');
         return;
       }
 
-      this.logger.info(`Found ${orders.length} pending vendor assignment(s)`);
-
-      const now = new Date();
-      const timeoutThreshold = new Date(now.getTime() - (this.TIMEOUT_HOURS * 60 * 60 * 1000));
+      this.logger.info(`Found ${orders.length} expired vendor bid(s)`);
 
       for (const order of orders) {
-        await this.checkOrderTimeout(order, timeoutThreshold);
+        await this.processExpiredBid(order);
       }
-
     } catch (error) {
-      const isFirewallError = this.isCosmosFirewallError(error);
-      if (isFirewallError) {
+      if (this.isCosmosFirewallError(error)) {
         this.firewallBlocked = true;
-        this.logger.warn('Vendor timeout checker disabled due to Cosmos firewall restriction (public IP blocked).', { error });
+        this.logger.warn(
+          'VendorTimeoutCheckerJob disabled due to Cosmos DB firewall restriction.',
+          { error },
+        );
+        return;
+      }
+      this.logger.error('Error scanning for expired vendor bids', { error });
+    }
+  }
+
+  // ── Per-order handling ────────────────────────────────────────────────────
+
+  private async processExpiredBid(order: any): Promise<void> {
+    try {
+      const state = order.autoVendorAssignment as AutoVendorAssignmentState;
+
+      if (!state?.currentBidId) {
+        this.logger.warn('Order in PENDING_BID state has no currentBidId — skipping', {
+          orderId: order.id,
+        });
         return;
       }
 
-      this.logger.error('Error checking vendor timeouts', { error });
-    }
-  }
-
-  private isCosmosFirewallError(error: any): boolean {
-    return (
-      !!error &&
-      (error.code === 403 || error.statusCode === 403) &&
-      typeof error.body?.message === 'string' &&
-      error.body.message.includes('blocked by your Cosmos DB account firewall')
-    );
-  }
-
-  /**
-   * Check if a specific order has timed out
-   */
-  private async checkOrderTimeout(order: any, timeoutThreshold: Date): Promise<void> {
-    try {
-      const assignedAt = new Date(order.vendorAssignment.assignedAt);
-      
-      if (assignedAt < timeoutThreshold) {
-        this.logger.warn('Vendor assignment timeout detected', {
+      const currentVendor = state.rankedVendors[state.currentAttempt];
+      if (!currentVendor) {
+        this.logger.warn('Order in PENDING_BID state has no current vendor entry — skipping', {
           orderId: order.id,
-          vendorId: order.vendorAssignment.vendorId,
-          assignedAt,
-          hoursElapsed: Math.floor((Date.now() - assignedAt.getTime()) / (1000 * 60 * 60))
+          currentAttempt: state.currentAttempt,
         });
-
-        await this.handleTimeout(order);
-      }
-    } catch (error) {
-      this.logger.error('Error checking order timeout', {
-        orderId: order.id,
-        error
-      });
-    }
-  }
-
-  /**
-   * Handle a timed-out vendor assignment
-   */
-  private async handleTimeout(order: any): Promise<void> {
-    const container = this.cosmosService.getContainer('orders');
-    const partitionKey = order.status; // Cosmos container partitions by status
-
-    try {
-      // Update order: mark vendor as timed out, increment attempt count
-      const attemptNumber = (order.vendorAssignment.attemptNumber || 0) + 1;
-      
-      // Store the failed attempt in history
-      const failedAttempt = {
-        vendorId: order.vendorAssignment.vendorId,
-        assignedAt: order.vendorAssignment.assignedAt,
-        timeoutAt: new Date().toISOString(),
-        reason: 'timeout',
-        attemptNumber: order.vendorAssignment.attemptNumber || 1
-      };
-
-      order.vendorAssignmentHistory = order.vendorAssignmentHistory || [];
-      order.vendorAssignmentHistory.push(failedAttempt);
-
-  // Clear current assignment (keep status to avoid partition key change)
-      order.vendorAssignment = null;
-      order.updatedAt = new Date().toISOString();
-      order.reassignmentRequired = true;
-      order.reassignmentReason = `Vendor did not respond within ${this.TIMEOUT_HOURS} hours (Attempt ${attemptNumber})`;
-
-      // Update in database
-      await container.item(order.id, partitionKey).replace(order);
-
-      this.logger.info('Order marked for reassignment due to timeout', {
-        orderId: order.id,
-        previousVendor: failedAttempt.vendorId,
-        attemptNumber
-      });
-
-      // Publish vendor.bid.timeout event — the AutoAssignmentOrchestrator
-      // subscribes to this and advances to the next vendor in the ranked list.
-      await this.publishBidTimeoutEvent(order, failedAttempt, attemptNumber);
-
-      // If we've exhausted the configured maximum, also fire the escalation event.
-      if (attemptNumber >= MAX_VENDOR_ATTEMPTS_BEFORE_ESCALATION) {
-        await this.publishAssignmentExhaustedEvent(order, attemptNumber);
+        return;
       }
 
-      // Send notification to vendor about timeout
-      await this.notifyVendorTimeout(order, failedAttempt.vendorId);
-
-      // Send notification to management about reassignment need
-      await this.notifyManagementReassignment(order, attemptNumber);
-
-    } catch (error) {
-      this.logger.error('Error handling vendor timeout', {
+      this.logger.warn('Vendor bid expired — publishing vendor.bid.timeout', {
         orderId: order.id,
-        error
+        vendorId: currentVendor.vendorId,
+        bidId: state.currentBidId,
+        expiredAt: state.currentBidExpiresAt,
+        attempt: state.currentAttempt + 1,
+        of: state.rankedVendors.length,
       });
-      throw error;
-    }
-  }
 
-  /**
-   * Publish vendor.bid.timeout event so the AutoAssignmentOrchestrator
-   * can advance to the next ranked vendor.
-   */
-  private async publishBidTimeoutEvent(
-    order: any,
-    failedAttempt: { vendorId: string; attemptNumber: number },
-    totalAttempts: number,
-  ): Promise<void> {
-    try {
-      const priority = order.priority === 'RUSH' || order.priority === 'EMERGENCY'
-        ? EventPriority.HIGH
-        : EventPriority.NORMAL;
+      const priority =
+        order.priority === 'RUSH' || order.priority === 'EMERGENCY'
+          ? EventPriority.HIGH
+          : EventPriority.NORMAL;
 
+      // Publish the timeout event — the orchestrator handles all state transitions.
       await this.publisher.publish({
         id: uuidv4(),
         type: 'vendor.bid.timeout',
@@ -254,156 +172,36 @@ export class VendorTimeoutCheckerJob {
           orderId: order.id,
           orderNumber: order.orderNumber ?? '',
           tenantId: order.tenantId ?? '',
-          vendorId: failedAttempt.vendorId,
-          bidId: '',  // bid record is cleared before we reach here
-          attemptNumber: failedAttempt.attemptNumber,
-          totalAttempts,
+          vendorId: currentVendor.vendorId,
+          bidId: state.currentBidId,
+          attemptNumber: state.currentAttempt + 1,
+          totalAttempts: state.rankedVendors.length,
           priority,
         },
       });
 
-      this.logger.info('Published vendor.bid.timeout event', {
+      this.logger.info('Published vendor.bid.timeout', {
         orderId: order.id,
-        vendorId: failedAttempt.vendorId,
-        attemptNumber: failedAttempt.attemptNumber,
+        vendorId: currentVendor.vendorId,
+        attempt: state.currentAttempt + 1,
       });
     } catch (error) {
-      this.logger.error('Failed to publish vendor.bid.timeout event', {
+      this.logger.error('Error processing expired bid for order', {
         orderId: order.id,
         error,
       });
-      // Non-fatal: the order is already marked for reassignment in the DB
+      // Non-fatal: log and continue to next order.
     }
   }
 
-  /**
-   * Publish vendor.assignment.exhausted once all ranked vendors have timed out.
-   */
-  private async publishAssignmentExhaustedEvent(order: any, totalAttempts: number): Promise<void> {
-    try {
-      const vendorsContacted: string[] = (order.vendorAssignmentHistory ?? []).map(
-        (h: any) => h.vendorId as string,
-      );
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
-      await this.publisher.publish({
-        id: uuidv4(),
-        type: 'vendor.assignment.exhausted',
-        timestamp: new Date(),
-        source: 'vendor-timeout-checker-job',
-        version: '1.0',
-        category: EventCategory.ASSIGNMENT,
-        data: {
-          orderId: order.id,
-          orderNumber: order.orderNumber ?? '',
-          tenantId: order.tenantId ?? '',
-          attemptsCount: totalAttempts,
-          vendorsContacted,
-          priority: EventPriority.HIGH,
-          requiresHumanIntervention: true,
-        },
-      });
-
-      this.logger.warn('Published vendor.assignment.exhausted event', {
-        orderId: order.id,
-        totalAttempts,
-      });
-    } catch (error) {
-      this.logger.error('Failed to publish vendor.assignment.exhausted event', {
-        orderId: order.id,
-        error,
-      });
-    }
-  }
-
-  /**
-   * Notify vendor that they missed the acceptance window
-   */
-  private async notifyVendorTimeout(order: any, vendorId: string): Promise<void> {
-    try {
-      // Get vendor contact info
-      const vendorContainer = this.cosmosService.getContainer('vendors');
-      const { resource: vendor } = await vendorContainer.item(vendorId, order.tenantId).read();
-
-      if (!vendor || !vendor.contactEmail) {
-        this.logger.warn('Cannot notify vendor - no contact info', { vendorId });
-        return;
-      }
-
-      // Send SMS if available
-      if (vendor.contactPhone) {
-        const smsClient = this.acsService.getSmsClient();
-        await smsClient.send({
-          from: process.env.AZURE_COMMUNICATION_SMS_NUMBER!,
-          to: [vendor.contactPhone],
-          message: `Order ${order.orderNumber} was reassigned - you did not respond within ${this.TIMEOUT_HOURS} hours. Reply ACCEPT to be considered for future assignments.`
-        });
-      }
-
-      this.logger.info('Vendor timeout notification sent', {
-        orderId: order.id,
-        vendorId,
-        notificationMethod: vendor.contactPhone ? 'SMS' : 'none'
-      });
-
-    } catch (error) {
-      this.logger.error('Error notifying vendor of timeout', {
-        orderId: order.id,
-        vendorId,
-        error
-      });
-    }
-  }
-
-  /**
-   * Notify management that order needs reassignment
-   */
-  private async notifyManagementReassignment(order: any, attemptNumber: number): Promise<void> {
-    try {
-      // Store notification in communications container
-      const commsContainer = this.cosmosService.getContainer('communications');
-      
-      const notification = {
-        id: `comm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        type: 'communication',
-        tenantId: order.tenantId,
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        channel: 'system',
-        direction: 'outbound',
-        status: 'delivered',
-        subject: `Order Reassignment Required - Attempt ${attemptNumber}`,
-        body: `Order ${order.orderNumber} requires reassignment. Previous vendor did not respond within ${this.TIMEOUT_HOURS} hours.`,
-        metadata: {
-          reason: 'vendor_timeout',
-          attemptNumber,
-          priority: attemptNumber > 2 ? 'high' : 'normal'
-        },
-        createdAt: new Date().toISOString()
-      };
-
-      await commsContainer.items.create(notification);
-
-      this.logger.info('Management notified of reassignment need', {
-        orderId: order.id,
-        attemptNumber
-      });
-
-    } catch (error) {
-      this.logger.error('Error notifying management', {
-        orderId: order.id,
-        error
-      });
-    }
-  }
-
-  /**
-   * Get job status
-   */
-  getStatus(): { running: boolean; intervalMs: number; timeoutHours: number } {
-    return {
-      running: this.isRunning,
-      intervalMs: this.CHECK_INTERVAL_MS,
-      timeoutHours: this.TIMEOUT_HOURS
-    };
+  private isCosmosFirewallError(error: any): boolean {
+    return (
+      !!error &&
+      (error.code === 403 || error.statusCode === 403) &&
+      typeof error.body?.message === 'string' &&
+      error.body.message.includes('blocked by your Cosmos DB account firewall')
+    );
   }
 }

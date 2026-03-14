@@ -188,6 +188,34 @@ export class OrderController {
         priority: req.body.priority || 'STANDARD',
       };
 
+      // Run duplicate check before creating — advisory only, never blocks.
+      let duplicateWarning: { hasPotentialDuplicates: boolean; matches: unknown[] } | undefined;
+      try {
+        const addr = orderData.propertyAddress;
+        const addrString: string =
+          typeof addr === 'string' ? addr
+          : addr?.streetAddress
+            ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
+            : '';
+        if (addrString) {
+          const dupResult = await this.duplicateDetection.checkForDuplicates({
+            propertyAddress: addrString,
+            city: addr?.city,
+            state: addr?.state,
+            zipCode: addr?.zipCode,
+            borrowerFirstName: orderData.borrowerInformation?.firstName,
+            borrowerLastName:  orderData.borrowerInformation?.lastName,
+            tenantId: req.user!.tenantId,
+          });
+          if (dupResult.hasPotentialDuplicates) {
+            duplicateWarning = dupResult;
+          }
+        }
+      } catch (dupErr) {
+        // Non-fatal: log and proceed — never block order creation over a dup-check failure.
+        logger.warn('Duplicate order check failed — proceeding with order creation', { error: dupErr });
+      }
+
       const result = await this.dbService.createOrder(orderData);
 
       if (result.success) {
@@ -250,7 +278,10 @@ export class OrderController {
         }).catch((err) =>
           logger.error('Failed to write audit log for order creation', { error: err }),
         );
-        res.status(201).json(result.data);
+        res.status(201).json(duplicateWarning
+          ? { ...result.data as object, duplicateWarning }
+          : result.data,
+        );
       } else {
         res.status(500).json({
           error: 'Order creation failed',

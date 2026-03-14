@@ -322,6 +322,18 @@ resource ucdpEadAutoSubmitServiceSubscription 'Microsoft.ServiceBus/namespaces/t
   }
 }
 
+// MISMO Auto-Generate Service Subscription (consumed by MismoAutoGenerateService — auto-generates MISMO 3.4 XML when an order is SUBMITTED)
+resource mismoAutoGenerateServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'mismo-auto-generate-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id
