@@ -51,6 +51,7 @@ import { module as arvAnalysesModule } from './modules/arv-analyses.js';
 import { module as communicationPlatformModule } from './modules/communication-platform.js';
 import { module as constructionCatalogModule } from './modules/construction-catalog.js';
 import { module as reportTemplatesModule } from './modules/report-templates.js';
+import { module as auditEventsModule } from './modules/audit-events.js';
 
 /** Ordered list — phases run top-to-bottom. */
 const ALL_MODULES: SeedModule[] = [
@@ -80,6 +81,7 @@ const ALL_MODULES: SeedModule[] = [
   communicationPlatformModule, // Phase 24
   constructionCatalogModule,   // Phase 25
   reportTemplatesModule,        // Phase 26
+  auditEventsModule,            // Phase 27
 ];
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
