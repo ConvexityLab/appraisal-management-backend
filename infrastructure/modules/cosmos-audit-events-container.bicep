@@ -46,6 +46,11 @@ resource auditEventsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
         paths: ['/engagementId']
         kind: 'Hash'
       }
+      // ⚠️  DEFERRED: TTL is enabled but set to -1 (documents live forever).
+      // Before production go-live this MUST be changed to enforce data retention.
+      // USPAP minimum is 5 years; 7 years (220,752,000 s) is the recommended value.
+      // See AUTOMATION_FLOW.md § "Known Gaps & Deferred Work" for full rationale.
+      // Also create a matching Bicep module for the `audit-trail` container.
       defaultTtl: -1
       indexingPolicy: {
         indexingMode: 'consistent'
