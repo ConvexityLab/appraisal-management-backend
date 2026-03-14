@@ -47,6 +47,7 @@ import type {
   BaseEvent,
   EventHandler,
   EngagementOrderCreatedEvent,
+  EngagementLetterDeclinedEvent,
   VendorBidTimedOutEvent,
   VendorBidDeclinedEvent,
   VendorBidAcceptedEvent,
@@ -55,6 +56,7 @@ import type {
   ReviewAssignmentTimedOutEvent,
   QCAIScoredEvent,
   AxiomEvaluationCompletedEvent,
+  AxiomEvaluationTimedOutEvent,
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -193,6 +195,16 @@ export class AutoAssignmentOrchestratorService {
         'axiom.evaluation.completed',
         this.makeHandler('axiom.evaluation.completed', this.onAxiomEvaluationCompleted.bind(this)),
       ),
+      // Letter declined: vendor declined the engagement letter — retry next vendor in ranked list.
+      this.subscriber.subscribe<EngagementLetterDeclinedEvent>(
+        'engagement.letter.declined',
+        this.makeHandler('engagement.letter.declined', this.onEngagementLetterDeclined.bind(this)),
+      ),
+      // Axiom webhook never arrived — route to human QC so the order is not stuck.
+      this.subscriber.subscribe<AxiomEvaluationTimedOutEvent>(
+        'axiom.evaluation.timeout',
+        this.makeHandler('axiom.evaluation.timeout', this.onAxiomEvaluationTimedOut.bind(this)),
+      ),
     ]);
 
     this.isStarted = true;
@@ -210,6 +222,8 @@ export class AutoAssignmentOrchestratorService {
       this.subscriber.unsubscribe('qc.ai.scored'),
       this.subscriber.unsubscribe('vendor.bid.accepted'),
       this.subscriber.unsubscribe('axiom.evaluation.completed'),
+      this.subscriber.unsubscribe('engagement.letter.declined'),
+      this.subscriber.unsubscribe('axiom.evaluation.timeout'),
     ]);
     this.isStarted = false;
     this.logger.info('AutoAssignmentOrchestrator stopped');
@@ -416,6 +430,22 @@ export class AutoAssignmentOrchestratorService {
   }
 
   /**
+   * Triggered when a vendor declines the engagement letter after accepting
+   * the bid.  Treat this identically to a bid decline: advance to the next
+   * vendor in the ranked list.  The declined vendor is not made ineligible
+   * for future orders — letter-declination is not a performance signal.
+   */
+  private async onEngagementLetterDeclined(event: EngagementLetterDeclinedEvent): Promise<void> {
+    const { orderId, tenantId, vendorId, reason } = event.data;
+    this.logger.info('Processing engagement.letter.declined — advancing to next vendor', {
+      orderId,
+      vendorId,
+      reason,
+    });
+    await this.advanceVendorAssignment(orderId, tenantId, event.data.priority);
+  }
+
+  /**
    * Triggered when a vendor accepts a bid.
    *
    * In broadcast mode: cancel all other pending bids for the same order so
@@ -530,6 +560,41 @@ export class AutoAssignmentOrchestratorService {
 
     // Route to human QC (or AI gate if not separately enabled here).
     await this.initiateReviewAssignment(order, tenantId, priority);
+  }
+
+  /**
+   * Triggered when AxiomTimeoutWatcherJob fires because Axiom never responded.
+   * Routes the order to human QC so it is not stuck indefinitely.
+   */
+  private async onAxiomEvaluationTimedOut(event: AxiomEvaluationTimedOutEvent): Promise<void> {
+    const { orderId, tenantId, timeoutMinutes } = event.data;
+
+    this.logger.warn('axiom.evaluation.timeout received — routing to human QC', {
+      orderId,
+      timeoutMinutes,
+    });
+
+    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    if (!tenantConfig.axiomAutoTrigger) {
+      return;
+    }
+
+    // Defer to AI QC gate if enabled — that gate already handles routing.
+    if (tenantConfig.aiQcEnabled) {
+      this.logger.info(
+        'aiQcEnabled also true — AI QC gate handles final routing; no action from timeout path',
+        { orderId },
+      );
+      return;
+    }
+
+    const order = await this.loadOrder(orderId, tenantId);
+    if (!order) {
+      this.logger.warn('onAxiomEvaluationTimedOut: order not found', { orderId });
+      return;
+    }
+
+    await this.initiateReviewAssignment(order, tenantId, event.data.priority);
   }
 
   /**

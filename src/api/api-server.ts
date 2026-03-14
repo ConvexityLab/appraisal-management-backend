@@ -127,6 +127,8 @@ import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
 // Import Phase 3 background jobs
 import { SLAMonitoringJob } from '../jobs/sla-monitoring.job';
 import { OverdueOrderDetectionJob } from '../jobs/overdue-order-detection.job';
+import { AxiomTimeoutWatcherJob } from '../jobs/axiom-timeout-watcher.job';
+import { SupervisionTimeoutWatcherJob } from '../jobs/supervision-timeout-watcher.job';
 
 // Import Appraiser Controller (Phase 4.3)
 import { AppraiserController } from '../controllers/appraiser.controller';
@@ -265,6 +267,8 @@ export class AppraisalManagementAPIServer {
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
   private reviewSLAWatcherJob?: ReviewSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
+  private axiomTimeoutWatcherJob?: AxiomTimeoutWatcherJob;
+  private supervisionTimeoutWatcherJob?: SupervisionTimeoutWatcherJob;
   private orderController!: OrderController;
   
   // QC routers
@@ -3429,6 +3433,26 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Axiom Timeout Watcher Job (detects Axiom webhook non-responses; publishes axiom.evaluation.timeout)
+    try {
+      this.axiomTimeoutWatcherJob = new AxiomTimeoutWatcherJob(this.dbService);
+      this.axiomTimeoutWatcherJob.start();
+    } catch (err) {
+      this.logger.warn('AxiomTimeoutWatcherJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Supervision Timeout Watcher Job (detects overdue supervisor co-signs; publishes supervision.timeout)
+    try {
+      this.supervisionTimeoutWatcherJob = new SupervisionTimeoutWatcherJob(this.dbService);
+      this.supervisionTimeoutWatcherJob.start();
+    } catch (err) {
+      this.logger.warn('SupervisionTimeoutWatcherJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Review SLA Watcher Job (polls for imminent and breached review SLAs)
     try {
       this.reviewSLAWatcherJob = new ReviewSLAWatcherJob(this.dbService);
@@ -3454,7 +3478,7 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher']
     });
   }
 

@@ -32,12 +32,15 @@ import type {
   VendorAssignmentExhaustedEvent,
   ReviewAssignmentExhaustedEvent,
   OrderDeliveredEvent,
+  OrderOverdueEvent,
   EngagementStatusChangedEvent,
   ReviewSLAWarningEvent,
   ReviewSLABreachedEvent,
   EngagementLetterSentEvent,
   EngagementLetterSignedEvent,
   EngagementLetterDeclinedEvent,
+  SupervisionTimedOutEvent,
+  AxiomEvaluationTimedOutEvent,
 } from '../types/events.js';
 
 export class CommunicationEventHandler {
@@ -147,6 +150,18 @@ export class CommunicationEventHandler {
           this.onEngagementLetterDeclined.bind(this),
         ),
       ),
+      this.subscriber.subscribe<OrderOverdueEvent>(
+        'order.overdue',
+        this.makeHandler('order.overdue', this.onOrderOverdue.bind(this)),
+      ),
+      this.subscriber.subscribe<SupervisionTimedOutEvent>(
+        'supervision.timeout',
+        this.makeHandler('supervision.timeout', this.onSupervisionTimedOut.bind(this)),
+      ),
+      this.subscriber.subscribe<AxiomEvaluationTimedOutEvent>(
+        'axiom.evaluation.timeout',
+        this.makeHandler('axiom.evaluation.timeout', this.onAxiomEvaluationTimedOut.bind(this)),
+      ),
     ]);
 
     this.isStarted = true;
@@ -167,6 +182,9 @@ export class CommunicationEventHandler {
       this.subscriber.unsubscribe('engagement.letter.sent'),
       this.subscriber.unsubscribe('engagement.letter.signed'),
       this.subscriber.unsubscribe('engagement.letter.declined'),
+      this.subscriber.unsubscribe('order.overdue'),
+      this.subscriber.unsubscribe('supervision.timeout'),
+      this.subscriber.unsubscribe('axiom.evaluation.timeout'),
     ]);
     this.isStarted = false;
     this.logger.info('CommunicationEventHandler stopped');
@@ -470,6 +488,79 @@ export class CommunicationEventHandler {
         <p><strong>Manual re-assignment may be required.</strong></p>
       `,
       context: { event: 'engagement.letter.declined', orderId, vendorId },
+    });
+  }
+
+  // ── Email resolution helpers ───────────────────────────────────────────────
+
+  private async onOrderOverdue(event: OrderOverdueEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, dueDate, hoursOverdue, currentStatus } = event.data;
+    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
+    const to = Array.from(
+      new Set([...recipients, ...(coordinatorEmail ? [coordinatorEmail] : [])]),
+    );
+    if (to.length === 0) {
+      this.logger.warn('order.overdue: no recipients — skipping', { orderId });
+      return;
+    }
+    await this.sendEmail({
+      to,
+      subject: `⏰ Order Overdue — ${orderNumber}`,
+      html: `
+        <p>Order <strong>${orderNumber}</strong> (${orderId}) passed its due date of
+           <strong>${new Date(dueDate).toLocaleDateString()}</strong> and is
+           <strong>${hoursOverdue} hours overdue</strong>.</p>
+        <p>Current status: <strong>${currentStatus}</strong></p>
+        <p>Please review and take appropriate action.</p>
+      `,
+      context: { event: 'order.overdue', orderId },
+    });
+  }
+
+  private async onSupervisionTimedOut(event: SupervisionTimedOutEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, supervisorId, requestedAt, slaHours } = event.data;
+    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const supervisorEmail = await this.resolveReviewerEmail(supervisorId, tenantId);
+    const to = Array.from(
+      new Set([...recipients, ...(supervisorEmail ? [supervisorEmail] : [])]),
+    );
+    if (to.length === 0) {
+      this.logger.warn('supervision.timeout: no recipients — skipping', { orderId });
+      return;
+    }
+    await this.sendEmail({
+      to,
+      subject: `⚠️ Supervisor Co-Sign Overdue — ${orderNumber}`,
+      html: `
+        <p>Order <strong>${orderNumber}</strong> (${orderId}) requires supervisory co-sign
+           but has not been co-signed within the <strong>${slaHours}-hour SLA</strong>.</p>
+        <p>Co-sign was requested at <strong>${new Date(requestedAt).toLocaleString()}</strong>.</p>
+        <p>Assigned supervisor: <strong>${supervisorId}</strong>.</p>
+        <p><strong>Immediate action is required to unblock delivery.</strong></p>
+      `,
+      context: { event: 'supervision.timeout', orderId, supervisorId },
+    });
+  }
+
+  private async onAxiomEvaluationTimedOut(event: AxiomEvaluationTimedOutEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, submittedAt, timeoutMinutes } = event.data;
+    const recipients = await this.resolveEscalationRecipients(tenantId);
+    if (recipients.length === 0) {
+      this.logger.warn('axiom.evaluation.timeout: no escalation recipients — skipping', { orderId });
+      return;
+    }
+    await this.sendEmail({
+      to: recipients,
+      subject: `⚠️ Axiom Evaluation Timed Out — ${orderNumber}`,
+      html: `
+        <p>The Axiom evaluation for order <strong>${orderNumber}</strong> (${orderId}) did not
+           complete within the <strong>${timeoutMinutes}-minute timeout</strong>.</p>
+        <p>Submitted to Axiom at: <strong>${new Date(submittedAt).toLocaleString()}</strong></p>
+        <p>The order has been routed to human QC review. Please investigate the Axiom pipeline
+           if this recurs.</p>
+      `,
+      context: { event: 'axiom.evaluation.timeout', orderId },
     });
   }
 

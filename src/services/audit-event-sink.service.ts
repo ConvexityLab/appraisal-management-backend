@@ -82,11 +82,14 @@ const EVENT_META: Record<string, EventMeta> = {
   'qc.ai.scored':                  { describe: d => `AI QC scored order — decision: ${d.decision ?? '?'} (score ${d.score ?? '?'})`, severity: d => d.decision === 'auto_pass' ? 'success' : d.decision === 'needs_supervision' ? 'warning' : 'info', icon: 'smart_toy' },
   'supervision.required':          { describe: d => `Supervisory review required: ${d.reason ?? 'no reason given'}`, severity: 'warning', icon: 'supervisor_account' },
   'supervision.cosigned':          { describe: d => `Supervisor co-signed the review`, severity: 'success', icon: 'verified_user' },
+  'supervision.timeout':           { describe: d => `Supervisor co-sign SLA breached (${d.slaHours ?? '?'}h) — escalation required`, severity: 'error', icon: 'person_off' },
   'engagement.letter.sent':        { describe: d => `Engagement letter sent to vendor ${d.vendorEmail ?? d.vendorId ?? '?'}`, severity: 'info', icon: 'mail' },
   'engagement.letter.signed':      { describe: d => `Engagement letter signed by vendor`, severity: 'success', icon: 'draw' },
   'engagement.letter.declined':    { describe: d => `Engagement letter declined by vendor${d.reason ? ': ' + d.reason : ''}`, severity: 'warning', icon: 'unpublished' },
   'axiom.evaluation.submitted':    { describe: d => `Axiom evaluation submitted (job ${d.jobId ?? '?'})`, severity: 'info', icon: 'science' },
   'axiom.evaluation.completed':    { describe: d => `Axiom evaluation completed — status: ${d.status ?? '?'}${d.score != null ? `, score ${d.score}` : ''}`, severity: d => d.status === 'passed' ? 'success' : d.status === 'failed' ? 'error' : 'info', icon: 'hub' },
+  'axiom.evaluation.timeout':      { describe: d => `Axiom evaluation timed out after ${d.timeoutMinutes ?? '?'} minutes — routed to human QC`, severity: 'error', icon: 'timer_off' },
+  'order.overdue':                  { describe: d => `Order ${d.orderNumber ?? d.orderId} is ${d.hoursOverdue ?? '?'} hours past its due date`, severity: 'error', icon: 'alarm_off' },
   'system.alert':                  { describe: d => `System alert: ${d.message ?? d.alertType ?? 'unknown'}`, severity: 'warning', icon: 'notifications_active' },
 };
 
@@ -139,6 +142,9 @@ const ALL_EVENT_TYPES: string[] = [
   'vendor.bid.round.exhausted',
   'supervision.required',
   'supervision.cosigned',
+  'supervision.timeout',
+  'order.overdue',
+  'axiom.evaluation.timeout',
 ];
 
 // ── Service ───────────────────────────────────────────────────────────────────

@@ -50,6 +50,14 @@ export interface TenantAutomationConfig {
    */
   reviewExpiryHours: number;
 
+  /**
+   * Hours a supervisor has to co-sign an order before the
+   * SupervisionTimeoutWatcherJob fires a `supervision.timeout` event and
+   * escalates to `escalationRecipients`.
+   * @default 8
+   */
+  supervisorTimeoutHours: number;
+
   // ── Default staff assignments ─────────────────────────────────────────────
 
   /**
@@ -202,6 +210,7 @@ export const DEFAULT_TENANT_AUTOMATION_CONFIG: Omit<
   maxVendorAttempts: 5,
   bidExpiryHours: 4,
   reviewExpiryHours: 8,
+  supervisorTimeoutHours: 8,
   preferredVendorIds: [],
   // defaultSupervisorId omitted — undefined not allowed with exactOptionalPropertyTypes
   supervisoryReviewForAllOrders: false,

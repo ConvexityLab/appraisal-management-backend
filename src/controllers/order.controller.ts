@@ -5,19 +5,20 @@
  * Extracted from inline methods in api-server.ts (Phase 0.2).
  *
  * Routes:
- *   POST   /                  → createOrder       (validated)
- *   GET    /                  → getOrders
- *   GET    /dashboard         → getOrderDashboard
- *   POST   /search            → searchOrders       (validated)
- *   POST   /batch/status      → batchUpdateStatus   (validated)
- *   POST   /batch/assign      → batchAssign          (validated)
- *   POST   /export            → exportOrders          (validated)
- *   GET    /:orderId          → getOrder
- *   PUT    /:orderId/status   → updateOrderStatus
- *   POST   /:orderId/cancel   → cancelOrder         (validated)
- *   POST   /:orderId/deliver  → deliverOrder
- *   POST   /:orderId/assign   → assignVendor
- *   GET    /:orderId/timeline → getOrderTimeline
+ *   POST   /                       → createOrder       (validated)
+ *   GET    /                       → getOrders
+ *   GET    /dashboard              → getOrderDashboard
+ *   GET    /needs-attention        → getNeedsAttentionOrders
+ *   POST   /search                 → searchOrders       (validated)
+ *   POST   /batch/status           → batchUpdateStatus   (validated)
+ *   POST   /batch/assign           → batchAssign          (validated)
+ *   POST   /export                 → exportOrders          (validated)
+ *   GET    /:orderId               → getOrder
+ *   PUT    /:orderId/status        → updateOrderStatus
+ *   POST   /:orderId/cancel        → cancelOrder         (validated)
+ *   POST   /:orderId/deliver       → deliverOrder
+ *   POST   /:orderId/assign        → assignVendor
+ *   GET    /:orderId/timeline      → getOrderTimeline
  */
 
 import { Router, Response } from 'express';
@@ -143,6 +144,7 @@ export class OrderController {
   private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
     // IMPORTANT: Specific routes MUST come before parameterized routes
     this.router.get('/dashboard', this.getOrderDashboard.bind(this));
+    this.router.get('/needs-attention', this.getNeedsAttentionOrders.bind(this));
 
     // GET / — with optional authorization (audit mode)
     const readMiddleware = authzMiddleware
@@ -520,6 +522,29 @@ export class OrderController {
           orderId, currentStatus, newStatus, req.user!.id,
         ).catch((err) =>
           logger.error('Failed to publish ORDER_STATUS_CHANGED event', { orderId, error: err }),
+        );
+
+        // Publish the canonical order.status.changed event to the appraisal-events topic
+        // so that all Service Bus subscribers (AI QC gate, orchestrator, Axiom auto-trigger,
+        // audit sink, communication handler) receive the transition.
+        this.publisher.publish({
+          id: uuidv4(),
+          type: 'order.status.changed',
+          timestamp: new Date(),
+          source: 'order-controller',
+          version: '1.0',
+          category: EventCategory.ORDER,
+          data: {
+            orderId,
+            tenantId: req.user!.tenantId,
+            previousStatus: currentStatus,
+            newStatus,
+            changedBy: req.user!.id,
+            reason: notes,
+            priority: EventPriority.NORMAL,
+          },
+        }).catch((err) =>
+          logger.error('Failed to publish order.status.changed to appraisal-events', { orderId, error: err }),
         );
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
@@ -1271,6 +1296,65 @@ export class OrderController {
       res.status(500).json({
         error: 'Batch status update failed',
         code: 'BATCH_UPDATE_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── GET /needs-attention ────────────────────────────────────────────────
+
+  /**
+   * Returns all active orders that need human attention for this tenant.
+   *
+   * An order "needs attention" when any of:
+   *   - requiresHumanVendorAssignment = true  (all vendors exhausted)
+   *   - requiresHumanReviewAssignment = true  (all reviewers exhausted)
+   *   - requiresHumanIntervention     = true  (supervision SLA breach or other escalation)
+   *   - isOverdue                     = true  (past due date, set by OverdueOrderDetectionJob)
+   *
+   * Orders are returned newest-first, cap 200.  The response also includes a
+   * breakdown count per attention type for the dashboard badges.
+   */
+  private async getNeedsAttentionOrders(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId;
+      const container = this.dbService.getContainer('orders');
+
+      const query = `
+        SELECT *
+        FROM   c
+        WHERE  c.tenantId = @tenantId
+        AND    c.documentType = 'order'
+        AND    (
+                 c.requiresHumanVendorAssignment = true
+              OR c.requiresHumanReviewAssignment = true
+              OR c.requiresHumanIntervention     = true
+              OR c.isOverdue                     = true
+               )
+        ORDER BY c.updatedAt DESC
+        OFFSET 0 LIMIT 200
+      `;
+
+      const { resources } = await container.items
+        .query({ query, parameters: [{ name: '@tenantId', value: tenantId }] })
+        .fetchAll();
+
+      const orders = resources.map(normalizeOrder);
+
+      const breakdown = {
+        vendorExhausted:    orders.filter((o: any) => o.requiresHumanVendorAssignment).length,
+        reviewerExhausted:  orders.filter((o: any) => o.requiresHumanReviewAssignment).length,
+        humanIntervention:  orders.filter((o: any) => o.requiresHumanIntervention).length,
+        overdue:            orders.filter((o: any) => o.isOverdue).length,
+        total:              orders.length,
+      };
+
+      res.json({ orders, breakdown });
+    } catch (error) {
+      logger.error('getNeedsAttentionOrders failed', { error });
+      res.status(500).json({
+        error: 'Failed to retrieve needs-attention orders',
+        code: 'NEEDS_ATTENTION_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }

@@ -547,6 +547,65 @@ export interface VendorBidRoundStartedEvent extends BaseEvent {
   };
 }
 
+/**
+ * Fired when an order's due date has passed without being delivered.
+ * Published by OverdueOrderDetectionJob in addition to setting isOverdue: true.
+ */
+export interface OrderOverdueEvent extends BaseEvent {
+  type: 'order.overdue';
+  category: EventCategory.ORDER;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    /** ISO string of the original due date. */
+    dueDate: string;
+    /** How many hours past due. */
+    hoursOverdue: number;
+    currentStatus: string;
+    priority: EventPriority;
+  };
+}
+
+/**
+ * Fired when Axiom does not return an evaluation within the configured timeout window.
+ * Published by AxiomTimeoutWatcherJob.
+ */
+export interface AxiomEvaluationTimedOutEvent extends BaseEvent {
+  type: 'axiom.evaluation.timeout';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    /** When the evaluation was originally submitted to Axiom. */
+    submittedAt: Date;
+    /** Configured timeout window in minutes. */
+    timeoutMinutes: number;
+    priority: EventPriority;
+  };
+}
+
+/**
+ * Fired when a supervisor has not co-signed an order within the configured SLA window.
+ * Published by SupervisionTimeoutWatcherJob.
+ */
+export interface SupervisionTimedOutEvent extends BaseEvent {
+  type: 'supervision.timeout';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    supervisorId: string;
+    /** When supervision was first requested. */
+    requestedAt: Date;
+    /** Configured SLA in hours. */
+    slaHours: number;
+    priority: EventPriority;
+  };
+}
+
 /** Fired when a broadcast round expires with no acceptance. */
 export interface VendorBidRoundExhaustedEvent extends BaseEvent {
   type: 'vendor.bid.round.exhausted';
@@ -607,6 +666,7 @@ export type AppEvent =
   | OrderAssignedEvent
   | OrderCompletedEvent
   | OrderDeliveredEvent
+  | OrderOverdueEvent
   | EngagementStatusChangedEvent
   | QCStartedEvent
   | QCCompletedEvent
@@ -629,6 +689,7 @@ export type AppEvent =
   | ReviewAssignmentExhaustedEvent
   | SupervisionRequiredEvent
   | SupervisionCosignedEvent
+  | SupervisionTimedOutEvent
   // Engagement letter events
   | EngagementLetterSentEvent
   | EngagementLetterSignedEvent
@@ -636,6 +697,7 @@ export type AppEvent =
   // Axiom evaluation events
   | AxiomEvaluationSubmittedEvent
   | AxiomEvaluationCompletedEvent
+  | AxiomEvaluationTimedOutEvent
   // Review SLA events
   | ReviewSLAWarningEvent
   | ReviewSLABreachedEvent

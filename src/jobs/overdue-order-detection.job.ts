@@ -14,7 +14,10 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
-import { OrderEventService } from '../services/order-event.service.js';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+import type { OrderOverdueEvent } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const FINAL_STATUSES = ['COMPLETED', 'DELIVERED', 'CANCELLED'];
 
@@ -22,7 +25,7 @@ export class OverdueOrderDetectionJob {
   private logger: Logger;
   private cosmosService: CosmosDbService;
   private auditService: AuditTrailService;
-  private eventService: OrderEventService;
+  private publisher: ServiceBusEventPublisher;
   private isRunning = false;
   private firewallBlocked = false;
   private intervalId?: NodeJS.Timeout;
@@ -33,7 +36,7 @@ export class OverdueOrderDetectionJob {
     this.logger = new Logger('OverdueOrderDetection');
     this.cosmosService = dbService || new CosmosDbService();
     this.auditService = new AuditTrailService();
-    this.eventService = new OrderEventService();
+    this.publisher = new ServiceBusEventPublisher();
   }
 
   /**
@@ -159,14 +162,29 @@ export class OverdueOrderDetectionJob {
             // Non-fatal
           }
 
-          // Publish event
+          // Publish order.overdue to Service Bus so CommunicationEventHandler
+          // can send escalation emails and the audit sink can record the event.
           try {
-            await this.eventService.publishOrderStatusChanged(
-              order.id,
-              order.status,
-              order.status, // status doesn't change, but we publish the overdue event
-              'system'
-            );
+            const dueDate = new Date(order.dueDate);
+            const hoursOverdue = Math.floor((Date.now() - dueDate.getTime()) / 3_600_000);
+            const overdueEvent: OrderOverdueEvent = {
+              id: uuidv4(),
+              type: 'order.overdue',
+              timestamp: new Date(),
+              source: 'overdue-order-detection-job',
+              version: '1.0',
+              category: EventCategory.ORDER,
+              data: {
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                tenantId: order.tenantId,
+                dueDate: order.dueDate,
+                hoursOverdue,
+                currentStatus: order.status,
+                priority: EventPriority.HIGH,
+              },
+            };
+            await this.publisher.publish(overdueEvent);
           } catch {
             // Non-fatal
           }
