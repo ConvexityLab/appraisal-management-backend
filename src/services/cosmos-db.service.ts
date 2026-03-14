@@ -1,4 +1,4 @@
-import { CosmosClient, Database, Container, ItemResponse, FeedResponse, SqlQuerySpec } from '@azure/cosmos';
+import { CosmosClient, Database, Container, ItemResponse, FeedResponse, SqlQuerySpec, PartitionKeyBuilder } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import { 
   AppraisalOrder, 
@@ -120,6 +120,27 @@ export class CosmosDbService {
         'Set COSMOS_ENDPOINT (or AZURE_COSMOS_ENDPOINT) to your production CosmosDB endpoint.'
       );
     }
+  }
+
+  /**
+   * Resolve the correct Cosmos DB partition key for a document partitioned by /tenantId.
+   *
+   * - If tenantId is a non-empty string → use it directly (string partition key).
+   * - If tenantId is null or empty string → use NullPartitionKeyValue (explicit null slot).
+   * - If tenantId is undefined (field absent) → use NonePartitionKeyValue (missing-field slot).
+   *
+   * Using the wrong slot causes a 404 on replace/delete even though the item was created
+   * successfully, because the partition shard won't match.
+   */
+  private resolvePartitionKey(tenantId: string | null | undefined): any {
+    if (tenantId !== undefined && tenantId !== null && tenantId !== '') {
+      return tenantId;
+    }
+    if (tenantId === null) {
+      return new PartitionKeyBuilder().addNullValue().build();
+    }
+    // undefined → document was stored without the field
+    return new PartitionKeyBuilder().addNoneValue().build();
   }
 
   /**
@@ -424,10 +445,12 @@ export class CosmosDbService {
       };
 
       // The orders container is partitioned by /tenantId (immutable).
-      // Status changes no longer require delete+create — just replace in place.
-      const tenantId = (existingOrder.tenantId ?? existingOrder.id) as string;
+      // Use the EXACT same partition key the document was stored with. If no
+      // tenantId was present at creation time, the slot is null — never fall
+      // back to the document id, which lives in a different partition shard.
+      const partitionKey = this.resolvePartitionKey(existingOrder.tenantId);
 
-      const replaceResponse = await this.ordersContainer.item(id, tenantId).replace(updatedOrder);
+      const replaceResponse = await this.ordersContainer.item(id, partitionKey).replace(updatedOrder);
       const resource = replaceResponse.resource as AppraisalOrder;
 
       return {
@@ -1321,12 +1344,11 @@ export class CosmosDbService {
       };
 
       // Vendors container is partitioned by /tenantId (immutable).
-      // Status changes no longer require delete+create — just replace in place.
-      // Use the stored tenantId as partition key; if absent, pass null so Cosmos
-      // resolves the null-partition-key slot (avoids using the wrong shard).
-      const tenantId = existingResponse.data.tenantId ?? null;
+      // Use the EXACT same partition key the document was stored with. If no
+      // tenantId was present at creation time, the slot is null.
+      const partitionKey = this.resolvePartitionKey(existingResponse.data.tenantId);
 
-      const replaceResponse = await this.vendorsContainer.item(id, tenantId as any).replace(updatedVendor);
+      const replaceResponse = await this.vendorsContainer.item(id, partitionKey).replace(updatedVendor);
       const resource = replaceResponse.resource as Vendor;
 
       return {
@@ -1876,9 +1898,27 @@ export class CosmosDbService {
       }
 
       const container = this.database!.container(containerName);
-      const response = await container.item(id, partitionKey || id).read();
 
-      if (!response.resource) {
+      // When the caller supplies an explicit partition key, use a point-read (faster).
+      // Otherwise, fall back to a cross-partition query to avoid 404s caused by
+      // guessing the wrong shard when partitionKey !== id.
+      if (partitionKey) {
+        const response = await container.item(id, partitionKey).read();
+        if (!response.resource) {
+          return {
+            success: false,
+            error: this.createApiError('ITEM_NOT_FOUND', `Item ${id} not found`)
+          };
+        }
+        return { success: true, data: response.resource as T };
+      }
+
+      const querySpec = {
+        query: 'SELECT * FROM c WHERE c.id = @id',
+        parameters: [{ name: '@id', value: id }]
+      };
+      const { resources } = await container.items.query<T>(querySpec, { maxItemCount: 1 }).fetchAll();
+      if (!resources || resources.length === 0) {
         return {
           success: false,
           error: this.createApiError('ITEM_NOT_FOUND', `Item ${id} not found`)
@@ -1887,7 +1927,7 @@ export class CosmosDbService {
 
       return {
         success: true,
-        data: response.resource as T
+        data: resources[0] as T
       };
     } catch (error) {
       this.logger.error('Failed to get item', { error: error instanceof Error ? error.message : 'Unknown error', containerName, id });
@@ -1905,17 +1945,26 @@ export class CosmosDbService {
       }
 
       const container = this.database!.container(containerName);
-      const existingResponse = await container.item(id, partitionKey || id).read();
-      
-      if (!existingResponse.resource) {
+
+      // Use a cross-partition query to find the existing item by id — avoids guessing
+      // the partition key value (which would cause 404 if wrong).
+      const querySpec = {
+        query: 'SELECT * FROM c WHERE c.id = @id',
+        parameters: [{ name: '@id', value: id }]
+      };
+      const { resources } = await container.items.query<T>(querySpec).fetchAll();
+      if (!resources || resources.length === 0) {
         return {
           success: false,
           error: this.createApiError('ITEM_NOT_FOUND', `Item ${id} not found`)
         };
       }
 
-      const updatedItem = { ...existingResponse.resource, ...updates };
-      const response = await container.item(id, partitionKey || id).replace(updatedItem);
+      const existingItem: any = resources[0];
+      const updatedItem = { ...existingItem, ...updates };
+
+      // Use upsert so Cosmos can route to the correct partition shard automatically.
+      const response = await container.items.upsert(updatedItem);
 
       return {
         success: true,

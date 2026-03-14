@@ -29,6 +29,7 @@ import type {
   BaseEvent,
   EventHandler,
   QCAIScoredEvent,
+  QCCompletedEvent,
   SupervisionCosignedEvent,
   OrderDeliveredEvent,
 } from '../types/events.js';
@@ -66,6 +67,10 @@ export class AutoDeliveryService {
         'qc.ai.scored',
         this.makeHandler('qc.ai.scored', this.onQCAIScored.bind(this)),
       ),
+      this.subscriber.subscribe<QCCompletedEvent>(
+        'qc.completed',
+        this.makeHandler('qc.completed', this.onQCCompleted.bind(this)),
+      ),
       this.subscriber.subscribe<SupervisionCosignedEvent>(
         'supervision.cosigned',
         this.makeHandler('supervision.cosigned', this.onSupervisionCosigned.bind(this)),
@@ -80,6 +85,7 @@ export class AutoDeliveryService {
     if (!this.isStarted) return;
     await Promise.all([
       this.subscriber.unsubscribe('qc.ai.scored'),
+      this.subscriber.unsubscribe('qc.completed'),
       this.subscriber.unsubscribe('supervision.cosigned'),
     ]);
     this.isStarted = false;
@@ -96,6 +102,32 @@ export class AutoDeliveryService {
     const { orderId, tenantId, priority } = event.data;
     this.logger.info('AI auto-pass detected — checking auto-delivery config', { orderId, tenantId });
     await this.deliverOrder(orderId, tenantId, 'ai_auto_pass', priority);
+  }
+
+  /**
+   * Fires when a human QC reviewer marks an order as passed.
+   * This covers the path: AI flags needs_review → analyst reviews → passes.
+   * The supervision.cosigned path handles cases where supervisor sign-off is
+   * also required — this handles direct analyst approval without supervision.
+   */
+  private async onQCCompleted(event: QCCompletedEvent): Promise<void> {
+    if (event.data.result !== 'passed') return;
+
+    const { orderId, priority } = event.data;
+    // QCCompletedEvent carries no tenantId — use a cross-partition query to resolve it.
+    const rows = await this.dbService.queryDocuments<{ id: string; tenantId: string }>(
+      'orders',
+      'SELECT c.id, c.tenantId FROM c WHERE c.id = @orderId',
+      [{ name: '@orderId', value: orderId }],
+    );
+    const row = rows[0];
+    if (!row) {
+      this.logger.error('AutoDeliveryService: order not found for qc.completed', { orderId });
+      return;
+    }
+    const tenantId: string = row.tenantId;
+    this.logger.info('Human QC passed — checking auto-delivery config', { orderId, tenantId });
+    await this.deliverOrder(orderId, tenantId, 'qc_review_passed', priority);
   }
 
   /** Fires after a supervisor co-signs, regardless of whether AI flagged it or

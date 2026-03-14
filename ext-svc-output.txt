@@ -1,0 +1,882 @@
+﻿
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/source/appraisal-management-backend[39m
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:42.223Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:45:42.226Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:45:42.227Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:43.057Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:45:43.057Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:47.192Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:47.196Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:47.197Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:47.198Z INFO [App] AzureCommunicationService: using API key credential
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:45:47.198Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:48.288Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:48.458Z INFO [DeadLetterQueueMonitorService] DLQ monitor using Managed Identity {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:49.507Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:49.673Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:45:49.673Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:50.173Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:50.174Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:50.175Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:50.515Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:50.516Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:45:50.516Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:45:50.517Z INFO [App] ACS Identity Service initialized with API key
+2026-03-14T16:45:50.518Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:50.520Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:50.562Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:45:50.562Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:45:50.563Z INFO [App] ACS Identity Service initialized with API key
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:50.618Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:50.618Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:50.866Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:45:50.866Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:45:50.867Z INFO [App] ACS Identity Service initialized with API key
+2026-03-14T16:45:50.867Z INFO [App] ACS Chat Service initialized successfully
+2026-03-14T16:45:50.867Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:45:50.867Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:45:50.867Z INFO [App] ACS Identity Service initialized with API key
+2026-03-14T16:45:50.867Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:50.868Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:51.736Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:45:51.736Z INFO [App] AzureCommunicationService: using API key credential
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m2026-03-14T16:45:51.850Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:51.850Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:51.851Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m≡ƒº¬ Setting up test environment...
+Γ£à Test environment ready
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests
+[22m[39m2026-03-14T16:45:56.274Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:45:56.274Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-03-14T16:45:56.274Z INFO [App] Creating NEW Azure Entra auth instance with JWKS cache
+2026-03-14T16:45:56.276Z INFO [App] Azure Entra ID authentication initialized {"tenantId":"885097ba-35ea-48db-be7a-a0aa7ff451bd","clientId":"dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a"}
+2026-03-14T16:45:56.276Z INFO [App] Role mapping configured {"groupId":"admin-group-id","role":"admin","permissions":["*"]}
+2026-03-14T16:45:56.276Z INFO [App] Role mapping configured {"groupId":"manager-group-id","role":"manager","permissions":["order_manage","vendor_manage","vendor_assign","analytics_view","qc_metrics","qc_validate"]}
+2026-03-14T16:45:56.276Z INFO [App] Role mapping configured {"groupId":"qc-analyst-group-id","role":"qc_analyst","permissions":["qc_validate","qc_execute","qc_metrics"]}
+2026-03-14T16:45:56.276Z INFO [App] Role mapping configured {"groupId":"appraiser-group-id","role":"appraiser","permissions":["order_view","order_update"]}
+2026-03-14T16:45:56.276Z INFO [App] Azure AD role mappings configured
+2026-03-14T16:45:56.276Z INFO [App] Reusing existing Azure Entra auth instance (JWKS cache preserved)
+2026-03-14T16:45:56.310Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:56.310Z INFO [App] AzureCommunicationService: using API key credential
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:45:56.311Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-03-14T16:45:56.311Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:56.311Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:56.311Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:45:56.318Z INFO [App] Teams service initialized with Managed Identity
+2026-03-14T16:45:56.319Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:45:56.321Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:45:56.323Z INFO [ServiceBusEventSubscriber] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:45:56.324Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:45:56.382Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:45:56.382Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+
+node.exe : [90mstderr[2m | 
+tests/integration/external-services.test.ts[2m > [22m[2mExternal 
+Services Integration Tests
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.cjs"  
+...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([90mstderr[2m...tegratio 
+   n Tests:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[22m[39m2026-03-14T16:45:56.277Z WARN [App] ΓÜá∩╕Å  Test tokens are 
+ENABLED - DO NOT USE IN PRODUCTION
+2026-03-14T16:45:56.309Z WARN [App] Azure Service Bus connection string 
+not provided, using mock implementation
+2026-03-14T16:45:56.373Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.373Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.373Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.373Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.376Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.376Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.377Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.377Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.380Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.382Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:45:56.383Z WARN [App] Authorization middleware not 
+initialized - allowing request
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone data via risk assessment
+[22m[39m2026-03-14T16:45:56.417Z INFO [App] Incoming request {"correlationId":"1bdabe2f-22c0-4882-8f96-e81de3903021","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone data via risk assessment
+[22m[39m2026-03-14T16:45:56.451Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":29.7604,"longitude":-95.3698},"strategy":"quality_first"}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood 
+Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone 
+data via risk assessment
+[22m[39m2026-03-14T16:45:56.453Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":29.7604,"longitude":-95.369
+8},"analysisType":"demographics"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone data via risk assessment
+[22m[39m2026-03-14T16:45:56.452Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":29.7604,"longitude":-95.3698},"strategy":"quality_first","enabledProviders":["google","azure","openstreetmap"]}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood 
+Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone 
+data via risk assessment
+[22m[39m2026-03-14T16:45:56.454Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood 
+Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone 
+data via risk assessment
+[22m[39m2026-03-14T16:45:56.455Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T16:45:56.455Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T16:45:56.455Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T16:45:56.455Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T16:45:56.455Z WARN [App] Analysis step 5 failed {"error":{}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate with FEMA flood zone data via risk assessment
+[22m[39m2026-03-14T16:45:56.457Z INFO [App] Request completed {"correlationId":"1bdabe2f-22c0-4882-8f96-e81de3903021","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"40ms"}
+2026-03-14T16:45:56.458Z INFO [App] Request completed {"correlationId":"1bdabe2f-22c0-4882-8f96-e81de3903021","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"41ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:45:56 +0000] "POST /api/property-intelligence/analyze/comprehensive HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance requirement assessment
+[22m[39m2026-03-14T16:45:56.488Z INFO [App] Incoming request {"correlationId":"3b2508aa-9c19-442e-9de1-02645f6d27a4","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance requirement assessment
+[22m[39m2026-03-14T16:45:56.492Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":29.7604,"longitude":-95.3698},"strategy":"quality_first"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance requirement assessment
+[22m[39m2026-03-14T16:45:56.493Z INFO [App] Request completed {"correlationId":"3b2508aa-9c19-442e-9de1-02645f6d27a4","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"5ms"}
+2026-03-14T16:45:56.493Z INFO [App] Request completed {"correlationId":"3b2508aa-9c19-442e-9de1-02645f6d27a4","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"5ms"}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mFEMA Flood Risk Integration[2m > [22mshould integrate with FEMA flood zone data via risk assessment[32m 91[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+::ffff:127.0.0.1 - - [14/Mar/2026:16:45:56 +0000] "POST /api/property-intelligence/analyze/comprehensive HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould search nearby places using Google Places API
+[22m[39m2026-03-14T16:45:56.506Z INFO [App] Incoming request {"correlationId":"c92a7686-d28e-4c02-819a-118f02a97cc0","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","ip":"::ffff:127.0.0.1"}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mFEMA Flood Risk Integration[2m > [22mshould provide flood insurance requirement assessment[32m 18[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould search nearby places using 
+Google Places API
+[22m[39m2026-03-14T16:46:03.831Z ERROR [App] OSM green spaces 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould search nearby places using 
+Google Places API
+[22m[39m2026-03-14T16:46:03.832Z ERROR [App] OSM public transport 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould search nearby places using Google Places API
+[22m[39m2026-03-14T16:46:03.832Z INFO [App] Request completed {"correlationId":"c92a7686-d28e-4c02-819a-118f02a97cc0","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","statusCode":200,"duration":"7326ms"}
+2026-03-14T16:46:03.833Z INFO [App] Request completed {"correlationId":"c92a7686-d28e-4c02-819a-118f02a97cc0","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","statusCode":200,"duration":"7326ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:03 +0000] "POST /api/property-intelligence/analyze/neighborhood HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould find specific establishment types (Starbucks test)
+[22m[39m2026-03-14T16:46:03.843Z INFO [App] Incoming request {"correlationId":"7978bfb1-526b-4218-a9b9-ebd3a6f90061","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","ip":"::ffff:127.0.0.1"}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mGoogle Places API Integration[2m > [22mshould search nearby places using Google Places API[33m 7337[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould find specific 
+establishment types (Starbucks test)
+[22m[39m2026-03-14T16:46:09.538Z ERROR [App] OSM green spaces 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould find specific 
+establishment types (Starbucks test)
+[22m[39m2026-03-14T16:46:09.812Z ERROR [App] OSM community amenities 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould find specific establishment types (Starbucks test)
+[22m[39m2026-03-14T16:46:09.812Z INFO [App] Request completed {"correlationId":"7978bfb1-526b-4218-a9b9-ebd3a6f90061","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","statusCode":200,"duration":"5969ms"}
+2026-03-14T16:46:09.813Z INFO [App] Request completed {"correlationId":"7978bfb1-526b-4218-a9b9-ebd3a6f90061","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","statusCode":200,"duration":"5970ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:09 +0000] "POST /api/property-intelligence/analyze/neighborhood HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould provide detailed place information
+[22m[39m2026-03-14T16:46:09.825Z INFO [App] Incoming request {"correlationId":"c389fb72-0241-470e-9330-729084f6d086","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","ip":"::ffff:127.0.0.1"}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mGoogle Places API Integration[2m > [22mshould find specific establishment types (Starbucks test)[33m 5981[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould provide detailed place 
+information
+[22m[39m2026-03-14T16:46:17.442Z ERROR [App] OSM green spaces 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould provide detailed place 
+information
+[22m[39m2026-03-14T16:46:17.442Z ERROR [App] OSM public transport 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle 
+Places API Integration[2m > [22m[2mshould provide detailed place 
+information
+[22m[39m2026-03-14T16:46:17.443Z ERROR [App] OSM community amenities 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould provide detailed place information
+[22m[39m2026-03-14T16:46:17.443Z INFO [App] Request completed {"correlationId":"c389fb72-0241-470e-9330-729084f6d086","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","statusCode":200,"duration":"7618ms"}
+2026-03-14T16:46:17.443Z INFO [App] Request completed {"correlationId":"c389fb72-0241-470e-9330-729084f6d086","method":"POST","url":"/api/property-intelligence/analyze/neighborhood","statusCode":200,"duration":"7618ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:17 +0000] "POST /api/property-intelligence/analyze/neighborhood HTTP/1.1" 200 660 "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[22m[39m2026-03-14T16:46:17.458Z INFO [App] Incoming request {"correlationId":"a0503640-218f-4dda-8d04-2d2e96141c2c","method":"GET","url":"/api/property-intelligence/census/demographics?latitude=37.4224764&longitude=-122.0842499","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[22m[39m2026-03-14T16:46:17.461Z INFO [App] Census demographics request received {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+2026-03-14T16:46:17.461Z INFO [App] Fetching Census demographic intelligence {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[22m[39m2026-03-14T16:46:17.461Z INFO [App] Starting Census demographic analysis {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mGoogle Places API Integration[2m > [22mshould provide detailed place information[33m 7630[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.160Z INFO [App] Census demographic analysis completed {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499},"score":70}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.161Z INFO [App] Request completed {"correlationId":"a0503640-218f-4dda-8d04-2d2e96141c2c","method":"GET","url":"/api/property-intelligence/census/demographics?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"703ms"}
+2026-03-14T16:46:18.161Z INFO [App] Request completed {"correlationId":"a0503640-218f-4dda-8d04-2d2e96141c2c","method":"GET","url":"/api/property-intelligence/census/demographics?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"703ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:18 +0000] "GET /api/property-intelligence/census/demographics?latitude=37.4224764&longitude=-122.0842499 HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.176Z INFO [App] Incoming request {"correlationId":"dd3b6f60-4fca-4bef-bd3d-e661d1613856","method":"GET","url":"/api/property-intelligence/census/economics?latitude=37.4224764&longitude=-122.0842499","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.179Z INFO [App] Census economics request received {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+2026-03-14T16:46:18.179Z INFO [App] Fetching Census economic intelligence {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.179Z INFO [App] Starting Census economic analysis {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mUS Census Bureau Integration[2m > [22mshould retrieve demographic data from Census Bureau[33m 719[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.572Z INFO [App] Census economic analysis completed {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499},"score":69}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[22m[39m2026-03-14T16:46:18.573Z INFO [App] Request completed {"correlationId":"dd3b6f60-4fca-4bef-bd3d-e661d1613856","method":"GET","url":"/api/property-intelligence/census/economics?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"397ms"}
+2026-03-14T16:46:18.573Z INFO [App] Request completed {"correlationId":"dd3b6f60-4fca-4bef-bd3d-e661d1613856","method":"GET","url":"/api/property-intelligence/census/economics?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"397ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:18 +0000] "GET /api/property-intelligence/census/economics?latitude=37.4224764&longitude=-122.0842499 HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[22m[39m2026-03-14T16:46:18.584Z INFO [App] Incoming request {"correlationId":"66dbf9cd-9b9a-4a27-a971-b5d84118697f","method":"GET","url":"/api/property-intelligence/census/housing?latitude=37.4224764&longitude=-122.0842499","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[22m[39m2026-03-14T16:46:18.587Z INFO [App] Census housing request received {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+2026-03-14T16:46:18.587Z INFO [App] Fetching Census housing intelligence {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[22m[39m2026-03-14T16:46:18.588Z INFO [App] Starting Census housing analysis {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mUS Census Bureau Integration[2m > [22mshould retrieve economic data from Census Bureau[33m 409[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[22m[39m2026-03-14T16:46:18.950Z INFO [App] Census housing analysis completed {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499},"score":32}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[22m[39m2026-03-14T16:46:18.951Z INFO [App] Request completed {"correlationId":"66dbf9cd-9b9a-4a27-a971-b5d84118697f","method":"GET","url":"/api/property-intelligence/census/housing?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"367ms"}
+2026-03-14T16:46:18.951Z INFO [App] Request completed {"correlationId":"66dbf9cd-9b9a-4a27-a971-b5d84118697f","method":"GET","url":"/api/property-intelligence/census/housing?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"367ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:18 +0000] "GET /api/property-intelligence/census/housing?latitude=37.4224764&longitude=-122.0842499 HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[22m[39m2026-03-14T16:46:18.963Z INFO [App] Incoming request {"correlationId":"7ff66377-945e-4255-b57c-6e2df27351f3","method":"GET","url":"/api/property-intelligence/census/comprehensive?latitude=37.4224764&longitude=-122.0842499","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[22m[39m2026-03-14T16:46:18.966Z INFO [App] Comprehensive Census intelligence request received {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+2026-03-14T16:46:18.967Z INFO [App] Starting comprehensive Census intelligence analysis {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[22m[39m2026-03-14T16:46:18.967Z INFO [App] Census demographic data retrieved from cache {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[22m[39m2026-03-14T16:46:18.967Z INFO [App] Comprehensive Census intelligence analysis completed {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499},"overallCommunityScore":58,"demographicScore":70,"economicScore":69,"housingScore":32}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[22m[39m2026-03-14T16:46:18.968Z INFO [App] Request completed {"correlationId":"7ff66377-945e-4255-b57c-6e2df27351f3","method":"GET","url":"/api/property-intelligence/census/comprehensive?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"5ms"}
+2026-03-14T16:46:18.968Z INFO [App] Request completed {"correlationId":"7ff66377-945e-4255-b57c-6e2df27351f3","method":"GET","url":"/api/property-intelligence/census/comprehensive?latitude=37.4224764&longitude=-122.0842499","statusCode":200,"duration":"5ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:18 +0000] "GET /api/property-intelligence/census/comprehensive?latitude=37.4224764&longitude=-122.0842499 HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould validate addresses using multiple providers
+[22m[39m2026-03-14T16:46:18.979Z INFO [App] Incoming request {"correlationId":"25e2c5bb-2d33-46eb-82ab-eb582151cd82","method":"POST","url":"/api/property-intelligence/address/validate","ip":"::ffff:127.0.0.1"}
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mUS Census Bureau Integration[2m > [22mshould retrieve housing data from Census Bureau[33m 377[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mUS Census Bureau Integration[2m > [22mshould provide comprehensive census intelligence[32m 18[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould validate addresses using multiple providers
+[22m[39m2026-03-14T16:46:19.169Z INFO [App] Request completed {"correlationId":"25e2c5bb-2d33-46eb-82ab-eb582151cd82","method":"POST","url":"/api/property-intelligence/address/validate","statusCode":200,"duration":"190ms"}
+2026-03-14T16:46:19.170Z INFO [App] Request completed {"correlationId":"25e2c5bb-2d33-46eb-82ab-eb582151cd82","method":"POST","url":"/api/property-intelligence/address/validate","statusCode":200,"duration":"191ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/address/validate HTTP/1.1" 200 642 "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould standardize addresses using SmartyStreets/USPS
+[22m[39m2026-03-14T16:46:19.179Z INFO [App] Incoming request {"correlationId":"7fb63928-96fb-41da-91b6-73714e1af52a","method":"POST","url":"/api/property-intelligence/address/validate","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould standardize addresses using SmartyStreets/USPS
+[22m[39m2026-03-14T16:46:19.272Z INFO [App] Request completed {"correlationId":"7fb63928-96fb-41da-91b6-73714e1af52a","method":"POST","url":"/api/property-intelligence/address/validate","statusCode":200,"duration":"93ms"}
+2026-03-14T16:46:19.272Z INFO [App] Request completed {"correlationId":"7fb63928-96fb-41da-91b6-73714e1af52a","method":"POST","url":"/api/property-intelligence/address/validate","statusCode":200,"duration":"93ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/address/validate HTTP/1.1" 200 638 "-" "-"
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mMulti-Provider Address Services[2m > [22mshould validate addresses using multiple providers[32m 201[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mMulti-Provider Address Services[2m > [22mshould standardize addresses using SmartyStreets/USPS[32m 100[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould extract detailed address components
+[22m[39m2026-03-14T16:46:19.279Z INFO [App] Incoming request {"correlationId":"cda96490-d406-46af-9b47-986027d0e6a8","method":"POST","url":"/api/property-intelligence/address/geocode","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould extract detailed address components
+[22m[39m2026-03-14T16:46:19.282Z INFO [App] Geocoding address request {"address":"1600 Amphitheatre Parkway, Mountain View, CA 94043"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould extract detailed address components
+[22m[39m2026-03-14T16:46:19.282Z INFO [App] Request completed {"correlationId":"cda96490-d406-46af-9b47-986027d0e6a8","method":"POST","url":"/api/property-intelligence/address/geocode","statusCode":200,"duration":"3ms"}
+2026-03-14T16:46:19.282Z INFO [App] Request completed {"correlationId":"cda96490-d406-46af-9b47-986027d0e6a8","method":"POST","url":"/api/property-intelligence/address/geocode","statusCode":200,"duration":"3ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/address/geocode HTTP/1.1" 200 734 "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould assess environmental hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.291Z INFO [App] Incoming request {"correlationId":"dac0464d-d28c-42d9-87e3-0b9ae8957759","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould assess environmental hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.294Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499},"strategy":"quality_first"}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial 
+Risk Assessment Services[2m > [22m[2mshould assess environmental 
+hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.296Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould assess environmental hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.295Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":37.4224764,"longitude":-122.0842499},"strategy":"quality_first","enabledProviders":["google","azure","openstreetmap"]}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial 
+Risk Assessment Services[2m > [22m[2mshould assess environmental 
+hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.296Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial 
+Risk Assessment Services[2m > [22m[2mshould assess environmental 
+hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.296Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T16:46:19.296Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T16:46:19.296Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T16:46:19.297Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T16:46:19.297Z WARN [App] Analysis step 5 failed {"error":{}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould assess environmental hazards using multiple data sources
+[22m[39m2026-03-14T16:46:19.297Z INFO [App] Request completed {"correlationId":"dac0464d-d28c-42d9-87e3-0b9ae8957759","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"6ms"}
+2026-03-14T16:46:19.297Z INFO [App] Request completed {"correlationId":"dac0464d-d28c-42d9-87e3-0b9ae8957759","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"6ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/analyze/comprehensive HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould provide detailed earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.305Z INFO [App] Incoming request {"correlationId":"ec65f9a9-1f8d-406c-9391-8f562faaf287","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould provide detailed earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.308Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":37.7749,"longitude":-122.4194},"strategy":"quality_first"}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial 
+Risk Assessment Services[2m > [22m[2mshould provide detailed 
+earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.308Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.7749,"longitude":-122.41
+94},"analysisType":"demographics"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould provide detailed earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.308Z INFO [App] Starting comprehensive property analysis {"coordinates":{"latitude":37.7749,"longitude":-122.4194},"strategy":"quality_first","enabledProviders":["google","azure","openstreetmap"]}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial 
+Risk Assessment Services[2m > [22m[2mshould provide detailed 
+earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.309Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+
+[90mstderr[2m | tests/integration/external-services.test.ts[2m > 
+[22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial 
+Risk Assessment Services[2m > [22m[2mshould provide detailed 
+earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.309Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T16:46:19.309Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T16:46:19.309Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T16:46:19.309Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T16:46:19.309Z WARN [App] Analysis step 5 failed {"error":{}}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mGeospatial Risk Assessment Services[2m > [22m[2mshould provide detailed earthquake risk using USGS data
+[22m[39m2026-03-14T16:46:19.309Z INFO [App] Request completed {"correlationId":"ec65f9a9-1f8d-406c-9391-8f562faaf287","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"4ms"}
+2026-03-14T16:46:19.309Z INFO [App] Request completed {"correlationId":"ec65f9a9-1f8d-406c-9391-8f562faaf287","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":200,"duration":"4ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/analyze/comprehensive HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mProperty Intelligence Service Health[2m > [22m[2mshould report external service connectivity status
+[22m[39m2026-03-14T16:46:19.317Z INFO [App] Incoming request {"correlationId":"e53bab2c-8a06-4d53-bd0b-ed85006f171a","method":"GET","url":"/api/property-intelligence/health","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mProperty Intelligence Service Health[2m > [22m[2mshould report external service connectivity status
+[22m[39m2026-03-14T16:46:19.318Z INFO [App] Request completed {"correlationId":"e53bab2c-8a06-4d53-bd0b-ed85006f171a","method":"GET","url":"/api/property-intelligence/health","statusCode":200,"duration":"1ms"}
+2026-03-14T16:46:19.319Z INFO [App] Request completed {"correlationId":"e53bab2c-8a06-4d53-bd0b-ed85006f171a","method":"GET","url":"/api/property-intelligence/health","statusCode":200,"duration":"2ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "GET /api/property-intelligence/health HTTP/1.1" 200 350 "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze coffee shop density using Google Places
+[22m[39m2026-03-14T16:46:19.327Z INFO [App] Incoming request {"correlationId":"f25976e1-4fc6-42cf-af13-9175bef7e978","method":"POST","url":"/api/property-intelligence/analyze/creative","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze coffee shop density using Google Places
+[22m[39m2026-03-14T16:46:19.331Z INFO [App] Request completed {"correlationId":"f25976e1-4fc6-42cf-af13-9175bef7e978","method":"POST","url":"/api/property-intelligence/analyze/creative","statusCode":200,"duration":"5ms"}
+2026-03-14T16:46:19.331Z INFO [App] Request completed {"correlationId":"f25976e1-4fc6-42cf-af13-9175bef7e978","method":"POST","url":"/api/property-intelligence/analyze/creative","statusCode":200,"duration":"5ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/analyze/creative HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze walkability using external place data
+[22m[39m2026-03-14T16:46:19.340Z INFO [App] Incoming request {"correlationId":"bcdd5558-3c96-4ab2-9388-b245a5968577","method":"POST","url":"/api/property-intelligence/analyze/creative","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/external-services.test.ts[2m > [22m[2mExternal Services Integration Tests[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze walkability using external place data
+[22m[39m2026-03-14T16:46:19.343Z INFO [App] Request completed {"correlationId":"bcdd5558-3c96-4ab2-9388-b245a5968577","method":"POST","url":"/api/property-intelligence/analyze/creative","statusCode":200,"duration":"3ms"}
+2026-03-14T16:46:19.343Z INFO [App] Request completed {"correlationId":"bcdd5558-3c96-4ab2-9388-b245a5968577","method":"POST","url":"/api/property-intelligence/analyze/creative","statusCode":200,"duration":"3ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:46:19 +0000] "POST /api/property-intelligence/analyze/creative HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/external-services.test.ts
+[22m[39m≡ƒº╣ Cleaning up test environment...
+Γ£à Test cleanup complete
+
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mMulti-Provider Address Services[2m > [22mshould extract detailed address components[32m 11[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mGeospatial Risk Assessment Services[2m > [22mshould assess environmental hazards using multiple data sources[32m 15[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mGeospatial Risk Assessment Services[2m > [22mshould provide detailed earthquake risk using USGS data[32m 13[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mProperty Intelligence Service Health[2m > [22mshould report external service connectivity status[32m 7[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mCreative Property Features (External Data)[2m > [22mshould analyze coffee shop density using Google Places[32m 13[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+ [31m├ù[39m tests/integration/external-services.test.ts[2m > [22mExternal Services Integration Tests[2m > [22mCreative Property Features (External Data)[2m > [22mshould analyze walkability using external place data[32m 12[2mms[22m[39m
+[31m   ΓåÆ response.json is not a function[39m
+
+[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m[1m[41m Failed Tests 17 
+[49m[22m[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mFEMA Flood Risk Integration[2m > 
+[22mshould integrate with FEMA flood zone data via risk assessment
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m53:37[22m[39m
+    [90m 51| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m 52| [39m      
+    [90m 53| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m 54| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m 55| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[1/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mFEMA Flood Risk Integration[2m > 
+[22mshould provide flood insurance requirement assessment
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m80:37[22m[39m
+    [90m 78| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m 79| [39m      
+    [90m 80| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m 81| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m 82| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[2/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGoogle Places API Integration[2m 
+> [22mshould search nearby places using Google Places API
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m104:37[22m[39m
+    [90m102| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m103| [39m      
+    [90m104| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m105| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m106| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[3/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGoogle Places API Integration[2m 
+> [22mshould find specific establishment types (Starbucks test)
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m138:37[22m[39m
+    [90m136| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m137| [39m      
+    [90m138| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m139| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m140| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[4/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGoogle Places API Integration[2m 
+> [22mshould provide detailed place information
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m161:37[22m[39m
+    [90m159| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m160| [39m      
+    [90m161| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m162| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m163| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[5/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould retrieve demographic data from Census Bureau
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m180:37[22m[39m
+    [90m178| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m179| [39m      
+    [90m180| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m181| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m182| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[6/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould retrieve economic data from Census Bureau
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m209:37[22m[39m
+    [90m207| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m208| [39m      
+    [90m209| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m210| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m211| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[7/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould retrieve housing data from Census Bureau
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m235:37[22m[39m
+    [90m233| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m234| [39m      
+    [90m235| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m236| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m237| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[8/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould provide comprehensive census intelligence
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m264:37[22m[39m
+    [90m262| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m263| [39m      
+    [90m264| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m265| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m266| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»[9/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mMulti-Provider Address 
+Services[2m > [22mshould validate addresses using multiple providers
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m288:37[22m[39m
+    [90m286| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m287| [39m      
+    [90m288| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m289| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m290| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[10/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mMulti-Provider Address 
+Services[2m > [22mshould standardize addresses using 
+SmartyStreets/USPS
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m314:37[22m[39m
+    [90m312| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m313| [39m      
+    [90m314| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m315| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m316| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[11/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mMulti-Provider Address 
+Services[2m > [22mshould extract detailed address components
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m335:37[22m[39m
+    [90m333| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m334| [39m      
+    [90m335| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m336| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m337| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[12/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGeospatial Risk Assessment 
+Services[2m > [22mshould assess environmental hazards using multiple 
+data sources
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m362:37[22m[39m
+    [90m360| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m361| [39m      
+    [90m362| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m363| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m364| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[13/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGeospatial Risk Assessment 
+Services[2m > [22mshould provide detailed earthquake risk using USGS 
+data
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m396:37[22m[39m
+    [90m394| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m395| [39m      
+    [90m396| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m397| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m17 failed[39m[22m[90m (17)[39m
+[2m   Start at [22m 12:45:36
+    [90m398| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[14/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mProperty Intelligence Service 
+Health[2m > [22mshould report external service connectivity status
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m409:37[22m[39m
+    [90m407| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m408| [39m      
+    [90m409| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m410| [39m      // health response structure: { success, data: 
+{ status, serviceΓÇª
+    [90m411| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mdata[33m.[39mstatus)[33m.[39m[34mtoBe[39m([32m'healthy'[39m)
+[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[15/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mCreative Property Features 
+(External Data)[2m > [22mshould analyze coffee shop density using 
+Google Places
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m459:37[22m[39m
+    [90m457| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m458| [39m      
+    [90m459| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m460| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m461| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[16/17]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mCreative Property Features 
+(External Data)[2m > [22mshould analyze walkability using external 
+place data
+[31m[1mTypeError[22m: response.json is not a function[39m
+[36m [2mΓ¥»[22m 
+tests/integration/external-services.test.ts:[2m489:37[22m[39m
+[2m   Duration [22m 43.12s[2m (transform 4.10s, setup 94ms, collect 18.49s, tests 23.08s, environment 0ms, prepare 356ms)[22m
+
+    [90m487| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m488| [39m      
+    [90m489| [39m      [35mconst[39m result [33m=[39m 
+[35mawait[39m response[33m.[39m[34mjson[39m()[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m490| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m491| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»[17/17]ΓÄ»[22m[39m
+

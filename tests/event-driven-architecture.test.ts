@@ -16,7 +16,9 @@ import {
 } from '../src/types/events';
 
 // Test timeout for async operations
-const TEST_TIMEOUT = 10000;
+// Increased to 30s because the notification service may persist in-app notifications
+// to Azure Cosmos DB which can take up to ~20s on cold connections.
+const TEST_TIMEOUT = 30000;
 
 describe('Event-Driven Architecture', () => {
   let publisher: ServiceBusEventPublisher;

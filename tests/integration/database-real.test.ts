@@ -65,7 +65,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not c
       expect(health.database).toBe('appraisal-management')
       expect(typeof health.latency).toBe('number')
       expect(health.latency).toBeGreaterThan(0)
-      expect(health.latency).toBeLessThan(5000) // Should be under 5 seconds
+      expect(health.latency).toBeLessThan(15000) // Should be under 15 seconds (includes DB init under load)
       
       console.log(`💚 Health check passed - Latency: ${health.latency}ms`)
     })

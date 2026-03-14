@@ -20,7 +20,18 @@ import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 
 const TOPIC = 'appraisal-events';
-const MANAGED_SUBSCRIPTIONS = ['notification-service', 'auto-assignment-service'];
+const MANAGED_SUBSCRIPTIONS = [
+  'notification-service',
+  'auto-assignment-service',
+  'auto-delivery-service',
+  'audit-event-sink',
+  'ai-qc-gate-service',
+  'engagement-lifecycle-service',
+  'engagement-letter-autosend-service',
+  'axiom-auto-trigger-service',
+  'vendor-performance-updater-service',
+  'ucdp-ead-auto-submit-service',
+];
 
 export interface DLQMessageSummary {
   messageId: string;

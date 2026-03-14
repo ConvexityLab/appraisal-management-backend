@@ -331,6 +331,39 @@ export class ROVController {
       next(error);
     }
   };
+
+  /**
+   * POST /api/rov/requests/:id/triage
+   * Manually trigger (or re-trigger) AI triage for an ROV request.
+   * Triage is also triggered automatically on creation; this endpoint
+   * allows coordinators to request a fresh analysis after evidence is updated.
+   */
+  triggerAITriage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = req.params.id;
+      if (!id) {
+        res.status(400).json({ success: false, error: 'ROV id is required' });
+        return;
+      }
+      const requestedBy: string = (req as any).user?.email ?? (req as any).user?.id ?? 'coordinator';
+      this.logger.info('Manual AI triage triggered', { rovId: id, requestedBy });
+
+      const result = await this.rovService.performAITriage(id, requestedBy);
+
+      if (result.success) {
+        res.json({
+          success: true,
+          data: result.analysis,
+          message: 'AI triage completed successfully',
+        });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      this.logger.error('Error in triggerAITriage endpoint', { error, rovId: req.params.id });
+      next(error);
+    }
+  };
 }
 
 /**
@@ -349,6 +382,7 @@ export function createROVRouter(): express.Router {
   router.post('/requests/:id/assign', controller.assignROVRequest);
   router.put('/requests/:id/research', controller.updateROVResearch);
   router.post('/requests/:id/response', controller.submitROVResponse);
+  router.post('/requests/:id/triage', controller.triggerAITriage);
 
   // ROV analytics
   router.get('/metrics', controller.getROVMetrics);

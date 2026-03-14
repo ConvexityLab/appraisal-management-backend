@@ -1,0 +1,2140 @@
+﻿[22m[39m2026-03-14T15:33:04.773Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Unexpected token 
+';'","executionTime":13,"codePreview":"return 2 +;"}
+[22m[39m2026-03-14T15:33:04.859Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: Test 
+error","executionTime":81,"codePreview":"throw new Error(\"Test 
+error\");"}
+[22m[39m2026-03-14T15:33:04.931Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: undefinedVariable is 
+not defined","executionTime":68,"codePreview":"return 
+undefinedVariable;"}
+[22m[39m2026-03-14T15:33:05.148Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Code execution timeout after 
+100ms","executionTime":212,"codePreview":"while(true) {}"}
+[22m[39m2026-03-14T15:33:05.209Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: require is not 
+defined","executionTime":60,"codePreview":"\n        const fs = 
+require('fs');\n        return fs.readFileSync('/etc/passwd', 
+'utf8');\n      "}
+[22m[39m2026-03-14T15:33:05.237Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: require is not 
+defined","executionTime":26,"codePreview":"\n        const http = 
+require('http');\n        return http.get('http://example.com');\n      
+"}
+[22m[39m2026-03-14T15:33:05.265Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: process is not 
+defined","executionTime":23,"codePreview":"return process.env;"}
+ [32mΓ£ô[39m tests/substantive-review-integration.test.ts[2m > [22mSubstantive Review ΓÇö Integration[2m > [22mScoring rules[2m > [22moverallStatus "fail" should mean critical issues exist or score < 50[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/substantive-review-integration.test.ts[2m > [22mSubstantive Review ΓÇö Integration[2m > [22mScoring rules[2m > [22moverallStatus "pass" should mean score >= 80 and no critical issues[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/substantive-review-engine.test.ts[2m > [22mSubstantiveReviewEngine[2m > [22mscoring[2m > [22mshould set status to fail when score < 60[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/substantive-review-engine.test.ts[2m > [22mSubstantiveReviewEngine[2m > [22mscoring[2m > [22mshould set status to fail when critical issues exist[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/substantive-review-engine.test.ts[2m > [22mSubstantiveReviewEngine[2m > [22mscoring[2m > [22mshould set status to pass when score >= 75 and <= 2 high issues[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/substantive-review-engine.test.ts[2m > [22mSubstantiveReviewEngine[2m > [22merror handling[2m > [22mshould still return results for other services when one fails[32m 1[2mms[22m[39m
+[22m[39m2026-03-14T15:33:07.274Z ERROR [AutoAssignmentOrchestrator] 
+Failed to add order to QC queue 
+{"orderId":"order-e2e-8910954a","error":{}}
+[22m[39m2026-03-14T15:33:07.312Z ERROR [AutoAssignmentOrchestrator] 
+Failed to add order to QC queue 
+{"orderId":"order-e2e-d92db47b","error":{}}
+[22m[39m2026-03-14T15:33:07.316Z ERROR [AutoAssignmentOrchestrator] 
+Failed to add order to QC queue 
+{"orderId":"order-e2e-5b5c65b7","error":{}}
+[22m[39m2026-03-14T15:33:07.916Z WARN [EngagementService] FK 
+write-back to order failed (non-fatal) {"vendorOrderId":"ord-xyz","engag
+ementId":"eng-test-001","loanId":"loan-001","err":{}}
+[22m[39m2026-03-14T15:33:07.919Z WARN [EngagementService] FK 
+write-back to order failed (non-fatal) {"vendorOrderId":"ord-xyz","engag
+ementId":"eng-test-001","loanId":"loan-001","err":{}}
+[22m[39m2026-03-14T15:33:08.243Z WARN [WaiverScreeningService] Failed 
+to load client waiver config {"clientId":"client-1","error":{}}
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckConditionQualityRatings[2m > [22mpasses for valid C/Q ratings[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckConditionQualityRatings[2m > [22mfails for invalid condition rating[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckConditionQualityRatings[2m > [22mfails for invalid quality rating[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckConditionQualityRatings[2m > [22mpasses C5 with adequate condition description[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckGlaReasonableness[2m > [22mpasses for reasonable GLA[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckRoomCountLogic[2m > [22mpasses for consistent room counts[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckBasementConsistency[2m > [22mpasses for consistent basement data[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckBasementConsistency[2m > [22mpasses when no basement[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckEffectiveAgeReasonableness[2m > [22mpasses for reasonable effective age[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mcheckFunctionalUtility[2m > [22mpasses when all building components documented[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mImprovementsReviewService.performReview[2m > [22mreturns pass for well-documented improvements[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/improvements-review.test.ts[2m > [22mImprovementsReviewService.performReview[2m > [22mreturns fail for critical issues[32m 0[2mms[22m[39m
+  result: [32m'passed'[39m,
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckZoningCompliance[2m > [22mpasses when zoning is documented and legal[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckZoningCompliance[2m > [22mfails when zoning classification and description are both missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckFloodZoneDocumentation[2m > [22mpasses when all flood data is documented and low-risk zone[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckFloodZoneDocumentation[2m > [22mfails when flood zone is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckFloodZoneDocumentation[2m > [22mfails when flood map number is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckHbuAnalysis[2m > [22mpasses when full four-test framework is documented[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckHbuAnalysis[2m > [22mfails critical when HBU analysis is missing entirely[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckHbuAnalysis[2m > [22mflags when as-improved tests lack narrative[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckUtilityDocumentation[2m > [22mpasses when all utilities are documented[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckUtilityDocumentation[2m > [22mfails when utilities block is null[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckSiteDimensionConsistency[2m > [22mpasses for reasonable lot size[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckSiteDimensionConsistency[2m > [22mfails when lot size is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckLegalDescriptionPresence[2m > [22mpasses when zoning description is present[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mcheckLegalDescriptionPresence[2m > [22mfails when zoning description is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mZoningSiteReviewService.performReview[2m > [22mreturns pass for a well-documented site[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/zoning-site-review.test.ts[2m > [22mZoningSiteReviewService.performReview[2m > [22mreturns fail for critical issues[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckContractExecution[2m > [22mpasses when contract is fully executed with all signatures[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckContractExecution[2m > [22mfails when contract is not fully executed[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckContractExecution[2m > [22mfails when buyer signature date is missing[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckContractExecution[2m > [22mfails when seller signature date is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckContractExecution[2m > [22mpasses when contract data is not provided[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckArmLengthTransaction[2m > [22mpasses with no related-party indicators[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckArmLengthTransaction[2m > [22mfails when related-party flag is true[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckArmLengthTransaction[2m > [22mfails when family relationship is flagged[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckArmLengthTransaction[2m > [22mfails when employer relationship is flagged[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22manalyzeConcessions[2m > [22mpasses when concessions are within market norms[32m 41[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22manalyzeConcessions[2m > [22mpasses with zero concessions[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22manalyzeConcessions[2m > [22mpasses when concession data is not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckPriceReasonableness[2m > [22mpasses when contract price is within 5% of appraised value[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckPriceReasonableness[2m > [22mpasses when appraised value is not available[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckFinancingTerms[2m > [22mpasses with conventional financing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckFinancingTerms[2m > [22mpasses when financing data not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckPersonalPropertyInclusion[2m > [22mpasses when no personal property in contract[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckPersonalPropertyInclusion[2m > [22mpasses when personal property is in contract AND acknowledged in appraisal[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mcheckPersonalPropertyInclusion[2m > [22mpasses when personal property data not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mContractReviewService.performReview[2m > [22mreturns pass for a clean purchase transaction[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/contract-review.test.ts[2m > [22mContractReviewService.performReview[2m > [22mreturns fail for critical arm-length violation[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectSerialFlip[2m > [22mpasses when no serial flip pattern[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectSerialFlip[2m > [22mpasses when no prior sale data[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectCompClustering[2m > [22mpasses with geographically dispersed comps[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectCompClustering[2m > [22mpasses when insufficient geo-coded comps[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectPerfectMatchComps[2m > [22mpasses when all comps are unique[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectValueRoundingBias[2m > [22mpasses for non-round value[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectAdjustmentSymmetry[2m > [22mpasses with mixed adjustment directions[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mdetectCompStaleness[2m > [22mpasses when all comps recent[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mEnhancedFraudDetectionService.performReview[2m > [22mreturns pass for clean data[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/enhanced-fraud-detection.test.ts[2m > [22mEnhancedFraudDetectionService.performReview[2m > [22mreturns fail for serial flip[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mscanProhibitedFactors[2m > [22mpasses when narrative has no prohibited demographic terms[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mscanProhibitedFactors[2m > [22mfails when narrative references racial demographics[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mscanProhibitedFactors[2m > [22mfails when market commentary references ethnic composition[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mscanProhibitedFactors[2m > [22mpasses when text is empty[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mscanSteeringLanguage[2m > [22mpasses with neutral market language[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckNeighborhoodNarrative[2m > [22mpasses with data-supported market commentary[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckNeighborhoodNarrative[2m > [22mpasses "up and coming" when absorption rate data is cited[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckNeighborhoodNarrative[2m > [22mpasses when no trend language is present[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mscanProtectedClassReferences[2m > [22mpasses with no protected class mentions[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckCompGeographicDiversity[2m > [22mpasses when comps span multiple zip codes including subject zip[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckCompGeographicDiversity[2m > [22mpasses when all comps share subject zip code[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckCompGeographicDiversity[2m > [22mpasses when fewer than 2 comparables are provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckCompGeographicDiversity[2m > [22mpasses when no comparables are provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckLocationAdjustments[2m > [22mpasses with modest mixed-direction adjustments[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckLocationAdjustments[2m > [22mpasses when adjustments are uniform but small[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mcheckLocationAdjustments[2m > [22mpasses when fewer than 2 comps have location adjustments[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mvalidateEngagementAlignment[2m > [22mpasses when engagement and report match[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mvalidateEngagementAlignment[2m > [22mfails when client name differs[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mvalidateEngagementAlignment[2m > [22mfails when intended use differs[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mvalidateEngagementAlignment[2m > [22mfails when value type differs[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mvalidateEngagementAlignment[2m > [22mfails when effective date differs[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mvalidateEngagementAlignment[2m > [22mpasses when engagement data is not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mBiasScreeningService.performScreening[2m > [22mreturns pass when all checks pass[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mBiasScreeningService.performScreening[2m > [22mreturns fail when critical issues found (prohibited demographics)[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/bias-screening.test.ts[2m > [22mBiasScreeningService.performScreening[2m > [22mcounts severity levels correctly across multiple failing checks[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckApproachSpread[2m > [22mpasses when approach spread is reasonable[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckApproachSpread[2m > [22mpasses when only one approach is used[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckWeightJustification[2m > [22mpasses when weights are provided with narrative[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckSensitivityAnalysis[2m > [22mpasses when final value is within approach range[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckSensitivityAnalysis[2m > [22mfails when final value is outside approach range[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckTimeAdjustmentSupport[2m > [22mpasses by default (placeholder for market rate data)[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mcheckExposureMarketingTime[2m > [22mpasses when exposure/marketing times are documented[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mReconciliationReviewService.performReview[2m > [22mreturns pass for well-supported reconciliation[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/reconciliation-review.test.ts[2m > [22mReconciliationReviewService.performReview[2m > [22mreturns fail when final value outside range[32m 1[2mms[22m[39m
+[22m[39m2026-03-14T15:33:10.534Z WARN [AutoAssignmentOrchestrator] 
+Failed to cancel broadcast bid {"bidId":"bid-gamma","error":"Cannot 
+destructure property 'resources' of '(intermediate value)' as it is 
+undefined."}
+[90mstdout[2m | tests/unit/auto-assignment-orchestrator-broadcast.test.ts[2m > [22m[2mAutoAssignmentOrchestratorService ΓÇö Axiom Gate[2m > [22m[2mcreates a human QC review when Axiom returns UNKNOWN (failed evaluation)
+[22m[39m2026-03-14T15:33:10.551Z INFO [AutoAssignmentOrchestrator] axiom.evaluation.completed received {"orderId":"order-91b57c2c-a2a7-493a-b01b-09ed87bcf742","overallDecision":"UNKNOWN","status":"failed"}
+[90mstderr[2m | 
+tests/unit/auto-assignment-orchestrator-broadcast.test.ts[2m > 
+[22m[2mAutoAssignmentOrchestratorService ΓÇö Axiom Gate[2m > 
+[22m[2mcreates a human QC review when Axiom returns UNKNOWN (failed 
+evaluation)
+[22m[39m2026-03-14T15:33:10.552Z WARN [AutoAssignmentOrchestrator] 
+Axiom evaluation failed ΓÇö routing to human QC regardless {"orderId":"o
+rder-91b57c2c-a2a7-493a-b01b-09ed87bcf742","overallDecision":"UNKNOWN"}
+[90mstderr[2m | 
+tests/unit/auto-assignment-orchestrator-broadcast.test.ts[2m > 
+[22m[2mAutoAssignmentOrchestratorService ΓÇö Axiom Gate[2m > 
+[22m[2mcreates a human QC review when Axiom returns UNKNOWN (failed 
+evaluation)
+[90mstderr[2m | 
+tests/unit/auto-assignment-orchestrator-broadcast.test.ts[2m > 
+[22m[2mAutoAssignmentOrchestratorService ΓÇö Axiom Gate[2m > 
+[22m[2mcreates a human QC review when Axiom returns UNKNOWN (failed 
+evaluation)
+ [32mΓ£ô[39m tests/unit/auto-assignment-orchestrator-broadcast.test.ts[2m > [22mAutoAssignmentOrchestratorService ΓÇö Axiom Gate[2m > [22mcreates a human QC review when Axiom returns UNKNOWN (failed evaluation)[32m 4[2mms[22m[39m
+[22m[39m2026-03-14T15:33:11.077Z ERROR [App] Failed to retrieve 
+property {"propertyId":"prop_1773502391058_tuviuw23h","error":{}}
+[22m[39m2026-03-14T15:33:11.077Z ERROR [App] Failed to retrieve 
+property {"propertyId":"prop_1773502391058_tuviuw23h","error":{}}
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mpasses when property details are complete[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mfails when propertyDetails is missing entirely[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mfails when address is missing[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mfails when address is empty string[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mfails when city is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mfails when state is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckPropertyIdentification[2m > [22mfails when zipCode is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUse[2m > [22mpasses when intendedUse is present[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUse[2m > [22mfails when intendedUse is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUse[2m > [22mfails when intendedUse is empty[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUsers[2m > [22mpasses when intendedUsers is a non-empty string[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUsers[2m > [22mpasses when intendedUsers is a non-empty array[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUsers[2m > [22mfails when intendedUsers is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUsers[2m > [22mfails when intendedUsers is an empty array[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckIntendedUsers[2m > [22mfails when intendedUsers is an empty string[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckEffectiveDate[2m > [22mpasses when effectiveDate is present as string[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckEffectiveDate[2m > [22mpasses when effectiveDate is a Date object[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckEffectiveDate[2m > [22mfails when effectiveDate is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckEffectiveDate[2m > [22mfails when effectiveDate is empty[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserCompetency[2m > [22mpasses with valid license in matching state[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserCompetency[2m > [22mfails when appraiser block is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserCompetency[2m > [22mfails when license number is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserCompetency[2m > [22mfails when license is expired[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserCompetency[2m > [22mfails when license state does not cover property state[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserCompetency[2m > [22mpasses when licenseState matches propertyState even without serviceStates[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckCompetencyDisclosure[2m > [22mpasses when competency disclosure is present[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckCompetencyDisclosure[2m > [22mfails when certification block is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckCompetencyDisclosure[2m > [22mfails when competencyDisclosure is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckCompetencyDisclosure[2m > [22mfails when competencyDisclosure is empty[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserSignature[2m > [22mpasses when signature is present[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserSignature[2m > [22mfails when certification block is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckAppraiserSignature[2m > [22mfails when signaturePresent is false[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckLicenseNumber[2m > [22mpasses when license number is in certification[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckLicenseNumber[2m > [22mfails when certification block is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckLicenseNumber[2m > [22mfails when licenseNumber is missing from certification[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckLicenseNumber[2m > [22mfails when licenseNumber is empty[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheck23PointCertification[2m > [22mpasses when all certification elements are present[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheck23PointCertification[2m > [22mfails when certification block is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheck23PointCertification[2m > [22mfails when elements array is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheck23PointCertification[2m > [22mfails when some elements are missing and reports them[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckRetentionTracking[2m > [22mpasses when retention tracking is enabled[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckRetentionTracking[2m > [22mfails when workfile block is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckRetentionTracking[2m > [22mfails when retentionEnabled is false[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckRetentionTracking[2m > [22mfails when retentionDate is missing[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckMisleadingStatements[2m > [22mpasses when report sections contain no red flags[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckMisleadingStatements[2m > [22mfails when placeholder text is found[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckMisleadingStatements[2m > [22mfails when TBD markers are found[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckMisleadingStatements[2m > [22mfails when "lorem ipsum" is found[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckMisleadingStatements[2m > [22mfails when "SAMPLE" or "DRAFT" markers appear[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mcheckMisleadingStatements[2m > [22mpasses when reportSections is missing (nothing to check)[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mperformComplianceCheck integration[2m > [22mreturns compliant when all checks pass[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mperformComplianceCheck integration[2m > [22mreturns non_compliant when a critical check fails[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/uspap-compliance-phase0.test.ts[2m > [22mperformComplianceCheck integration[2m > [22mreturns non_compliant when a high check fails[32m 2[2mms[22m[39m
+[22m[39m2026-03-14T15:33:12.555Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+a24e1098-e1b0-4e85-bb11-c26571bde889, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041092241111s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 82;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 80;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateAdjustmentGridMath[2m > [22mpasses when all comp grid math is correct[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateAdjustmentGridMath[2m > [22mfails when netAdjustmentTotal is wrong[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateAdjustmentGridMath[2m > [22mfails when grossAdjustmentTotal is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateAdjustmentGridMath[2m > [22mfails when adjustedSalePrice is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateAdjustmentGridMath[2m > [22mpasses when comps array is empty[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateGlaConsistency[2m > [22mpasses when GLA matches public record[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateGlaConsistency[2m > [22mpasses when GLA difference is under 10%[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateGlaConsistency[2m > [22mpasses when public record GLA is not available[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidatePerSfAdjustments[2m > [22mpasses when GLA adj direction is consistent with GLA difference[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidatePerSfAdjustments[2m > [22mfails when GLA adj direction contradicts GLA difference[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidatePerSfAdjustments[2m > [22mpasses when GLA adj is zero and GLA is same[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateCostApproachMath[2m > [22mpasses when cost approach math is correct[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateCostApproachMath[2m > [22mfails when depreciation sum is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateCostApproachMath[2m > [22mfails when depreciated cost of improvements is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateCostApproachMath[2m > [22mfails when indicated value is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateCostApproachMath[2m > [22mpasses when cost approach data is not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateIncomeApproachMath[2m > [22mpasses when income approach math is correct[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateIncomeApproachMath[2m > [22mfails when PGI is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateIncomeApproachMath[2m > [22mfails when EGI is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateIncomeApproachMath[2m > [22mfails when NOI is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateIncomeApproachMath[2m > [22mfails when cap rate indicated value is wrong[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateIncomeApproachMath[2m > [22mpasses when income approach data is not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateReconciliationMath[2m > [22mpasses when reconciliation math is correct[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateReconciliationMath[2m > [22mfails when weights do not sum to 1.0[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateReconciliationMath[2m > [22mfails when final value deviates from weighted average by > 1%[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateReconciliationMath[2m > [22mpasses when reconciliation data is not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mvalidateReconciliationMath[2m > [22mpasses when weights are not provided (skip weight check)[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mMathIntegrityService.performValidation[2m > [22mreturns pass for fully correct math[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/math-integrity.test.ts[2m > [22mMathIntegrityService.performValidation[2m > [22mreturns fail for critical math errors[32m 1[2mms[22m[39m
+[90mstdout[2m | tests/integration/database.test.ts[2m > [22m[2mCosmos DB Real Integration Tests[2m > [22m[2mDatabase Connection & Health[2m > [22m[2mshould pass health check with valid latency
+[22m[39m≡ƒÆÜ Health check passed - Latency: 4419ms
+ [32mΓ£ô[39m tests/integration/database.test.ts[2m > [22mCosmos DB Real Integration Tests[2m > [22mDatabase Connection & Health[2m > [22mshould pass health check with valid latency[33m 4421[2mms[22m[39m
+[22m[39m2026-03-14T15:33:13.245Z ERROR [App] Failed to update order 
+{"error":{"code":404,"body":{"code":"NotFound","message":"Entity with 
+the specified id does not exist in the system. More info: 
+https://aka.ms/cosmosdb-tsg-not-found, 
+{\"Summary\":{\"DirectCalls\":{\"(404, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-03-14T15:33:14.043Z\",\"duration in 
+milliseconds\":1.7653,\"data\":{\"Client Side Request Stats\":{\"Id\":\"
+AggregatedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1413
+6/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229018509848p/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14031/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854347s/\"},{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1437
+1/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229135854348s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14372/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854346s/\"}],\"Region
+sContacted\":[],\"FailedReplicas\":[],\"AddressResolutionStatistics\":[]
+,\"StoreResponseStatistics\":[{\"ResponseTimeUTC\":\"2026-03-14T15:33:14
+.0456715Z\",\"DurationInMs\":1.6717,\"ResourceType\":\"Document\",\"Oper
+ationType\":\"Replace\",\"LocationEndpoint\":\"https://appraisal-mgmt-st
+aging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\"ActivityI
+d\":\"632ee80a-ecb0-495f-9808-640c0d45a925\",\"StatusCode\":\"NotFound\"
+,\"SubStatusCode\":\"Unknown\",\"LSN\":1601,\"PartitionKeyRangeId\":\"0\
+",\"GlobalCommittedLSN\":1601,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"Q
+uorumAckedLSN\":1601,\"SessionToken\":\"-1#1601\",\"CurrentWriteQuorum\"
+:3,\"CurrentReplicaSetSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":tru
+e,\"StorePhysicalAddress\":\"rntbd://cdb-ms-prod-eastus1-be219.documents
+.azure.com:14136/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184
+f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb
+52632fc3/replicas/134174229018509848p/\",\"RequestCharge\":1.24,\"RetryA
+fterInMs\":null,\"BELatencyInMs\":\"0.694\",\"ReplicaHealthStatuses\":[\
+"(port: 14136 | status: Unknown | lkt: 3/14/2026 3:18:13 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-03-14T15:33:14.0440196Z\", 
+\"durationInMs\": 0.0023},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-03-14T15:33:14.0440219Z\", \"durationInMs\": 
+0.0015},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-03-14T15:33:14.0440234Z\", \"durationInMs\": 0.0545},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-03-14T15:33:14.0440779Z\", 
+\"durationInMs\": 1.5581},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-03-14T15:33:14.0456360Z\", \"durationInMs\": 0.0244},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-03-14T15:33:14.0456604Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\
+"openConnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"F
+alse\",\"callsPendingReceive\":0,\"lastSendAttempt\":\"2026-03-14T15:33:
+13.8225262Z\",\"lastSend\":\"2026-03-14T15:33:13.8225571Z\",\"lastReceiv
+e\":\"2026-03-14T15:33:13.8282536Z\"},\"requestSizeInBytes\":3712,\"requ
+estBodySizeInBytes\":996,\"responseMetadataSizeInBytes\":226,\"responseB
+odySizeInBytes\":84},\"TransportException\":null}}]}}}, 
+Windows/10.0.20348 cosmos-netstandard-sdk/3.18.0"},"headers":{"content-l
+ength":"3789","date":"Sat, 14 Mar 2026 15:33:13 GMT","content-type":"app
+lication/json","server":"Compute","x-ms-gatewayversion":"2.0.0","x-ms-ac
+tivity-id":"632ee80a-ecb0-495f-9808-640c0d45a925","x-ms-last-state-chang
+e-utc":"Sun, 08 Mar 2026 05:55:12.086 GMT","x-ms-schemaversion":"1.21","
+lsn":"1601","x-ms-request-charge":"1.24","x-ms-quorum-acked-lsn":"1601",
+"x-ms-current-write-quorum":"3","x-ms-current-replica-set-size":"4","x-m
+s-documentdb-partitionkeyrangeid":"0","x-ms-xp-role":"1","x-ms-global-co
+mmitted-lsn":"1601","x-ms-number-of-read-regions":"0","x-ms-transport-re
+quest-id":"10","x-ms-cosmos-llsn":"1601","x-ms-cosmos-quorum-acked-llsn"
+:"1601","x-ms-session-token":"0:-1#1601","x-ms-request-duration-ms":"0.6
+94","x-ms-serviceversion":"version=2.14.0.0","x-ms-aad-applied-role-assi
+gnment":"a8a683a0-4317-4a4c-a81c-61b29f401805","x-ms-cosmos-physical-par
+tition-id":"0","x-ms-cosmos-internal-partition-id":"a15a8db1-c643-4222-a
+66f-50bb52632fc3","x-ms-throttle-retry-count":0,"x-ms-throttle-retry-wai
+t-time-ms":0},"activityId":"632ee80a-ecb0-495f-9808-640c0d45a925","diagn
+ostics":{"clientSideRequestStatistics":{"requestStartTimeUTCInMs":177350
+2393211,"requestDurationInMs":33,"totalRequestPayloadLengthInBytes":992,
+"totalResponsePayloadLengthInBytes":3789,"locationEndpointsContacted":["
+https://appraisal-mgmt-staging-cosmos-eastus.documents.azure.com:443/"],
+"metadataDiagnostics":{"metadataLookups":[]},"retryDiagnostics":{"failed
+Attempts":[]},"gatewayStatistics":[{"activityId":"632ee80a-ecb0-495f-980
+8-640c0d45a925","startTimeUTCInMs":1773502393212,"durationInMs":32,"stat
+usCode":404,"requestPayloadLengthInBytes":992,"responsePayloadLengthInBy
+tes":3789,"operationType":"replace","resourceType":"docs"}]}}},"id":"177
+3502392936-1nxoce0su"}
+[22m[39m2026-03-14T15:33:13.695Z ERROR [App] Failed to update vendor 
+{"error":{"code":404,"body":{"code":"NotFound","message":"Entity with 
+the specified id does not exist in the system. More info: 
+https://aka.ms/cosmosdb-tsg-not-found, 
+{\"Summary\":{\"DirectCalls\":{\"(404, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-03-14T15:33:14.502Z\",\"duration in 
+milliseconds\":1.8103,\"data\":{\"Client Side Request Stats\":{\"Id\":\"
+AggregatedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1413
+1/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/cdf58b52-7e09-452d-
+8f86-2b5b1aee98a4/partitions/e13622cb-e884-402b-92ac-9f9cf848e806/replic
+as/134176416009067351p/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14194/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/cdf58b52-7e09-452d-8f86-2b5b1aee98a4/partitions/e13622c
+b-e884-402b-92ac-9f9cf848e806/replicas/134176416081879676s/\"},{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1436
+4/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/cdf58b52-7e09-452d-
+8f86-2b5b1aee98a4/partitions/e13622cb-e884-402b-92ac-9f9cf848e806/replic
+as/134176416081879675s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14429/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/cdf58b52-7e09-452d-8f86-2b5b1aee98a4/partitions/e13622c
+b-e884-402b-92ac-9f9cf848e806/replicas/134176416081879674s/\"}],\"Region
+sContacted\":[],\"FailedReplicas\":[],\"AddressResolutionStatistics\":[]
+,\"StoreResponseStatistics\":[{\"ResponseTimeUTC\":\"2026-03-14T15:33:14
+.5039580Z\",\"DurationInMs\":1.7009,\"ResourceType\":\"Document\",\"Oper
+ationType\":\"Replace\",\"LocationEndpoint\":\"https://appraisal-mgmt-st
+aging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\"ActivityI
+d\":\"544d6dde-7f3c-4710-8009-186e0a954814\",\"StatusCode\":\"NotFound\"
+,\"SubStatusCode\":\"Unknown\",\"LSN\":1248,\"PartitionKeyRangeId\":\"0\
+",\"GlobalCommittedLSN\":1248,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"Q
+uorumAckedLSN\":1248,\"SessionToken\":\"-1#1248\",\"CurrentWriteQuorum\"
+:3,\"CurrentReplicaSetSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":tru
+e,\"StorePhysicalAddress\":\"rntbd://cdb-ms-prod-eastus1-be219.documents
+.azure.com:14131/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/cdf5
+8b52-7e09-452d-8f86-2b5b1aee98a4/partitions/e13622cb-e884-402b-92ac-9f9c
+f848e806/replicas/134176416009067351p/\",\"RequestCharge\":1.24,\"RetryA
+fterInMs\":null,\"BELatencyInMs\":\"0.722\",\"ReplicaHealthStatuses\":[\
+"(port: 14131 | status: Unknown | lkt: 3/14/2026 3:25:29 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-03-14T15:33:14.5022744Z\", 
+\"durationInMs\": 0.0018},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-03-14T15:33:14.5022762Z\", \"durationInMs\": 
+0.002},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-03-14T15:33:14.5022782Z\", \"durationInMs\": 0.0563},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-03-14T15:33:14.5023345Z\", 
+\"durationInMs\": 1.5816},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-03-14T15:33:14.5039161Z\", \"durationInMs\": 0.0299},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-03-14T15:33:14.5039460Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\
+"openConnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"F
+alse\",\"callsPendingReceive\":0,\"lastSendAttempt\":\"2026-03-14T15:33:
+14.3758272Z\",\"lastSend\":\"2026-03-14T15:33:14.3758598Z\",\"lastReceiv
+e\":\"2026-03-14T15:33:14.3822424Z\"},\"requestSizeInBytes\":3573,\"requ
+estBodySizeInBytes\":879,\"responseMetadataSizeInBytes\":226,\"responseB
+odySizeInBytes\":84},\"TransportException\":null}}]}}}, 
+Windows/10.0.20348 cosmos-netstandard-sdk/3.18.0"},"headers":{"content-l
+ength":"3788","date":"Sat, 14 Mar 2026 15:33:13 GMT","content-type":"app
+lication/json","server":"Compute","x-ms-gatewayversion":"2.0.0","x-ms-ac
+tivity-id":"544d6dde-7f3c-4710-8009-186e0a954814","x-ms-last-state-chang
+e-utc":"Tue, 10 Mar 2026 18:40:06.459 GMT","x-ms-schemaversion":"1.21","
+lsn":"1248","x-ms-request-charge":"1.24","x-ms-quorum-acked-lsn":"1248",
+"x-ms-current-write-quorum":"3","x-ms-current-replica-set-size":"4","x-m
+s-documentdb-partitionkeyrangeid":"0","x-ms-xp-role":"1","x-ms-global-co
+mmitted-lsn":"1248","x-ms-number-of-read-regions":"0","x-ms-transport-re
+quest-id":"28","x-ms-cosmos-llsn":"1248","x-ms-cosmos-quorum-acked-llsn"
+:"1248","x-ms-session-token":"0:-1#1248","x-ms-request-duration-ms":"0.7
+22","x-ms-serviceversion":"version=2.14.0.0","x-ms-aad-applied-role-assi
+gnment":"a8a683a0-4317-4a4c-a81c-61b29f401805","x-ms-cosmos-physical-par
+tition-id":"0","x-ms-cosmos-internal-partition-id":"e13622cb-e884-402b-9
+2ac-9f9cf848e806","x-ms-throttle-retry-count":0,"x-ms-throttle-retry-wai
+t-time-ms":0},"activityId":"544d6dde-7f3c-4710-8009-186e0a954814","diagn
+ostics":{"clientSideRequestStatistics":{"requestStartTimeUTCInMs":177350
+2393675,"requestDurationInMs":20,"totalRequestPayloadLengthInBytes":875,
+"totalResponsePayloadLengthInBytes":3788,"locationEndpointsContacted":["
+https://appraisal-mgmt-staging-cosmos-eastus.documents.azure.com:443/"],
+"metadataDiagnostics":{"metadataLookups":[]},"retryDiagnostics":{"failed
+Attempts":[]},"gatewayStatistics":[{"activityId":"544d6dde-7f3c-4710-800
+9-186e0a954814","startTimeUTCInMs":1773502393676,"durationInMs":19,"stat
+usCode":404,"requestPayloadLengthInBytes":875,"responsePayloadLengthInBy
+tes":3788,"operationType":"replace","resourceType":"docs"}]}}},"id":"177
+3502393498-1i02ect51"}
+[90mstdout[2m | tests/integration/database-real.test.ts[2m > [22m[2mCosmos DB Real Integration Tests[2m > [22m[2mDatabase Connection & Health[2m > [22m[2mshould pass health check with valid latency
+[22m[39m≡ƒÆÜ Health check passed - Latency: 4380ms
+ [32mΓ£ô[39m tests/integration/database-real.test.ts[2m > [22mCosmos DB Real Integration Tests[2m > [22mDatabase Connection & Health[2m > [22mshould pass health check with valid latency[33m 4382[2mms[22m[39m
+[22m[39m2026-03-14T15:33:14.145Z ERROR [App] Failed to update order 
+{"error":{"code":404,"body":{"code":"NotFound","message":"Entity with 
+the specified id does not exist in the system. More info: 
+https://aka.ms/cosmosdb-tsg-not-found, 
+{\"Summary\":{\"DirectCalls\":{\"(404, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-03-14T15:33:14.951Z\",\"duration in 
+milliseconds\":1.4592,\"data\":{\"Client Side Request Stats\":{\"Id\":\"
+AggregatedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1413
+6/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229018509848p/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14031/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854347s/\"},{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1437
+1/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229135854348s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14372/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854346s/\"}],\"Region
+sContacted\":[],\"FailedReplicas\":[],\"AddressResolutionStatistics\":[]
+,\"StoreResponseStatistics\":[{\"ResponseTimeUTC\":\"2026-03-14T15:33:14
+.9525818Z\",\"DurationInMs\":1.3567,\"ResourceType\":\"Document\",\"Oper
+ationType\":\"Replace\",\"LocationEndpoint\":\"https://appraisal-mgmt-st
+aging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\"ActivityI
+d\":\"c93339c3-66c4-4ec9-b106-a37c49c8c0a1\",\"StatusCode\":\"NotFound\"
+,\"SubStatusCode\":\"Unknown\",\"LSN\":1602,\"PartitionKeyRangeId\":\"0\
+",\"GlobalCommittedLSN\":1602,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"Q
+uorumAckedLSN\":1602,\"SessionToken\":\"-1#1602\",\"CurrentWriteQuorum\"
+:3,\"CurrentReplicaSetSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":tru
+e,\"StorePhysicalAddress\":\"rntbd://cdb-ms-prod-eastus1-be219.documents
+.azure.com:14136/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184
+f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb
+52632fc3/replicas/134174229018509848p/\",\"RequestCharge\":1.57,\"RetryA
+fterInMs\":null,\"BELatencyInMs\":\"0.556\",\"ReplicaHealthStatuses\":[\
+"(port: 14136 | status: Unknown | lkt: 3/14/2026 3:21:06 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-03-14T15:33:14.9512406Z\", 
+\"durationInMs\": 0.0019},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-03-14T15:33:14.9512425Z\", \"durationInMs\": 
+0.0016},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-03-14T15:33:14.9512441Z\", \"durationInMs\": 0.0597},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-03-14T15:33:14.9513038Z\", 
+\"durationInMs\": 1.2488},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-03-14T15:33:14.9525526Z\", \"durationInMs\": 0.0189},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-03-14T15:33:14.9525715Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\
+"openConnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"F
+alse\",\"callsPendingReceive\":0,\"lastSendAttempt\":\"2026-03-14T15:33:
+14.7527710Z\",\"lastSend\":\"2026-03-14T15:33:14.7528073Z\",\"lastReceiv
+e\":\"2026-03-14T15:33:14.7584615Z\"},\"requestSizeInBytes\":4025,\"requ
+estBodySizeInBytes\":1303,\"responseMetadataSizeInBytes\":226,\"response
+BodySizeInBytes\":84},\"TransportException\":null}}]}}}, 
+Windows/10.0.20348 cosmos-netstandard-sdk/3.18.0"},"headers":{"content-l
+ength":"3790","date":"Sat, 14 Mar 2026 15:33:14 GMT","content-type":"app
+lication/json","server":"Compute","x-ms-gatewayversion":"2.0.0","x-ms-ac
+tivity-id":"c93339c3-66c4-4ec9-b106-a37c49c8c0a1","x-ms-last-state-chang
+e-utc":"Sun, 08 Mar 2026 05:55:12.086 GMT","x-ms-schemaversion":"1.21","
+lsn":"1602","x-ms-request-charge":"1.57","x-ms-quorum-acked-lsn":"1602",
+"x-ms-current-write-quorum":"3","x-ms-current-replica-set-size":"4","x-m
+s-documentdb-partitionkeyrangeid":"0","x-ms-xp-role":"1","x-ms-global-co
+mmitted-lsn":"1602","x-ms-number-of-read-regions":"0","x-ms-transport-re
+quest-id":"12","x-ms-cosmos-llsn":"1602","x-ms-cosmos-quorum-acked-llsn"
+:"1602","x-ms-session-token":"0:-1#1602","x-ms-request-duration-ms":"0.5
+56","x-ms-serviceversion":"version=2.14.0.0","x-ms-aad-applied-role-assi
+gnment":"a8a683a0-4317-4a4c-a81c-61b29f401805","x-ms-cosmos-physical-par
+tition-id":"0","x-ms-cosmos-internal-partition-id":"a15a8db1-c643-4222-a
+66f-50bb52632fc3","x-ms-throttle-retry-count":0,"x-ms-throttle-retry-wai
+t-time-ms":0},"activityId":"c93339c3-66c4-4ec9-b106-a37c49c8c0a1","diagn
+ostics":{"clientSideRequestStatistics":{"requestStartTimeUTCInMs":177350
+2394115,"requestDurationInMs":30,"totalRequestPayloadLengthInBytes":1299
+,"totalResponsePayloadLengthInBytes":3790,"locationEndpointsContacted":[
+"https://appraisal-mgmt-staging-cosmos-eastus.documents.azure.com:443/"]
+,"metadataDiagnostics":{"metadataLookups":[]},"retryDiagnostics":{"faile
+dAttempts":[]},"gatewayStatistics":[{"activityId":"c93339c3-66c4-4ec9-b1
+06-a37c49c8c0a1","startTimeUTCInMs":1773502394117,"durationInMs":27,"sta
+tusCode":404,"requestPayloadLengthInBytes":1299,"responsePayloadLengthIn
+Bytes":3790,"operationType":"replace","resourceType":"docs"}]}}},"id":"1
+773502393853-k0yvbqli6"}
+ [32mΓ£ô[39m tests/canonical-schema-phase0.test.ts[2m > [22mCanonical Schema ΓÇö Phase 0[2m > [22mPhase 0.3 ΓÇö HighestAndBestUse 4-Test Framework[2m > [22mshould handle a failing test (not financially feasible)[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/canonical-schema-phase0.test.ts[2m > [22mCanonical Schema ΓÇö Phase 0[2m > [22mPhase 0.3 ΓÇö HighestAndBestUse 4-Test Framework[2m > [22mshould allow null tests (H&BU not yet analyzed)[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/rov-research-phase0.test.ts[2m > [22msearchComparables[2m > [22mpasses search criteria through to searchSoldListings[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m tests/rov-research-phase0.test.ts[2m > [22manalyzeMarketTrends[2m > [22mpasses soldWithinDays derived from analysisWindowDays[32m 1[2mms[22m[39m
+[22m[39m2026-03-14T15:33:14.632Z ERROR [App] Failed to update vendor 
+{"error":{"code":404,"body":{"code":"NotFound","message":"Entity with 
+the specified id does not exist in the system. More info: 
+https://aka.ms/cosmosdb-tsg-not-found, 
+{\"Summary\":{\"DirectCalls\":{\"(404, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-03-14T15:33:15.440Z\",\"duration in 
+milliseconds\":1.4478,\"data\":{\"Client Side Request Stats\":{\"Id\":\"
+AggregatedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1413
+1/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/cdf58b52-7e09-452d-
+8f86-2b5b1aee98a4/partitions/e13622cb-e884-402b-92ac-9f9cf848e806/replic
+as/134176416009067351p/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14194/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/cdf58b52-7e09-452d-8f86-2b5b1aee98a4/partitions/e13622c
+b-e884-402b-92ac-9f9cf848e806/replicas/134176416081879676s/\"},{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1436
+4/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/cdf58b52-7e09-452d-
+8f86-2b5b1aee98a4/partitions/e13622cb-e884-402b-92ac-9f9cf848e806/replic
+as/134176416081879675s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14429/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/cdf58b52-7e09-452d-8f86-2b5b1aee98a4/partitions/e13622c
+b-e884-402b-92ac-9f9cf848e806/replicas/134176416081879674s/\"}],\"Region
+sContacted\":[],\"FailedReplicas\":[],\"AddressResolutionStatistics\":[]
+,\"StoreResponseStatistics\":[{\"ResponseTimeUTC\":\"2026-03-14T15:33:15
+.4415800Z\",\"DurationInMs\":1.3462,\"ResourceType\":\"Document\",\"Oper
+ationType\":\"Replace\",\"LocationEndpoint\":\"https://appraisal-mgmt-st
+aging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\"ActivityI
+d\":\"5833eaa1-38ab-4e0b-bdeb-ffd9308576e9\",\"StatusCode\":\"NotFound\"
+,\"SubStatusCode\":\"Unknown\",\"LSN\":1249,\"PartitionKeyRangeId\":\"0\
+",\"GlobalCommittedLSN\":1249,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"Q
+uorumAckedLSN\":1249,\"SessionToken\":\"-1#1249\",\"CurrentWriteQuorum\"
+:3,\"CurrentReplicaSetSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":tru
+e,\"StorePhysicalAddress\":\"rntbd://cdb-ms-prod-eastus1-be219.documents
+.azure.com:14131/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/cdf5
+8b52-7e09-452d-8f86-2b5b1aee98a4/partitions/e13622cb-e884-402b-92ac-9f9c
+f848e806/replicas/134176416009067351p/\",\"RequestCharge\":1.67,\"RetryA
+fterInMs\":null,\"BELatencyInMs\":\"0.625\",\"ReplicaHealthStatuses\":[\
+"(port: 14131 | status: Unknown | lkt: 3/14/2026 3:21:45 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-03-14T15:33:15.4402511Z\", 
+\"durationInMs\": 0.0018},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-03-14T15:33:15.4402529Z\", \"durationInMs\": 
+0.0015},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-03-14T15:33:15.4402544Z\", \"durationInMs\": 0.0546},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-03-14T15:33:15.4403090Z\", 
+\"durationInMs\": 1.233},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-03-14T15:33:15.4415420Z\", \"durationInMs\": 0.0274},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-03-14T15:33:15.4415694Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\
+"openConnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"F
+alse\",\"callsPendingReceive\":0,\"lastSendAttempt\":\"2026-03-14T15:33:
+15.3968897Z\",\"lastSend\":\"2026-03-14T15:33:15.3969226Z\",\"lastReceiv
+e\":\"2026-03-14T15:33:15.4177469Z\"},\"requestSizeInBytes\":4843,\"requ
+estBodySizeInBytes\":2151,\"responseMetadataSizeInBytes\":226,\"response
+BodySizeInBytes\":84},\"TransportException\":null}}]}}}, 
+Windows/10.0.20348 cosmos-netstandard-sdk/3.18.0"},"headers":{"content-l
+ength":"3789","date":"Sat, 14 Mar 2026 15:33:15 GMT","content-type":"app
+lication/json","server":"Compute","x-ms-gatewayversion":"2.0.0","x-ms-ac
+tivity-id":"5833eaa1-38ab-4e0b-bdeb-ffd9308576e9","x-ms-last-state-chang
+e-utc":"Tue, 10 Mar 2026 18:40:06.459 GMT","x-ms-schemaversion":"1.21","
+lsn":"1249","x-ms-request-charge":"1.67","x-ms-quorum-acked-lsn":"1249",
+"x-ms-current-write-quorum":"3","x-ms-current-replica-set-size":"4","x-m
+s-documentdb-partitionkeyrangeid":"0","x-ms-xp-role":"1","x-ms-global-co
+mmitted-lsn":"1249","x-ms-number-of-read-regions":"0","x-ms-transport-re
+quest-id":"27","x-ms-cosmos-llsn":"1249","x-ms-cosmos-quorum-acked-llsn"
+:"1249","x-ms-session-token":"0:-1#1249","x-ms-request-duration-ms":"0.6
+25","x-ms-serviceversion":"version=2.14.0.0","x-ms-aad-applied-role-assi
+gnment":"a8a683a0-4317-4a4c-a81c-61b29f401805","x-ms-cosmos-physical-par
+tition-id":"0","x-ms-cosmos-internal-partition-id":"e13622cb-e884-402b-9
+2ac-9f9cf848e806","x-ms-throttle-retry-count":0,"x-ms-throttle-retry-wai
+t-time-ms":0},"activityId":"5833eaa1-38ab-4e0b-bdeb-ffd9308576e9","diagn
+ostics":{"clientSideRequestStatistics":{"requestStartTimeUTCInMs":177350
+2394610,"requestDurationInMs":21,"totalRequestPayloadLengthInBytes":2147
+,"totalResponsePayloadLengthInBytes":3789,"locationEndpointsContacted":[
+"https://appraisal-mgmt-staging-cosmos-eastus.documents.azure.com:443/"]
+,"metadataDiagnostics":{"metadataLookups":[]},"retryDiagnostics":{"faile
+dAttempts":[]},"gatewayStatistics":[{"activityId":"5833eaa1-38ab-4e0b-bd
+eb-ffd9308576e9","startTimeUTCInMs":1773502394611,"durationInMs":20,"sta
+tusCode":404,"requestPayloadLengthInBytes":2147,"responsePayloadLengthIn
+Bytes":3789,"operationType":"replace","resourceType":"docs"}]}}},"id":"1
+773502394412-48f0akqkg"}
+[22m[39m2026-03-14T15:33:14.790Z ERROR 
+[DuplicateOrderDetectionService] Duplicate check failed (non-blocking) 
+{"error":{}}
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckCostSourceDocumentation[2m > [22mpasses when cost factor source is documented[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckCostSourceDocumentation[2m > [22mfails when cost factor source is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckCostSourceDocumentation[2m > [22mfails when land value source is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckCostSourceDocumentation[2m > [22mpasses when cost approach is not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckDepreciationMethodConsistency[2m > [22mpasses when depreciation method is consistent with narrative[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckDepreciationMethodConsistency[2m > [22mfails when depreciation type is not specified[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckDepreciationMethodConsistency[2m > [22mpasses when cost approach not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckEffectiveAgeConsistency[2m > [22mpasses when effective age is reasonable relative to actual age[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckEffectiveAgeConsistency[2m > [22mpasses when no effective age given[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckLandValueEvidence[2m > [22mpasses when land value source and method are documented[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckLandValueEvidence[2m > [22mfails when land value method is not specified[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckLandValueEvidence[2m > [22mpasses when cost approach not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckCostFactorReasonableness[2m > [22mpasses when cost per SF is within normal range[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckCostFactorReasonableness[2m > [22mpasses when GLA is not available[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckSoftCostsReasonableness[2m > [22mpasses when soft costs and profit are reasonable[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mcheckSoftCostsReasonableness[2m > [22mpasses when cost approach not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mCostApproachReviewService.performReview[2m > [22mreturns pass for a well-documented cost approach[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/cost-approach-review.test.ts[2m > [22mCostApproachReviewService.performReview[2m > [22mreturns fail for critical issues[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckLicenseStatus[2m > [22mpasses for active license in correct state[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckLicenseStatus[2m > [22mfails for expired license[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckLicenseStatus[2m > [22mfails for wrong state license[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckAddendaCompleteness[2m > [22mpasses when all required addenda present for 1004[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckAddendaCompleteness[2m > [22mfails when subject photos missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckAddendaCompleteness[2m > [22mfails when multiple addenda missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckAddendaCompleteness[2m > [22mpasses for non-1004 report types[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckCertificationLanguage[2m > [22mpasses when all key cert phrases present[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckCertificationLanguage[2m > [22mfails when certification is missing entirely[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckEffectiveDateConsistency[2m > [22mpasses for consistent dates[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckEffectiveDateConsistency[2m > [22mfails when signature is before effective date[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckEffectiveDateConsistency[2m > [22mfails when report date is more than 120 days after effective date[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckSupervisoryCompliance[2m > [22mpasses for non-trainee ΓÇö no supervisor needed[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckSupervisoryCompliance[2m > [22mfails for trainee without supervisor[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckSupervisoryCompliance[2m > [22mpasses for trainee with valid supervisor[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckSupervisoryCompliance[2m > [22mfails when supervisor also has trainee license[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckReportFormAppropriateness[2m > [22mpasses when form matches property type[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckReportFormAppropriateness[2m > [22mfails when wrong form for property type[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mcheckReportFormAppropriateness[2m > [22mpasses for unrecognized property type[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mReportComplianceService.performReview[2m > [22mreturns pass for fully compliant report[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/report-compliance.test.ts[2m > [22mReportComplianceService.performReview[2m > [22mreturns fail for expired license[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckReportTypeAlignment[2m > [22mpasses when report type matches engagement[32m 6[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckReportTypeAlignment[2m > [22mfails when report type differs from engagement[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckReportTypeAlignment[2m > [22mfails when report type is missing from report[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckReportTypeAlignment[2m > [22mpasses when engagement scope has no report type defined[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckPropertyRightsAlignment[2m > [22mpasses when property rights match[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckPropertyRightsAlignment[2m > [22mfails when property rights differ[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckPropertyRightsAlignment[2m > [22mpasses when engagement has no property rights specified[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckIntendedUseAlignment[2m > [22mpasses when intended use and users match[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckIntendedUseAlignment[2m > [22mfails when intended use differs[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckIntendedUseAlignment[2m > [22mfails when intended users differ[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckIntendedUseAlignment[2m > [22mfails when report adds extra intended users not in engagement[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckIntendedUseAlignment[2m > [22mpasses when engagement has no intended use/users defined[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckValueTypeAlignment[2m > [22mpasses when value types match[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckValueTypeAlignment[2m > [22mfails when value types differ[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckValueTypeAlignment[2m > [22mfails when report includes extra value types beyond engagement[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckValueTypeAlignment[2m > [22mfails when report omits value types specified in engagement[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckValueTypeAlignment[2m > [22mpasses when engagement has no value types defined[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckEffectiveDateAlignment[2m > [22mpasses when effective dates match[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckEffectiveDateAlignment[2m > [22mfails when effective dates differ[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckEffectiveDateAlignment[2m > [22mpasses when engagement has no effective date defined[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckPropertyTypeConsistency[2m > [22mpasses when property types match[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckPropertyTypeConsistency[2m > [22mfails when property type differs[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckPropertyTypeConsistency[2m > [22mpasses when engagement has no property type defined[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckScopeChangeApproval[2m > [22mpasses when no scope changes occurred[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckScopeChangeApproval[2m > [22mpasses when scope changes are approved with fee/time reset[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mcheckScopeChangeApproval[2m > [22mfails when scope change lacks client approval[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mScopeLockValidationService.performValidation[2m > [22mreturns pass for fully aligned engagement and report[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/scope-lock-validation.test.ts[2m > [22mScopeLockValidationService.performValidation[2m > [22mreturns fail for critical scope mismatches[32m 0[2mms[22m[39m
+[22m[39m2026-03-14T15:33:15.961Z ERROR [UCDPEADSubmissionService] GSE 
+submission failed {"submissionId":"sub-ucdp-1773502395960-xra4","portal"
+:"UCDP","error":"Network timeout","retryCount":1}
+[22m[39m2026-03-14T15:33:16.513Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":1,"failed":0,"noOrder":0}
+[90mstdout[2m | tests/unit/bulk-portfolio-attach.test.ts[2m > [22m[2mBulkPortfolioService.attachDocumentsToJob()[2m > [22m[2mrecords no-order (not failure) for a stem with no matching loan number
+[22m[39m2026-03-14T15:33:16.522Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":0,"failed":0,"noOrder":1}
+[22m[39m2026-03-14T15:33:16.524Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":1,"failed":0,"noOrder":0}
+[22m[39m2026-03-14T15:33:16.524Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":1,"failed":0,"noOrder":0}
+[22m[39m2026-03-14T15:33:16.525Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":2,"failed":0,"noOrder":1}
+[22m[39m2026-03-14T15:33:16.531Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":0,"failed":1,"noOrder":0}
+[90mstdout[2m | tests/unit/bulk-portfolio-attach.test.ts[2m > [22m[2mBulkPortfolioService.attachDocumentsToJob()[2m > [22m[2mtreats FAILED rows as unmatched because they have no orderId in the map
+[22m[39m2026-03-14T15:33:16.533Z INFO [App] attachDocumentsToJob complete {"jobId":"job-001","uploaded":0,"failed":0,"noOrder":1}
+ [32mΓ£ô[39m tests/unit/bulk-portfolio-attach.test.ts[2m > [22mBulkPortfolioService.attachDocumentsToJob()[2m > [22mrecords no-order (not failure) for a stem with no matching loan number[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/unit/bulk-portfolio-attach.test.ts[2m > [22mBulkPortfolioService.attachDocumentsToJob()[2m > [22mtreats FAILED rows as unmatched because they have no orderId in the map[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateMarketConditionsAlignment[2m > [22mpasses when stated conditions align with metrics[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateMarketConditionsAlignment[2m > [22mfails when stated trend is "Stable" but MOI indicates declining market[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateMarketConditionsAlignment[2m > [22mfails when stated trend is "Stable" but metrics suggest increasing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateMarketConditionsAlignment[2m > [22mpasses when stated conditions data is not provided[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateMarketConditionsAlignment[2m > [22mpasses when market metrics are not provided[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateDomConsistency[2m > [22mpasses when stated marketing time aligns with comp DOM[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateDomConsistency[2m > [22mfails when stated marketing time is "Under 3 months" but comps average much higher[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateDomConsistency[2m > [22mfails when stated marketing time is "Over 6 months" but DOM is low[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateDomConsistency[2m > [22mpasses when marketing time is not stated[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateAbsorptionRate[2m > [22mpasses when absorption rate is reasonable[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateAbsorptionRate[2m > [22mpasses when market metrics not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidateListToSaleRatio[2m > [22mpasses when list-to-sale ratio is normal[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mcheckSubmarketBoundaryCrossing[2m > [22mpasses when all comps are in the same submarket[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mcheckSubmarketBoundaryCrossing[2m > [22mpasses when no comps are provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidatePriceTrend[2m > [22mpasses when stated property values align with price change[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidatePriceTrend[2m > [22mfails when stated "Increasing" but YoY change is negative[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidatePriceTrend[2m > [22mfails when stated "Declining" but YoY change is positive[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mvalidatePriceTrend[2m > [22mpasses when property values stated condition is not provided[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mMarketAnalyticsService.performValidation[2m > [22mreturns pass for fully consistent market data[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m tests/market-analytics.test.ts[2m > [22mMarketAnalyticsService.performValidation[2m > [22mreturns fail for critical market misalignment[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckRentDerivationEvidence[2m > [22mpasses when rent comps are provided[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckRentDerivationEvidence[2m > [22mfails when no rent comps are used[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckRentDerivationEvidence[2m > [22mpasses when income approach not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckStrMisuse[2m > [22mpasses when rent basis is long-term lease[32m 27[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckStrMisuse[2m > [22mpasses when income approach not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckVacancyExpenseReasonableness[2m > [22mpasses when vacancy and expenses are reasonable[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckCapRateEvidence[2m > [22mpasses when cap rate source is documented[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckCapRateEvidence[2m > [22mfails when cap rate source is missing[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckGrmConsistency[2m > [22mpasses when GRM is within comp range[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckGrmConsistency[2m > [22mpasses when no GRM comp data[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckMarketRateContext[2m > [22mpasses when cap rate is reasonable for market context[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mcheckMarketRateContext[2m > [22mpasses when income approach not provided[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mIncomeApproachReviewService.performReview[2m > [22mreturns pass for well-supported income approach[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m tests/income-approach-review.test.ts[2m > [22mIncomeApproachReviewService.performReview[2m > [22mreturns fail for STR misuse[32m 0[2mms[22m[39m
+[22m[39m2026-03-14T15:33:18.630Z ERROR [App] Failed to delete order 
+{"error":{"code":404,"body":{"code":"NotFound","message":"Entity with 
+the specified id does not exist in the system. More info: 
+https://aka.ms/cosmosdb-tsg-not-found, 
+{\"Summary\":{\"DirectCalls\":{\"(404, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-03-14T15:33:19.434Z\",\"duration in 
+milliseconds\":1.4206,\"data\":{\"Client Side Request Stats\":{\"Id\":\"
+AggregatedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1413
+6/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229018509848p/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14031/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854347s/\"},{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1437
+1/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229135854348s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14372/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854346s/\"}],\"Region
+sContacted\":[],\"FailedReplicas\":[],\"AddressResolutionStatistics\":[]
+,\"StoreResponseStatistics\":[{\"ResponseTimeUTC\":\"2026-03-14T15:33:19
+.4357035Z\",\"DurationInMs\":1.3229,\"ResourceType\":\"Document\",\"Oper
+ationType\":\"Delete\",\"LocationEndpoint\":\"https://appraisal-mgmt-sta
+ging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\"ActivityId
+\":\"008ef451-5b50-4efd-b8aa-aece864173b4\",\"StatusCode\":\"NotFound\",
+\"SubStatusCode\":\"Unknown\",\"LSN\":1609,\"PartitionKeyRangeId\":\"0\"
+,\"GlobalCommittedLSN\":1609,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"Qu
+orumAckedLSN\":1609,\"SessionToken\":\"-1#1609\",\"CurrentWriteQuorum\":
+3,\"CurrentReplicaSetSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":true
+,\"StorePhysicalAddress\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.
+azure.com:14136/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f
+5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb5
+2632fc3/replicas/134174229018509848p/\",\"RequestCharge\":1.24,\"RetryAf
+terInMs\":null,\"BELatencyInMs\":\"0.638\",\"ReplicaHealthStatuses\":[\"
+(port: 14136 | status: Unknown | lkt: 3/14/2026 3:18:18 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-03-14T15:33:19.4344036Z\", 
+\"durationInMs\": 0.002},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-03-14T15:33:19.4344056Z\", \"durationInMs\": 
+0.0016},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-03-14T15:33:19.4344072Z\", \"durationInMs\": 0.0494},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-03-14T15:33:19.4344566Z\", 
+\"durationInMs\": 1.1955},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-03-14T15:33:19.4356521Z\", \"durationInMs\": 0.0398},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-03-14T15:33:19.4356919Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\
+"openConnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"F
+alse\",\"callsPendingReceive\":0,\"lastSendAttempt\":\"2026-03-14T15:33:
+19.3756371Z\",\"lastSend\":\"2026-03-14T15:33:19.3756695Z\",\"lastReceiv
+e\":\"2026-03-14T15:33:19.3811653Z\"},\"requestSizeInBytes\":2696,\"resp
+onseMetadataSizeInBytes\":226,\"responseBodySizeInBytes\":84},\"Transpor
+tException\":null}}]}}}, Windows/10.0.20348 cosmos-netstandard-sdk/3.18.
+0"},"headers":{"content-length":"3756","date":"Sat, 14 Mar 2026 
+15:33:19 GMT","content-type":"application/json","server":"Compute","x-ms
+-gatewayversion":"2.0.0","x-ms-activity-id":"008ef451-5b50-4efd-b8aa-aec
+e864173b4","x-ms-last-state-change-utc":"Sun, 08 Mar 2026 05:55:12.086 G
+MT","x-ms-schemaversion":"1.21","lsn":"1609","x-ms-request-charge":"1.24
+","x-ms-quorum-acked-lsn":"1609","x-ms-current-write-quorum":"3","x-ms-c
+urrent-replica-set-size":"4","x-ms-documentdb-partitionkeyrangeid":"0","
+x-ms-xp-role":"1","x-ms-global-committed-lsn":"1609","x-ms-number-of-rea
+d-regions":"0","x-ms-transport-request-id":"12","x-ms-cosmos-llsn":"1609
+","x-ms-cosmos-quorum-acked-llsn":"1609","x-ms-session-token":"0:-1#1609
+","x-ms-request-duration-ms":"0.638","x-ms-serviceversion":"version=2.14
+.0.0","x-ms-aad-applied-role-assignment":"a8a683a0-4317-4a4c-a81c-61b29f
+401805","x-ms-cosmos-physical-partition-id":"0","x-ms-cosmos-internal-pa
+rtition-id":"a15a8db1-c643-4222-a66f-50bb52632fc3","x-ms-throttle-retry-
+count":0,"x-ms-throttle-retry-wait-time-ms":0},"activityId":"008ef451-5b
+50-4efd-b8aa-aece864173b4","diagnostics":{"clientSideRequestStatistics":
+{"requestStartTimeUTCInMs":1773502398604,"requestDurationInMs":26,"total
+RequestPayloadLengthInBytes":0,"totalResponsePayloadLengthInBytes":3756,
+"locationEndpointsContacted":["https://appraisal-mgmt-staging-cosmos-eas
+tus.documents.azure.com:443/"],"metadataDiagnostics":{"metadataLookups":
+[]},"retryDiagnostics":{"failedAttempts":[]},"gatewayStatistics":[{"acti
+vityId":"008ef451-5b50-4efd-b8aa-aece864173b4","startTimeUTCInMs":177350
+2398604,"durationInMs":26,"statusCode":404,"requestPayloadLengthInBytes"
+:0,"responsePayloadLengthInBytes":3756,"operationType":"delete","resourc
+eType":"docs"}]}}},"id":"1773502392936-1nxoce0su"}
+ [32mΓ£ô[39m tests/unit/sample.test.ts[2m > [22mSample Unit Test[2m > [22mshould pass basic arithmetic test[32m 3[2mms[22m[39m
+[22m[39m2026-03-14T15:33:19.470Z ERROR [App] Failed to delete order 
+{"error":{"code":404,"body":{"code":"NotFound","message":"Entity with 
+the specified id does not exist in the system. More info: 
+https://aka.ms/cosmosdb-tsg-not-found, 
+{\"Summary\":{\"DirectCalls\":{\"(404, 
+0)\":1}},\"name\":\"HandleDocumentRequest\",\"start 
+datetime\":\"2026-03-14T15:33:20.276Z\",\"duration in 
+milliseconds\":1.7412,\"data\":{\"Client Side Request Stats\":{\"Id\":\"
+AggregatedClientSideRequestStatistics\",\"ContactedReplicas\":[{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1413
+6/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229018509848p/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14031/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854347s/\"},{\"Count\
+":1,\"Uri\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.azure.com:1437
+1/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f5e9-2ae6-4dc6-
+8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb52632fc3/replic
+as/134174229135854348s/\"},{\"Count\":1,\"Uri\":\"rntbd://cdb-ms-prod-ea
+stus1-be219.documents.azure.com:14372/apps/57869626-9557-4e4b-a3e4-1b257
+5054821/services/5184f5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db
+1-c643-4222-a66f-50bb52632fc3/replicas/134174229135854346s/\"}],\"Region
+sContacted\":[],\"FailedReplicas\":[],\"AddressResolutionStatistics\":[]
+,\"StoreResponseStatistics\":[{\"ResponseTimeUTC\":\"2026-03-14T15:33:20
+.2779011Z\",\"DurationInMs\":1.6345,\"ResourceType\":\"Document\",\"Oper
+ationType\":\"Delete\",\"LocationEndpoint\":\"https://appraisal-mgmt-sta
+ging-cosmos-eastus.sql.cosmos.azure.com/\",\"StoreResult\":{\"ActivityId
+\":\"c2413c3b-72ef-4557-833f-5188e4e32973\",\"StatusCode\":\"NotFound\",
+\"SubStatusCode\":\"Unknown\",\"LSN\":1610,\"PartitionKeyRangeId\":\"0\"
+,\"GlobalCommittedLSN\":1610,\"ItemLSN\":-1,\"UsingLocalLSN\":false,\"Qu
+orumAckedLSN\":1610,\"SessionToken\":\"-1#1610\",\"CurrentWriteQuorum\":
+3,\"CurrentReplicaSetSize\":4,\"NumberOfReadRegions\":0,\"IsValid\":true
+,\"StorePhysicalAddress\":\"rntbd://cdb-ms-prod-eastus1-be219.documents.
+azure.com:14136/apps/57869626-9557-4e4b-a3e4-1b2575054821/services/5184f
+5e9-2ae6-4dc6-8b67-7bc7c41e5ab7/partitions/a15a8db1-c643-4222-a66f-50bb5
+2632fc3/replicas/134174229018509848p/\",\"RequestCharge\":1.24,\"RetryAf
+terInMs\":null,\"BELatencyInMs\":\"0.68\",\"ReplicaHealthStatuses\":[\"(
+port: 14136 | status: Unknown | lkt: 3/14/2026 2:55:50 
+PM)\"],\"transportRequestTimeline\":{\"requestTimeline\":[{\"event\": 
+\"Created\", \"startTimeUtc\": \"2026-03-14T15:33:20.2762893Z\", 
+\"durationInMs\": 0.0022},{\"event\": \"ChannelAcquisitionStarted\", 
+\"startTimeUtc\": \"2026-03-14T15:33:20.2762915Z\", \"durationInMs\": 
+0.0019},{\"event\": \"Pipelined\", \"startTimeUtc\": 
+\"2026-03-14T15:33:20.2762934Z\", \"durationInMs\": 0.0556},{\"event\": 
+\"Transit Time\", \"startTimeUtc\": \"2026-03-14T15:33:20.2763490Z\", 
+\"durationInMs\": 1.5133},{\"event\": \"Received\", \"startTimeUtc\": 
+\"2026-03-14T15:33:20.2778623Z\", \"durationInMs\": 0.0272},{\"event\": 
+\"Completed\", \"startTimeUtc\": \"2026-03-14T15:33:20.2778895Z\", 
+\"durationInMs\": 0}],\"serviceEndpointStats\":{\"inflightRequests\":1,\
+"openConnections\":1},\"connectionStats\":{\"waitforConnectionInit\":\"F
+alse\",\"callsPendingReceive\":0,\"lastSendAttempt\":\"2026-03-14T15:33:
+20.2508733Z\",\"lastSend\":\"2026-03-14T15:33:20.2509092Z\",\"lastReceiv
+e\":\"2026-03-14T15:33:20.2561092Z\"},\"requestSizeInBytes\":2718,\"resp
+onseMetadataSizeInBytes\":226,\"responseBodySizeInBytes\":84},\"Transpor
+tException\":null}}]}}}, Windows/10.0.20348 cosmos-netstandard-sdk/3.18.
+0"},"headers":{"content-length":"3756","date":"Sat, 14 Mar 2026 
+15:33:19 GMT","content-type":"application/json","server":"Compute","x-ms
+-gatewayversion":"2.0.0","x-ms-activity-id":"c2413c3b-72ef-4557-833f-518
+8e4e32973","x-ms-last-state-change-utc":"Sun, 08 Mar 2026 05:55:12.086 G
+MT","x-ms-schemaversion":"1.21","lsn":"1610","x-ms-request-charge":"1.24
+","x-ms-quorum-acked-lsn":"1610","x-ms-current-write-quorum":"3","x-ms-c
+urrent-replica-set-size":"4","x-ms-documentdb-partitionkeyrangeid":"0","
+x-ms-xp-role":"1","x-ms-global-committed-lsn":"1610","x-ms-number-of-rea
+d-regions":"0","x-ms-transport-request-id":"3","x-ms-cosmos-llsn":"1610"
+,"x-ms-cosmos-quorum-acked-llsn":"1610","x-ms-session-token":"0:-1#1610"
+,"x-ms-request-duration-ms":"0.68","x-ms-serviceversion":"version=2.14.0
+.0","x-ms-aad-applied-role-assignment":"a8a683a0-4317-4a4c-a81c-61b29f40
+1805","x-ms-cosmos-physical-partition-id":"0","x-ms-cosmos-internal-part
+ition-id":"a15a8db1-c643-4222-a66f-50bb52632fc3","x-ms-throttle-retry-co
+unt":0,"x-ms-throttle-retry-wait-time-ms":0},"activityId":"c2413c3b-72ef
+-4557-833f-5188e4e32973","diagnostics":{"clientSideRequestStatistics":{"
+requestStartTimeUTCInMs":1773502399449,"requestDurationInMs":21,"totalRe
+questPayloadLengthInBytes":0,"totalResponsePayloadLengthInBytes":3756,"l
+ocationEndpointsContacted":["https://appraisal-mgmt-staging-cosmos-eastu
+s.documents.azure.com:443/"],"metadataDiagnostics":{"metadataLookups":[]
+},"retryDiagnostics":{"failedAttempts":[]},"gatewayStatistics":[{"activi
+tyId":"c2413c3b-72ef-4557-833f-5188e4e32973","startTimeUTCInMs":17735023
+99449,"durationInMs":20,"statusCode":404,"requestPayloadLengthInBytes":0
+,"responsePayloadLengthInBytes":3756,"operationType":"delete","resourceT
+ype":"docs"}]}}},"id":"1773502393853-k0yvbqli6"}
+[22m[39m2026-03-14T15:33:21.023Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+7cab1a96-5732-4dee-a8d8-1de437815e01, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041028334366s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 82;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 84;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".[39m
+[22m[39m2026-03-14T15:33:24.135Z ERROR [WebPubSubService] Failed to 
+send message to all clients {"error":{"statusCode":400,"details":{"error
+Code":"Error.BadRequest","date":"Sat, 14 Mar 2026 15:33:24 
+GMT","content-type":"application/problem+json; charset=utf-8","content-l
+ength":"372","connection":"keep-alive","strict-transport-security":"max-
+age=31536000; includeSubDomains"},"name":"RestError"},"messageId":"ws-17
+73502399751-90qr5wh1v"}
+[22m[39m2026-03-14T15:33:24.136Z ERROR [NotificationService] Failed 
+to send WebSocket notification {"error":{"statusCode":400,"details":{"er
+rorCode":"Error.BadRequest","date":"Sat, 14 Mar 2026 15:33:24 
+GMT","content-type":"application/problem+json; charset=utf-8","content-l
+ength":"372","connection":"keep-alive","strict-transport-security":"max-
+age=31536000; includeSubDomains"},"name":"RestError"},"notificationId":"
+notification-1773502391139-wq50riuhj"}
+[22m[39m2026-03-14T15:33:25.968Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+1dc63fbb-3811-48ba-9223-853f3a50dbd6, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041092241111s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 84;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 82;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+[22m[39m2026-03-14T15:33:25.970Z INFO [AutoAssignmentOrchestrator] Internal staff assigned directly (bid loop bypassed) {"orderId":"order-9d61a4ad-f400-4738-bf3f-a53f6f74e08d","vendorId":"v1","vendorName":"Vendor One","staffRole":"appraiser_internal"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[22m[39m2026-03-14T15:33:29.210Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+81aa66b6-5d9f-42c8-8600-9b58daa83ccf, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041028334366s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 86;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 82;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[22m[39m2026-03-14T15:33:29.211Z INFO [AutoAssignmentOrchestrator] Internal staff assigned directly (bid loop bypassed) {"orderId":"order-a21a3ede-5756-44a9-ae84-c0253cdb3054","vendorId":"v1","vendorName":"Vendor One","staffRole":"appraiser_internal"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/auto-assignment-orchestrator.test.ts[2m > [22m[2mAutoAssignmentOrchestratorService ΓÇö Internal Staff Assignment[2m > [22m[2mfalls back to the bid loop when the vendor lookup fails (graceful degradation)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/auto-assignment-orchestrator.test.ts[2m > [22m[2mAutoAssignmentOrchestratorService ΓÇö Internal Staff Assignment[2m > [22m[2mfalls back to the bid loop when the vendor lookup fails (graceful degradation)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate FEMA flood data via comprehensive analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate FEMA flood data via comprehensive analysis
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate 
+FEMA flood data via comprehensive analysis
+[22m[39m2026-03-14T15:33:29.567Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":29.7604,"longitude":-95.369
+8},"analysisType":"demographics"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate FEMA flood data via comprehensive analysis
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate 
+FEMA flood data via comprehensive analysis
+[22m[39m2026-03-14T15:33:29.568Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate 
+FEMA flood data via comprehensive analysis
+[22m[39m2026-03-14T15:33:29.569Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:29.569Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:29.569Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:29.569Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:29.569Z WARN [App] Analysis step 5 failed {"error":{}}
+[90mstdout[2m | tests/qc-workflow-e2e.test.ts[2m > [22m[2mQC Workflow E2E Tests[2m > [22m[2mhealth check passes
+[90mstdout[2m | tests/qc-workflow-e2e.test.ts[2m > [22m[2mQC Workflow E2E Tests[2m > [22m[2mhealth check passes
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate FEMA flood data via comprehensive analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould integrate FEMA flood data via comprehensive analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance assessment
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance assessment
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide 
+flood insurance assessment
+[22m[39m2026-03-14T15:33:29.604Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":29.7604,"longitude":-95.369
+8},"analysisType":"demographics"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance assessment
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide 
+flood insurance assessment
+[22m[39m2026-03-14T15:33:29.605Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide 
+flood insurance assessment
+[22m[39m2026-03-14T15:33:29.605Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:29.605Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:29.605Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:29.605Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:29.605Z WARN [App] Analysis step 5 failed {"error":{}}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance assessment
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mFEMA Flood Risk Integration[2m > [22m[2mshould provide flood insurance assessment
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould integrate Google Places via neighborhood analysis
+[90mstdout[2m | tests/qc-workflow-e2e.test.ts[2m > [22m[2mQC Workflow E2E Tests[2m > [22m[2mhealth check passes
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mFEMA Flood Risk Integration[2m > [22mshould integrate FEMA flood data via comprehensive analysis[32m 78[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mFEMA Flood Risk Integration[2m > [22mshould provide flood insurance assessment[32m 19[2mms[22m[39m
+[22m[39m2026-03-14T15:33:29.924Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:29.925Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502409814-u9usfgme8"}}
+[22m[39m2026-03-14T15:33:30.079Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.080Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502410049-5r61vlqbx"}}
+[22m[39m2026-03-14T15:33:30.225Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.226Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502410197-b5fowy2bc"}}
+[22m[39m2026-03-14T15:33:30.360Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.366Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.status_changed","res
+ource":{"type":"order","id":"1773502410197-b5fowy2bc"}}
+[22m[39m2026-03-14T15:33:30.469Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.469Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502410433-gyv5lj2v1"}}
+[22m[39m2026-03-14T15:33:30.606Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.607Z ERROR [App] Failed to find vendor 
+{"error":{},"id":"1773502410397-iscqwss9t"}
+2026-03-14T15:33:30.608Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.assigned","resource"
+:{"type":"order","id":"1773502410433-gyv5lj2v1"}}
+[22m[39m2026-03-14T15:33:30.803Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.804Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502410775-2xp2u0zfz"}}
+[22m[39m2026-03-14T15:33:30.840Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:30.841Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502410810-mxynjhx7p"}}
+[22m[39m2026-03-14T15:33:31.108Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":29.7604,"longitude":-95.369
+8},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:31.109Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:31.109Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:31.110Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:31.110Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:31.110Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:31.110Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:31.167Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:31.167Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:31.168Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:31.168Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:31.168Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:31.168Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:31.168Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:31.187Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:31.188Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502411159-9dls97j08"}}
+[22m[39m2026-03-14T15:33:31.688Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:31.689Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502411662-8bykezbbx"}}
+[22m[39m2026-03-14T15:33:31.816Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:31.816Z ERROR [App] Failed to find vendor 
+{"error":{},"id":"1773502411629-03ptte5wr"}
+2026-03-14T15:33:31.817Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.assigned","resource"
+:{"type":"order","id":"1773502411662-8bykezbbx"}}
+[22m[39m2026-03-14T15:33:31.979Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:31.983Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.status_changed","res
+ource":{"type":"order","id":"1773502411662-8bykezbbx"}}
+[22m[39m2026-03-14T15:33:32.140Z ERROR [App] Failed to retrieve 
+property {"propertyId":"nonexistent-id","error":{}}
+[22m[39m2026-03-14T15:33:32.140Z ERROR [App] Failed to retrieve 
+property {"propertyId":"nonexistent-id","error":{}}
+[90mstderr[2m | tests/auto-assignment-orchestrator.test.ts[2m > 
+[22m[2mAutoAssignmentOrchestratorService ΓÇö Internal Staff 
+Assignment[2m > [22m[2mfalls back to the bid loop when the vendor 
+lookup fails (graceful degradation)
+[22m[39m2026-03-14T15:33:33.358Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+9278eb1c-3339-4d2b-9caa-af650b6c3610, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041092241113s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 82;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 88;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+[90mstdout[2m | tests/auto-assignment-orchestrator.test.ts[2m > [22m[2mAutoAssignmentOrchestratorService ΓÇö Internal Staff Assignment[2m > [22m[2mfalls back to the bid loop when the vendor lookup fails (graceful degradation)
+[90mstdout[2m | tests/auto-assignment-orchestrator.test.ts[2m > [22m[2mAutoAssignmentOrchestratorService ΓÇö Internal Staff Assignment[2m > [22m[2mfalls back to the bid loop when the vendor lookup fails (graceful degradation)
+ [31m├ù[39m tests/auto-assignment-orchestrator.test.ts[2m > [22mAutoAssignmentOrchestratorService ΓÇö Internal Staff Assignment[2m > [22mfalls back to the bid loop when the vendor lookup fails (graceful degradation)[33m 4144[2mms[22m[39m
+[22m[39mΓ£à API health check passed: {
+[22m[39m2026-03-14T15:33:34.811Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:34.814Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502414705-0j7arxlah"}}
+[22m[39m2026-03-14T15:33:35.622Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:35.622Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:35.622Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:35.622Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:35.622Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:35.622Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:35.622Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:35.911Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:35.916Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502409702-9uq8rwyly"}}
+[90mstdout[2m | tests/qc-workflow-e2e.test.ts[2m > [22m[2mQC Workflow E2E Tests[2m > [22m[2mhealth check passes
+[22m[39mΓ£à API health check passed
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mGoogle Places API Integration[2m > [22m[2mshould integrate 
+Google Places via neighborhood analysis
+[22m[39m2026-03-14T15:33:36.714Z ERROR [App] OSM green spaces 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[22m[39m2026-03-14T15:33:37.117Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+07f9809d-860c-4e01-bb4c-2a2a17b7a890, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041028334366s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 80;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 82;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+[22m[39m2026-03-14T15:33:36.049Z ERROR [App] Azure Entra ID 
+authentication failed {"errorMessage":"Invalid token 
+format","errorName":"Error","errorStack":"Error: Invalid token format\n 
+   at AzureEntraAuthMiddleware.validateToken (C:\\source\\appraisal-mana
+gement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:116:13)\
+n    at AzureEntraAuthMiddleware.authenticate (C:\\source\\appraisal-man
+agement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:242:34)
+\n    at C:\\source\\appraisal-management-backend\\src\\middleware\\unif
+ied-auth.middleware.ts:118:33\n    at Layer.handle [as handle_request] (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at 
+trim_prefix (C:\\source\\appraisal-management-backend\\node_modules\\.pn
+pm\\express@4.22.1\\node_modules\\express\\lib\\router\\index.js:328:13)
+\n    at C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\
+express@4.22.1\\node_modules\\express\\lib\\router\\index.js:286:9\n    
+at Function.process_params (C:\\source\\appraisal-management-backend\\no
+de_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\i
+ndex.js:346:12)\n    at next (C:\\source\\appraisal-management-backend\\
+node_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\
+\index.js:280:10)\n    at urlencodedParser (C:\\source\\appraisal-manage
+ment-backend\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\bod
+y-parser\\lib\\types\\urlencoded.js:91:7)\n    at Layer.handle [as 
+handle_request] (C:\\source\\appraisal-management-backend\\node_modules\
+\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\layer.js:95:
+5)","fullError":"{\"stack\":\"Error: Invalid token format\\n    at 
+AzureEntraAuthMiddleware.validateToken (C:\\\\source\\\\appraisal-manage
+ment-backend\\\\src\\\\middleware\\\\azure-entra-auth.middleware.ts:116:
+13)\\n    at AzureEntraAuthMiddleware.authenticate (C:\\\\source\\\\appr
+aisal-management-backend\\\\src\\\\middleware\\\\azure-entra-auth.middle
+ware.ts:242:34)\\n    at C:\\\\source\\\\appraisal-management-backend\\\
+\src\\\\middleware\\\\unified-auth.middleware.ts:118:33\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\\n    at trim_prefix (C:\\\\sour
+ce\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4
+.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:328:13)\\n
+    at C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.
+pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\in
+dex.js:286:9\\n    at Function.process_params (C:\\\\source\\\\appraisal
+-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_m
+odules\\\\express\\\\lib\\\\router\\\\index.js:346:12)\\n    at next (C:
+\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\e
+xpress@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:28
+0:10)\\n    at urlencodedParser (C:\\\\source\\\\appraisal-management-ba
+ckend\\\\node_modules\\\\.pnpm\\\\body-parser@1.20.4\\\\node_modules\\\\
+body-parser\\\\lib\\\\types\\\\urlencoded.js:91:7)\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\",\"message\":\"Invalid token 
+format\"}"}
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mGoogle Places API Integration[2m > [22m[2mshould integrate 
+Google Places via neighborhood analysis
+[22m[39m2026-03-14T15:33:36.717Z ERROR [App] OSM public transport 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mGoogle Places API Integration[2m > [22m[2mshould integrate 
+Google Places via neighborhood analysis
+[22m[39m2026-03-14T15:33:36.719Z ERROR [App] OSM community amenities 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould integrate Google Places via neighborhood analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould integrate Google Places via neighborhood analysis
+[22m[39m2026-03-14T15:33:36.741Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:36.742Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502416600-dj292jhs3"}}
+[22m[39m2026-03-14T15:33:36.070Z ERROR [App] Azure Entra ID 
+authentication failed {"errorMessage":"Invalid token 
+format","errorName":"Error","errorStack":"Error: Invalid token format\n 
+   at AzureEntraAuthMiddleware.validateToken (C:\\source\\appraisal-mana
+gement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:116:13)\
+n    at AzureEntraAuthMiddleware.authenticate (C:\\source\\appraisal-man
+agement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:242:34)
+\n    at C:\\source\\appraisal-management-backend\\src\\middleware\\unif
+ied-auth.middleware.ts:118:33\n    at Layer.handle [as handle_request] (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at 
+trim_prefix (C:\\source\\appraisal-management-backend\\node_modules\\.pn
+pm\\express@4.22.1\\node_modules\\express\\lib\\router\\index.js:328:13)
+\n    at C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\
+express@4.22.1\\node_modules\\express\\lib\\router\\index.js:286:9\n    
+at Function.process_params (C:\\source\\appraisal-management-backend\\no
+de_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\i
+ndex.js:346:12)\n    at next (C:\\source\\appraisal-management-backend\\
+node_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\
+\index.js:280:10)\n    at urlencodedParser (C:\\source\\appraisal-manage
+ment-backend\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\bod
+y-parser\\lib\\types\\urlencoded.js:91:7)\n    at Layer.handle [as 
+handle_request] (C:\\source\\appraisal-management-backend\\node_modules\
+\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\layer.js:95:
+5)","fullError":"{\"stack\":\"Error: Invalid token format\\n    at 
+AzureEntraAuthMiddleware.validateToken (C:\\\\source\\\\appraisal-manage
+ment-backend\\\\src\\\\middleware\\\\azure-entra-auth.middleware.ts:116:
+13)\\n    at AzureEntraAuthMiddleware.authenticate (C:\\\\source\\\\appr
+aisal-management-backend\\\\src\\\\middleware\\\\azure-entra-auth.middle
+ware.ts:242:34)\\n    at C:\\\\source\\\\appraisal-management-backend\\\
+\src\\\\middleware\\\\unified-auth.middleware.ts:118:33\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\\n    at trim_prefix (C:\\\\sour
+ce\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4
+.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:328:13)\\n
+    at C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.
+pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\in
+dex.js:286:9\\n    at Function.process_params (C:\\\\source\\\\appraisal
+-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_m
+odules\\\\express\\\\lib\\\\router\\\\index.js:346:12)\\n    at next (C:
+\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\e
+xpress@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:28
+0:10)\\n    at urlencodedParser (C:\\\\source\\\\appraisal-management-ba
+ckend\\\\node_modules\\\\.pnpm\\\\body-parser@1.20.4\\\\node_modules\\\\
+body-parser\\\\lib\\\\types\\\\urlencoded.js:91:7)\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\",\"message\":\"Invalid token 
+format\"}"}
+[22m[39m2026-03-14T15:33:36.300Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:36.302Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502416214-jtlocclg1"}}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould find coffee shops via creative features analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould find coffee shops via creative features analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould find coffee shops via creative features analysis
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould analyze transportation and walkability
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould analyze transportation and walkability
+[22m[39m2026-03-14T15:33:36.083Z ERROR [App] Azure Entra ID 
+authentication failed {"errorMessage":"Invalid token 
+format","errorName":"Error","errorStack":"Error: Invalid token format\n 
+   at AzureEntraAuthMiddleware.validateToken (C:\\source\\appraisal-mana
+gement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:116:13)\
+n    at AzureEntraAuthMiddleware.authenticate (C:\\source\\appraisal-man
+agement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:242:34)
+\n    at C:\\source\\appraisal-management-backend\\src\\middleware\\unif
+ied-auth.middleware.ts:118:33\n    at Layer.handle [as handle_request] (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at 
+trim_prefix (C:\\source\\appraisal-management-backend\\node_modules\\.pn
+pm\\express@4.22.1\\node_modules\\express\\lib\\router\\index.js:328:13)
+\n    at C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\
+express@4.22.1\\node_modules\\express\\lib\\router\\index.js:286:9\n    
+at Function.process_params (C:\\source\\appraisal-management-backend\\no
+de_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\i
+ndex.js:346:12)\n    at next (C:\\source\\appraisal-management-backend\\
+node_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\
+\index.js:280:10)\n    at urlencodedParser (C:\\source\\appraisal-manage
+ment-backend\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\bod
+y-parser\\lib\\types\\urlencoded.js:91:7)\n    at Layer.handle [as 
+handle_request] (C:\\source\\appraisal-management-backend\\node_modules\
+\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\layer.js:95:
+5)","fullError":"{\"stack\":\"Error: Invalid token format\\n    at 
+AzureEntraAuthMiddleware.validateToken (C:\\\\source\\\\appraisal-manage
+ment-backend\\\\src\\\\middleware\\\\azure-entra-auth.middleware.ts:116:
+13)\\n    at AzureEntraAuthMiddleware.authenticate (C:\\\\source\\\\appr
+aisal-management-backend\\\\src\\\\middleware\\\\azure-entra-auth.middle
+ware.ts:242:34)\\n    at C:\\\\source\\\\appraisal-management-backend\\\
+\src\\\\middleware\\\\unified-auth.middleware.ts:118:33\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\\n    at trim_prefix (C:\\\\sour
+ce\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4
+.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:328:13)\\n
+    at C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.
+pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\in
+dex.js:286:9\\n    at Function.process_params (C:\\\\source\\\\appraisal
+-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_m
+odules\\\\express\\\\lib\\\\router\\\\index.js:346:12)\\n    at next (C:
+\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\e
+xpress@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:28
+0:10)\\n    at urlencodedParser (C:\\\\source\\\\appraisal-management-ba
+ckend\\\\node_modules\\\\.pnpm\\\\body-parser@1.20.4\\\\node_modules\\\\
+body-parser\\\\lib\\\\types\\\\urlencoded.js:91:7)\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\",\"message\":\"Invalid token 
+format\"}"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mGoogle Places API Integration[2m > [22m[2mshould analyze transportation and walkability
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mGoogle Places API Integration[2m > [22mshould integrate Google Places via neighborhood analysis[33m 7110[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mGoogle Places API Integration[2m > [22mshould find coffee shops via creative features analysis[32m 18[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mGoogle Places API Integration[2m > [22mshould analyze transportation and walkability[33m 360[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+[22m[39m2026-03-14T15:33:36.095Z ERROR [App] Azure Entra ID 
+authentication failed {"errorMessage":"Invalid token 
+format","errorName":"Error","errorStack":"Error: Invalid token format\n 
+   at AzureEntraAuthMiddleware.validateToken (C:\\source\\appraisal-mana
+gement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:116:13)\
+n    at AzureEntraAuthMiddleware.authenticate (C:\\source\\appraisal-man
+agement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:242:34)
+\n    at C:\\source\\appraisal-management-backend\\src\\middleware\\unif
+ied-auth.middleware.ts:118:33\n    at Layer.handle [as handle_request] (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at 
+trim_prefix (C:\\source\\appraisal-management-backend\\node_modules\\.pn
+pm\\express@4.22.1\\node_modules\\express\\lib\\router\\index.js:328:13)
+\n    at C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\
+express@4.22.1\\node_modules\\express\\lib\\router\\index.js:286:9\n    
+at Function.process_params (C:\\source\\appraisal-management-backend\\no
+de_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\i
+ndex.js:346:12)\n    at next (C:\\source\\appraisal-management-backend\\
+node_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\
+\index.js:280:10)\n    at urlencodedParser (C:\\source\\appraisal-manage
+ment-backend\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\bod
+y-parser\\lib\\types\\urlencoded.js:91:7)\n    at Layer.handle [as 
+handle_request] (C:\\source\\appraisal-management-backend\\node_modules\
+\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\layer.js:95:
+5)","fullError":"{\"stack\":\"Error: Invalid token format\\n    at 
+AzureEntraAuthMiddleware.validateToken (C:\\\\source\\\\appraisal-manage
+ment-backend\\\\src\\\\middleware\\\\azure-entra-auth.middleware.ts:116:
+13)\\n    at AzureEntraAuthMiddleware.authenticate (C:\\\\source\\\\appr
+aisal-management-backend\\\\src\\\\middleware\\\\azure-entra-auth.middle
+ware.ts:242:34)\\n    at C:\\\\source\\\\appraisal-management-backend\\\
+\src\\\\middleware\\\\unified-auth.middleware.ts:118:33\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\\n    at trim_prefix (C:\\\\sour
+ce\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4
+.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:328:13)\\n
+    at C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.
+pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\in
+dex.js:286:9\\n    at Function.process_params (C:\\\\source\\\\appraisal
+-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_m
+odules\\\\express\\\\lib\\\\router\\\\index.js:346:12)\\n    at next (C:
+\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\e
+xpress@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:28
+0:10)\\n    at urlencodedParser (C:\\\\source\\\\appraisal-management-ba
+ckend\\\\node_modules\\\\.pnpm\\\\body-parser@1.20.4\\\\node_modules\\\\
+body-parser\\\\lib\\\\types\\\\urlencoded.js:91:7)\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\",\"message\":\"Invalid token 
+format\"}"}
+[22m[39m2026-03-14T15:33:36.619Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:36.626Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.status_changed","res
+ource":{"type":"order","id":"1773502416214-jtlocclg1"}}
+[22m[39m2026-03-14T15:33:37.216Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:37.222Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.status_changed","res
+ource":{"type":"order","id":"1773502416600-dj292jhs3"}}
+[22m[39m2026-03-14T15:33:36.964Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:36.968Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502416827-tppvfa3pq"}}
+[22m[39m2026-03-14T15:33:37.175Z ERROR [QCChecklistManagement] Failed 
+to update QC checklist {"error":"Failed to update checklist in 
+database","checklistId":"qc_1773502409656_jex6wsel8"}
+[22m[39m2026-03-14T15:33:36.300Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: Test 
+error","executionTime":2,"codePreview":"throw new Error(\"Test 
+error\");"}
+[22m[39m2026-03-14T15:33:37.175Z ERROR [QCChecklistController] Failed 
+to update QC checklist {"error":"Failed to update checklist in database"
+,"checklistId":"qc_1773502409656_jex6wsel8","userId":"test-user-qc-analy
+st"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve demographic data from Census Bureau
+ [32mΓ£ô[39m tests/qc-workflow-e2e.test.ts[2m > [22mQC Workflow E2E Tests[2m > [22mhealth check passes[33m 6474[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mUS Census Bureau Integration[2m > [22mshould retrieve demographic data from Census Bureau[33m 745[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve economic data from Census Bureau
+[22m[39m2026-03-14T15:33:37.127Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:37.128Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.updated","resource":
+{"type":"order","id":"1773502416827-tppvfa3pq"}}
+[22m[39m2026-03-14T15:33:37.540Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:36.331Z ERROR [App] Azure Entra ID 
+authentication failed {"errorMessage":"Invalid token 
+format","errorName":"Error","errorStack":"Error: Invalid token format\n 
+   at AzureEntraAuthMiddleware.validateToken (C:\\source\\appraisal-mana
+gement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:116:13)\
+n    at AzureEntraAuthMiddleware.authenticate (C:\\source\\appraisal-man
+agement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:242:34)
+\n    at C:\\source\\appraisal-management-backend\\src\\middleware\\unif
+ied-auth.middleware.ts:118:33\n    at Layer.handle [as handle_request] (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at 
+Route.dispatch (C:\\source\\appraisal-management-backend\\node_modules\\
+.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\route.js:119:
+3)\n    at Layer.handle [as handle_request] (C:\\source\\appraisal-manag
+ement-backend\\node_modules\\.pnpm\\express@4.22.1\\node_modules\\expres
+s\\lib\\router\\layer.js:95:5)\n    at C:\\source\\appraisal-management-
+backend\\node_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib
+\\router\\index.js:284:15\n    at Function.process_params (C:\\source\\a
+ppraisal-management-backend\\node_modules\\.pnpm\\express@4.22.1\\node_m
+odules\\express\\lib\\router\\index.js:346:12)\n    at next (C:\\source\
+\appraisal-management-backend\\node_modules\\.pnpm\\express@4.22.1\\node
+_modules\\express\\lib\\router\\index.js:280:10)","fullError":"{\"stack\
+":\"Error: Invalid token format\\n    at 
+AzureEntraAuthMiddleware.validateToken (C:\\\\source\\\\appraisal-manage
+ment-backend\\\\src\\\\middleware\\\\azure-entra-auth.middleware.ts:116:
+13)\\n    at AzureEntraAuthMiddleware.authenticate (C:\\\\source\\\\appr
+aisal-management-backend\\\\src\\\\middleware\\\\azure-entra-auth.middle
+ware.ts:242:34)\\n    at C:\\\\source\\\\appraisal-management-backend\\\
+\src\\\\middleware\\\\unified-auth.middleware.ts:118:33\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\\n    at next (C:\\\\source\\\\a
+ppraisal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\
+\\node_modules\\\\express\\\\lib\\\\router\\\\route.js:149:13)\\n    at 
+Route.dispatch (C:\\\\source\\\\appraisal-management-backend\\\\node_mod
+ules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\rou
+ter\\\\route.js:119:3)\\n    at Layer.handle [as handle_request] (C:\\\\
+source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\expre
+ss@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\layer.js:95:5)\
+\n    at C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\
+\.pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\
+index.js:284:15\\n    at Function.process_params (C:\\\\source\\\\apprai
+sal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\nod
+e_modules\\\\express\\\\lib\\\\router\\\\index.js:346:12)\\n    at next 
+(C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\
+\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js
+:280:10)\",\"message\":\"Invalid token format\"}"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mUS Census Bureau Integration[2m > [22mshould retrieve economic data from Census Bureau[33m 384[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould retrieve housing data from Census Bureau
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[22m[39m2026-03-14T15:33:37.540Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:37.541Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:37.541Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:37.541Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:37.541Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:37.541Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:36.484Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Code execution timeout after 
+100ms","executionTime":113,"codePreview":"while(true) {}"}
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mUS Census Bureau Integration[2m > [22m[2mshould provide comprehensive census intelligence
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould validate addresses using geocoding service
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould validate addresses using geocoding service
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mUS Census Bureau Integration[2m > [22mshould retrieve housing data from Census Bureau[33m 380[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mUS Census Bureau Integration[2m > [22mshould provide comprehensive census intelligence[32m 18[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould validate addresses using geocoding service
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould validate addresses using geocoding service
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould perform address validation
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould perform address validation
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould perform address validation
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould perform reverse geocoding
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould perform reverse geocoding
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mMulti-Provider Address Services[2m > [22m[2mshould perform reverse geocoding
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mMulti-Provider Address Services[2m > [22mshould validate addresses using geocoding service[32m 133[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mMulti-Provider Address Services[2m > [22mshould perform address validation[32m 14[2mms[22m[39m
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mSystem Health and Provider Status[2m > [22m[2mshould report external service connectivity status
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mSystem Health and Provider Status[2m > [22m[2mshould report external service connectivity status
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mSystem Health and Provider Status[2m > [22m[2mshould report external service connectivity status
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mSystem Health and Provider Status[2m > [22m[2mshould provide provider status information
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mSystem Health and Provider Status[2m > [22m[2mshould provide provider status information
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mSystem Health and Provider Status[2m > [22m[2mshould provide provider status information
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze coffee shop density using external data
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze coffee shop density using external data
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze coffee shop density using external data
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze walkability using external place data
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze walkability using external place data
+[90mstdout[2m | tests/integration/external-services-fixed.test.ts[2m > [22m[2mExternal Services Integration Tests (Fixed)[2m > [22m[2mCreative Property Features (External Data)[2m > [22m[2mshould analyze walkability using external place data
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mMulti-Provider Address Services[2m > [22mshould perform reverse geocoding[32m 85[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mSystem Health and Provider Status[2m > [22mshould report external service connectivity status[32m 12[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mSystem Health and Provider Status[2m > [22mshould provide provider status information[32m 17[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mCreative Property Features (External Data)[2m > [22mshould analyze coffee shop density using external data[32m 33[2mms[22m[39m
+ [32mΓ£ô[39m tests/integration/external-services-fixed.test.ts[2m > [22mExternal Services Integration Tests (Fixed)[2m > [22mCreative Property Features (External Data)[2m > [22mshould analyze walkability using external place data[32m 34[2mms[22m[39m
+[90mstderr[2m | tests/integration/external-services-fixed.test.ts[2m 
+> [22m[2mExternal Services Integration Tests (Fixed)[2m > 
+[22m[2mSystem Health and Provider Status[2m > [22m[2mshould 
+provide provider status information
+[22m[39mΓ£à Property intelligence health check passed
+[22m[39m2026-03-14T15:33:40.230Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:40.230Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:40.230Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:40.231Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:40.231Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:40.231Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:40.231Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:40.388Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:40.389Z ERROR [App] Failed to find vendor 
+{"error":{},"id":"1773502415276-7upx2xdds"}
+2026-03-14T15:33:40.390Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.assigned","resource"
+:{"type":"order","id":"1773502414705-0j7arxlah"}}
+[22m[39m2026-03-14T15:33:40.617Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:40.622Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.status_changed","res
+ource":{"type":"order","id":"1773502414705-0j7arxlah"}}
+[90mstdout[2m | tests/integration/performance.test.ts[2m > [22m[2mAPI Performance Tests[2m > [22m[2mError Handling Performance[2m > [22m[2mshould handle authentication failures quickly
+[90mstdout[2m | tests/integration/performance.test.ts[2m > [22m[2mAPI Performance Tests[2m > [22m[2mError Handling Performance[2m > [22m[2mshould handle authentication failures quickly
+[90mstderr[2m | tests/integration/performance.test.ts[2m > 
+[22m[2mAPI Performance Tests[2m > [22m[2mError Handling 
+Performance[2m > [22m[2mshould handle authentication failures quickly
+[22m[39m2026-03-14T15:33:41.280Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: Intentional test 
+error","executionTime":2,"codePreview":"throw new Error(\"Intentional 
+test error\");"}
+ [32mΓ£ô[39m tests/integration/performance.test.ts[2m > [22mAPI Performance Tests[2m > [22mError Handling Performance[2m > [22mshould handle authentication failures quickly[32m 113[2mms[22m[39m
+[22m[39mΓ£à Property intelligence health check passed
+[22m[39m2026-03-14T15:33:42.413Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:42.413Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:42.414Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:42.414Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:42.414Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:42.414Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:42.414Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:42.601Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:42.602Z ERROR [App] Failed to find vendor 
+{"error":{},"id":"1773502416987-hl9rsgewd"}
+2026-03-14T15:33:42.603Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.assigned","resource"
+:{"type":"order","id":"1773502416214-jtlocclg1"}}
+[22m[39m2026-03-14T15:33:42.710Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+1eafedb1-190b-4862-9ed3-791d1628034b, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041092241113s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 80;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 86;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+[22m[39m2026-03-14T15:33:42.811Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:42.813Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.status_changed","res
+ource":{"type":"order","id":"1773502416214-jtlocclg1"}}
+[22m[39m2026-03-14T15:33:42.784Z ERROR [App] Azure Maps analysis 
+failed {"error":{},"coordinates":{"latitude":37.4224764,"longitude":-122
+.0842499},"analysisType":"demographics"}
+[22m[39m2026-03-14T15:33:42.784Z ERROR [App] Provider azure failed 
+for demographics {"error":{}}
+[22m[39m2026-03-14T15:33:42.784Z WARN [App] Analysis step 1 failed 
+{"error":{}}
+2026-03-14T15:33:42.784Z WARN [App] Analysis step 2 failed {"error":{}}
+2026-03-14T15:33:42.784Z WARN [App] Analysis step 3 failed {"error":{}}
+2026-03-14T15:33:42.784Z WARN [App] Analysis step 4 failed {"error":{}}
+2026-03-14T15:33:42.784Z WARN [App] Analysis step 5 failed {"error":{}}
+[22m[39m2026-03-14T15:33:43.559Z ERROR [App] OSM public transport 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[22m[39m2026-03-14T15:33:46.548Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+ef7619d4-dded-4421-9567-4ab305debc1d, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041028334366s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 82;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 80;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+2026-03-14T15:33:46.798Z INFO [QCExecutionEngine] QC review execution completed {"executionId":"qc_exec_1773502426796_g8kt61c5t","passed":false,"score":0,"criticalIssues":0}
+2026-03-14T15:33:47.074Z INFO [QCExecutionEngine] QC review execution completed {"executionId":"qc_exec_1773502427074_jv6tv8n4q","passed":false,"score":0,"criticalIssues":0}
+[22m[39m2026-03-14T15:33:47.643Z ERROR [App] OSM community amenities 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[22m[39m2026-03-14T15:33:47.647Z ERROR [App] OSM public transport 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[22m[39m2026-03-14T15:33:47.654Z ERROR [App] OSM green spaces 
+analysis failed {"error":{},"coordinates":{"latitude":37.4224764,"longit
+ude":-122.0842499}}
+[22m[39m2026-03-14T15:33:49.425Z ERROR [App] Failed to query items 
+{"error":"{\"code\":\"NotFound\",\"message\":\"Message: 
+{\\\"Errors\\\":[\\\"Resource Not Found. Learn more: 
+https://aka.ms/cosmosdb-tsg-not-found\\\"]}\\r\\nActivityId: 
+6ed8a896-c536-4ad7-b83a-c9813dda95fc, Request URI: /apps/15f80cde-f23e-4
+46c-adf0-f5bd2f1e1d61/services/14253c30-1807-4ae7-a246-374ddcb162e4/part
+itions/7d4c3dc2-9a8b-4839-894e-62601b55db63/replicas/134113041092241111s
+, RequestStats: , SDK: 
+Microsoft.Azure.Documents.Common/2.14.0\"}\r\nRequestUri: https://apprai
+sal-mgmt-staging-cosmos-eastus.sql.cosmos.azure.com/dbs/appraisal-manage
+ment/colls/tenant-automation-configs;\r\nRequestMethod: GET;\r\nHeader: 
+Authorization Length: 80;\r\nHeader: x-ms-date Length: 29;\r\nHeader: 
+x-ms-activity-id Length: 36;\r\nHeader: Cache-Control Length: 
+8;\r\nHeader: User-Agent Length: 143;\r\nHeader: x-ms-cosmos-apitype 
+Length: 3;\r\nHeader: x-ms-version Length: 10;\r\nHeader: 
+x-ms-cosmos-sdk-supportedcapabilities Length: 1;\r\nHeader: Accept 
+Length: 16;\r\nHeader: x-ms-gateway-signature Length: 82;\r\nHeader: 
+x-ms-cosmos-compute-hop-count Length: 1;\r\nHeader: 
+x-ms-gateway-use-mtls Length: 1;\r\n, Request URI: 
+/dbs/appraisal-management/colls/tenant-automation-configs, 
+RequestStats: Microsoft.Azure.Cosmos.Tracing.TraceData.ClientSideRequest
+StatisticsTraceDatum, SDK: Windows/10.0.20348 cosmos-netstandard-sdk/3.1
+8.0","containerName":"tenant-automation-configs","query":"SELECT * FROM 
+c WHERE c.tenantId = @tenantId AND c.entityType = @entityType"}
+[22m[39m2026-03-14T15:33:49.482Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Execution error: Intentional 
+error","executionTime":2,"codePreview":"throw new Error(\"Intentional 
+error\");"}
+[22m[39m2026-03-14T15:33:49.603Z ERROR [DynamicCodeExecutionService] 
+Code execution failed {"error":"Code execution timeout after 
+100ms","executionTime":108,"codePreview":"while(true) { /* infinite 
+loop */ }"}
+[22m[39m2026-03-14T15:33:50.722Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:50.722Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773502430694-p7cg3dmp9"}}
+[22m[39m2026-03-14T15:33:50.775Z ERROR [App] Azure Entra ID 
+authentication failed {"errorMessage":"Invalid token 
+format","errorName":"Error","errorStack":"Error: Invalid token format\n 
+   at AzureEntraAuthMiddleware.validateToken (C:\\source\\appraisal-mana
+gement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:116:13)\
+n    at AzureEntraAuthMiddleware.authenticate (C:\\source\\appraisal-man
+agement-backend\\src\\middleware\\azure-entra-auth.middleware.ts:242:34)
+\n    at C:\\source\\appraisal-management-backend\\src\\middleware\\unif
+ied-auth.middleware.ts:118:33\n    at Layer.handle [as handle_request] (
+C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\express@4
+.22.1\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at 
+trim_prefix (C:\\source\\appraisal-management-backend\\node_modules\\.pn
+pm\\express@4.22.1\\node_modules\\express\\lib\\router\\index.js:328:13)
+\n    at C:\\source\\appraisal-management-backend\\node_modules\\.pnpm\\
+express@4.22.1\\node_modules\\express\\lib\\router\\index.js:286:9\n    
+at Function.process_params (C:\\source\\appraisal-management-backend\\no
+de_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\i
+ndex.js:346:12)\n    at next (C:\\source\\appraisal-management-backend\\
+node_modules\\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\
+\index.js:280:10)\n    at urlencodedParser (C:\\source\\appraisal-manage
+ment-backend\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\bod
+y-parser\\lib\\types\\urlencoded.js:91:7)\n    at Layer.handle [as 
+handle_request] (C:\\source\\appraisal-management-backend\\node_modules\
+\.pnpm\\express@4.22.1\\node_modules\\express\\lib\\router\\layer.js:95:
+5)","fullError":"{\"stack\":\"Error: Invalid token format\\n    at 
+AzureEntraAuthMiddleware.validateToken (C:\\\\source\\\\appraisal-manage
+ment-backend\\\\src\\\\middleware\\\\azure-entra-auth.middleware.ts:116:
+13)\\n    at AzureEntraAuthMiddleware.authenticate (C:\\\\source\\\\appr
+aisal-management-backend\\\\src\\\\middleware\\\\azure-entra-auth.middle
+ware.ts:242:34)\\n    at C:\\\\source\\\\appraisal-management-backend\\\
+\src\\\\middleware\\\\unified-auth.middleware.ts:118:33\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\\n    at trim_prefix (C:\\\\sour
+ce\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\express@4
+.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:328:13)\\n
+    at C:\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.
+pnpm\\\\express@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\in
+dex.js:286:9\\n    at Function.process_params (C:\\\\source\\\\appraisal
+-management-backend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_m
+odules\\\\express\\\\lib\\\\router\\\\index.js:346:12)\\n    at next (C:
+\\\\source\\\\appraisal-management-backend\\\\node_modules\\\\.pnpm\\\\e
+xpress@4.22.1\\\\node_modules\\\\express\\\\lib\\\\router\\\\index.js:28
+0:10)\\n    at urlencodedParser (C:\\\\source\\\\appraisal-management-ba
+ckend\\\\node_modules\\\\.pnpm\\\\body-parser@1.20.4\\\\node_modules\\\\
+body-parser\\\\lib\\\\types\\\\urlencoded.js:91:7)\\n    at 
+Layer.handle [as handle_request] (C:\\\\source\\\\appraisal-management-b
+ackend\\\\node_modules\\\\.pnpm\\\\express@4.22.1\\\\node_modules\\\\exp
+ress\\\\lib\\\\router\\\\layer.js:95:5)\",\"message\":\"Invalid token 
+format\"}"}
+[22m[39m2026-03-14T15:33:50.890Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T15:33:50.891Z ERROR [App] Failed to find vendor 
+{"error":{},"id":"1773502430735-snw5jrf8s"}
+2026-03-14T15:33:50.892Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.assigned","resource"
+:{"type":"order","id":"1773502430694-p7cg3dmp9"}}
+2026-03-14T15:33:51.108Z INFO [QCExecutionEngine] QC review execution completed {"executionId":"qc_exec_1773502431108_b598csqiv","passed":false,"score":0,"criticalIssues":0}
+[22m[39m2026-03-14T15:33:51.127Z ERROR [QCChecklistManagement] Failed 
+to create QC checklist {"error":"Category 'Test' must have at least one 
+subcategory","name":"<script>alert(\"xss\")</script>Malicious 
+Checklist","documentType":"appraisal_report"}
+[22m[39m2026-03-14T15:33:51.153Z ERROR [QCChecklistManagement] Failed 
+to create QC checklist {"error":"Category 'Test' must have at least one 
+subcategory","name":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAA","documentType":"appraisal_report"}
+[90mstdout[2m | tests/qc-api-integration.test.ts[2m > [22m[2mQC API Endpoints Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould return proper error format for validation failures
+[90mstdout[2m | tests/qc-api-integration.test.ts[2m > [22m[2mQC API Endpoints Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould return proper error format for validation failures
+[90mstderr[2m | tests/qc-api-integration.test.ts[2m > [22m[2mQC 
+API Endpoints Integration Tests[2m > [22m[2mError Handling[2m > 
+[22m[2mshould return proper error format for validation failures
+ [32mΓ£ô[39m tests/qc-api-integration.test.ts[2m > [22mQC API Endpoints Integration Tests[2m > [22mError Handling[2m > [22mshould return proper error format for validation failures[32m 13[2mms[22m[39m
+[22m[39m2026-03-14T15:33:54.346Z ERROR [App] Failed to get analytics 
+overview {"error":{"code":400,"substatus":0,"body":{"code":"BadRequest",
+"message":"One of the input values is invalid.\r\nActivityId: 
+9a78e663-46fb-4da6-b9e6-0e2bb4a2af7e, Windows/10.0.20348 
+cosmos-netstandard-sdk/3.18.0"},"headers":{"date":"Sat, 14 Mar 2026 
+15:33:54 GMT","transfer-encoding":"chunked","content-type":"application/
+json","x-ms-activity-id":"9a78e663-46fb-4da6-b9e6-0e2bb4a2af7e","server"
+:"Compute","x-ms-gatewayversion":"2.0.0","x-ms-substatus":"0","x-ms-cosm
+os-correlated-activityid":"a825c987-0e6c-4490-a2bb-3744cb9bef43","x-ms-t
+hrottle-retry-count":0,"x-ms-throttle-retry-wait-time-ms":0},"activityId
+":"9a78e663-46fb-4da6-b9e6-0e2bb4a2af7e","diagnostics":{"clientSideReque
+stStatistics":{"requestStartTimeUTCInMs":1773502434183,"requestDurationI
+nMs":163,"totalRequestPayloadLengthInBytes":338,"totalResponsePayloadLen
+gthInBytes":560,"locationEndpointsContacted":["https://appraisal-mgmt-st
+aging-cosmos-eastus.documents.azure.com:443/"],"metadataDiagnostics":{"m
+etadataLookups":[{"activityId":"c3aa1efb-b22d-4d2c-9753-2ff45a3d4427","r
+equestPayloadLengthInBytes":169,"responsePayloadLengthInBytes":389,"star
+tTimeUTCInMs":1773502434183,"operationType":"read","resourceType":"docs"
+,"durationInMs":43,"metaDataType":"QUERY_PLAN_LOOK_UP"}]},"retryDiagnost
+ics":{"failedAttempts":[]},"gatewayStatistics":[{"activityId":"9a78e663-
+46fb-4da6-b9e6-0e2bb4a2af7e","correlateActivityId":"a825c987-0e6c-4490-a
+2bb-3744cb9bef43","startTimeUTCInMs":1773502434186,"durationInMs":160,"s
+tatusCode":400,"subStatusCode":0,"requestPayloadLengthInBytes":169,"resp
+onsePayloadLengthInBytes":171,"operationType":"query","resourceType":"do
+cs"}]}}}}
+[22m[39m2026-03-14T15:33:54.388Z ERROR [App] Failed to get 
+performance analytics {"error":{"code":400,"substatus":0,"body":{"code":
+"BadRequest","message":"One of the input values is 
+invalid.\r\nActivityId: 98c48795-b605-419b-83f7-d536341fe22c, 
+Windows/10.0.20348 
+cosmos-netstandard-sdk/3.18.0"},"headers":{"date":"Sat, 14 Mar 2026 
+15:33:54 GMT","transfer-encoding":"chunked","content-type":"application/
+json","x-ms-activity-id":"98c48795-b605-419b-83f7-d536341fe22c","server"
+:"Compute","x-ms-gatewayversion":"2.0.0","x-ms-substatus":"0","x-ms-cosm
+os-correlated-activityid":"6be3e227-594b-4311-871d-50fea91ba783","x-ms-t
+hrottle-retry-count":0,"x-ms-throttle-retry-wait-time-ms":0},"activityId
+":"98c48795-b605-419b-83f7-d536341fe22c","diagnostics":{"clientSideReque
+stStatistics":{"requestStartTimeUTCInMs":1773502434361,"requestDurationI
+nMs":27,"totalRequestPayloadLengthInBytes":176,"totalResponsePayloadLeng
+thInBytes":171,"locationEndpointsContacted":["https://appraisal-mgmt-sta
+ging-cosmos-eastus.documents.azure.com:443/"],"metadataDiagnostics":{"me
+tadataLookups":[]},"retryDiagnostics":{"failedAttempts":[]},"gatewayStat
+istics":[{"activityId":"98c48795-b605-419b-83f7-d536341fe22c","correlate
+ActivityId":"6be3e227-594b-4311-871d-50fea91ba783","startTimeUTCInMs":17
+73502434363,"durationInMs":25,"statusCode":400,"subStatusCode":0,"reques
+tPayloadLengthInBytes":176,"responsePayloadLengthInBytes":171,"operation
+Type":"query","resourceType":"docs"}]}}}}
+[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m[1m[41m Failed Tests 50 
+[49m[22m[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Vendor Assignment FSM[2m > 
+[22msends a bid to the top-ranked vendor when triggerVendorAssignment 
+is called
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Vendor Assignment FSM[2m > 
+[22madvances to the next vendor when onVendorBidTimedOut is received
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Vendor Assignment FSM[2m > 
+[22madvances to the next vendor when onVendorBidDeclined is received
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Vendor Assignment FSM[2m > 
+[22mpublishes vendor.assignment.exhausted when all vendors have been 
+contacted
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Vendor Assignment FSM[2m > 
+[22mimmediately escalates when matching engine returns no vendors
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Internal Staff 
+Assignment[2m > [22massigns internal staff directly and publishes 
+vendor.staff.assigned
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Internal Staff 
+Assignment[2m > [22mdirect-assigns the first vendor and does not 
+continue to the bid loop
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Internal Staff 
+Assignment[2m > [22mfalls back to the bid loop when the vendor lookup 
+fails (graceful degradation)
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Review Assignment FSM[2m > 
+[22massigns the lowest-workload reviewer when an order is SUBMITTED
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Review Assignment FSM[2m > 
+[22madvances to the next reviewer when review.assignment.timeout is 
+received
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Review Assignment FSM[2m > 
+[22mpublishes review.assignment.exhausted when all reviewers have 
+timed out
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Review Assignment FSM[2m > 
+[22mimmediately escalates review assignment when no analysts are 
+available
+[41m[1m FAIL [22m[49m 
+tests/auto-assignment-orchestrator.test.ts[2m > 
+[22mAutoAssignmentOrchestratorService ΓÇö Full End-to-End Flow[2m > 
+[22mtraces the complete assignment lifecycle from order creation to 
+escalation
+[41m[1m FAIL [22m[49m tests/comprehensive-api.test.ts[2m > 
+[22mAppraisal Management API - Comprehensive Tests[2m > [22mOrder 
+Management Endpoints[2m > [22mshould update order status
+[41m[1m FAIL [22m[49m tests/event-driven-architecture.test.ts[2m > 
+[22mEvent-Driven Architecture[2m > [22mshould handle event 
+processing with notification service
+If this is a long-running test, pass a timeout value as the last 
+argument or configure it globally with "testTimeout".[39m
+[41m[1m FAIL [22m[49m tests/qc-api-integration.test.ts[2m > 
+[22mQC API Endpoints Integration Tests[2m > [22mQC Checklist 
+Management[2m > [22mGET /api/qc/checklists[2m > [22mshould return 
+empty results for non-existent category
+[41m[1m FAIL [22m[49m tests/qc-api-integration.test.ts[2m > 
+[22mQC API Endpoints Integration Tests[2m > [22mQC Checklist 
+Management[2m > [22mPUT /api/qc/checklists/:checklistId[2m > 
+[22mshould update checklist successfully
+[41m[1m FAIL [22m[49m tests/qc-api-integration.test.ts[2m > 
+[22mQC API Endpoints Integration Tests[2m > [22mAuthentication and 
+Authorization[2m > [22mshould enforce role-based permissions
+[41m[1m FAIL [22m[49m tests/integration/database-real.test.ts[2m > 
+[22mCosmos DB Real Integration Tests[2m > [22mAppraisal Order CRUD 
+Operations[2m > [22mshould update the order status
+[41m[1m FAIL [22m[49m tests/integration/database-real.test.ts[2m > 
+[22mCosmos DB Real Integration Tests[2m > [22mAppraisal Order CRUD 
+Operations[2m > [22mshould list orders with filters
+[41m[1m FAIL [22m[49m tests/integration/database-real.test.ts[2m > 
+[22mCosmos DB Real Integration Tests[2m > [22mVendor CRUD 
+Operations[2m > [22mshould update vendor performance metrics
+[41m[1m FAIL [22m[49m tests/integration/database.test.ts[2m > 
+[22mCosmos DB Real Integration Tests[2m > [22mAppraisal Order CRUD 
+Operations[2m > [22mshould update the order status
+[41m[1m FAIL [22m[49m tests/integration/database.test.ts[2m > 
+[22mCosmos DB Real Integration Tests[2m > [22mAppraisal Order CRUD 
+Operations[2m > [22mshould list orders with filters
+[41m[1m FAIL [22m[49m tests/integration/database.test.ts[2m > 
+[22mCosmos DB Real Integration Tests[2m > [22mVendor CRUD 
+Operations[2m > [22mshould update vendor performance metrics
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mFEMA Flood Risk Integration[2m > 
+[22mshould integrate with FEMA flood zone data via risk assessment
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mFEMA Flood Risk Integration[2m > 
+[22mshould provide flood insurance requirement assessment
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGoogle Places API Integration[2m 
+> [22mshould search nearby places using Google Places API
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGoogle Places API Integration[2m 
+> [22mshould find specific establishment types (Starbucks test)
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGoogle Places API Integration[2m 
+> [22mshould provide detailed place information
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould retrieve demographic data from Census Bureau
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould retrieve economic data from Census Bureau
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould retrieve housing data from Census Bureau
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mUS Census Bureau Integration[2m 
+> [22mshould provide comprehensive census intelligence
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mMulti-Provider Address 
+Services[2m > [22mshould validate addresses using multiple providers
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mMulti-Provider Address 
+Services[2m > [22mshould standardize addresses using 
+SmartyStreets/USPS
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mMulti-Provider Address 
+Services[2m > [22mshould extract detailed address components
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGeospatial Risk Assessment 
+Services[2m > [22mshould assess environmental hazards using multiple 
+data sources
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mGeospatial Risk Assessment 
+Services[2m > [22mshould provide detailed earthquake risk using USGS 
+data
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mProperty Intelligence Service 
+Health[2m > [22mshould report external service connectivity status
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mCreative Property Features 
+(External Data)[2m > [22mshould analyze coffee shop density using 
+Google Places
+[41m[1m FAIL [22m[49m 
+tests/integration/external-services.test.ts[2m > [22mExternal 
+Services Integration Tests[2m > [22mCreative Property Features 
+(External Data)[2m > [22mshould analyze walkability using external 
+place data
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mOrder Management 
+Integration[2m > [22mshould update the order and persist changes
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mOrder Management 
+Integration[2m > [22mshould list orders with filters from real 
+database
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mProperty 
+Intelligence Integration[2m > [22mshould check property intelligence 
+service health
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mProperty 
+Intelligence Integration[2m > [22mshould geocode an address using 
+property intelligence
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mProperty 
+Intelligence Integration[2m > [22mshould perform comprehensive 
+property analysis
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mEnd-to-End 
+Workflow Integration[2m > [22mshould complete full appraisal workflow 
+with database persistence
+[41m[1m FAIL [22m[49m tests/integration/manual-api.test.ts[2m > 
+[22mProduction API Manual Tests[2m > [22mOrder Management Tests[2m 
+> [22mshould update the order status
+[41m[1m FAIL [22m[49m tests/integration/performance.test.ts[2m > 
+[22mAPI Performance Tests[2m > [22mResponse Time Tests[2m > 
+[22mshould respond to health checks within 5000ms
+[41m[1m FAIL [22m[49m tests/integration/production-api.test.ts[2m 
+> [22mProduction API Integration Tests[2m > [22mProperty 
+Intelligence Workflow[2m > [22mshould geocode an address
+[2m Test Files [22m [1m[31m11 failed[39m[22m[2m | [22m[1m[32m49 passed[39m[22m[90m (60)[39m
+[2m      Tests [22m [1m[31m50 failed[39m[22m[2m | [22m[1m[32m1202 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (1253)[39m
+[2m   Duration [22m 53.15s[2m (transform 24.04s, setup 6.56s, collect 393.05s, tests 265.86s, environment 25ms, prepare 31.08s)[22m

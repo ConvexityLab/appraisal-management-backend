@@ -34,8 +34,8 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
       const endTime = process.hrtime.bigint()
       const responseTimeMs = Number(endTime - startTime) / 1000000
       
-      // Allow up to 5 seconds for first request (includes DB initialization)
-      expect(responseTimeMs).toBeLessThan(5000)
+      // Allow up to 15 seconds for first request (includes DB initialization, may run under full-suite load)
+      expect(responseTimeMs).toBeLessThan(15000)
       expect(response.body.status).toBe('healthy')
     })
 

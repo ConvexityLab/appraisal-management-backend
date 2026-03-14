@@ -51,6 +51,44 @@ vi.mock('../src/services/qc-review-queue.service.js', () => ({
   })),
 }));
 
+vi.mock('../src/services/tenant-automation-config.service.js', () => ({
+  TenantAutomationConfigService: vi.fn().mockImplementation(() => ({
+    getConfig: vi.fn().mockResolvedValue({
+      autoAssignmentEnabled: true,
+      bidLoopEnabled: true,
+      maxVendorAttempts: 5,
+      bidExpiryHours: 4,
+      reviewExpiryHours: 8,
+      supervisorTimeoutHours: 8,
+      preferredVendorIds: [],
+      supervisoryReviewForAllOrders: false,
+      supervisoryReviewValueThreshold: 0,
+      escalationRecipients: [],
+      aiQcEnabled: false,
+      aiQcPassThreshold: 90,
+      aiQcFlagThreshold: 70,
+      autoDeliveryEnabled: true,
+      autoCloseEngagementEnabled: true,
+      bidMode: 'sequential',
+      broadcastCount: 5,
+      engagementLetterAutoSend: true,
+      requireSignedLetterBeforeProgress: false,
+      axiomAutoTrigger: false,
+      axiomTimeoutMinutes: 10,
+      entityType: 'tenant-automation-config',
+    }),
+    updateConfig: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock('../src/services/supervisory-review.service.js', () => ({
+  SupervisoryReviewService: vi.fn().mockImplementation(() => ({
+    createReview: vi.fn().mockResolvedValue({ id: 'sup-review-001' }),
+    getReview: vi.fn().mockResolvedValue(null),
+    updateReview: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 // ── Import after mocks are registered ────────────────────────────────────────
 
 import { AutoAssignmentOrchestratorService } from '../src/services/auto-assignment-orchestrator.service';

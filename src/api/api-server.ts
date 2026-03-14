@@ -156,6 +156,7 @@ import { CommunicationEventHandler } from '../services/communication-event-handl
 import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
+import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
 
 // Import Audit Event Sink + Engagement Audit Controller
@@ -265,6 +266,7 @@ export class AppraisalManagementAPIServer {
   private axiomAutoTriggerService?: AxiomAutoTriggerService;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
+  private ucdpEadAutoSubmitService?: UcdpEadAutoSubmitService;
   private reviewSLAWatcherJob?: ReviewSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
   private axiomTimeoutWatcherJob?: AxiomTimeoutWatcherJob;
@@ -3477,8 +3479,22 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start UCDP/EAD Auto-Submit Service (auto-submits delivered orders to GSE portals for eligible loan types)
+    try {
+      this.ucdpEadAutoSubmitService = new UcdpEadAutoSubmitService(this.dbService);
+      this.ucdpEadAutoSubmitService.start().catch(err => {
+        this.logger.warn('UcdpEadAutoSubmitService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('UcdpEadAutoSubmitService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit']
     });
   }
 
@@ -3530,6 +3546,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.auditEventSinkService) {
       this.auditEventSinkService.stop().catch(() => {});
+    }
+    if (this.ucdpEadAutoSubmitService) {
+      this.ucdpEadAutoSubmitService.stop().catch(() => {});
     }
     this.logger.info('Background jobs stopped');
   }

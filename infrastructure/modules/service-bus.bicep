@@ -310,6 +310,18 @@ resource vendorPerformanceUpdaterServiceSubscription 'Microsoft.ServiceBus/names
   }
 }
 
+// UCDP/EAD Auto-Submit Service Subscription (consumed by UcdpEadAutoSubmitService — auto-submits delivered orders to GSE portals)
+resource ucdpEadAutoSubmitServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'ucdp-ead-auto-submit-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id

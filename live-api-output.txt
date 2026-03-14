@@ -1,0 +1,599 @@
+﻿
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/source/appraisal-management-backend[39m
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:31.729Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:49:31.732Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:49:31.735Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:32.554Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:49:32.554Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:36.809Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:36.814Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:36.814Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:36.815Z INFO [App] AzureCommunicationService: using API key credential
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:49:36.816Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:37.856Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:38.037Z INFO [DeadLetterQueueMonitorService] DLQ monitor using Managed Identity {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:39.139Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:39.291Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:49:39.291Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:39.870Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:39.871Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:39.872Z INFO [WebPubSubService] Initialized Web PubSub client for hub: appraisal-notifications (Managed Identity)
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:40.168Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:40.169Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:49:40.169Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:49:40.170Z INFO [App] ACS Identity Service initialized with API key
+2026-03-14T16:49:40.170Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:40.171Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:40.215Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:49:40.215Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:49:40.215Z INFO [App] ACS Identity Service initialized with API key
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:40.267Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:40.268Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:40.490Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:49:40.490Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:49:40.491Z INFO [App] ACS Identity Service initialized with API key
+2026-03-14T16:49:40.491Z INFO [App] ACS Chat Service initialized successfully
+2026-03-14T16:49:40.491Z INFO [App] Cosmos DB initialized successfully for ACS Identity mappings
+2026-03-14T16:49:40.491Z INFO [App] Initializing ACS with API key authentication
+2026-03-14T16:49:40.491Z INFO [App] ACS Identity Service initialized with API key
+2026-03-14T16:49:40.491Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:40.491Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:41.302Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:49:41.302Z INFO [App] AzureCommunicationService: using API key credential
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m2026-03-14T16:49:41.423Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:41.423Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:41.423Z INFO [App] Teams service initialized with Managed Identity
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m≡ƒº¬ Setting up test environment...
+Γ£à Test environment ready
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.041Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:49:46.041Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-03-14T16:49:46.041Z INFO [App] Creating NEW Azure Entra auth instance with JWKS cache
+2026-03-14T16:49:46.043Z INFO [App] Azure Entra ID authentication initialized {"tenantId":"885097ba-35ea-48db-be7a-a0aa7ff451bd","clientId":"dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a"}
+2026-03-14T16:49:46.043Z INFO [App] Role mapping configured {"groupId":"admin-group-id","role":"admin","permissions":["*"]}
+2026-03-14T16:49:46.043Z INFO [App] Role mapping configured {"groupId":"manager-group-id","role":"manager","permissions":["order_manage","vendor_manage","vendor_assign","analytics_view","qc_metrics","qc_validate"]}
+2026-03-14T16:49:46.043Z INFO [App] Role mapping configured {"groupId":"qc-analyst-group-id","role":"qc_analyst","permissions":["qc_validate","qc_execute","qc_metrics"]}
+2026-03-14T16:49:46.043Z INFO [App] Role mapping configured {"groupId":"appraiser-group-id","role":"appraiser","permissions":["order_view","order_update"]}
+2026-03-14T16:49:46.043Z INFO [App] Azure AD role mappings configured
+2026-03-14T16:49:46.043Z INFO [App] Reusing existing Azure Entra auth instance (JWKS cache preserved)
+2026-03-14T16:49:46.070Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.070Z INFO [App] AzureCommunicationService: using API key credential
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:49:46.071Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-03-14T16:49:46.071Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.071Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.072Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.072Z INFO [App] Teams service initialized with Managed Identity
+2026-03-14T16:49:46.073Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:49:46.074Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:49:46.075Z INFO [ServiceBusEventSubscriber] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:49:46.075Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+2026-03-14T16:49:46.131Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:49:46.131Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-03-14T16:49:46.132Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-03-14T16:49:46.133Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-03-14T16:49:46.133Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+
+node.exe : [90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.cjs"  
+...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([90mstderr[2m...tegratio 
+   n Tests:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[22m[39m2026-03-14T16:49:46.043Z WARN [App] ΓÜá∩╕Å  Test tokens are 
+ENABLED - DO NOT USE IN PRODUCTION
+2026-03-14T16:49:46.070Z WARN [App] Azure Service Bus connection string 
+not provided, using mock implementation
+2026-03-14T16:49:46.123Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.123Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.123Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.123Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.125Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.126Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.126Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.127Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.130Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.131Z WARN [App] Authorization middleware not 
+initialized - allowing request
+2026-03-14T16:49:46.131Z WARN [App] Authorization middleware not 
+initialized - allowing request
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.139Z INFO [App] QC Results controller initialized with shared database service
+2026-03-14T16:49:46.139Z INFO [App] Γ£à Authorization ENFORCEMENT ENABLED - Casbin policies will be enforced
+2026-03-14T16:49:46.139Z INFO [App] Initializing authorization service
+2026-03-14T16:49:46.140Z INFO [App] Initializing Casbin enforcer {"modelPath":"C:\\source\\appraisal-management-backend\\config\\casbin\\model.conf","policyPath":"C:\\source\\appraisal-management-backend\\config\\casbin\\policy.csv"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.162Z INFO [App] Casbin enforcer initialized {"policyCount":47}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.162Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.162Z INFO [App] Authorization middleware initialized
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.162Z INFO [App] Authorization middleware initialized
+2026-03-14T16:49:46.162Z INFO [App] QC Results routes registered
+2026-03-14T16:49:46.163Z INFO [App] Registering authorization routes...
+2026-03-14T16:49:46.164Z INFO [App] Initializing authorization service
+2026-03-14T16:49:46.164Z INFO [App] Initializing Azure Cosmos DB connection with Managed Identity
+2026-03-14T16:49:46.165Z INFO [App] Using Managed Identity for Cosmos DB authentication
+2026-03-14T16:49:46.165Z INFO [App] Successfully connected to Azure Cosmos DB {"databaseId":"appraisal-management","endpoint":"https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/"}
+2026-03-14T16:49:46.166Z INFO [App] Universal AI Service initialized {"providers":["azure-openai","google-gemini","sambanova","certo"],"enabledProviders":["Azure OpenAI","Google Gemini"]}
+2026-03-14T16:49:46.166Z INFO [App] AI Provider Routing Configuration {"textGeneration":"sambanova","vision":"google-gemini","embeddings":"azure-openai","qcAnalysis":"azure-openai","documentProcessing":"google-gemini","propertyDescription":"sambanova","marketInsights":"google-gemini"}
+2026-03-14T16:49:46.176Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:49:46.176Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-03-14T16:49:46.198Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.204Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.204Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.208Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:49:46.210Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.212Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:49:46.213Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-03-14T16:49:46.216Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:49:46.216Z INFO [App] AzureCommunicationService: using API key credential
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:49:46.219Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-03-14T16:49:46.220Z INFO [ServiceBusEventPublisher] Using Managed Identity for Service Bus authentication {"namespace":"appraisal-mgmt-staging-servicebus.servicebus.windows.net"}
+Γ£à Axiom live mode ΓÇö https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io (no auth ΓÇö dev server)
+2026-03-14T16:49:46.221Z INFO [WebPubSubService] Using local emulator mode for Web PubSub
+2026-03-14T16:49:46.224Z INFO [BlobStorageService] Blob storage initialized with DefaultAzureCredential {"accountUrl":"https://apprstaginglqxl5vst.blob.core.windows.net"}
+2026-03-14T16:49:46.224Z INFO [App] AzureCommunicationService: using API key credential
+2026-03-14T16:49:46.229Z INFO [App] AzureCommunicationService: using API key credential
+≡ƒº¬ Payment provider: Mock (no STRIPE_SECRET_KEY configured)
+2026-03-14T16:49:46.230Z INFO [App] Payment provider initialised: Mock (simulated)
+2026-03-14T16:49:46.256Z INFO [App] Γ£à Authorization routes registered successfully
+2026-03-14T16:49:46.256Z INFO [App] Initializing Casbin enforcer {"modelPath":"C:\\source\\appraisal-management-backend\\config\\casbin\\model.conf","policyPath":"C:\\source\\appraisal-management-backend\\config\\casbin\\policy.csv"}
+
+[90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests
+[22m[39m2026-03-14T16:49:46.199Z WARN [App] Azure Service Bus 
+connection string not provided, using mock implementation
+2026-03-14T16:49:46.205Z WARN [App] Azure Service Bus connection string 
+not provided, using mock implementation
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests
+[22m[39mΓ£à In-process server ready
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould create a new order with real database persistence
+[22m[39m2026-03-14T16:49:46.272Z INFO [App] Casbin enforcer initialized {"policyCount":47}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould create a new order with real database persistence
+[22m[39m2026-03-14T16:49:46.272Z INFO [App] Authorization service initialized
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould create a new order with real database persistence
+[22m[39m2026-03-14T16:49:46.298Z INFO [App] Incoming request {"correlationId":"0ff4d79f-a86d-4af9-a071-87a79ec3e481","method":"POST","url":"/api/orders","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould create a new order with real database persistence
+[22m[39m2026-03-14T16:49:49.356Z INFO [App] Order created successfully {"orderId":"1773506986340-56059b6jh"}
+
+[90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests[2m > [22m[2mOrder 
+Management Integration[2m > [22m[2mshould create a new order with 
+real database persistence
+[22m[39m2026-03-14T16:49:49.357Z ERROR [App] Failed to create 
+document in audit-trail {"error":{}}
+2026-03-14T16:49:49.362Z ERROR [App] Failed to log audit event 
+{"error":"Database not initialized","action":"order.created","resource":
+{"type":"order","id":"1773506986340-56059b6jh"}}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould create a new order with real database persistence
+[22m[39m2026-03-14T16:49:49.356Z INFO [App] Mock Service Bus: Event published {"topic":"order-events","eventType":"ORDER_CREATED","orderId":"1773506986340-56059b6jh","timestamp":"2026-03-14T16:49:49.356Z"}
+2026-03-14T16:49:49.357Z INFO [App] Request completed {"correlationId":"0ff4d79f-a86d-4af9-a071-87a79ec3e481","method":"POST","url":"/api/orders","statusCode":201,"duration":"3060ms"}
+2026-03-14T16:49:49.358Z INFO [App] Request completed {"correlationId":"0ff4d79f-a86d-4af9-a071-87a79ec3e481","method":"POST","url":"/api/orders","statusCode":201,"duration":"3061ms"}
+2026-03-14T16:49:49.362Z INFO [App] Order created event published {"orderId":"1773506986340-56059b6jh"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:49 +0000] "POST /api/orders HTTP/1.1" 201 - "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould create a new order with real database persistence
+[22m[39mΓ£à Created order: INTEGRATION-1773506986273 (ID: 1773506986340-56059b6jh)
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould retrieve the created order proving database persistence
+[22m[39m2026-03-14T16:49:49.382Z INFO [App] Incoming request {"correlationId":"def6b65d-ca2f-4444-a946-4bd219445a02","method":"GET","url":"/api/orders/1773506986340-56059b6jh","ip":"::ffff:127.0.0.1"}
+
+ [32mΓ£ô[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mOrder Management Integration[2m > [22mshould create a new order with real database persistence[33m 3105[2mms[22m[39m
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould retrieve the created order proving database persistence
+[22m[39m2026-03-14T16:49:49.507Z INFO [App] Request completed {"correlationId":"def6b65d-ca2f-4444-a946-4bd219445a02","method":"GET","url":"/api/orders/1773506986340-56059b6jh","statusCode":200,"duration":"125ms"}
+2026-03-14T16:49:49.508Z INFO [App] Request completed {"correlationId":"def6b65d-ca2f-4444-a946-4bd219445a02","method":"GET","url":"/api/orders/1773506986340-56059b6jh","statusCode":200,"duration":"126ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:49 +0000] "GET /api/orders/1773506986340-56059b6jh HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould retrieve the created order proving database persistence
+[22m[39mΓ£à Retrieved order from database: INTEGRATION-1773506986273
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould update the order and persist changes
+[22m[39m2026-03-14T16:49:49.517Z INFO [App] Incoming request {"correlationId":"e28ab099-8d13-45c1-aff5-42dc94e39aec","method":"PUT","url":"/api/orders/1773506986340-56059b6jh","ip":"::ffff:127.0.0.1"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:49 +0000] "PUT /api/orders/1773506986340-56059b6jh HTTP/1.1" 400 65 "-" "-"
+[90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests[2m > [22m[2mOrder 
+Management Integration[2m > [22m[2mshould update the order and 
+persist changes
+[22m[39m2026-03-14T16:49:49.522Z WARN [App] Request completed with 
+error {"correlationId":"e28ab099-8d13-45c1-aff5-42dc94e39aec","method":"
+PUT","url":"/api/orders/1773506986340-56059b6jh","statusCode":400,"durat
+ion":"5ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould update the order and persist changes
+[22m[39m2026-03-14T16:49:49.521Z INFO [App] Request completed {"correlationId":"e28ab099-8d13-45c1-aff5-42dc94e39aec","method":"PUT","url":"/api/orders/1773506986340-56059b6jh","statusCode":400,"duration":"4ms"}
+2026-03-14T16:49:49.521Z INFO [App] Request completed {"correlationId":"e28ab099-8d13-45c1-aff5-42dc94e39aec","method":"PUT","url":"/api/orders/1773506986340-56059b6jh","statusCode":400,"duration":"4ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould list orders with filters from real database
+[22m[39m2026-03-14T16:49:49.534Z INFO [App] Incoming request {"correlationId":"804ca0da-8dee-43a1-a08b-ca6f88b1b34e","method":"GET","url":"/api/orders?status=IN_PROGRESS&limit=10","ip":"::ffff:127.0.0.1"}
+
+ [32mΓ£ô[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mOrder Management Integration[2m > [22mshould retrieve the created order proving database persistence[32m 137[2mms[22m[39m
+ [31m├ù[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mOrder Management Integration[2m > [22mshould update the order and persist changes[32m 16[2mms[22m[39m
+[31m   ΓåÆ expected 400 to be 200 // Object.is equality[39m
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mOrder Management Integration[2m > [22m[2mshould list orders with filters from real database
+[22m[39m2026-03-14T16:49:49.828Z INFO [App] Request completed {"correlationId":"804ca0da-8dee-43a1-a08b-ca6f88b1b34e","method":"GET","url":"/api/orders?status=IN_PROGRESS&limit=10","statusCode":200,"duration":"294ms"}
+2026-03-14T16:49:49.828Z INFO [App] Request completed {"correlationId":"804ca0da-8dee-43a1-a08b-ca6f88b1b34e","method":"GET","url":"/api/orders?status=IN_PROGRESS&limit=10","statusCode":200,"duration":"294ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:49 +0000] "GET /api/orders?status=IN_PROGRESS&limit=10 HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould create a new vendor with real database persistence
+[22m[39m2026-03-14T16:49:49.841Z INFO [App] Incoming request {"correlationId":"f34cdf3b-4075-4736-8cb9-b9740edfeca9","method":"POST","url":"/api/vendors","ip":"::ffff:127.0.0.1"}
+
+ [31m├ù[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mOrder Management Integration[2m > [22mshould list orders with filters from real database[33m 306[2mms[22m[39m
+[31m   ΓåÆ expected undefined to be defined[39m
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould create a new vendor with real database persistence
+[22m[39m2026-03-14T16:49:49.975Z INFO [App] Vendor created successfully {"vendorId":"1773506989855-cz1jtx2gs"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould create a new vendor with real database persistence
+[22m[39m2026-03-14T16:49:49.975Z INFO [VendorController] Vendor created {"vendorId":"1773506989855-cz1jtx2gs"}
+2026-03-14T16:49:49.976Z INFO [App] Request completed {"correlationId":"f34cdf3b-4075-4736-8cb9-b9740edfeca9","method":"POST","url":"/api/vendors","statusCode":201,"duration":"135ms"}
+2026-03-14T16:49:49.976Z INFO [App] Request completed {"correlationId":"f34cdf3b-4075-4736-8cb9-b9740edfeca9","method":"POST","url":"/api/vendors","statusCode":201,"duration":"135ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:49 +0000] "POST /api/vendors HTTP/1.1" 201 955 "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould create a new vendor with real database persistence
+[22m[39mΓ£à Created vendor: Integration Test Appraisals 1773506989836 (ID: 1773506989855-cz1jtx2gs)
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould retrieve the created vendor proving database persistence
+[22m[39m2026-03-14T16:49:49.983Z INFO [App] Incoming request {"correlationId":"07d907c5-fff7-4914-b285-105e5803d35e","method":"GET","url":"/api/vendors/1773506989855-cz1jtx2gs","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould retrieve the created vendor proving database persistence
+[22m[39m
+
+=== FIND VENDOR BY ID ===
+Looking for vendor ID: 1773506989855-cz1jtx2gs
+Container: initialized
+Query: {
+  "query": "SELECT * FROM c WHERE c.id = @id",
+  "parameters": [
+    {
+      "name": "@id",
+      "value": "1773506989855-cz1jtx2gs"
+    }
+  ]
+}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould retrieve the created vendor proving database persistence
+[22m[39mQuery returned resources count: [33m1[39m
+Found vendor: 1773506989855-cz1jtx2gs Integration Test Appraisals 1773506989836
+Vendor has certifications: [33mfalse[39m length: [90mundefined[39m
+Vendor has paymentHistory: [33mfalse[39m length: [90mundefined[39m
+=== END FIND VENDOR ===
+
+
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould retrieve the created vendor proving database persistence
+[22m[39m2026-03-14T16:49:50.042Z INFO [App] Request completed {"correlationId":"07d907c5-fff7-4914-b285-105e5803d35e","method":"GET","url":"/api/vendors/1773506989855-cz1jtx2gs","statusCode":200,"duration":"59ms"}
+2026-03-14T16:49:50.042Z INFO [App] Request completed {"correlationId":"07d907c5-fff7-4914-b285-105e5803d35e","method":"GET","url":"/api/vendors/1773506989855-cz1jtx2gs","statusCode":200,"duration":"59ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:50 +0000] "GET /api/vendors/1773506989855-cz1jtx2gs HTTP/1.1" 200 955 "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould retrieve the created vendor proving database persistence
+[22m[39mΓ£à Retrieved vendor from database: Integration Test Appraisals 1773506989836
+
+ [32mΓ£ô[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mVendor Management Integration[2m > [22mshould create a new vendor with real database persistence[32m 143[2mms[22m[39m
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould list vendors from real database
+[22m[39m2026-03-14T16:49:50.049Z INFO [App] Incoming request {"correlationId":"3bbedb0b-5e1e-45c3-91aa-40d65dca7f40","method":"GET","url":"/api/vendors?limit=10","ip":"::ffff:127.0.0.1"}
+
+ [32mΓ£ô[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mVendor Management Integration[2m > [22mshould retrieve the created vendor proving database persistence[32m 65[2mms[22m[39m
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould list vendors from real database
+[22m[39m2026-03-14T16:49:54.253Z INFO [App] Request completed {"correlationId":"3bbedb0b-5e1e-45c3-91aa-40d65dca7f40","method":"GET","url":"/api/vendors?limit=10","statusCode":200,"duration":"4204ms"}
+2026-03-14T16:49:54.257Z INFO [App] Request completed {"correlationId":"3bbedb0b-5e1e-45c3-91aa-40d65dca7f40","method":"GET","url":"/api/vendors?limit=10","statusCode":200,"duration":"4208ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:54 +0000] "GET /api/vendors?limit=10 HTTP/1.1" 200 - "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mVendor Management Integration[2m > [22m[2mshould list vendors from real database
+[22m[39mΓ£à Found 924 vendors in database, including our test vendor
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mProperty Intelligence Integration[2m > [22m[2mshould check property intelligence service health
+[22m[39m2026-03-14T16:49:54.288Z INFO [App] Incoming request {"correlationId":"98407e32-a2cb-4c03-bcc2-5760bccd5808","method":"GET","url":"/api/property-intelligence/health","ip":"::ffff:127.0.0.1"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mProperty Intelligence Integration[2m > [22m[2mshould check property intelligence service health
+[22m[39m2026-03-14T16:49:54.289Z INFO [App] Request completed {"correlationId":"98407e32-a2cb-4c03-bcc2-5760bccd5808","method":"GET","url":"/api/property-intelligence/health","statusCode":200,"duration":"1ms"}
+2026-03-14T16:49:54.290Z INFO [App] Request completed {"correlationId":"98407e32-a2cb-4c03-bcc2-5760bccd5808","method":"GET","url":"/api/property-intelligence/health","statusCode":200,"duration":"2ms"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:54 +0000] "GET /api/property-intelligence/health HTTP/1.1" 200 350 "-" "-"
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mProperty Intelligence Integration[2m > [22m[2mshould geocode an address using property intelligence
+[22m[39m2026-03-14T16:49:54.299Z INFO [App] Incoming request {"correlationId":"32950ebb-30dd-4f3c-bb17-be7373fdd267","method":"POST","url":"/api/property-intelligence/address/geocode","ip":"::ffff:127.0.0.1"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:54 +0000] "POST /api/property-intelligence/address/geocode HTTP/1.1" 401 58 "-" "-"
+[90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests[2m > [22m[2mProperty 
+Intelligence Integration[2m > [22m[2mshould geocode an address using 
+property intelligence
+[22m[39m2026-03-14T16:49:54.302Z WARN [App] Request completed with 
+error {"correlationId":"32950ebb-30dd-4f3c-bb17-be7373fdd267","method":"
+POST","url":"/api/property-intelligence/address/geocode","statusCode":40
+1,"duration":"3ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mProperty Intelligence Integration[2m > [22m[2mshould geocode an address using property intelligence
+[22m[39m2026-03-14T16:49:54.301Z INFO [App] Request completed {"correlationId":"32950ebb-30dd-4f3c-bb17-be7373fdd267","method":"POST","url":"/api/property-intelligence/address/geocode","statusCode":401,"duration":"2ms"}
+2026-03-14T16:49:54.301Z INFO [App] Request completed {"correlationId":"32950ebb-30dd-4f3c-bb17-be7373fdd267","method":"POST","url":"/api/property-intelligence/address/geocode","statusCode":401,"duration":"2ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mProperty Intelligence Integration[2m > [22m[2mshould perform comprehensive property analysis
+[22m[39m2026-03-14T16:49:54.311Z INFO [App] Incoming request {"correlationId":"8afa96fa-eaa8-4d47-b2b5-cd23cb68bba8","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","ip":"::ffff:127.0.0.1"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:54 +0000] "POST /api/property-intelligence/analyze/comprehensive HTTP/1.1" 401 58 "-" "-"
+[90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests[2m > [22m[2mProperty 
+Intelligence Integration[2m > [22m[2mshould perform comprehensive 
+property analysis
+[22m[39m2026-03-14T16:49:54.313Z WARN [App] Request completed with 
+error {"correlationId":"8afa96fa-eaa8-4d47-b2b5-cd23cb68bba8","method":"
+POST","url":"/api/property-intelligence/analyze/comprehensive","statusCo
+de":401,"duration":"2ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mProperty Intelligence Integration[2m > [22m[2mshould perform comprehensive property analysis
+[22m[39m2026-03-14T16:49:54.312Z INFO [App] Request completed {"correlationId":"8afa96fa-eaa8-4d47-b2b5-cd23cb68bba8","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":401,"duration":"1ms"}
+2026-03-14T16:49:54.313Z INFO [App] Request completed {"correlationId":"8afa96fa-eaa8-4d47-b2b5-cd23cb68bba8","method":"POST","url":"/api/property-intelligence/analyze/comprehensive","statusCode":401,"duration":"2ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mEnd-to-End Workflow Integration[2m > [22m[2mshould complete full appraisal workflow with database persistence
+[22m[39m
+=== End-to-End Workflow Test ===
+Step 1: Assigning vendor to order...
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mEnd-to-End Workflow Integration[2m > [22m[2mshould complete full appraisal workflow with database persistence
+[22m[39m2026-03-14T16:49:54.324Z INFO [App] Incoming request {"correlationId":"75de7d5a-1d40-490e-977c-a892a06da0af","method":"PUT","url":"/api/orders/1773506986340-56059b6jh","ip":"::ffff:127.0.0.1"}
+
+::ffff:127.0.0.1 - - [14/Mar/2026:16:49:54 +0000] "PUT /api/orders/1773506986340-56059b6jh HTTP/1.1" 400 65 "-" "-"
+[90mstderr[2m | tests/integration/live-api.test.ts[2m > 
+[22m[2mLive Production API Integration Tests[2m > 
+[22m[2mEnd-to-End Workflow Integration[2m > [22m[2mshould complete 
+full appraisal workflow with database persistence
+[22m[39m2026-03-14T16:49:54.329Z WARN [App] Request completed with 
+error {"correlationId":"75de7d5a-1d40-490e-977c-a892a06da0af","method":"
+PUT","url":"/api/orders/1773506986340-56059b6jh","statusCode":400,"durat
+ion":"5ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts[2m > [22m[2mLive Production API Integration Tests[2m > [22m[2mEnd-to-End Workflow Integration[2m > [22m[2mshould complete full appraisal workflow with database persistence
+[22m[39m2026-03-14T16:49:54.327Z INFO [App] Request completed {"correlationId":"75de7d5a-1d40-490e-977c-a892a06da0af","method":"PUT","url":"/api/orders/1773506986340-56059b6jh","statusCode":400,"duration":"3ms"}
+2026-03-14T16:49:54.328Z INFO [App] Request completed {"correlationId":"75de7d5a-1d40-490e-977c-a892a06da0af","method":"PUT","url":"/api/orders/1773506986340-56059b6jh","statusCode":400,"duration":"4ms"}
+
+[90mstdout[2m | tests/integration/live-api.test.ts
+[22m[39m≡ƒº╣ Cleaning up test environment...
+Γ£à Test cleanup complete
+
+ [32mΓ£ô[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mVendor Management Integration[2m > [22mshould list vendors from real database[33m 4239[2mms[22m[39m
+ [31m├ù[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mProperty Intelligence Integration[2m > [22mshould check property intelligence service health[32m 10[2mms[22m[39m
+[31m   ΓåÆ expected undefined to be 'healthy' // Object.is equality[39m
+ [31m├ù[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mProperty Intelligence Integration[2m > [22mshould geocode an address using property intelligence[32m 12[2mms[22m[39m
+[31m   ΓåÆ expected 401 to be 200 // Object.is equality[39m
+ [31m├ù[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mProperty Intelligence Integration[2m > [22mshould perform comprehensive property analysis[32m 11[2mms[22m[39m
+[31m   ΓåÆ expected 401 to be 200 // Object.is equality[39m
+ [31m├ù[39m tests/integration/live-api.test.ts[2m > [22mLive Production API Integration Tests[2m > [22mEnd-to-End Workflow Integration[2m > [22mshould complete full appraisal workflow with database persistence[32m 16[2mms[22m[39m
+[31m   ΓåÆ expected 400 to be 200 // Object.is equality[39m
+
+[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m[1m[41m Failed Tests 6 
+[49m[22m[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
+
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mOrder Management 
+Integration[2m > [22mshould update the order and persist changes
+[31m[1mAssertionError[22m: expected 400 to be 200 // Object.is 
+equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 200[39m
+[31m+ 400[39m
+
+[36m [2mΓ¥»[22m 
+tests/integration/live-api.test.ts:[2m133:31[22m[39m
+    [90m131| [39m        
+[33m.[39m[34msend[39m(updateData)[33m;[39m
+    [90m132| [39m
+    [90m133| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m   | [39m                              [31m^[39m
+    [90m134| [39m
+    [90m135| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mstatus)[33m.[39m[34mtoBe[39m([33mOrderStatus[39m[33m.[39m[3
+3mIN_PROGRESS[39m)[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[1/6]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mOrder Management 
+Integration[2m > [22mshould list orders with filters from real 
+database
+[31m[1mAssertionError[22m: expected undefined to be defined[39m
+[36m [2mΓ¥»[22m 
+tests/integration/live-api.test.ts:[2m151:25[22m[39m
+    [90m149| [39m      [90m// Our test order should be in the 
+results[39m
+    [90m150| [39m      const testOrder = 
+response.body.orders.find((order: any) => ordeΓÇª
+    [90m151| [39m      
+[34mexpect[39m(testOrder)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+    [90m   | [39m                        [31m^[39m
+    [90m152| [39m      [34mexpect[39m(testOrder[33m.[39mstatus)[3
+3m.[39m[34mtoBe[39m([33mOrderStatus[39m[33m.[39m[33mIN_PROGRESS
+[39m)[33m;[39m
+    [90m153| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[2/6]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mProperty 
+Intelligence Integration[2m > [22mshould check property intelligence 
+service health
+[31m[1mAssertionError[22m: expected undefined to be 'healthy' // 
+Object.is equality[39m
+
+[32m- Expected:[39m 
+"healthy"
+
+[31m+ Received:[39m 
+undefined
+
+[36m [2mΓ¥»[22m 
+tests/integration/live-api.test.ts:[2m223:36[22m[39m
+    [90m221| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m222| [39m
+    [90m223| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mstatus)[33m.[39m[34mtoBe[39m([32m'healthy'[39m)[33m;[39m
+    [90m   | [39m                                   [31m^[39m
+    [90m224| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39mservices)[33m.[39m[34mtoBeDefined[39m()[33m;[39m
+    [90m225| [39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[3/6]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mProperty 
+Intelligence Integration[2m > [22mshould geocode an address using 
+property intelligence
+[31m[1mAssertionError[22m: expected 401 to be 200 // Object.is 
+equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 200[39m
+[31m+ 401[39m
+
+[36m [2mΓ¥»[22m 
+tests/integration/live-api.test.ts:[2m239:31[22m[39m
+    [90m237| [39m        
+[33m.[39m[34msend[39m(addressData)[33m;[39m
+    [90m238| [39m
+    [90m239| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m   | [39m                              [31m^[39m
+    [90m240| [39m
+    [90m241| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[4/6]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mProperty 
+Intelligence Integration[2m > [22mshould perform comprehensive 
+property analysis
+[31m[1mAssertionError[22m: expected 401 to be 200 // Object.is 
+equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 200[39m
+[31m+ 401[39m
+
+[36m [2mΓ¥»[22m 
+tests/integration/live-api.test.ts:[2m258:31[22m[39m
+    [90m256| [39m        
+[33m.[39m[34msend[39m(analysisData)[33m;[39m
+    [90m257| [39m
+    [90m258| [39m      [34mexpect[39m(response[33m.[39mstatus)[33
+m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m   | [39m                              [31m^[39m
+    [90m259| [39m
+    [90m260| [39m      [34mexpect[39m(response[33m.[39mbody[33m.
+[39msuccess)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[5/6]ΓÄ»[22m[39m
+
+[41m[1m FAIL [22m[49m tests/integration/live-api.test.ts[2m > 
+[22mLive Production API Integration Tests[2m > [22mEnd-to-End 
+Workflow Integration[2m > [22mshould complete full appraisal workflow 
+with database persistence
+[31m[1mAssertionError[22m: expected 400 to be 200 // Object.is 
+equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 200[39m
+[31m+ 400[39m
+
+[36m [2mΓ¥»[22m 
+tests/integration/live-api.test.ts:[2m289:37[22m[39m
+    [90m287| [39m        
+[33m.[39m[34msend[39m(assignmentData)[33m;[39m
+    [90m288| [39m
+    [90m289| [39m      [34mexpect[39m(assignResponse[33m.[39mstatu
+s)[33m.[39m[34mtoBe[39m([34m200[39m)[33m;[39m
+    [90m   | [39m                                    [31m^[39m
+    [90m290| [39m      [34mexpect[39m(assignResponse[33m.[39mbody
+[33m.[39massignedVendorId)[33m.[39m[34mtoBe[39m(testVendorId)[33m;
+[39m
+    [90m291| [39m      [34mexpect[39m(assignResponse[33m.[39mbody
+[33m.[39mstatus)[33m.[39m[34mtoBe[39m([33mOrderStatus[39m[33m.[
+39m[33mASSIGNED[39m)[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[6/6]ΓÄ»[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m6 failed[39m[22m[2m | [22m[1m[32m5 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 12:49:25
+[2m   Duration [22m 28.37s[2m (transform 4.07s, setup 82ms, collect 18.62s, tests 8.30s, environment 0ms, prepare 315ms)[22m
+
+JSON report written to C:/source/appraisal-management-backend/coverage/test-results.json
+[1m[7m[35m HTML [39m[27m[22m [35mReport is generated[39m
+[2m       You can run [22m[1mnpx vite preview --outDir coverage[22m[2m to see the test results.[22m

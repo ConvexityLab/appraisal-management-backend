@@ -357,3 +357,29 @@ export interface ROVListResponse {
   limit: number;
   hasMore: boolean;
 }
+
+/**
+ * Structured output from the AI triage analysis performed on ROV submission.
+ * Returned by ROVManagementService.performAITriage().
+ */
+export interface ROVAITriageResult {
+  /** 0–100 merit score where 100 = overwhelming evidence for reconsideration. */
+  meritScore: number;
+  recommendedPriority: 'NORMAL' | 'HIGH' | 'URGENT';
+  challengeMerit: 'strong' | 'moderate' | 'weak' | 'frivolous';
+  /** The primary factual or methodological issues raised by the challenge. */
+  primaryChallengeIssues: string[];
+  /** Additional evidence the requestor should provide to strengthen the challenge. */
+  evidenceGaps: string[];
+  suggestedComparableSearch: {
+    distanceMiles: number;
+    saleDateWindowMonths: number;
+    minSquareFeet: number;
+    maxSquareFeet: number;
+    requiredFeatures: string[];
+  };
+  complianceRisk: 'none' | 'low' | 'medium' | 'high';
+  complianceNotes: string;
+  /** Plain-language triage summary for the human reviewer (2–4 sentences). */
+  triageSummary: string;
+}

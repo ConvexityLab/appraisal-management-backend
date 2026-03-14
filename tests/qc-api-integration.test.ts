@@ -145,7 +145,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
         const response = await request(app)
           .get('/api/qc/checklists')
           .set('Authorization', `Bearer ${authToken}`)
-          .query({ category: 'non_existent_category' })
+          .query({ documentType: 'non_existent_document_type_xyz' })
           .expect(200);
 
         expect(response.body.data.checklists).toHaveLength(0);

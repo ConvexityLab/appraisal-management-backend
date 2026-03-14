@@ -146,26 +146,21 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
     it('should update the order status', async () => {
       expect(testOrderId).toBeDefined();
 
-      const updateData = {
-        status: OrderStatus.IN_PROGRESS,
-        assignedVendorId: 'test-vendor-123',
-        notes: 'Order updated via integration test'
-      };
-
+      // Valid transition: NEW → PENDING_ASSIGNMENT via PUT /status
       const response = await request(app)
-        .put(`/api/orders/${testOrderId}`)
+        .put(`/api/orders/${testOrderId}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(updateData);
+        .send({ status: OrderStatus.PENDING_ASSIGNMENT, notes: 'Order updated via integration test' });
 
       expect(response.status).toBe(200);
-      expect(response.body.status).toBe(OrderStatus.IN_PROGRESS);
+      expect(response.body.status).toBe(OrderStatus.PENDING_ASSIGNMENT);
 
       console.log(`✅ Updated order status to: ${response.body.status}`);
     });
 
     it('should list orders with filters', async () => {
       const response = await request(app)
-        .get(`/api/orders?status=${OrderStatus.IN_PROGRESS}&limit=10`)
+        .get(`/api/orders?status=${OrderStatus.PENDING_ASSIGNMENT}&limit=10`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(response.status).toBe(200);

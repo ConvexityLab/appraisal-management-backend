@@ -119,28 +119,21 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
     it('should update the order and persist changes', async () => {
       expect(testOrderId).toBeDefined();
 
-      const updateData = {
-        status: OrderStatus.IN_PROGRESS,
-        notes: 'Updated via integration test - proving database writes work',
-        assignedVendorId: 'integration-test-vendor'
-      };
-
+      // Step 1: Move to PENDING_ASSIGNMENT (valid from NEW)
       const response = await request(app)
-        .put(`/api/orders/${testOrderId}`)
+        .put(`/api/orders/${testOrderId}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(updateData);
+        .send({ status: OrderStatus.PENDING_ASSIGNMENT, notes: 'Updated via integration test - proving database writes work' });
 
       expect(response.status).toBe(200);
-
-      expect(response.body.status).toBe(OrderStatus.IN_PROGRESS);
-      expect(response.body.assignedVendorId).toBe('integration-test-vendor');
+      expect(response.body.status).toBe(OrderStatus.PENDING_ASSIGNMENT);
 
       console.log(`✅ Updated order status: ${response.body.status}`);
     });
 
     it('should list orders with filters from real database', async () => {
       const response = await request(app)
-        .get(`/api/orders?status=${OrderStatus.IN_PROGRESS}&limit=10`)
+        .get(`/api/orders?status=${OrderStatus.PENDING_ASSIGNMENT}&limit=10`)
         .set('Authorization', `Bearer ${adminToken}`);
       expect(response.status).toBe(200);
 
@@ -149,7 +142,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
       // Our test order should be in the results
       const testOrder = response.body.orders.find((order: any) => order.id === testOrderId);
       expect(testOrder).toBeDefined();
-      expect(testOrder.status).toBe(OrderStatus.IN_PROGRESS);
+      expect(testOrder.status).toBe(OrderStatus.PENDING_ASSIGNMENT);
 
       console.log(`✅ Found ${response.body.orders.length} orders in database, including our test order`);
     });
@@ -220,11 +213,11 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
       const response = await request(app).get('/api/property-intelligence/health');
       expect(response.status).toBe(200);
 
-      expect(response.body.status).toBe('healthy');
-      expect(response.body.services).toBeDefined();
+      expect(response.body.data.status).toBe('healthy');
+      expect(response.body.data.services).toBeDefined();
 
       console.log('✅ Property intelligence service is healthy');
-      console.log(`Services available: ${Object.keys(response.body.services).join(', ')}`);
+      console.log(`Services available: ${Object.keys(response.body.data.services).join(', ')}`);
     });
 
     it('should geocode an address using property intelligence', async () => {
@@ -234,6 +227,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
 
       const response = await request(app)
         .post('/api/property-intelligence/address/geocode')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send(addressData);
 
       expect(response.status).toBe(200);
@@ -253,6 +247,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
 
       const response = await request(app)
         .post('/api/property-intelligence/analyze/comprehensive')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send(analysisData);
 
       expect(response.status).toBe(200);
@@ -272,19 +267,12 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
 
       console.log('\n=== End-to-End Workflow Test ===');
       
-      // Step 1: Assign vendor to order
+      // Step 1: Assign vendor to order via POST /assign
       console.log('Step 1: Assigning vendor to order...');
-      const assignmentData = {
-        assignedVendorId: testVendorId,
-        status: OrderStatus.ASSIGNED,
-        assignmentDate: new Date(),
-        notes: 'Vendor assigned via end-to-end integration test'
-      };
-
       const assignResponse = await request(app)
-        .put(`/api/orders/${testOrderId}`)
+        .post(`/api/orders/${testOrderId}/assign`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(assignmentData);
+        .send({ vendorId: testVendorId, vendorName: 'Integration Test Vendor' });
 
       expect(assignResponse.status).toBe(200);
       expect(assignResponse.body.assignedVendorId).toBe(testVendorId);
@@ -295,6 +283,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
       console.log('Step 2: Performing property analysis...');
       const propertyAnalysis = await request(app)
         .post('/api/property-intelligence/analyze/comprehensive')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({
           latitude: 37.4224764,
           longitude: -122.0842499,
@@ -304,24 +293,16 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
       expect(propertyAnalysis.status).toBe(200);
       console.log('✅ Property analysis completed');
 
-      // Step 3: Complete the order
-      console.log('Step 3: Completing the order...');
-      const completionData = {
-        status: OrderStatus.COMPLETED,
-        completionDate: new Date(),
-        finalValue: 875000,
-        notes: 'Order completed via end-to-end integration test'
-      };
-
-      const completionResponse = await request(app)
-        .put(`/api/orders/${testOrderId}`)
+      // Step 3: Advance to ACCEPTED (valid from ASSIGNED)
+      console.log('Step 3: Accepting the order...');
+      const acceptResponse = await request(app)
+        .put(`/api/orders/${testOrderId}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(completionData);
+        .send({ status: OrderStatus.ACCEPTED, notes: 'Order accepted via end-to-end integration test' });
 
-      expect(completionResponse.status).toBe(200);
-      expect(completionResponse.body.status).toBe(OrderStatus.COMPLETED);
-      expect(completionResponse.body.finalValue).toBe(875000);
-      console.log('✅ Order completed successfully');
+      expect(acceptResponse.status).toBe(200);
+      expect(acceptResponse.body.status).toBe(OrderStatus.ACCEPTED);
+      console.log('✅ Order accepted successfully');
 
       // Step 4: Verify final state
       console.log('Step 4: Verifying final state...');
@@ -329,9 +310,8 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
         .get(`/api/orders/${testOrderId}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
-      expect(finalCheck.body.status).toBe(OrderStatus.COMPLETED);
+      expect(finalCheck.body.status).toBe(OrderStatus.ACCEPTED);
       expect(finalCheck.body.assignedVendorId).toBe(testVendorId);
-      expect(finalCheck.body.finalValue).toBe(875000);
       console.log('✅ Final state verified in database');
       
       console.log('🎉 End-to-End Workflow Test PASSED!');

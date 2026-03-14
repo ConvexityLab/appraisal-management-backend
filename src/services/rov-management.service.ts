@@ -11,6 +11,7 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { AccessControlHelper } from './access-control-helper.service';
+import { UniversalAIService } from './universal-ai.service.js';
 import {
   ROVRequest,
   ROVStatus,
@@ -26,7 +27,8 @@ import {
   UpdateROVResearchInput,
   SubmitROVResponseInput,
   ROVListResponse,
-  ROVSLATracking
+  ROVSLATracking,
+  ROVAITriageResult,
 } from '../types/rov.types.js';
 
 /**
@@ -53,11 +55,13 @@ export class ROVManagementService {
   private logger: Logger;
   private dbService: CosmosDbService;
   private accessControlHelper: AccessControlHelper;
+  private aiService: UniversalAIService;
 
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
     this.accessControlHelper = new AccessControlHelper();
+    this.aiService = new UniversalAIService();
   }
 
   /**
@@ -155,6 +159,15 @@ export class ROVManagementService {
       }
 
       this.logger.info('ROV request created successfully', { rovId: rovRequest.id, rovNumber });
+
+      // Kick off AI triage asynchronously — result is persisted to internalNotes.
+      // Fire-and-forget intentional: triage is advisory only and must not block submission.
+      this.performAITriage(rovRequest.id, 'system').catch((err: unknown) => {
+        this.logger.error('Background AI triage failed for ROV', {
+          rovId: rovRequest.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
 
       return { success: true, data: rovRequest };
     } catch (error) {
@@ -486,6 +499,125 @@ export class ROVManagementService {
       default:
         return ROVStatus.RESPONDED;
     }
+  }
+
+  /**
+   * Perform AI-powered triage on a submitted ROV request.
+   *
+   * Uses UniversalAIService (Azure OpenAI / fallback) to:
+   *   1. Analyse the challenge description and supporting evidence
+   *   2. Assess prima-facie merit against the original appraisal value
+   *   3. Identify the strongest comparable arguments
+   *   4. Suggest priority and next-step evidence requests
+   *
+   * The analysis is persisted as an internalNotes block and a timeline entry.
+   * It does NOT change the ROV status — assignment and review remain human decisions.
+   *
+   * @throws if the ROV is not found; AI errors are caught and returned in the result.
+   */
+  async performAITriage(
+    rovId: string,
+    requestedBy: string = 'system',
+  ): Promise<{ success: boolean; analysis?: ROVAITriageResult; error?: string }> {
+    const rov = await this.getROVById(rovId);
+    if (!rov.success || !rov.data) {
+      return { success: false, error: `ROV ${rovId} not found` };
+    }
+
+    const rovData = rov.data;
+    this.logger.info('Starting AI triage for ROV', { rovId, rovNumber: rovData.rovNumber });
+
+    const systemPrompt = `You are an expert in real estate appraisal reconsideration of value (ROV) disputes.
+You analyze challenge requests on their technical merit against USPAP guidelines, market evidence, and comparable sales.
+Return ONLY valid JSON matching the schema below — no markdown, no extra text.
+
+Schema:
+{
+  "meritScore": <0–100, where 100 = overwhelming evidence for reconsideration>,
+  "recommendedPriority": "NORMAL" | "HIGH" | "URGENT",
+  "challengeMerit": "strong" | "moderate" | "weak" | "frivolous",
+  "primaryChallengeIssues": [<string>, ...],
+  "evidenceGaps": [<what additional evidence would strengthen the challenge>, ...],
+  "suggestedComparableSearch": {
+    "distanceMiles": <number>,
+    "saleDateWindowMonths": <number>,
+    "minSquareFeet": <number>,
+    "maxSquareFeet": <number>,
+    "requiredFeatures": [<string>, ...]
+  },
+  "complianceRisk": "none" | "low" | "medium" | "high",
+  "complianceNotes": "<string or empty string>",
+  "triageSummary": "<2–4 sentence plain-language summary for the reviewer>"
+}`;
+
+    const userPrompt = `ROV Request: ${rovData.rovNumber}
+Property: ${rovData.propertyAddress}
+Borrower: ${rovData.borrowerName ?? 'N/A'}
+Challenge Reason: ${rovData.challengeReason}
+Original Appraised Value: $${rovData.originalAppraisalValue.toLocaleString()}
+Requested Value: ${rovData.requestedValue ? '$' + rovData.requestedValue.toLocaleString() : 'Not specified'}
+Value Difference: ${rovData.requestedValue ? ((rovData.requestedValue - rovData.originalAppraisalValue) / rovData.originalAppraisalValue * 100).toFixed(1) + '%' : 'N/A'}
+
+Challenge Description:
+${rovData.challengeDescription}
+
+Supporting Evidence Count: ${rovData.supportingEvidence.length}
+Evidence Types: ${rovData.supportingEvidence.map(e => e.type).join(', ') || 'None provided'}
+
+Existing Internal Notes: ${rovData.internalNotes || 'None'}`;
+
+    let rawAnalysis: ROVAITriageResult;
+    try {
+      const aiResponse = await this.aiService.generateCompletion({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.1,
+        maxTokens: 1200,
+        provider: 'auto',
+      });
+
+      rawAnalysis = JSON.parse(aiResponse.content) as ROVAITriageResult;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error('ROV AI triage failed', { rovId, error: errMsg });
+      return { success: false, error: `AI triage failed: ${errMsg}` };
+    }
+
+    // Persist — append triage block to internalNotes + add timeline entry
+    const triageBlock = `\n\n--- AI Triage (${new Date().toISOString()}) ---\n` +
+      `Merit Score: ${rawAnalysis.meritScore}/100 | Challenge Merit: ${rawAnalysis.challengeMerit}\n` +
+      `Recommended Priority: ${rawAnalysis.recommendedPriority}\n` +
+      `Summary: ${rawAnalysis.triageSummary}\n` +
+      (rawAnalysis.complianceNotes ? `Compliance: ${rawAnalysis.complianceNotes}\n` : '') +
+      `Evidence Gaps: ${rawAnalysis.evidenceGaps.join('; ') || 'None identified'}`;
+
+    const updatedNotes = (rovData.internalNotes || '') + triageBlock;
+
+    const timelineEntry: ROVTimelineEntry = {
+      id: this.generateId(),
+      timestamp: new Date(),
+      action: 'AI_TRIAGE_COMPLETED',
+      performedBy: requestedBy,
+      details: `AI triage completed — merit score ${rawAnalysis.meritScore}/100 (${rawAnalysis.challengeMerit})`,
+      metadata: { meritScore: rawAnalysis.meritScore, recommendedPriority: rawAnalysis.recommendedPriority },
+    };
+
+    await this.dbService.updateROVRequest(rovId, {
+      internalNotes: updatedNotes,
+      priority: rawAnalysis.recommendedPriority,
+      timeline: [...rovData.timeline, timelineEntry],
+      updatedAt: new Date(),
+    });
+
+    this.logger.info('ROV AI triage persisted', {
+      rovId,
+      meritScore: rawAnalysis.meritScore,
+      recommendedPriority: rawAnalysis.recommendedPriority,
+    });
+
+    return { success: true, analysis: rawAnalysis };
   }
 
   /**

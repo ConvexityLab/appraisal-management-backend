@@ -107,7 +107,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
         });
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('status', 'assigned');
+      expect(response.body).toHaveProperty('status', 'ASSIGNED');
     });
   });
 

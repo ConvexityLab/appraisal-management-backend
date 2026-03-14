@@ -330,7 +330,7 @@ describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not s
 
       if (response.body.data.length > 0) {
         expect(response.body.data[0].coordinates).toBeDefined();
-        expect(response.body.data[0].formattedAddress).toBeDefined();
+        expect(response.body.data[0].address.formattedAddress).toBeDefined();
       }
 
       console.log(`✅ Geocoded address successfully`);
