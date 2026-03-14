@@ -150,6 +150,9 @@ export class AxiomTimeoutWatcherJob {
       await container.item(order.id, order.tenantId).patch([
         { op: 'add', path: '/axiomTimedOut', value: true },
         { op: 'add', path: '/axiomTimedOutAt', value: new Date().toISOString() },
+        // Clear any prior acknowledgement so this re-flags in the Needs Attention panel.
+        { op: 'add', path: '/attentionAcknowledgedAt', value: null },
+        { op: 'add', path: '/attentionAcknowledgedBy', value: null },
         { op: 'add', path: '/updatedAt', value: new Date().toISOString() },
       ]);
 

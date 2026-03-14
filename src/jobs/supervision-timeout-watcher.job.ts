@@ -158,6 +158,9 @@ export class SupervisionTimeoutWatcherJob {
         { op: 'add', path: '/requiresHumanIntervention', value: true },
         { op: 'add', path: '/humanInterventionReason', value: 'supervision_sla_breached' },
         { op: 'add', path: '/supervisionSlaBreachedAt', value: new Date().toISOString() },
+        // Clear any prior acknowledgement so this re-flags in the Needs Attention panel.
+        { op: 'add', path: '/attentionAcknowledgedAt', value: null },
+        { op: 'add', path: '/attentionAcknowledgedBy', value: null },
         { op: 'add', path: '/updatedAt', value: new Date().toISOString() },
       ]);
 

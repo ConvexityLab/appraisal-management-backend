@@ -173,6 +173,7 @@ export class OrderController {
     this.router.post('/:orderId/trigger-auto-assignment', this.triggerAutoAssignment.bind(this));
     this.router.post('/:orderId/vendor-bid/:bidId/accept', this.acceptVendorBid.bind(this));
     this.router.post('/:orderId/vendor-bid/:bidId/decline', this.declineVendorBid.bind(this));
+    this.router.post('/:orderId/acknowledge-attention', this.acknowledgeAttention.bind(this));
   }
 
   // ─── POST / ──────────────────────────────────────────────────────────────
@@ -1325,6 +1326,7 @@ export class OrderController {
         FROM   c
         WHERE  c.tenantId = @tenantId
         AND    c.documentType = 'order'
+        AND    (NOT IS_DEFINED(c.attentionAcknowledgedAt) OR IS_NULL(c.attentionAcknowledgedAt))
         AND    (
                  c.requiresHumanVendorAssignment = true
               OR c.requiresHumanReviewAssignment = true
@@ -1355,6 +1357,71 @@ export class OrderController {
       res.status(500).json({
         error: 'Failed to retrieve needs-attention orders',
         code: 'NEEDS_ATTENTION_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // ─── POST /:orderId/acknowledge-attention ──────────────────────────────────
+
+  /**
+   * Acknowledge that a human has seen the attention flags on this order.
+   * The order is hidden from the needs-attention panel until a job re-flags it.
+   *
+   * Semantics:
+   *   - Sets `attentionAcknowledgedAt` + `attentionAcknowledgedBy` on the order.
+   *   - Does NOT clear the underlying flags — those represent real system state.
+   *   - Jobs clear `attentionAcknowledgedAt` (set to null) when they re-flag an order,
+   *     so the item re-appears in the panel with the new issue.
+   */
+  private async acknowledgeAttention(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      if (!orderId) {
+        res.status(400).json({ error: 'orderId is required', code: 'VALIDATION_ERROR' });
+        return;
+      }
+      const tenantId = req.user!.tenantId;
+      const userId = req.user!.id;
+      if (!userId || !tenantId) {
+        res.status(401).json({
+          error: `Missing required auth context: ${!userId ? 'userId' : 'tenantId'}`,
+          code: 'MISSING_AUTH_CONTEXT',
+        });
+        return;
+      }
+
+      // Verify order exists and belongs to this tenant
+      const existing = await this.dbService.findOrderById(orderId);
+      if (!existing.success || !existing.data) {
+        res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+        return;
+      }
+      if ((existing.data as any).tenantId !== tenantId) {
+        res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
+        return;
+      }
+
+      const container = this.dbService.getContainer('orders');
+      await container.item(orderId, tenantId).patch([
+        { op: 'add', path: '/attentionAcknowledgedAt', value: new Date().toISOString() },
+        { op: 'add', path: '/attentionAcknowledgedBy', value: userId },
+        { op: 'add', path: '/updatedAt', value: new Date().toISOString() },
+      ]);
+
+      this.auditService.log({
+        actor: { userId, ...(req.user?.email != null && { email: req.user.email }) },
+        action: 'order.attention_acknowledged',
+        resource: { type: 'order', id: orderId },
+        after: { attentionAcknowledgedAt: new Date().toISOString() },
+      }).catch((err) => logger.error('Audit log failed for attention_acknowledged', { error: err }));
+
+      res.json({ success: true, orderId, acknowledgedAt: new Date().toISOString() });
+    } catch (error) {
+      logger.error('acknowledgeAttention failed', { error, orderId: req.params.orderId });
+      res.status(500).json({
+        error: 'Failed to acknowledge attention',
+        code: 'ACKNOWLEDGE_ATTENTION_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }

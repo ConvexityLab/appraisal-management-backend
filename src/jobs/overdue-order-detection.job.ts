@@ -128,6 +128,9 @@ export class OverdueOrderDetectionJob {
             ...order,
             isOverdue: true,
             overdueDetectedAt: new Date().toISOString(),
+            // Clear any prior acknowledgement so this re-flags in the Needs Attention panel.
+            attentionAcknowledgedAt: null,
+            attentionAcknowledgedBy: null,
             updatedAt: new Date().toISOString(),
           });
 
