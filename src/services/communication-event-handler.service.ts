@@ -33,19 +33,12 @@ import type {
   ReviewAssignmentExhaustedEvent,
   OrderDeliveredEvent,
   EngagementStatusChangedEvent,
+  ReviewSLAWarningEvent,
+  ReviewSLABreachedEvent,
+  EngagementLetterSentEvent,
+  EngagementLetterSignedEvent,
+  EngagementLetterDeclinedEvent,
 } from '../types/events.js';
-
-// EmailService throws at construction when AZURE_COMMUNICATION_EMAIL_DOMAIN is absent.
-// We import lazily and swallow the error so the rest of the pipeline keeps running.
-let EmailService: any;
-let EmailOptions: any;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mod = require('../services/email.service.js') as typeof import('./email.service.js');
-  EmailService = mod.EmailService;
-} catch {
-  // ACS package not available in this environment — dry-run mode.
-}
 
 export class CommunicationEventHandler {
   private readonly logger = new Logger('CommunicationEventHandler');
@@ -54,6 +47,10 @@ export class CommunicationEventHandler {
   private readonly tenantConfigService: TenantAutomationConfigService;
   private emailService: InstanceType<typeof import('./email.service.js').EmailService> | null = null;
   private isStarted = false;
+
+  // Resolved once EmailService is loaded (or failed). Awaited inside every
+  // handler so that the service is never used before initialization completes.
+  private readonly _emailServiceReady: Promise<void>;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
@@ -64,19 +61,25 @@ export class CommunicationEventHandler {
     );
     this.tenantConfigService = new TenantAutomationConfigService();
 
-    // Initialise email service gracefully — if ACS is not configured this
-    // service runs in log-only mode (no emails sent, no errors thrown).
-    if (EmailService) {
-      try {
-        this.emailService = new EmailService();
-      } catch (err) {
-        this.logger.warn(
-          'EmailService could not be initialised — running in log-only mode. ' +
-            'Set AZURE_COMMUNICATION_EMAIL_DOMAIN and AZURE_COMMUNICATION_ENDPOINT to enable sending.',
-          { error: err instanceof Error ? err.message : String(err) },
-        );
-      }
-    }
+    // Load EmailService lazily via dynamic import so the module is never
+    // required at startup (ACS env-vars may be absent in dev / CI). The
+    // returned Promise always resolves (never rejects) — failures put the
+    // service in log-only mode.
+    this._emailServiceReady = import('./email.service.js')
+      .then(mod => {
+        try {
+          this.emailService = new (mod as any).EmailService();
+        } catch (err) {
+          this.logger.warn(
+            'EmailService could not be initialised — running in log-only mode. ' +
+              'Set AZURE_COMMUNICATION_EMAIL_DOMAIN and AZURE_COMMUNICATION_ENDPOINT to enable sending.',
+            { error: err instanceof Error ? err.message : String(err) },
+          );
+        }
+      })
+      .catch(() => {
+        // ACS package not installed in this environment — dry-run mode.
+      });
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -121,6 +124,29 @@ export class CommunicationEventHandler {
           this.onEngagementStatusChanged.bind(this),
         ),
       ),
+      this.subscriber.subscribe<ReviewSLAWarningEvent>(
+        'review.sla.warning',
+        this.makeHandler('review.sla.warning', this.onReviewSLAWarning.bind(this)),
+      ),
+      this.subscriber.subscribe<ReviewSLABreachedEvent>(
+        'review.sla.breached',
+        this.makeHandler('review.sla.breached', this.onReviewSLABreached.bind(this)),
+      ),
+      this.subscriber.subscribe<EngagementLetterSentEvent>(
+        'engagement.letter.sent',
+        this.makeHandler('engagement.letter.sent', this.onEngagementLetterSent.bind(this)),
+      ),
+      this.subscriber.subscribe<EngagementLetterSignedEvent>(
+        'engagement.letter.signed',
+        this.makeHandler('engagement.letter.signed', this.onEngagementLetterSigned.bind(this)),
+      ),
+      this.subscriber.subscribe<EngagementLetterDeclinedEvent>(
+        'engagement.letter.declined',
+        this.makeHandler(
+          'engagement.letter.declined',
+          this.onEngagementLetterDeclined.bind(this),
+        ),
+      ),
     ]);
 
     this.isStarted = true;
@@ -136,6 +162,11 @@ export class CommunicationEventHandler {
       this.subscriber.unsubscribe('review.assignment.exhausted'),
       this.subscriber.unsubscribe('order.delivered'),
       this.subscriber.unsubscribe('engagement.status.changed'),
+      this.subscriber.unsubscribe('review.sla.warning'),
+      this.subscriber.unsubscribe('review.sla.breached'),
+      this.subscriber.unsubscribe('engagement.letter.sent'),
+      this.subscriber.unsubscribe('engagement.letter.signed'),
+      this.subscriber.unsubscribe('engagement.letter.declined'),
     ]);
     this.isStarted = false;
     this.logger.info('CommunicationEventHandler stopped');
@@ -308,6 +339,140 @@ export class CommunicationEventHandler {
     });
   }
 
+  private async onReviewSLAWarning(event: ReviewSLAWarningEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, reviewerId, percentElapsed, remainingMinutes } =
+      event.data;
+
+    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const reviewerEmail = await this.resolveReviewerEmail(reviewerId, tenantId);
+
+    const to = Array.from(new Set([...recipients, ...(reviewerEmail ? [reviewerEmail] : [])]));
+    if (to.length === 0) {
+      this.logger.warn('review.sla.warning: no recipients — skipping', { orderId });
+      return;
+    }
+
+    await this.sendEmail({
+      to,
+      subject: `⚠️ SLA Warning (${percentElapsed}% elapsed) — ${orderNumber}`,
+      html: `
+        <p>The QC review for order <strong>${orderNumber}</strong> is at
+           <strong>${percentElapsed}%</strong> of its SLA with
+           <strong>${remainingMinutes} minute(s)</strong> remaining.</p>
+        <p>Please ensure the review is completed on time to avoid an SLA breach.</p>
+      `,
+      context: { event: 'review.sla.warning', orderId, reviewerId },
+    });
+  }
+
+  private async onReviewSLABreached(event: ReviewSLABreachedEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, reviewerId, minutesOverdue } = event.data;
+
+    const recipients = await this.resolveEscalationRecipients(tenantId);
+    if (recipients.length === 0) {
+      this.logger.warn('review.sla.breached: no escalation recipients — skipping', { orderId });
+      return;
+    }
+
+    await this.sendEmail({
+      to: recipients,
+      subject: `🚨 SLA Breached — ${orderNumber}`,
+      html: `
+        <p>The QC review for order <strong>${orderNumber}</strong> has breached its SLA by
+           <strong>${minutesOverdue} minute(s)</strong>.</p>
+        <p>Reviewer ID: <strong>${reviewerId}</strong></p>
+        <p><strong>Immediate manual escalation is required.</strong></p>
+      `,
+      context: { event: 'review.sla.breached', orderId, reviewerId },
+    });
+  }
+
+  private async onEngagementLetterSent(event: EngagementLetterSentEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, vendorId, letterId } = event.data;
+
+    const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
+    if (!coordinatorEmail) {
+      this.logger.warn('engagement.letter.sent: no coordinator email — skipping', {
+        orderId,
+        vendorId,
+      });
+      return;
+    }
+
+    await this.sendEmail({
+      to: coordinatorEmail,
+      subject: `Engagement Letter Sent — ${orderNumber}`,
+      html: `
+        <p>An engagement letter (ref: <code>${letterId}</code>) has been automatically sent to
+           vendor <strong>${vendorId}</strong> for order <strong>${orderNumber}</strong>.</p>
+        <p>The vendor has been asked to sign or decline the letter via the portal.</p>
+      `,
+      context: { event: 'engagement.letter.sent', orderId, vendorId },
+    });
+  }
+
+  private async onEngagementLetterSigned(event: EngagementLetterSignedEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, vendorId, letterId, signedAt } = event.data;
+
+    const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
+    if (!coordinatorEmail) {
+      this.logger.warn('engagement.letter.signed: no coordinator email — skipping', {
+        orderId,
+        vendorId,
+      });
+      return;
+    }
+
+    const signedTime = new Date(signedAt).toLocaleString('en-US', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+    });
+
+    await this.sendEmail({
+      to: coordinatorEmail,
+      subject: `✅ Engagement Letter Signed — ${orderNumber}`,
+      html: `
+        <p>Vendor <strong>${vendorId}</strong> has signed the engagement letter
+           (ref: <code>${letterId}</code>) for order <strong>${orderNumber}</strong>
+           at <strong>${signedTime}</strong>.</p>
+        <p>The order is now ready to proceed to the next stage.</p>
+      `,
+      context: { event: 'engagement.letter.signed', orderId, vendorId },
+    });
+  }
+
+  private async onEngagementLetterDeclined(event: EngagementLetterDeclinedEvent): Promise<void> {
+    const { orderId, orderNumber, tenantId, vendorId, letterId, reason } = event.data;
+
+    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
+    const to = Array.from(
+      new Set([...recipients, ...(coordinatorEmail ? [coordinatorEmail] : [])]),
+    );
+
+    if (to.length === 0) {
+      this.logger.warn('engagement.letter.declined: no recipients — skipping', {
+        orderId,
+        vendorId,
+      });
+      return;
+    }
+
+    const reasonText = reason ? `<p>Reason given: <em>${reason}</em></p>` : '';
+
+    await this.sendEmail({
+      to,
+      subject: `⚠️ Engagement Letter Declined — ${orderNumber}`,
+      html: `
+        <p>Vendor <strong>${vendorId}</strong> has <strong>declined</strong> the engagement letter
+           (ref: <code>${letterId}</code>) for order <strong>${orderNumber}</strong>.</p>
+        ${reasonText}
+        <p><strong>Manual re-assignment may be required.</strong></p>
+      `,
+      context: { event: 'engagement.letter.declined', orderId, vendorId },
+    });
+  }
+
   // ── Email resolution helpers ───────────────────────────────────────────────
 
   private async resolveVendorEmail(
@@ -382,6 +547,19 @@ export class CommunicationEventHandler {
     }
   }
 
+  private async resolveReviewerEmail(
+    reviewerId: string,
+    tenantId: string,
+  ): Promise<string | null> {
+    try {
+      const result = await this.dbService.getItem('users', reviewerId, tenantId);
+      const user = (result as any)?.data ?? result;
+      return user?.email ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async resolveEscalationRecipients(tenantId: string): Promise<string[]> {
     try {
       const config = await this.tenantConfigService.getConfig(tenantId);
@@ -399,6 +577,9 @@ export class CommunicationEventHandler {
     html: string;
     context: Record<string, unknown>;
   }): Promise<void> {
+    // Ensure EmailService initialisation has completed before we check it.
+    await this._emailServiceReady;
+
     const { to, subject, html, context } = params;
     const recipients = Array.isArray(to) ? to : [to];
 

@@ -129,6 +129,56 @@ export interface TenantAutomationConfig {
    */
   autoCloseEngagementEnabled: boolean;
 
+  // ── Bid mode ──────────────────────────────────────────────────────────────
+
+  /**
+   * 'sequential' — contact vendors one-by-one (classic behaviour).
+   * 'broadcast'  — contact broadcastCount vendors simultaneously; first
+   *                acceptance wins and cancels the rest.
+   * @default 'sequential'
+   */
+  bidMode: 'sequential' | 'broadcast';
+
+  /**
+   * Number of vendors to contact simultaneously in broadcast mode.
+   * Ignored when bidMode is 'sequential'.
+   * @default 5
+   */
+  broadcastCount: number;
+
+  // ── Engagement letter ─────────────────────────────────────────────────────
+
+  /**
+   * When true, the system automatically generates and emails an engagement
+   * letter to the vendor upon bid acceptance or staff assignment.
+   * @default false
+   */
+  engagementLetterAutoSend: boolean;
+
+  /**
+   * When true, the order is blocked from progressing past ASSIGNED status
+   * until the vendor has signed the engagement letter.
+   * @default false
+   */
+  requireSignedLetterBeforeProgress: boolean;
+
+  // ── Axiom auto-trigger ────────────────────────────────────────────────────
+
+  /**
+   * When true, the system automatically submits every SUBMITTED order to the
+   * Axiom evaluation pipeline.  The orchestrator will wait up to
+   * axiomTimeoutMinutes before routing the order for human QC.
+   * @default false
+   */
+  axiomAutoTrigger: boolean;
+
+  /**
+   * Minutes to wait for Axiom evaluation before falling back to normal
+   * routing.  Set low in dev (2) and higher in prod (10-15).
+   * @default 10
+   */
+  axiomTimeoutMinutes: number;
+
   // ── Metadata ──────────────────────────────────────────────────────────────
 
   updatedAt: string; // ISO
@@ -162,5 +212,11 @@ export const DEFAULT_TENANT_AUTOMATION_CONFIG: Omit<
   aiQcFlagThreshold: 70,
   autoDeliveryEnabled: false,
   autoCloseEngagementEnabled: false,
+  bidMode: 'sequential',
+  broadcastCount: 5,
+  engagementLetterAutoSend: false,
+  requireSignedLetterBeforeProgress: false,
+  axiomAutoTrigger: false,
+  axiomTimeoutMinutes: 10,
   entityType: 'tenant-automation-config',
 };

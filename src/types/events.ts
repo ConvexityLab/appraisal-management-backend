@@ -411,6 +411,156 @@ export interface ReviewAssignmentExhaustedEvent extends BaseEvent {
     requiresHumanIntervention: true;
   };
 }
+// ── Engagement Letter Events ─────────────────────────────────────────────────
+
+/** Fired when an engagement letter is auto-generated and emailed to the vendor for signing. */
+export interface EngagementLetterSentEvent extends BaseEvent {
+  type: 'engagement.letter.sent';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    letterId: string;
+    signingToken: string;
+    expiresAt: Date;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when the vendor accepts the engagement letter via the one-time signed URL. */
+export interface EngagementLetterSignedEvent extends BaseEvent {
+  type: 'engagement.letter.signed';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    letterId: string;
+    signedAt: Date;
+    ipAddress?: string;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when the vendor declines the engagement letter. */
+export interface EngagementLetterDeclinedEvent extends BaseEvent {
+  type: 'engagement.letter.declined';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    vendorId: string;
+    letterId: string;
+    declinedAt: Date;
+    reason?: string;
+    priority: EventPriority;
+  };
+}
+
+// ── Axiom Evaluation Events ──────────────────────────────────────────────────
+
+/** Fired immediately after an order is submitted to the Axiom pipeline. */
+export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
+  type: 'axiom.evaluation.submitted';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    evaluationId: string;
+    pipelineJobId: string;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when Axiom completes the evaluation (published from the webhook handler). */
+export interface AxiomEvaluationCompletedEvent extends BaseEvent {
+  type: 'axiom.evaluation.completed';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    evaluationId: string;
+    pipelineJobId: string;
+    overallRiskScore: number;
+    overallDecision: 'ACCEPT' | 'CONDITIONAL' | 'REJECT' | 'UNKNOWN';
+    status: 'completed' | 'failed';
+    priority: EventPriority;
+  };
+}
+
+// ── Review SLA Events ────────────────────────────────────────────────────────
+
+/** Fired at configurable % threshold (default 80%) of SLA elapsed — early warning. */
+export interface ReviewSLAWarningEvent extends BaseEvent {
+  type: 'review.sla.warning';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    qcReviewId: string;
+    reviewerId: string;
+    /** Percentage of SLA that has elapsed (0-100). */
+    percentElapsed: number;
+    targetDate: Date;
+    remainingMinutes: number;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when the review SLA deadline has been missed. */
+export interface ReviewSLABreachedEvent extends BaseEvent {
+  type: 'review.sla.breached';
+  category: EventCategory.QC;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    qcReviewId: string;
+    reviewerId: string;
+    targetDate: Date;
+    minutesOverdue: number;
+    priority: EventPriority;
+  };
+}
+
+// ── Broadcast Bid Round Events ────────────────────────────────────────────────
+
+/** Fired when a broadcast bid round is opened (N vendors contacted simultaneously). */
+export interface VendorBidRoundStartedEvent extends BaseEvent {
+  type: 'vendor.bid.round.started';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    roundNumber: number;
+    vendorIds: string[];
+    expiresAt: Date;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when a broadcast round expires with no acceptance. */
+export interface VendorBidRoundExhaustedEvent extends BaseEvent {
+  type: 'vendor.bid.round.exhausted';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    roundNumber: number;
+    vendorIds: string[];
+    priority: EventPriority;
+  };
+}
+
 /**
  * Fired when an order requires supervisory co-sign before it can be delivered.
  * Published by the supervisory review service or the orchestrator when
@@ -478,7 +628,20 @@ export type AppEvent =
   | ReviewAssignmentTimedOutEvent
   | ReviewAssignmentExhaustedEvent
   | SupervisionRequiredEvent
-  | SupervisionCosignedEvent;
+  | SupervisionCosignedEvent
+  // Engagement letter events
+  | EngagementLetterSentEvent
+  | EngagementLetterSignedEvent
+  | EngagementLetterDeclinedEvent
+  // Axiom evaluation events
+  | AxiomEvaluationSubmittedEvent
+  | AxiomEvaluationCompletedEvent
+  // Review SLA events
+  | ReviewSLAWarningEvent
+  | ReviewSLABreachedEvent
+  // Broadcast bidding events
+  | VendorBidRoundStartedEvent
+  | VendorBidRoundExhaustedEvent;
 
 // Event handler interface
 export interface EventHandler<T extends BaseEvent = BaseEvent> {

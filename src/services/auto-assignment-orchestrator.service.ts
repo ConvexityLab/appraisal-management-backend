@@ -49,10 +49,12 @@ import type {
   EngagementOrderCreatedEvent,
   VendorBidTimedOutEvent,
   VendorBidDeclinedEvent,
+  VendorBidAcceptedEvent,
   VendorStaffAssignedEvent,
   OrderStatusChangedEvent,
   ReviewAssignmentTimedOutEvent,
   QCAIScoredEvent,
+  AxiomEvaluationCompletedEvent,
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -95,6 +97,10 @@ export interface AutoVendorAssignmentState {
   currentBidId: string | null;
   currentBidExpiresAt: string | null; // ISO date
   initiatedAt: string; // ISO date
+  // Broadcast-mode extension fields (undefined in sequential mode)
+  broadcastMode?: boolean;
+  broadcastBidIds?: string[];
+  broadcastRound?: number;
 }
 
 export interface RankedReviewerEntry {
@@ -177,6 +183,16 @@ export class AutoAssignmentOrchestratorService {
         'qc.ai.scored',
         this.makeHandler('qc.ai.scored', this.onQCAIScored.bind(this)),
       ),
+      // Accept in broadcast mode: cancel all other pending bids.
+      this.subscriber.subscribe<VendorBidAcceptedEvent>(
+        'vendor.bid.accepted',
+        this.makeHandler('vendor.bid.accepted', this.onVendorBidAccepted.bind(this)),
+      ),
+      // Axiom gate: route order to QC after Axiom evaluation completes.
+      this.subscriber.subscribe<AxiomEvaluationCompletedEvent>(
+        'axiom.evaluation.completed',
+        this.makeHandler('axiom.evaluation.completed', this.onAxiomEvaluationCompleted.bind(this)),
+      ),
     ]);
 
     this.isStarted = true;
@@ -192,6 +208,8 @@ export class AutoAssignmentOrchestratorService {
       this.subscriber.unsubscribe('order.status.changed'),
       this.subscriber.unsubscribe('review.assignment.timeout'),
       this.subscriber.unsubscribe('qc.ai.scored'),
+      this.subscriber.unsubscribe('vendor.bid.accepted'),
+      this.subscriber.unsubscribe('axiom.evaluation.completed'),
     ]);
     this.isStarted = false;
     this.logger.info('AutoAssignmentOrchestrator stopped');
@@ -329,16 +347,31 @@ export class AutoAssignmentOrchestratorService {
     rankedVendors = await this.enrichWithStaffType(rankedVendors, tenantId);
 
     // --- Initialise state and send first bid (or direct staff assignment) ---
-    const state: AutoVendorAssignmentState = {
-      status: 'PENDING_BID',
-      rankedVendors,
-      currentAttempt: 0,
-      currentBidId: null,
-      currentBidExpiresAt: null,
-      initiatedAt: new Date().toISOString(),
-    };
-
-    await this.sendBidToVendor(order, state, tenantId, priority);
+    const broadcastMode = tenantConfig.bidMode === 'broadcast';
+    if (broadcastMode) {
+      const state: AutoVendorAssignmentState = {
+        status: 'PENDING_BID',
+        rankedVendors,
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: new Date().toISOString(),
+        broadcastMode: true,
+        broadcastBidIds: [],
+        broadcastRound: 1,
+      };
+      await this.sendBroadcastBids(order, state, tenantId, priority, tenantConfig.broadcastCount);
+    } else {
+      const state: AutoVendorAssignmentState = {
+        status: 'PENDING_BID',
+        rankedVendors,
+        currentAttempt: 0,
+        currentBidId: null,
+        currentBidExpiresAt: null,
+        initiatedAt: new Date().toISOString(),
+      };
+      await this.sendBidToVendor(order, state, tenantId, priority);
+    }
 
     // --- Post-assignment: trigger supervisory review if tenant policy requires it ---
     const loanAmount = typeof (order as any).loanAmount === 'number' ? (order as any).loanAmount : 0;
@@ -383,6 +416,123 @@ export class AutoAssignmentOrchestratorService {
   }
 
   /**
+   * Triggered when a vendor accepts a bid.
+   *
+   * In broadcast mode: cancel all other pending bids for the same order so
+   * that only the accepting vendor proceeds.  In sequential mode this is a
+   * no-op (the bid loop already moved forward).
+   */
+  private async onVendorBidAccepted(event: VendorBidAcceptedEvent): Promise<void> {
+    const { orderId, tenantId, vendorId, vendorName } = event.data;
+
+    const order = await this.loadOrder(orderId, tenantId);
+    if (!order) {
+      this.logger.warn('onVendorBidAccepted: order not found', { orderId });
+      return;
+    }
+
+    const state = order.autoVendorAssignment as AutoVendorAssignmentState | undefined;
+    if (!state?.broadcastMode || !state.broadcastBidIds?.length) {
+      // Sequential mode — acceptance is handled by the bid controller; nothing to do here.
+      return;
+    }
+
+    if (state.status === 'ACCEPTED') {
+      // Another vendor was already accepted (race) — decline this late acceptance.
+      this.logger.info('Broadcast mode: ignoring late acceptance (already accepted)', {
+        orderId, vendorId,
+      });
+      return;
+    }
+
+    // Cancel all other pending broadcast bids
+    await this.cancelPendingBroadcastBids(
+      order,
+      tenantId,
+      state.broadcastBidIds.filter((id) => id !== `bid-${orderId}-${vendorId}-${event.timestamp.getTime()}`),
+      vendorId,
+    );
+
+    // Update state to ACCEPTED
+    const acceptedState: AutoVendorAssignmentState = {
+      ...state,
+      status: 'ACCEPTED',
+      currentBidId: null,
+      currentBidExpiresAt: null,
+    };
+
+    await this.dbService.updateItem(
+      'orders',
+      orderId,
+      {
+        ...order,
+        autoVendorAssignment: acceptedState,
+        assignedVendorId: vendorId,
+        assignedVendorName: vendorName,
+        assignedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      tenantId,
+    );
+
+    this.logger.info('Broadcast mode: vendor accepted — all other bids cancelled', {
+      orderId, vendorId, vendorName,
+    });
+  }
+
+  /**
+   * Triggered when Axiom finishes evaluating a submitted order.
+   *
+   * When `axiomAutoTrigger` is true, the orchestrator deferred review
+   * assignment from `onOrderStatusChanged`.  This handler now routes:
+   *   ACCEPT / CONDITIONAL  → assign to QC reviewer (human or by AI gate if also enabled)
+   *   REJECT / UNKNOWN      → log and also route to QC (human judgment required)
+   *   status: 'failed'      → pipeline failed; also route to QC so order is not stuck
+   */
+  private async onAxiomEvaluationCompleted(event: AxiomEvaluationCompletedEvent): Promise<void> {
+    const { orderId, tenantId, overallDecision, status, priority } = event.data;
+
+    this.logger.info('axiom.evaluation.completed received', { orderId, overallDecision, status });
+
+    // Check whether this tenant actually uses Axiom auto-trigger.
+    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    if (!tenantConfig.axiomAutoTrigger) {
+      // Another tenant path — not our concern.
+      return;
+    }
+
+    const order = await this.loadOrder(orderId, tenantId);
+    if (!order) {
+      this.logger.warn('onAxiomEvaluationCompleted: order not found', { orderId });
+      return;
+    }
+
+    if (status === 'failed') {
+      this.logger.warn(
+        'Axiom evaluation failed — routing to human QC regardless',
+        { orderId, overallDecision },
+      );
+    } else {
+      this.logger.info(
+        `Axiom decision: ${overallDecision} — routing to QC reviewer`,
+        { orderId, overallDecision },
+      );
+    }
+
+    // If AI QC is also enabled, it runs on the same SUBMITTED event — let it handle routing.
+    if (tenantConfig.aiQcEnabled) {
+      this.logger.info(
+        'aiQcEnabled also true — AI QC gate handles final routing; no action from Axiom path',
+        { orderId },
+      );
+      return;
+    }
+
+    // Route to human QC (or AI gate if not separately enabled here).
+    await this.initiateReviewAssignment(order, tenantId, priority);
+  }
+
+  /**
    * Triggered when an order status changes.
    * React to SUBMITTED (vendor delivered) → kick off review assignment.
    *
@@ -401,6 +551,16 @@ export class AutoAssignmentOrchestratorService {
     if (tenantConfig.aiQcEnabled) {
       this.logger.info(
         'AI QC gate enabled — deferring review routing to qc.ai.scored event',
+        { orderId, tenantId },
+      );
+      return;
+    }
+
+    // Defer to the Axiom gate when axiom auto-trigger is enabled.
+    // onAxiomEvaluationCompleted will route to review after Axiom finishes.
+    if (tenantConfig.axiomAutoTrigger) {
+      this.logger.info(
+        'Axiom auto-trigger enabled — deferring review routing to axiom.evaluation.completed',
         { orderId, tenantId },
       );
       return;
@@ -631,6 +791,174 @@ export class AutoAssignmentOrchestratorService {
     };
 
     await this.sendBidToVendor(order, nextState, tenantId, priority);
+  }
+
+  // ── Broadcast mode helpers ────────────────────────────────────────────────
+
+  /**
+   * Broadcast mode: contact the top N vendors simultaneously.
+   * All bids share the same expiry and the same round number.
+   * The first vendor to accept wins; onVendorBidAccepted cancels the rest.
+   */
+  private async sendBroadcastBids(
+    order: any,
+    state: AutoVendorAssignmentState,
+    tenantId: string,
+    priority: EventPriority,
+    broadcastCount: number,
+  ): Promise<void> {
+    const round = state.broadcastRound ?? 1;
+    const vendors = state.rankedVendors.slice(0, broadcastCount);
+
+    if (vendors.length === 0) {
+      this.logger.warn('sendBroadcastBids: no vendors to broadcast to', { orderId: order.id });
+      await this.escalateVendorAssignment(order, tenantId, []);
+      return;
+    }
+
+    const expiresAt = new Date(Date.now() + BID_EXPIRY_HOURS * 60 * 60 * 1000);
+    const broadcastBidIds: string[] = [];
+
+    // Persist order state and create bid documents for every vendor in the batch
+    for (const vendor of vendors) {
+      if (vendor.staffType === 'internal') {
+        // Internal staff: bypass bid and assign directly — broadcast terminates early
+        await this.assignStaffDirectly(order, state, vendor, tenantId, priority);
+        return;
+      }
+
+      const bidId = `bid-${order.id}-${vendor.vendorId}-${Date.now()}`;
+      broadcastBidIds.push(bidId);
+
+      const bidInvitation = {
+        id: bidId,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        vendorId: vendor.vendorId,
+        vendorName: vendor.vendorName,
+        tenantId,
+        propertyAddress: order.propertyAddress ?? order.propertyDetails?.fullAddress,
+        propertyType: order.productType ?? order.orderType,
+        dueDate: order.dueDate,
+        urgency: order.priority,
+        status: 'PENDING',
+        invitedAt: new Date().toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        attemptNumber: round,
+        entityType: 'vendor-bid-invitation',
+        isAutoAssignment: true,
+        broadcastRound: round,
+      };
+
+      await this.dbService.createItem('vendor-bids', bidInvitation);
+    }
+
+    // Update order state with the batch of bid IDs
+    const updatedState: AutoVendorAssignmentState = {
+      ...state,
+      currentBidExpiresAt: expiresAt.toISOString(),
+      broadcastBidIds,
+      broadcastRound: round,
+    };
+
+    await this.dbService.updateItem(
+      'orders',
+      order.id,
+      { ...order, autoVendorAssignment: updatedState, updatedAt: new Date().toISOString() },
+      tenantId,
+    );
+
+    // Publish round started event
+    await this.publisher.publish({
+      id: uuidv4(),
+      type: 'vendor.bid.round.started',
+      timestamp: new Date(),
+      source: 'auto-assignment-orchestrator',
+      version: '1.0',
+      category: EventCategory.VENDOR,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        tenantId,
+        roundNumber: round,
+        vendorIds: vendors.map((v) => v.vendorId),
+        expiresAt,
+        priority,
+      },
+    });
+
+    // Publish individual vendor.bid.sent events for each vendor
+    for (const [idx, vendor] of vendors.entries()) {
+      await this.publisher.publish({
+        id: uuidv4(),
+        type: 'vendor.bid.sent',
+        timestamp: new Date(),
+        source: 'auto-assignment-orchestrator',
+        version: '1.0',
+        category: EventCategory.VENDOR,
+        data: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          tenantId,
+          vendorId: vendor.vendorId,
+          vendorName: vendor.vendorName,
+          bidId: broadcastBidIds[idx]!,
+          expiresAt,
+          attemptNumber: round,
+          priority,
+        },
+      });
+    }
+
+    this.logger.info('Broadcast round started', {
+      orderId: order.id,
+      round,
+      vendorCount: vendors.length,
+      expiresAt: expiresAt.toISOString(),
+    });
+  }
+
+  /**
+   * Cancel all bid documents in a broadcast round, except the one for the
+   * accepting vendor.  Published as status=CANCELLED on each bid document.
+   */
+  private async cancelPendingBroadcastBids(
+    order: any,
+    tenantId: string,
+    bidIdsToCancel: string[],
+    winningVendorId: string,
+  ): Promise<void> {
+    const container = this.dbService.getContainer('vendor-bids');
+
+    await Promise.allSettled(
+      bidIdsToCancel.map(async (bidId) => {
+        try {
+          const { resources } = await container.items
+            .query<Record<string, unknown>>({
+              query: `SELECT * FROM c WHERE c.id = @id AND c.orderId = @orderId`,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              parameters: [{ name: '@id', value: bidId }, { name: '@orderId', value: order.id }] as any,
+            })
+            .fetchAll();
+
+          if (resources.length > 0) {
+            const bid = { ...resources[0], status: 'CANCELLED', cancelledAt: new Date().toISOString() };
+            await container.items.upsert(bid);
+          }
+        } catch (err) {
+          this.logger.warn('Failed to cancel broadcast bid', {
+            bidId,
+            error: (err as Error).message,
+          });
+        }
+      }),
+    );
+
+    this.logger.info('Cancelled broadcast bids after acceptance', {
+      orderId: order.id,
+      winningVendorId,
+      cancelledCount: bidIdsToCancel.length,
+    });
   }
 
   /**

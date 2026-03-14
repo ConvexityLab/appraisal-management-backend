@@ -151,6 +151,10 @@ import { AIQCGateService } from '../services/ai-qc-gate.service';
 import { AutoDeliveryService } from '../services/auto-delivery.service';
 import { EngagementLifecycleService } from '../services/engagement-lifecycle.service';
 import { CommunicationEventHandler } from '../services/communication-event-handler.service';
+import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service';
+import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
+import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
+import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
 
 // Import Audit Event Sink + Engagement Audit Controller
 import { AuditEventSinkService } from '../services/audit-event-sink.service.js';
@@ -256,6 +260,10 @@ export class AppraisalManagementAPIServer {
   private autoDeliveryService?: AutoDeliveryService;
   private engagementLifecycleService?: EngagementLifecycleService;
   private communicationEventHandler?: CommunicationEventHandler;
+  private axiomAutoTriggerService?: AxiomAutoTriggerService;
+  private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
+  private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
+  private reviewSLAWatcherJob?: ReviewSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
   private orderController!: OrderController;
   
@@ -3379,6 +3387,58 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Axiom Auto-Trigger Service (listens for order.status.changed and fires Axiom evaluations)
+    try {
+      this.axiomAutoTriggerService = new AxiomAutoTriggerService(this.dbService);
+      this.axiomAutoTriggerService.start().catch(err => {
+        this.logger.warn('AxiomAutoTriggerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AxiomAutoTriggerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Engagement Letter Auto-Send Service (sends letters on bid acceptance/staff assignment)
+    try {
+      this.engagementLetterAutoSendService = new EngagementLetterAutoSendService(this.dbService);
+      this.engagementLetterAutoSendService.start().catch(err => {
+        this.logger.warn('EngagementLetterAutoSendService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('EngagementLetterAutoSendService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Vendor Performance Updater Service (updates vendor metrics on QC completion)
+    try {
+      this.vendorPerformanceUpdaterService = new VendorPerformanceUpdaterService(this.dbService);
+      this.vendorPerformanceUpdaterService.start().catch(err => {
+        this.logger.warn('VendorPerformanceUpdaterService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('VendorPerformanceUpdaterService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Review SLA Watcher Job (polls for imminent and breached review SLAs)
+    try {
+      this.reviewSLAWatcherJob = new ReviewSLAWatcherJob(this.dbService);
+      this.reviewSLAWatcherJob.start();
+    } catch (err) {
+      this.logger.warn('ReviewSLAWatcherJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Audit Event Sink (persists every Service Bus event to engagement-audit-events container)
     try {
       this.auditEventSinkService = new AuditEventSinkService(this.dbService);
@@ -3394,7 +3454,7 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher']
     });
   }
 
@@ -3431,6 +3491,18 @@ export class AppraisalManagementAPIServer {
     }
     if (this.communicationEventHandler) {
       this.communicationEventHandler.stop().catch(() => {});
+    }
+    if (this.axiomAutoTriggerService) {
+      this.axiomAutoTriggerService.stop().catch(() => {});
+    }
+    if (this.engagementLetterAutoSendService) {
+      this.engagementLetterAutoSendService.stop().catch(() => {});
+    }
+    if (this.vendorPerformanceUpdaterService) {
+      this.vendorPerformanceUpdaterService.stop().catch(() => {});
+    }
+    if (this.reviewSLAWatcherJob) {
+      this.reviewSLAWatcherJob.stop();
     }
     if (this.auditEventSinkService) {
       this.auditEventSinkService.stop().catch(() => {});

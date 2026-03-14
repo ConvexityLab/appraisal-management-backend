@@ -8,19 +8,24 @@
  * - Document comparison (revision change detection)
  */
 
+import { v4 as uuidv4 } from 'uuid';
 import { Request, Response, Router } from 'express';
 import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
 import type { AppraisalOrder } from '../types/index.js';
+import type { AxiomEvaluationCompletedEvent } from '../types/events.js';
+import { EventCategory, EventPriority } from '../types/events.js';
 
 export class AxiomController {
   private axiomService: AxiomService;
   private dbService: CosmosDbService;
   private bulkPortfolioService: BulkPortfolioService;
+  private readonly eventPublisher: ServiceBusEventPublisher;
 
   /**
    * Build structured Axiom pipeline fields from an order.
@@ -57,6 +62,7 @@ export class AxiomController {
     this.dbService = dbService;
     this.axiomService = axiomService || new AxiomService(dbService);
     this.bulkPortfolioService = new BulkPortfolioService(dbService);
+    this.eventPublisher = new ServiceBusEventPublisher();
   }
 
   /**
@@ -516,6 +522,34 @@ export class AxiomController {
             });
           });
       }
+
+      // Publish axiom.evaluation.completed to Service Bus so the orchestrator
+      // can gate QC routing on Axiom completion when axiomAutoTrigger=true.
+      const evalCompletedEvent: AxiomEvaluationCompletedEvent = {
+        id: uuidv4(),
+        type: 'axiom.evaluation.completed',
+        timestamp: new Date(),
+        source: 'axiom-controller',
+        version: '1.0',
+        category: EventCategory.QC,
+        data: {
+          orderId: correlationId,
+          orderNumber: correlationId, // orderNumber resolved by orchestrator from DB
+          tenantId: (updateData as any).tenantId ?? '',
+          evaluationId: `eval-${correlationId}`,
+          pipelineJobId: pipelineJobId ?? '',
+          overallRiskScore: typeof updateData.axiomRiskScore === 'number' ? updateData.axiomRiskScore : 0,
+          overallDecision: (updateData.axiomDecision as 'ACCEPT' | 'CONDITIONAL' | 'REJECT' | 'UNKNOWN') ?? 'UNKNOWN',
+          status: (status === 'completed' ? 'completed' : 'failed') as 'completed' | 'failed',
+          priority: EventPriority.HIGH,
+        },
+      };
+      this.eventPublisher.publish(evalCompletedEvent).catch((err: unknown) => {
+        console.warn('⚠️  Axiom webhook: failed to publish axiom.evaluation.completed', {
+          orderId: correlationId,
+          error: (err as Error).message,
+        });
+      });
 
       return;
     }
