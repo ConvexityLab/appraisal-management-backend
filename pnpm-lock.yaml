@@ -146,9 +146,6 @@ importers:
       node-cache:
         specifier: ^5.1.2
         version: 5.1.2
-      nodemailer:
-        specifier: ^6.10.1
-        version: 6.10.1
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
@@ -231,9 +228,6 @@ importers:
       '@types/node':
         specifier: ^20.19.17
         version: 20.19.33
-      '@types/nodemailer':
-        specifier: ^6.4.21
-        version: 6.4.22
       '@types/pg':
         specifier: ^8.10.7
         version: 8.16.0
@@ -1799,9 +1793,6 @@ packages:
 
   '@types/node@20.19.33':
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
-
-  '@types/nodemailer@6.4.22':
-    resolution: {integrity: sha512-HV16KRsW7UyZBITE07B62k8PRAKFqRSFXn1T7vslurVjN761tMDBhk5Lbt17ehyTzK6XcyJnAgUpevrvkcVOzw==}
 
   '@types/pdfkit@0.17.5':
     resolution: {integrity: sha512-T3ZHnvF91HsEco5ClhBCOuBwobZfPcI2jaiSHybkkKYq4KhVIIurod94JVKvDIG0JXT6o3KiERC0X0//m8dyrg==}
@@ -3578,10 +3569,6 @@ packages:
 
   node-releases@2.0.27:
     resolution: {integrity: sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==}
-
-  nodemailer@6.10.1:
-    resolution: {integrity: sha512-Z+iLaBGVaSjbIzQ4pX6XV41HrooLsQ10ZWPUehGmuantvzWoDVBnmsdUcOIDM1t+yPor5pDhVlDESgOMEGxhHA==}
-    engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -6605,10 +6592,6 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/nodemailer@6.4.22':
-    dependencies:
-      '@types/node': 20.19.33
-
   '@types/pdfkit@0.17.5':
     dependencies:
       '@types/node': 20.19.33
@@ -8727,8 +8710,6 @@ snapshots:
   node-int64@0.4.0: {}
 
   node-releases@2.0.27: {}
-
-  nodemailer@6.10.1: {}
 
   normalize-path@3.0.0: {}
 
