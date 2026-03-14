@@ -152,6 +152,10 @@ import { AutoDeliveryService } from '../services/auto-delivery.service';
 import { EngagementLifecycleService } from '../services/engagement-lifecycle.service';
 import { CommunicationEventHandler } from '../services/communication-event-handler.service';
 
+// Import Audit Event Sink + Engagement Audit Controller
+import { AuditEventSinkService } from '../services/audit-event-sink.service.js';
+import { createEngagementAuditRouter } from '../controllers/engagement-audit.controller.js';
+
 // Import Review Assignment Timeout Job
 import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
 
@@ -252,6 +256,7 @@ export class AppraisalManagementAPIServer {
   private autoDeliveryService?: AutoDeliveryService;
   private engagementLifecycleService?: EngagementLifecycleService;
   private communicationEventHandler?: CommunicationEventHandler;
+  private auditEventSinkService?: AuditEventSinkService;
   private orderController!: OrderController;
   
   // QC routers
@@ -987,6 +992,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/arv',
       this.unifiedAuth.authenticate(),
       createArvRouter(this.dbService)
+    );
+
+    // Engagement Audit — timeline + raw audit log (before main engagement router so /:id/audit matches first)
+    this.app.use('/api/engagements',
+      this.unifiedAuth.authenticate(),
+      createEngagementAuditRouter(this.dbService)
     );
 
     // Engagements — aggregate root for lender-side valuation requests
@@ -3368,6 +3379,20 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Audit Event Sink (persists every Service Bus event to engagement-audit-events container)
+    try {
+      this.auditEventSinkService = new AuditEventSinkService(this.dbService);
+      this.auditEventSinkService.start().catch(err => {
+        this.logger.warn('AuditEventSinkService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AuditEventSinkService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     this.logger.info('✅ Background jobs started', {
       jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler']
     });
@@ -3406,6 +3431,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.communicationEventHandler) {
       this.communicationEventHandler.stop().catch(() => {});
+    }
+    if (this.auditEventSinkService) {
+      this.auditEventSinkService.stop().catch(() => {});
     }
     this.logger.info('Background jobs stopped');
   }
