@@ -13,13 +13,10 @@
 | Mar 14 — Session 1 | Initial audit written; identified 10 gaps |
 | Mar 14 — Session 2 | Built `AutoDeliveryService`, `DeadLetterQueueMonitorService`, `ROVManagementService`, `UcdpEadAutoSubmitService`; added 6 missing Service Bus subscriptions to Bicep; expanded DLQ monitor to all 9 subscriptions; flipped `autoDeliveryEnabled`, `autoCloseEngagementEnabled`, `engagementLetterAutoSend`, `axiomAutoTrigger` all to `true` in default config; fixed all 1252 tests |
 | Mar 14 — Session 3 | Rewrote `VendorTimeoutCheckerJob` to use correct `autoVendorAssignment` data model (publishes `vendor.bid.timeout` event only); wired duplicate order detection into `createOrder` (advisory, non-blocking); created `MismoAutoGenerateService` (subscribes to `order.status.changed` → SUBMITTED, auto-generates MISMO 3.4 XML); wired all into `api-server.ts` + Bicep; added 10 new tests; full suite 1262 passed |
+| Mar 14 — Session 4 | Implemented Gap #10 — ROV AI triage fully operational: added `validateTriageResult()` schema guard on parsed AI JSON (meritScore range, enum validation for all fields); added `complianceFlags` auto-update from triage result (`legalReview` on medium/high risk, `regulatoryEscalation` on high risk; existing flags never cleared); added 13 new tests; full suite 1275 passed |
 
 **Current outstanding gaps (in priority order):**
-1. ✅ **Bid/review timeout timer job** — `VendorTimeoutCheckerJob` rewritten this session; `ReviewAssignmentTimeoutJob` was already correct
-2. ✅ **UCDP/EAD auto-submit on delivery** — confirmed fully wired in prior session (Gap #7 confirmed done)
-3. ✅ **MISMO XML not auto-generated on submission** — `MismoAutoGenerateService` created and wired this session
-4. ✅ **Duplicate order detection not wired to intake** — wired into `createOrder` (advisory) this session
-5. ❌ **ROV AI triage is a stub** — no real AI analysis; out of scope for this audit phase
+✅ **ALL 10 GAPS CLOSED** — Full lifecycle automation is operational.
 
 ---
 
@@ -213,7 +210,7 @@ review.assignment.timeout
 | Step | Built | Automated | Notes |
 |---|---|---|---|
 | ROV request ingestion | ✅ | N/A | Client/borrower initiated |
-| AI triage (new comp analysis) | ⚠️ | ❌ | `ROVManagementService` built; AI analysis stub |
+| AI triage (new comp analysis) | ✅ | ✅ | `performAITriage` calls `UniversalAIService`; JSON schema validated; `complianceFlags` auto-updated; fires on creation + re-triggerable via `POST /rov/requests/:id/triage` |
 | Route to original appraiser | ✅ | ❌ | Manual routing |
 | 7-day response window tracking | ✅ | ✅ | SLA integration tracks deadline |
 | Value revised → back to QC | ✅ | ✅ | Status transition triggers QC queue entry |
@@ -287,7 +284,7 @@ Order created
 | 7 | **UCDP/EAD submission not triggered on delivery** — Service built but not wired to `order.delivered` | Regulatory reporting is manual | 0.5 day | ✅ Done — `UcdpEadAutoSubmitService` wired to `order.delivered`; SB subscription in Bicep; confirmed Session 2–3 |
 | 8 | **MISMO XML not auto-generated on submission** — Underwriting integration manual | Client integration friction | 0.5 day | ✅ Done — `MismoAutoGenerateService` subscribes to `order.status.changed` → SUBMITTED; SB subscription added to Bicep |
 | 9 | **Duplicate order detection not wired to intake** — Service exists, runs in isolation | Potential duplicate orders | 1 day | ✅ Done — wired into `createOrder` as advisory pre-creation check; 201 response includes `duplicateWarning` if found |
-| 10 | **ROV AI triage is a stub** — No real AI analysis for new comps | ROV is fully manual | 3-5 days | ❌ Not started |
+| 10 | **ROV AI triage is a stub** — No real AI analysis for new comps | ROV is fully manual | 3-5 days | ✅ Done — `performAITriage` fully wired; `validateTriageResult` guards schema; `complianceFlags` auto-escalated on medium/high risk; manual re-trigger endpoint `POST /rov/requests/:id/triage`; 13 tests |
 
 ---
 
@@ -307,4 +304,4 @@ Order created
 7. **Risk-based routing** — use Axiom score (<30 / 30-70 / >70) to branch QC routing
 8. **Vendor acceptance portal** — lightweight web view for vendor accept/decline
 9. **Borrower communication automation** — wire ACS automated inspection appointment reminders
-10. **ROV AI triage** — integrate Axiom or GPT-4 to pre-analyze new comps
+10. ~~**ROV AI triage** — integrate Axiom or GPT-4 to pre-analyze new comps~~ ✅ Done

@@ -578,7 +578,13 @@ Existing Internal Notes: ${rovData.internalNotes || 'None'}`;
         provider: 'auto',
       });
 
-      rawAnalysis = JSON.parse(aiResponse.content) as ROVAITriageResult;
+      const parsed = JSON.parse(aiResponse.content) as unknown;
+      const validated = this.validateTriageResult(parsed);
+      if (!validated.valid) {
+        this.logger.error('ROV AI triage returned invalid schema', { rovId, error: validated.error });
+        return { success: false, error: `AI triage schema error: ${validated.error}` };
+      }
+      rawAnalysis = validated.result;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger.error('ROV AI triage failed', { rovId, error: errMsg });
@@ -604,9 +610,28 @@ Existing Internal Notes: ${rovData.internalNotes || 'None'}`;
       metadata: { meritScore: rawAnalysis.meritScore, recommendedPriority: rawAnalysis.recommendedPriority },
     };
 
+    // Update complianceFlags based on AI-detected compliance risk.
+    // 'medium' or 'high' risk → flag for legal review.
+    // 'high' risk → also flag for regulatory escalation.
+    const existingFlags = rovData.complianceFlags ?? {
+      possibleBias: false,
+      discriminationClaim: false,
+      regulatoryEscalation: false,
+      legalReview: false,
+    };
+    const updatedComplianceFlags = {
+      ...existingFlags,
+      legalReview: existingFlags.legalReview ||
+        rawAnalysis.complianceRisk === 'medium' ||
+        rawAnalysis.complianceRisk === 'high',
+      regulatoryEscalation: existingFlags.regulatoryEscalation ||
+        rawAnalysis.complianceRisk === 'high',
+    };
+
     await this.dbService.updateROVRequest(rovId, {
       internalNotes: updatedNotes,
       priority: rawAnalysis.recommendedPriority,
+      complianceFlags: updatedComplianceFlags,
       timeline: [...rovData.timeline, timelineEntry],
       updatedAt: new Date(),
     });
@@ -618,6 +643,51 @@ Existing Internal Notes: ${rovData.internalNotes || 'None'}`;
     });
 
     return { success: true, analysis: rawAnalysis };
+  }
+
+  /**
+   * Helper: Validate the raw object returned by the AI against ROVAITriageResult schema.
+   * LLMs can hallucinate missing fields or wrong types; we catch that here rather than
+   * propagating garbage into the database.
+   */
+  private validateTriageResult(
+    raw: unknown,
+  ): { valid: true; result: ROVAITriageResult } | { valid: false; error: string } {
+    if (typeof raw !== 'object' || raw === null) {
+      return { valid: false, error: 'Expected JSON object, got ' + typeof raw };
+    }
+
+    const r = raw as Record<string, unknown>;
+
+    if (typeof r.meritScore !== 'number' || r.meritScore < 0 || r.meritScore > 100) {
+      return { valid: false, error: `meritScore must be a number 0–100, got ${r.meritScore}` };
+    }
+    if (!['NORMAL', 'HIGH', 'URGENT'].includes(r.recommendedPriority as string)) {
+      return { valid: false, error: `Invalid recommendedPriority: ${r.recommendedPriority}` };
+    }
+    if (!['strong', 'moderate', 'weak', 'frivolous'].includes(r.challengeMerit as string)) {
+      return { valid: false, error: `Invalid challengeMerit: ${r.challengeMerit}` };
+    }
+    if (!Array.isArray(r.primaryChallengeIssues)) {
+      return { valid: false, error: 'primaryChallengeIssues must be an array' };
+    }
+    if (!Array.isArray(r.evidenceGaps)) {
+      return { valid: false, error: 'evidenceGaps must be an array' };
+    }
+    if (typeof r.suggestedComparableSearch !== 'object' || r.suggestedComparableSearch === null) {
+      return { valid: false, error: 'suggestedComparableSearch must be an object' };
+    }
+    if (!['none', 'low', 'medium', 'high'].includes(r.complianceRisk as string)) {
+      return { valid: false, error: `Invalid complianceRisk: ${r.complianceRisk}` };
+    }
+    if (typeof r.complianceNotes !== 'string') {
+      return { valid: false, error: 'complianceNotes must be a string' };
+    }
+    if (typeof r.triageSummary !== 'string' || r.triageSummary.trim() === '') {
+      return { valid: false, error: 'triageSummary must be a non-empty string' };
+    }
+
+    return { valid: true, result: r as unknown as ROVAITriageResult };
   }
 
   /**
