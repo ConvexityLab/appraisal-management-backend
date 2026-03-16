@@ -160,9 +160,13 @@ jobs:
 
     - name: Import API swagger into APIM
       run: |
+        APIM_NAME="${{ steps.deploy.outputs.apimName }}"
+        if [[ -z "$APIM_NAME" || "$APIM_NAME" == "null" ]]; then
+          echo "⏭️  Skipping APIM swagger import — apimName output not present (APIM not deployed in this stack)."
+          exit 0
+        fi
         echo "📋 Importing API swagger spec into APIM (spec exceeds Bicep 128 KB limit)..."
         RG="${{ steps.deploy.outputs.resourceGroupName }}"
-        APIM_NAME="${{ steps.deploy.outputs.apimName }}"
         SERVICE_URL="${{ steps.deploy.outputs.appServiceUrl }}"
 
         az apim api import \
