@@ -104,6 +104,55 @@ function parseArgs(): { modules: string[]; clean: boolean; cleanOnly: boolean; l
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Container → partition key path mapping.
+ * Used by the ensure-containers step so `createIfNotExists` picks the right key.
+ * Default is '/tenantId' if not listed here.
+ */
+const CONTAINER_PARTITION_KEYS: Record<string, string> = {
+  'orders':                   '/tenantId',
+  'vendors':                  '/tenantId',
+  'clients':                  '/tenantId',
+  'products':                 '/tenantId',
+  'documents':                '/tenantId',
+  'communications':           '/tenantId',
+  'engagements':              '/tenantId',
+  'construction-loans':       '/tenantId',
+  'contractors':              '/tenantId',
+  'bulk-portfolio-jobs':      '/tenantId',
+  'matching-criteria-sets':   '/tenantId',
+  'arv-analyses':             '/tenantId',
+  'qc-reviews':               '/orderId',
+  'qc-checklists':            '/tenantId',
+  'revisions':                '/orderId',
+  'escalations':              '/orderId',
+  'rfb-requests':             '/orderId',
+  'sla-tracking':             '/orderId',
+  'sla-configurations':       '/clientId',
+  'review-programs':          '/clientId',
+  'review-results':           '/jobId',
+  'properties':               '/address/state',
+  'property-summaries':       '/propertyType',
+  'property-records':         '/tenantId',
+  'comparable-sales':         '/tenantId',
+  'comparable-analyses':      '/reviewId',
+  'analytics':                '/reportType',
+  'users':                    '/organizationId',
+  'results':                  '/orderId',
+  'sessions':                 '/userId',
+  'templates':                '/category',
+  'document-templates':       '/id',
+  'reporting':                '/id',
+  'draws':                    '/constructionLoanId',
+  'construction-cost-catalog':'/division',
+  'audit-trail':              '/orderId',
+  'pdf-templates':            '/tenantId',
+  'inspections':              '/tenantId',
+  'reports':                  '/tenantId',
+  'engagement-audit-events':  '/engagementId',
+  'appraisal-drafts':         '/orderId',
+};
+
 async function main(): Promise<void> {
   const opts = parseArgs();
 
@@ -156,6 +205,25 @@ async function main(): Promise<void> {
   }
 
   const db = cosmosClient.database('appraisal-management');
+
+  // ── Ensure containers exist ───────────────────────────────────────────────
+  // Collect every unique container name referenced by seed modules.
+  // For each one, call createIfNotExists so seeding works against a fresh db.
+  const allContainerNames = [...new Set(ALL_MODULES.flatMap(m => m.containers))];
+  console.log(`\n🔧 Ensuring ${allContainerNames.length} containers exist...`);
+  for (const name of allContainerNames) {
+    try {
+      await db.containers.createIfNotExists({ id: name, partitionKey: CONTAINER_PARTITION_KEYS[name] ?? '/tenantId' });
+      process.stdout.write('.');
+    } catch (err: unknown) {
+      // Container may already exist — that's fine
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('already exists')) {
+        console.warn(`\n  ⚠️  Could not ensure container "${name}": ${msg}`);
+      }
+    }
+  }
+  console.log(' done');
 
   const ctx: SeedContext = {
     cosmosClient,

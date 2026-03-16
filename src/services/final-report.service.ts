@@ -25,6 +25,8 @@ import { BlobStorageService } from './blob-storage.service.js';
 import { NotificationService } from './notification.service.js';
 import { MismoXmlGenerator } from './mismo-xml-generator.service.js';
 import type { SubmissionInfo } from './mismo-xml-generator.service.js';
+import { CompletionReportXmlGenerator } from './completion-report-xml-generator.service.js';
+import type { CanonicalCompletionReport } from '../types/canonical-completion-report.js';
 import { Logger } from '../utils/logger.js';
 import {
   FinalReport,
@@ -346,9 +348,7 @@ export class FinalReportService {
     const order = orderResp.data;
     const qcReview = await this._loadApprovedQcReview(orderId);
 
-    // Generate XML
-    const xmlGenerator = new MismoXmlGenerator();
-    const mismoReport = this._buildMismoReport(order, qcReview, report);
+    // Generate XML — route by formType
     const submissionInfo: SubmissionInfo = {
       loanNumber:          qcReview.loanNumber ?? orderId,
       lenderName:          order.contactInformation?.name ?? order.clientId,
@@ -356,7 +356,34 @@ export class FinalReportService {
       submittingUserName:  requestedBy,
       submittingUserId:    requestedBy,
     };
-    const xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
+
+    let xml: string;
+
+    if (report.formType === 'COMPLETION_REPORT') {
+      // ── Completion Report path (UAD 3.6 Appendix B-3) ────────────────────
+      const crDocs = await this.db.queryDocuments<CanonicalCompletionReport>(
+        this.REPORTING_CONTAINER,
+        'SELECT * FROM c WHERE c.orderId = @orderId AND c.reportType = @reportType ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+        [
+          { name: '@orderId',    value: orderId },
+          { name: '@reportType', value: 'CompletionReport' },
+        ],
+      );
+      const crDoc = crDocs[0];
+      if (!crDoc) {
+        throw new Error(
+          `No CanonicalCompletionReport found for order '${orderId}' in the '${this.REPORTING_CONTAINER}' container. ` +
+          `The appraiser must save the Completion Report workspace before MISMO XML can be generated.`,
+        );
+      }
+      const crGenerator = new CompletionReportXmlGenerator();
+      xml = crGenerator.generateCompletionReportXml(crDoc, submissionInfo);
+    } else {
+      // ── URAR / DVR path ───────────────────────────────────────────────────
+      const xmlGenerator = new MismoXmlGenerator();
+      const mismoReport = this._buildMismoReport(order, qcReview, report);
+      xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
+    }
 
     // Upload
     const xmlBlobPath = `${orderId}/mismo/${report.id}.xml`;
@@ -707,17 +734,44 @@ export class FinalReportService {
     // --- Event 2: Conditional MISMO XML generation ---
     if (process.env['ENABLE_MISMO_ON_DELIVERY'] === 'true') {
       try {
-        const xmlGenerator = new MismoXmlGenerator();
-        const mismoReport  = this._buildMismoReport(order, qcReview, report);
         const submissionInfo: SubmissionInfo = {
-          loanNumber:        qcReview.loanNumber ?? order.id,
-          lenderName:        order.contactInformation?.name ?? order.clientId,
-          lenderIdentifier:  order.clientId,
+          loanNumber:         qcReview.loanNumber ?? order.id,
+          lenderName:         order.contactInformation?.name ?? order.clientId,
+          lenderIdentifier:   order.clientId,
           submittingUserName: report.generatedBy,
           submittingUserId:   report.generatedBy,
         };
 
-        const xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
+        let xml: string;
+
+        if (report.formType === 'COMPLETION_REPORT') {
+          // ── Completion Report path (UAD 3.6 Appendix B-3) ────────────────────
+          // Load CanonicalCompletionReport from the reporting container.
+          // The document is stored with reportType === 'CompletionReport'.
+          const crDocs = await this.db.queryDocuments<CanonicalCompletionReport>(
+            this.REPORTING_CONTAINER,
+            'SELECT * FROM c WHERE c.orderId = @orderId AND c.reportType = @reportType ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+            [
+              { name: '@orderId',    value: order.id },
+              { name: '@reportType', value: 'CompletionReport' },
+            ],
+          );
+          const crDoc = crDocs[0];
+          if (!crDoc) {
+            throw new Error(
+              `No CanonicalCompletionReport found for order '${order.id}' in the '${this.REPORTING_CONTAINER}' container. ` +
+              `The appraiser must save the Completion Report workspace before MISMO XML can be generated.`,
+            );
+          }
+          const crGenerator = new CompletionReportXmlGenerator();
+          xml = crGenerator.generateCompletionReportXml(crDoc, submissionInfo);
+        } else {
+          // ── URAR / DVR path (all other form types) ────────────────────────────
+          const xmlGenerator = new MismoXmlGenerator();
+          const mismoReport  = this._buildMismoReport(order, qcReview, report);
+          xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
+        }
+
         const xmlBlobName = `${order.id}/mismo/${report.id}.xml`;
 
         await this.blob.uploadBlob({

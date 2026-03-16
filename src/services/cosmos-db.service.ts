@@ -59,6 +59,8 @@ export class CosmosDbService {
   private constructionLoansContainer: Container | null = null;
   private drawsContainer: Container | null = null;
   private contractorsContainer: Container | null = null;
+  // ── Appraisal Drafts (UAD 3.6 Phase 1) ─────────────────────────────────
+  private appraisalDraftsContainer: Container | null = null;
   // ── Property Aggregate Root (Phase R1) ──────────────────────────────────
   private propertyRecordsContainer: Container | null = null;
   private comparableSalesContainer: Container | null = null;
@@ -104,6 +106,8 @@ export class CosmosDbService {
     constructionLoans: 'construction-loans',               // ConstructionLoan, ConstructionBudget, ChangeOrder, FeasibilityReport, ConstructionStatusReport
     draws: 'draws',                                        // DrawRequest, DrawInspectionReport (partition: /constructionLoanId)
     contractors: 'contractors',                            // ContractorProfile (partition: /tenantId)
+    // ── Appraisal Drafts (UAD 3.6 Phase 1) ───────────────────────────────
+    appraisalDrafts: 'appraisal-drafts',                   // AppraisalDraft (partition: /orderId)
     // ── Property Aggregate Root (Phase R1) ────────────────────────────────
     propertyRecords: 'property-records',                   // PropertyRecord (partition: /tenantId)
     comparableSales: 'comparable-sales',                   // PropertyComparableSale (partition: /zipCode)
@@ -221,6 +225,8 @@ export class CosmosDbService {
       this.constructionLoansContainer = this.database.container(this.containers.constructionLoans);
       this.drawsContainer = this.database.container(this.containers.draws);
       this.contractorsContainer = this.database.container(this.containers.contractors);
+      // ── Appraisal Drafts (UAD 3.6 Phase 1) ──────────────────────────────────
+      this.appraisalDraftsContainer = this.database.container(this.containers.appraisalDrafts);
       // ── Property Aggregate Root (Phase R1) ─────────────────────────────────
       this.propertyRecordsContainer = this.database.container(this.containers.propertyRecords);
       this.comparableSalesContainer = this.database.container(this.containers.comparableSales);
@@ -3104,6 +3110,51 @@ export class CosmosDbService {
       throw new Error('engagements container not initialized');
     }
     return this.engagementsContainer;
+  }
+
+  /**
+   * Returns the appraisal-drafts container reference (UAD 3.6 Phase 1).
+   */
+  getAppraisalDraftsContainer(): import('@azure/cosmos').Container {
+    if (!this.appraisalDraftsContainer) {
+      throw new Error('appraisal-drafts container not initialized');
+    }
+    return this.appraisalDraftsContainer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Completion Report (Appendix B-3 / 1004D)
+  // Container: 'completion-reports'  Partition key: /orderId
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Upsert a CanonicalCompletionReport for an order.
+   * The stored document is keyed by orderId; one report per order.
+   */
+  async saveCompletionReport(orderId: string, report: any): Promise<any> {
+    const result = await this.upsertItem<any>('completion-reports', {
+      id: orderId,
+      orderId,
+      ...report,
+      savedAt: new Date().toISOString(),
+    });
+    if (!result.success) {
+      throw new Error(`Failed to save completion report for order '${orderId}'`);
+    }
+    return result.data;
+  }
+
+  /**
+   * Retrieve a CanonicalCompletionReport by orderId.
+   * Returns null when no report has been saved yet.
+   */
+  async findCompletionReportByOrderId(orderId: string): Promise<any | null> {
+    const result = await this.getItem<any>('completion-reports', orderId, orderId);
+    if (!result.success) {
+      // A 404-style miss is represented as success:false with ITEM_NOT_FOUND code — treat as null.
+      return null;
+    }
+    return result.data ?? null;
   }
 }
 

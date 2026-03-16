@@ -334,6 +334,18 @@ resource mismoAutoGenerateServiceSubscription 'Microsoft.ServiceBus/namespaces/t
   }
 }
 
+// Communication Event Handler Subscription (consumed by CommunicationEventHandlerService — triggers automated emails/SMS on appraisal lifecycle events)
+resource communicationEventHandlerSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'communication-event-handler'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id

@@ -86,6 +86,14 @@ export class CollaborationService {
   // ─── Private ───────────────────────────────────────────────────────────────
 
   private async getTenantKey(): Promise<string> {
+    // Local-dev bypass: set AZURE_FLUID_RELAY_KEY to the primary key from the Azure portal
+    // (Azure Fluid Relay resource → Access keys). This avoids needing Key Vault RBAC locally.
+    const localKey = process.env.AZURE_FLUID_RELAY_KEY;
+    if (localKey) {
+      this.logger.info('Using AZURE_FLUID_RELAY_KEY env var (local-dev bypass — not Key Vault)');
+      return localKey;
+    }
+
     const now = Date.now();
     if (this.cachedKey && now - this.keyFetchedAt < CollaborationService.KEY_CACHE_MS) {
       return this.cachedKey;

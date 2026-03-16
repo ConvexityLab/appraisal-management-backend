@@ -199,25 +199,39 @@ export const createCollaborationRouter = (): Router => {
         return;
       }
 
+      // Per-record authorization: verify the caller may access this container's record.
+      // Wrapped separately so a Cosmos/network error here doesn't become a generic 500.
+      let authzResult: Awaited<ReturnType<typeof authorizeContainerAccess>>;
       try {
-        // Per-record authorization: verify the caller may access this container's record.
-        const authzResult = await authorizeContainerAccess(
+        authzResult = await authorizeContainerAccess(
           req.query.containerId as string | undefined,
           { id: req.user.id, tenantId: req.user.tenantId },
         );
+      } catch (authzErr) {
+        logger.error('authorizeContainerAccess threw unexpectedly', { authzErr, userId: req.user.id });
+        res.status(503).json({
+          success: false,
+          error: {
+            code: 'AUTHORIZATION_UNAVAILABLE',
+            message: 'Unable to verify access to this collaboration session. The data store may be unreachable.',
+          },
+        });
+        return;
+      }
 
-        if (!authzResult.allowed) {
-          res.status(403).json({
-            success: false,
-            error: {
-              code: 'COLLABORATION_ACCESS_DENIED',
-              message: 'You do not have permission to join this collaboration session.',
-              ...(authzResult.reason && { reason: authzResult.reason }),
-            },
-          });
-          return;
-        }
+      if (!authzResult.allowed) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'COLLABORATION_ACCESS_DENIED',
+            message: 'You do not have permission to join this collaboration session.',
+            ...(authzResult.reason && { reason: authzResult.reason }),
+          },
+        });
+        return;
+      }
 
+      try {
         const result = await collaborationService.generateToken({
           tenantId,
           containerId: req.query.containerId as string | undefined,
@@ -228,13 +242,21 @@ export const createCollaborationRouter = (): Router => {
         res.json({ success: true, data: result });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        // Key Vault unreachable (common in local dev without managed identity or VPN)
+        // Key Vault unreachable or authorization failure (common in local dev).
+        // Catches: CredentialUnavailableError, ENOTFOUND, Azure SDK 401/403 responses.
         const isKeyVaultError =
           msg.includes('Key Vault') ||
           msg.includes('keyvault') ||
+          msg.includes('vault.azure.net') ||
           msg.includes('AuthenticationRequired') ||
           msg.includes('CredentialUnavailableError') ||
+          msg.includes('CredentialUnavailable') ||
+          msg.includes('No credential') ||
+          msg.includes('Forbidden') ||
+          msg.includes('Unauthorized') ||
           msg.includes('ENOTFOUND') ||
+          msg.includes('ECONNREFUSED') ||
+          msg.includes('fluid-relay-key') ||
           msg.includes('secret');
         if (isKeyVaultError) {
           logger.warn('Fluid Relay Key Vault unreachable — collaboration unavailable', { err, userId: req.user.id });
@@ -244,7 +266,8 @@ export const createCollaborationRouter = (): Router => {
               code: 'KEYVAULT_UNAVAILABLE',
               message:
                 'Cannot reach Key Vault to fetch the Fluid Relay signing key. ' +
-                'For local development set VITE_FLUID_RELAY_USE_LOCAL=true in .env and run `npx tinylicious`.',
+                'For local dev set AZURE_FLUID_RELAY_KEY in the backend .env to the ' +
+                'primary key from the Azure Fluid Relay resource → Access keys.',
             },
           });
           return;

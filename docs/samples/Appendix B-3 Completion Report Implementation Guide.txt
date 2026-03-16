@@ -1,0 +1,1205 @@
+=== PAGE 1 ===
+Uniform Appraisal Dataset (UAD) Specification
+Issued by Fannie Mae and Freddie Mac
+Appendix B-3: Completion Report Implementation Guide
+Document Version 1.4
+March 10, 2026
+This document relates to the Uniform Mortgage Data Program®, an effort undertaken jointly by Freddie Mac and Fannie Mae at the direction of the Federal Housing Finance Agency.
+©2026 Freddie Mac and Fannie Mae. Trademarks of the respective owners
+
+=== PAGE 2 ===
+Page 2
+Revision History
+Change
+Date Version iGuide Chapter Revision Description
+#
+Ad Added reference to the standardized XML structure and submission
+2026-030 Introduction
+guidance applicable across all UAD 3.6 report types
+04 New Observed Items
+2026-002 Corrected UID and display rule for CompletionReportNewDefectIndicator
+for Repair
+03/10/2026 1.4
+Clarified display rule for Supervisory Appraiser
+08 Assignment • ID (UID: 2200.0145, FID: 08.036),
+2026-009
+Information • State (UID: 2200.0146, FID: 08.037)
+• Expires (UID: 2200.0144, FID: 08.038)
+Removed ValuationReconciliationConditionsCommentDescription from the
+2025-002 02 Original Appraisal
+table, which should have been removed under 2024-021
+06/10/2025 1.3
+07 Completion Report Updated the ImageCaptionCommentDescription Unique ID from 1400.1012
+2025-040
+Exhibits to 4000.1001 due to an overlap with the URAR Unique ID.
+2024-028 Header and Footer Updated DocumentFormIssuingEntityVersionIdentifier
+2024-044 Header and Footer Added information for allowing additional text in the footer
+Removed two enumerations from
+09/17/2024 1.2
+PropertyValuationConditionalConclusionType (UID: 2800.0002, FID: 02.003)
+2024-021 02 Original Appraisal
+and removed ValuationReconciliationConditionsCommentDescription (UID:
+2800.0047, FID: 02.007)
+2024-019 05 Completion Status Updated snippet for Figure 5 - 03
+09 Certifications and
+2023-003 Updated Supervisory Appraiser Certs
+Scope of Work
+12/12/2023 1.1
+2023-061 Header and Footer Updated DocumentFormIssuingEntityVersionIdentifier
+
+=== PAGE 3 ===
+Page 3
+Change
+Date Version iGuide Chapter Revision Description
+#
+Ad Added reference to the standardized XML structure and submission
+2026-030 Introduction
+guidance applicable across all UAD 3.6 report types
+04 New Observed Items
+2026-002 Corrected UID and display rule for CompletionReportNewDefectIndicator
+for Repair
+03/10/2026 1.4
+Clarified display rule for Supervisory Appraiser
+08 Assignment • ID (UID: 2200.0145, FID: 08.036),
+2026-009
+Information • State (UID: 2200.0146, FID: 08.037)
+• Expires (UID: 2200.0144, FID: 08.038)
+Removed ValuationReconciliationConditionsCommentDescription from the
+2025-002 02 Original Appraisal
+table, which should have been removed under 2024-021
+06/10/2025 1.3
+07 Completion Report Updated the ImageCaptionCommentDescription Unique ID from 1400.1012
+2025-040
+Exhibits to 4000.1001 due to an overlap with the URAR Unique ID.
+2024-028 Header and Footer Updated DocumentFormIssuingEntityVersionIdentifier
+2024-044 Header and Footer Added information for allowing additional text in the footer
+Removed two enumerations from
+09/17/2024 1.2
+PropertyValuationConditionalConclusionType (UID: 2800.0002, FID: 02.003)
+2024-021 02 Original Appraisal
+and removed ValuationReconciliationConditionsCommentDescription (UID:
+2800.0047, FID: 02.007)
+2024-019 05 Completion Status Updated snippet for Figure 5 - 03
+03/29/2023 1.0 Initial Publication
+
+=== PAGE 4 ===
+Page 4
+Table of Contents
+Revision History ..........................................................................................................................................................................................2
+Table of Contents ........................................................................................................................................................................................4
+Introduction ................................................................................................................................................................................................7
+................................................................................................................................... 7
+Overview ....................................................................................................................................................................................................8
+Table Column Headers ........................................................................................................................................................................................ 8
+Document Conventions ....................................................................................................................................................................................... 8
+Report PDF ..................................................................................................................................................................................................9
+Completion Report Section Organization ........................................................................................................................................................... 9
+Header and Footer .................................................................................................................................................................................... 11
+Overview ........................................................................................................................................................................................................... 11
+Header ............................................................................................................................................................................................................... 11
+Footer ................................................................................................................................................................................................................ 11
+01 Subject Property .................................................................................................................................................................................. 13
+Overview ........................................................................................................................................................................................................... 13
+Data Mapping and PDF Rendering Information ................................................................................................................................................ 13
+Legal Description ........................................................................................................................................................................................ 15
+02 Original Appraisal ................................................................................................................................................................................. 17
+Overview ........................................................................................................................................................................................................... 17
+Data Mapping and PDF Rendering Information ................................................................................................................................................ 17
+Final Value Condition Statement ............................................................................................................................................................... 18
+03 Itemized List of Repairs ......................................................................................................................................................................... 20
+
+=== PAGE 5 ===
+Page 5
+Overview ........................................................................................................................................................................................................... 20
+Data Mapping and PDF Rendering Information ................................................................................................................................................ 20
+04 New Observed Items for Repair ............................................................................................................................................................ 22
+Overview ........................................................................................................................................................................................................... 22
+Data Mapping and PDF Rendering Information ................................................................................................................................................ 22
+05 Completion Status ................................................................................................................................................................................ 24
+Overview ........................................................................................................................................................................................................... 24
+Data Mapping and PDF Rendering .................................................................................................................................................................... 24
+06 Completion Report Commentary .......................................................................................................................................................... 28
+Overview ........................................................................................................................................................................................................... 28
+07 Completion Report Exhibits .................................................................................................................................................................. 29
+Overview ........................................................................................................................................................................................................... 29
+Itemized List of Repairs .............................................................................................................................................................................. 29
+New Observed Items for Repair ................................................................................................................................................................. 29
+Construction Complete .............................................................................................................................................................................. 29
+Construction not Completed Per Plans and Specifications ....................................................................................................................... 30
+Additional Exhibits ..................................................................................................................................................................................... 30
+08 Assignment Information ....................................................................................................................................................................... 32
+Overview ........................................................................................................................................................................................................... 32
+Data Mapping and PDF Rendering .................................................................................................................................................................... 32
+Assignment Information ............................................................................................................................................................................ 32
+Contact Information ................................................................................................................................................................................... 35
+Appraiser and Supervisory Appraiser ........................................................................................................................................................ 43
+
+=== PAGE 6 ===
+Page 6
+Assignment Information and Scope of Work Commentary ....................................................................................................................... 47
+09 Certifications and Intended Use/User ................................................................................................................................................... 48
+Overview ........................................................................................................................................................................................................... 48
+Data Mapping and PDF Rendering .................................................................................................................................................................... 48
+Intended Use .............................................................................................................................................................................................. 48
+Intended User ............................................................................................................................................................................................ 49
+Certifications .............................................................................................................................................................................................. 50
+Completion Report – Arcrole Relationships ...................................................................................................................................................... 55
+INSPECTION to ROLE ......................................................................................................................................................................................... 56
+Appraiser .................................................................................................................................................................................................... 56
+Supervisory Appraiser ................................................................................................................................................................................ 56
+SIGNATORY to ROLE .......................................................................................................................................................................................... 58
+Appraiser .................................................................................................................................................................................................... 58
+Supervisory Appraiser ................................................................................................................................................................................ 58
+
+=== PAGE 7 ===
+Page 7
+Introduction
+The Uniform Appraisal Dataset (UAD) is a standardized industry dataset for appraisal information that is transmitted electronically through the
+Uniform Collateral Data Portal® (UCDP®). At the direction of the Federal Housing Finance Agency (FHFA), Fannie Mae and Freddie Mac (the
+government-sponsored enterprises or GSEs) jointly developed the first UAD in 2010 using the Mortgage Industry Standards Maintenance
+Organization (MISMO®) Reference Model 2.6, providing consistent data standards for the loans the GSEs purchase.
+The dataset is being updated to reflect changes to the appraisal industry, address future appraisal needs, and facilitate ongoing digitization in
+the appraisal process and the mortgage industry.
+Standardizing the data was critical to evaluating risk at a macro level in the Legacy UAD. The new dataset will take this advancement even
+further by:
+• Creating consistent enumerated fields.
+• Keeping the related data together in each section for an easy-to-read report.
+• Conditionality driving what sections appear on the final output, eliminating the need for multiple forms to support different property and
+assignment types.
+The updated UAD will help the appraiser more accurately report the characteristics of the subject property and comparables, be more
+scalable and flexible than the Legacy forms, help appraisers comply with the Uniform Standards of Appraisal Practice (USPAP), and better
+define the Scope of Work.
+In addition, appraisal data is currently submitted to the GSEs using the MISMO Reference Model 2.6, which is outdated and no longer
+supported by MISMO. As part of this update, the UAD will conform to the latest MISMO Reference Model (3.6).
+For report file structure and submission requirements, refer to: Appendix B-1: Implementation Guide, Key Concepts chapter, Appraisal File
+Structure – Submission to UCDP
+This section contains the standardized XML structure and submission guidance applicable across all UAD 3.6 report types, including the
+Restricted Appraisal Update Report and Completion Report.
+
+=== PAGE 8 ===
+Page 8
+Overview
+The primary purpose of the Implementation Guide (iGuide) is to provide designers of the new Completion Report with an understanding of
+the MISMO version 3.6 Reference Model (MISMO v3.6) and how the data will be displayed in a dynamic PDF document.
+This document serves as a guide to assist with data mapping, field formats, and the PDF representation of the report. It is not a
+comprehensive developer’s guide.
+In some sections, a table is used to define the fields in that section.
+• Report Field ID (FID): Red numbers super-imposed on the sample Completion Report.
+• Report Label: Name of the field as shown on the Completion Report.
+• Unique ID (UID): This column lists the unique number assigned to each instance of a MISMO data point.
+• MISMO Data Point Name: This column lists the MISMO data point for the associated data element.
+• Display Rules: Documents display rules associated with a given data element.
+The following typefaces and colors are used throughout this document:
+• Completion Report Section and Subsection Names, are represented in bold, (e.g., Subject Property, Original Appraisal, Completion
+Report Commentary)
+• Report field labels are represented in italics, (e.g., Borrower Name, Physical Address)
+• On Completion Report excerpts and when form fields are referenced, a red superimposed number identifies a Report Field ID, (e.g., FID:
+01.001)
+
+=== PAGE 9 ===
+Page 9
+Report PDF
+The Completion Report is a dynamic data-driven, flexible report with sections (black tabs) that vary based on information contained in the
+report. See Appendix E - Report Style Guide, which includes specifications for the overall design elements that apply to all pages of the
+Completion Report.
+The organization of the report PDF is laid out in a four-level hierarchy of information, each with defined headings and style.
+1. At the highest level, there are sections that appear in a black rounded tab with white lettering. This will repeat at the top of each
+page and will be followed by “(continued)” if a section goes onto another page.
+2. Next are subsections that are defined by a gray bar and indicate a grouping of information contained within each section.
+3. Labels are bolded.
+4. Sub-Labels are not bolded.
+
+=== PAGE 10 ===
+Page 10
+This table shows the sections of the Completion Report and when they display. For more information about a section,
+reference the appropriate chapter of this guide.
+Section # Section Header When Section Displays on Report
+1 Subject Property Always
+2 Original Appraisal Always
+3 Itemized List of Repairs When Market Value Condition from the original appraisal included Subject to Repair.
+4 New Observed Items for Repair When new items are observed in the course of the completion inspection.
+When Market Value Condition from the original appraisal included Subject to
+5 Completion Status
+Completion Per Plans.
+6 Completion Report Commentary When comments are provided
+7 Completion Report Exhibits When exhibits are provided
+8 Assignment Information Always
+9 Certifications and Intended Use Always
+
+=== PAGE 11 ===
+Page 11
+Header and Footer
+The header and footer display on each page of the Completion Report. They provide navigation and reference notations including report title,
+page numbers, and, if applicable, Reference IDs used by various parties to the report.
+Header Text displays on all pages of the report.
+• Left side: DocumentType (UID: 2800.0036, FID: HF.001) = “Completion Report”
+o Always displays
+• Right side: “Page X of XX” (where X stands for page number, and XX for total pages in document)
+o Always displays
+Figure HF - 1
+See Appendix E – Report Style Guide for details displaying the header.
+Footer Text displays on every page of the report.
+
+=== PAGE 12 ===
+Page 12
+• Completion Version # - AboutVersionIdentifier (UID: 2100.0030, FID: HF.002)
+o Always displays
+• Fannie Mae | Freddie Mac - DocumentFormIssuingEntityNameType (UID: 2100.0052, FID: HF.003)
+o Always displays
+• September 2024 - DocumentFormIssuingEntityVersionIdentifier (UID: 2100.0053, FID: HF.004)
+o Always displays
+• Appraiser Reference ID - AppraiserFileIdentifier (UID: 2100.0029, FID: HF.005)
+o Always displays
+• Agency Case File ID - AdditionalValuationIdentifier (UID: 2100.0023, FID: HF.006)
+o Displays when AdditionalValuationIdentifierType (UID: 2100.0024, FID: HF.006)= "GovernmentAgency"
+• Client Reference ID - AdditionalValuationIdentifier (UID: 2100.0021, FID: HF.007)
+o Displays when AdditionalValuationIdentifierType (UID: 2100.0022, FID: HF.007) = "Client"
+• AMC Reference ID - AdditionalValuationIdentifier (UID: 2100.0025, FID: HF.008)
+o Displays when AdditionalValuationIdentifierType (UID: 2100.0026, FID: HF.008) = "ManagementCompany”
+Figure HF - 2
+See Appendix E – Report Style Guide for details displaying the footer.
+Note: Text can be included in the footer for vendor branding. However, the text must
+not overlap the predefined fields.
+
+=== PAGE 13 ===
+Page 13
+01 Subject Property
+The Subject Property section provides overall information including the address and legal description of the property being inspected.
+The Subject Property section always displays.
+Completion Report: Subject Property
+Report
+Report Label Name Unique ID MISMO Data Point Name Display Rules
+Field ID
+01.001 Physical Address 2800.0024 AddressLineText Always displays
+
+=== PAGE 14 ===
+Page 14
+Completion Report: Subject Property
+Report
+Report Label Name Unique ID MISMO Data Point Name Display Rules
+Field ID
+Display if exists
+- When AddressUnitIdentifier is provided,
+AddressUnitDesignatorType (UID: 2800.0048, FID: 01.001) = “Unit”
+2800.0025 AddressUnitIdentifier
+must be provided.
+Note: For 2- to 4-unit properties, do not populate unit number in
+Physical Address. Unit Identifier is included in the Unit Interior section.
+2800.0026 CityName
+2800.0028 PostalCode Always displays
+2800.0029 StateCode
+Always displays
+Note: When the property is located in more than one county, provide
+01.002 County 2800.0027 CountyName
+the county that corresponds to the Physical Address, and provide
+further details in Completion Report Commentary.
+An image of the subject property, typically the front, always displays in
+the Subject Property section.
+Not on
+{No Label} 1400.0842 ImageCategoryType - Deliver with ImageCategoryType = “PropertyPhoto”. (Figure 01 - 1)
+report
+- This image does not redisplay in Completion Report Exhibits
+section.
+
+=== PAGE 15 ===
+Page 15
+Figure 01 - 1
+Legal Description
+The Legal Description subsection always displays. The legal description is required either in text format or an image.
+- When Legal Description - ParcelsLegalDescription (UID: 2800.0049, FID: 01.003) is provided, the text displays. (Figure 01 - 2)
+Figure 01 - 2
+- When an image is provided for Legal Description, it must be delivered using ImageCategoryType (UID: 1400.0543 FID: Not on report) =
+“LegalDescription” and the image displays within the subsection below the gray bar. (Figure 01 - 3)
+- An image caption may be included using ImageCaptionCommentDescription (UID: 1400.0545, FID: 01.003.2) and displays above the
+image in bold font.
+
+=== PAGE 16 ===
+Page 16
+Figure 01 - 3
+
+=== PAGE 17 ===
+Page 17
+02 Original Appraisal
+The Original Appraisal section contains information from the original appraisal report.
+The Original Appraisal section always displays.
+Completion Report: Original Appraisal
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+02.001 Effective Date of Appraisal 2800.0032 OriginalAppraisalEffectiveDate Always displays
+02.002 Opinion of Market Value 2800.0033 OriginalAppraisedValueAmount Always displays
+Always displays
+02.003 Market Value Condition 2800.0002 PropertyValuationConditionalConclusionType
+If multiple, display stacked
+02.004 Appraiser 2800.0034 OriginalAppraiserUnparsedName Always displays
+02.005 Reference ID 2800.0035 OriginalAppraiserFileIdentifier Always displays
+02.006 Original Lender 2800.0046 OriginalLenderUnparsedName Always displays
+
+=== PAGE 18 ===
+Page 18
+Completion Report: Original Appraisal
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Displays when
+PropertyValuationConditionalConclusionType <> “AsIs”
+Final Value Condition
+02.007
+Statement
+The details on variations and how to compose the Final
+Value Condition Statement are listed below.
+Final Value Condition Statement
+The Final Value Condition Statement is a text field, which is created based on the valid value(s) of Market Value Condition. (Figure 02 - 1)
+• Market Value Condition - PropertyValuationConditionalConclusionType (UID: 2800.0002, FID: 02.003)
+Figure 02 - 1
+Note: When Market Value Condition – PropertyValuationConditionalConclusionType =
+“AsIs”, the Final Value Condition Statement does not display.
+Start with the statement, “This appraisal is made”
+Completion Report: Final Value Condition Statement
+If Market Value Condition is… Display Text
+subject to completion per plans and specifications on the basis of a hypothetical condition that the
+Subject to Completion Per Plans
+improvements have been completed
+
+=== PAGE 19 ===
+Page 19
+Completion Report: Final Value Condition Statement
+If Market Value Condition is… Display Text
+subject to the itemized list of required inspections below based on the extraordinary assumption that the
+Subject to Inspection
+condition or deficiency does not require alteration or repair
+subject to the itemized list of repairs recommended below on the basis of a hypothetical condition that the
+Subject to Repair
+repairs or alterations have been completed in a professional manner
+Subject to Completion Per Plans/Inspection/Repair
+When PropertyValuationConditionalConclusionType (UID: 2800.0002, FID: 02.003) = "SubjectToCompletionPerPlans" OR
+"SubjectToInspection" OR "SubjectToRepair":
+1. The statement begins with the text, “This appraisal is made”
+2. Followed by “Display Text” for the corresponding market value condition.
+a. If there are multiple market value conditions, each “Display Text” is separated by “, and”
+3. End the sentence with a period.
+4. Add a final sentence, “This might have affected the assignment results.”
+Examples
+Example of a singular PropertyValuationConditionalConclusionType: Subject to Completion Per Plans
+This appraisal is made subject to completion per plans and specifications on the basis of a hypothetical condition that the improvements
+have been completed. This might have affected the assignment results.
+Example of two PropertyValuationConditionalConclusionType: Subject to Completion Per Plans and Subject to Repair
+This appraisal is made subject to completion per plans and specifications on the basis of a hypothetical condition that the improvements
+have been completed, and subject to the itemized list of repairs recommended below on the basis of a hypothetical condition that the
+repairs or alterations have been completed in a professional manner. This might have affected the assignment results.
+
+=== PAGE 20 ===
+Page 20
+03 Itemized List of Repairs
+The Itemized List of Repairs section displays a list of individual repairs that were required in the original appraisal and their status as of the
+date of the completion inspection.
+The Itemized List of Repairs section does not display when there are no itemized repair items.
+• Each itemized repair from the original appraisal report must include the CompletionReportNewDefectIndicator - (UID: 3900.0015, FID:
+Not on report) = “false”
+Completion Report: Itemized List of Repairs (Figure 03 - 1)
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Display when PropertyValuationConditionalConclusionType =
+"SubjectToRepair" AND CompletionReportNewDefectIndicator = "false"
+Display a separate row for each repair item.
+- When the same Feature has multiple repair items, repeat the
+03.001 Feature 3900.0117 DefectComponentLabelType entire row.
+- Images for the repair item must be provided and display in
+Completion Report Exhibits
+03.002 Location 3900.0010 DefectItemLocationType Display for each repair item
+
+=== PAGE 21 ===
+Page 21
+Completion Report: Itemized List of Repairs (Figure 03 - 1)
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Display when PropertyValuationConditionalConclusionType =
+"SubjectToRepair" AND CompletionReportNewDefectIndicator = "false"
+- When items are not related to kitchens or baths, use
+DefectItemLocationType = “Other” and describe the location in
+DefectItemLocationTypeOtherDescription (UID: 3900.0162, FID:
+03.002)
+Display for each repair item
+03.003 Description 3900.0011 DefectItemDescription
+Affects Soundness or DefectItemAffectsSoundnessStr Display for each repair item
+03.004 3900.0012
+Structural Integrity ucturalIntegrityIndicator
+DefectItemRecommendedActio Display for each repair item
+03.005 Repair Completed 3900.0016
+nCompletedIndicator
+DefectItemRecommendedActio Display for each repair item
+03.006 Inspection Date 3900.0017
+nInspectionDate
+DefectItemRecommendedActio Display when DefectItemRecommendedActionCompletedIndicator =
+03.007 Completion Comment 3900.0018
+nCompletionDescription “false” OR exists
+Figure 03 - 1
+
+=== PAGE 22 ===
+Page 22
+04 New Observed Items for Repair
+The New Observed Items for Repair section displays a list of additional repairs observed in the course of the completion inspection.
+When there are no newly observed items in the course of the completion inspection, the section does not display.
+• Each newly observed item for repair, must include the CompletionReportNewDefectIndicator - (UID: 2800.0051, FID: Not on report) =
+“true” and additional details must be provided for each item.
+Completion Report: New Observed Items for Repair (Figure 04 - 1)
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Display when CompletionReportNewDefectIndicator = "true"
+- Display a separate row for each newly observed repair item.
+Display for each newly observed item
+- When the same Feature has multiple repair items, repeat the
+04.001 Feature 2800.0052 DefectComponentLabelType entire row.
+- Images for the newly observed repair item must be provided
+and display in Completion Report Exhibits
+
+=== PAGE 23 ===
+Page 23
+Completion Report: New Observed Items for Repair (Figure 04 - 1)
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Display when CompletionReportNewDefectIndicator = "true"
+- Display a separate row for each newly observed repair item.
+Display for each newly observed item
+- When newly observed items are not related to kitchens or
+baths, use DefectItemLocationType = “Other” and describe
+04.002 Location 2800.0056 DefectItemLocationType
+the defect location in
+DefectItemLocationTypeOtherDescription (UID: 2800.0057,
+FID: 04.002)
+04.003 Description 2800.0055 DefectItemDescription Display for each newly observed item
+Affects Soundness or DefectItemAffectsSoundnessStructuralInteg Display for each newly observed item
+04.004 2800.0054
+Structural Integrity rityIndicator
+04.005 Recommended Action 3900.0013 DefectItemRecommendedActionType Display for each newly observed item
+DefectItemRecommendedActionInspection Display for each newly observed item
+04.006 Inspection Date 2800.0058
+Date
+Figure 04 - 1
+
+=== PAGE 24 ===
+Page 24
+05 Completion Status
+The Completion Status section displays when Market Value Condition from the original appraisal included “Subject to Completion Per Plans”.
+The content of this section varies depending on whether construction is complete and whether it was completed in accordance with the
+original plans and specifications.
+• Display subsection when Market Value Condition - PropertyValuationConditionalConclusionType (UID: 2800.0002, FID: 02.003) =
+"SubjectToCompletionPerPlans"
+Completion Report: Completion Status
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Checkbox displays when
+PropertyValuationConditionalConclusionType (UID: 2800.0002,
+PropertyImprovementsCompletedIndi
+05.001 Is construction complete? 2800.0010 FID: 02.003) = "SubjectToCompletionPerPlans"
+cator
+- Images for the completed construction must be provided
+and display in Completion Report Exhibits
+
+=== PAGE 25 ===
+Page 25
+Completion Report: Completion Status
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Was construction
+completed in a manner PropertyImprovementsCompletedPer Checkbox displays when
+05.002 2800.0011
+consistent with the original PlansIndicator PropertyImprovementsCompletedIndicator = "true"
+plans and specifications?
+Display when
+PropertyImprovementsCompletedPerPlansIndicator = “false”
+SubjectToCompletionFeatureDescripti
+05.003 Feature 2800.0003 - Images for the Feature(s) Inconsistent with Original Plans
+on
+and Specs must be provided and display in Completion
+Report Exhibits
+SubjectToCompletionFeatureLocation Display when
+05.004 Location 2800.0004
+Description PropertyImprovementsCompletedPerPlansIndicator = “false”
+Comparison to Original SubjectToCompletionFeatureCompari Display when
+05.005 2800.0005
+Plans/Specs sonType PropertyImprovementsCompletedPerPlansIndicator = “false”
+SubjectToCompletionFeatureIncomple Display when
+05.006 Comment 2800.0006
+teOrInconsistentDescription PropertyImprovementsCompletedPerPlansIndicator = “false”
+Example 1: Construction is completed in a manner consistent with the original plans. (figure 05 - 1)
+Figure 05 - 1
+
+=== PAGE 26 ===
+Page 26
+Example 2: Construction is not complete. Commentary must be provided. (Figure 05 - 02)
+Figure 05 -02
+
+=== PAGE 27 ===
+Page 27
+Example 3: Construction completed in a manner not consistent with plans. Each feature not consistent with the original plans and
+specifications must display in the table. (Figure 05 - 3)
+Figure 05 - 3
+
+=== PAGE 28 ===
+Page 28
+06 Completion Report Commentary
+The Completion Report Commentary section displays when comments are provided. Any commentary must use
+AppraisalCompletionCommentText (UID: 2800.0007, FID: 06.001)
+<VALUATION_COMPLETION_DETAIL>
+<AppraisalCompletionCommentText>Commentary provided here.</AppraisalCompletionCommentText>
+</VALUATION_COMPLETION_DETAIL>
+
+=== PAGE 29 ===
+Page 29
+07 Completion Report Exhibits
+The Completion Report Exhibits section displays when images are provided. All text must display above the image in bold font.
+Itemized List of Repairs
+• Images provided for Itemized List of Repairs are delivered in the IMAGE container located in the instance of the DEFECT container that represents
+the given defect and the CompletionReportNewDefectIndicator - (UID: 3900.0015, FID: Not on report) = “false”,
+• The text "Itemized List of Repairs -" precedes the DefectComponentLabelType (UID: 3900.0117, FID: 03.001.1)
+• An additional caption may be provided using ImageCaptionCommentDescription (UID: 1400.0878, FID: 03.001.2) and displays
+above the image following the DefectComponentLabelType.
+New Observed Items for Repair
+• Images provided for New Observed Items for Repair are delivered in the IMAGE container located in the instance of the DEFECT container that
+represents the given defect and the CompletionReportNewDefectIndicator - (UID: 3900.0015, FID: Not on report) = “true”,
+• The text "New Observed Items for Repair -" precedes the DefectComponentLabelType (UID: 2800.0052, FID: 04.001.1)
+• An additional caption may be provided using ImageCaptionCommentDescription (UID: 4000.1001, FID: 04.001.2) and displays
+above the image following the DefectComponentLabelType.
+Construction Complete
+• Images provided for completed construction must be delivered using ImageCategoryType (UID: 1400.0849, FID: 05.001.1) =
+“CompletedConstruction".
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0851, FID: 05.001.2)
+
+=== PAGE 30 ===
+Page 30
+• Display "Completed Construction" above the photo in bold font, followed by caption if provided.
+Construction not Completed Per Plans and Specifications
+• Images provided for Improvements not completed per plan are delivered in the IMAGE container located in the instance of the
+SUBJECT_TO_COMPLETION_ITEM container that represents the given defect and the PropertyImprovementsCompletedPerPlansIndicator (UID:
+2800.0011, FID: 05.002) = "false"
+• Display "Inconsistent Item -" followed by the SubjectToCompletionFeatureDescription (UID: 2800.0003, FID: 05.003.1)
+• An additional caption may be provided using ImageCaptionCommentDescription (UID: 1400.0943, FID: 05.003.2) and displays
+above the image following the SubjectToCompletionFeatureDescription.
+Additional Exhibits
+Dwelling Front
+• Deliver using ImageCategoryType (UID: 1400.0944, FID: 07.001.1) = “DwellingFront”.
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0943, FID: 07.001.2).
+• Display "Dwelling Front -" in bold font, followed by caption if provided
+Dwelling Rear
+• Deliver using ImageCategoryType (UID: 1400.0944, FID: 07.001.1) = “DwellingRear”.
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0943, FID: 07.001.2).
+• Display "Dwelling Rear -" in bold font, followed by caption if provided
+HUD Data Plate
+• Deliver using ImageCategoryType (UID: 1400.0944, FID: 07.001.1) = “ManufacturedHomeHUDDataPlate”.
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0943, FID: 07.001.2).
+• Display "HUD Data Plate -" in bold font, followed by caption if provided
+HUD Certification Label
+
+=== PAGE 31 ===
+Page 31
+• Deliver using ImageCategoryType (UID: 1400.0944, FID: 07.001.1) = “ManufacturedHomeHUDCertificationLabel”.
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0943, FID: 07.001.2).
+• Display " HUD Certification Label -" in bold font, followed by caption if provided
+Manufactured Home Certification
+• Deliver using ImageCategoryType (UID: 1400.0944, FID: 07.001.1) = “ManufacturedHomeFinancingProgramEligibilityCertification”.
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0943, FID: 07.001.2).
+• Display " Manufactured Home Certification -" in bold font, followed by caption if provided
+Valuation Completion
+• Other images provided must be delivered using ImageCategoryType (UID: 1400.0944, FID: 07.001.1) = “ValuationCompletionExhibit”.
+• An image caption should be included using ImageCaptionCommentDescription (UID: 1400.0943, FID: 07.001.2) display above image in
+bold font.
+
+=== PAGE 32 ===
+Page 32
+08 Assignment Information
+The Assignment Information section provides information about the entities involved in the completion report and work completed by the
+appraiser and other parties. This section provides space for additional commentary and upload exhibits.
+The Assignment Information always displays.
+Assignment Information
+The Assignment Information subsection always displays and always starts on a new page.
+
+=== PAGE 33 ===
+Page 33
+Borrowers may be individuals or legal entities.
+Completion Report – Assignment: General Information
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+When borrower is not provided, do not display report label. Borrowers
+Borrower Name
+may be individuals or legal entities.
+1000.0149 PartyRoleType Display when PartyRoleType = “Borrower” and is an individual
+1000.0147 FirstName Display when the borrower is an individual
+1000.0178 MiddleName Display when provided when the borrower is an individual
+08.001 Borrower Name 1000.0148 LastName Display when the borrower is an individual
+1000.0179 SuffixName Display when provided when the borrower is an individual
+1000.0151 PartyRoleType Display when PartyRoleType = “Borrower” and is a legal entity
+1000.0150 FullName Display when the borrower is a legal entity
+Appraiser Fee When not provided, do not display report label.
+Not on
+Appraiser Fee 1000.0166 FeeType Display when FeeType = “AppraisalFee” AND Exists
+report
+08.002 1000.0167 ProvidedServiceActualCostAmount
+AMC Fee When not provided, do not display report label.
+Not on
+1000.0156 FeeType Display when FeeType = “AppraisalManagementCompanyFee” AND Exists
+report AMC Fee
+08.003 1000.0157 ProvidedServiceActualCostAmount
+Not on Display when FeeType = “AppraisalManagementCompanyFee” AND
+1000.0143 FeeType
+report AMC Fee PartyRoleType = “Client” AND Exists.
+08.003 1000.0144 ProvidedServiceActualCostAmount
+Government Agency When not provided, do not display report label.
+Not on Government 1000.0122 GovernmentAgencyAppraisalIndicator
+When “false”, do not display report label.
+report Agency
+08.004 1000.0123 GovernmentAgencyAppraisalType Required when GovernmentAgencyAppraisalIndicator = “true”
+Investor Requested Special Identification When not provided, do not display report label.
+
+=== PAGE 34 ===
+Page 34
+Completion Report – Assignment: General Information
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+Investor Requested
+08.005 Special 1000.0126 InvestorRequestedIdentificationCode When not provided, do not display report label.
+Identification
+Appraiser Fee and AMC Fee
+Appraiser Fee and AMC Fee, when provided, are each a type-value pair in the XML that is included in the corresponding instance of PARTY.
+(Figure 08 -1)
+• Appraiser Fee, when provided, is included in the instance with PartyRoleType (UID: 2200.0136, FID: Not on report) = “Appraiser”, as
+described in the Appraiser and Supervisory Appraiser subsection in this chapter (FID: 08.013 - 08.042).
+• AMC Fee, when provided, is included in the instance of PARTY with the AMC, as described in the [Role]/[Role] subsection in this
+chapter (FID: 08.006 – 08.012).
+o PartyRoleType (UID: 2400.0367, FID: 8.006) = “ManagementCompany” when the AMC is not the client.
+o PartyRoleType (UID: 2400.0365, FID: 8.007) = “ManagementCompany” when the AMC is the client.
+Example of Appraiser Fee and AMC Fee
+Figure 08 - 1
+
+=== PAGE 35 ===
+Page 35
+Contact Information
+The Contact Information subsection includes information about the people and/or companies (“contacts”) that are pertinent to the appraisal,
+including:
+• Clients, including lenders, AMCs, and other parties ([Role]/[Role] subsection)
+• Appraiser and supervisory appraiser, if applicable (Appraiser/Supervisory Appraiser subsection)
+Every contact has one or more roles (PartyRoleType). The PartyRoleType determines which of the subsections the contact appears in.
+
+=== PAGE 36 ===
+Page 36
+[Role]/[Role]
+This portion of Contact Information shows details about the lender, client, and/or AMC. It repeats for each lender, client, and/or AMC on the
+report (each instance of PARTY).
+A PARTY can have more than one PartyRoleType, which impacts the report display and the XML creation. This table provides some typical
+examples.
+
+=== PAGE 37 ===
+Page 37
+[Role]/[Role] - Examples
+How to Display Subheading
+Example Occurrences of PartyRoleType in XML Reference in This Chapter
+(08.006 /08.007)
+The lender is the − PartyRoleType (UID: 2400.0367, FID: 08.006) = “Client”
+Client/Lender Clients
+client − PartyRoleType (UID: 2400.0365, FID: 08.007) = “Lender”
+− PartyRoleType (UID: 2400.0367, FID: 08.006) = “Client”
+Client/Appraisal Management
+The AMC is the client − PartyRoleType (UID: 2400.0365, FID: 08.007) = Clients
+Company
+“ManagementCompany”
+Another entity - − PartyRoleType (UID: 2400.0367, FID: 08.006) = “Client”
+Client/Attorney Clients
+Attorney − PartyRoleType (UID: 2400.0365, FID: 08.007) = “Attorney”
+Another entity - − PartyRoleType (UID: 2400.0367, FID: 08.006) = “Client”
+Client/Investor Clients
+Investor − PartyRoleType (UID: 2400.0365, FID: 08.007) = “Investor”
+− PartyRoleType (UID: 2400.0367, FID: 08.006) = “Client”
+Another entity -
+− PartyRoleType (UID: 2400.0365, FID: 08.007) = “Other” Client/[Other Description] Clients
+Client
+PartyRoleTypeOtherDescription (UID: 2400.0366, FID: 08.007)
+The AMC is not the − PartyRoleType (FID: 2400.0365, UID: 08.007) = Appraisal Management When Lender/AMC is not the
+client “ManagementCompany” Company Client
+Example showing Client/Lender and AMC
+In this example, credentials (licensing information) are reported for the AMC. (Figure 08 - 2)
+Figure 08 - 2
+
+=== PAGE 38 ===
+Page 38
+Although the information is similar for clients and non-clients, the data points are different and clients require an additional PartyRoleType,
+therefore they are split out in this document.
+Client
+Company name and address is reported for clients, credentials (license information) are reported for AMCs when applicable (when required
+by the jurisdiction in which the subject property is located).
+• Clients must have an additional PartyRoleType (UID: 2400.0365, FID: 08.007) to identify the type of client.
+
+=== PAGE 39 ===
+Page 39
+Assignment Information: Contact Information – [Role]/[Role] - Client
+Display Rules
+Report
+Report Label Unique ID MISMO Data Point Name When PartyRoleType (UID: 2400.0367, FID: 08.006) = “Client”
+Field ID
+and PartyRoleType (UID: 2400.0365, FID: 08.007) is present …
+08.008 Company Name 2400.0357 FullName Always displays
+2400.0358 AddressLineText Always displays
+2400.0359 CityName Always displays
+08.009 Company Address
+2400.0361 StateCode Always displays
+2400.0360 PostalCode Always displays
+Credentials
+Display when provided for PartyRoleType (UID: 2400.0365,
+8.010 ID 2400.0363 LicenseIdentifier FID: 08.007) = “ManagementCompany”.
+- When not provided, do not display report label.
+Display when provided for PartyRoleType (UID: 2400.0365,
+8.011 State 2400.0364 LicenseIssuingAuthorityStateCode FID: 08.007) = “ManagementCompany”.
+- When not provided, do not display report label.
+Display when provided for PartyRoleType (UID: 2400.0365,
+8.012 Expires 2400.0362 LicenseExpirationDate FID: 08.007) = “ManagementCompany”.
+- When not provided, do not display report label.
+When a given PARTY plays multiple roles (e.g., Lender is also the Client) both roles must be identified in the same instance of the PARTY
+container with multiple occurrences of the ROLE container. The specific role played by the party is captured in
+ROLE/ROLE_DETAIL/PartyRoleType. (Figure 08 - 3)
+• When Lender is also the Client, the instance of the PARTY container representing Lender must have two instances of the ROLE
+container.
+o The first instance identifies ROLE/ROLE_DETAIL/PartyRoleType = “Lender”
+o The second instance identifies ROLE/ROLE_DETAIL/PartyRoleType = “Client”
+
+=== PAGE 40 ===
+Page 40
+Similarly, when an AMC is the Client, or attorney is the Client, the PARTY container must include two instances of ROLE container.
+Figure 08 - 3 depicts a PARTY container where Lender is also the Client. (Figure 08 - 3)
+Figure 08 - 3
+
+=== PAGE 41 ===
+Page 41
+When Lender/AMC is Not the Client
+• Deliver the appraisal management company information when an appraisal management company exists but is not the client. (Figure
+08 - 4)
+Figure 08 - 4
+• Deliver the lender information if a lender exists but is not the client. (Figure 08 - 5)
+
+=== PAGE 42 ===
+Page 42
+Figure 08 - 5
+Assignment Information: Contact Information – [Role]/[Role] – Non-Clients
+Display Rules
+Report
+Report Label Unique ID MISMO Data Point Name When PartyRoleType (UID: 2400.0373, FID: 08.006) =
+Field ID
+“Lender” or “Management Company”…
+08.008 Company Name 2400.0368 FullName … displays
+2400.0369 AddressLineText … displays
+2400.0370 CityName … displays
+08.009 Company Address
+2400.0372 StateCode … displays
+2400.0371 PostalCode … displays
+If LicenseIdentifier, LicenseIssuingAuthorityStateCode, and
+Credentials LicenseExpirationDate are not provided, do not display
+report label.
+Display when provided for PartyRoleType (UID: 2400.0373,
+08.010 ID 2400.0403 LicenseIdentifier FID: 08.006) = “ManagementCompany”. If not provided, do
+not display report label.
+
+=== PAGE 43 ===
+Page 43
+Assignment Information: Contact Information – [Role]/[Role] – Non-Clients
+Display Rules
+Report
+Report Label Unique ID MISMO Data Point Name When PartyRoleType (UID: 2400.0373, FID: 08.006) =
+Field ID
+“Lender” or “Management Company”…
+Display when provided for PartyRoleType (UID: 2400.0373,
+08.011 State 2400.0404 LicenseIssuingAuthorityStateCode FID: 08.006) = “ManagementCompany”. If not provided, do
+not display report label.
+Display when provided for PartyRoleType (UID: 2400.0373,
+08.012 Expires 2400.0402 LicenseExpirationDate FID: 08.006) = “ManagementCompany”. If not provided, do
+not display report label.
+Appraiser and Supervisory Appraiser
+This portion of Contact Information shows details about the Appraiser and Supervisory Appraiser (if any).
+• The Appraiser displays first, followed by the Supervisory Appraiser (if any).
+• Although the report is very similar for appraisers and supervisors, the data points in the Appraisal Completion Report Specification are
+different, and therefore they are split out in this document.
+Appraiser
+Information about the appraiser, PartyRoleType (UID: 2400.0056, FID: Not on report) = “Appraiser”, always displays.
+
+=== PAGE 44 ===
+Page 44
+Note: To easily find data points in the Appraisal Completion Report Specification,
+search for “Appraiser” under the “Additional Context” column.
+Assignment Information: Contact Information – Appraiser
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+2200.0126 FirstName Always displays
+2200.0128 MiddleName Display when provided
+08.0013 Name
+2200.0127 LastName Always displays
+2200.0129 SuffixName Display when provided
+08.0014 Designation 2400.0475 AppraiserDesignationType Display when provided
+08.0015 Company Name 2400.0471 AppraiserCompanyName Always displays
+2400.0466 AddressLineText Always displays
+2400.0467 CityName Always displays
+08.0016 Company Address
+2400.0469 StateCode Always displays
+2400.0468 PostalCode Always displays
+Scope of Inspection by Appraiser Always displays
+Subject Property Inspection
+08.017 Exterior 2400.0293 PropertyExteriorInspectionMethodType Always displays
+08.018 Interior 2400.0294 PropertyInteriorInspectionMethodType Always displays
+08.019 Inspection Date 2400.0292 InspectionDate Display when provided.
+
+=== PAGE 45 ===
+Page 45
+Assignment Information: Contact Information – Appraiser
+Report
+Report Label Unique ID MISMO Data Point Name Display Rules
+Field ID
+When not provided, do not display report label.
+Credentials Always displays
+08.020 Level 2200.0131 AppraiserLicenseType Always displays
+Required when AppraiserLicenseType <> “None”
+08.021 ID 2200.0134 LicenseIdentifier
+When not provided, do not display report label.
+Required when AppraiserLicenseType <> “None”
+08.022 State 2200.0135 LicenseIssuingAuthorityStateCode
+When not provided, do not display report label.
+Required when AppraiserLicenseType <> “None”
+08.023 Expires 2200.0133 LicenseExpirationDate
+When not provided, do not display report label
+Display when provided.
+08.024 ASC Identifier 2400.0470 AppraisalSubCommitteeAppraiserIdentifier
+When not provided, do not display report label.
+Display “FHA Appraiser ID” when
+08.025 VA Appraiser ID 2400.0474 AgencyAppraiserIdentifierType GovernmentAgencyAppraisalType ="FHA"
+08.026 FHA Appraiser ID 2400.0473 AgencyAppraiserIdentifier Display “VA Appraiser ID” when
+GovernmentAgencyAppraisalType = "VA"
+Display when GovernmentAgencyAppraisalType = "VA"
+08.027 Employment Type 2400.0472 AppaiserEmploymentType Always displays report label when
+GovernmentAgencyAppraisalType = “VA”
+Supervisory Appraiser
+Information about the Supervisory Appraiser, PartyRoleType (UID: 2200.0085, FID: Not on report) = “AppraiserSupervisor” displays when
+provided. If there is no Supervisory Appraiser, the subsection does not display.
+Note: To easily find data points in the Completion Report Specification, search for
+“Supervisory Appraiser” under the “Additional Context” column.
+
+=== PAGE 46 ===
+Page 46
+Assignment Information: Contact Information – Supervisory Appraiser
+Display Rules
+Report
+Report Label Unique ID MISMO Data Point Name When PartyRoleType (UID: 2200.0085, FID: Not on report) =
+Field ID
+“AppraiserSupervisor” …
+2200.0137 FirstName … displays
+2200.0139 MiddleName Display when provided
+08.028 Name
+2200.0138 LastName … displays
+2200.0140 SuffixName Display when provided
+08.029 Designation 2400.0486 AppraiserDesignationType Display when provided
+08.030 Company Name 2400.0482 AppraiserCompanyName … displays
+2400.0477 AddressLineText … displays
+2400.0478 CityName … displays
+08.031 Company Address
+2400.0480 StateCode … displays
+2400.0479 PostalCode … displays
+Scope of Inspection by Supervisory Appraiser … displays
+Subject Property Inspection
+08.032 Exterior 2400.0511 PropertyExteriorInspectionMethodType … displays
+08.033 Interior 2400.0512 PropertyInteriorInspectionMethodType … displays
+08.034 Inspection Date 2400.0510 InspectionDate Display when provided.
+
+=== PAGE 47 ===
+Page 47
+Assignment Information: Contact Information – Supervisory Appraiser
+Display Rules
+Report
+Report Label Unique ID MISMO Data Point Name When PartyRoleType (UID: 2200.0085, FID: Not on report) =
+Field ID
+“AppraiserSupervisor” …
+When not provided, do not display report label.
+Credentials … displays
+08.035 Level 2200.0142 AppraiserLicenseType … displays
+08.036 ID 2200.0145 LicenseIdentifier … displays
+08.037 State 2200.0146 LicenseIssuingAuthorityStateCode … displays
+08.038 Expires 2200.0144 LicenseExpirationDate …displays
+Display when provided.
+08.039 ASC Identifier 2400.0481 AppraisalSubCommitteeAppraiserIdentifier
+When not provided, do not display report label.
+Display “FHA Appraiser ID” when GovernmentAgencyAppraisalType
+08.040 VA Appraiser ID 2400.0485 AgencyAppraiserIdentifierType "FHA"
+08.041 FHA Appraiser ID 2400.0484 AgencyAppraiserIdentifier Display “VA Appraiser ID” when GovernmentAgencyAppraisalType
+"VA"
+Display when (GovernmentAgencyAppraisalType (UID: 1000.0029
+FID: 2.008) = "VA"
+08.042 Employment Type 2400.0483 AppaiserEmploymentType
+Always displays report label when GovernmentAgencyAppraisalType
+= “VA”
+Assignment Information and Scope of Work Commentary
+The Assignment Information and Scope of Work Commentary subsection displays when comments are provided. Any commentary must use
+ValuationCommentText (UID: 1000.0131, FID: 8.043) and ValuationAnalysisCategoryType (UID: 1000.0130, FID: Not on report) = “Assignment”.
+
+=== PAGE 48 ===
+Page 48
+09 Certifications and Intended Use/User
+The Certifications and Intended Use section always displays on the PDF. Information will not be delivered in the XML unless there is a
+datapoint that provides space for commentary (e.g., Additional Intended Use or appraiser certifications).
+Intended Use
+The Intended Use subsection always displays.
+Report
+Intended Use Text Text Conditionality
+Field ID
+The intended use of this certification of completion is for the lender/client to confirm that the requirements or conditions
+09.001 Always displays
+stated in the appraisal report referenced above have been met.
+When ValuationIntendedUseDescription (UID: 2200.0012, FID: 09.003) is provided AND GovernmentAgencyAppraisalType = "FHA"
+• Display sub-header: Additional Intended Use (FID: 09.002)
+• Display in italics below sub-header: Additional Intended Use cannot be contrary to the original Intended Use.
+• Display the text from ValuationIntendedUseDescription (UID: 2200.0012, FID: 09.003) and deliver in XML.
+
+=== PAGE 49 ===
+Page 49
+Intended User
+The Intended User subsection always displays.
+Report
+Intended User Text Text Conditionality
+Field ID
+09.004 The intended user of this report is the lender/client. Always displays
+FHA and the Mortgagee are the intended users of this Display descriptive text when GovernmentAgencyAppraisalType (UID: 1000.0123, FID: 09.005)
+appraisal report. = "FHA" and the original appraisal is for a purchase or refinance transaction.
+The USDA and any other identified lender/client are Display descriptive text when GovernmentAgencyAppraisalType (UID: 1000.0123, FID: 09.005)
+09.005
+intended users of this report. = “USDA”
+Display descriptive text when GovernmentAgencyAppraisalType (UID: 1000.0123, FID: 09.005)
+The VA is also an intended user of this appraisal report.
+= “VA”
+Additional Intended Users – ValuationAdditionalIntendedUserIndicator (UID: 2200.0055, FID: Not on report)
+• When “true”
+o Display sub-header: Additional Intended Users (FID: 09.006)
+o Display in italics below sub-header: Additional Intended Users cannot be contrary to the original Intended User.
+o Display the text from ValuationAdditionalIntendedUserDescription (UID: 2200.0011, FID: 09.007) and deliver in XML.
+• When “false”
+o Do not display
+
+=== PAGE 50 ===
+Page 50
+Certifications
+Appraiser Certifications
+The Appraiser Certifications subsection always displays.
+Report
+Cert # Certifications Text Display Rules
+Field ID
+Appraiser Certifications Always displays
+09.008 The Appraiser certifies and agrees that: Always displays
+I have no present or prospective interest in the subject property, or relationship with the
+09.009 1 present or prospective owners or occupants of the subject property, or other parties Always displays
+involved in this transaction.
+I performed this assignment without bias with respect to the parties involved in this
+09.010 2 transaction, the subject property, or the demographics of the area where the property is Always displays
+located.
+I am aware of and have complied with all applicable laws and regulations including
+09.011 3 antidiscrimination laws, rules, and requirements that apply to the appraiser and to the Always displays
+assignment.
+I did not base any part of my conclusions on the actual or perceived race, color, religion, sex
+(including sexual orientation or gender identity), age (other than as applicable for legally
+age-restricted communities), marital status, disability, familial status, or national origin of
+09.012 4 Always displays
+the present or prospective owners or occupants of either the subject property or properties
+in the area of the subject property or on any other basis prohibited by the Fair Housing Act
+or the Equal Credit Opportunity Act, or any other basis prohibited by law.
+I stated my own personal, unbiased, and professional analyses, opinions, and conclusions,
+09.013 5 Always displays
+which are subject only to the assumptions and limiting conditions herein.
+Display this text when
+I certify that I did perform a personal onsite inspection of the subject property to determine
+09.014 6 PersonalInspectionPerformedIndicator (UID:
+if the conditions or requirements stated in the original appraisal have been satisfied.
+2200.0027, FID: 09.014) = “true”
+I certify that I did not perform a personal onsite inspection of the subject property to Display this text when
+6 determine if the conditions or requirements stated in the original appraisal have been PersonalInspectionPerformedIndicator (UID:
+satisfied. 2200.0027, FID: 09.014) = “false” and a description
+
+=== PAGE 51 ===
+Page 51
+Report
+Cert # Certifications Text Display Rules
+Field ID
+must be provided using Description -
+09.015 Description: AppraisalConditionsSatisfiedVerificationDescription
+(UID: 2200.0026, FID: 09.015)
+If this report was transmitted as an “electronic record” containing my “electronic signature,”
+as those terms are defined in applicable federal and/or state laws (excluding audio and video
+recordings), or a facsimile transmission of this report containing a copy or representation of
+09.016 7 Always displays
+my signature, I agree that my electronic signature has the same force and effect as my
+manual handwritten signature, and that the report is enforceable and valid as a paper
+version of this report would be if delivered containing my manual handwritten signature.
+When Additional Appraiser Certifications – AppraiserAdditionalCertificationIndicator (UID: 2200.0052, FID: Not on report)
+• “true”
+o Display sub-header: Additional Appraiser Certifications (FID: 09.017)
+o Display in italics below sub-header: Additional Appraiser Certifications cannot be contrary to the original Appraiser Certifications.
+o Deliver ValuationAdditionalCertificationIncludedByType (UID: 2200.0025, FID: Not on report) = “Appraiser”
+o Display the text from ValuationAdditionalCertificationText (UID: 2200.0024, FID: 09.018) and deliver in XML.
+▪ Additional certifications are numbered starting at 1.
+• “false”
+o Do not display
+
+=== PAGE 52 ===
+Page 52
+Supervisory Appraiser Certifications
+Report
+Cert # Certifications Text Display Rules
+Field ID
+09.019 Supervisory Appraiser Certifications
+
+=== PAGE 53 ===
+Page 53
+Report
+Cert # Certifications Text Display Rules
+Field ID
+09.020 The Supervisory Appraiser certifies and agrees that:
+I have no present or prospective interest in the subject property, or relationship with the present or
+09.021 1
+prospective owners or occupants of the subject property, or other parties involved in this transaction.
+I performed this assignment without bias with respect to the parties involved in this transaction, the subject
+09.022 2
+property, or the demographics of the area where the property is located.
+I am aware of and have complied with all applicable laws and regulations including antidiscrimination laws,
+09.033 3
+rules, and requirements that apply to the appraiser and to the assignment.
+Display when PartyRoleType =
+09.034 4 I accept full responsibility for this certification of completion. "AppraiserSupervisor"
+09.035 5 The assignment information regarding the scope of inspection by the Supervisory Appraiser is correct.
+If this report was transmitted as an “electronic record” containing my “electronic signature,” as those terms
+are defined in applicable federal and/or state laws (excluding audio and video recordings), or a facsimile
+transmission of this report containing a copy or representation of my signature, I agree that my electronic
+09.036 6
+signature has the same force and effect as my manual handwritten signature, and that the report is
+enforceable and valid as a paper version of this report would be if delivered containing my manual
+handwritten signature.
+When Additional Supervisory Appraiser Certifications – AppraiserSupervisorAdditionalCertificationIndicator (UID: 2200.0035, FID: Not on
+report) =
+• “true”
+o Display sub-header: Additional Supervisory Appraiser Certifications (FID: 09.023)
+o Display in italics below sub-header: Additional Supervisory Appraiser Certifications cannot be contrary to the original Supervisory
+Appraiser Certifications.
+o Deliver ValuationAdditionalCertificationIncludedByType (UID: 2200.0090, FID: Not on report) = “AppraiserSupervisor”
+
+=== PAGE 54 ===
+Page 54
+o Display the text from ValuationAdditionalCertificationText (UID: 2200.0013, FID: 09.024) and deliver in XML.
+▪ Additional certifications are numbered starting at 1.
+• “false”
+o Do not display
+Signature
+The Signature subsection always displays. There can be multiple signatures on the report. Every completion report must contain a
+PartyRoleType = "Appraiser" and/or "AppraiserSupervisor". (Figure 09 - 1)
+Signature
+Report Report Label MISMO Data Point
+Unique ID Display Rules
+Field ID Name Name
+When PartyRoleType (UID: 2200.0136) = "Appraiser" or PartyRoleType
+2200.0136 (UID: 2200.0147) = "AppraiserSupervisor" display “Appraiser” first and,
+09.025 [Role] PartyRoleType
+2200.0147 when applicable, “Supervisory Appraiser” below the appraiser (Figure 09
+– 2)
+09.026 [Signature] Arcrole
+2400.0041 FirstName
+2400.0042 LastName FirstName and LastName always display.
+09.028 [Contact name]
+2400.0043 MiddleName MiddleName and SuffixName display when provided.
+2400.0044 SuffixName
+
+=== PAGE 55 ===
+Page 55
+Signature
+Report Report Label MISMO Data Point
+Unique ID Display Rules
+Field ID Name Name
+Date of Signature
+09.027 2200.0002 ExecutionDate When PartyRoleType = "Appraiser" OR "AppraiserSupervisor"
+and Report
+09.029 Level 2400.0051 AppraiserLicenseType When PartyRoleType = "Appraiser" OR "AppraiserSupervisor"
+When PartyRoleType = "Appraiser" OR "AppraiserSupervisor" AND
+09.030 ID 2400.0054 LicenseIdentifier
+AppraiserLicenseType <> "None"
+LicenseIssuingAuthority When PartyRoleType = "Appraiser" OR "AppraiserSupervisor" AND
+09.031 State 2400.0055
+StateCode AppraiserLicenseType <> "None"
+When PartyRoleType = "Appraiser" OR "AppraiserSupervisor" AND
+09.032 Expires 2400.0053 LicenseExpirationDate
+AppraiserLicenseType <> "None"
+Figure 09 - 1
+Arcrole relationships, establishes "relationships" or linkages in the XML data file that may be visually obvious on the URAR Report. In the XML
+data, specific instances of data points or containers must be connected to properly represent the information.
+• Containers or datapoints to be linked are identified using "xlink:label.”
+
+=== PAGE 56 ===
+Page 56
+• The RELATIONSHIP container holds the xlink:arcrole, xlink:from, and xlink:to attributes that describe the data relationships.
+Appraiser Performing the Subject Property Inspection. Provide one RELATIONSHIP container for each appraiser-related role (provided in
+the data set) joining the INSPECTION container to the PARTY container.
+Appraiser
+MISMO Attribute
+Unique ID Parent Container Supported Attribute Enumerations
+Name
+urn:fdc:mismo.org:2009:residential/INSPECTION_CompletedBy_R
+2400.0277 RELATIONSHIP @xlink:arcrole
+OLE
+2400.0278 RELATIONSHIP @xlink:from INSPECTION_n
+2400.0279 RELATIONSHIP @xlink:to ROLE_n
+2400.0291 INSPECTION @xlink:label INSPECTION_n
+2200.0130 ROLE @xlink:label ROLE_n
+Supervisory Appraiser
+MISMO Attribute
+Unique ID Parent Container Supported Attribute Enumerations
+Name
+urn:fdc:mismo.org:2009:residential/INSPECTION_CompletedBy_R
+2400.0498 RELATIONSHIP @xlink:arcrole
+OLE
+2400.0499 RELATIONSHIP @xlink:from INSPECTION_n
+2400.0500 RELATIONSHIP @xlink:to ROLE_n
+2400.0509 INSPECTION @xlink:label INSPECTION_n
+2200.0141 ROLE @xlink:label ROLE_n
+In this example, an appraiser and a supervisory appraiser are represented in the XML and displayed on the report. (Figure Arcrole - 1)
+
+=== PAGE 57 ===
+Page 57
+Arcrole - 1
+
+=== PAGE 58 ===
+Page 58
+Provide the relationship that joins the SIGNATORY container to the PARTY container representing the appraiser or supervisory appraiser.
+One RELATIONSHIP container is required for each PARTY that has signed the valuation report.
+Appraiser
+MISMO
+Unique ID Parent Container Supported Attribute Enumerations
+Attribute Name
+urn:fdc:mismo.org:2009:residential/SIGNATORY_IsAssociatedWith_RO
+2200.0048 RELATIONSHIP @xlink:arcrole
+LE
+2200.0049 RELATIONSHIP @xlink:from SIGNATORY_n
+2200.0050 RELATIONSHIP @xlink:to ROLE_n
+2200.0071 SIGNATORY @xlink:label SIGNATORY_n
+2200.0130 ROLE @xlink:label ROLE_n
+Supervisory Appraiser
+MISMO
+Unique ID Parent Container Supported Attribute Enumerations
+Attribute Name
+urn:fdc:mismo.org:2009:residential/SIGNATORY_IsAssociatedWith_RO
+2200.0148 RELATIONSHIP @xlink:arcrole
+LE
+2200.0149 RELATIONSHIP @xlink:from SIGNATORY_n
+2200.0150 RELATIONSHIP @xlink:to ROLE_n
+2200.0151 SIGNATORY @xlink:label SIGNATORY_n
+2200.0141 ROLE @xlink:label ROLE_n
+Every party that signs the report is represented in the data using an arcrole. The Appraiser and Supervisory Appraiser signatures displayed
+in Figure Arcrole - 2, represents a sample of the arcrole for signatories with a snapshot of the report.
+
+=== PAGE 59 ===
+Page 59
+Arcrole - 2
+

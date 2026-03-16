@@ -218,6 +218,36 @@ module cosmosEngagementsContainer 'modules/cosmos-engagements-container.bicep' =
   }
 }
 
+// Cosmos DB Appraisal Drafts Container (UAD 3.6 Phase 1 — in-progress appraisals)
+module cosmosAppraisalDraftsContainer 'modules/cosmos-appraisal-drafts-container.bicep' = {
+  name: 'cosmos-appraisal-drafts-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Completion Reports Container (URAR 1.3 — one completion report per order)
+module cosmosCompletionReportsContainer 'modules/cosmos-completion-reports-container.bicep' = {
+  name: 'cosmos-completion-reports-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Property Records + Comparable Sales Containers (Phase R1)
+module cosmosPropertyRecordsContainer 'modules/cosmos-property-records-container.bicep' = {
+  name: 'cosmos-property-records-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

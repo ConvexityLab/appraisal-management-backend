@@ -11,7 +11,9 @@ import {
   UadAppraisalReport,
   UadSubjectProperty,
   UadComparable,
-  UadAppraisalInfo
+  UadAppraisalInfo,
+  UadNeighborhood,
+  UadMarketConditions
 } from '../types/uad-3.6.js';
 import { Logger } from '../utils/logger.js';
 
@@ -102,22 +104,67 @@ export class MismoXmlGenerator {
     propertyDetail.ele('PropertyExistingCleanEnergyLienIndicator', 'false');
     propertyDetail.ele('PropertyInProjectIndicator', 'false');
     propertyDetail.ele('PropertyMixedUsageIndicator', 'false');
-    
-    // Property Category
     propertyDetail.ele('PropertyCurrentUsageType', subject.currentUse);
     propertyDetail.ele('PropertyUsageType', subject.occupancyType);
+    propertyDetail.ele('PropertyBuildingStatusType', subject.buildingStatus);
+    propertyDetail.ele('PropertyRightsAppraisedType', report.appraisalInfo.propertyRightsAppraised);
+
+    if (subject.legalDescription) {
+      propertyDetail.ele('PropertyLegalDescription', subject.legalDescription);
+    }
+    if (subject.taxYear != null) {
+      propertyDetail.ele('PropertyTaxYear', subject.taxYear);
+    }
+    if (subject.realEstateTaxes != null) {
+      propertyDetail.ele('PropertyTaxAmount', subject.realEstateTaxes);
+    }
 
     // Improvements
     const improvements = property.ele('IMPROVEMENTS');
     const improvement = improvements.ele('IMPROVEMENT');
 
-    // Improvement Feature
+    // Main dwelling improvement feature (above-grade GLA)
     const improvementFeature = improvement.ele('PROPERTY_IMPROVEMENT_FEATURE');
-    
     improvementFeature.ele('ImprovementFeatureName', 'Main Dwelling');
     improvementFeature.ele('ImprovementFeatureArea', subject.grossLivingArea);
     improvementFeature.ele('ImprovementFeatureAreaType', 'GrossLivingArea');
-    
+
+    // Construction details — foundation, walls, roof, HVAC, fireplaces
+    const constructionDetail = improvement.ele('IMPROVEMENT_CONSTRUCTION_DETAIL');
+    constructionDetail.ele('ImprovementFoundationType', subject.foundationType);
+    constructionDetail.ele('ImprovementExteriorWallsType', subject.exteriorWalls);
+    constructionDetail.ele('ImprovementRoofSurfaceType', subject.roofSurface);
+    constructionDetail.ele('ImprovementHeatingSystemType', subject.heating);
+    constructionDetail.ele('ImprovementCoolingSystemType', subject.cooling);
+    if (subject.fireplaces != null) {
+      constructionDetail.ele('ImprovementFireplaceCount', subject.fireplaces);
+    }
+
+    // Basement
+    if (subject.basementArea != null) {
+      const basementFeature = improvement.ele('PROPERTY_IMPROVEMENT_FEATURE');
+      basementFeature.ele('ImprovementFeatureName', 'Basement');
+      basementFeature.ele('ImprovementFeatureArea', subject.basementArea);
+      basementFeature.ele('ImprovementFeatureAreaType', 'BasementArea');
+      if (subject.basementFinishedArea != null) {
+        basementFeature.ele('ImprovementFeatureFinishedArea', subject.basementFinishedArea);
+      }
+    }
+
+    // Attic
+    if (subject.atticType && subject.atticType !== 'None') {
+      const atticFeature = improvement.ele('PROPERTY_IMPROVEMENT_FEATURE');
+      atticFeature.ele('ImprovementFeatureName', 'Attic');
+      atticFeature.ele('ImprovementFeatureType', subject.atticType);
+    }
+
+    // Pool
+    if (subject.pool && subject.pool !== 'None') {
+      const poolFeature = improvement.ele('PROPERTY_IMPROVEMENT_FEATURE');
+      poolFeature.ele('ImprovementFeatureName', 'Pool');
+      poolFeature.ele('ImprovementFeatureType', subject.pool);
+    }
+
     // Car Storage
     if (subject.garageCars && subject.garageCars > 0) {
       const carStorage = improvement.ele('CAR_STORAGES').ele('CAR_STORAGE');
@@ -125,40 +172,135 @@ export class MismoXmlGenerator {
       carStorage.ele('CarStorageCount', subject.garageCars);
     }
 
-    // Structure Analyses
+    // Structure Analysis
     const structureAnalysis = improvement.ele('STRUCTURE_ANALYSES').ele('STRUCTURE_ANALYSIS');
-    
-    structureAnalysis.ele('StructureAnalysisAverageRoomSize', 
+    structureAnalysis.ele('StructureAnalysisAverageRoomSize',
       Math.round(subject.grossLivingArea / subject.totalRooms));
     structureAnalysis.ele('StructureAnalysisBedroomCount', subject.totalBedrooms);
     structureAnalysis.ele('StructureAnalysisBathroomTotalCount', subject.totalBathrooms);
-    
     if (subject.halfBathrooms) {
       structureAnalysis.ele('StructureAnalysisHalfBathroomCount', subject.halfBathrooms);
     }
-    
     structureAnalysis.ele('StructureAnalysisRoomCount', subject.totalRooms);
-    // structureAnalysis.ele('StructureAnalysisStoryCount', subject.stories || 1);
-
-    // Quality and Condition
+    if (subject.effectiveAge != null) {
+      structureAnalysis.ele('StructureAnalysisEffectiveAge', subject.effectiveAge);
+    }
     structureAnalysis.ele('ConstructionQualityType', subject.qualityRating);
     structureAnalysis.ele('PropertyConditionType', subject.conditionRating);
+
+    // Utilities
+    const utilities = property.ele('UTILITIES');
+    utilities.ele('UtilityElectricityType', subject.publicUtilities.electricity);
+    utilities.ele('UtilityGasType', subject.publicUtilities.gas);
+    utilities.ele('UtilityWaterType', subject.publicUtilities.water);
+    utilities.ele('UtilitySanitarySewerType', subject.publicUtilities.sanitary);
 
     // Site
     const site = property.ele('SITE');
     site.ele('SiteAreaSquareFeetCount', subject.siteSizeSquareFeet || 0);
-    
     if (subject.siteSizeAcres) {
       site.ele('SiteAreaAcresCount', subject.siteSizeAcres);
     }
+    site.ele('SiteShapeType', subject.siteShape);
+    site.ele('PropertyLocationRatingType', subject.locationRating);
 
-    // Site Influences
-    const siteInfluences = site.ele('SITE_INFLUENCES');
-    subject.view.forEach(viewType => {
-      const siteInfluence = siteInfluences.ele('SITE_INFLUENCE');
-      siteInfluence.ele('SiteInfluenceType', 'View');
-      siteInfluence.ele('SiteInfluenceDescription', viewType);
-    });
+    // Street / off-site improvements
+    if (subject.street) {
+      const streetNode = site.ele('SITE_IMPROVEMENTS').ele('SITE_IMPROVEMENT');
+      streetNode.ele('SiteImprovementType', 'Street');
+      streetNode.ele('SiteImprovementPavedIndicator', subject.street.paved ? 'true' : 'false');
+      if (subject.street.surfaceType) {
+        streetNode.ele('SiteImprovementSurfaceType', subject.street.surfaceType);
+      }
+    }
+
+    // Zoning
+    if (subject.zoningCompliance) {
+      const zoning = site.ele('ZONING');
+      if (subject.zoningClassification) {
+        zoning.ele('ZoningClassificationType', subject.zoningClassification);
+      }
+      zoning.ele('ZoningComplianceType', subject.zoningCompliance);
+      zoning.ele('PropertyHighestBestUseCurrentIndicator',
+        subject.highestAndBestUse === 'Present' ? 'true' : 'false');
+    }
+
+    // FEMA Flood Zone
+    if (subject.femaFloodZone) {
+      const floodZone = site.ele('FLOOD_ZONE_DETAIL');
+      floodZone.ele('FloodZoneIdentifier', subject.femaFloodZone);
+      if (subject.femaMapNumber) {
+        floodZone.ele('FloodZoneMapIdentifier', subject.femaMapNumber);
+      }
+      if (subject.femaMapDate) {
+        floodZone.ele('FloodZoneMapDate', this.formatDate(subject.femaMapDate));
+      }
+    }
+
+    // Site Influences (view)
+    if (subject.view.length > 0) {
+      const siteInfluences = site.ele('SITE_INFLUENCES');
+      subject.view.forEach(viewType => {
+        const siteInfluence = siteInfluences.ele('SITE_INFLUENCE');
+        siteInfluence.ele('SiteInfluenceType', 'View');
+        siteInfluence.ele('SiteInfluenceDescription', viewType);
+      });
+    }
+
+    // Neighborhood
+    this.addNeighborhood(property, report.appraisalInfo);
+  }
+
+  /**
+   * Add Neighborhood section
+   */
+  private addNeighborhood(property: any, appraisalInfo: UadAppraisalInfo): void {
+    const n = appraisalInfo.neighborhood;
+    const mc = appraisalInfo.marketConditions;
+    const neighborhood = property.ele('NEIGHBORHOOD');
+
+    neighborhood.ele('NeighborhoodLocationType', n.location);
+    neighborhood.ele('NeighborhoodBuiltUpType', n.builtUp);
+    neighborhood.ele('NeighborhoodGrowthRateType', n.growth);
+    neighborhood.ele('NeighborhoodPropertyValueTrendType', n.propertyValues);
+    neighborhood.ele('NeighborhoodDemandSupplyType', n.demandSupply);
+    neighborhood.ele('NeighborhoodMarketingTimeType', n.marketingTime);
+    neighborhood.ele('NeighborhoodPredominantOccupancyType', n.predominantOccupancy);
+    neighborhood.ele('NeighborhoodLandUseChangeType', n.landUseChange);
+
+    if (n.neighborhoodBoundaries) {
+      neighborhood.ele('NeighborhoodBoundariesDescription', n.neighborhoodBoundaries);
+    }
+    neighborhood.ele('NeighborhoodDescription', n.neighborhoodDescription);
+    neighborhood.ele('NeighborhoodMarketConditionsDescription', n.marketConditionsDescription);
+
+    // Price range and predominant age
+    neighborhood.ele('NeighborhoodSingleFamilyPriceRangeLowAmount', n.singleFamilyPriceRange.low);
+    neighborhood.ele('NeighborhoodSingleFamilyPriceRangeHighAmount', n.singleFamilyPriceRange.high);
+    neighborhood.ele('NeighborhoodPredominantAgeDescription', n.predominantAge);
+
+    // Present land use percentages
+    const landUse = neighborhood.ele('NEIGHBORHOOD_LAND_USES');
+    landUse.ele('NeighborhoodLandUseSingleFamilyPercent', n.presentLandUse.singleFamily);
+    landUse.ele('NeighborhoodLandUseMultifamilyPercent', n.presentLandUse.multifamily);
+    landUse.ele('NeighborhoodLandUseCommercialPercent', n.presentLandUse.commercial);
+    landUse.ele('NeighborhoodLandUseOtherPercent', n.presentLandUse.other);
+
+    // Market conditions
+    const marketCond = neighborhood.ele('NEIGHBORHOOD_MARKET_CONDITIONS');
+    marketCond.ele('NeighborhoodMarketConditionsCompetingPropertiesCurrentCount',
+      mc.competingPropertiesCurrentlyOnMarket);
+    marketCond.ele('NeighborhoodMarketConditionsCompetingPropertiesPriorYearCount',
+      mc.competingPropertiesInLast12Months);
+    marketCond.ele('NeighborhoodMarketConditionsAbsorptionRateDescription',
+      mc.competingPropertiesAbsorptionRate);
+    marketCond.ele('NeighborhoodMarketConditionsOverallTrendType', mc.overallMarketTrend);
+    marketCond.ele('NeighborhoodMarketConditionsPriceRangeLowAmount', mc.priceRangeLow);
+    marketCond.ele('NeighborhoodMarketConditionsPriceRangeHighAmount', mc.priceRangeHigh);
+    marketCond.ele('NeighborhoodMarketConditionsAverageDaysOnMarketCount', mc.averageDaysOnMarket);
+    if (mc.additionalComments) {
+      marketCond.ele('NeighborhoodMarketConditionsAdditionalComments', mc.additionalComments);
+    }
   }
 
   /**

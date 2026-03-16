@@ -49,6 +49,7 @@ import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.c
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { createEngagementRouter } from '../controllers/engagement.controller.js';
+import { createAppraisalDraftRouter } from '../controllers/appraisal-draft.controller.js';
 import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
 
@@ -1020,6 +1021,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/engagements',
       this.unifiedAuth.authenticate(),
       createEngagementRouter(this.dbService)
+    );
+
+    // Appraisal Drafts — in-progress appraisals with section-level auto-save (UAD 3.6 Phase 1)
+    this.app.use('/api/appraisal-drafts',
+      this.unifiedAuth.authenticate(),
+      createAppraisalDraftRouter(this.dbService)
     );
 
     // ARV — analyses linked to an order

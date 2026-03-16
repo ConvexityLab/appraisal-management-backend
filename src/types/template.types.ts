@@ -24,7 +24,12 @@ export enum TemplateCategory {
 export enum AppraisalFormType {
   FORM_1004 = 'FORM_1004',           // Uniform Residential Appraisal Report (URAR)
   FORM_1004C = 'FORM_1004C',         // Manufactured Home Appraisal Report
-  FORM_1004D = 'FORM_1004D',         // Appraisal Update/Completion Report
+  FORM_1004D = 'FORM_1004D',         // Appraisal Update/Completion Report (legacy 2-page)
+  /**
+   * UAD 3.6 Appendix B-3 Completion Report — distinct from the legacy FORM_1004D.
+   * Used to confirm repairs/conditions from a prior URAR are complete.
+   */
+  COMPLETION_REPORT = 'COMPLETION_REPORT',
   FORM_1025 = 'FORM_1025',           // Small Residential Income Property
   FORM_1073 = 'FORM_1073',           // Individual Condominium Unit Appraisal Report (older)
   FORM_1033 = 'FORM_1033',           // Individual Condominium Unit Appraisal Report

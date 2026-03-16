@@ -7,6 +7,7 @@
  * Events handled:
  *   vendor.bid.sent             → bid invitation email/SMS to vendor
  *   vendor.bid.accepted         → acceptance confirmation to coordinator
+ *   vendor.bid.timeout          → coordinator notified that vendor did not respond
  *   order.delivered             → delivery email to client
  *   engagement.status.changed   → engagement complete email to client
  *   vendor.assignment.exhausted → escalation email to staff recipients
@@ -29,6 +30,7 @@ import type {
   EventHandler,
   VendorBidSentEvent,
   VendorBidAcceptedEvent,
+  VendorBidTimedOutEvent,
   VendorAssignmentExhaustedEvent,
   ReviewAssignmentExhaustedEvent,
   OrderDeliveredEvent,
@@ -102,6 +104,10 @@ export class CommunicationEventHandler {
         'vendor.bid.accepted',
         this.makeHandler('vendor.bid.accepted', this.onVendorBidAccepted.bind(this)),
       ),
+      this.subscriber.subscribe<VendorBidTimedOutEvent>(
+        'vendor.bid.timeout',
+        this.makeHandler('vendor.bid.timeout', this.onVendorBidTimedOut.bind(this)),
+      ),
       this.subscriber.subscribe<VendorAssignmentExhaustedEvent>(
         'vendor.assignment.exhausted',
         this.makeHandler(
@@ -173,6 +179,7 @@ export class CommunicationEventHandler {
     await Promise.all([
       this.subscriber.unsubscribe('vendor.bid.sent'),
       this.subscriber.unsubscribe('vendor.bid.accepted'),
+      this.subscriber.unsubscribe('vendor.bid.timeout'),
       this.subscriber.unsubscribe('vendor.assignment.exhausted'),
       this.subscriber.unsubscribe('review.assignment.exhausted'),
       this.subscriber.unsubscribe('order.delivered'),
@@ -245,6 +252,34 @@ export class CommunicationEventHandler {
         <p>The appraisal is now in progress.</p>
       `,
       context: { event: 'vendor.bid.accepted', orderId, vendorId },
+    });
+  }
+
+  private async onVendorBidTimedOut(event: VendorBidTimedOutEvent): Promise<void> {
+    const { orderId, orderNumber, vendorId, attemptNumber, totalAttempts, tenantId } = event.data;
+
+    const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
+    if (!coordinatorEmail) {
+      this.logger.warn('vendor.bid.timeout: no coordinator email — skipping', {
+        orderId,
+        vendorId,
+      });
+      return;
+    }
+
+    const moreAttempts = attemptNumber < totalAttempts;
+    await this.sendEmail({
+      to: coordinatorEmail,
+      subject: `Vendor Did Not Respond — Order ${orderNumber}`,
+      html: `
+        <p>A vendor (ID: <strong>${vendorId}</strong>) did not respond to the bid invitation
+           for order <strong>${orderNumber}</strong> (attempt ${attemptNumber} of ${totalAttempts}).</p>
+        ${moreAttempts
+          ? '<p>The system will automatically contact the next available vendor.</p>'
+          : '<p>All vendor attempts have been exhausted. Please assign a vendor manually.</p>'
+        }
+      `,
+      context: { event: 'vendor.bid.timeout', orderId, vendorId },
     });
   }
 

@@ -256,6 +256,90 @@ export interface UadSubjectProperty {
   femaFloodZone?: string;
   femaMapNumber?: string;
   femaMapDate?: Date;
+
+  // ── URAR v1.3: Construction & Structure (Phase 6A) ──────────────────────
+  constructionMethod?: 'SiteBuilt' | 'Modular' | 'Manufactured';
+  attachmentType?: 'Attached' | 'Detached' | 'SemiDetached';
+  structureDesign?: string;
+  structureIdentifier?: string;
+  structureVolume?: number;
+  windowSurfaceArea?: number;
+  remainingEconomicLife?: number;
+
+  // ── URAR v1.3: Area Breakdown (Phase 6A) ────────────────────────────────
+  grossBuildingFinishedArea?: number;
+  finishedAreaAboveGrade?: number;
+  finishedAreaAboveGradeNonstandard?: number;
+  unfinishedAreaAboveGrade?: number;
+  finishedAreaBelowGrade?: number;
+  finishedAreaBelowGradeNonstandard?: number;
+  unfinishedAreaBelowGrade?: number;
+  noncontinuousFinishedArea?: number;
+  bathsFull?: number;
+  bathsHalf?: number;
+
+  // ── URAR v1.3: View & Location (Phase 6A) ──────────────────────────────
+  viewRange?: string;
+  viewImpact?: 'Beneficial' | 'Neutral' | 'Adverse';
+  townhouseEndUnit?: boolean;
+  townhouseBackToBack?: boolean;
+  townhouseLocation?: string;
+  unitsAbove?: number;
+  unitsBelow?: number;
+
+  // ── URAR v1.3: Assignment & Listing (Phase 6A) ─────────────────────────
+  listingStatus?: string;
+  propertyValuationMethod?: string;
+  nativeAmericanLands?: boolean;
+  newConstruction?: boolean;
+  constructionStage?: 'Proposed' | 'UnderConstruction' | 'Complete';
+
+  // ── URAR v1.3: Property Rights & Restrictions (Phase 6A) ───────────────
+  siteOwnedInCommon?: boolean;
+  unitsExcludingAdus?: number;
+  accessoryDwellingUnits?: number;
+  propertyRestriction?: string;
+  encroachment?: string;
+  specialTaxAssessments?: string;
+  communityLandTrust?: boolean;
+  groundRent?: UadGroundRent;
+  mineralRightsLeased?: boolean;
+  allRightsIncluded?: boolean;
+  rightsNotIncluded?: string;
+  homeownerResponsibleForExteriorMaintenance?: boolean;
+  alternatePhysicalAddress?: string;
+
+  // ── URAR v1.3: Site Expansion (Phase 6A) ────────────────────────────────
+  apnDescription?: string;
+  numberOfParcels?: number;
+  contiguous?: boolean;
+  elementsDividingParcels?: string;
+  primaryAccess?: string;
+  streetType?: string;
+  streetSurface?: string;
+  maintenanceAgreement?: boolean;
+  apparentEnvironmentalConditions?: string;
+  broadbandInternetAvailable?: boolean;
+  dwellingWithinUtilityEasement?: boolean;
+  waterFrontage?: UadWaterFrontage;
+  siteInfluences?: UadSiteInfluence[];
+  siteFeatures?: UadSiteFeature[];
+
+  // ── URAR v1.3: Unit Interior Expansion (Phase 6A) ──────────────────────
+  cornerUnit?: boolean;
+  floorNumber?: number;
+  levelsInUnit?: number;
+  isAdu?: boolean;
+  legallyRentable?: boolean;
+  separatePostalAddress?: boolean;
+  kitchenUpdateStatus?: UadUpdateStatus;
+  bathroomUpdateStatus?: UadUpdateStatus;
+  accessibilityFeatures?: string;
+
+  // ── URAR v1.3: Defects & Condition (Phase 6A) ──────────────────────────
+  defects?: UadDefectItem[];
+  asIsOverallConditionRating?: string;
+  totalEstimatedCostOfRepairs?: number;
 }
 
 export interface UadAppraisalInfo {
@@ -682,4 +766,71 @@ export interface UadGseMessage {
   messageCode: string;
   messageText: string;
   fieldName?: string;
+}
+
+// ===========================
+// URAR v1.3 — SUPPORTING TYPES (Phase 6A)
+// ===========================
+
+export interface UadGroundRent {
+  annualAmount: number | null;
+  renewable?: boolean;
+  term?: number;
+  expires?: string; // ISO-8601
+}
+
+export interface UadWaterFrontage {
+  privateAccess?: boolean;
+  permanentWaterfrontFeature?: boolean;
+  rightToBuild?: boolean;
+  totalLinearMeasurement?: number;
+  naturalOrManMade?: 'Natural' | 'ManMade';
+  waterBodyType?: string;
+}
+
+export interface UadSiteInfluence {
+  influence: string;
+  proximity: string;
+  detail: string;
+  impact: 'Beneficial' | 'Neutral' | 'Adverse';
+  comment?: string;
+}
+
+export interface UadSiteFeature {
+  feature: string;
+  detail: string;
+  impact: 'Beneficial' | 'Neutral' | 'Adverse';
+  comment?: string;
+}
+
+export interface UadUpdateStatus {
+  timeFrame?: string;
+  quality?: string;
+  condition?: string;
+}
+
+export interface UadDefectItem {
+  feature: string;
+  location: string;
+  description: string;
+  affectsSoundnessOrStructuralIntegrity: boolean;
+  recommendedAction: string;
+  estimatedCostToRepair: number | null;
+}
+
+export interface UadFeatureQualityCondition {
+  walls?: string;
+  foundation?: string;
+  roof?: string;
+  windows?: string;
+  guttersDownspouts?: string;
+  overall?: string;
+}
+
+export interface UadInteriorQualityCondition {
+  kitchen?: string;
+  bathrooms?: string;
+  flooring?: string;
+  wallsCeiling?: string;
+  overall?: string;
 }

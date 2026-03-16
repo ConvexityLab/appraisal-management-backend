@@ -240,5 +240,58 @@ export function createFinalReportsRouter(dbService: CosmosDbService): Router {
     }
   );
 
+  // ==========================================================================
+  // GET /orders/:orderId/completion-report
+  // Returns the saved CanonicalCompletionReport for an order, or 404 if none.
+  // ==========================================================================
+  router.get(
+    '/orders/:orderId/completion-report',
+    [param('orderId').notEmpty().withMessage('orderId is required')],
+    handleValidation,
+    async (req: Request, res: Response) => {
+      const orderId = req.params['orderId']!;
+      try {
+        const report = await dbService.findCompletionReportByOrderId(orderId);
+        if (!report) {
+          res.status(404).json({ error: 'No completion report found for this order', code: 'COMPLETION_REPORT_NOT_FOUND' });
+          return;
+        }
+        res.status(200).json(report);
+      } catch (error: any) {
+        logger.error('Failed to get completion report', { orderId, error: error.message });
+        res.status(500).json({ error: 'Failed to retrieve completion report', message: error.message });
+      }
+    }
+  );
+
+  // ==========================================================================
+  // PUT /orders/:orderId/completion-report
+  // Save (upsert) the CanonicalCompletionReport for an order.
+  // Body: CanonicalCompletionReport (JSON)
+  // ==========================================================================
+  router.put(
+    '/orders/:orderId/completion-report',
+    [
+      param('orderId').notEmpty().withMessage('orderId is required'),
+      body().isObject().withMessage('Request body must be a JSON object'),
+    ],
+    handleValidation,
+    async (req: Request, res: Response) => {
+      const orderId = req.params['orderId']!;
+      const reportData = req.body as Record<string, unknown>;
+      if (!reportData || Object.keys(reportData).length === 0) {
+        res.status(400).json({ error: 'Request body is required and must not be empty' });
+        return;
+      }
+      try {
+        const saved = await dbService.saveCompletionReport(orderId, reportData);
+        res.status(200).json(saved);
+      } catch (error: any) {
+        logger.error('Failed to save completion report', { orderId, error: error.message });
+        res.status(500).json({ error: 'Failed to save completion report', message: error.message });
+      }
+    }
+  );
+
   return router;
 }

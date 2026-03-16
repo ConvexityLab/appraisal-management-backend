@@ -1,5 +1,5 @@
-/**
- * Canonical Report Schema — v1.1.0
+﻿/**
+ * Canonical Report Schema â v1.1.0
  *
  * UAD 3.6 / URAR (Form 1004) aligned.
  * This is the SINGLE source of truth for report data across both repos.
@@ -10,10 +10,10 @@
  *   2. Sections mirror the URAR form layout so populating the form is a direct read.
  *   3. Vendor-native formats are stored separately (VendorDataRecord) and mapped
  *      into this canonical shape at ingestion time via typed mapper functions.
- *   4. The frontend never sees vendor-native formats — only canonical.
+ *   4. The frontend never sees vendor-native formats â only canonical.
  *
  * Changelog:
- *   v1.1.0 (2026-03-11) — Phase 0.1/0.2/0.3:
+ *   v1.1.0 (2026-03-11) â Phase 0.1/0.2/0.3:
  *     - Enhanced CostApproach with depreciation breakdown, soft costs, externalities
  *     - Enhanced IncomeApproach with vacancy, expenses, cap rate, DCF, rent comps
  *     - Enhanced Reconciliation with per-approach weights, confidence, sensitivity
@@ -139,13 +139,39 @@ export interface CanonicalAddress {
 export interface CanonicalPropertyCore {
   address: CanonicalAddress;
 
-  // â”€â”€ Size & Layout (URAR: Improvements) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Size & Layout (URAR v1.3: Dwelling Exterior + Unit Interior) ─────────
   /** Above-grade living area in square feet. FNMA standard name. */
   grossLivingArea: number;
   totalRooms: number;
   bedrooms: number;
-  bathrooms: number; // full + half Ã— 0.5
+  /**
+   * @deprecated Use `bathsFull` + `bathsHalf` for URAR v1.3 compliance.
+   * Retained for backward compatibility; equals bathsFull + bathsHalf × 0.5.
+   */
+  bathrooms: number;
+  /** URAR v1.3: Full bathrooms count. Required for v1.3 forms. */
+  bathsFull?: number | null;
+  /** URAR v1.3: Half bathrooms count. Required for v1.3 forms. */
+  bathsHalf?: number | null;
   stories: number;
+
+  // ── URAR v1.3 Area Breakdown ────────────────────────────────────────────
+  /** Total finished area including above + below grade. URAR v1.3 "Gross Building Finished Area". */
+  grossBuildingFinishedArea?: number | null;
+  /** Finished area above grade (standard ceiling height). */
+  finishedAreaAboveGrade?: number | null;
+  /** Finished area above grade with nonstandard ceiling height. */
+  finishedAreaAboveGradeNonstandard?: number | null;
+  /** Unfinished area above grade. */
+  unfinishedAreaAboveGrade?: number | null;
+  /** Finished area below grade (standard ceiling height). */
+  finishedAreaBelowGrade?: number | null;
+  /** Finished area below grade with nonstandard ceiling height. */
+  finishedAreaBelowGradeNonstandard?: number | null;
+  /** Unfinished area below grade. */
+  unfinishedAreaBelowGrade?: number | null;
+  /** Noncontinuous finished area not connected to main dwelling. */
+  noncontinuousFinishedArea?: number | null;
 
   // â”€â”€ Site (URAR: Site section) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   lotSizeSqFt: number;
@@ -161,6 +187,28 @@ export interface CanonicalPropertyCore {
   foundationType: string; // "Full Basement", "Crawl Space", "Slab", "Pier"
   exteriorWalls: string; // "Brick", "Vinyl Siding", "Wood", "Stucco"
   roofSurface: string; // "Asphalt Shingle", "Metal", "Tile"
+
+  /** URAR v1.3: Construction method. */
+  constructionMethod?: 'SiteBuilt' | 'Modular' | 'Manufactured' | null;
+  /** URAR v1.3: Attachment type for townhouse/rowhouse. */
+  attachmentType?: 'Attached' | 'Detached' | 'SemiDetached' | null;
+  /** URAR v1.3: Structure design type (e.g. 1-Story, 2-Story, Split-Level). */
+  structureDesign?: string | null;
+  /** URAR v1.3: Individual structure identifier (unit #, bldg letter). */
+  structureIdentifier?: string | null;
+  /** URAR v1.3: Structure volume in cubic feet. */
+  structureVolume?: number | null;
+  /** URAR v1.3: Window surface area in sq ft. */
+  windowSurfaceArea?: number | null;
+  /** URAR v1.3: Remaining economic life in years. */
+  remainingEconomicLife?: number | null;
+
+  /** URAR v1.3: Dwelling style (e.g., Colonial, Ranch, Contemporary). */
+  dwellingStyle?: string | null;
+  /** URAR v1.3: Front door elevation / floor level. */
+  frontDoorElevation?: string | null;
+  /** URAR v1.3: Number of units in the structure containing the subject. */
+  subjectPropertyUnitsInStructure?: number | null;
 
   // â”€â”€ Basement (URAR: Improvements â€” Below Grade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   basement: string; // "Full", "Partial", "None"
@@ -181,9 +229,7 @@ export interface CanonicalPropertyCore {
   attic: string; // "None", "Scuttle", "Stairs", "Finished"
 
   // â”€â”€ Form 1004 additional description fields (not in core UAD 3.6 spec) â”€â”€â”€
-  /** Effective age in years (may differ from actual age due to updates). */
   effectiveAge?: number | null;
-  /** Total basement square footage (finished + unfinished). */
   basementSqFt?: number | null;
   drivewaySurface?: string | null;
   gutters?: string | null;
@@ -193,7 +239,6 @@ export interface CanonicalPropertyCore {
   interiorFloors?: string | null;
   interiorWalls?: string | null;
   bathFloor?: string | null;
-  /** Trim / finish material.  Note: Form 1004 label has a typo ("Tirm"). */
   trimFinish?: string | null;
   bathWainscot?: string | null;
   heatingFuel?: string | null;
@@ -201,7 +246,6 @@ export interface CanonicalPropertyCore {
   conditionDescription?: string | null;
   siteDimensions?: string | null;
   siteShape?: string | null;
-  /** More detailed view description than UAD view rating. */
   viewDescription?: string | null;
   zoningDescription?: string | null;
 
@@ -209,9 +253,67 @@ export interface CanonicalPropertyCore {
   view: string; // UAD view rating or description
   locationRating: string; // "Beneficial" | "Neutral" | "Adverse"
 
+  /** URAR v1.3: View range (distance or descriptor). */
+  viewRange?: string | null;
+  /** URAR v1.3: Overall view impact on market value. */
+  viewImpact?: 'Beneficial' | 'Neutral' | 'Adverse' | null;
+
+  // ── Townhouse-specific fields (URAR v1.3: Dwelling Exterior) ──────────
+  /** Townhouse: is this an end unit? */
+  townhouseEndUnit?: boolean | null;
+  /** Townhouse: is this a back-to-back unit? */
+  townhouseBackToBack?: boolean | null;
+  /** Townhouse: location description (e.g., Interior, End). */
+  townhouseLocation?: string | null;
+  /** Number of units above this unit. */
+  unitsAbove?: number | null;
+  /** Number of units below this unit. */
+  unitsBelow?: number | null;
+
+  // ── Per-feature Quality/Condition detail (URAR v1.3 Pages 12-14) ──────
+  /** Exterior feature quality/condition breakdown. */
+  exteriorQualityDetail?: CanonicalFeatureQualityCondition | null;
+  /** Exterior feature condition breakdown. */
+  exteriorConditionDetail?: CanonicalFeatureQualityCondition | null;
+  /** Interior feature quality detail. */
+  interiorQualityDetail?: CanonicalInteriorQualityCondition | null;
+  /** Interior feature condition detail. */
+  interiorConditionDetail?: CanonicalInteriorQualityCondition | null;
+
   // â”€â”€ Geolocation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   latitude: number | null;
   longitude: number | null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// URAR v1.3 — Per-Feature Quality/Condition Interfaces  (Phase 6A)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Per-feature quality/condition ratings for exterior components.
+ * URAR v1.3: Dwelling Exterior Q&C table (Pages 12-13).
+ */
+export interface CanonicalFeatureQualityCondition {
+  walls?: string | null;
+  foundation?: string | null;
+  roof?: string | null;
+  windows?: string | null;
+  guttersDownspouts?: string | null;
+  /** Overall exterior rating (Q1-Q6 or C1-C6). */
+  overall?: string | null;
+}
+
+/**
+ * Per-feature quality/condition ratings for interior components.
+ * URAR v1.3: Unit Interior Q&C table (Pages 13-14).
+ */
+export interface CanonicalInteriorQualityCondition {
+  kitchen?: string | null;
+  bathrooms?: string | null;
+  flooring?: string | null;
+  wallsCeiling?: string | null;
+  /** Overall interior rating (Q1-Q6 or C1-C6). */
+  overall?: string | null;
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -226,12 +328,6 @@ export interface CanonicalPropertyCore {
  *       + Improvements Section
  */
 export interface CanonicalSubject extends CanonicalPropertyCore {
-  /** FK → PropertyRecord.id — the canonical property record this subject maps to. Added Phase R0.3.
-   *  Populated at report creation time by PropertyRecordService. */
-  propertyId?: string;
-  /** Which PropertyRecord.recordVersion was current on the effective date.
-   *  Allows reports to be reproduced against the property as it was. Added Phase R0.3. */
-  propertyRecordVersion?: number;
   // â”€â”€ Identification (URAR: Subject) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   parcelNumber?: string | null; // APN / Assessor's Parcel Number
   censusTract?: string | null;
@@ -271,22 +367,396 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   hpiTrend?: 'Increasing' | 'Stable' | 'Declining' | null;
 
   // â”€â”€ Form 1004 subject-only fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  /** Tax year for the reported RE taxes. */
   taxYear?: number | null;
-  /** Annual real estate taxes (from public record). */
   annualTaxes?: number | null;
-  /** Carport spaces (separate from garageSpaces). */
   carportSpaces?: number | null;
-  /** Site area unit. */
   siteAreaUnit?: 'sf' | 'acres' | null;
+
+  // ── URAR v1.3: Assignment & Listing (Phase 6A) ────────────────────────
+  /** URAR v1.3: Listing status of the subject. */
+  listingStatus?: string | null;
+  /** URAR v1.3: Is the property valuation method other than Sales Comparison? */
+  propertyValuationMethod?: string | null;
+  /** URAR v1.3: Is the property on Native American Lands? */
+  nativeAmericanLands?: boolean | null;
+
+  // ── URAR v1.3: New Construction (Phase 6A) ────────────────────────────
+  /** Is this a new construction property? */
+  newConstruction?: boolean | null;
+  /** Construction stage: Proposed, UnderConstruction, or Complete. */
+  constructionStage?: 'Proposed' | 'UnderConstruction' | 'Complete' | null;
+
+  // ── URAR v1.3: Property Rights & Restrictions (Phase 6A) ─────────────
+  /** Is the site owned in common (condo/cooperative)? */
+  siteOwnedInCommon?: boolean | null;
+  /** Number of units excluding ADUs. */
+  unitsExcludingAdus?: number | null;
+  /** Number of accessory dwelling units. */
+  accessoryDwellingUnits?: number | null;
+  /** Property restrictions (deed, land trust, etc.). */
+  propertyRestriction?: string | null;
+  /** Encroachments description. */
+  encroachment?: string | null;
+  /** Special tax assessments or districts. */
+  specialTaxAssessments?: string | null;
+  /** Is the property part of a community land trust? */
+  communityLandTrust?: boolean | null;
+  /** Ground rent details (if leasehold). */
+  groundRent?: CanonicalGroundRent | null;
+  /** Are mineral rights leased? */
+  mineralRightsLeased?: boolean | null;
+  /** Are all rights included in the appraisal? */
+  allRightsIncluded?: boolean | null;
+  /** Rights not included. */
+  rightsNotIncluded?: string | null;
+  /** Is the homeowner responsible for exterior maintenance? */
+  homeownerResponsibleForExteriorMaintenance?: boolean | null;
+  /** Alternate physical address if different from primary. */
+  alternatePhysicalAddress?: string | null;
+
+  // ── URAR v1.3: Site Expansion (Phase 6A) ─────────────────────────────
+  /** APN description. */
+  apnDescription?: string | null;
+  /** Number of parcels composing the site. */
+  numberOfParcels?: number | null;
+  /** Are all parcels contiguous? */
+  contiguous?: boolean | null;
+  /** Elements dividing non-contiguous parcels. */
+  elementsDividingParcels?: string | null;
+  /** Primary access to the site (Public, Private, etc.). */
+  primaryAccess?: string | null;
+  /** Street type (Public, Private). */
+  streetType?: string | null;
+  /** Street surface (Paved, Gravel, Dirt). */
+  streetSurface?: string | null;
+  /** Is there a road maintenance agreement? */
+  maintenanceAgreement?: boolean | null;
+  /** Apparent environmental conditions. */
+  apparentEnvironmentalConditions?: string | null;
+  /** Is broadband internet available? */
+  broadbandInternetAvailable?: boolean | null;
+  /** Is the dwelling within a utility easement? */
+  dwellingWithinUtilityEasement?: boolean | null;
+  /** Water frontage details. */
+  waterFrontage?: CanonicalWaterFrontage | null;
+  /** Adverse site influences. */
+  siteInfluences?: CanonicalSiteInfluence[] | null;
+  /** Notable site features. */
+  siteFeatures?: CanonicalSiteFeature[] | null;
+
+  // ── URAR v1.3: Unit Interior Expansion (Phase 6A) ────────────────────
+  /** Is this a corner unit? */
+  cornerUnit?: boolean | null;
+  /** Floor number of the unit. */
+  floorNumber?: number | null;
+  /** Number of levels in the unit. */
+  levelsInUnit?: number | null;
+  /** Is this unit an ADU? */
+  isAdu?: boolean | null;
+  /** Is the ADU legally rentable? */
+  legallyRentable?: boolean | null;
+  /** Does the ADU have a separate postal address? */
+  separatePostalAddress?: boolean | null;
+  /** Kitchen update status (time frame, quality, condition). */
+  kitchenUpdateStatus?: CanonicalUpdateStatus | null;
+  /** Bathroom update status. */
+  bathroomUpdateStatus?: CanonicalUpdateStatus | null;
+  /** Accessibility features (ADA, ramps, etc.). */
+  accessibilityFeatures?: string | null;
+
+  // ── URAR v1.3: Defects & Condition (Phase 6A) ────────────────────────
+  /** List of apparent defects, damages, or deficiencies. */
+  defects?: CanonicalDefectItem[] | null;
+  /** Overall as-is condition rating (C1-C6). */
+  asIsOverallConditionRating?: string | null;
+  /** Total estimated cost of repairs for all defects. */
+  totalEstimatedCostOfRepairs?: number | null;
+
+  // ── Condo / PUD supplemental (Phase 5 — Form 1073 / PUD addendum) ──────
+  /** Condo project details — populated when propertyType is Condo or Cooperative. */
+  condoDetail?: CanonicalCondoDetail | null;
+  /** PUD project details — populated when propertyType is PUD. */
+  pudDetail?: CanonicalPudDetail | null;
+  /** HOA details — populated for Condo, PUD, and Townhouse properties. */
+  hoaDetail?: CanonicalHoaDetail | null;
+  /** Cooperative details — populated when propertyType is Co-op. */
+  coopDetail?: CanonicalCoopDetail | null;
 }
 
-/** URAR: Site â€” Utilities row. */
+/** URAR: Site — Utilities row. */
 export interface CanonicalUtilities {
   electricity: 'Public' | 'Other' | 'None';
   gas: 'Public' | 'Other' | 'None';
   water: 'Public' | 'Well' | 'Other' | 'None';
   sewer: 'Public' | 'Septic' | 'Other' | 'None';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// URAR v1.3 — New Supporting Interfaces  (Phase 6A)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Ground rent details. URAR v1.3 Subject Property + Project Information pages. */
+export interface CanonicalGroundRent {
+  annualAmount: number | null;
+  /** Is the ground rent renewable at the end of the term? */
+  renewable?: boolean | null;
+  /** Lease term in years. */
+  term?: number | null;
+  /** Expiration date (ISO-8601). */
+  expires?: string | null;
+}
+
+/** Water frontage details. URAR v1.3 Site section (Page 7). */
+export interface CanonicalWaterFrontage {
+  /** Does the property have private access to water frontage? */
+  privateAccess?: boolean | null;
+  /** Is the waterfront feature permanent? */
+  permanentWaterfrontFeature?: boolean | null;
+  /** Right to build on the waterfront? */
+  rightToBuild?: boolean | null;
+  /** Total linear measurement of water frontage. */
+  totalLinearMeasurement?: number | null;
+  /** Natural or man-made waterfront. */
+  naturalOrManMade?: 'Natural' | 'ManMade' | null;
+  /** Type of water body (ocean, lake, river, etc.). */
+  waterBodyType?: string | null;
+}
+
+/** Site influence factor. URAR v1.3 Site section — repeating table. */
+export interface CanonicalSiteInfluence {
+  influence: string;       // e.g., "Traffic", "Railroad", "Airport"
+  proximity: string;       // e.g., "Adjacent", "Within 1 mile"
+  detail: string;
+  impact: 'Beneficial' | 'Neutral' | 'Adverse';
+  comment?: string | null;
+}
+
+/** Site feature. URAR v1.3 Site section — repeating table. */
+export interface CanonicalSiteFeature {
+  feature: string;         // e.g., "Topography", "Drainage", "Landscaping"
+  detail: string;
+  impact: 'Beneficial' | 'Neutral' | 'Adverse';
+  comment?: string | null;
+}
+
+/** Kitchen or Bathroom update status. URAR v1.3 Unit Interior (Page 14). */
+export interface CanonicalUpdateStatus {
+  /** Time frame of update: e.g. "Within last 5 years", "6-15 years", "Not updated". */
+  timeFrame?: string | null;
+  /** Quality of update: Q1-Q6. */
+  quality?: string | null;
+  /** Condition of update: C1-C6. */
+  condition?: string | null;
+}
+
+/** Apparent defect/damage/deficiency. URAR v1.3 Pages 4 & 37. */
+export interface CanonicalDefectItem {
+  /** Section reference: "Site", "Dwelling Exterior", "Unit Interior", etc. */
+  feature: string | null;
+  /** Structure/Unit identifier or location. */
+  location: string | null;
+  description: string | null;
+  /** Does the defect affect soundness or structural integrity? */
+  affectsSoundnessOrStructuralIntegrity: boolean | null;
+  recommendedAction: string | null;
+  estimatedCostToRepair: number | null;
+}
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONDO / PUD / HOA DETAIL  (Phase 5 — UAD 3.6 Conditional Sections)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Form 1073: Condominium project details.
+ * Required when propertyType is Condo or Cooperative.
+ */
+export interface CanonicalCondoDetail {
+  projectName: string | null;
+  projectType: 'Established' | 'New' | 'Conversion' | 'Gut Rehabilitation' | null;
+  /** Total number of units in the project. */
+  totalUnits: number | null;
+  /** Number of units sold / closed. */
+  unitsSold: number | null;
+  /** Number of units currently for sale. */
+  unitsForSale: number | null;
+  /** Number of units rented (investor-owned). */
+  unitsRented: number | null;
+  /** % of project owned by single entity. FNMA flags > 10%. */
+  ownerOccupancyPct: number | null;
+  /** Is the project subject to additional phasing? */
+  isPhased: boolean | null;
+  /** Are common elements complete? */
+  commonElementsComplete: boolean | null;
+  /** Is there any pending litigation against the HOA or project? */
+  pendingLitigation: boolean | null;
+  pendingLitigationDetails: string | null;
+  /** Special assessment amount, if any. */
+  specialAssessment: number | null;
+  specialAssessmentDetails: string | null;
+  /** Developer/sponsor still in control of HOA? */
+  developerControlled: boolean | null;
+  /** Describe floors (unit's floor level, building total floors). */
+  unitFloorLevel: number | null;
+  buildingTotalFloors: number | null;
+  comments: string | null;
+
+  // ── Phase 7B-6 expansion ──────────────────────────────────────────────
+  /** Source of project data (HOA, management company, developer, public records). */
+  projectInfoDataSource?: string | null;
+  /** Reason rented-unit count is estimated. */
+  reasonUnitsRentedIsEstimated?: string | null;
+  /** Project is complete? */
+  projectComplete?: boolean | null;
+  /** Building(s) complete? */
+  buildingComplete?: boolean | null;
+  /** Was the project converted in the past 3 years? */
+  convertedInPast3Years?: boolean | null;
+  /** Year of condo conversion. */
+  yearConverted?: number | null;
+  /** Observed deficiencies in common areas? */
+  observedDeficiencies?: boolean | null;
+  /** Description of observed deficiencies. */
+  observedDeficienciesDescription?: string | null;
+  /** % of space used for non-residential purposes. */
+  nonResidentialUsePct?: number | null;
+  /** Description of commercial/non-residential use. */
+  commercialUseDescription?: string | null;
+  /** Single entity ownership count. */
+  singleEntityOwnedCount?: number | null;
+  /** Single entity ownership %. FNMA flags > 10%. */
+  singleEntityOwnershipPct?: number | null;
+  /** Hotel/motel operation? */
+  isHotelMotel?: boolean | null;
+  /** Timeshare or segmented ownership? */
+  isTimeshare?: boolean | null;
+  /** Income/deed-restricted? */
+  hasIncomeRestrictions?: boolean | null;
+  /** Age-restricted community (55+)? */
+  ageRestrictedCommunity?: boolean | null;
+  /** Project-level ground rent applicable? */
+  groundRent?: boolean | null;
+  /** Project-level ground rent amount. */
+  groundRentAmount?: number | null;
+}
+
+/**
+ * PUD project / community details.
+ * Required when propertyType is PUD.
+ */
+export interface CanonicalPudDetail {
+  projectName: string | null;
+  pudType: 'Detached' | 'Attached' | null;
+  /** Total number of units/lots in the PUD. */
+  totalUnits: number | null;
+  /** Number of phases in the development. */
+  totalPhases: number | null;
+  /** Is the developer still in control of HOA? */
+  developerControlled: boolean | null;
+  /** Are common elements/amenities complete? */
+  commonElementsComplete: boolean | null;
+  /** Is the PUD subject to additional phases? */
+  isPhased: boolean | null;
+  comments: string | null;
+
+  // ── Phase 7B-6 expansion ──────────────────────────────────────────────
+  /** Source of project data. */
+  projectInfoDataSource?: string | null;
+  /** Units sold / closed. */
+  unitsSold?: number | null;
+  /** Units for sale. */
+  unitsForSale?: number | null;
+  /** Units rented. */
+  unitsRented?: number | null;
+  /** Owner occupancy percentage. */
+  ownerOccupancyPct?: number | null;
+  /** Project complete? */
+  projectComplete?: boolean | null;
+  /** Observed deficiencies in common areas? */
+  observedDeficiencies?: boolean | null;
+  /** Description of observed deficiencies. */
+  observedDeficienciesDescription?: string | null;
+}
+
+/**
+ * HOA details — applicable to Condo, PUD, and Townhouse properties.
+ */
+export interface CanonicalHoaDetail {
+  /** Monthly/quarterly/annual HOA fee amount. */
+  hoaFee: number | null;
+  hoaFrequency: 'Monthly' | 'Quarterly' | 'Annually' | null;
+  /** What the HOA fee covers (e.g., landscaping, pool, insurance). */
+  hoaIncludes: string | null;
+  /** Monthly special assessment amount, if any. */
+  specialAssessmentAmount: number | null;
+  /** Name of the management company. */
+  managementCompany: string | null;
+
+  // ── Phase 7B-6 expansion ──────────────────────────────────────────────
+  /** Mandatory fees beyond HOA dues. */
+  mandatoryFees?: number | null;
+  /** Description of what mandatory fees cover. */
+  mandatoryFeeDescription?: string | null;
+  /** Utilities included in HOA/fees. */
+  utilitiesIncluded?: string | null;
+  /** HOA name. */
+  hoaName?: string | null;
+  /** HOA contact phone. */
+  hoaContactPhone?: string | null;
+  /** Reserve fund balance. */
+  reserveFundBalance?: number | null;
+  /** Reserve fund adequacy assessment. */
+  reserveFundAdequacy?: 'Adequate' | 'Inadequate' | 'Unknown' | null;
+  /** Annual budget amount. */
+  annualBudgetAmount?: number | null;
+  /** % of budget allocated to reserves. */
+  reserveAllocationPct?: number | null;
+  /** Units > 60 days delinquent on dues. */
+  delinquentDues60Day?: number | null;
+  /** % of units delinquent. */
+  delinquentDuesPct?: number | null;
+  /** Master/blanket insurance premium. */
+  masterInsurancePremium?: number | null;
+  /** What master policy covers. */
+  masterInsuranceCoverage?: string | null;
+  /** Fidelity bond amount. */
+  fidelityBondCoverage?: number | null;
+}
+
+/**
+ * Cooperative project details (Phase 7B-6).
+ * Required when propertyType is Co-op.
+ */
+export interface CanonicalCoopDetail {
+  /** Name of the cooperative corporation. */
+  projectName?: string | null;
+  /** Total shares outstanding in the corporation. */
+  totalSharesOutstanding?: number | null;
+  /** Shares attributable to the subject unit. */
+  sharesAttributableToSubject?: number | null;
+  /** Total shares issued. */
+  sharesIssued?: number | null;
+  /** Proprietary lease expiration date (ISO-8601). */
+  proprietaryLeaseExpires?: string | null;
+  /** Blanket financing on the cooperative? */
+  blanketFinancing?: boolean | null;
+  /** Underlying mortgage interest rate. */
+  cooperativeInterestRate?: number | null;
+  /** Remaining balance on blanket mortgage. */
+  cooperativeUnderlyingMortgageBalance?: number | null;
+  /** Monthly maintenance/carrying charge. */
+  monthlyAssessment?: number | null;
+  /** What assessment includes (taxes, insurance, utilities, etc.). */
+  assessmentIncludes?: string | null;
+  /** Management type. */
+  cooperativeManagementType?: 'SelfManaged' | 'ProfessionallyManaged' | null;
+  /** Managing agent name. */
+  cooperativeManagementAgent?: string | null;
+  /** Subletting policy. */
+  subletPolicy?: 'Allowed' | 'Restricted' | 'NotAllowed' | null;
+  /** Transfer/flip tax percentage. */
+  flipTaxPct?: number | null;
+  /** Board approval required for purchase? */
+  boardApprovalRequired?: boolean | null;
+  comments?: string | null;
 }
 
 /**
@@ -312,6 +782,66 @@ export interface CanonicalNeighborhood {
   boundaryDescription: string | null;
   neighborhoodDescription: string | null;
   marketConditionsNotes: string | null;
+
+  // ── URAR v1.3: Market Analysis Expansion (Phase 6C) ─────────────────────
+  /** One-unit housing: predominant price. */
+  predominantPrice?: number | null;
+  /** One-unit housing: age range low (years). */
+  ageRangeLow?: number | null;
+  /** One-unit housing: age range high (years). */
+  ageRangeHigh?: number | null;
+  /** Housing supply: total active listings in the market area. */
+  activeListingCount?: number | null;
+  /** Housing supply: months of housing supply (inventory). */
+  monthsOfSupply?: number | null;
+  /** Housing supply: absorption rate (units sold per month). */
+  absorptionRate?: number | null;
+  /** Median sale price in the market area. */
+  medianSalePrice?: number | null;
+  /** Median days on market. */
+  medianDaysOnMarket?: number | null;
+  /** Price trend: 1-year percentage change. */
+  priceTrend1Year?: number | null;
+  /** Price trend: 3-year percentage change. */
+  priceTrend3Year?: number | null;
+  /** Number of comparable sales in last 12 months. */
+  comparableSalesCount12Mo?: number | null;
+  /** Number of comparable listings currently active. */
+  comparableListingsActive?: number | null;
+  /** Market conditions are consistent with the property values selection above? */
+  marketConditionsConsistent?: boolean | null;
+
+  // ── Phase 7B-5: Market Section Expansion ──────────────────────────────
+  /** Search criteria used to select comps. */
+  searchCriteriaDescription?: string | null;
+  /** Active listing price low. */
+  activeListingPriceLow?: number | null;
+  /** Active listing price median. */
+  activeListingPriceMedian?: number | null;
+  /** Active listing price high. */
+  activeListingPriceHigh?: number | null;
+  /** Active listing median DOM. */
+  activeListingMedianDOM?: number | null;
+  /** Pending sales count. */
+  pendingSalesCount?: number | null;
+  /** Pending sale price low. */
+  pendingSalePriceLow?: number | null;
+  /** Pending sale price median. */
+  pendingSalePriceMedian?: number | null;
+  /** Pending sale price high. */
+  pendingSalePriceHigh?: number | null;
+  /** Comparable sales count: last 6 months. */
+  salesCount6Mo?: number | null;
+  /** Comparable sales count: last 3 months. */
+  salesCount3Mo?: number | null;
+  /** Distressed market competition (REO/short-sale prevalence). */
+  distressedMarketCompetition?: string | null;
+  /** Source for price trend data (e.g., MLS, Public Records). */
+  priceTrendSource?: string | null;
+  /** Price trend analysis commentary narrative. */
+  priceTrendAnalysisCommentary?: string | null;
+  /** Market commentary (replaces marketConditionsNotes going forward). */
+  marketCommentary?: string | null;
 }
 
 /**
@@ -324,6 +854,28 @@ export interface CanonicalContractInfo {
   propertyRightsAppraised: 'Fee Simple' | 'Leasehold' | 'Other';
   financingConcessions: string | null;
   isPropertySeller: boolean | null; // is seller a financial institution?
+
+  // ── URAR v1.3: Expanded Sales Contract fields (Phase 6A) ──────────────
+  /** Is there a sales contract? */
+  isSalesContract?: boolean | null;
+  /** Was sales contract information analyzed? */
+  wasContractAnalyzed?: boolean | null;
+  /** Does this appear to be an arm's length transaction? */
+  isArmLengthTransaction?: boolean | null;
+  /** Commentary when non-arm's length. */
+  nonArmLengthCommentary?: string | null;
+  /** Transfer terms description. */
+  transferTerms?: string | null;
+  /** Personal property conveyed with the sale. */
+  personalPropertyConveyed?: string | null;
+  /** Known sales concessions description. */
+  knownSalesConcessions?: string | null;
+  /** Total dollar amount of sales concessions. */
+  totalSalesConcessions?: number | null;
+  /** Are the concessions typical for the market? */
+  typicalForMarket?: boolean | null;
+  /** Sales contract analysis narrative. */
+  salesContractAnalysis?: string | null;
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -337,14 +889,14 @@ export interface CanonicalContractInfo {
  * URAR: Sales Comparison Approach grid (page 2)
  */
 export interface CanonicalComp extends CanonicalPropertyCore {
-  compId: string; // stable unique ID
+  /** Stable unique ID */
+  compId: string;
   /** FK → PropertyRecord.id for this comp's physical address. Added Phase R0.3.
    *  Resolved at comp-selection time via PropertyRecordService. */
   propertyId?: string;
   /** FK → PropertyComparableSale.id — the specific sale event this comp represents.
    *  Populated when a comp is selected from the persistent comparable-sales container. Added Phase R0.3. */
   comparableSaleId?: string;
-
   // â”€â”€ Sale Information (URAR: Sale grid columns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   salePrice: number | null;
   saleDate: string | null; // ISO date
@@ -361,23 +913,204 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   vendorRecordRef: string | null; // ID into vendor-data container for traceability
 
   // â”€â”€ Form 1004 comp-only supplemental fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  /** Human-readable proximity string, e.g. "0.25 miles NE". */
   proximityToSubject?: string | null;
-  /** Verification source, e.g. "County Records", "MLS #12345". */
   verificationSource?: string | null;
-  /** Financing concessions description (text for Description column in grid). */
   saleFinancingConcessions?: string | null;
-  /** Property rights description for this comp's Leasehold/Fee Simple cell. */
   propertyRights?: string | null;
-  /** Second prior sale date for prior-transfer history block. */
   priorSaleDate2?: string | null;
-  /** Second prior sale price for prior-transfer history block. */
   priorSalePrice2?: number | null;
+
+  // -- URAR v1.3: Expanded comp descriptor fields (Phase 6C) ----------------
+  // NOTE: constructionMethod, attachmentType, foundationType inherited from CanonicalPropertyCore
+  /** View quality rating (URAR v1.3). */
+  viewQuality?: string | null;
+  /** View type description (URAR v1.3). */
+  viewType?: string | null;
+  /** Below grade finished area in sq ft. */
+  belowGradeFinishedSqFt?: number | null;
+  /** Below grade unfinished area in sq ft. */
+  belowGradeUnfinishedSqFt?: number | null;
+  /** Number of fireplaces. */
+  fireplaceCount?: number | null;
+  /** Pool present? */
+  hasPool?: boolean | null;
+  /** Fence type or description. */
+  fencing?: string | null;
 
   // â”€â”€ Distance & Proximity (URAR: proximity column) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   distanceFromSubjectMiles: number;
   proximityScore: number | null; // 0-100 if vendor-computed
 
+
+  // -- Phase 7C: URAR v1.3 Full Comp Expansion (Pages 26-29) ----------------
+
+  // ── Transaction / Contract Detail ─────────────────────────────────────────
+  /** Terms of sale / transfer (e.g., 'Conventional', 'Owner Financing'). */
+  transferTerms?: string | null;
+  /** Contract price at time of sale (may differ from sale price). */
+  contractPrice?: number | null;
+  /** Sale-to-list price ratio (e.g. 0.98 for 98%). */
+  saleToListPriceRatio?: number | null;
+  /** Property rights appraised (Fee Simple, Leasehold, etc.). */
+  propertyRightsAppraised?: string | null;
+  /** Days on market before sale. */
+  daysOnMarket?: number | null;
+  /** Was the comp a distressed sale (REO, Short Sale, Foreclosure)? */
+  distressedSale?: boolean | null;
+  /** Listing status at time of analysis. */
+  compListingStatus?: 'Active' | 'Pending' | 'Sold' | 'Withdrawn' | 'Expired' | null;
+
+  // ── Project / HOA Detail ──────────────────────────────────────────────────
+  /** Project name (for condo/PUD comps). */
+  projectName?: string | null;
+  /** Is this comp in the same project as the subject? */
+  sameProjectAsSubject?: boolean | null;
+  /** Monthly HOA / condo fee. */
+  monthlyFee?: number | null;
+  /** Common amenities in the project (pool, gym, etc.). */
+  commonAmenities?: string | null;
+  /** Special assessments at time of sale. */
+  specialAssessments?: string | null;
+
+  // ── Site Detail (comp-specific, beyond inherited core) ────────────────────
+  /** Is the site owned in common? */
+  siteOwnedInCommon?: boolean | null;
+  /** Neighborhood name / location descriptor. */
+  neighborhoodName?: string | null;
+  /** Zoning compliance (Legal, Legal Non-conforming, Illegal, etc.). */
+  zoningCompliance?: string | null;
+  /** Hazard zone designation (flood, seismic, wildfire). */
+  hazardZone?: string | null;
+  /** Primary access type (Public, Private, etc.). */
+  primaryAccess?: string | null;
+  /** Street type (Paved, Gravel, Dirt, etc.). */
+  streetType?: string | null;
+  /** Property restrictions (easements, deed restrictions, etc.). */
+  propertyRestriction?: string | null;
+  /** Easement description. */
+  easement?: string | null;
+  /** Topography description. */
+  topography?: string | null;
+  /** Drainage description. */
+  drainage?: string | null;
+  /** Site characteristics description. */
+  siteCharacteristics?: string | null;
+  /** Site influences (positive/negative environmental or locational). */
+  siteInfluence?: string | null;
+  /** Apparent environmental conditions. */
+  apparentEnvironmentalConditions?: string | null;
+
+  // ── Water Frontage ────────────────────────────────────────────────────────
+  /** Type of water frontage (Ocean, Lake, River, Creek, Canal, etc.). */
+  waterFrontageType?: string | null;
+  /** Linear feet of water frontage. */
+  waterFrontageLinearFeet?: number | null;
+  /** Private waterfront access? */
+  waterFrontagePrivateAccess?: boolean | null;
+  /** Is water frontage permanent? */
+  waterFrontagePermanent?: boolean | null;
+  /** Natural vs man-made water feature. */
+  waterFrontageNaturalManMade?: 'Natural' | 'Man-Made' | null;
+
+  // ── Manufactured Home (comp-specific) ─────────────────────────────────────
+  /** HUD Data Plate present? */
+  hudDataPlate?: boolean | null;
+  /** HUD Label / certification present? */
+  hudLabel?: boolean | null;
+  /** Manufactured home serial number. */
+  serialNumber?: string | null;
+
+  // ── Mechanical / HVAC (comp-specific) ─────────────────────────────────────
+  /** HVAC system type (Forced Air, Radiant, etc.). */
+  hvacType?: string | null;
+  /** HVAC fuel type (Gas, Electric, Oil, etc.). */
+  hvacFuel?: string | null;
+  /** Estimated HVAC age in years. */
+  hvacAge?: number | null;
+
+  // ── Energy / Green Features ───────────────────────────────────────────────
+  /** Green certification type (ENERGY STAR, LEED, etc.). */
+  greenCertification?: string | null;
+  /** Solar panels present? */
+  solarPanels?: boolean | null;
+  /** Energy rating (HERS, EPS score, etc.). */
+  energyRating?: string | null;
+
+  // ── Disaster Mitigation ───────────────────────────────────────────────────
+  /** Summary of disaster mitigation features. */
+  disasterMitigationSummary?: string | null;
+
+  // ── Unit Detail (condo/multi-unit comps) ──────────────────────────────────
+  /** Unit identifier within structure. */
+  unitId?: string | null;
+  /** ADU location if applicable. */
+  aduLocation?: string | null;
+  /** Floor number of the unit. */
+  floorNumber?: number | null;
+  /** Is this a corner unit? */
+  cornerUnit?: boolean | null;
+  /** Number of levels in the unit. */
+  levelsInUnit?: number | null;
+  /** Accessibility features present. */
+  accessibilityFeatures?: string | null;
+
+  // ── Overall Quality / Condition Ratings ───────────────────────────────────
+  /** Overall quality rating (Q1-Q6 or descriptive). */
+  overallQualityRating?: string | null;
+  /** Overall condition rating (C1-C6 or descriptive). */
+  overallConditionRating?: string | null;
+
+  // ── Amenities (5 categories per URAR v1.3) ───────────────────────────────
+  /** Porch/patio/deck description. */
+  amenitiesPorchPatioDeck?: string | null;
+  /** Pool / spa description. */
+  amenitiesPoolSpa?: string | null;
+  /** Fireplace description. */
+  amenitiesFireplace?: string | null;
+  /** Fence description. */
+  amenitiesFence?: string | null;
+  /** Other amenities description. */
+  amenitiesOther?: string | null;
+
+  // ── Vehicle Storage ───────────────────────────────────────────────────────
+  /** Vehicle storage type (Attached Garage, Detached Garage, Carport, etc.). */
+  vehicleStorageType?: string | null;
+  /** Number of vehicle storage spaces. */
+  vehicleStorageSpaces?: number | null;
+  /** Vehicle storage detail / description. */
+  vehicleStorageDetail?: string | null;
+
+  // ── Outbuilding ───────────────────────────────────────────────────────────
+  /** Outbuilding type (Barn, Shed, Workshop, Guest House, etc.). */
+  outbuildingType?: string | null;
+  /** Outbuilding gross building area. */
+  outbuildingGBA?: number | null;
+  /** Outbuilding finished area. */
+  outbuildingFinishedArea?: number | null;
+  /** Outbuilding unfinished area. */
+  outbuildingUnfinishedArea?: number | null;
+  /** Outbuilding volume in cubic feet. */
+  outbuildingVolume?: number | null;
+  /** Outbuilding has bathrooms? */
+  outbuildingBaths?: number | null;
+  /** Outbuilding has kitchen? */
+  outbuildingKitchen?: boolean | null;
+  /** Outbuilding has HVAC? */
+  outbuildingHVAC?: boolean | null;
+  /** Outbuilding has utilities? */
+  outbuildingUtilities?: boolean | null;
+
+  // ── Summary / Computed Fields ─────────────────────────────────────────────
+  /** Adjusted price per unit. */
+  adjustedPricePerUnit?: number | null;
+  /** Adjusted price per bedroom. */
+  adjustedPricePerBedroom?: number | null;
+  /** Price per gross building finished area sf. */
+  pricePerGrossBuildingFinishedArea?: number | null;
+  /** Price per finished area above grade sf. */
+  pricePerFinishedAreaAboveGrade?: number | null;
+  /** Comparable weight assigned by appraiser (0-100%). */
+  comparableWeight?: number | null;
   // â”€â”€ Selection State (workspace UI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** true = appraiser has selected this comp for the grid. */
   selected: boolean;
@@ -434,6 +1167,46 @@ export interface CanonicalAdjustments {
   otherAdj2: number;
   otherAdj3: number;
 
+  // -- URAR v1.3: Expanded adjustment rows (Phase 6C) ----------------------
+  /** Construction method adjustment (site-built vs modular/manufactured). */
+  constructionMethodAdj?: number;
+  /** Attachment type adjustment (detached vs attached). */
+  attachmentTypeAdj?: number;
+  /** View impact adjustment (URAR v1.3 expanded view rating). */
+  viewImpactAdj?: number;
+  /** Foundation adjustment. */
+  foundationAdj?: number;
+  /** Below grade area adjustment. */
+  belowGradeAdj?: number;
+  /** Fireplace adjustment. */
+  fireplaceAdj?: number;
+  /** Pool adjustment. */
+  poolAdj?: number;
+  /** Fencing/exterior features adjustment. */
+  fencingAdj?: number;
+
+
+  // -- Phase 7C: Expanded adjustment rows for new comp fields ────────────────
+  /** Water frontage adjustment. */
+  waterFrontageAdj?: number;
+  /** Outbuilding adjustment. */
+  outbuildingAdj?: number;
+  /** Vehicle storage adjustment. */
+  vehicleStorageAdj?: number;
+  /** Amenities (porch/patio/deck/pool/spa) adjustment. */
+  amenitiesAdj?: number;
+  /** Disaster mitigation features adjustment. */
+  disasterMitigationAdj?: number;
+  /** Green / energy features adjustment. */
+  greenEnergyAdj?: number;
+  /** Manufactured home features adjustment. */
+  manufacturedHomeAdj?: number;
+  /** Project / HOA fee adjustment. */
+  projectHoaAdj?: number;
+  /** Property rights adjustment. */
+  propertyRightsAdj?: number;
+  /** Transfer terms adjustment. */
+  transferTermsAdj?: number;
   // â”€â”€ Computed Totals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** Sum of all adjustments (preserving sign). */
   netAdjustmentTotal: number;
@@ -441,13 +1214,30 @@ export interface CanonicalAdjustments {
   grossAdjustmentTotal: number;
   /** salePrice + netAdjustmentTotal. */
   adjustedSalePrice: number;
-  /** Net adjustment as percentage of the comparable's sale price. */
   netAdjustmentPct?: number | null;
-  /** Gross adjustment as percentage of the comparable's sale price. */
   grossAdjustmentPct?: number | null;
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+// ── Phase 7C: Analyzed Properties Not Used ──────────────────────────────────
+
+/** Properties analyzed but not selected as comparables. URAR v1.3 Pages 29-30. */
+export interface CanonicalAnalyzedPropertyNotUsed {
+  /** Street address. */
+  address: string;
+  /** Sale date (YYYY-MM-DD). */
+  saleDate?: string | null;
+  /** Sale price. */
+  salePrice?: number | null;
+  /** Listing status. */
+  status?: 'Active' | 'Pending' | 'Sold' | 'Withdrawn' | 'Expired' | null;
+  /** Reason this property was not used as a comparable. */
+  reasonNotUsed: string;
+  /** Additional comments. */
+  comment?: string | null;
+}
+
 // EXTENSION INTERFACES  (non-UAD enrichment data)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -473,7 +1263,7 @@ export interface MlsExtension {
 
 /** Public record data for tax and ownership verification. */
 export interface PublicRecordExtension {
-  parcelNumber?: string | null;
+  parcelNumber: string | null;
   taxAssessedValue: number | null;
   taxYear?: number | null;
   annualTaxAmount: number | null;
@@ -513,16 +1303,9 @@ export interface CanonicalValuation {
   recommendedListPrice?: number | null;}
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// CANONICAL REPORT METADATA  (report-generation context, not stored in vendor data)
+// CANONICAL REPORT METADATA
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-/**
- * Report-level context fields assembled at generation time from the AppraisalOrder
- * and appraiser profile. These do NOT come from vendor comp data â€” they come from
- * the order management system and are joined by the canonical document builder.
- *
- * Populated by FinalReportService before passing the document to ReportEngineService.
- */
 export interface CanonicalReportMetadata {
   orderId: string;
   orderNumber: string | null;
@@ -535,6 +1318,10 @@ export interface CanonicalReportMetadata {
   loanNumber: string | null;
   effectiveDate: string | null;
   inspectionDate: string | null;
+  /**
+   * @deprecated Use `assignmentReason` for URAR v1.3 compliance.
+   * Retained for backward compatibility; derive from assignmentReason === 'Purchase'.
+   */
   isSubjectPurchase: boolean;
   contractPrice: number | null;
   contractDate: string | null;
@@ -547,9 +1334,350 @@ export interface CanonicalReportMetadata {
    * C=Marginal, D=Unacceptable). Only populated for DVR review report types.
    */
   appraisalGrade?: 'A' | 'B' | 'C' | 'D' | null;
+
+  // ── URAR v1.3: Expanded assignment fields (Phase 6A) ───────────────────
+  /**
+   * Assignment reason enum — replaces the binary `isSubjectPurchase`.
+   * Both are kept for backward compat; new code should prefer this.
+   */
+  assignmentReason?: 'Purchase' | 'Refinance' | 'Other' | null;
+  /** Seller name (new in v1.3). */
+  sellerName?: string | null;
+  /** Appraiser fee for this assignment. */
+  appraiserFee?: number | null;
+  /** AMC fee for this assignment. */
+  amcFee?: number | null;
+  /** Government agency / investor requested special identification. */
+  specialIdentification?: string | null;
+  /** FHA REO insurability level. */
+  fhaReoInsurabilityLevel?: string | null;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+// -----------------------------------------------------------------------
+// PRIOR TRANSFER HISTORY  (Phase 6B -- URAR v1.3 Section 5)
+// -----------------------------------------------------------------------
+
+/** A single prior transfer / sale record for subject or comp. */
+export interface CanonicalPriorTransfer {
+  /** Which property: 'subject' or comp identifier. */
+  propertyRole: 'subject' | 'comp';
+  /** Transaction date (YYYY-MM-DD). */
+  transactionDate: string | null;
+  /** Sale price in USD. */
+  salePrice: number | null;
+  /** Transfer type: sale, listing, agreement-of-sale, etc. */
+  transferType: string | null;
+  /** Data source for this transfer. */
+  dataSource: string | null;
+  /** Seller name. */
+  seller: string | null;
+  /** Buyer name. */
+  buyer: string | null;
+  /** Days on market prior to sale. */
+  daysOnMarket: number | null;
+  /** MLS number or other reference. */
+  listingId: string | null;
+  /** Whether this is a verified arm's-length transaction. */
+  isArmsLength: boolean | null;
+  /** Notes or qualifications about this transfer. */
+  notes: string | null;
+}
+
+// -----------------------------------------------------------------------
+// SCOPE OF WORK  (Phase 6B -- URAR v1.3 Section 6 / USPAP SR2)
+// -----------------------------------------------------------------------
+
+/** Structured scope-of-work description per USPAP Standards Rule 2. */
+export interface CanonicalScopeOfWork {
+  /** Extent of inspection: interior/exterior/desktop. */
+  inspectionType: string | null;
+  /** Data sources consulted -- MLS, public records, etc. */
+  dataSourcesConsulted: string[];
+  /** Approaches to value developed. */
+  approachesDeveloped: string[];
+  /** Research scope / market area defined. */
+  marketAreaDefined: string | null;
+  /** Type of appraisal report: self-contained, summary, restricted. */
+  reportType: string | null;
+  /** Overall scope narrative. */
+  scopeNarrative: string | null;
+  /** Significant real property appraisal assistance. */
+  significantAssistance: string | null;
+}
+
+// -----------------------------------------------------------------------
+// ASSIGNMENT CONDITIONS  (Phase 6B -- URAR v1.3 Section 7)
+// -----------------------------------------------------------------------
+
+/** Assignment-level conditions, assumptions, and intended-use metadata. */
+export interface CanonicalAssignmentConditions {
+  /** Intended use of the appraisal. */
+  intendedUse: string | null;
+  /** Intended user(s) of the appraisal. */
+  intendedUsers: string | null;
+  /** Extraordinary assumptions for this assignment. */
+  extraordinaryAssumptions: string[];
+  /** Hypothetical conditions for this assignment. */
+  hypotheticalConditions: string[];
+  /** Subject-to conditions (e.g., subject to repairs, completion). */
+  subjectToConditions: string[];
+  /** Jurisdictional exceptions. */
+  jurisdictionalExceptions: string[];
+  /** Definition of market value used. */
+  marketValueDefinition: string | null;
+  /** Source of the market value definition. */
+  marketValueDefinitionSource: string | null;
+  /** Property rights appraised: fee simple, leased fee, etc. */
+  propertyRightsAppraised: string | null;
+}
+
+// -----------------------------------------------------------------------
+// ADDITIONAL COMMENTS  (Phase 6B -- URAR v1.3 Section 10)
+// -----------------------------------------------------------------------
+
+/** A structured additional-comment block referencing a specific section. */
+export interface CanonicalAdditionalComment {
+  /** Section reference -- which form section this comment pertains to. */
+  sectionRef: string | null;
+  /** Title / heading for this comment block. */
+  heading: string;
+  /** Comment body -- narrative text. */
+  body: string;
+}
+
+// ===============================================================================
+// PHASE 7A: NEW URAR v1.3 SECTION INTERFACES
+// ===============================================================================
+
+// -- 7A-1: Disaster Mitigation (URAR Page 9) ---------------------------------
+
+/** A single disaster mitigation feature/action. */
+export interface CanonicalDisasterMitigationItem {
+  /** Category of disaster (e.g. Flood, Wildfire, Wind, Earthquake, Hail). */
+  disasterCategory: string;
+  /** Specific mitigation feature or action taken. */
+  mitigationFeature: string;
+  /** Additional detail about the mitigation. */
+  detail: string | null;
+}
+
+/** Disaster mitigation section data -- URAR v1.3 page 9. */
+export interface CanonicalDisasterMitigation {
+  /** Individual mitigation features/actions. */
+  items: CanonicalDisasterMitigationItem[];
+  /** Community-level programs (FEMA CRS, Firewise, StormReady, etc.). */
+  communityPrograms: string | null;
+  /** Narrative commentary on disaster mitigation. */
+  narrative: string | null;
+}
+
+// -- 7A-2: Energy Efficient & Green Features (URAR Page 10) -------------------
+
+/** A single energy-efficient or green feature. */
+export interface CanonicalEnergyFeature {
+  /** Feature name (e.g. Solar Panels, Insulation Upgrade, Energy Star Appliances). */
+  feature: string;
+  /** Additional description. */
+  detail: string | null;
+  /** Estimated market impact (e.g. Beneficial, Neutral, Adverse). */
+  impact: string | null;
+}
+
+/** Energy efficiency & green features section -- URAR v1.3 page 10. */
+export interface CanonicalEnergyEfficiency {
+  /** Individual energy/green features. */
+  features: CanonicalEnergyFeature[];
+  /** Renewable energy components (solar, wind, geothermal, etc.). */
+  renewableEnergyComponent: string | null;
+  /** Building certification (LEED, Energy Star, HERS, etc.). */
+  buildingCertification: string | null;
+  /** Numeric energy efficiency rating (e.g. HERS index). */
+  energyEfficiencyRating: number | null;
+  /** Narrative commentary. */
+  narrative: string | null;
+}
+
+// -- 7A-3: Manufactured Home (URAR Page 13) -----------------------------------
+
+/** Manufactured home details -- URAR v1.3 page 13. */
+export interface CanonicalManufacturedHome {
+  /** Whether a HUD data plate is present. */
+  hudDataPlatePresent: boolean | null;
+  /** HUD label number(s). */
+  hudLabelNumbers: string | null;
+  /** Manufacturer name. */
+  manufacturer: string | null;
+  /** Model name/number. */
+  model: string | null;
+  /** Serial number. */
+  serialNumber: string | null;
+  /** Year manufactured. */
+  yearManufactured: number | null;
+  /** Width type (Single-Wide, Double-Wide, Triple-Wide). */
+  widthType: string | null;
+  /** Invoice cost at time of purchase. */
+  invoiceCost: number | null;
+  /** Delivery cost. */
+  deliveryCost: number | null;
+  /** Installation cost. */
+  installationCost: number | null;
+  /** Setup cost. */
+  setupCost: number | null;
+  /** Foundation type for the manufactured home. */
+  foundationType: string | null;
+  /** Factory-built certification type if applicable. */
+  factoryBuiltCertification: string | null;
+  /** Narrative commentary. */
+  narrative: string | null;
+}
+
+// -- 7A-4: Functional Obsolescence (URAR Page 15) ----------------------------
+
+/** A single functional obsolescence item. */
+export interface CanonicalFunctionalObsolescenceItem {
+  /** The feature exhibiting obsolescence. */
+  feature: string;
+  /** Description of the obsolescence. */
+  description: string | null;
+  /** Whether the obsolescence is curable. */
+  curable: boolean | null;
+  /** Additional detail or explanation. */
+  detail: string | null;
+  /** Market impact (dollar amount or descriptive). */
+  impact: string | null;
+  /** Appraiser comment. */
+  comment: string | null;
+}
+
+// -- 7A-5: Outbuilding (URAR Page 16) ----------------------------------------
+
+/** A single outbuilding feature (e.g. workshop bench, plumbing fixture). */
+export interface CanonicalOutbuildingFeature {
+  /** Feature name. */
+  feature: string;
+  /** Description. */
+  detail: string | null;
+}
+
+/** A single outbuilding on the property. */
+export interface CanonicalOutbuilding {
+  /** Type (e.g. Barn, Shed, Workshop, Greenhouse, Pool House, Guest House). */
+  type: string;
+  /** Gross building area (sq ft). */
+  gba: number | null;
+  /** Finished area (sq ft). */
+  finishedArea: number | null;
+  /** Unfinished area (sq ft). */
+  unfinishedArea: number | null;
+  /** Volume (cubic ft) -- for volumetric measuring. */
+  volume: number | null;
+  /** Number of bathrooms. */
+  baths: number | null;
+  /** Number of kitchens. */
+  kitchens: number | null;
+  /** HVAC description. */
+  hvac: string | null;
+  /** Utilities (electric, water, sewer). */
+  utilities: string | null;
+  /** Year built. */
+  yearBuilt: number | null;
+  /** Quality rating (Q1-Q6). */
+  quality: string | null;
+  /** Condition rating (C1-C6). */
+  condition: string | null;
+  /** Additional features. */
+  features: CanonicalOutbuildingFeature[];
+  /** Narrative comment. */
+  comment: string | null;
+}
+
+// -- 7A-6: Vehicle Storage (URAR Page 17) ------------------------------------
+
+/** A single vehicle storage structure. */
+export interface CanonicalVehicleStorage {
+  /** Type: Attached Garage, Detached Garage, Built-In Garage, Carport, None. */
+  type: string;
+  /** Number of vehicle spaces. */
+  spaces: number | null;
+  /** Additional detail (finish, door type, etc.). */
+  detail: string | null;
+  /** Market impact. */
+  impact: string | null;
+  /** Year built (may differ from main dwelling). */
+  yearBuilt: number | null;
+  /** Surface area (sq ft). */
+  surfaceArea: number | null;
+  /** Whether there is interior storage beyond vehicle parking. */
+  interiorStorage: boolean | null;
+}
+
+// -- 7A-7: Subject Property Amenities (URAR Page 18) -------------------------
+
+/** A single property amenity. */
+export interface CanonicalPropertyAmenity {
+  /** Category: Outdoor Accessories, Outdoor Living, Water Features, Whole Home, Miscellaneous. */
+  category: string;
+  /** Feature name (e.g. Patio, Pool, Deck, Fireplace, Fencing). */
+  feature: string;
+  /** Additional detail. */
+  detail: string | null;
+  /** Market impact (Beneficial, Neutral, Adverse). */
+  impact: string | null;
+  /** Appraiser comment. */
+  comment: string | null;
+}
+
+// -- 7A-8: Overall Quality & Condition (URAR Page 19) ------------------------
+
+/** Quality and condition rating for a specific building feature. */
+export interface CanonicalFeatureQC {
+  /** Feature name (e.g. Walls, Foundation, Roof, Windows, Kitchen, Bathrooms, Flooring). */
+  feature: string;
+  /** Quality rating (Q1-Q6). */
+  quality: string | null;
+  /** Condition rating (C1-C6). */
+  condition: string | null;
+}
+
+/** Overall quality & condition assessment -- URAR v1.3 page 19. */
+export interface CanonicalOverallQualityCondition {
+  /** Overall quality rating (Q1-Q6). */
+  overallQuality: string | null;
+  /** Overall condition rating (C1-C6). */
+  overallCondition: string | null;
+  /** Per-feature exterior ratings (Walls, Foundation, Roof, Windows). */
+  exteriorFeatures: CanonicalFeatureQC[];
+  /** Per-feature interior ratings (Kitchen, Bathrooms, Flooring, Walls/Trim/Finish). */
+  interiorFeatures: CanonicalFeatureQC[];
+  /** Reconciliation narrative explaining Q/C ratings. */
+  reconciliationNarrative: string | null;
+}
+
+// -- 7A-9: Subject Listing Information (URAR Page 23) ------------------------
+
+/** A single listing record for subject property listing history. */
+export interface CanonicalSubjectListing {
+  /** Data source (MLS name, public records, etc.). */
+  dataSource: string | null;
+  /** Listing status (Active, Pending, Sold, Withdrawn, Expired, Cancelled). */
+  listingStatus: string | null;
+  /** Listing type (Original, Relisted, Price Change). */
+  listingType: string | null;
+  /** MLS or listing ID number. */
+  listingId: string | null;
+  /** Listing start date (ISO string). */
+  startDate: string | null;
+  /** Listing end date (ISO string). */
+  endDate: string | null;
+  /** Days on market for this listing period. */
+  daysOnMarket: number | null;
+  /** Starting list price. */
+  startingListPrice: number | null;
+  /** Current or final list price. */
+  currentOrFinalListPrice: number | null;
+}
+
 // TOP-LEVEL REPORT DOCUMENT  (Cosmos container: reporting)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -572,10 +1700,6 @@ export interface CanonicalReportDocument {
   status: string;
   schemaVersion: string; // must equal SCHEMA_VERSION
 
-  /**
-   * Report-generation context assembled from the order + appraiser profile.
-   * Not sourced from vendor comp data. Populated by FinalReportService.
-   */
   metadata: CanonicalReportMetadata;
 
   /** URAR: Subject section (page 1). */
@@ -599,13 +1723,55 @@ export interface CanonicalReportDocument {
   incomeApproach?: CanonicalIncomeApproach;
   /** Photos resolved for report embedding: subject, comps, aerial, addenda. */
   photos?: ReportPhotoAsset[];
+  /** Addenda content — scope of work, assumptions, conditions, free-form pages. */
+  addenda?: CanonicalAddenda;
   // --- Phase 0.2: Value types & effective dates ---
   /** All value types requested for this assignment. */
   valueTypes?: ValueType[];
   /** Per-value-type effective dates (e.g. AS_IS -> inspection date, PROSPECTIVE -> completion date). */
   effectiveDates?: Partial<Record<ValueType, string>>;
-
-
+  // -- Phase 6B: New core sections -------------------------------------------
+  /** Prior transfer/sale history for subject and comps -- URAR v1.3 section 5. */
+  priorTransfers?: CanonicalPriorTransfer[];
+  /** Scope of work details -- URAR v1.3 section 6 / USPAP SR2. */
+  scopeOfWork?: CanonicalScopeOfWork;
+  /** Assignment conditions -- extraordinary assumptions, hypothetical conditions, etc. */
+  assignmentConditions?: CanonicalAssignmentConditions;
+  /** Additional structured comments by section -- URAR v1.3 section 10. */
+  additionalComments?: CanonicalAdditionalComment[];
+  // -- Phase 7A: New URAR v1.3 sections -------------------------------------
+  /** Disaster mitigation features -- URAR v1.3 page 9. */
+  disasterMitigation?: CanonicalDisasterMitigation;
+  /** Energy efficient & green features -- URAR v1.3 page 10. */
+  energyEfficiency?: CanonicalEnergyEfficiency;
+  /** Manufactured home details -- URAR v1.3 page 13. Populated when propertyType is Manufactured. */
+  manufacturedHome?: CanonicalManufacturedHome;
+  /** Functional obsolescence items -- URAR v1.3 page 15. */
+  functionalObsolescence?: CanonicalFunctionalObsolescenceItem[];
+  /** Outbuildings on the property -- URAR v1.3 page 16. */
+  outbuildings?: CanonicalOutbuilding[];
+  /** Vehicle storage structures -- URAR v1.3 page 17. */
+  vehicleStorage?: CanonicalVehicleStorage[];
+  /** Property amenities -- URAR v1.3 page 18. */
+  amenities?: CanonicalPropertyAmenity[];
+  /** Overall quality & condition assessment -- URAR v1.3 page 19. */
+  overallQualityCondition?: CanonicalOverallQualityCondition;
+  /** Subject listing history -- URAR v1.3 page 23. */
+  subjectListings?: CanonicalSubjectListing[];
+  /** Total days on market across all listing periods. */
+  totalDaysOnMarket?: number | null;
+  /** Listing history analysis narrative. */
+  listingHistoryAnalysis?: string | null;
+  /** Defects, damages & deficiencies -- URAR v1.3 pages 4, 37. */
+  defects?: CanonicalDefectItem[];
+  /** As-is overall condition rating. */
+  asIsOverallConditionRating?: string | null;
+  /** Total estimated cost of all identified repairs. */
+  totalEstimatedCostOfRepairs?: number | null;
+  // -- End Phase 7A ----------------------------------------------------------
+  // -- Phase 7C: Analyzed properties not used --------------------------------
+  /** Properties analyzed but not selected as comparables -- URAR v1.3 Pages 29-30. */
+  analyzedPropertiesNotUsed?: CanonicalAnalyzedPropertyNotUsed[];
   // â”€â”€ Metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createdAt: string;
   updatedAt: string;
@@ -632,22 +1798,19 @@ export interface VendorMapper {
 // REPORT GENERATION SUPPLEMENTAL TYPES  (Phase 8)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-/**
- * URAR: Reconciliation section (page 2 bottom / page 3 top) â€” form-fill-ready shape.
- * Supplements CanonicalValuation (which serves AVM / workspace comparison).
- */
 export interface CanonicalReconciliation {
   salesCompApproachValue: number | null;
   costApproachValue: number | null;
   incomeApproachValue: number | null;
   /** The appraiser's final opinion of value. */
   finalOpinionOfValue: number;
-  /** ISO date string â€” the "as of" effective date. */
+  /** ISO date string — the "as of" effective date. */
   effectiveDate: string;
   reconciliationNarrative: string | null;
   /** e.g. "3-6 months" */
   exposureTime: string | null;
   marketingTime: string | null;
+
   // — Phase 0.1: Per-approach weighting & confidence ——————————————
   /** Appraiser-assigned weight to sales comparison approach (0-1, all weights should sum to 1). */
   salesCompWeight?: number | null;
@@ -670,56 +1833,136 @@ export interface CanonicalReconciliation {
   reviewerRepairEstimate?: number | null;
   /** Fair market monthly rent opinion (income approach). */
   fairMarketMonthlyRent?: number | null;
+
+  // ── Phase 7B-8 expansion ──────────────────────────────────────────────
+  /** Reason for excluding or discounting the sales comparison approach. */
+  salesCompReasonForExclusion?: string | null;
+  /** Reason for excluding or discounting the cost approach. */
+  costReasonForExclusion?: string | null;
+  /** Reason for excluding or discounting the income approach. */
+  incomeReasonForExclusion?: string | null;
+  /** Opinion of market value of cooperative interest (co-op only). */
+  cooperativeInterestValue?: number | null;
+  /** Pro-rata share calculation method for co-op. */
+  proRataShareCalculationMethod?: string | null;
+  /** Market value condition: as-is, as-completed, as-repaired, subject-to, etc. */
+  marketValueCondition?: 'as-is' | 'as-completed' | 'as-repaired' | 'subject-to-completion' | 'subject-to-alteration' | string | null;
+  /** FHA REO insurability level. */
+  fhaReoInsurabilityLevel?: string | null;
+  /** Final value condition narrative statement. */
+  finalValueConditionStatement?: string | null;
+  /** Date of property inspection (ISO-8601). */
+  dateOfInspection?: string | null;
+  /** Client-requested value condition. */
+  clientRequestedValueCondition?: string | null;
+  /** Client-requested marketing time. */
+  clientRequestedMarketingTime?: string | null;
+  /** Client-requested duration / term. */
+  clientRequestedDuration?: string | null;
+  /** Alternate opinion requested by client. */
+  clientAlternateOpinion?: string | null;
+  /** Client-requested conditions commentary. */
+  clientConditionsCommentary?: string | null;
 }
 
-/**
- * Appraiser certification info â€” joined from the appraiser profile at report-generation time.
- * Populates the Appraiser Signature block on the URAR (page 3).
- */
 export interface CanonicalAppraiserInfo {
   name: string;
   licenseNumber: string;
-  /** 2-letter state code */
   licenseState: string;
   licenseType: 'Certified Residential' | 'Certified General' | 'Licensed' | 'Trainee';
-  /** ISO date string */
   licenseExpirationDate: string;
   companyName: string;
   companyAddress: string;
   phone: string;
   email: string;
-  /** ISO date string */
   signatureDate: string;
   supervisoryAppraiser?: Omit<CanonicalAppraiserInfo, 'supervisoryAppraiser'>;
+
+  // -- Phase 7B-9: Certification Expansion --------------------------------
+
+  /** Date the subject property was inspected (YYYY-MM-DD). */
+  inspectionDate?: string | null;
+  /** Type of property inspection performed. */
+  inspectionType?: 'Interior' | 'Exterior' | 'Desktop' | 'Drive-By' | null;
+  /** Did the appraiser personally inspect the interior? */
+  didInspectInterior?: boolean | null;
+  /** Did the appraiser personally inspect the exterior? */
+  didInspectExterior?: boolean | null;
+  /** Description of how property was inspected (e.g. "from the street"). */
+  propertyInspectedFrom?: string | null;
+  /** GLA measured in compliance with ANSI Z765 standard. */
+  ansiCompliant?: boolean | null;
+  /** Name(s) of individuals who provided significant real property appraisal assistance. */
+  significantAssistance?: string | null;
+  /** Professional designations (MAI, SRA, AI-RRS, etc.). */
+  designations?: string | null;
+  /** NRDS / Appraisal Institute membership ID. */
+  nrdsId?: string | null;
+  /** FHA case number, when applicable. */
+  fhaCaseNumber?: string | null;
+  /** Effective date of the value opinion (YYYY-MM-DD). */
+  effectiveDate?: string | null;
+  /** Disclosure of prior services regarding the subject property within 3 years. */
+  priorServicesDisclosure?: string | null;
+  /** Compliance frameworks applied (FIRREA, USPAP edition year, etc.). */
+  appraisalCompliance?: string | null;
 }
 
-/**
- * DVR / BPO-specific subject ratings and condition fields.
- * These use a different scale than UAD C1-C6 (Excellent/Good/Average/Fair/Poor).
- * Only populated when reportType is 'dvr' or 'bpo_exterior' / 'bpo_interior'.
- */
 export interface DvrSubjectDetail {
   overallCondition: 'Excellent' | 'Good' | 'Average' | 'Fair' | 'Poor';
   interiorCondition: 'Excellent' | 'Good' | 'Average' | 'Fair' | 'Poor';
   exteriorCondition: 'Excellent' | 'Good' | 'Average' | 'Fair' | 'Poor';
   estimatedRepairCostLow: number | null;
   estimatedRepairCostHigh: number | null;
-  /** Free-text list of major repairs required. */
   majorRepairsNeeded: string | null;
   occupancyStatus: 'Owner Occupied' | 'Tenant Occupied' | 'Vacant' | 'Unknown';
   occupantCooperation: 'Cooperative' | 'Uncooperative' | 'No Contact' | null;
   accessType: 'Interior' | 'Exterior Only' | 'Drive-By';
-  /** Reviewerâ€™s estimate of days to sell at the as-is market value. */
   daysToSell: number | null;
-  /** Reviewerâ€™s recommended list price. */
   listingPriceRecommendation: number | null;
-  /** Percentage discount below market for a 30-day liquidation scenario. */
   quickSaleDiscount: number | null;
 }
 
-/**
- * URAR: Cost Approach section â€” optional for 1004, required for 1073 and 1025.
- */
+// ── Phase 7B-7: Cost Approach Supporting Interfaces ─────────────────────────
+
+/** Per-structure cost and depreciation breakdown for cost approach. */
+export interface CanonicalCostStructure {
+  structureName: string;
+  structureType?: string | null;
+  grossBuildingArea?: number | null;
+  replacementCostNew?: number | null;
+  physicalDepreciation?: number | null;
+  functionalObsolescence?: number | null;
+  externalObsolescence?: number | null;
+  totalDepreciation?: number | null;
+  depreciatedCost?: number | null;
+  remainingEconomicLife?: number | null;
+  effectiveAge?: number | null;
+  economicLife?: number | null;
+}
+
+/** Itemized site improvement for cost approach. */
+export interface CanonicalCostSiteImprovement {
+  description: string;
+  cost?: number | null;
+  depreciatedCost?: number | null;
+  remainingLife?: number | null;
+}
+
+/** Structured land sale comparable. */
+export interface CanonicalLandComparable {
+  address?: string | null;
+  saleDate?: string | null;
+  salePrice?: number | null;
+  siteSize?: number | null;
+  siteSizeUnit?: 'sqft' | 'acres' | null;
+  pricePerUnit?: number | null;
+  zoningClassification?: string | null;
+  adjustedPrice?: number | null;
+  dataSource?: string | null;
+  proximityToSubject?: string | null;
+}
+
 export interface CanonicalCostApproach {
   // — Land value ———————————————————————————————————————————————————
   estimatedLandValue: number | null;
@@ -761,11 +2004,36 @@ export interface CanonicalCostApproach {
   depreciatedCostOfImprovements: number | null;
   indicatedValueByCostApproach: number | null;
   comments: string | null;
+
+  // ── Phase 7B-7 expansion ──────────────────────────────────────────────
+  /** Replacement vs. Reproduction. */
+  costType?: 'Replacement' | 'Reproduction' | null;
+  /** Cost method: Comparative Unit, Segregated Cost, Quantity Survey, etc. */
+  costMethod?: string | null;
+  /** Depreciation method (expanded from depreciationType). */
+  depreciationMethod?: string | null;
+  /** Remaining economic life at the top level. */
+  remainingEconomicLife?: number | null;
+  /** Per-structure cost + depreciation breakdowns. */
+  structures?: CanonicalCostStructure[];
+  /** Itemized site improvements table. */
+  siteImprovements?: CanonicalCostSiteImprovement[];
+  /** Land sale comparables table. */
+  landComparables?: CanonicalLandComparable[];
+  /** Narrative: why replacement vs. reproduction was chosen. */
+  costMethodologyNarrative?: string | null;
+  /** Narrative: depreciation methodology explanation. */
+  depreciationNarrative?: string | null;
+  /** Narrative: detailed land value analysis. */
+  landValueNarrative?: string | null;
+  /** Manufactured home delivery cost (for cost approach calc). */
+  manufacturedHomeDeliveryCost?: number | null;
+  /** Manufactured home installation cost. */
+  manufacturedHomeInstallationCost?: number | null;
+  /** Manufactured home setup cost. */
+  manufacturedHomeSetupCost?: number | null;
 }
 
-/**
- * URAR: Income Approach section â€” optional for 1004; required for 1025.
- */
 export interface CanonicalIncomeApproach {
   // — Rent analysis ———————————————————————————————————————————————
   estimatedMonthlyMarketRent: number | null;
@@ -822,13 +2090,8 @@ export interface CanonicalRentComp {
   adjustedRent?: number | null;
 }
 
-/**
- * A single photo asset resolved for embedding in a generated report.
- * Populated by PhotoResolverService from the order's Blob-stored photos.
- */
 export interface ReportPhotoAsset {
   orderId: string;
-  /** Blob path the image was downloaded from */
   blobPath: string;
   photoType:
     | 'SUBJECT_FRONT'
@@ -839,10 +2102,33 @@ export interface ReportPhotoAsset {
     | 'AERIAL'
     | 'FLOOR_PLAN'
     | 'ADDITIONAL';
-  /** 1-6 for comp photos, matching CanonicalComp.slotIndex */
   compIndex?: number;
   caption?: string;
-  /** ISO date when photo was taken */
   takenAt?: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADDENDA  (Phase 4 — UAD 3.6 Compliance)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Addenda content appended to the URAR report.
+ * Each entry represents a separate addendum page / section.
+ */
+export interface CanonicalAddenda {
+  /** Scope of work narrative — required by USPAP. */
+  scopeOfWork: string | null;
+  /** Extraordinary assumptions (mirrored from reconciliation for convenience). */
+  extraordinaryAssumptions: string[];
+  /** Hypothetical conditions (mirrored from reconciliation for convenience). */
+  hypotheticalConditions: string[];
+  /** Free-form addendum pages — each entry is one page of narrative. */
+  additionalPages: AddendumPage[];
+}
+
+export interface AddendumPage {
+  /** Page title / heading. */
+  title: string;
+  /** Rich-text or plain-text content. */
+  content: string;
+}
