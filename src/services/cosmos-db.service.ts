@@ -1073,7 +1073,7 @@ export class CosmosDbService {
         this.ordersContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.status NOT IN ('completed','cancelled')").fetchAll(),
         this.ordersContainer.items.query("SELECT VALUE COUNT(1) FROM c WHERE c.status = 'cancelled'").fetchAll(),
         this.ordersContainer.items.query(`
-          SELECT AVG(DateDiff('day', c.createdAt, c.completedAt)) as avg
+          SELECT AVG(DateTimeDiff('day', c.createdAt, c.completedAt)) as avg
           FROM c WHERE c.status = 'completed' AND c.completedAt != null
         `).fetchAll(),
         this.ordersContainer.items.query(`
@@ -1197,12 +1197,12 @@ export class CosmosDbService {
       // --- Efficiency: average processing time, capacity utilization ---
       const [avgProcessRes, bottleneckRes] = await Promise.all([
         this.ordersContainer.items.query(`
-          SELECT AVG(DateDiff('hour', c.createdAt, c.completedAt)) as avgHours
+          SELECT AVG(DateTimeDiff('hour', c.createdAt, c.completedAt)) as avgHours
           FROM c WHERE c.status = 'completed' AND c.completedAt != null ${dateFilter}
         `).fetchAll(),
         this.ordersContainer.items.query(`
           SELECT c.status as stage, COUNT(1) as cnt,
-                 AVG(DateDiff('hour', c.statusChangedAt, c.updatedAt)) as avgTime
+                 AVG(DateTimeDiff('hour', c.statusChangedAt, c.updatedAt)) as avgTime
           FROM c WHERE c.status NOT IN ('completed','cancelled') ${dateFilter}
           GROUP BY c.status
         `).fetchAll(),
@@ -1604,9 +1604,7 @@ export class CosmosDbService {
       // Calculate average completion time for completed orders
       const completionQuery = {
         query: `SELECT 
-          AVG(DateDiff('day', c.createdAt, c.completedAt)) as avgCompletionTime,
-          COUNT(1) as totalCompleted
-          FROM c 
+          AVG(DateTimeDiff('day', c.createdAt, c.completedAt)) as avgCompletionTime,
           WHERE c.status = 'completed' AND c.completedAt != null`
       };
 

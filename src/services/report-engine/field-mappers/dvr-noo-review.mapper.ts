@@ -118,7 +118,9 @@ export class DvrNooReviewMapper implements IFieldMapper {
       lotSizeAcres,
       rooms:        s?.totalRooms?.toString() ?? '',
       bedrooms:     s?.bedrooms?.toString() ?? '',
-      bathrooms:    s?.bathrooms?.toFixed(1) ?? '',
+      bathrooms:    s?.bathsFull != null
+        ? (s.bathsFull + (s.bathsHalf ?? 0) * 0.5).toFixed(1)
+        : s?.bathrooms?.toFixed(1) ?? '',
 
       // ── Neighborhood ──────────────────────────────────────────────────
       locationType:    a(mkt?.locationType),

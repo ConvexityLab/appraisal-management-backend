@@ -249,6 +249,90 @@ export class MismoXmlGenerator {
 
     // Neighborhood
     this.addNeighborhood(property, report.appraisalInfo);
+
+    // UAD v1.3 / 3.6 Expanded Sections
+    this.addV13Extensions(property, subject);
+  }
+
+  private addV13Extensions(property: any, subject: any): void {
+    if (subject.disasterMitigation) {
+      const disasterNode = property.ele('DISASTER_MITIGATIONS');
+      if (subject.disasterMitigation.communityPrograms) {
+        disasterNode.ele('CommunityPrograms', subject.disasterMitigation.communityPrograms);
+      }
+      subject.disasterMitigation.items.forEach((item: any) => {
+        const itemNode = disasterNode.ele('DISASTER_MITIGATION');
+        itemNode.ele('DisasterCategory', item.disasterCategory);
+        if (item.detail) itemNode.ele('MitigationDetail', item.detail);
+      });
+    }
+
+    if (subject.energyEfficiency) {
+      const energyNode = property.ele('ENERGY_EFFICIENCIES');
+      if (subject.energyEfficiency.hasFeatures !== undefined) {
+        energyNode.ele('HasFeaturesIndicator', subject.energyEfficiency.hasFeatures ? 'true' : 'false');
+      }
+      if (subject.energyEfficiency.items) {
+        subject.energyEfficiency.items.forEach((item: any) => {
+          const itemNode = energyNode.ele('ENERGY_EFFICIENCY');
+          itemNode.ele('EnergyFeatureCategory', item.category);
+        });
+      }
+    }
+
+    if (subject.manufacturedHome) {
+      const mfgNode = property.ele('MANUFACTURED_HOME');
+      mfgNode.ele('ManufacturedHomeMakeText', subject.manufacturedHome.make);
+      mfgNode.ele('ManufacturedHomeModelIdentifier', subject.manufacturedHome.model);
+      mfgNode.ele('ManufacturedHomeYearBuilt', subject.manufacturedHome.yearManufactured);
+    }
+
+    if (subject.vehicleStorage && Array.isArray(subject.vehicleStorage)) {
+      const storageNodes = property.ele('VEHICLE_STORAGES');
+      subject.vehicleStorage.forEach((vs: any) => {
+        const vsNode = storageNodes.ele('VEHICLE_STORAGE');
+        vsNode.ele('VehicleStorageType', vs.storageType);
+        vsNode.ele('VehicleStorageCapacity', vs.capacityCount);
+      });
+    }
+
+    if (subject.rentalInformation) {
+      const rentalNode = property.ele('RENTAL_INFORMATION');
+      if (subject.rentalInformation.rentalAnalysisCommentary) {
+         rentalNode.ele('RentalAnalysisCommentary', subject.rentalInformation.rentalAnalysisCommentary);
+      }
+      if (subject.rentalInformation.rentSchedule && Array.isArray(subject.rentalInformation.rentSchedule)) {
+        const scheduleNode = rentalNode.ele('RENT_SCHEDULES');
+        subject.rentalInformation.rentSchedule.forEach((rs: any) => {
+          const unitNode = scheduleNode.ele('RENT_SCHEDULE');
+          unitNode.ele('UnitIdentifier', rs.unitId || '');
+          if (rs.monthlyRent !== undefined && rs.monthlyRent !== null) {
+            unitNode.ele('MonthlyRentAmount', rs.monthlyRent);
+          }
+          if (rs.occupancyType) {
+            unitNode.ele('UnitOccupancyType', rs.occupancyType);
+          }
+        });
+      }
+    }
+
+    if (subject.revisionHistory && Array.isArray(subject.revisionHistory)) {
+      const revsNode = property.ele('REVISION_HISTORIES');
+      subject.revisionHistory.forEach((rev: any) => {
+        const revNode = revsNode.ele('REVISION_HISTORY');
+        revNode.ele('RevisionDate', rev.revisionDate || '');
+        revNode.ele('RevisionSection', rev.urarSection || '');
+        revNode.ele('RevisionDescription', rev.description || '');
+      });
+    }
+
+    if (subject.reconsiderationOfValue) {
+      const rovNode = property.ele('RECONSIDERATION_OF_VALUE');
+      rovNode.ele('ReconsiderationType', subject.reconsiderationOfValue.type || '');
+      rovNode.ele('ReconsiderationDate', subject.reconsiderationOfValue.date || '');
+      rovNode.ele('ReconsiderationResult', subject.reconsiderationOfValue.result || '');
+      rovNode.ele('ReconsiderationCommentary', subject.reconsiderationOfValue.commentary || '');
+    }
   }
 
   /**

@@ -60,6 +60,12 @@ export interface MlsSearchParams {
   maxSqft?: number;
   soldWithinDays?: number;
   propertyType?: string;
+  /** Filter by listing status. Defaults to 'sold' for backward compatibility. */
+  status?: 'active' | 'sold';
+  minPrice?: number;
+  maxPrice?: number;
+  /** Optional provider-specific dataset/MLS identifier */
+  datasetId?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -96,16 +96,89 @@ export interface PropertyDetails {
 export interface ClientInformation {
   clientId: string;
   clientName: string;
+  /** Internal display name — may differ from clientName (used on external-facing docs) */
+  clientDisplayName?: string;
   contactPerson: string;
   email: string;
   phone: string;
   address: string;
   loanNumber?: string;
+  /** Client’s own internal reference number (separate from loanNumber) */
+  clientReferenceNumber?: string;
+  // ── Borrower ────────────────────────────────────────────────────────────
   borrowerName?: string;
+  borrowerEmail?: string;
+  borrowerPhone?: string;
+  borrowerCell?: string;
+  borrowerWorkPhone?: string;
+  // ── Co-Borrower ─────────────────────────────────────────────────────────
+  coBorrowerName?: string;
+  coBorrowerEmail?: string;
+  coBorrowerPhone?: string;
+  // ── Origination context ──────────────────────────────────────────────────
+  /** Who placed this order within the client organization */
+  requester?: string;
+  requesterEmail?: string;
   loanOfficer?: string;
   loanOfficerEmail?: string;
   loanOfficerPhone?: string;
+  /** Investor / end-buyer name (e.g. FNMA, FHLMC, private) */
+  investorName?: string;
+  /** Loan Product Advisor key (Freddie Mac LPA) */
+  lpaKey?: string;
+  /** AMC registration number for the ordering entity */
+  amcRegistrationNumber?: string;
 }
+
+// =========================
+// BPO-SPECIFIC TYPES
+// =========================
+
+export type BpoPhotoType =
+  | 'FRONT'
+  | 'REAR'
+  | 'LEFT_SIDE'
+  | 'RIGHT_SIDE'
+  | 'STREET'
+  | 'KITCHEN'
+  | 'MASTER_BEDROOM'
+  | 'LIVING_ROOM'
+  | 'BATHROOM'
+  | 'COMP_1'
+  | 'COMP_2'
+  | 'COMP_3'
+  | 'COMP_4'
+  | 'COMP_5'
+  | 'COMP_6'
+  | 'DAMAGES'
+  | 'ADDITIONAL';
+
+export interface BpoOrderDetails {
+  formLength?: 'SHORT' | 'LONG' | 'FULL';
+  inspectionType?: 'EXTERIOR' | 'INTERIOR' | 'BOTH';
+  poolName?: string;
+  lockBoxCode?: string;
+  feeCollectedFromClient?: number;
+  feePaidToAgent?: number;
+  purchaseOrderNumber?: string;
+  accountingJobNumber?: string;
+  bpoFormTemplateId?: string;
+  requiredPhotoTypes?: BpoPhotoType[];
+  assetQcManagerId?: string;
+  assetQcManagerName?: string;
+  bpoCoordinatorId?: string;
+  bpoCoordinatorName?: string;
+  /** Professional designations required of the performing vendor (e.g. 'MAI', 'SRA', 'AI-RRS') */
+  requiredDesignations?: string[];
+  /** Industry membership affiliations required (e.g. 'NAR', 'REALTORS', 'NAIFA') */
+  requiredMemberships?: string[];
+}
+
+export type OrderSource =
+  | 'CLIENT_PORTAL' | 'API_INTEGRATION' | 'EMAIL' | 'MANUAL_ENTRY' | 'BULK_IMPORT' | 'ENGAGEMENT';
+
+export type BillingMethod =
+  | 'CLIENT_INVOICE' | 'CREDIT_CARD' | 'ACH' | 'CHECK' | 'PURCHASE_ORDER' | 'NET_30' | 'NET_60';
 
 // =========================
 // ORDER DEFINITIONS
@@ -160,6 +233,9 @@ export interface AppraisalOrder {
   qcReportId?: string;
   qcScore?: number;
   qcStatus?: 'PENDING' | 'PASSED' | 'FAILED' | 'REQUIRES_REVISION';
+    // Compliance Integration (Phase 1.4)
+    complianceStatus?: 'PENDING' | 'PASSED' | 'WARNINGS' | 'HARD_STOP';
+    complianceViolations?: Array<{ code: string; reason: string; severity: 'WARNING' | 'STOP' }>;
 
   // Valuation report link — set when a report is first saved for this order
   reportId?: string;
@@ -180,6 +256,30 @@ export interface AppraisalOrder {
   createdBy: string;
   tags?: string[];
   notes?: string;
+
+  // ── Order provenance ─────────────────────────────────────────────────────
+  orderSource?: OrderSource;
+  billingMethod?: BillingMethod;
+  estimatedClientDeliveryDate?: Date;
+  originalAppraisalDate?: Date;
+  linkedOrderIds?: string[];
+
+  // ── BPO-specific details (only populated when orderType === OrderType.BPO) ────
+  bpoDetails?: BpoOrderDetails;
+
+  // ── Audit trail ──────────────────────────────────────────────────────────
+  lastUpdatedByStaffId?: string;
+  lastUpdatedByStaffName?: string;
+  lastUpdatedByVendorId?: string;
+  lastUpdatedByVendorName?: string;
+
+  // ── Flagging ─────────────────────────────────────────────────────────────
+  isFlagged?: boolean;
+  flagNote?: string;
+
+  // ── Document tracking ─────────────────────────────────────────────────────
+  /** Denormalized count of documents uploaded to this order — drives Docs badge. */
+  documentCount?: number;
 
   // ── Supervisory review ────────────────────────────────────────────────────
   /**
@@ -612,3 +712,5 @@ export interface OrderOperationResult {
   timestamp: Date;
   performedBy: string;
 }
+
+

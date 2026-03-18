@@ -119,6 +119,33 @@ import { createPaymentRouter } from '../controllers/payment.controller';
 import { createVendorOnboardingRouter } from '../controllers/vendor-onboarding.controller';
 import { createVendorAnalyticsRouter } from '../controllers/vendor-analytics.controller';
 
+// Import Exclusionary List controller
+import { createExclusionListRouter } from '../controllers/exclusion-list.controller';
+
+// Import E-Consent & Delivery Receipt controller
+import { createEConsentRouter } from '../controllers/econsent.controller';
+
+// Import Off-Market Property Data controller (Phase 2.2)
+import { createOffMarketRouter } from '../controllers/off-market.controller';
+
+// Import Phase 3 Investment Intelligence controllers
+import { createInvestorRouter } from '../controllers/investor.controller.js';
+import { createDealFinderRouter } from '../controllers/deal-finder.controller.js';
+import { createRehabRouter } from '../controllers/rehab.controller.js';
+import { createProformaRouter } from '../controllers/proforma.controller.js';
+
+// Import Phase 4 Market Intelligence controllers
+import { createMarketRouter } from '../controllers/market.controller.js';
+import { createAlertRouter } from '../controllers/alert.controller.js';
+
+// Import QuickBooks Integration
+import { QuickBooksController } from '../controllers/quickbooks.controller.js';
+
+// Import Phase 5 LOS / GSE / Portal controllers
+import { createLosRouter } from '../controllers/los.controller.js';
+import { createGseRouter } from '../controllers/gse.controller.js';
+import { createPortalRouter } from '../controllers/portal.controller.js';
+
 // Import Simple Communication Controller (Phase 4.1)
 import { createCommunicationRouter } from '../controllers/communication.controller';
 
@@ -160,6 +187,7 @@ import { VendorPerformanceUpdaterService } from '../services/vendor-performance-
 import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.service.js';
 import { MismoAutoGenerateService } from '../services/mismo-auto-generate.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
+import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
 // Import Audit Event Sink + Engagement Audit Controller
 import { AuditEventSinkService } from '../services/audit-event-sink.service.js';
@@ -271,6 +299,7 @@ export class AppraisalManagementAPIServer {
   private ucdpEadAutoSubmitService?: UcdpEadAutoSubmitService;
   private mismoAutoGenerateService?: MismoAutoGenerateService;
   private reviewSLAWatcherJob?: ReviewSLAWatcherJob;
+  private rovSLAWatcherJob?: ROVSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
   private axiomTimeoutWatcherJob?: AxiomTimeoutWatcherJob;
   private supervisionTimeoutWatcherJob?: SupervisionTimeoutWatcherJob;
@@ -492,6 +521,79 @@ export class AppraisalManagementAPIServer {
       this.authzMiddleware.loadUserProfile(),
       createVendorPerformanceRouter()
     );
+
+    // Appraiser Exclusionary List — per-tenant list of permanently excluded appraisers
+    this.app.use('/api/exclusion-list',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createExclusionListRouter(this.dbService)
+    );
+
+    // E-Consent & Delivery Receipt Tracking — RESPA/ECOA compliance
+    this.app.use('/api/consent',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createEConsentRouter(this.dbService)
+    );
+
+    // Off-Market Property Data — distressed/private sales, foreclosures, pocket listings (Phase 2.2)
+    this.app.use('/api/off-market',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createOffMarketRouter(this.dbService)
+    );
+
+    // Investor Activity Tracking — profiles, transactions, market activity (Phase 3.1)
+    this.app.use('/api/investors',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createInvestorRouter(this.dbService)
+    );
+
+    // Auto Deal Finder — buy-box management + deal scoring engine (Phase 3.2)
+    this.app.use('/api/deal-finder',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createDealFinderRouter(this.dbService)
+    );
+
+    // Rehab Records — before/after photos + rehab cost tracking (Phase 3.4)
+    this.app.use('/api/rehab',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createRehabRouter(this.dbService)
+    );
+
+    // Investment Proforma — ROI, cap rate, cash-on-cash calculator + persistence (Phase 3.5)
+    this.app.use('/api/proforma',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createProformaRouter(this.dbService)
+    );
+
+    // Market Intelligence — heatmap, trends, comparable activity (Phase 4.1)
+    this.app.use('/api/market',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createMarketRouter(this.dbService)
+    );
+
+    // Alert System — buy-box + market condition alerts with WebPubSub delivery (Phase 4.2)
+    this.app.use('/api/alerts',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      createAlertRouter(this.dbService)
+    );
+
+      // QuickBooks Integration
+      const quickBooksController = new QuickBooksController();
+      this.app.use('/api/v1/quickbooks', quickBooksController.getRouter());
+
+      this.app.use('/api/portal',
+        this.unifiedAuth.authenticate(),
+        this.authzMiddleware.loadUserProfile(),
+        createPortalRouter(this.dbService)
+      );
 
     // Auto-Assignment & Vendor Matching (authenticated users with proper permissions)
     this.app.use('/api/auto-assignment',
@@ -3464,6 +3566,15 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    try {
+      this.rovSLAWatcherJob = new ROVSLAWatcherJob();
+      this.rovSLAWatcherJob.start();
+    } catch (err) {
+      this.logger.warn('ROVSLAWatcherJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Review SLA Watcher Job (polls for imminent and breached review SLAs)
     try {
       this.reviewSLAWatcherJob = new ReviewSLAWatcherJob(this.dbService);
@@ -3563,6 +3674,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.vendorPerformanceUpdaterService) {
       this.vendorPerformanceUpdaterService.stop().catch(() => {});
+    }
+    if (this.rovSLAWatcherJob) {
+      this.rovSLAWatcherJob.stop();
     }
     if (this.reviewSLAWatcherJob) {
       this.reviewSLAWatcherJob.stop();

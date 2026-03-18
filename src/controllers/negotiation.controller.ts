@@ -16,12 +16,45 @@ import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { OrderNegotiationService } from '../services/order-negotiation.service.js';
 import { Logger } from '../utils/logger.js';
+import { WebPubSubService } from '../services/web-pubsub.service.js';
+import { EventCategory, EventPriority } from '../types/events.js';
 
 const logger = new Logger('NegotiationController');
 
 export function createNegotiationRouter(): Router {
   const router = Router();
   const negotiationService = new OrderNegotiationService();
+
+  // ── WebPubSub: best-effort tenant-scoped notifications ────────────────────
+  let webPubSub: WebPubSubService | null = null;
+  try {
+    webPubSub = new WebPubSubService();
+  } catch {
+    logger.warn('WebPubSub unavailable — negotiation notifications disabled');
+  }
+
+  async function broadcastNegotiationEvent(
+    tenantId: string,
+    eventType: string,
+    title: string,
+    message: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    if (!webPubSub) return;
+    try {
+      await webPubSub.sendToGroup(`tenant:${tenantId}`, {
+        id: `neg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        title,
+        message,
+        priority: EventPriority.NORMAL,
+        category: EventCategory.NEGOTIATION,
+        targets: [],
+        data: { eventType, tenantId, ...data },
+      });
+    } catch (err) {
+      logger.warn('WebPubSub negotiation broadcast failed', { eventType, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
 
   // -------------------------------------------------------------------------
   // POST /accept — Vendor accepts order assignment
@@ -44,6 +77,7 @@ export function createNegotiationRouter(): Router {
 
         const result = await negotiationService.acceptOrder(orderId, vendorId, tenantId);
 
+        await broadcastNegotiationEvent(tenantId, 'negotiation.accepted', 'Order Accepted', `Vendor ${vendorId} accepted order ${orderId}`, { orderId, vendorId });
         return res.json({
           success: true,
           data: {
@@ -85,6 +119,7 @@ export function createNegotiationRouter(): Router {
 
         await negotiationService.rejectOrder(orderId, vendorId, reason, tenantId);
 
+        await broadcastNegotiationEvent(tenantId, 'negotiation.rejected', 'Order Rejected', `Vendor ${vendorId} rejected order ${orderId}`, { orderId, vendorId, reason });
         return res.json({
           success: true,
           data: {
@@ -143,6 +178,13 @@ export function createNegotiationRouter(): Router {
           tenantId
         );
 
+        await broadcastNegotiationEvent(
+          tenantId,
+          autoResult ? 'negotiation.counter_auto_accepted' : 'negotiation.counter_submitted',
+          autoResult ? 'Counter-Offer Auto-Accepted' : 'Counter-Offer Submitted',
+          autoResult ? `Counter-offer for order ${orderId} was auto-accepted` : `Vendor ${vendorId} submitted a counter-offer for order ${orderId}`,
+          { orderId, vendorId, proposedFee, proposedDueDate },
+        );
         if (autoResult) {
           return res.json({
             success: true,
@@ -211,6 +253,7 @@ export function createNegotiationRouter(): Router {
             tenantId
           );
 
+          await broadcastNegotiationEvent(tenantId, 'negotiation.counter_accepted', 'Counter-Offer Accepted', `Counter-offer ${counterOfferId} for order ${orderId} was accepted`, { orderId, counterOfferId, clientId });
           return res.json({
             success: true,
             data: {
@@ -228,6 +271,7 @@ export function createNegotiationRouter(): Router {
             tenantId
           );
 
+          await broadcastNegotiationEvent(tenantId, 'negotiation.counter_rejected', 'Counter-Offer Rejected', `Counter-offer ${counterOfferId} for order ${orderId} was rejected`, { orderId, counterOfferId, clientId });
           return res.json({
             success: true,
             data: {

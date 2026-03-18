@@ -52,6 +52,7 @@ import { module as communicationPlatformModule } from './modules/communication-p
 import { module as constructionCatalogModule } from './modules/construction-catalog.js';
 import { module as reportTemplatesModule } from './modules/report-templates.js';
 import { module as auditEventsModule } from './modules/audit-events.js';
+import { module as quickbooksModule } from './modules/quickbooks.js';
 
 /** Ordered list — phases run top-to-bottom. */
 const ALL_MODULES: SeedModule[] = [
@@ -82,6 +83,7 @@ const ALL_MODULES: SeedModule[] = [
   constructionCatalogModule,   // Phase 25
   reportTemplatesModule,        // Phase 26
   auditEventsModule,            // Phase 27
+  quickbooksModule,             // Phase 28 (External Sync)
 ];
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────

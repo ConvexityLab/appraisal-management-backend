@@ -125,7 +125,8 @@ function mapSubjectProperty(doc: CanonicalReportDocument): UadSubjectProperty {
     grossLivingArea: s.grossLivingArea,
     totalRooms: s.totalRooms,
     totalBedrooms: s.bedrooms,
-    totalBathrooms: s.bathrooms,
+    // URAR v1.3: compute combined count from split fields; fall back to deprecated combined field.
+    totalBathrooms: s.bathsFull != null ? s.bathsFull + (s.bathsHalf ?? 0) * 0.5 : s.bathrooms,
     yearBuilt: s.yearBuilt,
     foundationType: s.foundationType,
     exteriorWalls: s.exteriorWalls,
@@ -148,18 +149,30 @@ function mapSubjectProperty(doc: CanonicalReportDocument): UadSubjectProperty {
     propertyType,
     view: viewTypes,
     locationRating: (s.locationRating as UadSubjectProperty['locationRating']) ?? 'Neutral',
+    
+    // v1.3 Expanded Sections
+    disasterMitigation: doc.disasterMitigation as any,
+    energyEfficiency: doc.energyEfficiency as any,
+    manufacturedHome: doc.manufacturedHome as any,
+    functionalObsolescence: doc.functionalObsolescence as any,
+    outbuildings: doc.outbuildings as any,
+    vehicleStorage: doc.vehicleStorage as any,
+    amenities: doc.amenities as any,
+    overallQualityCondition: doc.overallQualityCondition as any,
+    subjectListing: doc.subjectListings as any,
+    rentalInformation: doc.rentalInformation as any,
 
     // Utilities
-    publicUtilities: mapUtilities(s.utilities),
+    publicUtilities: mapUtilities(s.utilities as any),
 
     // Street
-    street: { paved: true }, // UAD-REQUIRED: street type not in canonical; paved is the vast majority
+    street: { paved: true }, 
 
     // Form meta
-    occupancyType: mapOccupancyType(s.occupant), // UAD-REQUIRED: mapped from canonical occupant field
-    currentUse: 'Single Family Residence', // UAD-REQUIRED: report type constrains this to SFR
-    buildingStatus: mapBuildingStatus(s.yearBuilt), // derived from yearBuilt presence
-    highestAndBestUse: s.highestAndBestUse ?? 'Present',
+    occupancyType: mapOccupancyType(s.occupant), 
+    currentUse: 'Single Family Residence', 
+    buildingStatus: mapBuildingStatus(s.yearBuilt), 
+    highestAndBestUse: (s.highestAndBestUse as any) ?? 'Present',
   };
 }
 
@@ -358,7 +371,8 @@ function mapComparable(comp: CanonicalComp, reportId: string): UadComparable {
     siteSizeSquareFeet: comp.lotSizeSqFt,
     roomCount: comp.totalRooms,
     bedroomCount: comp.bedrooms,
-    bathroomCount: comp.bathrooms,
+    // URAR v1.3: compute combined count from split fields; fall back to deprecated combined field.
+    bathroomCount: comp.bathsFull != null ? comp.bathsFull + (comp.bathsHalf ?? 0) * 0.5 : comp.bathrooms,
     ...(comp.basementSqFt != null ? { basementArea: comp.basementSqFt } : comp.basement !== 'None' ? { basementArea: 0 } : {}),
     ...(comp.basementFinishedSqFt != null ? { basementFinishedArea: comp.basementFinishedSqFt } : {}),
     functionalUtility: 'Average', // UAD-REQUIRED: not tracked per-comp in canonical

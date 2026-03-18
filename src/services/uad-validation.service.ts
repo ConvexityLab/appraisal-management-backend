@@ -217,6 +217,59 @@ export class UadValidationService {
       }
     }
 
+    // v1.3 Expanded Sections Validation
+    if (property.disasterMitigation && !Array.isArray(property.disasterMitigation.items)) {
+      errors.push({
+        fieldPath: 'subjectProperty.disasterMitigation.items',
+        errorCode: 'INVALID_FORMAT',
+        errorMessage: 'Disaster mitigation items must be an array',
+        severity: 'ERROR',
+        uadRule: 'UAD-109'
+      });
+    }
+
+    if (property.rentalInformation && property.rentalInformation.rentSchedule && !Array.isArray(property.rentalInformation.rentSchedule)) {
+      errors.push({
+        fieldPath: 'subjectProperty.rentalInformation.rentSchedule',
+        errorCode: 'INVALID_FORMAT',
+        errorMessage: 'Rent schedule must be an array of units',
+        severity: 'ERROR',
+        uadRule: 'UAD-201'
+      });
+    }
+
+    if (property.revisionHistory && !Array.isArray(property.revisionHistory)) {
+      errors.push({
+        fieldPath: 'subjectProperty.revisionHistory',
+        errorCode: 'INVALID_FORMAT',
+        errorMessage: 'Revision history must be an array of entries',
+        severity: 'ERROR',
+        uadRule: 'UAD-202'
+      });
+    }
+
+    if (property.manufacturedHome) {
+      if (!property.manufacturedHome.make) {
+        errors.push({
+          fieldPath: 'subjectProperty.manufacturedHome.make',
+          errorCode: 'REQUIRED_FIELD_MISSING',
+          errorMessage: 'Manufactured home make is required',
+          severity: 'ERROR',
+          uadRule: 'UAD-110'
+        });
+      }
+    }
+
+    if (property.vehicleStorage && !Array.isArray(property.vehicleStorage)) {
+      errors.push({
+        fieldPath: 'subjectProperty.vehicleStorage',
+        errorCode: 'INVALID_FORMAT',
+        errorMessage: 'Vehicle storage must be an array',
+        severity: 'ERROR',
+        uadRule: 'UAD-111'
+      });
+    }
+
     return errors;
   }
 

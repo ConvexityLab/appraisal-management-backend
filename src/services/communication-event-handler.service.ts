@@ -42,7 +42,7 @@ import type {
   EngagementLetterSignedEvent,
   EngagementLetterDeclinedEvent,
   SupervisionTimedOutEvent,
-  AxiomEvaluationTimedOutEvent,
+  AxiomEvaluationTimedOutEvent, PaymentInitiatedEvent, PaymentCompletedEvent, PaymentFailedEvent, SubmissionUploadedEvent, SubmissionApprovedEvent, SubmissionRejectedEvent, SubmissionRevisionRequestedEvent, EscalationCreatedEvent, EscalationResolvedEvent, RovCreatedEvent, RovAssignedEvent, RovDecisionIssuedEvent, DeliveryReceiptConfirmedEvent, DeliveryReceiptOpenedEvent, ConsentGivenEvent, ConsentDeniedEvent, ConsentWithdrawnEvent, NegotiationCounterOfferSubmittedEvent, NegotiationAcceptedEvent, NegotiationRejectedEvent,
 } from '../types/events.js';
 
 export class CommunicationEventHandler {

@@ -116,7 +116,9 @@ export class DvrNooDesktopMapper implements IFieldMapper {
       lotSizeAcres,
       rooms:        s?.totalRooms?.toString() ?? '',
       bedrooms:     s?.bedrooms?.toString() ?? '',
-      bathrooms:    s?.bathrooms?.toString() ?? '',
+      bathrooms:    s?.bathsFull != null
+        ? (s.bathsFull + (s.bathsHalf ?? 0) * 0.5).toFixed(1)
+        : s?.bathrooms?.toString() ?? '',
 
       // ── Neighborhood ─────────────────────────────────────────────────
       locationType:   a(mkt?.locationType),

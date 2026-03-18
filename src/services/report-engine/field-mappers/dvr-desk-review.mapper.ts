@@ -122,7 +122,9 @@ export class DvrDeskReviewMapper implements IFieldMapper {
           salePrice:          fmt(c.salePrice),
           grossLivingArea:    fmtNum(c.grossLivingArea),
           bedrooms:           c.bedrooms?.toString() ?? '',
-          bathrooms:          c.bathrooms?.toFixed(1) ?? '',
+          bathrooms:          c.bathsFull != null
+            ? (c.bathsFull + (c.bathsHalf ?? 0) * 0.5).toFixed(1)
+            : c.bathrooms?.toFixed(1) ?? '',
           yearBuilt:          c.yearBuilt?.toString() ?? '',
           condition:          a(c.condition),
           daysOnMarket:       c.mlsData?.daysOnMarket?.toString() ?? '',
@@ -182,7 +184,9 @@ export class DvrDeskReviewMapper implements IFieldMapper {
         yearBuilt:        s?.yearBuilt?.toString() ?? '',
         grossLivingArea:  s?.grossLivingArea != null ? `${fmtNum(s.grossLivingArea)} SF` : '',
         bedrooms:         s?.bedrooms?.toString() ?? '',
-        bathrooms:        s?.bathrooms?.toFixed(1) ?? '',
+        bathrooms:        s?.bathsFull != null
+          ? (s.bathsFull + (s.bathsHalf ?? 0) * 0.5).toFixed(1)
+          : s?.bathrooms?.toFixed(1) ?? '',
         basementSqFt:     s?.basementSqFt ? `${fmtNum(s.basementSqFt)} SF` : 'None',
         lotSizeSqFt:      s?.lotSizeSqFt != null ? fmtNum(s.lotSizeSqFt) : '',
         garageType:       a(s?.garageType),

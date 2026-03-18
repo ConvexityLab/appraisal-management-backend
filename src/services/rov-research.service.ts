@@ -14,7 +14,7 @@ import { Logger } from '../utils/logger.js';
 import { EnhancedPropertyIntelligenceV2Service } from './enhanced-property-intelligence-v2.service';
 import { ROVComparable } from '../types/rov.types.js';
 import type { MlsDataProvider, MlsListing } from '../types/mls-data.types.js';
-import { SeededMlsDataProvider } from './seeded-mls-data-provider.js';
+import { createMlsProvider } from './mls-providers/factory.js';
 
 // ─── Haversine distance (miles) ──────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ export class ROVResearchService {
   ) {
     this.logger = new Logger();
     this.propertyIntelligenceService = new EnhancedPropertyIntelligenceV2Service();
-    this.mlsProvider = mlsProvider ?? new SeededMlsDataProvider();
+    this.mlsProvider = mlsProvider ?? createMlsProvider();
     this.adjustmentFactors = {
       ...DEFAULT_ADJUSTMENT_FACTORS,
       ...customAdjustmentFactors

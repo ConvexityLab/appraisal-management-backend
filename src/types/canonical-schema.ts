@@ -1,5 +1,5 @@
 ﻿/**
- * Canonical Report Schema â v1.1.0
+ * Canonical Report Schema ï¿½?? v1.1.0
  *
  * UAD 3.6 / URAR (Form 1004) aligned.
  * This is the SINGLE source of truth for report data across both repos.
@@ -10,10 +10,10 @@
  *   2. Sections mirror the URAR form layout so populating the form is a direct read.
  *   3. Vendor-native formats are stored separately (VendorDataRecord) and mapped
  *      into this canonical shape at ingestion time via typed mapper functions.
- *   4. The frontend never sees vendor-native formats â only canonical.
+ *   4. The frontend never sees vendor-native formats ï¿½?? only canonical.
  *
  * Changelog:
- *   v1.1.0 (2026-03-11) â Phase 0.1/0.2/0.3:
+ *   v1.1.0 (2026-03-11) ï¿½?? Phase 0.1/0.2/0.3:
  *     - Enhanced CostApproach with depreciation breakdown, soft costs, externalities
  *     - Enhanced IncomeApproach with vacancy, expenses, cap rate, DCF, rent comps
  *     - Enhanced Reconciliation with per-approach weights, confidence, sensitivity
@@ -26,9 +26,9 @@
 
 export const SCHEMA_VERSION = '1.1.0';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// VALUE TYPE ENUM  (Phase 0.2 — supports multi-value-type assignments)
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
+// VALUE TYPE ENUM  (Phase 0.2 ï¿½ supports multi-value-type assignments)
+// -------------------------------------------------------------------------------
 
 /**
  * The type of value being estimated. An assignment may require one or more
@@ -50,9 +50,9 @@ export const VALUE_TYPES: readonly ValueType[] = [
   'RETROSPECTIVE',
 ] as const;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HIGHEST AND BEST USE — 4-TEST FRAMEWORK  (Phase 0.3)
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
+// HIGHEST AND BEST USE ï¿½ 4-TEST FRAMEWORK  (Phase 0.3)
+// -------------------------------------------------------------------------------
 
 /**
  * Full H&BU analysis with the standard 4-test framework,
@@ -139,14 +139,14 @@ export interface CanonicalAddress {
 export interface CanonicalPropertyCore {
   address: CanonicalAddress;
 
-  // ── Size & Layout (URAR v1.3: Dwelling Exterior + Unit Interior) ─────────
+  // -- Size & Layout (URAR v1.3: Dwelling Exterior + Unit Interior) ---------
   /** Above-grade living area in square feet. FNMA standard name. */
   grossLivingArea: number;
   totalRooms: number;
   bedrooms: number;
   /**
    * @deprecated Use `bathsFull` + `bathsHalf` for URAR v1.3 compliance.
-   * Retained for backward compatibility; equals bathsFull + bathsHalf × 0.5.
+   * Retained for backward compatibility; equals bathsFull + bathsHalf ï¿½ 0.5.
    */
   bathrooms: number;
   /** URAR v1.3: Full bathrooms count. Required for v1.3 forms. */
@@ -155,7 +155,7 @@ export interface CanonicalPropertyCore {
   bathsHalf?: number | null;
   stories: number;
 
-  // ── URAR v1.3 Area Breakdown ────────────────────────────────────────────
+  // -- URAR v1.3 Area Breakdown --------------------------------------------
   /** Total finished area including above + below grade. URAR v1.3 "Gross Building Finished Area". */
   grossBuildingFinishedArea?: number | null;
   /** Finished area above grade (standard ceiling height). */
@@ -178,8 +178,8 @@ export interface CanonicalPropertyCore {
   propertyType: string; // SFR, Condo, Townhouse, PUD, etc.
 
   // â”€â”€ Quality & Condition (UAD C1-C6 / Q1-Q6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  condition: string; // C1-C6
-  quality: string; // Q1-Q6
+  /** @deprecated Phase 7F: Use overallQualityCondition.overallCondition instead */ condition: string; // C1-C6
+  /** @deprecated Phase 7F: Use overallQualityCondition.overallQuality instead */ quality: string; // Q1-Q6
 
   // â”€â”€ Design & Construction (URAR: Improvements) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   design: string; // e.g. "Colonial", "Ranch", "Contemporary"
@@ -219,12 +219,16 @@ export interface CanonicalPropertyCore {
   cooling: string; // "Central", "Wall Unit", "None"
   fireplaces: number;
 
-  // â”€â”€ Garage / Carport (URAR: Improvements) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- Garage / Carport (URAR: Improvements) -------------------------------
+  /** @deprecated Phase 7F: Use vehicleStorage array instead */
   garageType: string; // "Attached", "Detached", "Built-In", "Carport", "None"
+  /** @deprecated Phase 7F: Use vehicleStorage array instead */
   garageSpaces: number;
 
-  // â”€â”€ Other Improvements (URAR: Improvements) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- Other Improvements (URAR: Improvements) -----------------------------
+  /** @deprecated Phase 7F: Use amenities array instead */
   porchPatioDeck: string; // description, e.g. "Open Porch, Deck"
+  /** @deprecated Phase 7F: Use amenities array instead */
   pool: boolean;
   attic: string; // "None", "Scuttle", "Stairs", "Finished"
 
@@ -258,7 +262,7 @@ export interface CanonicalPropertyCore {
   /** URAR v1.3: Overall view impact on market value. */
   viewImpact?: 'Beneficial' | 'Neutral' | 'Adverse' | null;
 
-  // ── Townhouse-specific fields (URAR v1.3: Dwelling Exterior) ──────────
+  // -- Townhouse-specific fields (URAR v1.3: Dwelling Exterior) ----------
   /** Townhouse: is this an end unit? */
   townhouseEndUnit?: boolean | null;
   /** Townhouse: is this a back-to-back unit? */
@@ -270,7 +274,7 @@ export interface CanonicalPropertyCore {
   /** Number of units below this unit. */
   unitsBelow?: number | null;
 
-  // ── Per-feature Quality/Condition detail (URAR v1.3 Pages 12-14) ──────
+  // -- Per-feature Quality/Condition detail (URAR v1.3 Pages 12-14) ------
   /** Exterior feature quality/condition breakdown. */
   exteriorQualityDetail?: CanonicalFeatureQualityCondition | null;
   /** Exterior feature condition breakdown. */
@@ -285,9 +289,9 @@ export interface CanonicalPropertyCore {
   longitude: number | null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// URAR v1.3 — Per-Feature Quality/Condition Interfaces  (Phase 6A)
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
+// URAR v1.3 ï¿½ Per-Feature Quality/Condition Interfaces  (Phase 6A)
+// -------------------------------------------------------------------------------
 
 /**
  * Per-feature quality/condition ratings for exterior components.
@@ -372,7 +376,7 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   carportSpaces?: number | null;
   siteAreaUnit?: 'sf' | 'acres' | null;
 
-  // ── URAR v1.3: Assignment & Listing (Phase 6A) ────────────────────────
+  // -- URAR v1.3: Assignment & Listing (Phase 6A) ------------------------
   /** URAR v1.3: Listing status of the subject. */
   listingStatus?: string | null;
   /** URAR v1.3: Is the property valuation method other than Sales Comparison? */
@@ -380,13 +384,13 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   /** URAR v1.3: Is the property on Native American Lands? */
   nativeAmericanLands?: boolean | null;
 
-  // ── URAR v1.3: New Construction (Phase 6A) ────────────────────────────
+  // -- URAR v1.3: New Construction (Phase 6A) ----------------------------
   /** Is this a new construction property? */
   newConstruction?: boolean | null;
   /** Construction stage: Proposed, UnderConstruction, or Complete. */
   constructionStage?: 'Proposed' | 'UnderConstruction' | 'Complete' | null;
 
-  // ── URAR v1.3: Property Rights & Restrictions (Phase 6A) ─────────────
+  // -- URAR v1.3: Property Rights & Restrictions (Phase 6A) -------------
   /** Is the site owned in common (condo/cooperative)? */
   siteOwnedInCommon?: boolean | null;
   /** Number of units excluding ADUs. */
@@ -414,7 +418,7 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   /** Alternate physical address if different from primary. */
   alternatePhysicalAddress?: string | null;
 
-  // ── URAR v1.3: Site Expansion (Phase 6A) ─────────────────────────────
+  // -- URAR v1.3: Site Expansion (Phase 6A) -----------------------------
   /** APN description. */
   apnDescription?: string | null;
   /** Number of parcels composing the site. */
@@ -444,7 +448,7 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   /** Notable site features. */
   siteFeatures?: CanonicalSiteFeature[] | null;
 
-  // ── URAR v1.3: Unit Interior Expansion (Phase 6A) ────────────────────
+  // -- URAR v1.3: Unit Interior Expansion (Phase 6A) --------------------
   /** Is this a corner unit? */
   cornerUnit?: boolean | null;
   /** Floor number of the unit. */
@@ -464,7 +468,7 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   /** Accessibility features (ADA, ramps, etc.). */
   accessibilityFeatures?: string | null;
 
-  // ── URAR v1.3: Defects & Condition (Phase 6A) ────────────────────────
+  // -- URAR v1.3: Defects & Condition (Phase 6A) ------------------------
   /** List of apparent defects, damages, or deficiencies. */
   defects?: CanonicalDefectItem[] | null;
   /** Overall as-is condition rating (C1-C6). */
@@ -472,18 +476,18 @@ export interface CanonicalSubject extends CanonicalPropertyCore {
   /** Total estimated cost of repairs for all defects. */
   totalEstimatedCostOfRepairs?: number | null;
 
-  // ── Condo / PUD supplemental (Phase 5 — Form 1073 / PUD addendum) ──────
-  /** Condo project details — populated when propertyType is Condo or Cooperative. */
+  // -- Condo / PUD supplemental (Phase 5 ï¿½ Form 1073 / PUD addendum) ------
+  /** Condo project details ï¿½ populated when propertyType is Condo or Cooperative. */
   condoDetail?: CanonicalCondoDetail | null;
-  /** PUD project details — populated when propertyType is PUD. */
+  /** PUD project details ï¿½ populated when propertyType is PUD. */
   pudDetail?: CanonicalPudDetail | null;
-  /** HOA details — populated for Condo, PUD, and Townhouse properties. */
+  /** HOA details ï¿½ populated for Condo, PUD, and Townhouse properties. */
   hoaDetail?: CanonicalHoaDetail | null;
-  /** Cooperative details — populated when propertyType is Co-op. */
+  /** Cooperative details ï¿½ populated when propertyType is Co-op. */
   coopDetail?: CanonicalCoopDetail | null;
 }
 
-/** URAR: Site — Utilities row. */
+/** URAR: Site ï¿½ Utilities row. */
 export interface CanonicalUtilities {
   electricity: 'Public' | 'Other' | 'None';
   gas: 'Public' | 'Other' | 'None';
@@ -491,9 +495,9 @@ export interface CanonicalUtilities {
   sewer: 'Public' | 'Septic' | 'Other' | 'None';
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// URAR v1.3 — New Supporting Interfaces  (Phase 6A)
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
+// URAR v1.3 ï¿½ New Supporting Interfaces  (Phase 6A)
+// -------------------------------------------------------------------------------
 
 /** Ground rent details. URAR v1.3 Subject Property + Project Information pages. */
 export interface CanonicalGroundRent {
@@ -522,7 +526,7 @@ export interface CanonicalWaterFrontage {
   waterBodyType?: string | null;
 }
 
-/** Site influence factor. URAR v1.3 Site section — repeating table. */
+/** Site influence factor. URAR v1.3 Site section ï¿½ repeating table. */
 export interface CanonicalSiteInfluence {
   influence: string;       // e.g., "Traffic", "Railroad", "Airport"
   proximity: string;       // e.g., "Adjacent", "Within 1 mile"
@@ -531,7 +535,7 @@ export interface CanonicalSiteInfluence {
   comment?: string | null;
 }
 
-/** Site feature. URAR v1.3 Site section — repeating table. */
+/** Site feature. URAR v1.3 Site section ï¿½ repeating table. */
 export interface CanonicalSiteFeature {
   feature: string;         // e.g., "Topography", "Drainage", "Landscaping"
   detail: string;
@@ -561,9 +565,9 @@ export interface CanonicalDefectItem {
   recommendedAction: string | null;
   estimatedCostToRepair: number | null;
 }
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONDO / PUD / HOA DETAIL  (Phase 5 — UAD 3.6 Conditional Sections)
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
+// CONDO / PUD / HOA DETAIL  (Phase 5 ï¿½ UAD 3.6 Conditional Sections)
+// -------------------------------------------------------------------------------
 
 /**
  * Form 1073: Condominium project details.
@@ -599,7 +603,7 @@ export interface CanonicalCondoDetail {
   buildingTotalFloors: number | null;
   comments: string | null;
 
-  // ── Phase 7B-6 expansion ──────────────────────────────────────────────
+  // -- Phase 7B-6 expansion ----------------------------------------------
   /** Source of project data (HOA, management company, developer, public records). */
   projectInfoDataSource?: string | null;
   /** Reason rented-unit count is estimated. */
@@ -657,7 +661,7 @@ export interface CanonicalPudDetail {
   isPhased: boolean | null;
   comments: string | null;
 
-  // ── Phase 7B-6 expansion ──────────────────────────────────────────────
+  // -- Phase 7B-6 expansion ----------------------------------------------
   /** Source of project data. */
   projectInfoDataSource?: string | null;
   /** Units sold / closed. */
@@ -677,7 +681,7 @@ export interface CanonicalPudDetail {
 }
 
 /**
- * HOA details — applicable to Condo, PUD, and Townhouse properties.
+ * HOA details ï¿½ applicable to Condo, PUD, and Townhouse properties.
  */
 export interface CanonicalHoaDetail {
   /** Monthly/quarterly/annual HOA fee amount. */
@@ -690,7 +694,7 @@ export interface CanonicalHoaDetail {
   /** Name of the management company. */
   managementCompany: string | null;
 
-  // ── Phase 7B-6 expansion ──────────────────────────────────────────────
+  // -- Phase 7B-6 expansion ----------------------------------------------
   /** Mandatory fees beyond HOA dues. */
   mandatoryFees?: number | null;
   /** Description of what mandatory fees cover. */
@@ -783,7 +787,7 @@ export interface CanonicalNeighborhood {
   neighborhoodDescription: string | null;
   marketConditionsNotes: string | null;
 
-  // ── URAR v1.3: Market Analysis Expansion (Phase 6C) ─────────────────────
+  // -- URAR v1.3: Market Analysis Expansion (Phase 6C) ---------------------
   /** One-unit housing: predominant price. */
   predominantPrice?: number | null;
   /** One-unit housing: age range low (years). */
@@ -811,7 +815,7 @@ export interface CanonicalNeighborhood {
   /** Market conditions are consistent with the property values selection above? */
   marketConditionsConsistent?: boolean | null;
 
-  // ── Phase 7B-5: Market Section Expansion ──────────────────────────────
+  // -- Phase 7B-5: Market Section Expansion ------------------------------
   /** Search criteria used to select comps. */
   searchCriteriaDescription?: string | null;
   /** Active listing price low. */
@@ -855,7 +859,7 @@ export interface CanonicalContractInfo {
   financingConcessions: string | null;
   isPropertySeller: boolean | null; // is seller a financial institution?
 
-  // ── URAR v1.3: Expanded Sales Contract fields (Phase 6A) ──────────────
+  // -- URAR v1.3: Expanded Sales Contract fields (Phase 6A) --------------
   /** Is there a sales contract? */
   isSalesContract?: boolean | null;
   /** Was sales contract information analyzed? */
@@ -891,10 +895,10 @@ export interface CanonicalContractInfo {
 export interface CanonicalComp extends CanonicalPropertyCore {
   /** Stable unique ID */
   compId: string;
-  /** FK → PropertyRecord.id for this comp's physical address. Added Phase R0.3.
+  /** FK ? PropertyRecord.id for this comp's physical address. Added Phase R0.3.
    *  Resolved at comp-selection time via PropertyRecordService. */
   propertyId?: string;
-  /** FK → PropertyComparableSale.id — the specific sale event this comp represents.
+  /** FK ? PropertyComparableSale.id ï¿½ the specific sale event this comp represents.
    *  Populated when a comp is selected from the persistent comparable-sales container. Added Phase R0.3. */
   comparableSaleId?: string;
   // â”€â”€ Sale Information (URAR: Sale grid columns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -944,7 +948,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
 
   // -- Phase 7C: URAR v1.3 Full Comp Expansion (Pages 26-29) ----------------
 
-  // ── Transaction / Contract Detail ─────────────────────────────────────────
+  // -- Transaction / Contract Detail -----------------------------------------
   /** Terms of sale / transfer (e.g., 'Conventional', 'Owner Financing'). */
   transferTerms?: string | null;
   /** Contract price at time of sale (may differ from sale price). */
@@ -960,7 +964,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Listing status at time of analysis. */
   compListingStatus?: 'Active' | 'Pending' | 'Sold' | 'Withdrawn' | 'Expired' | null;
 
-  // ── Project / HOA Detail ──────────────────────────────────────────────────
+  // -- Project / HOA Detail --------------------------------------------------
   /** Project name (for condo/PUD comps). */
   projectName?: string | null;
   /** Is this comp in the same project as the subject? */
@@ -972,7 +976,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Special assessments at time of sale. */
   specialAssessments?: string | null;
 
-  // ── Site Detail (comp-specific, beyond inherited core) ────────────────────
+  // -- Site Detail (comp-specific, beyond inherited core) --------------------
   /** Is the site owned in common? */
   siteOwnedInCommon?: boolean | null;
   /** Neighborhood name / location descriptor. */
@@ -1000,7 +1004,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Apparent environmental conditions. */
   apparentEnvironmentalConditions?: string | null;
 
-  // ── Water Frontage ────────────────────────────────────────────────────────
+  // -- Water Frontage --------------------------------------------------------
   /** Type of water frontage (Ocean, Lake, River, Creek, Canal, etc.). */
   waterFrontageType?: string | null;
   /** Linear feet of water frontage. */
@@ -1012,7 +1016,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Natural vs man-made water feature. */
   waterFrontageNaturalManMade?: 'Natural' | 'Man-Made' | null;
 
-  // ── Manufactured Home (comp-specific) ─────────────────────────────────────
+  // -- Manufactured Home (comp-specific) -------------------------------------
   /** HUD Data Plate present? */
   hudDataPlate?: boolean | null;
   /** HUD Label / certification present? */
@@ -1020,7 +1024,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Manufactured home serial number. */
   serialNumber?: string | null;
 
-  // ── Mechanical / HVAC (comp-specific) ─────────────────────────────────────
+  // -- Mechanical / HVAC (comp-specific) -------------------------------------
   /** HVAC system type (Forced Air, Radiant, etc.). */
   hvacType?: string | null;
   /** HVAC fuel type (Gas, Electric, Oil, etc.). */
@@ -1028,7 +1032,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Estimated HVAC age in years. */
   hvacAge?: number | null;
 
-  // ── Energy / Green Features ───────────────────────────────────────────────
+  // -- Energy / Green Features -----------------------------------------------
   /** Green certification type (ENERGY STAR, LEED, etc.). */
   greenCertification?: string | null;
   /** Solar panels present? */
@@ -1036,11 +1040,11 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Energy rating (HERS, EPS score, etc.). */
   energyRating?: string | null;
 
-  // ── Disaster Mitigation ───────────────────────────────────────────────────
+  // -- Disaster Mitigation ---------------------------------------------------
   /** Summary of disaster mitigation features. */
   disasterMitigationSummary?: string | null;
 
-  // ── Unit Detail (condo/multi-unit comps) ──────────────────────────────────
+  // -- Unit Detail (condo/multi-unit comps) ----------------------------------
   /** Unit identifier within structure. */
   unitId?: string | null;
   /** ADU location if applicable. */
@@ -1054,13 +1058,13 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Accessibility features present. */
   accessibilityFeatures?: string | null;
 
-  // ── Overall Quality / Condition Ratings ───────────────────────────────────
+  // -- Overall Quality / Condition Ratings -----------------------------------
   /** Overall quality rating (Q1-Q6 or descriptive). */
   overallQualityRating?: string | null;
   /** Overall condition rating (C1-C6 or descriptive). */
   overallConditionRating?: string | null;
 
-  // ── Amenities (5 categories per URAR v1.3) ───────────────────────────────
+  // -- Amenities (5 categories per URAR v1.3) -------------------------------
   /** Porch/patio/deck description. */
   amenitiesPorchPatioDeck?: string | null;
   /** Pool / spa description. */
@@ -1072,7 +1076,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Other amenities description. */
   amenitiesOther?: string | null;
 
-  // ── Vehicle Storage ───────────────────────────────────────────────────────
+  // -- Vehicle Storage -------------------------------------------------------
   /** Vehicle storage type (Attached Garage, Detached Garage, Carport, etc.). */
   vehicleStorageType?: string | null;
   /** Number of vehicle storage spaces. */
@@ -1080,7 +1084,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Vehicle storage detail / description. */
   vehicleStorageDetail?: string | null;
 
-  // ── Outbuilding ───────────────────────────────────────────────────────────
+  // -- Outbuilding -----------------------------------------------------------
   /** Outbuilding type (Barn, Shed, Workshop, Guest House, etc.). */
   outbuildingType?: string | null;
   /** Outbuilding gross building area. */
@@ -1100,7 +1104,7 @@ export interface CanonicalComp extends CanonicalPropertyCore {
   /** Outbuilding has utilities? */
   outbuildingUtilities?: boolean | null;
 
-  // ── Summary / Computed Fields ─────────────────────────────────────────────
+  // -- Summary / Computed Fields ---------------------------------------------
   /** Adjusted price per unit. */
   adjustedPricePerUnit?: number | null;
   /** Adjusted price per bedroom. */
@@ -1186,7 +1190,7 @@ export interface CanonicalAdjustments {
   fencingAdj?: number;
 
 
-  // -- Phase 7C: Expanded adjustment rows for new comp fields ────────────────
+  // -- Phase 7C: Expanded adjustment rows for new comp fields ----------------
   /** Water frontage adjustment. */
   waterFrontageAdj?: number;
   /** Outbuilding adjustment. */
@@ -1220,7 +1224,7 @@ export interface CanonicalAdjustments {
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-// ── Phase 7C: Analyzed Properties Not Used ──────────────────────────────────
+// -- Phase 7C: Analyzed Properties Not Used ----------------------------------
 
 /** Properties analyzed but not selected as comparables. URAR v1.3 Pages 29-30. */
 export interface CanonicalAnalyzedPropertyNotUsed {
@@ -1294,7 +1298,7 @@ export interface CanonicalValuation {
   avmProvider: string | null;
   avmModelVersion: string | null;
   /** The value type(s) this valuation addresses (e.g. AS_IS, PROSPECTIVE_AS_COMPLETED). */
-  valueType?: ValueType | null;  // ── Broker DVR/BPO supplemental fields ────────────────────────────────────
+  valueType?: ValueType | null;  // -- Broker DVR/BPO supplemental fields ------------------------------------
   /** Prospective as-repaired value (rehab / DVR assignments). */
   estimatedValueAsRepaired?: number | null;
   /** Broker's estimated cost to bring the property to repaired condition. */
@@ -1335,9 +1339,9 @@ export interface CanonicalReportMetadata {
    */
   appraisalGrade?: 'A' | 'B' | 'C' | 'D' | null;
 
-  // ── URAR v1.3: Expanded assignment fields (Phase 6A) ───────────────────
+  // -- URAR v1.3: Expanded assignment fields (Phase 6A) -------------------
   /**
-   * Assignment reason enum — replaces the binary `isSubjectPurchase`.
+   * Assignment reason enum ï¿½ replaces the binary `isSubjectPurchase`.
    * Both are kept for backward compat; new code should prefer this.
    */
   assignmentReason?: 'Purchase' | 'Refinance' | 'Other' | null;
@@ -1359,6 +1363,19 @@ export interface CanonicalReportMetadata {
 // -----------------------------------------------------------------------
 
 /** A single prior transfer / sale record for subject or comp. */
+export interface CanonicalRevisionEntry {
+  revisionDate: string;
+  urarSection: string;
+  description: string;
+}
+
+export interface CanonicalReconsiderationOfValue {
+  type: string;
+  date: string;
+  result: string;
+  commentary: string;
+}
+
 export interface CanonicalPriorTransfer {
   /** Which property: 'subject' or comp identifier. */
   propertyRole: 'subject' | 'comp';
@@ -1692,9 +1709,9 @@ export interface CanonicalReportDocument {
   id: string; // Cosmos document ID
   reportId: string; // business-level report identifier
   orderId: string; // FK to orders container
-  /** FK → PropertyRecord — the physical subject property. Added Phase R0.3. */
+  /** FK ? PropertyRecord ï¿½ the physical subject property. Added Phase R0.3. */
   propertyId?: string;
-  /** FK → Engagement that produced this report. Added Phase R0.3. */
+  /** FK ? Engagement that produced this report. Added Phase R0.3. */
   engagementId?: string;
   reportType: string; // "1004", "1073", "2055", etc.
   status: string;
@@ -1723,7 +1740,7 @@ export interface CanonicalReportDocument {
   incomeApproach?: CanonicalIncomeApproach;
   /** Photos resolved for report embedding: subject, comps, aerial, addenda. */
   photos?: ReportPhotoAsset[];
-  /** Addenda content — scope of work, assumptions, conditions, free-form pages. */
+  /** Addenda content ï¿½ scope of work, assumptions, conditions, free-form pages. */
   addenda?: CanonicalAddenda;
   // --- Phase 0.2: Value types & effective dates ---
   /** All value types requested for this assignment. */
@@ -1768,6 +1785,10 @@ export interface CanonicalReportDocument {
   asIsOverallConditionRating?: string | null;
   /** Total estimated cost of all identified repairs. */
   totalEstimatedCostOfRepairs?: number | null;
+  // -- Phase 7G: Rental & Revision History ---------------------------------
+  rentalInformation?: CanonicalRentalInformation;
+  revisionHistory?: CanonicalRevisionEntry[];
+  reconsiderationOfValue?: CanonicalReconsiderationOfValue;
   // -- End Phase 7A ----------------------------------------------------------
   // -- Phase 7C: Analyzed properties not used --------------------------------
   /** Properties analyzed but not selected as comparables -- URAR v1.3 Pages 29-30. */
@@ -1804,14 +1825,14 @@ export interface CanonicalReconciliation {
   incomeApproachValue: number | null;
   /** The appraiser's final opinion of value. */
   finalOpinionOfValue: number;
-  /** ISO date string — the "as of" effective date. */
+  /** ISO date string ï¿½ the "as of" effective date. */
   effectiveDate: string;
   reconciliationNarrative: string | null;
   /** e.g. "3-6 months" */
   exposureTime: string | null;
   marketingTime: string | null;
 
-  // — Phase 0.1: Per-approach weighting & confidence ——————————————
+  // ï¿½ Phase 0.1: Per-approach weighting & confidence ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   /** Appraiser-assigned weight to sales comparison approach (0-1, all weights should sum to 1). */
   salesCompWeight?: number | null;
   /** Appraiser-assigned weight to cost approach (0-1). */
@@ -1823,10 +1844,10 @@ export interface CanonicalReconciliation {
   /** Variance between highest and lowest approach values, as %. */
   approachSpreadPct?: number | null;
 
-  // — Extraordinary assumptions & hypothetical conditions —————————
+  // ï¿½ Extraordinary assumptions & hypothetical conditions ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   extraordinaryAssumptions?: string[] | null;
   hypotheticalConditions?: string[] | null;
-  // ── Reviewer override fields (Phase UI) ────────────────────────────────────
+  // -- Reviewer override fields (Phase UI) ------------------------------------
   /** Reviewer's override for the as-repaired value (distinct from appraiser's as-repaired). */
   reviewerAsRepairedValue?: number | null;
   /** Reviewer's repair estimate override. */
@@ -1834,7 +1855,7 @@ export interface CanonicalReconciliation {
   /** Fair market monthly rent opinion (income approach). */
   fairMarketMonthlyRent?: number | null;
 
-  // ── Phase 7B-8 expansion ──────────────────────────────────────────────
+  // -- Phase 7B-8 expansion ----------------------------------------------
   /** Reason for excluding or discounting the sales comparison approach. */
   salesCompReasonForExclusion?: string | null;
   /** Reason for excluding or discounting the cost approach. */
@@ -1923,7 +1944,7 @@ export interface DvrSubjectDetail {
   quickSaleDiscount: number | null;
 }
 
-// ── Phase 7B-7: Cost Approach Supporting Interfaces ─────────────────────────
+// -- Phase 7B-7: Cost Approach Supporting Interfaces -------------------------
 
 /** Per-structure cost and depreciation breakdown for cost approach. */
 export interface CanonicalCostStructure {
@@ -1964,7 +1985,7 @@ export interface CanonicalLandComparable {
 }
 
 export interface CanonicalCostApproach {
-  // — Land value ———————————————————————————————————————————————————
+  // ï¿½ Land value ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   estimatedLandValue: number | null;
   landValueSource: string | null;
   /** Method used: 'sales_comparison' | 'allocation' | 'abstraction' | 'other' */
@@ -1972,7 +1993,7 @@ export interface CanonicalCostApproach {
   /** Evidence: sale comps, allocations, or abstractions supporting land value. */
   landValueEvidence?: string | null;
 
-  // — Replacement cost ————————————————————————————————————————————
+  // ï¿½ Replacement cost ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   replacementCostNew: number | null;
   /** Cost factor source (e.g. 'Marshall & Swift', 'RSMeans', 'Builder Bid'). */
   costFactorSource?: string | null;
@@ -1983,13 +2004,13 @@ export interface CanonicalCostApproach {
   /** Site improvements (driveways, landscaping, utility connections). */
   siteImprovementsCost?: number | null;
 
-  // — Depreciation breakdown ——————————————————————————————————————
+  // ï¿½ Depreciation breakdown ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   depreciationAmount: number | null;
   /** e.g. "Age-Life", "Observed Condition", "Market Extraction" */
   depreciationType: string | null;
-  /** Physical deterioration — curable. */
+  /** Physical deterioration ï¿½ curable. */
   physicalDepreciationCurable?: number | null;
-  /** Physical deterioration — incurable (short-lived + long-lived). */
+  /** Physical deterioration ï¿½ incurable (short-lived + long-lived). */
   physicalDepreciationIncurable?: number | null;
   /** Functional obsolescence (floor plan, design, energy inefficiency). */
   functionalObsolescence?: number | null;
@@ -2000,12 +2021,12 @@ export interface CanonicalCostApproach {
   /** Economic (total useful) life used in age-life calculation. */
   economicLife?: number | null;
 
-  // — Result ——————————————————————————————————————————————————————
+  // ï¿½ Result ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   depreciatedCostOfImprovements: number | null;
   indicatedValueByCostApproach: number | null;
   comments: string | null;
 
-  // ── Phase 7B-7 expansion ──────────────────────────────────────────────
+  // -- Phase 7B-7 expansion ----------------------------------------------
   /** Replacement vs. Reproduction. */
   costType?: 'Replacement' | 'Reproduction' | null;
   /** Cost method: Comparative Unit, Segregated Cost, Quantity Survey, etc. */
@@ -2034,25 +2055,43 @@ export interface CanonicalCostApproach {
   manufacturedHomeSetupCost?: number | null;
 }
 
+export interface CanonicalUnitRentalInfo {
+  unitIdentifier: string;
+  currentlyRented: boolean;
+  occupancy: string;
+  monthlyRent: number;
+  monthToMonth: boolean;
+  leaseStart: string;
+  rentControl: boolean;
+  rentConcessions: string;
+  utilitiesIncluded: string;
+  furnished: boolean;
+}
+
+export interface CanonicalRentalInformation {
+  rentSchedule: CanonicalUnitRentalInfo[];
+  rentalAnalysisCommentary: string | null;
+}
+
 export interface CanonicalIncomeApproach {
-  // — Rent analysis ———————————————————————————————————————————————
+  // ï¿½ Rent analysis ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   estimatedMonthlyMarketRent: number | null;
   /** Rent comps supporting the market rent estimate. */
   rentComps?: CanonicalRentComp[];
 
-  // — GRM approach ————————————————————————————————————————————————
+  // ï¿½ GRM approach ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   grossRentMultiplier: number | null;
 
-  // — Direct capitalization (1-4 unit income, small commercial) ———
-  /** Potential Gross Income (PGI) — annual. */
+  // ï¿½ Direct capitalization (1-4 unit income, small commercial) ï¿½ï¿½ï¿½
+  /** Potential Gross Income (PGI) ï¿½ annual. */
   potentialGrossIncome?: number | null;
   /** Vacancy & credit loss rate (0-1). */
   vacancyRate?: number | null;
-  /** Effective Gross Income (PGI × (1 - vacancy)). */
+  /** Effective Gross Income (PGI ï¿½ (1 - vacancy)). */
   effectiveGrossIncome?: number | null;
-  /** Total operating expenses — annual. */
+  /** Total operating expenses ï¿½ annual. */
   operatingExpenses?: number | null;
-  /** Replacement reserves — annual. */
+  /** Replacement reserves ï¿½ annual. */
   replacementReserves?: number | null;
   /** Net Operating Income (EGI - expenses - reserves). */
   netOperatingIncome?: number | null;
@@ -2061,7 +2100,7 @@ export interface CanonicalIncomeApproach {
   /** Cap rate source/derivation (e.g. 'comparable_sales', 'band_of_investment'). */
   capRateSource?: string | null;
 
-  // — DCF (optional, complex properties) ——————————————————————————
+  // ï¿½ DCF (optional, complex properties) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   /** Discount rate for DCF analysis. */
   discountRate?: number | null;
   /** Holding period in years for DCF. */
@@ -2071,7 +2110,7 @@ export interface CanonicalIncomeApproach {
   /** DCF present value result. */
   dcfPresentValue?: number | null;
 
-  // — Result ——————————————————————————————————————————————————————
+  // ï¿½ Result ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
   indicatedValueByIncomeApproach: number | null;
   comments: string | null;
 }
@@ -2107,22 +2146,22 @@ export interface ReportPhotoAsset {
   takenAt?: string;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ADDENDA  (Phase 4 — UAD 3.6 Compliance)
-// ═══════════════════════════════════════════════════════════════════════════════
+// -------------------------------------------------------------------------------
+// ADDENDA  (Phase 4 ï¿½ UAD 3.6 Compliance)
+// -------------------------------------------------------------------------------
 
 /**
  * Addenda content appended to the URAR report.
  * Each entry represents a separate addendum page / section.
  */
 export interface CanonicalAddenda {
-  /** Scope of work narrative — required by USPAP. */
+  /** Scope of work narrative ï¿½ required by USPAP. */
   scopeOfWork: string | null;
   /** Extraordinary assumptions (mirrored from reconciliation for convenience). */
   extraordinaryAssumptions: string[];
   /** Hypothetical conditions (mirrored from reconciliation for convenience). */
   hypotheticalConditions: string[];
-  /** Free-form addendum pages — each entry is one page of narrative. */
+  /** Free-form addendum pages ï¿½ each entry is one page of narrative. */
   additionalPages: AddendumPage[];
 }
 

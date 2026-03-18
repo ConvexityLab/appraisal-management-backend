@@ -12,6 +12,8 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { AccessControlHelper } from './access-control-helper.service';
 import { UniversalAIService } from './universal-ai.service.js';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { EventCategory, EventPriority, RovCreatedEvent, RovAssignedEvent, RovDecisionIssuedEvent } from '../types/events.js';
 import {
   ROVRequest,
   ROVStatus,
@@ -56,12 +58,14 @@ export class ROVManagementService {
   private dbService: CosmosDbService;
   private accessControlHelper: AccessControlHelper;
   private aiService: UniversalAIService;
+  private eventPublisher: ServiceBusEventPublisher;
 
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
     this.accessControlHelper = new AccessControlHelper();
     this.aiService = new UniversalAIService();
+    this.eventPublisher = new ServiceBusEventPublisher();
   }
 
   /**
@@ -169,6 +173,27 @@ export class ROVManagementService {
         });
       });
 
+      const createdEvent: RovCreatedEvent = {
+        id: this.generateId(),
+        version: '1.0',
+        type: 'rov.created',
+        category: EventCategory.ROV,
+        timestamp: new Date(),
+        source: 'rov-management.service',
+        data: {
+          rovId: rovRequest.id,
+          orderId: rovRequest.orderId,
+          tenantId: (order as any).tenantId || 'default',
+          requestorType: rovRequest.requestorType as any,
+          challengeReason: rovRequest.challengeReason as any,
+          originalValue: rovRequest.originalAppraisalValue || 0,
+          priority: EventPriority.HIGH
+        }
+      };
+      await this.eventPublisher.publish(createdEvent).catch(err => 
+        this.logger.error('Failed to emit rov.created event', { error: err })
+      );
+
       return { success: true, data: rovRequest };
     } catch (error) {
       this.logger.error('Error creating ROV request', { error });
@@ -215,6 +240,28 @@ export class ROVManagementService {
       };
 
       const result = await this.dbService.updateROVRequest(rovId, updated);
+      
+      if (result.success && result.data) {
+        const assignedEvent: RovAssignedEvent = {
+          id: this.generateId(),
+          version: '1.0',
+          type: 'rov.assigned',
+          category: EventCategory.ROV,
+          timestamp: new Date(),
+          source: 'rov-management.service',
+          data: {
+            rovId: rovId,
+            orderId: result.data.orderId,
+            tenantId: (result.data as any).tenantId || 'default',
+            assignedTo: assignedTo,
+            priority: EventPriority.HIGH
+          }
+        };
+        await this.eventPublisher.publish(assignedEvent).catch((err: unknown) => 
+          this.logger.error('Failed to emit rov.assigned event', { error: err })
+        );
+      }
+
       return result;
     } catch (error) {
       this.logger.error('Error assigning ROV request', { error, rovId });
@@ -336,14 +383,40 @@ export class ROVManagementService {
       };
 
       const result = await this.dbService.updateROVRequest(input.rovId, updated);
-      
-      if (result.success) {
-        // TODO: Send notification to requestor
-        this.logger.info('ROV response submitted', { 
-          rovId: input.rovId, 
+
+      if (result.success && result.data) {
+        // Send notification to requestor
+        this.logger.info('ROV response submitted', {
+          rovId: input.rovId,
           decision: input.decision,
-          valueChange: valueChangeAmount 
+          valueChange: valueChangeAmount
         });
+
+        let decisionType: 'upheld' | 'value_changed' | 'withdrawn' = 'upheld';
+        if (input.decision === ROVDecision.VALUE_INCREASED || input.decision === ROVDecision.VALUE_DECREASED) {
+          decisionType = 'value_changed';
+        }
+
+        const decisionEvent: RovDecisionIssuedEvent = {
+          id: this.generateId(),
+          version: '1.0',
+          type: 'rov.decision.issued',
+          category: EventCategory.ROV,
+          timestamp: new Date(),
+          source: 'rov-management.service',
+          data: {
+            rovId: input.rovId,
+            orderId: result.data.orderId,
+            tenantId: (result.data as any).tenantId || 'default',
+            decision: decisionType,
+            ...(newValue !== originalValue ? { updatedValue: newValue } : {}),
+            decidedBy: respondedBy,
+            priority: EventPriority.HIGH
+          }
+        };
+        await this.eventPublisher.publish(decisionEvent).catch((err: unknown) => 
+          this.logger.error('Failed to emit rov.decision.issued event', { error: err })
+        );
       }
 
       return result;
@@ -391,6 +464,138 @@ export class ROVManagementService {
     } catch (error) {
       this.logger.error('Error listing ROV requests', { error, filters });
       return { data: [], total: 0, page, limit, hasMore: false };
+    }
+  }
+
+  /**
+   * Withdraw an ROV request. Requestor indicates they are no longer challenging the value.
+   * Valid from: SUBMITTED, UNDER_REVIEW, RESEARCHING.
+   */
+  async withdrawROVRequest(
+    rovId: string,
+    withdrawnBy: string,
+    reason: string,
+  ): Promise<{ success: boolean; data?: ROVRequest; error?: string }> {
+    try {
+      const rov = await this.getROVById(rovId);
+      if (!rov.success || !rov.data) return { success: false, error: 'ROV request not found' };
+
+      if (!isValidROVTransition(rov.data.status, ROVStatus.WITHDRAWN)) {
+        return { success: false, error: `Cannot withdraw ROV in ${rov.data.status} status` };
+      }
+
+      const updated: Partial<ROVRequest> = {
+        status: ROVStatus.WITHDRAWN,
+        updatedAt: new Date(),
+        timeline: [
+          ...rov.data.timeline,
+          {
+            id: this.generateId(),
+            timestamp: new Date(),
+            action: 'ROV_WITHDRAWN',
+            performedBy: withdrawnBy,
+            details: `ROV withdrawn: ${reason}`,
+            metadata: { reason },
+          },
+        ],
+      };
+
+      return await this.dbService.updateROVRequest(rovId, updated);
+    } catch (error) {
+      this.logger.error('Error withdrawing ROV request', { error, rovId });
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Escalate an ROV request to senior management / compliance.
+   * Valid from: UNDER_REVIEW, RESEARCHING, PENDING_RESPONSE.
+   */
+  async escalateROVRequest(
+    rovId: string,
+    escalatedBy: string,
+    reason: string,
+  ): Promise<{ success: boolean; data?: ROVRequest; error?: string }> {
+    try {
+      const rov = await this.getROVById(rovId);
+      if (!rov.success || !rov.data) return { success: false, error: 'ROV request not found' };
+
+      if (!isValidROVTransition(rov.data.status, ROVStatus.ESCALATED)) {
+        return { success: false, error: `Cannot escalate ROV in ${rov.data.status} status` };
+      }
+
+      const updated: Partial<ROVRequest> = {
+        status: ROVStatus.ESCALATED,
+        updatedAt: new Date(),
+        complianceFlags: {
+          ...rov.data.complianceFlags,
+          regulatoryEscalation: true,
+        },
+        timeline: [
+          ...rov.data.timeline,
+          {
+            id: this.generateId(),
+            timestamp: new Date(),
+            action: 'ROV_ESCALATED',
+            performedBy: escalatedBy,
+            details: `ROV escalated to senior management: ${reason}`,
+            metadata: { reason },
+          },
+        ],
+      };
+
+      return await this.dbService.updateROVRequest(rovId, updated);
+    } catch (error) {
+      this.logger.error('Error escalating ROV request', { error, rovId });
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Update the SLA deadline (e.g. when a regulatory extension is granted).
+   */
+  async updateROVDeadline(
+    rovId: string,
+    newDueDate: Date,
+    updatedBy: string,
+  ): Promise<{ success: boolean; data?: ROVRequest; error?: string }> {
+    try {
+      const rov = await this.getROVById(rovId);
+      if (!rov.success || !rov.data) return { success: false, error: 'ROV request not found' };
+
+      const now = new Date();
+      const daysUntilDue = now <= newDueDate
+        ? this.calculateBusinessDays(now, newDueDate)
+        : -this.calculateBusinessDays(newDueDate, now);
+
+      const updatedSLA: ROVSLATracking = {
+        ...rov.data.slaTracking,
+        dueDate: newDueDate,
+        isOverdue: now > newDueDate,
+        daysUntilDue,
+      };
+
+      const previousDueDate = rov.data.slaTracking.dueDate;
+      const updated: Partial<ROVRequest> = {
+        slaTracking: updatedSLA,
+        updatedAt: new Date(),
+        timeline: [
+          ...rov.data.timeline,
+          {
+            id: this.generateId(),
+            timestamp: new Date(),
+            action: 'DEADLINE_UPDATED',
+            performedBy: updatedBy,
+            details: `SLA deadline updated to ${newDueDate.toISOString()}`,
+            metadata: { previousDueDate, newDueDate },
+          },
+        ],
+      };
+
+      return await this.dbService.updateROVRequest(rovId, updated);
+    } catch (error) {
+      this.logger.error('Error updating ROV deadline', { error, rovId });
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 

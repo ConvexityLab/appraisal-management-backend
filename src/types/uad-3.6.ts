@@ -228,8 +228,7 @@ export interface UadSubjectProperty {
   
   // Additional Rooms
   atticType?: 'None' | 'Scuttle' | 'Stairs' | 'Elevator' | 'Finished';
-  amenities?: string[];
-  
+
   // Location
   locationRating: 'Beneficial' | 'Neutral' | 'Adverse';
   
@@ -251,7 +250,19 @@ export interface UadSubjectProperty {
     paved: boolean;
     surfaceType?: string;
   };
-  
+
+  // --- New v1.3 Sections ---
+  disasterMitigation?: UadDisasterMitigation;
+  energyEfficiency?: UadEnergyEfficiency;
+  manufacturedHome?: UadManufacturedHome;
+  functionalObsolescence?: UadFunctionalObsolescenceItem[];
+  outbuildings?: UadOutbuilding[];
+  vehicleStorage?: UadVehicleStorage[];
+  amenities?: UadPropertyAmenity[];
+  overallQualityCondition?: UadOverallQualityCondition;
+  subjectListing?: UadSubjectListing;
+  rentalInformation?: UadRentalInformation;
+
   // Flood Zone
   femaFloodZone?: string;
   femaMapNumber?: string;
@@ -833,4 +844,222 @@ export interface UadInteriorQualityCondition {
   flooring?: string;
   wallsCeiling?: string;
   overall?: string;
+}
+
+
+// --- NEW UAD 3.6 SECTIONS ---
+
+export interface UadDisasterMitigationItem {
+  /** Category of disaster (e.g. Flood, Wildfire, Wind, Earthquake, Hail). */
+  disasterCategory: string;
+  /** Specific mitigation feature or action taken. */
+  mitigationFeature: string;
+  /** Additional detail about the mitigation. */
+  detail: string | null;
+}
+
+export interface UadDisasterMitigation {
+  /** Individual mitigation features/actions. */
+  items: UadDisasterMitigationItem[];
+  /** Community-level programs (FEMA CRS, Firewise, StormReady, etc.). */
+  communityPrograms: string | null;
+  /** Narrative commentary on disaster mitigation. */
+  narrative: string | null;
+}
+
+export interface UadEnergyFeature {
+  /** Feature name (e.g. Solar Panels, Insulation Upgrade, Energy Star Appliances). */
+  feature: string;
+  /** Additional description. */
+  detail: string | null;
+  /** Estimated market impact (e.g. Beneficial, Neutral, Adverse). */
+  impact: string | null;
+}
+
+export interface UadEnergyEfficiency {
+  /** Individual energy/green features. */
+  features: UadEnergyFeature[];
+  /** Renewable energy components (solar, wind, geothermal, etc.). */
+  renewableEnergyComponent: string | null;
+  /** Building certification (LEED, Energy Star, HERS, etc.). */
+  buildingCertification: string | null;
+  /** Numeric energy efficiency rating (e.g. HERS index). */
+  energyEfficiencyRating: number | null;
+  /** Narrative commentary. */
+  narrative: string | null;
+}
+
+export interface UadManufacturedHome {
+  /** Whether a HUD data plate is present. */
+  hudDataPlatePresent: boolean | null;
+  /** HUD label number(s). */
+  hudLabelNumbers: string | null;
+  /** Manufacturer name. */
+  manufacturer: string | null;
+  /** Model name/number. */
+  model: string | null;
+  /** Serial number. */
+  serialNumber: string | null;
+  /** Year manufactured. */
+  yearManufactured: number | null;
+  /** Width type (Single-Wide, Double-Wide, Triple-Wide). */
+  widthType: string | null;
+  /** Invoice cost at time of purchase. */
+  invoiceCost: number | null;
+  /** Delivery cost. */
+  deliveryCost: number | null;
+  /** Installation cost. */
+  installationCost: number | null;
+  /** Setup cost. */
+  setupCost: number | null;
+  /** Foundation type for the manufactured home. */
+  foundationType: string | null;
+  /** Factory-built certification type if applicable. */
+  factoryBuiltCertification: string | null;
+  /** Narrative commentary. */
+  narrative: string | null;
+}
+
+export interface UadFunctionalObsolescenceItem {
+  /** The feature exhibiting obsolescence. */
+  feature: string;
+  /** Description of the obsolescence. */
+  description: string | null;
+  /** Whether the obsolescence is curable. */
+  curable: boolean | null;
+  /** Additional detail or explanation. */
+  detail: string | null;
+  /** Market impact (dollar amount or descriptive). */
+  impact: string | null;
+  /** Appraiser comment. */
+  comment: string | null;
+}
+
+export interface UadOutbuildingFeature {
+  /** Feature name. */
+  feature: string;
+  /** Description. */
+  detail: string | null;
+}
+
+export interface UadOutbuilding {
+  /** Type (e.g. Barn, Shed, Workshop, Greenhouse, Pool House, Guest House). */
+  type: string;
+  /** Gross building area (sq ft). */
+  gba: number | null;
+  /** Finished area (sq ft). */
+  finishedArea: number | null;
+  /** Unfinished area (sq ft). */
+  unfinishedArea: number | null;
+  /** Volume (cubic ft) -- for volumetric measuring. */
+  volume: number | null;
+  /** Number of bathrooms. */
+  baths: number | null;
+  /** Number of kitchens. */
+  kitchens: number | null;
+  /** HVAC description. */
+  hvac: string | null;
+  /** Utilities (electric, water, sewer). */
+  utilities: string | null;
+  /** Year built. */
+  yearBuilt: number | null;
+  /** Quality rating (Q1-Q6). */
+  quality: string | null;
+  /** Condition rating (C1-C6). */
+  condition: string | null;
+  /** Additional features. */
+  features: UadOutbuildingFeature[];
+  /** Narrative comment. */
+  comment: string | null;
+}
+
+export interface UadVehicleStorage {
+  /** Type: Attached Garage, Detached Garage, Built-In Garage, Carport, None. */
+  type: string;
+  /** Number of vehicle spaces. */
+  spaces: number | null;
+  /** Additional detail (finish, door type, etc.). */
+  detail: string | null;
+  /** Market impact. */
+  impact: string | null;
+  /** Year built (may differ from main dwelling). */
+  yearBuilt: number | null;
+  /** Surface area (sq ft). */
+  surfaceArea: number | null;
+  /** Whether there is interior storage beyond vehicle parking. */
+  interiorStorage: boolean | null;
+}
+
+export interface UadPropertyAmenity {
+  /** Category: Outdoor Accessories, Outdoor Living, Water Features, Whole Home, Miscellaneous. */
+  category: string;
+  /** Feature name (e.g. Patio, Pool, Deck, Fireplace, Fencing). */
+  feature: string;
+  /** Additional detail. */
+  detail: string | null;
+  /** Market impact (Beneficial, Neutral, Adverse). */
+  impact: string | null;
+  /** Appraiser comment. */
+  comment: string | null;
+}
+
+export interface UadFeatureQC {
+  /** Feature name (e.g. Walls, Foundation, Roof, Windows, Kitchen, Bathrooms, Flooring). */
+  feature: string;
+  /** Quality rating (Q1-Q6). */
+  quality: string | null;
+  /** Condition rating (C1-C6). */
+  condition: string | null;
+}
+
+export interface UadOverallQualityCondition {
+  /** Overall quality rating (Q1-Q6). */
+  overallQuality: string | null;
+  /** Overall condition rating (C1-C6). */
+  overallCondition: string | null;
+  /** Per-feature exterior ratings (Walls, Foundation, Roof, Windows). */
+  exteriorFeatures: UadFeatureQC[];
+  /** Per-feature interior ratings (Kitchen, Bathrooms, Flooring, Walls/Trim/Finish). */
+  interiorFeatures: UadFeatureQC[];
+  /** Reconciliation narrative explaining Q/C ratings. */
+  reconciliationNarrative: string | null;
+}
+
+export interface UadSubjectListing {
+  /** Data source (MLS name, public records, etc.). */
+  dataSource: string | null;
+  /** Listing status (Active, Pending, Sold, Withdrawn, Expired, Cancelled). */
+  listingStatus: string | null;
+  /** Listing type (Original, Relisted, Price Change). */
+  listingType: string | null;
+  /** MLS or listing ID number. */
+  listingId: string | null;
+  /** Listing start date (ISO string). */
+  startDate: string | null;
+  /** Listing end date (ISO string). */
+  endDate: string | null;
+  /** Days on market for this listing period. */
+  daysOnMarket: number | null;
+  /** Starting list price. */
+  startingListPrice: number | null;
+  /** Current or final list price. */
+  currentOrFinalListPrice: number | null;
+}
+
+export interface UadUnitRentalInfo {
+  unitIdentifier: string;
+  currentlyRented: boolean;
+  occupancy: string;
+  monthlyRent: number;
+  monthToMonth: boolean;
+  leaseStart: string;
+  rentControl: boolean;
+  rentConcessions: string;
+  utilitiesIncluded: string;
+  furnished: boolean;
+}
+
+export interface UadRentalInformation {
+  rentSchedule: UadUnitRentalInfo[];
+  rentalAnalysisCommentary: string | null;
 }

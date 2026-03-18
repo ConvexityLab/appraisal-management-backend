@@ -7,6 +7,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { ROVManagementService } from '../services/rov-management.service.js';
 import { Logger } from '../utils/logger.js';
+import { WebPubSubService } from '../services/web-pubsub.service.js';
+import { EventCategory, EventPriority } from '../types/events.js';
 import {
   CreateROVRequestInput,
   UpdateROVResearchInput,
@@ -21,10 +23,42 @@ import {
 export class ROVController {
   private rovService: ROVManagementService;
   private logger: Logger;
+  private webPubSub: WebPubSubService | null = null;
 
   constructor() {
     this.rovService = new ROVManagementService();
     this.logger = new Logger();
+    try {
+      this.webPubSub = new WebPubSubService();
+    } catch {
+      this.logger.warn('WebPubSub unavailable — ROV notifications disabled');
+    }
+  }
+
+  /**
+   * Best-effort ROV lifecycle broadcast.
+   */
+  private async broadcastROVEvent(
+    tenantId: string,
+    eventType: string,
+    title: string,
+    message: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.webPubSub) return;
+    try {
+      await this.webPubSub.sendToGroup(`tenant:${tenantId}`, {
+        id: `rov-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        title,
+        message,
+        priority: EventPriority.HIGH,
+        category: EventCategory.ROV,
+        targets: [],
+        data: { eventType, tenantId, ...data },
+      });
+    } catch (err) {
+      this.logger.warn('WebPubSub ROV broadcast failed', { eventType, error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   /**
@@ -56,6 +90,7 @@ export class ROVController {
       const result = await this.rovService.createROVRequest(input, userId, tenantId);
 
       if (result.success) {
+        await this.broadcastROVEvent(tenantId, 'rov.created', 'ROV Request Created', `New ROV request submitted for order ${input.orderId}`, { rovId: result.data?.id, orderId: input.orderId });
         res.status(201).json({
           success: true,
           data: result.data,
@@ -177,6 +212,7 @@ export class ROVController {
       const { id } = req.params;
       const { assignedTo, assignedToEmail } = req.body;
       const userId = (req as any).user?.id || 'system';
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
 
       if (!id || !assignedTo || !assignedToEmail) {
         res.status(400).json({
@@ -191,6 +227,7 @@ export class ROVController {
       const result = await this.rovService.assignROVRequest(id, assignedTo, assignedToEmail, userId);
 
       if (result.success) {
+        await this.broadcastROVEvent(tenantId, 'rov.assigned', 'ROV Request Assigned', `ROV request ${id} assigned to ${assignedTo}`, { rovId: id, assignedTo, assignedToEmail });
         res.json({
           success: true,
           data: result.data,
@@ -262,6 +299,7 @@ export class ROVController {
       const { id } = req.params;
       const userId = (req as any).user?.id || 'system';
       const userEmail = (req as any).user?.email || 'system@example.com';
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
 
       if (!id) {
         res.status(400).json({
@@ -287,6 +325,7 @@ export class ROVController {
       const result = await this.rovService.submitROVResponse(input, userId, userEmail);
 
       if (result.success) {
+        await this.broadcastROVEvent(tenantId, 'rov.decision_issued', 'ROV Decision Issued', `ROV request ${id} decision: ${input.decision}`, { rovId: id, decision: input.decision, newValue: input.newValue });
         res.json({
           success: true,
           data: result.data,
@@ -364,6 +403,113 @@ export class ROVController {
       next(error);
     }
   };
+
+  /**
+   * POST /api/rov/requests/:id/withdraw
+   * Requestor withdraws the reconsideration request.
+   */
+  withdrawROVRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) { res.status(400).json({ success: false, error: 'ROV ID is required' }); return; }
+
+      const withdrawnBy = (req as any).user?.id || 'system';
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const reason: string = req.body.reason || 'No reason provided';
+
+      const result = await this.rovService.withdrawROVRequest(id, withdrawnBy, reason);
+      if (result.success) {
+        await this.broadcastROVEvent(tenantId, 'rov.withdrawn', 'ROV Request Withdrawn', `ROV request ${id} has been withdrawn`, { rovId: id, reason });
+        res.json({ success: true, data: result.data, message: 'ROV request withdrawn' });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      this.logger.error('Error in withdrawROVRequest endpoint', { error, rovId: req.params.id });
+      next(error);
+    }
+  };
+
+  /**
+   * POST /api/rov/requests/:id/escalate
+   * Escalate an ROV request to senior management or compliance.
+   */
+  escalateROVRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) { res.status(400).json({ success: false, error: 'ROV ID is required' }); return; }
+      if (!req.body.reason) { res.status(400).json({ success: false, error: 'reason is required' }); return; }
+
+      const escalatedBy = (req as any).user?.id || 'system';
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+
+      const result = await this.rovService.escalateROVRequest(id, escalatedBy, req.body.reason as string);
+      if (result.success) {
+        await this.broadcastROVEvent(tenantId, 'rov.escalated', 'ROV Request Escalated', `ROV request ${id} escalated to senior management`, { rovId: id, reason: req.body.reason, escalatedBy });
+        res.json({ success: true, data: result.data, message: 'ROV request escalated' });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      this.logger.error('Error in escalateROVRequest endpoint', { error, rovId: req.params.id });
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/rov/requests/:id/timeline
+   * Return the ordered audit timeline for an ROV request.
+   */
+  getROVTimeline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) { res.status(400).json({ success: false, error: 'ROV ID is required' }); return; }
+
+      const result = await this.rovService.getROVById(id);
+      if (!result.success || !result.data) {
+        res.status(404).json({ success: false, error: 'ROV request not found' });
+        return;
+      }
+
+      res.json({ success: true, data: result.data.timeline, total: result.data.timeline.length });
+    } catch (error) {
+      this.logger.error('Error in getROVTimeline endpoint', { error, rovId: req.params.id });
+      next(error);
+    }
+  };
+
+  /**
+   * PATCH /api/rov/requests/:id/deadline
+   * Update the SLA due date on an ROV (e.g. regulatory extension granted).
+   * Body: { newDueDate: ISO string }
+   */
+  updateROVDeadline = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) { res.status(400).json({ success: false, error: 'ROV ID is required' }); return; }
+      if (!req.body.newDueDate) { res.status(400).json({ success: false, error: 'newDueDate is required (ISO string)' }); return; }
+
+      const newDueDate = new Date(req.body.newDueDate as string);
+      if (isNaN(newDueDate.getTime())) {
+        res.status(400).json({ success: false, error: `Invalid newDueDate: ${req.body.newDueDate}` });
+        return;
+      }
+
+      const updatedBy = (req as any).user?.id || 'system';
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+
+      const result = await this.rovService.updateROVDeadline(id, newDueDate, updatedBy);
+      if (result.success) {
+        await this.broadcastROVEvent(tenantId, 'rov.deadline_updated', 'ROV Deadline Updated', `SLA deadline for ROV ${id} updated to ${newDueDate.toDateString()}`, { rovId: id, newDueDate: newDueDate.toISOString() });
+        res.json({ success: true, data: result.data, message: 'ROV deadline updated' });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      this.logger.error('Error in updateROVDeadline endpoint', { error, rovId: req.params.id });
+      next(error);
+    }
+  };
 }
 
 /**
@@ -383,6 +529,10 @@ export function createROVRouter(): express.Router {
   router.put('/requests/:id/research', controller.updateROVResearch);
   router.post('/requests/:id/response', controller.submitROVResponse);
   router.post('/requests/:id/triage', controller.triggerAITriage);
+  router.post('/requests/:id/withdraw', controller.withdrawROVRequest);
+  router.post('/requests/:id/escalate', controller.escalateROVRequest);
+  router.get('/requests/:id/timeline', controller.getROVTimeline);
+  router.patch('/requests/:id/deadline', controller.updateROVDeadline);
 
   // ROV analytics
   router.get('/metrics', controller.getROVMetrics);

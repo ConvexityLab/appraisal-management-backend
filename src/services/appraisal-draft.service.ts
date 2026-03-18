@@ -373,7 +373,13 @@ export class AppraisalDraftService {
       grossLivingArea: (pd.grossLivingArea as number) ?? 0,
       totalRooms: 0,
       bedrooms: (pd.bedrooms as number) ?? 0,
-      bathrooms: (pd.bathrooms as number) ?? 0,
+      // URAR v1.3: populate bathsFull/bathsHalf from order data when present; fall back to
+      // deprecated combined bathrooms for orders that pre-date the v1.3 split.
+      bathsFull: (pd.bathsFull as number) ?? null,
+      bathsHalf: (pd.bathsHalf as number) ?? null,
+      bathrooms: (pd.bathsFull as number) != null
+        ? (pd.bathsFull as number) + ((pd.bathsHalf as number) ?? 0) * 0.5
+        : (pd.bathrooms as number) ?? 0,
       stories: (pd.stories as number) ?? 0,
       lotSizeSqFt: (pd.lotSize as number) ?? 0,
       propertyType: (pd.propertyType as string) ?? '',

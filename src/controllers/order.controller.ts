@@ -50,6 +50,7 @@ import type { AuthorizationMiddleware } from '../middleware/authorization.middle
 import type { AppraisalOrder } from '../types/index.js';
 import { DuplicateOrderDetectionService } from '../services/duplicate-order-detection.service.js';
 import { WaiverScreeningService } from '../services/waiver-screening.service.js';
+import { ComplianceService } from '../services/ComplianceService.js';
 
 const logger = new Logger('OrderController');
 
@@ -114,6 +115,7 @@ export class OrderController {
   private _documentService: DocumentService | null = null;
   private duplicateDetection: DuplicateOrderDetectionService;
   private waiverScreening: WaiverScreeningService;
+    private complianceService: ComplianceService;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -138,6 +140,7 @@ export class OrderController {
     this.orchestrator = new AutoAssignmentOrchestratorService(dbService);
     this.duplicateDetection = new DuplicateOrderDetectionService(dbService);
     this.waiverScreening = new WaiverScreeningService(dbService);
+      this.complianceService = new ComplianceService(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -169,6 +172,7 @@ export class OrderController {
     this.router.post('/:orderId/unassign', this.unassignVendor.bind(this));
     this.router.post('/:orderId/payment', this.markPayment.bind(this));
     this.router.get('/:orderId/timeline', this.getOrderTimeline.bind(this));
+      this.router.post('/:orderId/compliance-check', this.evaluateCompliance.bind(this));
     this.router.get('/:orderId/auto-assignment', this.getAutoAssignmentStatus.bind(this));
     this.router.post('/:orderId/trigger-auto-assignment', this.triggerAutoAssignment.bind(this));
     this.router.post('/:orderId/vendor-bid/:bidId/accept', this.acceptVendorBid.bind(this));
@@ -1502,7 +1506,41 @@ export class OrderController {
    *   - Audit trail events (from the audit-trail container)
    *   - SLA tracking records (from the sla-tracking container)
    */
-  public async getOrderTimeline(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  public async evaluateCompliance(req: UnifiedAuthRequest, res: Response): Promise<void> {
+      try {
+        const { orderId } = req.params;
+        if (!orderId) {
+          res.status(400).json({ error: 'orderId is required' });
+          return;
+        }
+
+        const results = await this.complianceService.evaluateOrderCompliance(orderId);
+
+        // Add an audit trail event for the compliance evaluation
+        const now = new Date();
+        this.auditService.log({
+          actor: { userId: req.user?.id || 'system', email: req.user?.email || 'system' },
+          action: 'order.compliance_evaluated',
+          resource: { type: 'order', id: orderId },
+          metadata: {
+            message: `Compliance evaluation completed with ${results.length} violations found.`
+          }
+        });
+
+        res.json({
+          success: true,
+          data: results
+        });
+      } catch (error) {
+        logger.error('Error evaluating MOP compliance', { error: error instanceof Error ? error.message : String(error) });
+        res.status(500).json({
+          error: 'Failed to evaluate compliance',
+          details: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    public async getOrderTimeline(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const { orderId } = req.params;
       if (!orderId) {
@@ -2008,3 +2046,8 @@ export class OrderController {
     return result;
   }
 }
+
+
+
+
+

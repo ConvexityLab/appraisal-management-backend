@@ -190,6 +190,9 @@ AZURE_AD_CLIENT_ID=your-client-id
 # Property Intelligence (Required)
 GOOGLE_MAPS_API_KEY=your-google-maps-key
 
+# Payments & Billing
+STRIPE_SECRET_KEY=sk_test_...
+
 # Optional Services
 AZURE_MAPS_SUBSCRIPTION_KEY=your-azure-maps-key
 AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/

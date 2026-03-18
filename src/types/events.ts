@@ -29,6 +29,13 @@ export enum EventCategory {
   SYSTEM = 'system',
   NOTIFICATION = 'notification',
   ASSIGNMENT = 'assignment',
+  PAYMENT = 'payment',
+  SUBMISSION = 'submission',
+  ESCALATION = 'escalation',
+  ROV = 'rov',
+  DELIVERY = 'delivery',
+  CONSENT = 'consent',
+  NEGOTIATION = 'negotiation',
 }
 
 // Order-related events
@@ -660,6 +667,284 @@ export interface SupervisionCosignedEvent extends BaseEvent {
   };
 }
 
+// ── Payment Events ────────────────────────────────────────────────────────
+
+export interface PaymentInitiatedEvent extends BaseEvent {
+  type: 'payment.initiated';
+  category: EventCategory.PAYMENT;
+  data: {
+    paymentId: string;
+    orderId: string;
+    tenantId: string;
+    amountCents: number;
+    currency: string;
+    paymentMethod: string;
+    payee: string;  // 'vendor' | 'borrower' | 'client'
+    priority: EventPriority;
+  };
+}
+
+export interface PaymentCompletedEvent extends BaseEvent {
+  type: 'payment.completed';
+  category: EventCategory.PAYMENT;
+  data: {
+    paymentId: string;
+    orderId: string;
+    tenantId: string;
+    amountCents: number;
+    providerTransactionId: string;
+    priority: EventPriority;
+  };
+}
+
+export interface PaymentFailedEvent extends BaseEvent {
+  type: 'payment.failed';
+  category: EventCategory.PAYMENT;
+  data: {
+    paymentId: string;
+    orderId: string;
+    tenantId: string;
+    amountCents: number;
+    failureReason: string;
+    priority: EventPriority;
+  };
+}
+
+// ── Submission Events ─────────────────────────────────────────────────────
+
+export interface SubmissionUploadedEvent extends BaseEvent {
+  type: 'submission.uploaded';
+  category: EventCategory.SUBMISSION;
+  data: {
+    submissionId: string;
+    orderId: string;
+    tenantId: string;
+    vendorId: string;
+    documentCount: number;
+    priority: EventPriority;
+  };
+}
+
+export interface SubmissionApprovedEvent extends BaseEvent {
+  type: 'submission.approved';
+  category: EventCategory.SUBMISSION;
+  data: {
+    submissionId: string;
+    orderId: string;
+    tenantId: string;
+    approvedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface SubmissionRejectedEvent extends BaseEvent {
+  type: 'submission.rejected';
+  category: EventCategory.SUBMISSION;
+  data: {
+    submissionId: string;
+    orderId: string;
+    tenantId: string;
+    rejectedBy: string;
+    reason: string;
+    priority: EventPriority;
+  };
+}
+
+export interface SubmissionRevisionRequestedEvent extends BaseEvent {
+  type: 'submission.revision.requested';
+  category: EventCategory.SUBMISSION;
+  data: {
+    submissionId: string;
+    orderId: string;
+    tenantId: string;
+    requestedBy: string;
+    revisionNotes: string;
+    priority: EventPriority;
+  };
+}
+
+// ── Escalation Events ─────────────────────────────────────────────────────
+
+export interface EscalationCreatedEvent extends BaseEvent {
+  type: 'escalation.created';
+  category: EventCategory.ESCALATION;
+  data: {
+    escalationId: string;
+    orderId: string;
+    tenantId: string;
+    reason: string;
+    escalatedBy: string;
+    assignedTo?: string;
+    priority: EventPriority;
+  };
+}
+
+export interface EscalationResolvedEvent extends BaseEvent {
+  type: 'escalation.resolved';
+  category: EventCategory.ESCALATION;
+  data: {
+    escalationId: string;
+    orderId: string;
+    tenantId: string;
+    resolvedBy: string;
+    resolution: string;
+    priority: EventPriority;
+  };
+}
+
+// ── ROV Events ────────────────────────────────────────────────────────────
+
+export interface RovCreatedEvent extends BaseEvent {
+  type: 'rov.created';
+  category: EventCategory.ROV;
+  data: {
+    rovId: string;
+    orderId: string;
+    tenantId: string;
+    requestorType: string;
+    challengeReason: string;
+    originalValue: number;
+    requestedValue?: number;
+    priority: EventPriority;
+  };
+}
+
+export interface RovAssignedEvent extends BaseEvent {
+  type: 'rov.assigned';
+  category: EventCategory.ROV;
+  data: {
+    rovId: string;
+    orderId: string;
+    tenantId: string;
+    assignedTo: string;
+    priority: EventPriority;
+  };
+}
+
+export interface RovDecisionIssuedEvent extends BaseEvent {
+  type: 'rov.decision.issued';
+  category: EventCategory.ROV;
+  data: {
+    rovId: string;
+    orderId: string;
+    tenantId: string;
+    decision: 'upheld' | 'value_changed' | 'withdrawn';
+    updatedValue?: number;
+    decidedBy: string;
+    priority: EventPriority;
+  };
+}
+
+// ── Delivery Events ───────────────────────────────────────────────────────
+
+export interface DeliveryReceiptConfirmedEvent extends BaseEvent {
+  type: 'delivery.receipt.confirmed';
+  category: EventCategory.DELIVERY;
+  data: {
+    packageId: string;
+    orderId: string;
+    tenantId: string;
+    confirmedBy: string;
+    channel: 'portal' | 'email' | 'api';
+    priority: EventPriority;
+  };
+}
+
+export interface DeliveryReceiptOpenedEvent extends BaseEvent {
+  type: 'delivery.receipt.opened';
+  category: EventCategory.DELIVERY;
+  data: {
+    packageId: string;
+    orderId: string;
+    tenantId: string;
+    openedBy: string;
+    priority: EventPriority;
+  };
+}
+
+// ── Consent Events ────────────────────────────────────────────────────────
+
+export interface ConsentGivenEvent extends BaseEvent {
+  type: 'consent.given';
+  category: EventCategory.CONSENT;
+  data: {
+    consentId: string;
+    orderId: string;
+    tenantId: string;
+    borrowerEmail: string;
+    disclosureVersion: string;
+    method: 'portal' | 'email_link' | 'esign';
+    priority: EventPriority;
+  };
+}
+
+export interface ConsentDeniedEvent extends BaseEvent {
+  type: 'consent.denied';
+  category: EventCategory.CONSENT;
+  data: {
+    consentId: string;
+    orderId: string;
+    tenantId: string;
+    borrowerEmail: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ConsentWithdrawnEvent extends BaseEvent {
+  type: 'consent.withdrawn';
+  category: EventCategory.CONSENT;
+  data: {
+    consentId: string;
+    orderId: string;
+    tenantId: string;
+    borrowerEmail: string;
+    withdrawnAt: string;
+    priority: EventPriority;
+  };
+}
+
+// ── Negotiation Events ────────────────────────────────────────────────────
+
+export interface NegotiationCounterOfferSubmittedEvent extends BaseEvent {
+  type: 'negotiation.counter_offer.submitted';
+  category: EventCategory.NEGOTIATION;
+  data: {
+    negotiationId: string;
+    orderId: string;
+    tenantId: string;
+    originalFee: number;
+    counterFee: number;
+    submittedBy: string;  // vendor ID
+    priority: EventPriority;
+  };
+}
+
+export interface NegotiationAcceptedEvent extends BaseEvent {
+  type: 'negotiation.accepted';
+  category: EventCategory.NEGOTIATION;
+  data: {
+    negotiationId: string;
+    orderId: string;
+    tenantId: string;
+    agreedFee: number;
+    acceptedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface NegotiationRejectedEvent extends BaseEvent {
+  type: 'negotiation.rejected';
+  category: EventCategory.NEGOTIATION;
+  data: {
+    negotiationId: string;
+    orderId: string;
+    tenantId: string;
+    rejectedBy: string;
+    reason?: string;
+    priority: EventPriority;
+  };
+}
+
 export type AppEvent = 
   | OrderCreatedEvent
   | OrderStatusChangedEvent
@@ -703,7 +988,34 @@ export type AppEvent =
   | ReviewSLABreachedEvent
   // Broadcast bidding events
   | VendorBidRoundStartedEvent
-  | VendorBidRoundExhaustedEvent;
+  | VendorBidRoundExhaustedEvent
+  // Payment events
+  | PaymentInitiatedEvent
+  | PaymentCompletedEvent
+  | PaymentFailedEvent
+  // Submission events
+  | SubmissionUploadedEvent
+  | SubmissionApprovedEvent
+  | SubmissionRejectedEvent
+  | SubmissionRevisionRequestedEvent
+  // Escalation events
+  | EscalationCreatedEvent
+  | EscalationResolvedEvent
+  // ROV events
+  | RovCreatedEvent
+  | RovAssignedEvent
+  | RovDecisionIssuedEvent
+  // Delivery events
+  | DeliveryReceiptConfirmedEvent
+  | DeliveryReceiptOpenedEvent
+  // Consent events
+  | ConsentGivenEvent
+  | ConsentDeniedEvent
+  | ConsentWithdrawnEvent
+  // Negotiation events
+  | NegotiationCounterOfferSubmittedEvent
+  | NegotiationAcceptedEvent
+  | NegotiationRejectedEvent;
 
 // Event handler interface
 export interface EventHandler<T extends BaseEvent = BaseEvent> {

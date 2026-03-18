@@ -1,15 +1,11 @@
 /**
  * Stripe Payment Provider
- * 
+ *
  * Wraps the Stripe SDK behind the PaymentProvider interface.
- * 
- * To activate:
- *   1. pnpm add stripe
- *   2. Set STRIPE_SECRET_KEY in .env  (sk_test_… for sandbox)
- *   3. Uncomment the SDK import and constructor block below
- *   4. The factory in ./index.ts will auto-select this provider
- * 
- * Everything else (service, controller, routes, UI) stays untouched.
+ * The factory in ./index.ts auto-selects this provider when STRIPE_SECRET_KEY is set.
+ *
+ * Required env vars:
+ *   STRIPE_SECRET_KEY  — sk_test_… for sandbox, sk_live_… for production
  */
 
 import { PaymentStatus } from '../../types/payment.types.js';

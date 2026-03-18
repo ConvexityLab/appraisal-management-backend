@@ -5,6 +5,15 @@
 		},
 		{
 			"path": "."
+		},
+		{
+			"path": "../axiom"
+		},
+		{
+			"path": "../mortgage-origination-platform"
+		},
+		{
+			"path": "../prio"
 		}
 	],
 	"settings": {}
