@@ -312,9 +312,41 @@ jobs:
         echo " Functions Container App: $FUNCTIONS_APP_NAME"
         echo " Resource Group: $RG_NAME"
         
+    - name: Resolve frontend SWA hostname
+      id: swa
+      run: |
+        RG_NAME="${{ steps.get-app.outputs.resource-group }}"
+        SWA_HOSTNAME=$(az staticwebapp list \
+          --resource-group "$RG_NAME" \
+          --query "[0].defaultHostname" -o tsv 2>/dev/null || true)
+        if [[ -n "$SWA_HOSTNAME" ]]; then
+          echo "swa-origin=https://$SWA_HOSTNAME" >> "$GITHUB_OUTPUT"
+          echo " SWA origin: https://$SWA_HOSTNAME"
+        else
+          echo "swa-origin=" >> "$GITHUB_OUTPUT"
+          echo " No SWA found in $RG_NAME — ALLOWED_ORIGINS will use secret value only"
+        fi
+
     - name: Update API Container App with new image
+      env:
+        SECRET_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+        SWA_ORIGIN: ${{ steps.swa.outputs.swa-origin }}
       run: |
         echo " Updating Container App with new image and environment config..."
+
+        # Build ALLOWED_ORIGINS: secret value + dynamically resolved SWA origin
+        FINAL_ORIGINS="${SECRET_ORIGINS}"
+        if [[ -n "$SWA_ORIGIN" ]]; then
+          if [[ -n "$FINAL_ORIGINS" ]]; then
+            # Append SWA origin only if not already present
+            if [[ "$FINAL_ORIGINS" != *"$SWA_ORIGIN"* ]]; then
+              FINAL_ORIGINS="${FINAL_ORIGINS},${SWA_ORIGIN}"
+            fi
+          else
+            FINAL_ORIGINS="$SWA_ORIGIN"
+          fi
+        fi
+        echo " ALLOWED_ORIGINS: $FINAL_ORIGINS"
         
         # Determine scaling based on environment
         if [["${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
@@ -357,7 +389,7 @@ jobs:
             NODE_ENV=production \
             AZURE_API_CLIENT_ID=${{ secrets.AZURE_API_CLIENT_ID }} \
             AZURE_AUDIENCE=${{ secrets.AZURE_API_CLIENT_ID }} \
-            ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} \
+            ALLOWED_ORIGINS="${FINAL_ORIGINS}" \
             AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
             AZURE_OPENAI_DEPLOYMENT=${{ secrets.AZURE_OPENAI_DEPLOYMENT }} \
             AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
