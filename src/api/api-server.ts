@@ -150,6 +150,7 @@ import { createPortalRouter } from '../controllers/portal.controller.js';
 import { createCommunicationRouter } from '../controllers/communication.controller';
 
 // Import Vendor Timeout Job (Phase 4.2)
+import { QuickBooksTokenRefreshJob } from '../jobs/quickbooks-token-refresh.job.js';
 import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
 
 // Import Phase 3 background jobs
@@ -261,6 +262,7 @@ import {
   createFieldReviewTriggerRouter,
   createArchivingRetentionRouter,
 } from '../controllers/phase1.controller.js';
+import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
 
 import { 
   authenticateJWT, 
@@ -891,6 +893,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/wip-board',
       this.unifiedAuth.authenticate(),
       createWIPBoardRouter(this.dbService)
+    );
+
+    // AI Agentic Workflow / Structured Parsing
+    this.app.use('/api/ai',
+      this.unifiedAuth.authenticate(),
+      createAiParsingRouter()
     );
 
     // Post-Delivery Tasks — 1004D tracking, archiving, follow-ups (Phase 1.10)
@@ -3750,3 +3758,5 @@ export class AppraisalManagementAPIServer {
 
 // Export for use
 export default AppraisalManagementAPIServer;
+
+

@@ -153,6 +153,7 @@ const CONTAINER_PARTITION_KEYS: Record<string, string> = {
   'reports':                  '/tenantId',
   'engagement-audit-events':  '/engagementId',
   'appraisal-drafts':         '/orderId',
+  'integrations':             '/tenantId',
 };
 
 async function main(): Promise<void> {

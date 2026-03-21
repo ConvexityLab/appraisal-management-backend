@@ -36,6 +36,14 @@ export interface Appraiser {
   currentWorkload: number;
   maxCapacity: number;
   
+  // Calendar & Scheduling limits (Pillar 3)
+  outOfOffice?: {
+    startDate: string; // ISO 8601
+    endDate: string; // ISO 8601
+    reason?: string;
+  }[];
+  dailyCapacitySlots?: number;
+
   // Conflict of Interest
   conflictProperties: ConflictProperty[];
 

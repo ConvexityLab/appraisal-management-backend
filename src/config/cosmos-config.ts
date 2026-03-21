@@ -49,7 +49,8 @@ export class CosmosDbConfig {
       orders: process.env.COSMOS_CONTAINER_ORDERS || 'orders',
       vendors: process.env.COSMOS_CONTAINER_VENDORS || 'vendors',
       propertySummaries: process.env.COSMOS_CONTAINER_PROPERTY_SUMMARIES || 'property-summaries',
-      properties: process.env.COSMOS_CONTAINER_PROPERTIES || 'properties'
+      properties: process.env.COSMOS_CONTAINER_PROPERTIES || 'properties',
+      integrations: process.env.COSMOS_CONTAINER_INTEGRATIONS || 'integrations'
     };
 
     // Performance settings

@@ -83,6 +83,7 @@ export interface PropertyDetails {
   propertyType: 'SINGLE_FAMILY' | 'CONDO' | 'TOWNHOME' | 'MULTI_FAMILY' | 'COMMERCIAL' | 'LAND';
   yearBuilt?: number;
   squareFootage?: number;
+    estimatedValue?: number;
   lotSize?: number;
   bedrooms?: number;
   bathrooms?: number;
@@ -103,6 +104,7 @@ export interface ClientInformation {
   phone: string;
   address: string;
   loanNumber?: string;
+  loanType?: 'CONVENTIONAL' | 'FHA' | 'VA' | 'USDA' | 'NON_QM';
   /** Client’s own internal reference number (separate from loanNumber) */
   clientReferenceNumber?: string;
   // ── Borrower ────────────────────────────────────────────────────────────
@@ -186,6 +188,7 @@ export type BillingMethod =
 
 export interface AppraisalOrder {
   id: string;
+  tenantId?: string;
   orderNumber: string; // Human-readable order number
   clientInformation: ClientInformation;
   propertyDetails: PropertyDetails;
@@ -207,8 +210,10 @@ export interface AppraisalOrder {
   // Delivery information
   deliveredAt?: Date;
   completedAt?: Date;
+
+  // Financial information & Integration links
+  quickbooksInvoiceId?: string; // Links this order to the QuickBooks Invoice (Accounts Receivable) Pushed from L1
   
-  // Financial information
   orderValue: number;
   vendorFee?: number;
   additionalFees?: Array<{
@@ -374,6 +379,7 @@ export interface VendorProfile {
   alternatePhone?: string;
   
   // Business information
+  quickbooksId?: string; // Links this vendor to QuickBooks Vendor record
   address: string;
   city: string;
   state: string;

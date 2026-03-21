@@ -308,6 +308,20 @@ export function createEngagementRouter(dbService: CosmosDbService) {
           req.body.status as EngagementStatus,
           updatedBy,
         );
+
+        // QuickBooks Integration: Auto-generate AP Bill for Vendor on Engagement completion
+        if (req.body.status === EngagementStatus.DELIVERED) {
+          import('../services/quickbooks.service.js').then(({ QuickBooksService }) => {
+            const qbService = new QuickBooksService();
+            const vendorId = (engagement as any).vendorId || (engagement as any).vendor?.id || "1";
+            qbService.createBill(engagement, vendorId).catch((err: any) => {
+              logger.error('Failed to auto-generate QuickBooks Bill on engagement completion', { engagementId: req.params['id'], error: err });
+            });
+          }).catch((err: any) => {
+            logger.error('Failed to load QuickBooksService for auto-bill', { engagementId: req.params['id'], error: err });
+          });
+        }
+
         return res.json({ success: true, data: engagement });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);

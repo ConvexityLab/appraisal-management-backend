@@ -288,12 +288,13 @@ export const createCollaborationRouter = (): Router => {
   //
   // Maps logical container IDs (e.g. "comp-order-005") to service-assigned UUIDs
   // (Tinylicious or Azure Fluid Relay both assign their own IDs on createContainer).
-  // Stored in-process for local dev. For production, move to Cosmos DB or Redis.
+  // Persisted to Cosmos DB (container: fluid-container-registry) so mappings
+  // survive backend restarts and are shared across all instances.
   //
   // This is the rendezvous mechanism that lets two different browsers (with
   // separate localStorage) find the same Fluid document.
 
-  const containerRegistry = new Map<string, string>();
+  const REGISTRY_CONTAINER = 'fluid-container-registry';
 
   /**
    * GET /container-registry/:logicalId
@@ -311,12 +312,21 @@ export const createCollaborationRouter = (): Router => {
         res.status(400).json({ success: false, error: { code: 'MISSING_LOGICAL_ID' } });
         return;
       }
-      const serviceId = containerRegistry.get(logicalId);
-      if (!serviceId) {
-        res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
-        return;
+      try {
+        const doc = await dbService.getDocument<{ id: string; serviceId: string; tenantId: string }>(
+          REGISTRY_CONTAINER,
+          logicalId,
+          req.user.tenantId,
+        );
+        if (!doc || !doc.serviceId) {
+          res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+          return;
+        }
+        res.json({ success: true, data: { serviceId: doc.serviceId } });
+      } catch (err) {
+        logger.error('Container registry: lookup failed', { logicalId, err });
+        res.status(500).json({ success: false, error: { code: 'REGISTRY_LOOKUP_FAILED' } });
       }
-      res.json({ success: true, data: { serviceId } });
     },
   );
 
@@ -346,9 +356,20 @@ export const createCollaborationRouter = (): Router => {
         });
         return;
       }
-      containerRegistry.set(logicalId, serviceId);
-      logger.info('Container registry: registered', { logicalId, serviceId, userId: req.user.id });
-      res.json({ success: true, data: { serviceId } });
+      try {
+        await dbService.upsertDocument(REGISTRY_CONTAINER, {
+          id: logicalId,
+          tenantId: req.user.tenantId,
+          serviceId,
+          registeredBy: req.user.id,
+          registeredAt: new Date().toISOString(),
+        });
+        logger.info('Container registry: registered', { logicalId, serviceId, userId: req.user.id });
+        res.json({ success: true, data: { serviceId } });
+      } catch (err) {
+        logger.error('Container registry: upsert failed', { logicalId, serviceId, err });
+        res.status(500).json({ success: false, error: { code: 'REGISTRY_UPSERT_FAILED' } });
+      }
     },
   );
 

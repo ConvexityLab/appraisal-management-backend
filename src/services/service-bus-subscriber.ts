@@ -17,6 +17,7 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
   private readonly subscriptionName: string;
   private readonly logger: Logger;
   private isListening: boolean = false;
+  private startPromise?: Promise<void>;
 
   constructor(
     serviceBusNamespace?: string,
@@ -137,57 +138,64 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
     }
   }
 
-  private async startListening(): Promise<void> {
-    if (this.isListening) return;
+  private startListening(): Promise<void> {
+    if (this.isListening) return Promise.resolve();
+    if (this.startPromise) return this.startPromise;
 
-    try {
-      const receiver = await this.getReceiver('default');
-      this.isListening = true;
+    this.startPromise = (async () => {
+      try {
+        const receiver = await this.getReceiver('default');
+        this.isListening = true;
 
-      receiver.subscribe({
-        processMessage: async (message: ServiceBusReceivedMessage) => {
-          await this.handleMessage(message);
-        },
-        processError: async (args: any) => {
-          const err = args.error;
-          const code = err?.code || 'UNKNOWN';
+        receiver.subscribe({
+          processMessage: async (message: ServiceBusReceivedMessage) => {
+            await this.handleMessage(message);
+          },
+          processError: async (args: any) => {
+            const err = args.error;
+            const code = err?.code || 'UNKNOWN';
 
-          // MessagingEntityNotFound means the topic or subscription doesn't exist
-          // in Azure. The SDK will retry forever, creating a hot error loop that
-          // can destabilise the whole process. Close the receiver and give up.
-          if (code === 'MessagingEntityNotFoundError' || err?.message?.includes('MessagingEntityNotFound')) {
-            this.logger.error(
-              `Service Bus subscription not found — closing receiver to stop retry loop. ` +
-              `Topic: ${this.topicName}, Subscription: ${this.subscriptionName}. ` +
-              `Create the subscription in Azure before restarting.`,
-              { code, entityPath: args.entityPath }
-            );
-            this.isListening = false;
-            // Close asynchronously — don't await inside processError to avoid SDK deadlock
-            receiver.close().catch(() => {});
-            this.receivers.delete('default');
-            return;
+            // MessagingEntityNotFound means the topic or subscription doesn't exist
+            // in Azure. The SDK will retry forever, creating a hot error loop that
+            // can destabilise the whole process. Close the receiver and give up.
+            if (code === 'MessagingEntityNotFoundError' || err?.message?.includes('MessagingEntityNotFound')) {
+              this.logger.error(
+                `Service Bus subscription not found — closing receiver to stop retry loop. ` +
+                `Topic: ${this.topicName}, Subscription: ${this.subscriptionName}. ` +
+                `Create the subscription in Azure before restarting.`,
+                { code, entityPath: args.entityPath }
+              );
+              this.isListening = false;
+              delete this.startPromise;
+              // Close asynchronously — don't await inside processError to avoid SDK deadlock
+              receiver.close().catch(() => {});
+              this.receivers.delete('default');
+              return;
+            }
+
+            this.logger.error('Service Bus message processing error', { 
+              message: err?.message || 'Unknown error',
+              code,
+              name: err?.name || 'Error',
+              source: args.errorSource,
+              entityPath: args.entityPath
+            });
           }
+        });
 
-          this.logger.error('Service Bus message processing error', { 
-            message: err?.message || 'Unknown error',
-            code,
-            name: err?.name || 'Error',
-            source: args.errorSource,
-            entityPath: args.entityPath
-          });
-        }
-      });
+        this.logger.info('Started listening for Service Bus messages', {
+          topic: this.topicName,
+          subscription: this.subscriptionName
+        });
+      } catch (error) {
+        this.logger.error('Failed to start listening', { error });
+        this.isListening = false;
+        delete this.startPromise;
+        throw error;
+      }
+    })();
 
-      this.logger.info('Started listening for Service Bus messages', {
-        topic: this.topicName,
-        subscription: this.subscriptionName
-      });
-    } catch (error) {
-      this.logger.error('Failed to start listening', { error });
-      this.isListening = false;
-      throw error;
-    }
+    return this.startPromise;
   }
 
   private async handleMessage(message: ServiceBusReceivedMessage): Promise<void> {

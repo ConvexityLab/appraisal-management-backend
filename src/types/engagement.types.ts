@@ -201,8 +201,8 @@ export interface Engagement {
 
   // ── Financials ────────────────────────────────────────────────────────────
   /** Sum of all EngagementProduct fees across all loans — what we charge the lender */
-  totalEngagementFee?: number;
-
+  totalEngagementFee?: number;  /** Links this Engagement to the QuickBooks Bill (Accounts Payable) generated for our vendors */
+  quickbooksBillId?: string;
   // ── Instructions ──────────────────────────────────────────────────────────
   accessInstructions?: string;
   specialInstructions?: string;

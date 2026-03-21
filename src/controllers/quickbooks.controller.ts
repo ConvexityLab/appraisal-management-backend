@@ -23,6 +23,9 @@ export class QuickBooksController {
     router.get('/company', this.getCompany.bind(this));
     router.get('/summary', this.getSummary.bind(this));
 
+    // Webhooks endpoint
+    router.post('/webhook', express.raw({ type: 'application/json' }), this.webhook.bind(this));
+
     return router;
   }
 
@@ -38,7 +41,7 @@ export class QuickBooksController {
       logger.info('Redirecting to QuickBooks for OAuth', { authUri });
       res.redirect(authUri);
     } catch (error) {
-      logger.error('Error generating QB connect URL', error);
+      logger.error('Error generating QB connect URL', error as Error);
       res.status(500).json({ error: 'Failed to generate QuickBooks authorization URL.' });
     }
   }
@@ -54,7 +57,7 @@ export class QuickBooksController {
       // Store the realmId (This is the specific QuickBooks Company ID we just linked to)
       const realmId = req.query.realmId as string;
       if (realmId) {
-        qbService.setRealmId(realmId);
+        await qbService.setRealmId(realmId);
       }
 
       // Exchange the code for a token
@@ -63,7 +66,7 @@ export class QuickBooksController {
       await qbService.createToken(parseRedirect);
 
       // Print tokens for easy CLI copy pasting!
-      const finalTokens = qbService.getTokens();
+      const finalTokens = await qbService.getTokens();
       console.log('\n\n======================================================');
       console.log('✅ QuickBooks OAuth Tokens Captured!');
       console.log('======================================================');
@@ -77,7 +80,7 @@ export class QuickBooksController {
       
       res.redirect(`${feRedirect}/accounting`);
     } catch (error) {
-      logger.error('Error in QB Callback exchange', error);
+      logger.error('Error in QB Callback exchange', error as Error);
       res.status(500).send('OAuth exchange failed. Check server logs.');
     }
   }
@@ -86,9 +89,9 @@ export class QuickBooksController {
    * Check if we have an active QB connection.
    * Route: GET /api/v1/quickbooks/status
    */
-  private status(req: Request, res: Response, next: NextFunction) {
+  private async status(req: Request, res: Response, next: NextFunction) {
     const qbService = QuickBooksOAuthService.getInstance();
-    const tokens = qbService.getTokens();
+    const tokens = await qbService.getTokens();
 
     if (tokens.accessToken && tokens.realmId) {
       res.json({
@@ -131,6 +134,64 @@ export class QuickBooksController {
     } catch (error: any) {
       logger.error('Failed to retrieve QuickBooks summary', error);
       res.status(500).json({ error: error.message || 'Error fetching summary' });
+    }
+  }
+
+  /**
+   * Intuit Webhook Endpoint
+   * Used for bidirectional syncing (e.g. knowing when a Client pays an AR Invoice or Vendor is Paid)
+   * Route: POST /api/v1/quickbooks/webhook
+   */
+  private async webhook(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const webhookPayload = req.body.toString();
+      const intuitSignature = req.headers['intuit-signature'];
+      
+      logger.info('Received QuickBooks Webhook', { signature: intuitSignature, body: webhookPayload });
+
+      // @ts-ignore - To parse it back to JSON
+      const body = JSON.parse(webhookPayload);
+
+      // Verify the signature against process.env.QUICKBOOKS_WEBHOOK_TOKEN
+      const crypto = await import('crypto');
+      const webhookToken = process.env.QUICKBOOKS_WEBHOOK_TOKEN;
+      
+      if (webhookToken && intuitSignature) {
+        const hash = crypto.createHmac('sha256', webhookToken).update(webhookPayload).digest('base64');
+        if (hash !== intuitSignature) {
+          logger.warn('QuickBooks Webhook Signature mismatch', { expected: hash, received: intuitSignature });
+          // Still returning 200 to Acknowledge to Intuit
+          res.status(200).send('Signature mismatch');
+          return;
+        }
+      }
+
+      const qbOperations = new QuickBooksService();
+      
+      // Process events
+      if (body.eventNotifications && Array.isArray(body.eventNotifications)) {
+        for (const notif of body.eventNotifications) {
+          if (notif.dataChangeEvent && Array.isArray(notif.dataChangeEvent.entities)) {
+            for (const entity of notif.dataChangeEvent.entities) {
+              const { name, id, operation } = entity;
+              logger.info(`QB Webhook Entity Update: ${name} [${id}] - ${operation}`);
+              
+              if ((name === 'Invoice' || name === 'Bill') && operation === 'Update') {
+                // We should ideally sync the status back
+                // This is a Fire-and-forget sync to not hold up the webhook acknowledgement
+                qbOperations.syncStatusFromQuickbooks(name, id).catch((err: any) => {
+                  logger.error(`Failed to sync ${name} ${id} from QuickBooks Webhook`, err);
+                });
+              }
+            }
+          }
+        }
+      }
+
+      res.status(200).send('Acknowledged');
+    } catch (error: any) {
+      logger.error('Error processing QuickBooks Webhook', error);
+      res.status(500).json({ error: error.message || 'Error processing webhook' });
     }
   }
 }

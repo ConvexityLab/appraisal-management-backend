@@ -1,23 +1,23 @@
-// Core domain types for the Appraisal Management System
+﻿// Core domain types for the Appraisal Management System
 
-// ─── Property Data Layer (aggregate root) ────────────────────────────────────
-// PropertyRecord: canonical physical asset — the root of all work entities
+// â”€â”€â”€ Property Data Layer (aggregate root) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PropertyRecord: canonical physical asset â€” the root of all work entities
 // PropertyComparableSale: persisted market transaction events (our comp database)
-// Phase R0 — see PROPERTY_DATA_REFACTOR_PLAN.md
+// Phase R0 â€” see PROPERTY_DATA_REFACTOR_PLAN.md
 export * from './property-record.types.js';
 export * from './comparable-sale.types.js';
 
-// ─── Engagement domain (aggregate root for lender-side work) ─────────────────
+// â”€â”€â”€ Engagement domain (aggregate root for lender-side work) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export * from './engagement.types.js';
 
 // Import geospatial risk assessment types
 export * from './geospatial';
 import { PropertyRiskAssessment } from './geospatial';
 
-// ─── Construction Cost Catalog ────────────────────────────────────────────────
+// â”€â”€â”€ Construction Cost Catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export * from './construction-cost-catalog.types.js';
 
-// ─── Construction Finance Module ──────────────────────────────────────────────
+// â”€â”€â”€ Construction Finance Module â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export * from './construction-loan.types.js';
 export * from './draw-request.types.js';
 export * from './change-order.types.js';
@@ -57,14 +57,14 @@ export interface AppraisalOrder {
   paymentStatus?: PaymentStatus;
   paidAt?: string;
   paymentNotes?: string;
-  // Final report history — all generation attempts embedded in the order, newest first when sorted by createdAt
+  // Final report history â€” all generation attempts embedded in the order, newest first when sorted by createdAt
   finalReports?: FinalReport[];
-  // ── Axiom AI evaluation ─────────────────────────────────────────────────
+  // â”€â”€ Axiom AI evaluation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** Axiom pipelineJobId returned by POST /api/pipelines */
   axiomPipelineJobId?: string;
   /** Axiom evaluation/batch correlation ID */
   axiomEvaluationId?: string;
-  /** Axiom risk score 0–100 */
+  /** Axiom risk score 0â€“100 */
   axiomRiskScore?: number;
   /** Axiom overall decision */
   axiomDecision?: 'ACCEPT' | 'CONDITIONAL' | 'REJECT';
@@ -78,20 +78,20 @@ export interface AppraisalOrder {
   axiomProgramId?: string;
   /** Version of the Axiom evaluation program */
   axiomProgramVersion?: string;
-  // ── Property FK ──────────────────────────────────────────────────────────────
-  /** FK → PropertyRecord.id — the canonical physical property. Added Phase R0.4. */
+  // â”€â”€ Property FK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  /** FK â†’ PropertyRecord.id â€” the canonical physical property. Added Phase R0.4. */
   propertyId?: string;
-  // ── Engagement FK fields ──────────────────────────────────────────────────
+  // â”€â”€ Engagement FK fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the parent Engagement document */
   engagementId?: string;
   /** FK to the specific EngagementLoan within the engagement */
   engagementLoanId?: string;
   /** FK to the specific EngagementProduct within the loan */
   engagementProductId?: string;
-  // ── Report linkage ──────────────────────────────────────────────────────────
+  // â”€â”€ Report linkage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the report document in the reporting container, written back on upsert. */
   reportId?: string;
-  // ── Auto-generation settings ──────────────────────────────────────────────────
+  // â”€â”€ Auto-generation settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** If true, a final report is auto-generated when QC review reaches APPROVED status. */
   autoGenerateReport?: boolean;
   /**
@@ -189,7 +189,7 @@ export interface Vendor {
   paymentHistory?: PaymentRecord[]; // Recent payment history (last 6 months)
   invoiceHistory?: InvoiceRecord[]; // Recent invoices (last 6 months)
 
-  // ── Staff / Internal assignment ───────────────────────────────────────────
+  // â”€â”€ Staff / Internal assignment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * 'internal' = staff member who is assigned directly (no bid loop).
    * 'external' = fee-panel vendor who goes through the bid loop.
@@ -197,7 +197,7 @@ export interface Vendor {
    */
   staffType?: StaffType;
   /**
-   * Specific role — only set when staffType === 'internal'.
+   * Specific role â€” only set when staffType === 'internal'.
    */
   staffRole?: StaffRole;
   /**
@@ -211,7 +211,7 @@ export interface Vendor {
    */
   activeOrderCount?: number;
 
-  // ── Extended profile (Increment 1) ────────────────────────────────────────
+  // â”€â”€ Extended profile (Increment 1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * Weekly work schedule.  Used by the supervisor roster to show "Available now"
    * and by the matching engine to prefer vendors reachable for urgent orders.
@@ -219,14 +219,14 @@ export interface Vendor {
   workSchedule?: WorkScheduleBlock[];
   /**
    * Geographic coverage split into three zones:
-   *   licensed  — states/counties the vendor is legally allowed to work in
-   *   preferred  — areas they actively want work (used for score bonus)
-   *   extended   — areas they will cover with a travel fee
+   *   licensed  â€” states/counties the vendor is legally allowed to work in
+   *   preferred  â€” areas they actively want work (used for score bonus)
+   *   extended   â€” areas they will cover with a travel fee
    */
   geographicCoverage?: GeographicCoverageZones;
   /**
    * Structured capability flags used by the matching engine as hard gates
-   * (e.g. order requires fha_approved → only eligible vendors are sent bids).
+   * (e.g. order requires fha_approved â†’ only eligible vendors are sent bids).
    */
   capabilities?: VendorCapability[];
   /**
@@ -354,7 +354,7 @@ export enum ProductType {
   ANALYSIS_1033 = 'analysis_1033',    // FNMA Form 1033 Individual Appraisal Field Review
 }
 
-// OrderStatus — canonical definition lives in order-status.ts
+// OrderStatus â€” canonical definition lives in order-status.ts
 export { OrderStatus } from './order-status.js';
 export type { OrderStatusConfig, OrderStatusCategory } from './order-status.js';
 export { STATUS_CONFIG, isValidStatusTransition, normalizeOrderStatus, getStatusLabel, getStatusesByCategory, getActiveStatuses, getFinalStatuses } from './order-status.js';
@@ -433,7 +433,7 @@ export type StaffRole =
 
 /**
  * A single block of availability within a weekly recurring schedule.
- * dayOfWeek follows JS convention: 0 = Sunday … 6 = Saturday.
+ * dayOfWeek follows JS convention: 0 = Sunday â€¦ 6 = Saturday.
  * startTime / endTime are 24-hour 'HH:mm' strings.
  */
 export interface WorkScheduleBlock {
@@ -455,7 +455,7 @@ export interface GeographicCoverageZones {
     counties?: string[];
     zipCodes?: string[];
   };
-  /** Areas the vendor actively wants work — score bonus in matching engine. */
+  /** Areas the vendor actively wants work â€” score bonus in matching engine. */
   preferred?: {
     states: string[];
     counties?: string[];
@@ -915,13 +915,14 @@ export interface OrderUpdateData {
   axiomProgramVersion?: string;
 }
 
-// ─── Client (Lender / AMC / Broker) ─────────────────────────────────────────
+// â”€â”€â”€ Client (Lender / AMC / Broker) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ClientStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
 export type ClientType = 'LENDER' | 'AMC' | 'BROKER' | 'CREDIT_UNION' | 'OTHER';
 
 export interface Client {
   id: string;
+  quickbooksId?: string; // Links this client to QuickBooks Customer record
   tenantId: string;
   clientName: string;
   clientType: ClientType;
@@ -968,7 +969,7 @@ export interface UpdateClientRequest {
   status?: ClientStatus;
 }
 
-// ─── Product / Fee Configuration ─────────────────────────────────────────────
+// â”€â”€â”€ Product / Fee Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ProductStatus = 'ACTIVE' | 'INACTIVE';
 
@@ -1023,3 +1024,8 @@ export interface UpdateProductRequest {
   matchingCriteriaSets?: string[];
   autoAwardFirstBid?: boolean;
 }
+export * from './ai-parser.types';
+
+
+
+export * from './ai-parser.types';

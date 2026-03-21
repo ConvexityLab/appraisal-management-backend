@@ -23,6 +23,7 @@
 
 import { Router, Response } from 'express';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { QuickBooksService } from '../services/quickbooks.service.js';
 import { OrderEventService } from '../services/order-event.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
 import { SLATrackingService } from '../services/sla-tracking.service.js';
@@ -798,6 +799,19 @@ export class OrderController {
         }).catch((err) =>
           logger.error('Failed to write audit log for delivery', { orderId, error: err }),
         );
+
+        // QuickBooks Integration: Auto-generate AR Invoice for Client
+        import('../services/quickbooks.service.js').then(({ QuickBooksService }) => {
+          const qbService = new QuickBooksService();
+          if (current.data) {
+            const customerId = current.data.clientId || "1";
+            qbService.createInvoice(current.data, customerId).catch(err => {
+              logger.error('Failed to auto-generate QuickBooks Invoice on order delivery', { orderId, error: err });
+            });
+          }
+        }).catch(err => {
+          logger.error('Failed to load QuickBooksService for auto-invoice', { orderId, error: err });
+        });
         this.notificationService.notifyOrderDelivered(result.data!)
           .catch((err) => logger.error('Failed to send order delivery notification', { orderId, error: err }));
         res.json(normalizeOrder(result.data!));
@@ -1472,21 +1486,51 @@ export class OrderController {
         this.dbService.getRecentOrders(10),
       ]);
 
-      const dashboard = {
-        summary:
-          summaryResult.status === 'fulfilled' && summaryResult.value.success
+      const summary = summaryResult.status === 'fulfilled' && summaryResult.value.success
             ? summaryResult.value.data
-            : { totalOrders: 0, pendingOrders: 0, inProgressOrders: 0, completedOrders: 0 },
-
-        metrics:
-          metricsResult.status === 'fulfilled' && metricsResult.value.success
+            : { totalOrders: 0, pendingOrders: 0, inProgressOrders: 0, completedOrders: 0 };
+            
+      const metrics = metricsResult.status === 'fulfilled' && metricsResult.value.success
             ? metricsResult.value.data
-            : { averageCompletionTime: 0, onTimeDeliveryRate: 0, qcPassRate: 0 },
-
-        recentOrders:
-          recentOrdersResult.status === 'fulfilled' && recentOrdersResult.value.success
+            : { averageCompletionTime: 0, onTimeDeliveryRate: 0, qcPassRate: 0 };
+            
+      const recentOrders = recentOrdersResult.status === 'fulfilled' && recentOrdersResult.value.success
             ? (recentOrdersResult.value.data || []).map(normalizeOrder)
-            : [],
+            : [];
+
+      const dashboard = {
+        totalOrders: summary.totalOrders || 0,
+        activeOrders: (summary.inProgressOrders || 0) + (summary.pendingOrders || 0),
+        completedOrders: summary.completedOrders || 0,
+        pendingAssignment: summary.pendingOrders || 0,
+        inQCReview: summary.inQCReview || 0,
+        averageTurnaroundTime: metrics.averageCompletionTime || 0,
+        onTimeDeliveryRate: metrics.onTimeDeliveryRate || 0,
+        statusBreakdown: {
+          NEW: 0,
+          PENDING_ASSIGNMENT: summary.pendingOrders || 0,
+          ASSIGNED: 0,
+          PENDING_ACCEPTANCE: 0,
+          ACCEPTED: 0,
+          IN_PROGRESS: summary.inProgressOrders || 0,
+          INSPECTION_SCHEDULED: 0,
+          INSPECTION_COMPLETED: 0,
+          SUBMITTED: 0,
+          QC_REVIEW: summary.inQCReview || 0,
+          REVISION_REQUESTED: 0,
+          COMPLETED: summary.completedOrders || 0,
+          DELIVERED: 0,
+          CANCELLED: 0,
+          ON_HOLD: 0
+        },
+        priorityBreakdown: {
+          RUSH: 0,
+          HIGH: 0,
+          NORMAL: summary.totalOrders || 0,
+          LOW: 0
+        },
+        recentOrders,
+        overdueOrders: []
       };
 
       res.json(dashboard);
