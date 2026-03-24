@@ -100,10 +100,8 @@ resource uploadsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   name: 'uploads'
   properties: {
     publicAccess: 'None'
-    metadata: {
-      purpose: 'Statebridge inbound BPO order files (pipe-delimited)'
-      environment: environment
-    }
+    // NOTE: HNS (ADLS Gen2/SFTP) accounts do not support container metadata
+    // via the blob container API — the storage stamp returns HTTP 400.
   }
 }
 
@@ -113,12 +111,8 @@ resource resultsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   name: 'results'
   properties: {
     publicAccess: 'None'
-    // NOTE: blob metadata values are sent as HTTP headers — no angle brackets,
-    // hashes, em-dashes, or other non-ASCII/header-invalid characters permitted.
-    metadata: {
-      purpose: 'Statebridge BPO results files and PDFs'
-      environment: environment
-    }
+    // NOTE: HNS (ADLS Gen2/SFTP) accounts do not support container metadata
+    // via the blob container API — the storage stamp returns HTTP 400.
   }
 }
 
