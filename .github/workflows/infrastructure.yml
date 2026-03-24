@@ -180,26 +180,26 @@ jobs:
 
         BASE_URL="https://management.azure.com/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers"
 
-        echo "🔑 Rotating SFTP password for 'statebridge-upload'..."
+        echo "🔑 Rotating SFTP password for 'statebridgeupload'..."
         UPLOAD_PW=$(az rest --method post \
-          --url "${BASE_URL}/statebridge-upload/regeneratePassword?api-version=2023-04-01" \
+          --url "${BASE_URL}/statebridgeupload/regeneratePassword?api-version=2023-04-01" \
           --query 'sshPassword' -o tsv)
-        if [[ -z "$UPLOAD_PW" ]]; then echo "❌ Failed to regenerate statebridge-upload password."; exit 1; fi
-        az keyvault secret set --vault-name "$KV_NAME" --name "sftp-statebridge-upload-password" --value "$UPLOAD_PW" --output none
-        echo "✅ statebridge-upload password stored in Key Vault."
+        if [[ -z "$UPLOAD_PW" ]]; then echo "❌ Failed to regenerate statebridgeupload password."; exit 1; fi
+        az keyvault secret set --vault-name "$KV_NAME" --name "sftp-statebridgeupload-password" --value "$UPLOAD_PW" --output none
+        echo "✅ statebridgeupload password stored in Key Vault."
 
-        echo "🔑 Rotating SFTP password for 'statebridge-results'..."
+        echo "🔑 Rotating SFTP password for 'statebridgeresults'..."
         RESULTS_PW=$(az rest --method post \
-          --url "${BASE_URL}/statebridge-results/regeneratePassword?api-version=2023-04-01" \
+          --url "${BASE_URL}/statebridgeresults/regeneratePassword?api-version=2023-04-01" \
           --query 'sshPassword' -o tsv)
-        if [[ -z "$RESULTS_PW" ]]; then echo "❌ Failed to regenerate statebridge-results password."; exit 1; fi
-        az keyvault secret set --vault-name "$KV_NAME" --name "sftp-statebridge-results-password" --value "$RESULTS_PW" --output none
-        echo "✅ statebridge-results password stored in Key Vault."
+        if [[ -z "$RESULTS_PW" ]]; then echo "❌ Failed to regenerate statebridgeresults password."; exit 1; fi
+        az keyvault secret set --vault-name "$KV_NAME" --name "sftp-statebridgeresults-password" --value "$RESULTS_PW" --output none
+        echo "✅ statebridgeresults password stored in Key Vault."
 
         echo ""
         echo "🔐 Retrieve passwords after deploy:"
-        echo "   Upload:  az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-upload-password --query value -o tsv"
-        echo "   Results: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-results-password --query value -o tsv"
+        echo "   Upload:  az keyvault secret show --vault-name $KV_NAME --name sftp-statebridgeupload-password --query value -o tsv"
+        echo "   Results: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridgeresults-password --query value -o tsv"
 
     - name: Import API swagger into APIM
       run: |

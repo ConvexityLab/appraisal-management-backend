@@ -117,7 +117,7 @@ resource resultsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
 // User 1: Statebridge uploads order files here
 resource statebridgeUploadUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
   parent: sftpStorageAccount
-  name: 'statebridge-upload'
+  name: 'statebridgeupload'
   properties: {
     hasSshKey: false
     hasSharedKey: false
@@ -137,7 +137,7 @@ resource statebridgeUploadUser 'Microsoft.Storage/storageAccounts/localUsers@202
 // User 2: Statebridge reads results + PDFs from here
 resource statebridgeResultsUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
   parent: sftpStorageAccount
-  name: 'statebridge-results'
+  name: 'statebridgeresults'
   properties: {
     hasSshKey: false
     hasSharedKey: false
