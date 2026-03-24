@@ -101,43 +101,57 @@ resource resultsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   // Access is governed by the account-level allowBlobPublicAccess: false setting.
 }
 
-// ─── SFTP Local User ──────────────────────────────────────────────────────────
-// Password is NOT settable via ARM; after deployment run:
+// ─── SFTP Local Users ─────────────────────────────────────────────────────────
+// Azure Blob SFTP scopes each local user to exactly one homeDirectory container.
+// A single user CANNOT navigate between containers — that is an Azure platform
+// constraint. Two users are required: one for uploads, one for results.
+//
+// Password is NOT settable via ARM. After each deployment run:
 //   az storage account local-user regenerate-password \
-//     --account-name <name> --name statebridge --resource-group <rg>
-// Store the returned sshPassword in Key Vault under secret 'sftp-statebridge-password'.
-resource statebridgeLocalUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
+//     --account-name <name> --name statebridge-upload --resource-group <rg>
+//   az storage account local-user regenerate-password \
+//     --account-name <name> --name statebridge-results --resource-group <rg>
+// Store passwords in Key Vault: sftp-statebridge-upload-password, sftp-statebridge-results-password
+// (The CI workflow does this automatically after each infra deploy.)
+
+// User 1: Statebridge uploads order files here
+resource statebridgeUploadUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
   parent: sftpStorageAccount
-  name: 'statebridge'
+  name: 'statebridge-upload'
   properties: {
-    // hasSshPassword is a READ-ONLY flag set by the storage service after
-    // `az storage account local-user regenerate-password` is called.
-    // Setting it to true here causes HTTP 400 because the storage service
-    // will not accept it via PUT before a password has been provisioned.
     hasSshKey: false
     hasSharedKey: false
-    // homeDirectory intentionally omitted — defaults to account root so the
-    // user can navigate to both 'uploads' (write) and 'results' (read).
-    // Setting homeDirectory to any value (including '') jails or breaks login.
+    homeDirectory: 'uploads'
     permissionScopes: [
       {
-        // Statebridge uploads order files: create + write + list + read (to verify uploads)
+        // create + write + list + read (to verify uploads)
         permissions: 'rcwl'
         service: 'blob'
         resourceName: 'uploads'
       }
+    ]
+  }
+  dependsOn: [uploadsContainer]
+}
+
+// User 2: Statebridge reads results + PDFs from here
+resource statebridgeResultsUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
+  parent: sftpStorageAccount
+  name: 'statebridge-results'
+  properties: {
+    hasSshKey: false
+    hasSharedKey: false
+    homeDirectory: 'results'
+    permissionScopes: [
       {
-        // Statebridge reads back results + PDFs: read + list only
+        // read + list only
         permissions: 'rl'
         service: 'blob'
         resourceName: 'results'
       }
     ]
   }
-  dependsOn: [
-    uploadsContainer
-    resultsContainer
-  ]
+  dependsOn: [resultsContainer]
 }
 
 // ─── Outputs ──────────────────────────────────────────────────────────────────
