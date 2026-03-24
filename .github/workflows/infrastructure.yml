@@ -104,6 +104,7 @@ jobs:
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         
         az deployment sub validate \
+          --name "main-${GITHUB_RUN_ID}" \
           --location ${{ inputs.location }} \
           --template-file infrastructure/main.bicep \
           "${PARAM_ARGS[@]}"
@@ -132,6 +133,7 @@ jobs:
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         
         deployment_output=$(az deployment sub create \
+          --name "main-${GITHUB_RUN_ID}" \
           --location ${{ inputs.location }} \
           --template-file infrastructure/main.bicep \
           "${PARAM_ARGS[@]}" \
