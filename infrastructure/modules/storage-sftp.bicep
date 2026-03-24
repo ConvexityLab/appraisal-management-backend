@@ -130,7 +130,10 @@ resource statebridgeLocalUser 'Microsoft.Storage/storageAccounts/localUsers@2023
   parent: sftpStorageAccount
   name: 'statebridge'
   properties: {
-    hasSshPassword: true
+    // hasSshPassword is a READ-ONLY flag set by the storage service after
+    // `az storage account local-user regenerate-password` is called.
+    // Setting it to true here causes HTTP 400 because the storage service
+    // will not accept it via PUT before a password has been provisioned.
     hasSshKey: false
     hasSharedKey: false
     homeDirectory: 'uploads'
