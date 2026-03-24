@@ -67,6 +67,7 @@ jobs:
       app-service-name: ${{ steps.deploy.outputs.appServiceName }}
       app-service-url: ${{ steps.deploy.outputs.appServiceUrl }}
       key-vault-name: ${{ steps.deploy.outputs.keyVaultName }}
+      sftp-storage-account-name: ${{ steps.deploy.outputs.sftpStorageAccountName }}
       apim-name: ${{ steps.deploy.outputs.apimName }}
     
     steps:
@@ -148,7 +149,7 @@ jobs:
         app_service_name=$(echo "$deployment_output" | jq -r '.appServiceName.value')
         app_service_url=$(echo "$deployment_output" | jq -r '.appServiceUrl.value')
         key_vault_name=$(echo "$deployment_output" | jq -r '.keyVaultName.value')
-        
+        sftp_storage_account=$(echo "$deployment_output" | jq -r '.sftpStorageAccountName.value')
         apim_name=$(echo "$deployment_output" | jq -r '.apimName.value')
         
         # Set outputs
@@ -156,6 +157,7 @@ jobs:
         echo "appServiceName=$app_service_name" >> $GITHUB_OUTPUT
         echo "appServiceUrl=$app_service_url" >> $GITHUB_OUTPUT
         echo "keyVaultName=$key_vault_name" >> $GITHUB_OUTPUT
+        echo "sftpStorageAccountName=$sftp_storage_account" >> $GITHUB_OUTPUT
         echo "apimName=$apim_name" >> $GITHUB_OUTPUT
         
         echo "✅ Infrastructure deployment outputs:"
@@ -164,6 +166,38 @@ jobs:
         echo "   App Service URL: $app_service_url"
         echo "   Key Vault: $key_vault_name"
         echo "   APIM: $apim_name"
+
+    - name: Rotate SFTP password and store in Key Vault
+      run: |
+        SFTP_ACCOUNT="${{ steps.deploy.outputs.sftpStorageAccountName }}"
+        KV_NAME="${{ steps.deploy.outputs.keyVaultName }}"
+        RG="${{ steps.deploy.outputs.resourceGroupName }}"
+
+        if [[ -z "$SFTP_ACCOUNT" || "$SFTP_ACCOUNT" == "null" ]]; then
+          echo "⏭️  Skipping SFTP password rotation — sftpStorageAccountName not in deployment outputs."
+          exit 0
+        fi
+
+        echo "🔑 Rotating SFTP password for local user 'statebridge' on $SFTP_ACCOUNT..."
+        SSH_PASSWORD=$(az rest \
+          --method post \
+          --url "https://management.azure.com/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge/regeneratePassword?api-version=2023-04-01" \
+          --query 'sshPassword' -o tsv)
+
+        if [[ -z "$SSH_PASSWORD" ]]; then
+          echo "❌ Failed to regenerate SFTP password."
+          exit 1
+        fi
+
+        echo "✅ SFTP password regenerated. Storing in Key Vault '$KV_NAME' as secret 'sftp-statebridge-password'..."
+        az keyvault secret set \
+          --vault-name "$KV_NAME" \
+          --name "sftp-statebridge-password" \
+          --value "$SSH_PASSWORD" \
+          --output none
+
+        echo "✅ SFTP password stored in Key Vault. Retrieve with:"
+        echo "   az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-password --query value -o tsv"
 
     - name: Import API swagger into APIM
       run: |
