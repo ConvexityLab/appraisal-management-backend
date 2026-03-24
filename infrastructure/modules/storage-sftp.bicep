@@ -83,75 +83,24 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01'
   name: 'default'
 }
 
-// ─── Containers ───────────────────────────────────────────────────────────────
-
-// Inbound: Statebridge uploads daily pipe-delimited order files here
-resource uploadsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
-  parent: blobService
-  name: 'uploads'
-  // NOTE: publicAccess is not supported on HNS/ADLS Gen2 containers.
-  // Access is governed by the account-level allowBlobPublicAccess: false setting.
-}
-
-// Outbound: We write tab-delimited results + PDFs here for Statebridge to retrieve
-resource resultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
-  parent: blobService
-  name: 'results'
-  // NOTE: publicAccess is not supported on HNS/ADLS Gen2 containers.
-  // Access is governed by the account-level allowBlobPublicAccess: false setting.
-}
-
-// ─── SFTP Local Users ─────────────────────────────────────────────────────────
-// Azure Blob SFTP scopes each local user to exactly one homeDirectory container.
-// A single user CANNOT navigate between containers — that is an Azure platform
-// constraint. Two users are required: one for uploads, one for results.
+// ─── Container ────────────────────────────────────────────────────────────────
+// Single container 'statebridge' — Statebridge's SFTP home directory.
+// Inside this container, uploads/ and results/ are virtual path prefixes:
+//   statebridge/uploads/  — Statebridge writes daily order files here
+//   statebridge/results/  — We write tab-delimited results + PDFs here
 //
-// Password is NOT settable via ARM. After each deployment run:
-//   az storage account local-user regenerate-password \
-//     --account-name <name> --name statebridge-upload --resource-group <rg>
-//   az storage account local-user regenerate-password \
-//     --account-name <name> --name statebridge-results --resource-group <rg>
-// Store passwords in Key Vault: sftp-statebridge-upload-password, sftp-statebridge-results-password
-// (The CI workflow does this automatically after each infra deploy.)
-
-// User 1: Statebridge uploads order files here
-resource statebridgeUploadUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
-  parent: sftpStorageAccount
-  name: 'statebridgeupload'
-  properties: {
-    hasSshKey: false
-    hasSharedKey: false
-    homeDirectory: 'uploads'
-    permissionScopes: [
-      {
-        // create + write + list + read (to verify uploads)
-        permissions: 'rcwl'
-        service: 'blob'
-        resourceName: 'uploads'
-      }
-    ]
-  }
-  dependsOn: [uploadsContainer]
-}
-
-// User 2: Statebridge reads results + PDFs from here
-resource statebridgeResultsUser 'Microsoft.Storage/storageAccounts/localUsers@2023-04-01' = {
-  parent: sftpStorageAccount
-  name: 'statebridgeresults'
-  properties: {
-    hasSshKey: false
-    hasSharedKey: false
-    homeDirectory: 'results'
-    permissionScopes: [
-      {
-        // read + list only
-        permissions: 'rl'
-        service: 'blob'
-        resourceName: 'results'
-      }
-    ]
-  }
-  dependsOn: [resultsContainer]
+// The local user (created once by CI, never by Bicep) is scoped to this
+// container as homeDirectory and sees /uploads/ and /results/ at its root.
+// Permission scopes restrict writes to uploads/ and reads to results/.
+//
+// LOCAL USER IS NOT DECLARED HERE — see CI workflow for idempotent provisioning.
+// Reason: ARM resets hasSshPassword on every PUT of a localUsers resource,
+// which wipes the password on every deploy. Managing it outside Bicep once
+// means the password persists across all subsequent deploys.
+resource statebridgeContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
+  parent: blobService
+  name: 'statebridge'
+  // NOTE: publicAccess not supported on HNS/ADLS Gen2 — account-level setting governs access.
 }
 
 // ─── Outputs ──────────────────────────────────────────────────────────────────
@@ -167,8 +116,5 @@ output sftpEndpoint string = '${sftpStorageAccount.name}.blob.core.windows.net'
 @description('SFTP connection target for clients: <storageAccountName>.blob.core.windows.net')
 output sftpConnectionTarget string = sftpStorageAccount.properties.primaryEndpoints.blob
 
-@description('Upload container name')
-output uploadsContainerName string = uploadsContainer.name
-
-@description('Results container name')
-output resultsContainerName string = resultsContainer.name
+@description('Container name — Statebridge home directory')
+output statebridgeContainerName string = statebridgeContainer.name

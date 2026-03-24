@@ -167,39 +167,66 @@ jobs:
         echo "   Key Vault: $key_vault_name"
         echo "   APIM: $apim_name"
 
-    - name: Rotate SFTP passwords and store in Key Vault
+    - name: Provision SFTP local user (idempotent)
       run: |
         SFTP_ACCOUNT="${{ steps.deploy.outputs.sftpStorageAccountName }}"
         KV_NAME="${{ steps.deploy.outputs.keyVaultName }}"
         RG="${{ steps.deploy.outputs.resourceGroupName }}"
+        SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
 
         if [[ -z "$SFTP_ACCOUNT" || "$SFTP_ACCOUNT" == "null" ]]; then
-          echo "⏭️  Skipping SFTP password rotation — sftpStorageAccountName not in deployment outputs."
+          echo "⏭️  Skipping — sftpStorageAccountName not in deployment outputs."
           exit 0
         fi
 
-        BASE_URL="https://management.azure.com/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers"
+        USER_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge?api-version=2023-04-01"
+        REGEN_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge/regeneratePassword?api-version=2023-04-01"
 
-        echo "🔑 Rotating SFTP password for 'statebridgeupload'..."
-        UPLOAD_PW=$(az rest --method post \
-          --url "${BASE_URL}/statebridgeupload/regeneratePassword?api-version=2023-04-01" \
-          --query 'sshPassword' -o tsv)
-        if [[ -z "$UPLOAD_PW" ]]; then echo "❌ Failed to regenerate statebridgeupload password."; exit 1; fi
-        az keyvault secret set --vault-name "$KV_NAME" --name "sftp-statebridgeupload-password" --value "$UPLOAD_PW" --output none
-        echo "✅ statebridgeupload password stored in Key Vault."
+        # ── Step 1: Create user only if it does not already exist ─────────────
+        if az rest --method get --url "$USER_URL" --output none 2>/dev/null; then
+          echo "👤 SFTP local user 'statebridge' already exists — skipping creation."
+        else
+          echo "👤 Creating SFTP local user 'statebridge'..."
+          az rest --method put --url "$USER_URL" \
+            --body '{
+              "properties": {
+                "hasSshKey": false,
+                "hasSharedKey": false,
+                "homeDirectory": "statebridge",
+                "permissionScopes": [
+                  { "permissions": "rcwl", "service": "blob", "resourceName": "statebridge/uploads" },
+                  { "permissions": "rl",   "service": "blob", "resourceName": "statebridge/results" }
+                ]
+              }
+            }'
+          echo "✅ User 'statebridge' created."
+        fi
 
-        echo "🔑 Rotating SFTP password for 'statebridgeresults'..."
-        RESULTS_PW=$(az rest --method post \
-          --url "${BASE_URL}/statebridgeresults/regeneratePassword?api-version=2023-04-01" \
-          --query 'sshPassword' -o tsv)
-        if [[ -z "$RESULTS_PW" ]]; then echo "❌ Failed to regenerate statebridgeresults password."; exit 1; fi
-        az keyvault secret set --vault-name "$KV_NAME" --name "sftp-statebridgeresults-password" --value "$RESULTS_PW" --output none
-        echo "✅ statebridgeresults password stored in Key Vault."
+        # ── Step 2: Generate password only if Key Vault secret is absent ──────
+        # This means re-deploys do NOT overwrite the password. To force a
+        # rotation, delete the secret from Key Vault and re-run the workflow.
+        EXISTING_PW=$(az keyvault secret show \
+          --vault-name "$KV_NAME" \
+          --name "sftp-statebridge-password" \
+          --query value -o tsv 2>/dev/null || echo "")
+
+        if [[ -z "$EXISTING_PW" ]]; then
+          echo "🔑 No password found in Key Vault — generating new password..."
+          PASSWORD=$(az rest --method post --url "$REGEN_URL" --query 'sshPassword' -o tsv)
+          if [[ -z "$PASSWORD" ]]; then echo "❌ Failed to generate SFTP password."; exit 1; fi
+          az keyvault secret set \
+            --vault-name "$KV_NAME" \
+            --name "sftp-statebridge-password" \
+            --value "$PASSWORD" \
+            --output none
+          echo "✅ Password stored in Key Vault as 'sftp-statebridge-password'."
+        else
+          echo "🔐 Password already exists in Key Vault — NOT overwriting (idempotent)."
+          echo "   To force rotation: delete the secret and re-run the workflow."
+        fi
 
         echo ""
-        echo "🔐 Retrieve passwords after deploy:"
-        echo "   Upload:  az keyvault secret show --vault-name $KV_NAME --name sftp-statebridgeupload-password --query value -o tsv"
-        echo "   Results: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridgeresults-password --query value -o tsv"
+        echo "   Retrieve: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-password --query value -o tsv"
 
     - name: Import API swagger into APIM
       run: |
