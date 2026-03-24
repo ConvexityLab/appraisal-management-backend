@@ -383,6 +383,12 @@ jobs:
           # matching this commit's short SHA.
           ACR_SERVER="${{ needs.build-and-push-container.outputs.container-registry }}"
           SHORT_SHA="${GITHUB_SHA:0:7}"
+          # GitHub Actions silently drops job outputs when always() is used and a
+          # sibling needs-job failed. Rediscover the ACR server if output is empty.
+          if [[ -z "$ACR_SERVER" ]]; then
+            RG_NAME="rg-appraisal-mgmt-${{ needs.determine-environment.outputs.environment }}-eastus"
+            ACR_SERVER=$(az acr list --resource-group "$RG_NAME" --query '[0].loginServer' -o tsv)
+          fi
           if [[ -n "$ACR_SERVER" ]]; then
             MATCHED_TAG=$(az acr repository show-tags \
               --name "${ACR_SERVER%%.*}" \
@@ -456,6 +462,11 @@ jobs:
         if [[ -z "$FUNC_NEW_IMAGE" ]]; then
           ACR_SERVER="${{ needs.build-and-push-container.outputs.container-registry }}"
           SHORT_SHA="${GITHUB_SHA:0:7}"
+          # Same always()-output-drop fallback as the API block above.
+          if [[ -z "$ACR_SERVER" ]]; then
+            RG_NAME="rg-appraisal-mgmt-${{ needs.determine-environment.outputs.environment }}-eastus"
+            ACR_SERVER=$(az acr list --resource-group "$RG_NAME" --query '[0].loginServer' -o tsv)
+          fi
           if [[ -n "$ACR_SERVER" ]]; then
             MATCHED_TAG=$(az acr repository show-tags \
               --name "${ACR_SERVER%%.*}" \
