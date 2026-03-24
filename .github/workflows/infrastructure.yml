@@ -182,50 +182,61 @@ jobs:
         USER_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge?api-version=2023-04-01"
         REGEN_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge/regeneratePassword?api-version=2023-04-01"
 
-        # ── Step 1: Create user only if it does not already exist ─────────────
-        if az rest --method get --url "$USER_URL" --output none 2>/dev/null; then
-          echo "👤 SFTP local user 'statebridge' already exists — skipping creation."
+        # Desired config: homeDirectory=statebridge, full rcwl on the statebridge container.
+        # NOTE: Azure permissionScope.resourceName must be a plain container name — path-scoped
+        # values like "statebridge/uploads" are rejected by the API (InvalidRequestPropertyValue).
+        DESIRED_BODY='{"properties":{"hasSshKey":false,"hasSharedKey":false,"homeDirectory":"statebridge","permissionScopes":[{"permissions":"rcwl","service":"blob","resourceName":"statebridge"}]}}'
+
+        # ── Step 1: Ensure user exists with correct config ────────────────────
+        # Read current homeDirectory. If user doesn't exist, az rest returns non-zero
+        # and the output is empty; if user exists with wrong config, we PUT to fix it.
+        # ARM PUT always resets hasSshPassword — so we regenerate and update KV after any PUT.
+        CURRENT_HOME=$(az rest --method get --url "$USER_URL" \
+          --query 'properties.homeDirectory' -o tsv 2>/dev/null || echo "")
+
+        if [[ "$CURRENT_HOME" == "statebridge" ]]; then
+          echo "👤 SFTP local user 'statebridge' exists with correct homeDirectory — no PUT needed."
+          NEED_REGEN=false
         else
-          echo "👤 Creating SFTP local user 'statebridge'..."
-          az rest --method put --url "$USER_URL" \
-            --body '{
-              "properties": {
-                "hasSshKey": false,
-                "hasSharedKey": false,
-                "homeDirectory": "statebridge",
-                "permissionScopes": [
-                  { "permissions": "rcwl", "service": "blob", "resourceName": "statebridge/uploads" },
-                  { "permissions": "rl",   "service": "blob", "resourceName": "statebridge/results" }
-                ]
-              }
-            }'
-          echo "✅ User 'statebridge' created."
+          if [[ -z "$CURRENT_HOME" ]]; then
+            echo "👤 SFTP local user 'statebridge' does not exist — creating..."
+          else
+            echo "👤 SFTP local user 'statebridge' has wrong homeDirectory ('${CURRENT_HOME}') — fixing..."
+          fi
+          az rest --method put --url "$USER_URL" --body "$DESIRED_BODY"
+          echo "✅ User 'statebridge' created/updated."
+          # ARM PUT always resets hasSshPassword — must regenerate immediately.
+          NEED_REGEN=true
         fi
 
-        # ── Step 2: Generate password only if Key Vault secret is absent ──────
-        # This means re-deploys do NOT overwrite the password. To force a
-        # rotation, delete the secret from Key Vault and re-run the workflow.
-        EXISTING_PW=$(az keyvault secret show \
-          --vault-name "$KV_NAME" \
-          --name "sftp-statebridge-password" \
-          --query value -o tsv 2>/dev/null || echo "")
-
-        if [[ -z "$EXISTING_PW" ]]; then
-          echo "🔑 No password found in Key Vault — generating new password..."
-          PASSWORD=$(az rest --method post --url "$REGEN_URL" --query 'sshPassword' -o tsv)
-          if [[ -z "$PASSWORD" ]]; then echo "❌ Failed to generate SFTP password."; exit 1; fi
-          az keyvault secret set \
+        # ── Step 2: Manage password in Key Vault ──────────────────────────────
+        # After a PUT, always regenerate (hasSshPassword was reset by ARM).
+        # If user config was already correct, only regenerate if KV secret is absent.
+        # To force rotation: delete the KV secret and re-run the workflow.
+        if [[ "$NEED_REGEN" == "true" ]]; then
+          echo "🔑 Regenerating SFTP password (required after user create/update)..."
+        else
+          EXISTING_PW=$(az keyvault secret show \
             --vault-name "$KV_NAME" \
             --name "sftp-statebridge-password" \
-            --value "$PASSWORD" \
-            --output none
-          echo "✅ Password stored in Key Vault as 'sftp-statebridge-password'."
-        else
-          echo "🔐 Password already exists in Key Vault — NOT overwriting (idempotent)."
-          echo "   To force rotation: delete the secret and re-run the workflow."
+            --query value -o tsv 2>/dev/null || echo "")
+          if [[ -n "$EXISTING_PW" ]]; then
+            echo "🔐 Password already in Key Vault and user config is correct — nothing to do."
+            echo "   To force rotation: delete the KV secret and re-run the workflow."
+            echo "   Retrieve: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-password --query value -o tsv"
+            exit 0
+          fi
+          echo "🔑 No password found in Key Vault — generating..."
         fi
 
-        echo ""
+        PASSWORD=$(az rest --method post --url "$REGEN_URL" --query 'sshPassword' -o tsv)
+        if [[ -z "$PASSWORD" ]]; then echo "❌ Failed to generate SFTP password."; exit 1; fi
+        az keyvault secret set \
+          --vault-name "$KV_NAME" \
+          --name "sftp-statebridge-password" \
+          --value "$PASSWORD" \
+          --output none
+        echo "✅ Password stored in Key Vault as 'sftp-statebridge-password'."
         echo "   Retrieve: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-password --query value -o tsv"
 
     - name: Import API swagger into APIM
