@@ -534,8 +534,7 @@ output appServiceName string = appServices.outputs.containerAppNames[0]
 output appServiceUrl string = 'https://${appServices.outputs.containerAppFqdns[0]}'
 output sftpStorageAccountName string = sftpStorage.outputs.sftpStorageAccountName
 output sftpEndpoint string = sftpStorage.outputs.sftpEndpoint
-output sftpUploadsContainer string = sftpStorage.outputs.uploadsContainerName
-output sftpResultsContainer string = sftpStorage.outputs.resultsContainerName
+output sftpStatebridgeContainer string = sftpStorage.outputs.statebridgeContainerName
 output deploymentSummary object = {
   resourceGroup: resourceGroup.name
   location: location
