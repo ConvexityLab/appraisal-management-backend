@@ -116,10 +116,9 @@ resource statebridgeLocalUser 'Microsoft.Storage/storageAccounts/localUsers@2023
     // will not accept it via PUT before a password has been provisioned.
     hasSshKey: false
     hasSharedKey: false
-    // Empty homeDirectory = user lands at account root and can navigate to both
-    // 'uploads' (write) and 'results' (read) containers via SFTP.
-    // A non-empty homeDirectory jails the user inside that single container.
-    homeDirectory: ''
+    // homeDirectory intentionally omitted — defaults to account root so the
+    // user can navigate to both 'uploads' (write) and 'results' (read).
+    // Setting homeDirectory to any value (including '') jails or breaks login.
     permissionScopes: [
       {
         // Statebridge uploads order files: create + write + list + read (to verify uploads)
