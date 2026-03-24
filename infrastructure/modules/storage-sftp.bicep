@@ -72,24 +72,15 @@ resource sftpStorageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
 }
 
 // ─── Blob Service ─────────────────────────────────────────────────────────────
+// Minimal properties only — HNS/ADLS Gen2 accounts do not support:
+//   • changeFeed (removed above)
+//   • deleteRetentionPolicy (blob soft delete)
+//   • containerDeleteRetentionPolicy (container soft delete)
+//   • isVersioningEnabled (blob versioning)
+// Setting any of these causes the storage stamp to return HTTP 400.
 resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01' = {
   parent: sftpStorageAccount
   name: 'default'
-  properties: {
-    deleteRetentionPolicy: {
-      enabled: true
-      days: environment == 'prod' ? 30 : 7
-    }
-    containerDeleteRetentionPolicy: {
-      enabled: true
-      days: environment == 'prod' ? 30 : 7
-    }
-    // NOTE: changeFeed is NOT supported on HNS (ADLS Gen2 / isSftpEnabled)
-    // accounts. The storage service returns HTTP 400 if you try to enable it.
-    // Event Grid BlobCreated events work natively on HNS accounts WITHOUT
-    // change feed — the sftpEventGrid module sets up the system topic directly.
-    isVersioningEnabled: false
-  }
 }
 
 // ─── Containers ───────────────────────────────────────────────────────────────
@@ -98,22 +89,16 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01'
 resource uploadsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
   parent: blobService
   name: 'uploads'
-  properties: {
-    publicAccess: 'None'
-    // NOTE: HNS (ADLS Gen2/SFTP) accounts do not support container metadata
-    // via the blob container API — the storage stamp returns HTTP 400.
-  }
+  // NOTE: publicAccess is not supported on HNS/ADLS Gen2 containers.
+  // Access is governed by the account-level allowBlobPublicAccess: false setting.
 }
 
 // Outbound: We write tab-delimited results + PDFs here for Statebridge to retrieve
 resource resultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
   parent: blobService
   name: 'results'
-  properties: {
-    publicAccess: 'None'
-    // NOTE: HNS (ADLS Gen2/SFTP) accounts do not support container metadata
-    // via the blob container API — the storage stamp returns HTTP 400.
-  }
+  // NOTE: publicAccess is not supported on HNS/ADLS Gen2 containers.
+  // Access is governed by the account-level allowBlobPublicAccess: false setting.
 }
 
 // ─── SFTP Local User ──────────────────────────────────────────────────────────
