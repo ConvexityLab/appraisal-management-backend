@@ -107,14 +107,16 @@ resource uploadsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   }
 }
 
-// Outbound: We write pipe-delimited results + PDFs here for Statebridge to retrieve
+// Outbound: We write tab-delimited results + PDFs here for Statebridge to retrieve
 resource resultsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
   parent: blobService
   name: 'results'
   properties: {
     publicAccess: 'None'
+    // NOTE: blob metadata values are sent as HTTP headers — no angle brackets,
+    // hashes, em-dashes, or other non-ASCII/header-invalid characters permitted.
     metadata: {
-      purpose: 'Statebridge BPO results files and PDFs — named <LoanID>_BPO_<CollateralNumber>_<yyyymmdd#hhmmss>.pdf'
+      purpose: 'Statebridge BPO results files and PDFs'
       environment: environment
     }
   }
