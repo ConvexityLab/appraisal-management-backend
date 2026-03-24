@@ -11,6 +11,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Request, Response, Router } from 'express';
 import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
+import { AxiomExecutionService } from '../services/axiom-execution.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service';
@@ -18,11 +19,12 @@ import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
 import type { AppraisalOrder } from '../types/index.js';
-import type { AxiomEvaluationCompletedEvent } from '../types/events.js';
+import type { AxiomEvaluationCompletedEvent, AxiomExecutionCompletedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
 export class AxiomController {
   private axiomService: AxiomService;
+  private axiomExecutionService: AxiomExecutionService;
   private dbService: CosmosDbService;
   private bulkPortfolioService: BulkPortfolioService;
   private readonly eventPublisher: ServiceBusEventPublisher;
@@ -61,6 +63,7 @@ export class AxiomController {
   constructor(dbService: CosmosDbService, axiomService?: AxiomService) {
     this.dbService = dbService;
     this.axiomService = axiomService || new AxiomService(dbService);
+    this.axiomExecutionService = new AxiomExecutionService(dbService);
     this.bulkPortfolioService = new BulkPortfolioService(dbService);
     this.eventPublisher = new ServiceBusEventPublisher();
   }
@@ -444,7 +447,47 @@ export class AxiomController {
     // ── New pipeline shape ────────────────────────────────────────────────
     const correlationType = body['correlationType'] as string | undefined;
     const rawCorrelationId = body['correlationId'] as string | undefined;
+    if (rawCorrelationId && correlationType === 'EXECUTION') {
+      const executionId = rawCorrelationId;
+      const pipelineJobId = body['pipelineJobId'] as string | undefined;
+      const status = (body['status'] as string) ?? 'completed';
+      const result = body['result'] as Record<string, unknown> | undefined;
+      const error = body['error'] as string | undefined;
 
+      console.log(`[Axiom Webhook] EXECUTION update - executionId=${executionId} status=${status} pipelineJobId=${pipelineJobId}`);
+
+      const executionStatus = status === 'completed' ? 'COMPLETED' : 'FAILED';
+      
+      try {
+        await this.axiomExecutionService.updateExecutionStatus(
+          executionId,
+          executionStatus,
+          result,
+          error
+        );
+
+        const execCompletedEvent: AxiomExecutionCompletedEvent = {
+          id: uuidv4(),
+          type: 'axiom.execution.completed',
+          timestamp: new Date(),
+          source: 'axiom-controller',
+          version: '1.0',
+          category: EventCategory.SYSTEM,
+          data: {
+            executionId,
+            status: executionStatus,
+            ...(pipelineJobId !== undefined ? { pipelineJobId } : {})
+          }
+        };
+        this.eventPublisher.publish(execCompletedEvent).catch((err: unknown) => {
+          console.error('[Axiom Webhook] failed to publish axiom.execution.completed event', err);
+        });
+      } catch (err) {
+        console.error('[Axiom Webhook] failed to update execution status', err);
+      }
+
+      return;
+    }
     if (rawCorrelationId && correlationType === 'TAPE_LOAN') {
       // correlationId is '{jobId}::{loanNumber}' for tape fan-out submissions
       const separatorIdx = rawCorrelationId.indexOf('::');
@@ -746,6 +789,50 @@ export class AxiomController {
       this.axiomService.broadcastBatchJobUpdate(jobId).catch(() => undefined);
     }
   };
+
+  /**
+   * Run the Axiom agent (synchronous proxy)
+   * POST /api/axiom/agent/run
+   *
+   * Body: {
+   *   prompt: string,
+   *   context?: Record<string, unknown>,
+   *   maxIterations?: number
+   * }
+   */
+  runAgent = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { prompt, context, maxIterations } = req.body;
+
+      if (!prompt) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'prompt is required'
+          }
+        });
+        return;
+      }
+
+      const result = await this.axiomService.runAgent(prompt, context, maxIterations);
+
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      console.error('Error running Axiom agent:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to run Axiom agent',
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+  };
 }
 
 /**
@@ -763,6 +850,9 @@ export function createAxiomRouter(dbService: CosmosDbService): Router {
 
   // Document analysis (frontend-friendly, looks up blob URL by documentId)
   router.post('/analyze', controller.analyzeDocument);
+
+  // Agent proxy
+  router.post('/agent/run', controller.runAgent);
 
   // Evaluation retrieval
   router.get('/evaluations/order/:orderId', controller.getEvaluationByOrder);

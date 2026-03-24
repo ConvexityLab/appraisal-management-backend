@@ -552,6 +552,125 @@ export class AxiomService {
    * @param evaluationId Evaluation ID
    * @returns Evaluation results or null if not found
    */
+  
+  /**
+   * Upload files to Axiom to create a FileSet
+   * POST /api/documents
+   */
+  async createFileSet(
+    tenantId: string,
+    clientId: string,
+    files: Array<{ url: string; filename: string }>,
+    metadata?: Record<string, any>
+  ): Promise<{ fileSetId: string; status: string; queueJobId?: string } | null> {
+    if (!this.enabled) {
+      return { fileSetId: `mock-fileset-${Date.now()}`, status: 'processing' };
+    }
+
+    try {
+      const payload = {
+        tenantId,
+        clientId,
+        metadata,
+        presignedUrls: files.map((f) => ({ url: f.url, name: f.filename })),
+      };
+
+      const res = await this.client.post('/api/documents', payload);
+      return res.data as { fileSetId: string; status: string; queueJobId?: string };
+    } catch (error) {
+      console.error('[AxiomService] Error creating FileSet:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Submit a task pipeline to Axiom for extraction/evaluation
+   * POST /api/pipelines
+   */
+  async submitPipeline(
+    tenantId: string,
+    clientId: string,
+    fileSetId: string,
+    pipelineMode: 'FULL_PIPELINE' | 'CLASSIFICATION_ONLY' | 'EXTRACTION_ONLY' | 'CRITERIA_ONLY',
+    metadata?: Record<string, any>
+  ): Promise<{ jobId: string; status: string } | null> {
+    if (!this.enabled) {
+      return { jobId: `mock-job-${Date.now()}`, status: 'submitted' };
+    }
+
+    let pipelineBody;
+    switch (pipelineMode) {
+      case 'FULL_PIPELINE':
+        pipelineBody = AxiomService.PIPELINE_RISK_EVAL;
+        break;
+      case 'EXTRACTION_ONLY':
+        pipelineBody = AxiomService.PIPELINE_DOC_EXTRACT;
+        break;
+      default:
+        pipelineBody = AxiomService.PIPELINE_RISK_EVAL;
+    }
+
+    try {
+      const payload = {
+        pipeline: pipelineBody,
+        input: {
+          tenantId,
+          clientId,
+          fileSetId,
+          ...metadata,
+        },
+      };
+
+      const res = await this.client.post('/api/pipelines', payload);
+      return res.data as { jobId: string; status: string };
+    } catch (error) {
+      console.error('[AxiomService] Error submitting pipeline:', error);
+      return null;
+    }
+  }
+
+
+
+    /**
+   * Proxies an SSE stream from Axiom directly to the client
+   */
+  async proxyPipelineStream(jobId: string, req: import('express').Request, res: import('express').Response): Promise<void> {
+    if (!this.enabled) {
+      res.write('data: ' + JSON.stringify({ type: 'COMPLETE', status: 'completed' }) + '\n\n');
+      res.end();
+      return;
+    }
+
+    try {
+      const response = await this.client.get('/api/pipelines/' + jobId + '/observe', {
+        responseType: 'stream',
+        headers: {
+          Accept: 'text/event-stream',
+        },
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+
+      response.data.pipe(res);
+
+      req.on('close', () => {
+        response.data.destroy();
+      });
+    } catch (error) {
+      console.error('[AxiomService] Error proxying SSE stream:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: 'Failed to proxy SSE stream' });
+      } else {
+        res.end();
+      }
+    }
+  }
+
+
   async getEvaluationById(evaluationId: string): Promise<AxiomEvaluationResult | null> {
     try {
       // Try Cosmos DB first
@@ -2110,5 +2229,27 @@ export class AxiomService {
         compiledAt: now,
       },
     };
+  }
+
+  /**
+   * Task 4.4: The Agentic Exception 
+   * Synchronous /api/agent/run proxy.
+   */
+  public async runAgent(prompt: string, context?: Record<string, unknown>, maxIterations?: number): Promise<any> {
+    if (!this.enabled) {
+      throw new Error('Axiom Platform is not enabled or configured.');
+    }
+    
+    try {
+      const response = await this.client.post('/api/agent/run', {
+        goal: prompt,
+        context: context,
+        options: { maxIterations: maxIterations || 10 }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to run agent:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 }

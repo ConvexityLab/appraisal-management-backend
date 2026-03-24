@@ -21,6 +21,13 @@ export class MopApiClient {
    * Sends the payload to MOP's evaluation endpoint to retrieve rules output.
    */
   public async evaluateCompliance(payload: any): Promise<MopComplianceViolation[]> {
+    if (this.baseUrl === 'mock' || process.env.MOCK_MOP === 'true') {
+      return [
+        { program: 'Conventional', reason: 'Missing necessary data in report', violation_code: 'MISSING_DATA' },
+        { program: 'FHA', reason: 'Zoning appears to be commercial', violation_code: 'ZONING_COMMERCIAL' }
+      ];
+    }
+
     try {
       const response = await fetch(`${this.baseUrl}/api/v1/quote`, {
         method: 'POST',

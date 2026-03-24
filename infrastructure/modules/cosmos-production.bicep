@@ -16,6 +16,20 @@ var tags = {
 // Container configurations optimized for appraisal management workload
 var containers = [
   {
+    name: 'integrations'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {
     name: 'vendor-onboarding'
     partitionKey: '/id'
     indexingPolicy: {
@@ -847,7 +861,23 @@ var containers = [
         ]
       ]
     }
-  }]
+  }
+  // Fluid container registry — maps logical IDs to service-assigned Fluid Relay container UUIDs
+  {
+    name: 'fluid-container-registry'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
+]
 
 // Cosmos DB Account with enterprise settings
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {

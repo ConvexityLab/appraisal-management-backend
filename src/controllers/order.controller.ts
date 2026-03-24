@@ -1551,31 +1551,83 @@ export class OrderController {
    *   - SLA tracking records (from the sla-tracking container)
    */
   public async evaluateCompliance(req: UnifiedAuthRequest, res: Response): Promise<void> {
-      try {
-        const { orderId } = req.params;
-        if (!orderId) {
-          res.status(400).json({ error: 'orderId is required' });
-          return;
-        }
+    try {
+      const { orderId } = req.params;
+      if (!orderId) {
+        res.status(400).json({ error: 'orderId is required' });
+        return;
+      }
 
-        const results = await this.complianceService.evaluateOrderCompliance(orderId);
+      // Fetch the order to get real tenantId, clientId, and field data.
+      // req.user.tenantId is used as partition key hint for the Cosmos lookup.
+      const tenantHint = req.user?.tenantId;
+      const orderResult = await this.dbService.getItem<any>('orders', orderId, tenantHint);
+      const orderData = orderResult.success && orderResult.data ? orderResult.data : null;
 
-        // Add an audit trail event for the compliance evaluation
-        const now = new Date();
-        this.auditService.log({
-          actor: { userId: req.user?.id || 'system', email: req.user?.email || 'system' },
-          action: 'order.compliance_evaluated',
-          resource: { type: 'order', id: orderId },
-          metadata: {
-            message: `Compliance evaluation completed with ${results.length} violations found.`
-          }
-        });
+      if (!orderData) {
+        res.status(404).json({ error: `Order ${orderId} not found` });
+        return;
+      }
 
-        res.json({
-          success: true,
-          data: results
-        });
-      } catch (error) {
+      const tenantId: string = orderData.tenantId;
+      const clientId: string = orderData.clientId;
+
+      if (!tenantId) {
+        res.status(422).json({ error: `Order ${orderId} has no tenantId — cannot submit to Axiom` });
+        return;
+      }
+      if (!clientId) {
+        res.status(422).json({ error: `Order ${orderId} has no clientId — cannot submit to Axiom` });
+        return;
+      }
+
+      // Build structured field list from the order record.
+      const fields = buildOrderFields(orderData as AppraisalOrder);
+
+      // Fetch all documents for this order and pass appraisal-report ones to Axiom.
+      const docResult = await this.documentService.listDocuments(tenantId, { orderId });
+      const appraisalDocs = docResult.success && docResult.data
+        ? docResult.data.filter((d) => d.category === 'appraisal-report')
+        : [];
+      const documents = appraisalDocs.map((d) => ({
+        documentName: d.name,
+        documentReference: d.blobUrl,
+      }));
+
+      const axiomResult = await this.axiomService.submitOrderEvaluation(
+        orderId,
+        fields,
+        documents,
+        tenantId,
+        clientId,
+        undefined,
+        'ORDER',
+      );
+
+      this.auditService.log({
+        actor: { userId: req.user?.id || 'system', email: req.user?.email || 'system' },
+        action: 'order.compliance_evaluated',
+        resource: { type: 'order', id: orderId },
+        metadata: {
+          message: 'Compliance evaluation submitted to Axiom pipeline.',
+          pipelineJobId: axiomResult?.pipelineJobId,
+          fieldCount: fields.length,
+          documentCount: documents.length,
+        },
+      });
+
+      if (!axiomResult) {
+        res.status(502).json({ error: 'Axiom pipeline submission failed — check AXIOM_API_BASE_URL and AXIOM_API_KEY' });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: [],
+        pipelineJobId: axiomResult.pipelineJobId,
+        evaluationId: axiomResult.evaluationId,
+      });
+    } catch (error) {
         logger.error('Error evaluating MOP compliance', { error: error instanceof Error ? error.message : String(error) });
         res.status(500).json({
           error: 'Failed to evaluate compliance',

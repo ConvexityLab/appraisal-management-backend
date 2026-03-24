@@ -634,7 +634,7 @@ export class AppraisalManagementAPIServer {
     // The tenant signing key is fetched from Key Vault (Managed Identity) — never from env.
     this.app.use('/api/collaboration',
       this.unifiedAuth.authenticate(),
-      createCollaborationRouter()
+      createCollaborationRouter(this.dbService)
     );
 
     // Teams Meetings - Teams interoperability (authenticated users)

@@ -4,6 +4,7 @@ import { CosmosDbService } from '../services/cosmos-db.service';
 import { BlobStorageService } from '../services/blob-storage.service';
 import { DocumentService } from '../services/document.service';
 import { AxiomService } from '../services/axiom.service';
+import { AxiomExecutionService } from '../services/axiom-execution.service';
 import { DocumentUploadRequest, DocumentUpdateRequest, DocumentListQuery, DocumentMetadata } from '../types/document.types';
 import type { AppraisalOrder } from '../types/index.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
@@ -85,6 +86,7 @@ export class DocumentController {
   private documentService: DocumentService;
   private blobService: BlobStorageService;
   private axiomService: AxiomService;
+  private axiomExecutionService: AxiomExecutionService;
 
 
   // Blob Storage container for document files (set via STORAGE_CONTAINER_DOCUMENTS env var)
@@ -109,11 +111,20 @@ export class DocumentController {
     this.blobService = new BlobStorageService();
     this.documentService = new DocumentService(dbService, this.blobService);
     this.axiomService = new AxiomService(dbService);
-
+    this.axiomExecutionService = new AxiomExecutionService(dbService);
     this.initializeRoutes();
   }
 
   private initializeRoutes(): void {
+    /**
+     * GET /stream/:executionId
+     * Proxy SSE stream from Axiom for a document evaluation
+     */
+    this.router.get(
+      '/stream/:executionId',
+      this.streamDocumentExecution.bind(this)
+    );
+
     /**
      * POST /upload
      * Upload a document file
@@ -187,6 +198,35 @@ export class DocumentController {
       '/:id',
       this.deleteDocument.bind(this)
     );
+  }
+
+  /**
+   * GET /stream/:executionId
+   * Sets up an SSE connection proxying directly to Axiom's pipeline stream
+   */
+  private async streamDocumentExecution(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const executionId = req.params.executionId;
+      if (!executionId) {
+        res.status(400).json({ success: false, error: 'Missing executionId parameter' });
+        return;
+      }
+
+      // 1. Fetch the execution record to get the actual Axiom jobId
+      const execution = await this.axiomExecutionService.getExecutionById(executionId);
+      
+      // If we don't have an execution record yet, maybe it's the raw jobId directly?
+      const jobId = (execution as any)?.axiomJobId || executionId;
+
+      await this.axiomService.proxyPipelineStream(jobId, req, res);
+    } catch (error) {
+      console.error('[DocumentController] Error streaming document execution:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: 'Failed to establish stream' });
+      } else {
+        res.end();
+      }
+    }
   }
 
   /**
@@ -285,6 +325,19 @@ export class DocumentController {
           }).then((axiomResult) => {
             if (axiomResult) {
               console.log(`[DocumentController] Auto-submitted doc ${savedDoc.id} to Axiom pipeline → evaluationId: ${axiomResult.evaluationId}`);
+              
+              // Create the robust pipeline execution record
+              this.axiomExecutionService.createExecution({
+                tenantId: savedDoc.tenantId,
+                orderId: savedDoc.orderId,
+                documentIds: [savedDoc.id],
+                axiomJobId: axiomResult.pipelineJobId,
+                pipelineMode: 'FULL_PIPELINE',
+                initiatedBy: 'SYSTEM-AUTO'
+              }).catch((err: Error) => {
+                console.error('[DocumentController] Failed to create AxiomExecutionRecord', err.message);
+              });
+
               // Stamp evaluationId and status on the order (best-effort)
               this.dbService.updateOrder(orderId, {
                 axiomEvaluationId: axiomResult.evaluationId,

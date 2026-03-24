@@ -40,9 +40,7 @@ const PREFIX_MAP: Readonly<Record<string, { containerName: string; resourceType:
   arv:   { containerName: 'arv-analyses', resourceType: 'arv_analysis' },
 };
 
-// Module-level singletons — constructors are lightweight; actual I/O is deferred.
-const dbService = new CosmosDbService();
-const authzService = new AuthorizationService();
+// authzService is created inside createCollaborationRouter so it shares the initialized dbService.
 
 /**
  * Authorize a user's access to a Fluid collaboration container.
@@ -61,7 +59,9 @@ const authzService = new AuthorizationService();
  */
 async function authorizeContainerAccess(
   containerId: string | undefined,
-  user: { id: string; tenantId: string },
+  user: { id: string; tenantId: string; role?: string; email?: string; name?: string },
+  dbService: CosmosDbService,
+  authzService: AuthorizationService,
 ): Promise<{ allowed: boolean; reason?: string }> {
   // New container — no record to check.
   if (!containerId) {
@@ -116,6 +116,33 @@ async function authorizeContainerAccess(
       : { allowed: decision.allowed };
   }
 
+  // No Cosmos UserProfile — user may be an authenticated Azure AD user whose profile
+  // hasn't been seeded yet.  Fall back to the role from their JWT (set by Azure Entra
+  // middleware) so that Casbin role-based policies still apply.
+  if (user.role) {
+    const syntheticProfile = {
+      id: user.id,
+      email: user.email ?? user.id,
+      name: user.name ?? user.id,
+      tenantId: user.tenantId,
+      role: user.role,
+      accessScope: { teamIds: [], departmentIds: [] },
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const decision = await authzService.canAccess(
+      syntheticProfile,
+      mapped.resourceType,
+      recordId,
+      'read',
+      record.accessControl,
+    );
+    return decision.reason
+      ? { allowed: decision.allowed, reason: decision.reason }
+      : { allowed: decision.allowed };
+  }
+
   // External user (vendor / client) — direct ID comparison only.
   const ac = record.accessControl as { vendorId?: string; clientId?: string } | undefined;
   const isVendor = record.assignedVendorId === user.id || ac?.vendorId === user.id;
@@ -135,7 +162,13 @@ try {
   logger.warn('CollaborationService not available — collaboration endpoints will return 503', { err });
 }
 
-export const createCollaborationRouter = (): Router => {
+export const createCollaborationRouter = (dbService: CosmosDbService): Router => {
+  // Create authzService sharing the injected (already-initialized) dbService.
+  // Kick off Casbin policy-file initialization immediately — it reads local files, no DB needed.
+  const authzService = new AuthorizationService(undefined, dbService);
+  const authzReady = authzService.initialize(/* dbAlreadyInitialized= */ true);
+  authzReady.catch((err) => logger.error('AuthorizationService initialization failed', { err }));
+
   const router = express.Router();
 
   /**
@@ -205,7 +238,15 @@ export const createCollaborationRouter = (): Router => {
       try {
         authzResult = await authorizeContainerAccess(
           req.query.containerId as string | undefined,
-          { id: req.user.id, tenantId: req.user.tenantId },
+          {
+            id: req.user.id,
+            tenantId: req.user.tenantId,
+            ...(req.user.role !== undefined ? { role: req.user.role } : {}),
+            email: req.user.email,
+            name: req.user.name,
+          },
+          dbService,
+          authzService,
         );
       } catch (authzErr) {
         logger.error('authorizeContainerAccess threw unexpectedly', { authzErr, userId: req.user.id });

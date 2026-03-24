@@ -65,6 +65,7 @@ func.log
 !package-lock.json
 !tsconfig.json
 !infrastructure/parameters/*.json
+!seed-data/**/*.json
 
 # Local development
 .env.local

@@ -16,6 +16,7 @@ export interface UnifiedAuthRequest extends Request {
     id: string;
     email: string;
     name: string;
+    role?: string;  // Set by Azure Entra auth middleware; used by collaboration authz
     tenantId: string;
     azureAdObjectId?: string;
     accessScope?: any;
@@ -60,7 +61,12 @@ export class UnifiedAuthMiddleware {
   authenticate = () => {
     return async (req: UnifiedAuthRequest, res: Response, next: NextFunction): Promise<any> => {
       try {
-        const authHeader = req.headers.authorization;
+        let authHeader = req.headers.authorization;
+
+        // Fallback to query parameter for EventSource (SSE) which cannot send headers
+        if (!authHeader && req.query.access_token && typeof req.query.access_token === 'string') {
+          authHeader = `Bearer ${req.query.access_token}`;
+        }
 
         if (!authHeader) {
           return res.status(401).json({

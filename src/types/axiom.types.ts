@@ -78,3 +78,39 @@ export interface CompileResponse {
   cached: boolean;
   metadata: CompileMetadata;
 }
+
+// --- Axiom Pipeline Execution & Tracking ---------------------------------
+
+export type AxiomPipelineMode = 
+  | 'FULL_PIPELINE' 
+  | 'CLASSIFICATION_ONLY' 
+  | 'EXTRACTION_ONLY' 
+  | 'CRITERIA_ONLY';
+
+export type AxiomExecutionStatus = 
+  | 'QUEUED' 
+  | 'CLASSIFYING' 
+  | 'EXTRACTING' 
+  | 'CONSOLIDATING'
+  | 'EVALUATING' 
+  | 'COMPLETED' 
+  | 'FAILED';
+
+export interface AxiomExecutionRecord {
+  id: string;                    // Internal platform document tracking ID (PK for Cosmos)
+  tenantId: string;
+  orderId?: string;              // Linked Order
+  documentIds: string[];         // Platform doc IDs passed
+  axiomFileSetId?: string;       // Tied to Axiom's /api/documents
+  axiomJobId: string;            // Tied to Axiom's /api/pipelines execution
+  pipelineMode: AxiomPipelineMode;
+  status: AxiomExecutionStatus;
+  runCount: number;              // Documents can be re-run
+  initiatedBy: string;           // userId or 'SYSTEM-AUTO'
+  results?: any;                 // The final consolidated output
+  failureReason?: string;
+  createdAt: string;             // ISO Date
+  updatedAt: string;             // ISO Date
+  completedAt?: string;          // ISO Date
+}
+

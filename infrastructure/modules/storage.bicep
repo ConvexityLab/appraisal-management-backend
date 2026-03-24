@@ -275,6 +275,20 @@ resource imageResizeQueue 'Microsoft.Storage/storageAccounts/queueServices/queue
   }
 }
 
+// SFTP Order Events Queue
+// Receives Event Grid BlobCreated notifications from the SFTP storage account.
+// The processSftpOrderFile function uses this as its trigger.
+resource sftpOrderEventsQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-04-01' = {
+  parent: queueService
+  name: 'sftp-order-events'
+  properties: {
+    metadata: {
+      purpose: 'Event Grid delivery queue for Statebridge SFTP inbound file notifications'
+      environment: environment
+    }
+  }
+}
+
 // Outputs
 output storageAccountName string = storageAccount.name
 output storageAccountId string = storageAccount.id
@@ -297,4 +311,5 @@ output tableNames array = [
 output queueNames array = [
   documentProcessingQueue.name
   imageResizeQueue.name
+  sftpOrderEventsQueue.name
 ]

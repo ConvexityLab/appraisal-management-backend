@@ -593,6 +593,16 @@ export interface AxiomEvaluationTimedOutEvent extends BaseEvent {
   };
 }
 
+export interface AxiomExecutionCompletedEvent extends BaseEvent {
+  type: 'axiom.execution.completed';
+  category: EventCategory.SYSTEM;
+  data: {
+    executionId: string;
+    status: 'COMPLETED' | 'FAILED';
+    pipelineJobId?: string;
+  };
+}
+
 /**
  * Fired when a supervisor has not co-signed an order within the configured SLA window.
  * Published by SupervisionTimeoutWatcherJob.
@@ -945,7 +955,7 @@ export interface NegotiationRejectedEvent extends BaseEvent {
   };
 }
 
-export type AppEvent = 
+export type AppEvent =
   | OrderCreatedEvent
   | OrderStatusChangedEvent
   | OrderAssignedEvent
@@ -960,6 +970,7 @@ export type AppEvent =
   | VendorPerformanceUpdatedEvent
   | VendorAvailabilityChangedEvent
   | SystemAlertEvent
+  | AxiomExecutionCompletedEvent
   // Auto-assignment workflow events
   | EngagementOrderCreatedEvent
   | VendorBidSentEvent
