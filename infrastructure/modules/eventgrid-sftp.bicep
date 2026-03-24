@@ -44,13 +44,13 @@ resource sftpEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview
 // Grant the Event Grid system topic's managed identity permission to enqueue
 // messages onto the main storage account's sftp-order-events queue.
 resource queueSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  // Role: Storage Queue Data Message Sender (970f84d8-71b6-4697-b05c-4b487c-...)
-  name: guid(sftpEventGridTopic.id, mainStorageAccountId, '970f84d8-71b6-4697-b05c-4b487c1ab8e6')
+  // Role: Storage Queue Data Message Sender (c6a89b2d-59bc-44d0-9896-0f6e12d7b80a)
+  name: guid(sftpEventGridTopic.id, mainStorageAccountId, 'c6a89b2d-59bc-44d0-9896-0f6e12d7b80a')
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
-      '970f84d8-71b6-4697-b05c-4b487c1ab8e6' // Storage Queue Data Message Sender
+      'c6a89b2d-59bc-44d0-9896-0f6e12d7b80a' // Storage Queue Data Message Sender
     )
     principalId: sftpEventGridTopic.identity.principalId
     principalType: 'ServicePrincipal'
