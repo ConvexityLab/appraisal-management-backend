@@ -24,6 +24,19 @@ param webPubSubEndpoint string = ''
 param fluidRelayTenantId string = ''
 param fluidRelayEndpoint string = ''
 
+// Statebridge SFTP integration
+param sftpStorageAccountName string = ''
+param statebridgeClientId string = 'statebridge'
+param statebridgeClientName string = 'Statebridge'
+param statebridge_tenantId string = ''
+
+// Axiom AI platform integration (functions container)
+param axiomApiBaseUrl string = ''
+param axiomWebhookSecret string = ''
+// Externally reachable base URL of the functions Container App — used to build
+// the Axiom callback webhook URL.  Populated post-deploy once the FQDN is known.
+param apiCallbackBaseUrl string = ''
+
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
@@ -278,6 +291,49 @@ var containerApps = [
       {
         name: 'BATCHDATA_ENDPOINT'
         value: empty(batchDataEndpoint) ? '' : batchDataEndpoint
+      }
+      {
+        // SFTP storage account name — used by processSftpOrderFile to download
+        // inbound order files and write results back via DefaultAzureCredential
+        name: 'SFTP_STORAGE_ACCOUNT_NAME'
+        value: sftpStorageAccountName
+      }
+      {
+        // Client identifier for Cosmos orders created from Statebridge SFTP files
+        name: 'STATEBRIDGE_CLIENT_ID'
+        value: statebridgeClientId
+      }
+      {
+        name: 'STATEBRIDGE_CLIENT_NAME'
+        value: statebridgeClientName
+      }
+      {
+        // Cosmos partition key (tenantId) for all Statebridge engagement + order documents
+        name: 'STATEBRIDGE_TENANT_ID'
+        value: statebridge_tenantId
+      }
+      {
+        // Axiom AI platform — extraction API endpoint used by BPO extraction functions
+        name: 'AXIOM_API_BASE_URL'
+        value: axiomApiBaseUrl
+      }
+      {
+        // HMAC-SHA256 secret shared with Axiom for webhook signature verification
+        name: 'AXIOM_WEBHOOK_SECRET'
+        value: axiomWebhookSecret
+      }
+      {
+        // External base URL of this functions Container App.
+        // Set after first deployment when the FQDN is known.
+        // Used to build the webhookUrl sent to Axiom for BPO extraction callbacks.
+        name: 'API_CALLBACK_BASE_URL'
+        value: apiCallbackBaseUrl
+      }
+      {
+        // Cosmos Change Feed binding — identity-based connection requires
+        // CosmosDbConnection__accountEndpoint pointing at the Cosmos account.
+        name: 'CosmosDbConnection__accountEndpoint'
+        value: cosmosEndpoint
       }
     ], empty(batchDataApiKey) ? [] : [
       {

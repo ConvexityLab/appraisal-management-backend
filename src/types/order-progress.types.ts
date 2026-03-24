@@ -89,6 +89,7 @@ export interface OrderProgressUpdate {
 
 export type DocumentType =
   | 'APPRAISAL_REPORT'
+  | 'BPO_REPORT'
   | 'INSPECTION_PHOTOS'
   | 'COMPS'
   | 'FLOOR_PLAN'

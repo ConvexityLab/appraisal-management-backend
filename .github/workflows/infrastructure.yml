@@ -17,6 +17,8 @@ on:
         required: true
       AZURE_SUBSCRIPTION_ID:
         required: true
+      AXIOM_WEBHOOK_SECRET:
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -58,6 +60,7 @@ jobs:
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AXIOM_WEBHOOK_SECRET: ${{ secrets.AXIOM_WEBHOOK_SECRET }}
     
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
@@ -98,6 +101,7 @@ jobs:
         [ -n "$AZURE_TENANT_ID" ] && PARAM_ARGS+=("azureTenantId=$AZURE_TENANT_ID")
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
+        [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         
         az deployment sub validate \
           --location ${{ inputs.location }} \
@@ -125,6 +129,7 @@ jobs:
         [ -n "$AZURE_TENANT_ID" ] && PARAM_ARGS+=("azureTenantId=$AZURE_TENANT_ID")
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
+        [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         
         deployment_output=$(az deployment sub create \
           --location ${{ inputs.location }} \

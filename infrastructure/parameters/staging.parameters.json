@@ -35,6 +35,18 @@
     },
     "dnsZoneResourceGroup": {
       "value": "rg-appraisal-mgmt-staging-eastus"
+    },
+    "statebridgeClientName": {
+      "value": "Statebridge"
+    },
+    "statebridge_tenantId": {
+      "value": "statebridge-tenant"
+    },
+    "axiomApiBaseUrl": {
+      "value": "https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"
+    },
+    "apiCallbackBaseUrl": {
+      "value": "https://ca-appraisalfunctions-sta-lqxl.jollysand-19372da7.eastus.azurecontainerapps.io"
     }
   }
 }

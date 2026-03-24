@@ -95,6 +95,25 @@ param azureClientSecret string = ''
 @description('Optional: Array of developer user principal IDs for local testing (get via: az ad signed-in-user show --query id -o tsv)')
 param developerPrincipalIds array = []
 
+@description('Statebridge client identifier — used as clientId on all Cosmos orders created via SFTP')
+param statebridgeClientId string = 'statebridge'
+
+@description('Statebridge display name — used in the EngagementClient.clientName field')
+param statebridgeClientName string = 'Statebridge'
+
+@description('Tenant ID for all Statebridge Cosmos documents (partition key). Set to your Statebridge tenant GUID.')
+param statebridge_tenantId string
+
+@description('Base URL of the Axiom AI extraction API (e.g. https://axiom.internal.example.com)')
+param axiomApiBaseUrl string = ''
+
+@secure()
+@description('HMAC-SHA256 secret shared with Axiom for webhook signature verification')
+param axiomWebhookSecret string = ''
+
+@description('Externally reachable base URL of the functions Container App. Set post-deploy when the FQDN is known.')
+param apiCallbackBaseUrl string = ''
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -295,6 +314,37 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
+// SFTP Storage Account (Statebridge integration)
+// Dedicated HNS/ADLS Gen2 account — HNS cannot be added to the existing account.
+// Statebridge uploads daily pipe-delimited BPO order files to uploads/
+// and reads pipe-delimited results + PDFs from results/.
+module sftpStorage 'modules/storage-sftp.bicep' = {
+  name: 'sftp-storage-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+  }
+}
+
+// Event Grid subscription: SFTP BlobCreated → sftp-order-events queue
+// Routes uploads/ blob events to the queue so the functions container app can process them.
+module sftpEventGrid 'modules/eventgrid-sftp.bicep' = {
+  name: 'sftp-eventgrid-deployment'
+  scope: resourceGroup
+  params: {
+    sftpStorageAccountId: sftpStorage.outputs.sftpStorageAccountId
+    sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
+    mainStorageAccountId: storage.outputs.storageAccountId
+    tags: tags
+  }
+  dependsOn: [
+    storage
+    sftpStorage
+  ]
+}
+
 // Container Apps and Container Registry (deployed after data services)
 module appServices 'modules/app-services.bicep' = {
   name: 'app-services-deployment'
@@ -322,6 +372,13 @@ module appServices 'modules/app-services.bicep' = {
     webPubSubEndpoint: webPubSub.outputs.webPubSubEndpoint
     fluidRelayTenantId: fluidRelay.outputs.fluidRelayTenantId
     fluidRelayEndpoint: fluidRelay.outputs.fluidRelayEndpoint
+    sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
+    statebridgeClientId: statebridgeClientId
+    statebridgeClientName: statebridgeClientName
+    statebridge_tenantId: statebridge_tenantId
+    axiomApiBaseUrl: axiomApiBaseUrl
+    axiomWebhookSecret: axiomWebhookSecret
+    apiCallbackBaseUrl: apiCallbackBaseUrl
   }
 }
 
@@ -331,6 +388,16 @@ module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
   scope: resourceGroup
   params: {
     cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
+// SFTP Storage role assignments for Container Apps (functions need read/write on SFTP account)
+module sftpStorageRoleAssignments 'modules/storage-sftp-role-assignments.bicep' = {
+  name: 'sftp-storage-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
@@ -465,6 +532,10 @@ output cosmosAccountName string = cosmosDb.outputs.cosmosAccountName
 output applicationInsightsName string = monitoring.outputs.applicationInsightsName
 output appServiceName string = appServices.outputs.containerAppNames[0]
 output appServiceUrl string = 'https://${appServices.outputs.containerAppFqdns[0]}'
+output sftpStorageAccountName string = sftpStorage.outputs.sftpStorageAccountName
+output sftpEndpoint string = sftpStorage.outputs.sftpEndpoint
+output sftpUploadsContainer string = sftpStorage.outputs.uploadsContainerName
+output sftpResultsContainer string = sftpStorage.outputs.resultsContainerName
 output deploymentSummary object = {
   resourceGroup: resourceGroup.name
   location: location

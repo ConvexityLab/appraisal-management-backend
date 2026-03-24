@@ -1,0 +1,146 @@
+{
+    "id": "visionone:statebridge-tenant:bpo-report:v1.0",
+    "type": "extraction-schema",
+    "clientId": "visionone",
+    "tenantId": "statebridge-tenant",
+    "documentType": "bpo-report",
+    "name": "Broker Price Opinion — Statebridge/VisionOne Extraction Schema",
+    "version": "1.0",
+    "isActive": true,
+    "fields": [
+        {
+            "name": "county",
+            "type": "string",
+            "required": true,
+            "description": "County where the subject property is located, as shown in the subject address header of the BPO form",
+            "label": "County",
+            "aiHints": {
+                "aliases": ["County", "county name", "(County)", "subject county"],
+                "context": "Located in the subject property address header row, typically the last label in the sequence: (Subject Address) (City) (State) (Zip Code) (County). The value immediately follows the zip code.",
+                "format": "string — county name only, no state suffix (e.g. 'Okaloosa', not 'Okaloosa County, FL')"
+            }
+        },
+        {
+            "name": "propertyCondition",
+            "type": "string",
+            "required": true,
+            "description": "Overall condition rating of the subject property as reported by the broker, either as a UAD code (C1-C6) or descriptive term (Excellent, Good, Average, Fair, Poor)",
+            "label": "Property Condition",
+            "aiHints": {
+                "aliases": ["Condition", "property condition", "subject condition", "overall condition"],
+                "context": "Found in the Subject column of the comparable sales grid, on the 'Condition' row. May appear as a UAD condition code (C1, C2, C3, C4, C5, C6) or a descriptive word. The subject column is the first data column in the comp grid.",
+                "format": "string — prefer the UAD code if present (C1–C6); otherwise return the descriptive word as written (e.g. 'Average', 'Fair', 'Good')"
+            }
+        },
+        {
+            "name": "asIsValue",
+            "type": "number",
+            "required": true,
+            "description": "As-Is Market Value of the subject property in its current condition, expressed as a dollar amount",
+            "label": "As-Is Market Value",
+            "aiHints": {
+                "aliases": ["As-Is Market Value", "As Is Market Value", "As-Is Value", "as-is", "AsIs"],
+                "context": "Dollar amount labeled 'As-Is Market Value' near the top of the BPO form, often on the same page as the subject address. May also appear in a subject sale/listing information section. Look for a line reading 'As-Is Market Value: $XXX,XXX'.",
+                "format": "number — extract as numeric value without currency symbols or commas (e.g. 245000, not '$245,000')"
+            }
+        },
+        {
+            "name": "repairedValue",
+            "type": "number",
+            "required": true,
+            "description": "As-Repaired Market Value (ARV) of the subject property after the proposed repairs, expressed as a dollar amount",
+            "label": "As-Repaired Market Value",
+            "aiHints": {
+                "aliases": ["As-Repaired Market Value", "As Repaired Market Value", "ARV", "After-Repair Value", "as-repaired", "AsRepaired", "Repaired Value"],
+                "context": "Dollar amount labeled 'As-Repaired Market Value:' prominently displayed near the top of the form, often directly below or near the subject address header. This is the primary valuation figure on the BPO. Example: 'As-Repaired Market Value: $360,000'.",
+                "format": "number — extract as numeric value without currency symbols or commas (e.g. 360000, not '$360,000')"
+            }
+        },
+        {
+            "name": "propertyAddress",
+            "type": "string",
+            "required": true,
+            "description": "Full street address of the subject property",
+            "label": "Property Address",
+            "aiHints": {
+                "aliases": ["Subject Address", "property address", "subject property address", "(Subject Address)"],
+                "context": "First field in the subject address header row at the top of the BPO form, labeled '(Subject Address)'. Contains street number and street name.",
+                "format": "string — street address only, no city/state/zip (e.g. '420 Paradise Rd')"
+            }
+        },
+        {
+            "name": "propertyCity",
+            "type": "string",
+            "required": false,
+            "description": "City of the subject property",
+            "label": "City",
+            "aiHints": {
+                "aliases": ["City", "(City)", "subject city"],
+                "context": "Second element in the subject address header row, labeled '(City)'",
+                "format": "string"
+            }
+        },
+        {
+            "name": "propertyState",
+            "type": "string",
+            "required": false,
+            "description": "Two-letter state abbreviation of the subject property",
+            "label": "State",
+            "aiHints": {
+                "aliases": ["State", "(State)", "subject state"],
+                "context": "Third element in the subject address header row, labeled '(State)'",
+                "format": "string — 2-letter state abbreviation (e.g. 'FL')"
+            }
+        },
+        {
+            "name": "propertyZip",
+            "type": "string",
+            "required": false,
+            "description": "Zip code of the subject property",
+            "label": "Zip Code",
+            "aiHints": {
+                "aliases": ["Zip Code", "(Zip Code)", "zip", "postal code"],
+                "context": "Fourth element in the subject address header row, labeled '(Zip Code)'",
+                "format": "string — 5-digit zip code"
+            }
+        },
+        {
+            "name": "effectiveDate",
+            "type": "string",
+            "required": false,
+            "description": "Date the BPO report was completed or signed by the service provider",
+            "label": "Report Date",
+            "aiHints": {
+                "aliases": ["Report Date", "Signature Date", "date", "report date"],
+                "context": "Found in the signature block at the bottom of the form, labeled 'Report Date'. Also may appear as the submission or signature date.",
+                "format": "date — return in ISO 8601 format YYYY-MM-DD if possible; otherwise return as written"
+            }
+        },
+        {
+            "name": "brokerName",
+            "type": "string",
+            "required": false,
+            "description": "Full name of the service provider (broker or real-estate agent) who prepared the BPO",
+            "label": "Service Provider Name",
+            "aiHints": {
+                "aliases": ["Service Provider Name", "Agent Name", "Broker Name", "Prepared By", "Appraiser"],
+                "context": "Found in the signature block at the bottom of the report, labeled 'Service Provider Name'",
+                "format": "string — full name as written"
+            }
+        },
+        {
+            "name": "repairCost",
+            "type": "number",
+            "required": false,
+            "description": "Estimated cost of repairs/renovations to bring the property to its repaired condition, as stated in the BPO",
+            "label": "Repair Cost",
+            "aiHints": {
+                "aliases": ["repair cost", "renovation cost", "repair/renovation cost", "repairs"],
+                "context": "Found in the 'Repair Cost & Commentary' section, on a line reading 'The repair/renovation cost quoted in the client instructions is $XX,XXX'. May differ from the service provider's own estimate.",
+                "format": "number — extract as numeric value without currency symbols or commas"
+            }
+        }
+    ],
+    "createdAt": "2025-01-01T00:00:00.000Z",
+    "createdBy": "seed-script"
+}

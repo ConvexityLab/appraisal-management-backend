@@ -1,0 +1,210 @@
+{
+    "id": "registry-visionone:statebridge-tenant:bpo-report",
+    "type": "document-type",
+    "clientId": "visionone",
+    "tenantId": "statebridge-tenant",
+    "documentType": "bpo-report",
+    "name": "Broker Price Opinion",
+    "category": "appraisal-documents",
+    "description": "Interior Broker Price Opinion (BPO) prepared by a licensed real-estate broker/agent. Contains subject property stats, as-is market value, as-repaired market value (ARV), comparable sales grid (as-repaired and as-is comps), neighborhood data, repair cost commentary, and broker certification. Formatted as an interior BPO produced for investors/servicers, typically 5-15 pages.",
+    "version": "1.0.0",
+    "isActive": true,
+    "isEnabled": true,
+    "extractionRequired": true,
+    "priority": 10,
+    "confidenceThreshold": 0.85,
+    "activeSchemaId": "visionone:statebridge-tenant:bpo-report:v1.0",
+    "aliases": [
+        "BPO",
+        "Broker Price Opinion",
+        "Broker's Price Opinion",
+        "Interior BPO",
+        "Interior Broker Price Opinion",
+        "Valuation Report",
+        "BPO Report"
+    ],
+    "boundaryDetection": {
+        "strategy": "field-based",
+        "uniqueIdentifierFields": [
+            "subjectAddress",
+            "reportDate",
+            "brokerName"
+        ],
+        "typicalPageCount": 7,
+        "minPageCount": 3,
+        "maxPageCount": 20,
+        "firstPagePatterns": [
+            "(?i)broker\\s+price\\s+opinion",
+            "(?i)interior\\s+broker\\s+price\\s+opinion",
+            "(?i)as-repaired\\s+market\\s+value",
+            "(?i)as-is\\s+market\\s+value"
+        ],
+        "firstPageKeywords": [
+            "broker price opinion",
+            "as-repaired market value",
+            "as-is market value",
+            "comparable sales"
+        ],
+        "sequenceIndicators": {
+            "pageNumberFormat": "Page X"
+        }
+    },
+    "visualCriteria": {
+        "layoutFeatures": [
+            {
+                "type": "form_header",
+                "description": "BPO form header showing 'Interior Broker Price Opinion', subject address, city, state, zip, and county",
+                "required": true,
+                "position": "top",
+                "confidenceWeight": 0.35
+            },
+            {
+                "type": "table",
+                "description": "Comparable sales grid with Subject column and 3-6 comparable columns (as-repaired and/or as-is)",
+                "required": true,
+                "position": "anywhere",
+                "confidenceWeight": 0.35
+            },
+            {
+                "type": "value_box",
+                "description": "As-Repaired Market Value dollar amount prominently shown near top of form",
+                "required": true,
+                "position": "top",
+                "confidenceWeight": 0.2
+            },
+            {
+                "type": "form_fields",
+                "description": "Subject Stats section with Occupant, Appears Secure, Est. Rent/Mo., Marketability",
+                "required": false,
+                "position": "anywhere",
+                "confidenceWeight": 0.1
+            }
+        ],
+        "visualElements": [
+            {
+                "type": "text_block",
+                "description": "Dollar amount labeled 'As-Repaired Market Value' or 'As-Is Market Value'",
+                "expectedContent": "As-Repaired Market Value|As-Is Market Value|ARV",
+                "required": true,
+                "confidenceWeight": 0.4
+            },
+            {
+                "type": "address_block",
+                "description": "Subject address header with street, city, state, zip, county on the same or adjacent lines",
+                "expectedContent": "Subject Address|City|State|Zip Code|County",
+                "required": true,
+                "confidenceWeight": 0.35
+            },
+            {
+                "type": "table",
+                "description": "Comp grid rows: Address, Proximity, Sale Price, Price/SqFt, Condition, Year Built, Living Area",
+                "expectedContent": "Address|Sale Price|Condition|Year Built|Living Area|Proximity",
+                "required": true,
+                "confidenceWeight": 0.25
+            }
+        ],
+        "formattingIndicators": [
+            {
+                "type": "form_structure",
+                "description": "Multi-column comp grid layout with Subject in first data column",
+                "confidenceWeight": 0.4
+            },
+            {
+                "type": "letterhead",
+                "description": "Client/Intended User line near top (e.g. 'Client/Intended User: Vision VMC')",
+                "confidenceWeight": 0.3
+            },
+            {
+                "type": "signature_block",
+                "description": "Service Provider signature, name, license number, and license state at bottom",
+                "confidenceWeight": 0.3
+            }
+        ],
+        "classificationPrompts": [
+            {
+                "prompt": "Examine the document. Does it have ALL of the following: (1) a form header or title containing 'Broker Price Opinion' or 'BPO', (2) a subject property address with County field, (3) a dollar amount labeled 'As-Repaired Market Value' or 'As-Is Market Value', (4) a comparable sales grid showing multiple comparable properties with address, sale price, and condition?",
+                "expectedResponse": "Yes, this is a Broker Price Opinion showing subject property valuation and comparable sales data",
+                "confidenceWeight": 0.8
+            },
+            {
+                "prompt": "Verify it is NOT a full URAR appraisal (Form 1004) or a desktop appraisal. Confirm: (1) the document is prepared by a broker or real-estate agent (not a licensed appraiser), (2) it shows 'BPO' terminology rather than 'Uniform Residential Appraisal Report' or URAR form numbers, (3) it contains an 'As-Repaired Market Value' or service provider/vendor comments sections typical of BPO forms.",
+                "expectedResponse": "Confirmed - Broker Price Opinion prepared by a real-estate broker/agent, NOT a URAR appraisal",
+                "confidenceWeight": 0.2
+            }
+        ]
+    },
+    "textCriteria": {
+        "keywords": [
+            {
+                "keywords": ["Broker Price Opinion", "Interior Broker Price Opinion", "Interior BPO"],
+                "weight": 0.4,
+                "required": true,
+                "context": "header"
+            },
+            {
+                "keywords": ["As-Repaired Market Value", "As-Is Market Value", "ARV"],
+                "weight": 0.35,
+                "required": true,
+                "context": "body"
+            },
+            {
+                "keywords": ["Service Provider", "Broker Contact", "License Number", "License State"],
+                "weight": 0.15,
+                "required": false,
+                "context": "anywhere"
+            },
+            {
+                "keywords": ["Comparable Sales", "As-Repaired Sale", "As-Is Sale", "Comparable Comments"],
+                "weight": 0.1,
+                "required": false,
+                "context": "anywhere"
+            }
+        ],
+        "textPatterns": [
+            {
+                "pattern": "(?i)\\bbroker\\s+price\\s+opinion\\b",
+                "description": "Broker Price Opinion title",
+                "required": true,
+                "weight": 0.45
+            },
+            {
+                "pattern": "(?i)as-repaired\\s+market\\s+value\\s*:\\s*\\$[\\d,]+",
+                "description": "As-Repaired Market Value with dollar amount",
+                "required": true,
+                "weight": 0.35
+            },
+            {
+                "pattern": "(?i)\\b(county)\\b",
+                "description": "County label in subject address header",
+                "required": true,
+                "weight": 0.1
+            },
+            {
+                "pattern": "(?i)\\b(condition)\\s+(C[1-6]|excellent|good|average|fair|poor)\\b",
+                "description": "Property condition rating in comp grid",
+                "required": false,
+                "weight": 0.1
+            }
+        ],
+        "requiredElements": [
+            {
+                "elementType": "title",
+                "description": "Document title containing 'Broker Price Opinion'",
+                "pattern": "(?i)broker\\s+price\\s+opinion",
+                "required": true
+            },
+            {
+                "elementType": "address",
+                "description": "Subject property address with county",
+                "required": true
+            },
+            {
+                "elementType": "value",
+                "description": "As-Repaired Market Value dollar amount",
+                "required": true
+            }
+        ]
+    },
+    "createdAt": "2025-01-01T00:00:00.000Z",
+    "createdBy": "seed-script"
+}
