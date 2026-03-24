@@ -84,11 +84,10 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01'
       enabled: true
       days: environment == 'prod' ? 30 : 7
     }
-    // Change feed enables Event Grid BlobCreated events on HNS accounts
-    changeFeed: {
-      enabled: true
-      retentionInDays: environment == 'prod' ? 7 : 3
-    }
+    // NOTE: changeFeed is NOT supported on HNS (ADLS Gen2 / isSftpEnabled)
+    // accounts. The storage service returns HTTP 400 if you try to enable it.
+    // Event Grid BlobCreated events work natively on HNS accounts WITHOUT
+    // change feed — the sftpEventGrid module sets up the system topic directly.
     isVersioningEnabled: false
   }
 }
