@@ -53,6 +53,7 @@ vi.mock('../../src/services/cosmos-db.service.js', () => ({
 
 vi.mock('../../src/services/authorization.service.js', () => ({
   AuthorizationService: vi.fn().mockImplementation(() => ({
+    initialize: vi.fn().mockResolvedValue(undefined),
     getUserProfile: mockGetUserProfile,
     canAccess: mockCanAccess,
   })),
@@ -75,13 +76,14 @@ function attachTestUser(req: express.Request, _res: express.Response, next: expr
 // ─── Import router after mocks ────────────────────────────────────────────────
 
 import { createCollaborationRouter } from '../../src/controllers/collaboration.controller.js';
+import { CosmosDbService } from '../../src/services/cosmos-db.service.js';
 
 // ─── Build test app ───────────────────────────────────────────────────────────
 
 function buildApp() {
   const app = express();
   app.use(express.json());
-  app.use('/api/collaboration', attachTestUser, createCollaborationRouter());
+  app.use('/api/collaboration', attachTestUser, createCollaborationRouter(new CosmosDbService()));
   return app;
 }
 
