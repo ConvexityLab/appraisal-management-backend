@@ -364,7 +364,7 @@ jobs:
         echo " ALLOWED_ORIGINS: $FINAL_ORIGINS"
         
         # Determine scaling based on environment
-        if [["${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
+        if [[ "${{ needs.determine-environment.outputs.environment }}" == "prod" ]]; then
           MIN_REPLICAS=2
           MAX_REPLICAS=10
         else
@@ -393,9 +393,8 @@ jobs:
             MATCHED_TAG=$(az acr repository show-tags \
               --name "${ACR_SERVER%%.*}" \
               --repository appraisal-api \
-              --filter "$SHORT_SHA" \
               --orderby time_desc \
-              --top 1 -o tsv 2>/dev/null || true)
+              --top 20 -o tsv 2>/dev/null | grep "^${SHORT_SHA}" | head -1 || true)
           fi
           if [[ -n "$MATCHED_TAG" && "$MATCHED_TAG" != "latest" ]]; then
             NEW_IMAGE="${ACR_SERVER}/appraisal-api:${MATCHED_TAG}"
@@ -471,9 +470,8 @@ jobs:
             MATCHED_TAG=$(az acr repository show-tags \
               --name "${ACR_SERVER%%.*}" \
               --repository appraisal-functions \
-              --filter "$SHORT_SHA" \
               --orderby time_desc \
-              --top 1 -o tsv 2>/dev/null || true)
+              --top 20 -o tsv 2>/dev/null | grep "^${SHORT_SHA}" | head -1 || true)
           fi
           if [[ -n "$MATCHED_TAG" && "$MATCHED_TAG" != "latest" ]]; then
             FUNC_NEW_IMAGE="${ACR_SERVER}/appraisal-functions:${MATCHED_TAG}"

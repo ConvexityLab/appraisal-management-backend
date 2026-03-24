@@ -88,7 +88,7 @@ resource sftpEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscripti
         resourceId: mainStorageAccountId
         queueName: 'sftp-order-events'
         // Messages expire after 7 days (604800 seconds) — long enough for weekend gap
-        queueMessageTtlInSeconds: 604800
+        queueMessageTimeToLiveInSeconds: 604800
       }
     }
     retryPolicy: {
