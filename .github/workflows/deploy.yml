@@ -80,8 +80,8 @@ jobs:
     name: Detect What Changed
     runs-on: ubuntu-latest
     outputs:
-      infrastructure: ${{ steps.filter.outputs.infrastructure }}
-      code: ${{ steps.filter.outputs.code }}
+      infrastructure: ${{ steps.override.outputs.infrastructure }}
+      code: ${{ steps.override.outputs.code }}
     steps:
     - uses: actions/checkout@v4
     - uses: dorny/paths-filter@v3
@@ -92,10 +92,24 @@ jobs:
             - 'infrastructure/**'
           code:
             - 'src/**'
+            - 'tests/**'
             - 'package.json'
             - 'pnpm-lock.yaml'
             - 'Dockerfile'
             - 'tsconfig*.json'
+    # workflow_dispatch has no diff context so dorny/paths-filter returns
+    # false for all outputs. Force both to true so manual dispatches always
+    # run the full pipeline.
+    - name: Override outputs for workflow_dispatch
+      id: override
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "code=true" >> $GITHUB_OUTPUT
+          echo "infrastructure=true" >> $GITHUB_OUTPUT
+        else
+          echo "code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
+          echo "infrastructure=${{ steps.filter.outputs.infrastructure }}" >> $GITHUB_OUTPUT
+        fi
 
   build-and-test:
     needs: detect-changes
