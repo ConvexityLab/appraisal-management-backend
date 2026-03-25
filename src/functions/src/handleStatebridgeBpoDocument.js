@@ -201,6 +201,9 @@ app.cosmosDB("detectStatebridgeBpoUpload", {
   databaseName,
   containerName: "documents",
   leaseContainerName: "leases",
+  // leaseContainerPrefix prevents "builder already used" crash — each trigger
+  // must have a unique prefix so the Cosmos SDK allocates separate builder instances.
+  leaseContainerPrefix: "bpo-detect",
   createLeaseContainerIfNotExists: false, // infrastructure creates leases container
   startFromBeginning: false,
   handler: async (documents, context) => {

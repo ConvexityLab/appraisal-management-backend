@@ -877,6 +877,23 @@ var containers = [
       ]
     }
   }
+  // Cosmos Change Feed leases — used by detectStatebridgeBpoUpload to track
+  // its read position across the 'documents' container's change feed.
+  // Partition key /id is the standard choice for the Change Feed Processor lease store.
+  {
+    name: 'leases'
+    partitionKey: '/id'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+    }
+  }
 ]
 
 // Cosmos DB Account with enterprise settings
