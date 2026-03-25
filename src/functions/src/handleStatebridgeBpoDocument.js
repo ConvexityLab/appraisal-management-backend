@@ -1,24 +1,20 @@
 /**
  * handleStatebridgeBpoDocument.js
  *
- * Two Azure Functions for the Statebridge BPO Axiom extraction round-trip:
+ * Cosmos Change Feed function for the Statebridge BPO Axiom extraction flow:
  *
- *   1. detectStatebridgeBpoUpload — Cosmos Change Feed on `documents` container.
- *      Fires when a document is inserted/updated. Detects BPO PDF uploads
- *      linked to Statebridge orders and submits them to the Axiom
- *      DOCUMENT_EXTRACTION pipeline.
- *
- *   2. statebridgeBpoAxiomCallback — HTTP POST handler.
- *      Axiom calls this when it finishes extracting fields from the BPO PDF.
- *      On success, writes county/condition/asIsValue/repairedValue back to the
- *      order document, copies the PDF to the SFTP results container with the
- *      correct file-name format, then marks the order COMPLETED.
+ *   detectStatebridgeBpoUpload — Cosmos Change Feed on `documents` container.
+ *   When a BPO PDF document is inserted, this function:
+ *     1. Verifies the document belongs to a Statebridge order
+ *     2. Submits the PDF to Axiom's DOCUMENT_EXTRACTION pipeline
+ *     3. Opens an SSE connection to GET /api/pipelines/:jobId/stream
+ *     4. Waits for the pipeline.completed (or pipeline.failed) event
+ *     5. Fetches full results via GET /api/pipelines/:jobId/results
+ *     6. Copies the BPO PDF to the SFTP results/ folder with Statebridge naming
+ *     7. Patches the order with extracted data and marks it COMPLETED
  *
  * Required env vars (add to infrastructure/modules/app-services.bicep):
- *   AXIOM_API_BASE_URL         — e.g. https://axiom.internal.example.com
- *   AXIOM_WEBHOOK_SECRET       — HMAC-SHA256 signing secret shared with Axiom
- *   API_CALLBACK_BASE_URL      — externally reachable URL of the functions host
- *                                (used to build the webhookUrl sent to Axiom)
+ *   AXIOM_API_BASE_URL         — e.g. https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io
  *   CosmosDbConnection__accountEndpoint — same value as COSMOSDB_ENDPOINT;
  *                                required by the Cosmos DB trigger binding
  *
@@ -27,7 +23,8 @@
  *   AZURE_STORAGE_ACCOUNT_NAME  — main doc storage (source of BPO PDFs)
  *   SFTP_STORAGE_ACCOUNT_NAME   — SFTP account (destination for result PDFs)
  *   STATEBRIDGE_TENANT_ID       — Cosmos partition key for Statebridge docs
- *   STATEBRIDGE_CLIENT_ID       — "visionone"
+ *   STATEBRIDGE_CLIENT_ID       — e.g. "visionone"
+ *   STORAGE_CONTAINER_DOCUMENTS — blob container name for document files
  */
 
 "use strict";
@@ -36,32 +33,31 @@ const { app } = require("@azure/functions");
 const { CosmosClient } = require("@azure/cosmos");
 const { DefaultAzureCredential } = require("@azure/identity");
 const { BlobServiceClient, generateBlobSASQueryParameters, BlobSASPermissions } = require("@azure/storage-blob");
-const { createHmac } = require("crypto");
 const axios = require("axios");
+const http = require("http");
+const https = require("https");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const cosmosEndpoint        = process.env.COSMOSDB_ENDPOINT;
-const databaseName          = process.env.DATABASE_NAME;
-const storageAccountName    = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+const cosmosEndpoint         = process.env.COSMOSDB_ENDPOINT;
+const databaseName           = process.env.DATABASE_NAME;
+const storageAccountName     = process.env.AZURE_STORAGE_ACCOUNT_NAME;
 const sftpStorageAccountName = process.env.SFTP_STORAGE_ACCOUNT_NAME;
-const statebridge_tenantId  = process.env.STATEBRIDGE_TENANT_ID;
-const statebridgeClientId   = process.env.STATEBRIDGE_CLIENT_ID;
-const axiomApiBaseUrl       = process.env.AXIOM_API_BASE_URL;
-const axiomWebhookSecret    = process.env.AXIOM_WEBHOOK_SECRET;
-const apiCallbackBaseUrl    = process.env.API_CALLBACK_BASE_URL;
+const statebridge_tenantId   = process.env.STATEBRIDGE_TENANT_ID;
+const statebridgeClientId    = process.env.STATEBRIDGE_CLIENT_ID;
+const axiomApiBaseUrl        = process.env.AXIOM_API_BASE_URL;
 
 // Fail loudly at cold-start so misconfiguration surfaces immediately.
-if (!cosmosEndpoint)        throw new Error("COSMOSDB_ENDPOINT is required but not set");
-if (!databaseName)          throw new Error("DATABASE_NAME is required but not set");
-if (!storageAccountName)    throw new Error("AZURE_STORAGE_ACCOUNT_NAME is required but not set");
+if (!cosmosEndpoint)         throw new Error("COSMOSDB_ENDPOINT is required but not set");
+if (!databaseName)           throw new Error("DATABASE_NAME is required but not set");
+if (!storageAccountName)     throw new Error("AZURE_STORAGE_ACCOUNT_NAME is required but not set");
 if (!sftpStorageAccountName) throw new Error("SFTP_STORAGE_ACCOUNT_NAME is required but not set");
-if (!statebridge_tenantId)  throw new Error("STATEBRIDGE_TENANT_ID is required but not set");
-if (!statebridgeClientId)   throw new Error("STATEBRIDGE_CLIENT_ID is required but not set");
-if (!axiomApiBaseUrl)       throw new Error("AXIOM_API_BASE_URL is required but not set");
-if (!axiomWebhookSecret)    throw new Error("AXIOM_WEBHOOK_SECRET is required but not set");
-// API_CALLBACK_BASE_URL is validated at handler invocation (not cold-start) because
-// the first deploy cannot know its own FQDN yet — it is set in the second deploy.
+if (!statebridge_tenantId)   throw new Error("STATEBRIDGE_TENANT_ID is required but not set");
+if (!statebridgeClientId)    throw new Error("STATEBRIDGE_CLIENT_ID is required but not set");
+if (!axiomApiBaseUrl)        throw new Error("AXIOM_API_BASE_URL is required but not set");
+
+// SSE timeout: 4 minutes — leaves headroom within Azure Functions' 5-min default limit.
+const SSE_TIMEOUT_MS = 4 * 60 * 1000;
 
 // ─── Clients (module-scoped so they are reused across invocations) ─────────────
 
@@ -69,8 +65,7 @@ const credential = new DefaultAzureCredential();
 
 const cosmosClient = new CosmosClient({ endpoint: cosmosEndpoint, aadCredentials: credential });
 const db = cosmosClient.database(databaseName);
-const ordersContainer    = db.container("orders");
-const documentsContainer = db.container("documents");
+const ordersContainer = db.container("orders");
 
 // Main storage account — source of uploaded BPO PDFs
 const mainBlobClient = new BlobServiceClient(
@@ -85,7 +80,6 @@ const sftpBlobClient = new BlobServiceClient(
 );
 
 // ─── Inline Loom pipeline definition (Document-only extraction) ───────────────
-// Mirrors AxiomService.PIPELINE_DOC_EXTRACT in the container app.
 const BPO_EXTRACTION_PIPELINE = {
   name: "document-extraction",
   version: "1.0.0",
@@ -106,9 +100,9 @@ const BPO_EXTRACTION_PIPELINE = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
 /**
  * Simple retry with exponential backoff for transient failures.
- * Retries up to `maxRetries` times, starting at `initialDelayMs` and doubling each attempt.
  */
 async function withRetry(fn, { maxRetries = 2, initialDelayMs = 1000, label = "operation" } = {}) {
   let lastErr;
@@ -125,10 +119,10 @@ async function withRetry(fn, { maxRetries = 2, initialDelayMs = 1000, label = "o
   }
   throw lastErr;
 }
+
 /**
  * Build a user-delegation SAS URL so Axiom (an external service) can download
- * the BPO PDF blob.  The SAS is valid for 30 minutes — enough time for Axiom
- * to ingest the document and call the callback.
+ * the BPO PDF blob.  The SAS is valid for 30 minutes.
  */
 async function buildSasUrl(containerName, blobPath) {
   const userDelegationKey = await mainBlobClient
@@ -161,10 +155,8 @@ async function copyBpoToSftpResults(blobPath, documentContainerName, loanId, col
   const hhmmss  = now.toISOString().slice(11, 19).replace(/:/g, "");
   const destBlobName = `results/${loanId}_BPO_${collateralNumber}_${yyyymmdd}#${hhmmss}.pdf`;
 
-  const sourceBlob = mainBlobClient.getContainerClient(documentContainerName).getBlobClient(blobPath);
   const sourceSasUrl = await buildSasUrl(documentContainerName, blobPath);
 
-  // Write to the statebridge SFTP container under results/ (same path as writeStatebridgeDailyResults)
   const destContainer = sftpBlobClient.getContainerClient("statebridge");
   const destBlobClient = destContainer.getBlockBlobClient(destBlobName);
 
@@ -175,80 +167,255 @@ async function copyBpoToSftpResults(blobPath, documentContainerName, loanId, col
   return destBlobName;
 }
 
+// ─── SSE Client ───────────────────────────────────────────────────────────────
+
 /**
- * Verify Axiom's HMAC-SHA256 webhook signature.
- * Axiom sends X-Axiom-Signature: sha256=<hex-digest> computed over the raw body.
+ * Connect to Axiom's SSE stream and wait for a terminal pipeline event.
+ *
+ * Returns a promise that resolves with { eventType, data } on terminal events:
+ *   pipeline.completed, pipeline.failed, pipeline.cancelled, pipeline.timeout
+ *
+ * Rejects on network error, SSE parse failure, or timeout.
+ *
+ * Uses Node.js built-in http/https — no EventSource polyfill needed.
  */
-function verifyAxiomSignature(rawBody, signatureHeader) {
-  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false;
-  const expected = "sha256=" + createHmac("sha256", axiomWebhookSecret)
-    .update(rawBody, "utf8").digest("hex");
-  // Constant-time comparison to defend against timing attacks
-  if (expected.length !== signatureHeader.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) {
-    diff |= expected.charCodeAt(i) ^ signatureHeader.charCodeAt(i);
-  }
-  return diff === 0;
+function awaitPipelineCompletion(jobId, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(`${axiomApiBaseUrl}/api/pipelines/${jobId}/stream?timeout=${timeoutMs}`);
+    const transport = url.protocol === "https:" ? https : http;
+
+    const timer = setTimeout(() => {
+      req.destroy();
+      reject(new Error(`SSE stream timed out after ${timeoutMs}ms waiting for pipeline ${jobId}`));
+    }, timeoutMs + 5000); // +5s grace beyond Axiom's own timeout
+
+    const req = transport.get(url, {
+      headers: { Accept: "text/event-stream" },
+      timeout: timeoutMs + 10000,
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        clearTimeout(timer);
+        reject(new Error(`SSE stream returned HTTP ${res.statusCode} for pipeline ${jobId}`));
+        res.resume();
+        return;
+      }
+
+      let buffer = "";
+      let currentEvent = {};
+
+      res.setEncoding("utf8");
+
+      res.on("data", (chunk) => {
+        buffer += chunk;
+        // Parse SSE frames (delimited by blank lines)
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop(); // keep incomplete last frame
+
+        for (const frame of frames) {
+          if (!frame.trim()) continue;
+          const lines = frame.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              currentEvent.eventName = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              currentEvent.data = line.slice(6);
+            } else if (line.startsWith("id: ")) {
+              currentEvent.id = line.slice(4).trim();
+            }
+            // Ignore comments (lines starting with :)
+          }
+
+          const terminalEvents = new Set([
+            "pipeline.completed", "pipeline.failed",
+            "pipeline.cancelled", "pipeline.timeout",
+            "done",
+          ]);
+
+          if (currentEvent.eventName && terminalEvents.has(currentEvent.eventName)) {
+            clearTimeout(timer);
+            req.destroy();
+            let parsed = {};
+            try { parsed = JSON.parse(currentEvent.data); } catch { /* use empty obj */ }
+            resolve({ eventType: currentEvent.eventName, data: parsed });
+            return;
+          }
+          currentEvent = {};
+        }
+      });
+
+      res.on("end", () => {
+        clearTimeout(timer);
+        reject(new Error(`SSE stream ended without a terminal event for pipeline ${jobId}`));
+      });
+
+      res.on("error", (err) => {
+        clearTimeout(timer);
+        reject(new Error(`SSE stream error for pipeline ${jobId}: ${err.message}`));
+      });
+    });
+
+    req.on("error", (err) => {
+      clearTimeout(timer);
+      reject(new Error(`SSE connection failed for pipeline ${jobId}: ${err.message}`));
+    });
+
+    req.on("timeout", () => {
+      clearTimeout(timer);
+      req.destroy();
+      reject(new Error(`SSE connection timed out for pipeline ${jobId}`));
+    });
+  });
 }
 
-// ─── Function 1: Detect BPO upload (Cosmos Change Feed) ──────────────────────
+// ─── Result processor ─────────────────────────────────────────────────────────
+
+/**
+ * After pipeline completion: fetch results from Axiom, copy PDF to SFTP,
+ * and patch the order with extracted data.
+ */
+async function processBpoExtractionResult(orderId, pipelineJobId, order, blobName, context) {
+  // 1. Fetch extraction results from Axiom's polling endpoint (with retry).
+  //    SSE pipeline.completed events truncate data >5KB so we always fetch the
+  //    full results via the REST endpoint.
+  let extractedData;
+  try {
+    const resp = await withRetry(
+      () => axios.get(
+        `${axiomApiBaseUrl}/api/pipelines/${pipelineJobId}/results`,
+        { timeout: 15000 }
+      ),
+      { maxRetries: 2, initialDelayMs: 1000, label: `Axiom results order ${orderId}` }
+    );
+    const raw = resp.data;
+    const inner = raw?.results ?? raw;
+    extractedData = inner?.extractedData ?? inner?.stages?.extract?.extractedData ?? {};
+  } catch (err) {
+    context.error(`[processBpoResult] Failed to fetch Axiom results for order ${orderId}: ${err.message}`);
+    throw err;
+  }
+
+  const county            = extractedData?.county ?? null;
+  const propertyCondition = extractedData?.propertyCondition ?? null;
+  const asIsValue         = typeof extractedData?.asIsValue === "number" ? extractedData.asIsValue : null;
+  const repairedValue     = typeof extractedData?.repairedValue === "number" ? extractedData.repairedValue : null;
+
+  context.log(`[processBpoResult] Extracted fields for order ${orderId}:`, {
+    county, propertyCondition, asIsValue, repairedValue,
+  });
+
+  // 2. Copy the BPO PDF to SFTP results/ with Statebridge naming
+  const loanId           = order.loanId;
+  const collateralNumber = order.collateralNumber;
+
+  let sftpResultPdfName = null;
+  if (blobName) {
+    try {
+      const docBlobContainer = process.env.STORAGE_CONTAINER_DOCUMENTS;
+      if (!docBlobContainer) {
+        throw new Error("STORAGE_CONTAINER_DOCUMENTS is required to copy BPO PDF to SFTP");
+      }
+      sftpResultPdfName = await copyBpoToSftpResults(
+        blobName, docBlobContainer, loanId, collateralNumber, context
+      );
+    } catch (err) {
+      context.error(`[processBpoResult] SFTP copy failed for order ${orderId}: ${err.message}`);
+      // Non-fatal — still write the extracted data even if the copy fails.
+    }
+  }
+
+  // 3. Patch the order: set extracted BPO fields, COMPLETED status, dateCompleted
+  const now = new Date().toISOString();
+  const patches = [
+    { op: "set", path: "/bpoExtractionStatus", value: "COMPLETED" },
+    { op: "set", path: "/status", value: "COMPLETED" },
+    { op: "set", path: "/dateCompleted", value: now },
+    { op: "set", path: "/updatedAt", value: now },
+    { op: "set", path: "/bpoExtractedData", value: {
+      county,
+      propertyCondition,
+      asIsValue,
+      repairedValue,
+      extractedAt: now,
+      pipelineJobId,
+    }},
+  ];
+  if (sftpResultPdfName) {
+    patches.push({ op: "set", path: "/sftpResultPdfName", value: sftpResultPdfName });
+  }
+
+  await ordersContainer.item(orderId, statebridge_tenantId).patch(patches);
+
+  context.log(
+    `[processBpoResult] Order ${orderId} marked COMPLETED. sftpResultPdfName=${sftpResultPdfName}`
+  );
+}
+
+// ─── Function: Detect BPO upload (Cosmos Change Feed) ─────────────────────────
 
 app.cosmosDB("detectStatebridgeBpoUpload", {
-  // The binding setting name is the prefix for the identity-based connection.
-  // Add CosmosDbConnection__accountEndpoint = COSMOSDB_ENDPOINT in Bicep.
   connection: "CosmosDbConnection",
   databaseName,
   containerName: "documents",
   leaseContainerName: "leases",
-  // leaseContainerPrefix prevents "builder already used" crash — each trigger
-  // must have a unique prefix so the Cosmos SDK allocates separate builder instances.
   leaseContainerPrefix: "bpo-detect",
-  createLeaseContainerIfNotExists: false, // infrastructure creates leases container
+  createLeaseContainerIfNotExists: false,
   startFromBeginning: false,
   handler: async (documents, context) => {
     for (const doc of documents) {
-      // Only process BPO PDFs
+      // ── Filter: only BPO PDFs ────────────────────────────────────────
       if (doc.mimeType !== "application/pdf") continue;
-      if (doc.documentType !== "BPO_REPORT") continue;
+
+      // Match on category (what DocumentService stores) or documentType (belt-and-suspenders)
+      const isBpo = doc.category === "bpo-report" || doc.documentType === "BPO_REPORT";
+      if (!isBpo) continue;
       if (!doc.orderId) continue;
 
       const tenantId = doc.tenantId ?? statebridge_tenantId;
 
-      // Load the order to verify it is a Statebridge order
+      // ── Load the order to verify it is a Statebridge order ───────────
       let order;
       try {
         const { resource } = await ordersContainer.item(doc.orderId, tenantId).read();
         order = resource;
       } catch (err) {
-        context.log(`[detectStatebridgeBpoUpload] Could not read order ${doc.orderId}: ${err.message}`);
+        context.log(`[detectBpo] Could not read order ${doc.orderId}: ${err.message}`);
         continue;
       }
 
       if (!order || order.source !== "statebridge-sftp") continue;
       if (order.bpoExtractionStatus === "AXIOM_PENDING" ||
           order.bpoExtractionStatus === "COMPLETED") {
-        context.log(`[detectStatebridgeBpoUpload] Order ${doc.orderId} already has bpoExtractionStatus=${order.bpoExtractionStatus} — skipping`);
+        context.log(`[detectBpo] Order ${doc.orderId} already has bpoExtractionStatus=${order.bpoExtractionStatus} — skipping`);
         continue;
       }
 
-      // Build the blob SAS URL for Axiom to download the PDF
-      const blobContainerName = "documents"; // main documents blob container
+      if (!order.loanId || !order.collateralNumber) {
+        context.error(`[detectBpo] Order ${doc.orderId} missing loanId or collateralNumber — cannot process`);
+        continue;
+      }
+
+      // ── Build SAS URL for Axiom to download the PDF ──────────────────
+      const docBlobContainer = process.env.STORAGE_CONTAINER_DOCUMENTS;
+      if (!docBlobContainer) {
+        context.error("[detectBpo] STORAGE_CONTAINER_DOCUMENTS is not set — cannot build SAS URL for Axiom");
+        continue;
+      }
+      // DocumentService stores the blob path as `blobName` (e.g. "orderId/uuid.pdf")
+      const blobName = doc.blobName;
+      if (!blobName) {
+        context.error(`[detectBpo] Document ${doc.id} has no blobName — cannot build SAS URL`);
+        continue;
+      }
+
       let blobSasUrl;
       try {
-        blobSasUrl = await buildSasUrl(blobContainerName, doc.blobPath);
+        blobSasUrl = await buildSasUrl(docBlobContainer, blobName);
       } catch (err) {
-        context.error(`[detectStatebridgeBpoUpload] Failed to build SAS URL for ${doc.blobPath}: ${err.message}`);
+        context.error(`[detectBpo] Failed to build SAS URL for ${blobName}: ${err.message}`);
         continue;
       }
 
-      if (!apiCallbackBaseUrl) {
-        context.error("[detectStatebridgeBpoUpload] API_CALLBACK_BASE_URL is not set — cannot submit to Axiom. Set this env var to the functions FQDN and redeploy.");
-        continue;
-      }
-      const callbackUrl = `${apiCallbackBaseUrl}/api/statebridge-bpo-callback`;
-
-      // Submit to Axiom extraction pipeline (with retry for transient failures)
+      // ── Submit to Axiom extraction pipeline ──────────────────────────
       let pipelineJobId;
       try {
         const resp = await withRetry(
@@ -264,16 +431,11 @@ app.cosmosDB("detectStatebridgeBpoUpload", {
                 documentType: "bpo-report",
                 documents: [
                   {
-                    documentName: doc.fileName ?? "bpo-report.pdf",
+                    documentName: doc.name ?? doc.fileName ?? "bpo-report.pdf",
                     documentReference: blobSasUrl,
                     mimeType: "application/pdf",
                   },
                 ],
-                delivery: {
-                  webhookUrl: callbackUrl,
-                  webhookSecret: axiomWebhookSecret,
-                  includeFieldConfidence: true,
-                },
               },
             },
             {
@@ -287,9 +449,8 @@ app.cosmosDB("detectStatebridgeBpoUpload", {
         if (!pipelineJobId) throw new Error(`Axiom did not return a jobId. Response: ${JSON.stringify(resp.data)}`);
       } catch (err) {
         context.error(
-          `[detectStatebridgeBpoUpload] Axiom pipeline submission failed for order ${doc.orderId} after retries: ${err.message}`
+          `[detectBpo] Axiom pipeline submission failed for order ${doc.orderId} after retries: ${err.message}`
         );
-        // Stamp AXIOM_SUBMISSION_FAILED so this order isn't silently lost
         try {
           await ordersContainer.item(doc.orderId, tenantId).patch([
             { op: "set", path: "/bpoExtractionStatus", value: "AXIOM_SUBMISSION_FAILED" },
@@ -297,204 +458,77 @@ app.cosmosDB("detectStatebridgeBpoUpload", {
             { op: "set", path: "/updatedAt", value: new Date().toISOString() },
           ]);
         } catch (patchErr) {
-          context.error(`[detectStatebridgeBpoUpload] Also failed to stamp AXIOM_SUBMISSION_FAILED on order ${doc.orderId}: ${patchErr.message}`);
+          context.error(`[detectBpo] Also failed to stamp AXIOM_SUBMISSION_FAILED on order ${doc.orderId}: ${patchErr.message}`);
         }
         continue;
       }
 
-      // Stamp the order with the pending extraction state
+      // ── Stamp AXIOM_PENDING ──────────────────────────────────────────
       try {
         await ordersContainer.item(doc.orderId, tenantId).patch([
           { op: "set", path: "/bpoExtractionStatus", value: "AXIOM_PENDING" },
           { op: "set", path: "/axiomBpoPipelineJobId", value: pipelineJobId },
           { op: "set", path: "/bpoDocumentId", value: doc.id },
-          { op: "set", path: "/bpoBlobPath", value: doc.blobPath },
+          { op: "set", path: "/bpoBlobName", value: blobName },
           { op: "set", path: "/updatedAt", value: new Date().toISOString() },
         ]);
       } catch (err) {
-        // Non-fatal — Axiom submission succeeded; we just lose the status stamp.
-        context.warn(
-          `[detectStatebridgeBpoUpload] Could not stamp bpoExtractionStatus on order ${doc.orderId}: ${err.message}`
-        );
+        context.warn(`[detectBpo] Could not stamp AXIOM_PENDING on order ${doc.orderId}: ${err.message}`);
       }
 
       context.log(
-        `[detectStatebridgeBpoUpload] Submitted BPO extraction to Axiom for order ${doc.orderId} (pipelineJobId=${pipelineJobId})`
+        `[detectBpo] Submitted BPO extraction to Axiom for order ${doc.orderId} (jobId=${pipelineJobId}). Opening SSE stream…`
       );
-    }
-  },
-});
 
-// ─── Function 2: Receive Axiom callback (HTTP trigger) ───────────────────────
-
-app.http("statebridgeBpoAxiomCallback", {
-  methods: ["POST"],
-  authLevel: "anonymous",
-  route: "statebridge-bpo-callback",
-  handler: async (request, context) => {
-    // Acknowledge immediately — Axiom should not wait on our processing.
-    // We read and verify the payload first, then process asynchronously.
-    let rawBody;
-    try {
-      rawBody = await request.text();
-    } catch (err) {
-      return { status: 400, body: JSON.stringify({ error: "Could not read request body" }) };
-    }
-
-    const signature = request.headers.get("x-axiom-signature") ?? "";
-    if (!verifyAxiomSignature(rawBody, signature)) {
-      context.warn("[statebridgeBpoAxiomCallback] Invalid Axiom webhook signature — rejecting");
-      return { status: 401, body: JSON.stringify({ error: "Invalid signature" }) };
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch (err) {
-      return { status: 400, body: JSON.stringify({ error: "Invalid JSON" }) };
-    }
-
-    // Acknowledge before processing — Axiom does not retry on 200.
-    const immediate200 = { status: 200, body: JSON.stringify({ success: true }) };
-
-    const orderId     = payload.correlationId ?? payload.orderId;
-    const jobId       = payload.jobId ?? payload.pipelineJobId;
-    const status      = payload.status;           // "completed" | "failed"
-
-    if (!orderId || !jobId) {
-      context.error("[statebridgeBpoAxiomCallback] Missing correlationId or jobId in payload", payload);
-      return immediate200;
-    }
-
-    if (status === "failed") {
-      context.error(`[statebridgeBpoAxiomCallback] Axiom BPO extraction failed for order ${orderId}`, payload.error);
-      // Stamp FAILED so nightly results function can skip this order gracefully
+      // ── Wait for pipeline completion via SSE ─────────────────────────
+      let sseResult;
       try {
-        await ordersContainer.item(orderId, statebridge_tenantId).patch([
-          { op: "set", path: "/bpoExtractionStatus", value: "AXIOM_FAILED" },
-          { op: "set", path: "/updatedAt", value: new Date().toISOString() },
-        ]);
-      } catch (_) { /* non-fatal */ }
-      return immediate200;
-    }
+        sseResult = await awaitPipelineCompletion(pipelineJobId, SSE_TIMEOUT_MS);
+      } catch (sseErr) {
+        context.error(`[detectBpo] SSE stream error for order ${doc.orderId}: ${sseErr.message}`);
+        try {
+          await ordersContainer.item(doc.orderId, tenantId).patch([
+            { op: "set", path: "/bpoExtractionStatus", value: "AXIOM_SSE_TIMEOUT" },
+            { op: "set", path: "/bpoSseError", value: sseErr.message },
+            { op: "set", path: "/updatedAt", value: new Date().toISOString() },
+          ]);
+        } catch (_) { /* best-effort stamp */ }
+        continue;
+      }
 
-    if (status !== "completed") {
-      context.log(`[statebridgeBpoAxiomCallback] Ignoring non-terminal status '${status}' for order ${orderId}`);
-      return immediate200;
-    }
+      context.log(`[detectBpo] SSE terminal event for order ${doc.orderId}: ${sseResult.eventType}`);
 
-    // Process the extraction result inline (not fire-and-forget) to ensure
-    // the runtime doesn't terminate before we've written results to Cosmos.
-    // We already read+verified the payload, so this is safe to await.
-    try {
-      await processBpoExtractionResult(orderId, jobId, context);
-    } catch (err) {
-      context.error(`[statebridgeBpoAxiomCallback] Processing failed for order ${orderId}: ${err.message}`);
-      // Still return 200 — Axiom already delivered the payload; re-delivery won't help.
-      // The order is stamped with AXIOM_PROCESSING_FAILED inside processBpoExtractionResult.
-    }
-    return immediate200;
-  },
-});
+      // ── Handle pipeline.failed / cancelled / timeout ─────────────────
+      if (sseResult.eventType !== "pipeline.completed" && sseResult.eventType !== "done") {
+        const failureStatus =
+          sseResult.eventType === "pipeline.failed" ? "AXIOM_FAILED" :
+          sseResult.eventType === "pipeline.cancelled" ? "AXIOM_CANCELLED" :
+          sseResult.eventType === "pipeline.timeout" ? "AXIOM_TIMEOUT" :
+          "AXIOM_UNKNOWN_STATUS";
 
-// ─── Async result processor ───────────────────────────────────────────────────
+        context.error(`[detectBpo] Pipeline ${pipelineJobId} ended with ${sseResult.eventType} for order ${doc.orderId}`);
+        try {
+          await ordersContainer.item(doc.orderId, tenantId).patch([
+            { op: "set", path: "/bpoExtractionStatus", value: failureStatus },
+            { op: "set", path: "/updatedAt", value: new Date().toISOString() },
+          ]);
+        } catch (_) { /* best-effort stamp */ }
+        continue;
+      }
 
-async function processBpoExtractionResult(orderId, pipelineJobId, context) {
-  try {
-    // 1. Load the order to get loanId, collateralNumber, blobPath
-    const { resource: order } = await ordersContainer
-      .item(orderId, statebridge_tenantId)
-      .read();
-
-    if (!order) {
-      context.error(`[processBpoExtractionResult] Order ${orderId} not found in Cosmos`);
-      return;
-    }
-
-    const loanId          = order.loanId;
-    const collateralNumber = order.collateralNumber;
-    const bpoBlobPath     = order.bpoBlobPath;
-
-    if (!loanId || !collateralNumber) {
-      context.error(`[processBpoExtractionResult] Order ${orderId} missing loanId or collateralNumber`);
-      return;
-    }
-
-    // 2. Fetch extraction results from Axiom (with retry)
-    let extractedData;
-    try {
-      const resp = await withRetry(
-        () => axios.get(
-          `${axiomApiBaseUrl}/api/pipelines/${pipelineJobId}/results`,
-          { timeout: 15000 }
-        ),
-        { maxRetries: 2, initialDelayMs: 1000, label: `Axiom results order ${orderId}` }
-      );
-      // Axiom may nest under `results`
-      const raw = resp.data;
-      const inner = raw?.results ?? raw;
-      extractedData = inner?.extractedData ?? inner?.stages?.extract?.extractedData ?? {};
-    } catch (err) {
-      context.error(`[processBpoExtractionResult] Failed to fetch Axiom results for order ${orderId}: ${err.message}`);
-      return;
-    }
-
-    const county           = extractedData?.county ?? null;
-    const propertyCondition = extractedData?.propertyCondition ?? null;
-    const asIsValue        = typeof extractedData?.asIsValue === "number" ? extractedData.asIsValue : null;
-    const repairedValue    = typeof extractedData?.repairedValue === "number" ? extractedData.repairedValue : null;
-
-    context.log(`[processBpoExtractionResult] Extracted fields for order ${orderId}:`, {
-      county, propertyCondition, asIsValue, repairedValue,
-    });
-
-    // 3. Copy the BPO PDF to SFTP results/ container
-    let sftpResultPdfName = null;
-    if (bpoBlobPath) {
+      // ── Pipeline completed — fetch full results and process ──────────
       try {
-        sftpResultPdfName = await copyBpoToSftpResults(
-          bpoBlobPath, "documents", loanId, collateralNumber, context
-        );
+        await processBpoExtractionResult(doc.orderId, pipelineJobId, order, blobName, context);
       } catch (err) {
-        context.error(`[processBpoExtractionResult] SFTP copy failed for order ${orderId}: ${err.message}`);
-        // Do not abort — still write the extracted data even if the copy fails.
+        context.error(`[detectBpo] Result processing failed for order ${doc.orderId}: ${err.message}`);
+        try {
+          await ordersContainer.item(doc.orderId, tenantId).patch([
+            { op: "set", path: "/bpoExtractionStatus", value: "AXIOM_PROCESSING_FAILED" },
+            { op: "set", path: "/bpoProcessingError", value: String(err.message ?? err) },
+            { op: "set", path: "/updatedAt", value: new Date().toISOString() },
+          ]);
+        } catch (_) { /* best-effort stamp */ }
       }
     }
-
-    // 4. Patch the order: set extracted BPO fields, COMPLETED status, dateCompleted
-    const now = new Date().toISOString();
-    const patches = [
-      { op: "set", path: "/bpoExtractionStatus", value: "COMPLETED" },
-      { op: "set", path: "/status", value: "COMPLETED" },
-      { op: "set", path: "/dateCompleted", value: now },
-      { op: "set", path: "/updatedAt", value: now },
-      { op: "set", path: "/bpoExtractedData", value: {
-        county,
-        propertyCondition,
-        asIsValue,
-        repairedValue,
-        extractedAt: now,
-        pipelineJobId,
-      }},
-    ];
-    if (sftpResultPdfName) {
-      patches.push({ op: "set", path: "/sftpResultPdfName", value: sftpResultPdfName });
-    }
-
-    await ordersContainer.item(orderId, statebridge_tenantId).patch(patches);
-
-    context.log(
-      `[processBpoExtractionResult] Order ${orderId} marked COMPLETED. sftpResultPdfName=${sftpResultPdfName}`
-    );
-  } catch (err) {
-    context.error(`[processBpoExtractionResult] Unhandled error for order ${orderId}:`, err.message ?? err);
-    // Stamp failure so the order isn't silently lost in limbo
-    try {
-      await ordersContainer.item(orderId, statebridge_tenantId).patch([
-        { op: "set", path: "/bpoExtractionStatus", value: "AXIOM_PROCESSING_FAILED" },
-        { op: "set", path: "/bpoProcessingError", value: String(err.message ?? err) },
-        { op: "set", path: "/updatedAt", value: new Date().toISOString() },
-      ]);
-    } catch (_) { /* best-effort stamp */ }
-  }
-}
+  },
+});

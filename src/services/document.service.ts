@@ -77,6 +77,7 @@ export class DocumentService {
         mimeType: file.mimetype,
         contentHash,
         ...(category && { category }),
+        ...(category && { documentType: category.toUpperCase().replace(/-/g, '_') }),
         ...(tags && { tags }),
         version: 1,
         isLatestVersion: true,

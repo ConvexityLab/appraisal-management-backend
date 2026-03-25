@@ -13,6 +13,7 @@ export interface DocumentMetadata {
   fileSize: number;
   mimeType: string;
   category?: string; // e.g., 'appraisal_report', 'photo', 'invoice', 'contract', 'license', 'certification', 'other'
+  documentType?: string; // SCREAMING_SNAKE derived from category — e.g. 'BPO_REPORT' from 'bpo-report'
   tags?: string[];
   version: number;
   previousVersionId?: string;  // Points to the document this version replaces
