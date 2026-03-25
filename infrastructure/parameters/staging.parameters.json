@@ -47,6 +47,9 @@
     },
     "apiCallbackBaseUrl": {
       "value": "https://ca-appraisalfunctions-sta-lqxl.jollysand-19372da7.eastus.azurecontainerapps.io"
+    },
+    "ciServicePrincipalId": {
+      "value": "88f0212b-840d-4ef8-872e-401f545c87bc"
     }
   }
 }

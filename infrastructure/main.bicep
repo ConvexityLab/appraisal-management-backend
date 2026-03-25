@@ -114,6 +114,9 @@ param axiomWebhookSecret string = ''
 @description('Externally reachable base URL of the functions Container App. Set post-deploy when the FQDN is known.')
 param apiCallbackBaseUrl string = ''
 
+@description('Object ID of the CI/CD service principal (GitHub Actions SP). Granted Key Vault Secrets Officer so it can write the SFTP password to Key Vault after provisioning local users.')
+param ciServicePrincipalId string = ''
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -481,13 +484,14 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   }
 }
 
-// Key Vault Role Assignments for Container Apps
+// Key Vault Role Assignments for Container Apps + CI/CD service principal
 module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
   name: 'keyvault-role-assignments-deployment'
   scope: resourceGroup
   params: {
     keyVaultName: keyVault.outputs.keyVaultName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    additionalPrincipalIds: empty(ciServicePrincipalId) ? [] : [ciServicePrincipalId]
   }
 }
 
