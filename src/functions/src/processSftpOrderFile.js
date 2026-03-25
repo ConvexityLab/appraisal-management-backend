@@ -2,7 +2,7 @@ const { app } = require("@azure/functions");
 const { CosmosClient } = require("@azure/cosmos");
 const { DefaultAzureCredential } = require("@azure/identity");
 const { BlobServiceClient } = require("@azure/storage-blob");
-const uuid = require("uuid");
+const crypto = require("crypto");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -56,10 +56,24 @@ const IN = {
   LockboxCode: 12,
 };
 
-// ─── ID generators (match format used in engagement.service.ts) ───────────────
+// ─── Deterministic ID generation (idempotent across retries/duplicate events) ──
 
-function generateEngagementId() {
-  return `eng-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+/**
+ * Produce a deterministic, collision-resistant ID from a prefix and seed parts.
+ * Same inputs always yield the same output, so duplicate invocations for the
+ * same file produce the same Cosmos document IDs → 409 Conflict on retry.
+ */
+function deterministicId(prefix, ...parts) {
+  const hash = crypto
+    .createHash("sha256")
+    .update(parts.join(":"))
+    .digest("hex")
+    .slice(0, 16);
+  return `${prefix}-${hash}`;
+}
+
+function generateEngagementId(sourceFile) {
+  return deterministicId("sftp-eng", statebridge_tenantId, sourceFile);
 }
 
 function generateEngagementNumber() {
@@ -69,12 +83,23 @@ function generateEngagementNumber() {
   return `ENG-${year}-${ts}${rand}`;
 }
 
-function generateLoanId() {
-  return `loan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function generateLoanId(sourceFile, rowIndex) {
+  return deterministicId("sftp-loan", statebridge_tenantId, sourceFile, String(rowIndex));
 }
 
-function generateProductId() {
-  return `prod-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function generateProductId(sourceFile, rowIndex) {
+  return deterministicId("sftp-prod", statebridge_tenantId, sourceFile, String(rowIndex));
+}
+
+function generateOrderId(sourceFile, rowIndex) {
+  return deterministicId("sftp-ord", statebridge_tenantId, sourceFile, String(rowIndex));
+}
+
+/**
+ * Returns true if a Cosmos error is a 409 Conflict (document already exists).
+ */
+function isConflict(err) {
+  return err && err.code === 409;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,9 +165,9 @@ function parseOrderFile(content) {
  * Build one EngagementLoan + its single BPO product from a parsed row.
  * Returns { loan, productId } so the order can reference the productId.
  */
-function buildLoanAndProduct(fields) {
-  const loanId = generateLoanId();
-  const productId = generateProductId();
+function buildLoanAndProduct(fields, sourceFile, rowIndex) {
+  const loanId = generateLoanId(sourceFile, rowIndex);
+  const productId = generateProductId(sourceFile, rowIndex);
 
   const loan = {
     id: loanId,
@@ -173,12 +198,12 @@ function buildLoanAndProduct(fields) {
  * One engagement per daily SFTP file — each row becomes one EngagementLoan.
  */
 function buildEngagementDocument(rows, sourceFileName) {
-  const engagementId = generateEngagementId();
+  const engagementId = generateEngagementId(sourceFileName);
   const now = new Date().toISOString();
 
-  const loanMeta = rows.map((fields) => {
-    const { loan, productId } = buildLoanAndProduct(fields);
-    return { loan, productId, fields };
+  const loanMeta = rows.map((fields, rowIndex) => {
+    const { loan, productId } = buildLoanAndProduct(fields, sourceFileName, rowIndex);
+    return { loan, productId, fields, rowIndex };
   });
 
   return {
@@ -210,12 +235,12 @@ function buildEngagementDocument(rows, sourceFileName) {
 /**
  * Build a Cosmos DB order document for one row, linked to the engagement.
  */
-function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileName) {
+function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileName, rowIndex) {
   const loanNumber = (fields[IN.LoanID] || "").trim().padStart(10, "0");
   const collateralNumber = (fields[IN.CollateralNumber] || "").trim();
 
   return {
-    id: uuid.v4(),
+    id: generateOrderId(sourceFileName, rowIndex),
     clientId: statebridgeClientId,
     tenantId: statebridge_tenantId,
     // Engagement linkage
@@ -251,24 +276,6 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
   };
 }
 
-/**
- * Check whether we have already processed this file (idempotency on re-delivery).
- * Returns true if an engagement with this sourceFile already exists.
- */
-async function fileAlreadyProcessed(sourceFileName) {
-  const { resources } = await engagementsContainer.items
-    .query({
-      query:
-        "SELECT c.id FROM c WHERE c.tenantId = @tenantId AND c.sourceFile = @sourceFile",
-      parameters: [
-        { name: "@tenantId", value: statebridge_tenantId },
-        { name: "@sourceFile", value: sourceFileName },
-      ],
-    })
-    .fetchAll();
-  return resources.length > 0;
-}
-
 // ─── Function Handler ─────────────────────────────────────────────────────────
 
 app.storageQueue("processSftpOrderFile", {
@@ -290,13 +297,7 @@ app.storageQueue("processSftpOrderFile", {
 
     context.log(`Processing SFTP inbound file: ${blobName}`);
 
-    // 2. Idempotency: skip if this file has already been processed
-    if (await fileAlreadyProcessed(blobName)) {
-      context.log(`File ${blobName} already processed — skipping (idempotent re-delivery)`);
-      return;
-    }
-
-    // 3. Download the file text
+    // 2. Download the file text
     let fileContent;
     try {
       fileContent = await downloadSftpBlob("statebridge", blobName, context);
@@ -305,7 +306,7 @@ app.storageQueue("processSftpOrderFile", {
       throw err; // retryable
     }
 
-    // 4. Parse rows
+    // 3. Parse rows
     const rows = parseOrderFile(fileContent);
     if (rows.length === 0) {
       context.log(`WARNING: No data rows found in ${blobName} — nothing to process`);
@@ -328,7 +329,9 @@ app.storageQueue("processSftpOrderFile", {
       return;
     }
 
-    // 5. Build and write the Engagement (one per file upload)
+    // 4. Build and write the Engagement (one per file upload)
+    // IDs are deterministic from (tenantId + sourceFile + rowIndex), so duplicate
+    // invocations produce the same IDs and Cosmos returns 409 Conflict.
     const { engagement, loanMeta, engagementId } = buildEngagementDocument(validRows, blobName);
 
     try {
@@ -337,21 +340,29 @@ app.storageQueue("processSftpOrderFile", {
         `Created engagement id=${engagementId} number=${engagement.engagementNumber} with ${loanMeta.length} loan(s)`
       );
     } catch (err) {
-      context.log(`ERROR: Failed to create engagement for file ${blobName}: ${err.message}`);
-      throw err; // retryable — orders should not be created without the engagement
+      if (isConflict(err)) {
+        context.log(
+          `Engagement ${engagementId} already exists (duplicate event) — continuing to orders for partial-retry safety`
+        );
+      } else {
+        context.log(`ERROR: Failed to create engagement for file ${blobName}: ${err.message}`);
+        throw err; // retryable — orders should not be created without the engagement
+      }
     }
 
-    // 6. Create one linked order per valid row
+    // 5. Create one linked order per valid row
     let created = 0;
+    let skipped = 0;
     const errors = [];
 
-    for (const { fields, loan, productId } of loanMeta) {
+    for (const { fields, loan, productId, rowIndex } of loanMeta) {
       const orderDoc = buildOrderDocument(
         fields,
         engagementId,
         loan.id,
         productId,
-        blobName
+        blobName,
+        rowIndex
       );
 
       try {
@@ -361,15 +372,22 @@ app.storageQueue("processSftpOrderFile", {
           `Created order id=${orderDoc.id} externalOrderId=${orderDoc.externalOrderId} loanId=${orderDoc.loanId} engagementId=${engagementId}`
         );
       } catch (err) {
-        context.log(
-          `ERROR: Failed to create order externalOrderId=${orderDoc.externalOrderId} loanId=${orderDoc.loanId}: ${err.message}`
-        );
-        errors.push({ externalOrderId: orderDoc.externalOrderId, error: err.message });
+        if (isConflict(err)) {
+          skipped++;
+          context.log(
+            `Order ${orderDoc.id} already exists (duplicate event) — skipping`
+          );
+        } else {
+          context.log(
+            `ERROR: Failed to create order externalOrderId=${orderDoc.externalOrderId} loanId=${orderDoc.loanId}: ${err.message}`
+          );
+          errors.push({ externalOrderId: orderDoc.externalOrderId, error: err.message });
+        }
       }
     }
 
     context.log(
-      `processSftpOrderFile complete — file: ${blobName} | engagement: ${engagementId} | orders created: ${created} | errors: ${errors.length}`
+      `processSftpOrderFile complete — file: ${blobName} | engagement: ${engagementId} | orders created: ${created} | skipped (already exist): ${skipped} | errors: ${errors.length}`
     );
 
     if (errors.length > 0) {
