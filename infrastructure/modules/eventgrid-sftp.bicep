@@ -70,7 +70,7 @@ resource sftpEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscripti
       includedEventTypes: [
         'Microsoft.Storage.BlobCreated'
       ]
-      subjectBeginsWith: '/blobServices/default/containers/uploads/'
+      subjectBeginsWith: '/blobServices/default/containers/statebridge/blobs/uploads/'
       // Exclude the hdi_isfolder marker blobs that HNS creates for directories
       advancedFilters: [
         {

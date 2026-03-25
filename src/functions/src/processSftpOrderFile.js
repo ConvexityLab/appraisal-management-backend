@@ -287,7 +287,7 @@ app.storageQueue("processSftpOrderFile", {
       return;
     }
 
-    context.log(`Processing SFTP inbound file: uploads/${blobName}`);
+    context.log(`Processing SFTP inbound file: ${blobName}`);
 
     // 2. Idempotency: skip if this file has already been processed
     if (await fileAlreadyProcessed(blobName)) {
@@ -298,9 +298,9 @@ app.storageQueue("processSftpOrderFile", {
     // 3. Download the file text
     let fileContent;
     try {
-      fileContent = await downloadSftpBlob("uploads", blobName, context);
+      fileContent = await downloadSftpBlob("statebridge", blobName, context);
     } catch (err) {
-      context.log(`ERROR: Failed to download blob uploads/${blobName}: ${err.message}`);
+      context.log(`ERROR: Failed to download blob ${blobName}: ${err.message}`);
       throw err; // retryable
     }
 
@@ -453,10 +453,10 @@ function parseEventGridMessage(queueMessage) {
   }
 
   const blobUrl = event.data.url;
-  // subject: /blobServices/default/containers/uploads/blobs/<filename>
+  // subject: /blobServices/default/containers/statebridge/blobs/uploads/<filename>
   const subject = event.subject || "";
   const blobNameMatch = subject.match(/\/blobs\/(.+)$/);
-  const blobName = blobNameMatch ? blobNameMatch[1] : new URL(blobUrl).pathname.split("/uploads/")[1];
+  const blobName = blobNameMatch ? blobNameMatch[1] : new URL(blobUrl).pathname.split("/statebridge/")[1];
 
   return { blobUrl, blobName, subject };
 }
@@ -583,15 +583,15 @@ app.storageQueue("processSftpOrderFile", {
       return;
     }
 
-    context.log(`Processing SFTP inbound file: uploads/${blobName}`);
+    context.log(`Processing SFTP inbound file: ${blobName}`);
 
     // 2. Download the file text from the SFTP storage account
     let fileContent;
     try {
-      fileContent = await downloadSftpBlob("uploads", blobName, context);
+      fileContent = await downloadSftpBlob("statebridge", blobName, context);
     } catch (err) {
       // Transient download error — throw so the queue retries
-      context.log(`ERROR: Failed to download blob uploads/${blobName}: ${err.message}`);
+      context.log(`ERROR: Failed to download blob ${blobName}: ${err.message}`);
       throw err;
     }
 

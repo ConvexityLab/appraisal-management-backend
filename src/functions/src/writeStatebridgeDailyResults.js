@@ -205,8 +205,8 @@ app.timer("writeStatebridgeDailyResults", {
 
     // ── Upload to SFTP results/ container ────────────────────────────────────
     const blobName    = `statebridge_results_${yyyymmdd}.txt`;
-    const containerClient = sftpBlobClient.getContainerClient("results");
-    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    const containerClient = sftpBlobClient.getContainerClient("statebridge");
+    const blockBlobClient = containerClient.getBlockBlobClient(`results/${blobName}`);
 
     await blockBlobClient.upload(fileBytes, fileBytes.byteLength, {
       blobHTTPHeaders: { blobContentType: "text/plain; charset=utf-8" },
