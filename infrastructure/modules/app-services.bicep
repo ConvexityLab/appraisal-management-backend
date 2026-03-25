@@ -420,8 +420,10 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
           }
           env: concat(app.env, [
             {
+              // Use the clientId of the Bicep-managed user-assigned identity so
+              // DefaultAzureCredential resolves the correct identity at runtime.
               name: 'AZURE_CLIENT_ID'
-              value: azureClientId
+              value: containerAppIdentities[i].properties.clientId
             }
           ])
         }
