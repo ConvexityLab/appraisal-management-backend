@@ -276,6 +276,31 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
   };
 }
 
+/**
+ * Check whether this file has already been processed (rejects re-uploads with
+ * the same filename). For corrections, Statebridge must upload a new file
+ * (e.g., Orders_20260325_v2.txt).
+ *
+ * NOTE: This check has a small race window when two concurrent Event Grid
+ * messages arrive for the SAME upload — both may pass this check. The 409
+ * Conflict handling in the create calls below is the true idempotency guard;
+ * this query is an early-exit optimisation that produces a clear log message
+ * for genuine re-uploads that happen minutes/hours later.
+ */
+async function fileAlreadyProcessed(sourceFileName) {
+  const { resources } = await engagementsContainer.items
+    .query({
+      query:
+        "SELECT c.id FROM c WHERE c.tenantId = @tenantId AND c.sourceFile = @sourceFile OFFSET 0 LIMIT 1",
+      parameters: [
+        { name: "@tenantId", value: statebridge_tenantId },
+        { name: "@sourceFile", value: sourceFileName },
+      ],
+    })
+    .fetchAll();
+  return resources.length > 0;
+}
+
 // ─── Function Handler ─────────────────────────────────────────────────────────
 
 app.storageQueue("processSftpOrderFile", {
@@ -297,7 +322,18 @@ app.storageQueue("processSftpOrderFile", {
 
     context.log(`Processing SFTP inbound file: ${blobName}`);
 
-    // 2. Download the file text
+    // 2. Reject re-uploads of already-processed filenames.
+    //    Statebridge must use a unique filename for corrections (e.g., _v2 suffix).
+    if (await fileAlreadyProcessed(blobName)) {
+      context.log(
+        `REJECTED: File "${blobName}" has already been processed. ` +
+        `To submit corrections, upload with a unique filename ` +
+        `(e.g., ${blobName.replace(/\.txt$/i, "_v2.txt")}). Discarding.`
+      );
+      return;
+    }
+
+    // 3. Download the file text
     let fileContent;
     try {
       fileContent = await downloadSftpBlob("statebridge", blobName, context);
@@ -306,7 +342,7 @@ app.storageQueue("processSftpOrderFile", {
       throw err; // retryable
     }
 
-    // 3. Parse rows
+    // 4. Parse rows
     const rows = parseOrderFile(fileContent);
     if (rows.length === 0) {
       context.log(`WARNING: No data rows found in ${blobName} — nothing to process`);
@@ -329,7 +365,7 @@ app.storageQueue("processSftpOrderFile", {
       return;
     }
 
-    // 4. Build and write the Engagement (one per file upload)
+    // 5. Build and write the Engagement (one per file upload)
     // IDs are deterministic from (tenantId + sourceFile + rowIndex), so duplicate
     // invocations produce the same IDs and Cosmos returns 409 Conflict.
     const { engagement, loanMeta, engagementId } = buildEngagementDocument(validRows, blobName);
@@ -350,7 +386,7 @@ app.storageQueue("processSftpOrderFile", {
       }
     }
 
-    // 5. Create one linked order per valid row
+    // 6. Create one linked order per valid row
     let created = 0;
     let skipped = 0;
     const errors = [];
