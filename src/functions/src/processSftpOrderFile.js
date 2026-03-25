@@ -10,14 +10,29 @@ const cosmosEndpoint = process.env.COSMOSDB_ENDPOINT;
 const databaseName = process.env.DATABASE_NAME;
 const sftpStorageAccountName = process.env.SFTP_STORAGE_ACCOUNT_NAME;
 const statebridgeClientId = process.env.STATEBRIDGE_CLIENT_ID;
-const statebridgeClientName = process.env.STATEBRIDGE_CLIENT_NAME || "Statebridge";
+const statebridgeClientName = process.env.STATEBRIDGE_CLIENT_NAME;
 const statebridge_tenantId = process.env.STATEBRIDGE_TENANT_ID;
 
 if (!cosmosEndpoint) throw new Error("COSMOSDB_ENDPOINT is required but not set");
 if (!databaseName) throw new Error("DATABASE_NAME is required but not set");
 if (!sftpStorageAccountName) throw new Error("SFTP_STORAGE_ACCOUNT_NAME is required but not set");
 if (!statebridgeClientId) throw new Error("STATEBRIDGE_CLIENT_ID is required but not set");
+if (!statebridgeClientName) throw new Error("STATEBRIDGE_CLIENT_NAME is required but not set");
 if (!statebridge_tenantId) throw new Error("STATEBRIDGE_TENANT_ID is required but not set");
+
+// ─── Constants for input validation ───────────────────────────────────────────
+
+const VALID_FILE_EXTENSIONS = [".txt", ".csv", ".dat"];
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB hard limit
+
+const US_STATES = new Set([
+  "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL",
+  "IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE",
+  "NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","PR","RI","SC",
+  "SD","TN","TX","UT","VT","VA","VI","WA","WV","WI","WY","GU","AS","MP",
+]);
+
+const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
 
 // ─── Clients (module-scoped so they are reused across invocations) ─────────────
 
@@ -134,12 +149,23 @@ function parseEventGridMessage(queueMessage) {
 
 /**
  * Download a blob from the SFTP storage account and return its text content.
+ * Enforces a file size limit to prevent OOM from unexpectedly large uploads.
  */
 async function downloadSftpBlob(containerName, blobName, context) {
   const containerClient = sftpBlobClient.getContainerClient(containerName);
   const blobClient = containerClient.getBlobClient(blobName);
 
-  context.log(`Downloading SFTP blob: ${containerName}/${blobName}`);
+  // Check blob size before downloading into memory
+  const properties = await blobClient.getProperties();
+  const blobSize = properties.contentLength;
+  if (blobSize > MAX_FILE_SIZE_BYTES) {
+    throw new Error(
+      `Blob ${containerName}/${blobName} is ${blobSize} bytes, ` +
+      `exceeding the ${MAX_FILE_SIZE_BYTES} byte limit. Rejecting.`
+    );
+  }
+
+  context.log(`Downloading SFTP blob: ${containerName}/${blobName} (${blobSize} bytes)`);
   const downloadResponse = await blobClient.download(0);
 
   const chunks = [];
@@ -147,6 +173,58 @@ async function downloadSftpBlob(containerName, blobName, context) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString("utf-8");
+}
+
+/**
+ * Move a processed blob from uploads/ to processed/ so the uploads directory
+ * doesn't accumulate indefinitely and operators can see what's been handled.
+ */
+async function archiveProcessedBlob(containerName, blobName, context) {
+  const containerClient = sftpBlobClient.getContainerClient(containerName);
+  const sourceBlobClient = containerClient.getBlobClient(blobName);
+  const destPath = blobName.replace(/^uploads\//, "processed/");
+  const destBlobClient = containerClient.getBlobClient(destPath);
+
+  try {
+    // Copy then delete (ADLS Gen2 / HNS doesn't support rename via SDK)
+    const poller = await destBlobClient.beginCopyFromURL(sourceBlobClient.url);
+    await poller.pollUntilDone();
+    await sourceBlobClient.delete();
+    context.log(`Archived ${blobName} → ${destPath}`);
+  } catch (err) {
+    // Archival failure is non-fatal — the file was already processed successfully
+    context.log(`WARNING: Failed to archive ${blobName} → ${destPath}: ${err.message}`);
+  }
+}
+
+/**
+ * Validate a single parsed row's fields. Returns an array of warning strings
+ * (empty if all fields are valid).
+ */
+function validateRow(fields, rowIndex) {
+  const warnings = [];
+  const state = (fields[IN.State] || "").trim().toUpperCase();
+  const zip = (fields[IN.Zip] || "").trim();
+  const address = (fields[IN.AddressLine1] || "").trim();
+  const city = (fields[IN.City] || "").trim();
+  const loanId = (fields[IN.LoanID] || "").trim();
+
+  if (!loanId) {
+    warnings.push(`Row ${rowIndex}: LoanID is empty`);
+  }
+  if (!address) {
+    warnings.push(`Row ${rowIndex}: AddressLine1 is empty`);
+  }
+  if (!city) {
+    warnings.push(`Row ${rowIndex}: City is empty`);
+  }
+  if (state && !US_STATES.has(state)) {
+    warnings.push(`Row ${rowIndex}: Invalid state code "${state}"`);
+  }
+  if (zip && !ZIP_REGEX.test(zip)) {
+    warnings.push(`Row ${rowIndex}: Invalid zip code "${zip}"`);
+  }
+  return warnings;
 }
 
 /**
@@ -322,7 +400,17 @@ app.storageQueue("processSftpOrderFile", {
 
     context.log(`Processing SFTP inbound file: ${blobName}`);
 
-    // 2. Reject re-uploads of already-processed filenames.
+    // 2. Reject files with unexpected extensions (only .txt, .csv, .dat)
+    const ext = blobName.includes(".") ? blobName.substring(blobName.lastIndexOf(".")).toLowerCase() : "";
+    if (!VALID_FILE_EXTENSIONS.includes(ext)) {
+      context.log(
+        `REJECTED: File "${blobName}" has unsupported extension "${ext}". ` +
+        `Expected one of: ${VALID_FILE_EXTENSIONS.join(", ")}. Discarding.`
+      );
+      return;
+    }
+
+    // 3. Reject re-uploads of already-processed filenames.
     //    Statebridge must use a unique filename for corrections (e.g., _v2 suffix).
     if (await fileAlreadyProcessed(blobName)) {
       context.log(
@@ -333,7 +421,7 @@ app.storageQueue("processSftpOrderFile", {
       return;
     }
 
-    // 3. Download the file text
+    // 4. Download the file text (with size guard)
     let fileContent;
     try {
       fileContent = await downloadSftpBlob("statebridge", blobName, context);
@@ -342,7 +430,7 @@ app.storageQueue("processSftpOrderFile", {
       throw err; // retryable
     }
 
-    // 4. Parse rows
+    // 5. Parse rows
     const rows = parseOrderFile(fileContent);
     if (rows.length === 0) {
       context.log(`WARNING: No data rows found in ${blobName} — nothing to process`);
@@ -350,12 +438,18 @@ app.storageQueue("processSftpOrderFile", {
     }
     context.log(`Parsed ${rows.length} order row(s) from ${blobName}`);
 
-    // Validate each row has minimum columns before creating anything
+    // Validate each row has minimum columns and valid fields before creating anything
     const validRows = [];
-    for (const fields of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const fields = rows[i];
       if (fields.length < 11) {
-        context.log(`WARNING: Skipping malformed row (${fields.length} columns): ${fields.join("|")}`);
+        context.log(`WARNING: Skipping malformed row ${i} (${fields.length} columns): ${fields.join("|")}`);
         continue;
+      }
+      // Per-field validation — warn but still process (Statebridge data may have quirks)
+      const fieldWarnings = validateRow(fields, i);
+      for (const w of fieldWarnings) {
+        context.log(`VALIDATION WARNING: ${w} in ${blobName}`);
       }
       validRows.push(fields);
     }
@@ -365,7 +459,7 @@ app.storageQueue("processSftpOrderFile", {
       return;
     }
 
-    // 5. Build and write the Engagement (one per file upload)
+    // 6. Build and write the Engagement (one per file upload)
     // IDs are deterministic from (tenantId + sourceFile + rowIndex), so duplicate
     // invocations produce the same IDs and Cosmos returns 409 Conflict.
     const { engagement, loanMeta, engagementId } = buildEngagementDocument(validRows, blobName);
@@ -386,7 +480,7 @@ app.storageQueue("processSftpOrderFile", {
       }
     }
 
-    // 6. Create one linked order per valid row
+    // 7. Create one linked order per valid row
     let created = 0;
     let skipped = 0;
     const errors = [];
@@ -431,6 +525,9 @@ app.storageQueue("processSftpOrderFile", {
         `${errors.length} order(s) failed to create. First error: ${errors[0].error}. File: ${blobName}`
       );
     }
+
+    // 8. Archive file from uploads/ to processed/ (non-fatal on failure)
+    await archiveProcessedBlob("statebridge", blobName, context);
   },
 });
 

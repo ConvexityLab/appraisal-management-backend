@@ -139,6 +139,11 @@ app.timer("writeStatebridgeDailyResults", {
             c.loanId,
             c.collateralNumber,
             c.propertyAddress,
+            c.streetAddress,
+            c.addressLine2,
+            c.city,
+            c.state,
+            c.zip,
             c.dateOrdered,
             c.dateCompleted,
             c.bpoExtractedData
@@ -176,6 +181,10 @@ app.timer("writeStatebridgeDailyResults", {
 
     for (const order of orders) {
       const bpo = order.bpoExtractedData ?? {};
+
+      // Orders from processSftpOrderFile store address as flat fields (streetAddress,
+      // addressLine2, city, state, zip). Also support the object form (propertyAddress)
+      // in case other ingest paths store it that way.
       const addr = (typeof order.propertyAddress === "object" && order.propertyAddress !== null)
         ? order.propertyAddress
         : {};
@@ -184,11 +193,11 @@ app.timer("writeStatebridgeDailyResults", {
         escapeField(order.externalOrderId ?? order.id),
         escapeField(order.loanId),
         escapeField(order.collateralNumber),
-        escapeField(addr.street ?? ""),
-        escapeField(addr.street2 ?? ""),
-        escapeField(addr.city ?? ""),
-        escapeField(addr.state ?? ""),
-        escapeField(addr.zipCode ?? ""),
+        escapeField(order.streetAddress ?? addr.street ?? ""),
+        escapeField(order.addressLine2 ?? addr.street2 ?? ""),
+        escapeField(order.city ?? addr.city ?? ""),
+        escapeField(order.state ?? addr.state ?? ""),
+        escapeField(order.zip ?? addr.zipCode ?? ""),
         escapeField((bpo.county ?? "").toUpperCase()), // spec requires ALL CAPS county
         formatDate(order.dateOrdered),
         formatDate(order.dateCompleted),
