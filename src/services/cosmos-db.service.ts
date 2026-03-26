@@ -1189,23 +1189,32 @@ export class CosmosDbService {
 
       const { startDate, endDate } = params;
 
-      // Build optional date filter
-      const dateFilter = startDate && endDate
-        ? `AND c.createdAt >= '${startDate}' AND c.createdAt <= '${endDate}'`
-        : '';
+      // Build optional parameterized date filter
+      const dateParams: { name: string; value: string }[] = [];
+      let dateFilter = '';
+      if (startDate && endDate) {
+        dateFilter = 'AND c.createdAt >= @startDate AND c.createdAt <= @endDate';
+        dateParams.push({ name: '@startDate', value: startDate });
+        dateParams.push({ name: '@endDate', value: endDate });
+      }
 
       // --- Efficiency: average processing time, capacity utilization ---
       const [avgProcessRes, bottleneckRes] = await Promise.all([
-        this.ordersContainer.items.query(`
-          SELECT AVG(DateTimeDiff('hour', c.createdAt, c.completedAt)) as avgHours
-          FROM c WHERE c.status = 'completed' AND c.completedAt != null ${dateFilter}
-        `).fetchAll(),
-        this.ordersContainer.items.query(`
-          SELECT c.status as stage, COUNT(1) as cnt,
-                 AVG(DateTimeDiff('hour', c.statusChangedAt, c.updatedAt)) as avgTime
-          FROM c WHERE c.status NOT IN ('completed','cancelled') ${dateFilter}
-          GROUP BY c.status
-        `).fetchAll(),
+        this.ordersContainer.items.query({
+          query: `SELECT AVG(DateTimeDiff('hour', c.createdAt, c.completedAt)) as avgHours
+                  FROM c WHERE c.status = 'completed' AND IS_DEFINED(c.completedAt) AND c.completedAt != null ${dateFilter}`,
+          parameters: [...dateParams]
+        }).fetchAll(),
+        this.ordersContainer.items.query({
+          query: `SELECT c.status as stage, COUNT(1) as cnt,
+                         AVG(DateTimeDiff('hour', c.statusChangedAt, c.updatedAt)) as avgTime
+                  FROM c WHERE c.status NOT IN ('completed','cancelled')
+                    AND IS_DEFINED(c.statusChangedAt) AND c.statusChangedAt != null
+                    AND IS_DEFINED(c.updatedAt) AND c.updatedAt != null
+                    ${dateFilter}
+                  GROUP BY c.status`,
+          parameters: [...dateParams]
+        }).fetchAll(),
       ]);
 
       const avgProcessingHours = avgProcessRes.resources[0]?.avgHours || 0;
@@ -1222,24 +1231,31 @@ export class CosmosDbService {
       }
 
       // --- Quality: first-time pass, revision rate, critical error rate ---
+      const qcDateFilter = dateParams.length > 0 ? 'WHERE 1=1 ' + dateFilter : '';
+      const qcDateFilterAnd = dateParams.length > 0 ? dateFilter : '';
       const [firstTimeRes, revisionRateRes, criticalRateRes, avgQcRes] = await Promise.all([
-        this.qcResultsContainer.items.query(`
-          SELECT VALUE COUNT(1) FROM c WHERE c.qcScore >= 85 AND c.revisionNumber = 1 ${dateFilter}
-        `).fetchAll(),
-        this.qcResultsContainer.items.query(`
-          SELECT VALUE COUNT(1) FROM c WHERE c.revisionsRequested > 0 ${dateFilter}
-        `).fetchAll(),
-        this.qcResultsContainer.items.query(`
-          SELECT VALUE COUNT(1) FROM c WHERE c.hasCriticalIssues = true ${dateFilter}
-        `).fetchAll(),
-        this.qcResultsContainer.items.query(`
-          SELECT AVG(c.qcScore) as avg FROM c ${dateFilter ? 'WHERE 1=1 ' + dateFilter : ''}
-        `).fetchAll(),
+        this.qcResultsContainer.items.query({
+          query: `SELECT VALUE COUNT(1) FROM c WHERE c.qcScore >= 85 AND c.revisionNumber = 1 ${qcDateFilterAnd}`,
+          parameters: [...dateParams]
+        }).fetchAll(),
+        this.qcResultsContainer.items.query({
+          query: `SELECT VALUE COUNT(1) FROM c WHERE c.revisionsRequested > 0 ${qcDateFilterAnd}`,
+          parameters: [...dateParams]
+        }).fetchAll(),
+        this.qcResultsContainer.items.query({
+          query: `SELECT VALUE COUNT(1) FROM c WHERE c.hasCriticalIssues = true ${qcDateFilterAnd}`,
+          parameters: [...dateParams]
+        }).fetchAll(),
+        this.qcResultsContainer.items.query({
+          query: `SELECT AVG(c.qcScore) as avg FROM c ${qcDateFilter}`,
+          parameters: [...dateParams]
+        }).fetchAll(),
       ]);
 
-      const totalQcForPeriod = await this.qcResultsContainer.items.query(
-        `SELECT VALUE COUNT(1) FROM c ${dateFilter ? 'WHERE 1=1 ' + dateFilter : ''}`
-      ).fetchAll();
+      const totalQcForPeriod = await this.qcResultsContainer.items.query({
+        query: `SELECT VALUE COUNT(1) FROM c ${qcDateFilter}`,
+        parameters: [...dateParams]
+      }).fetchAll();
       const qcTotal = totalQcForPeriod.resources[0] || 0;
       const firstTimePass = firstTimeRes.resources[0] || 0;
       const revisionCount = revisionRateRes.resources[0] || 0;
@@ -1247,14 +1263,17 @@ export class CosmosDbService {
       const avgScore = avgQcRes.resources[0]?.avg || 0;
 
       // --- Vendor performance: top performers ---
-      const topVendorRes = await this.ordersContainer.items.query(`
-        SELECT TOP 5 c.assignedVendorId as vendorId,
-               c.assignedVendorName as vendorName,
-               AVG(c.qcScore) as score
-        FROM c WHERE c.status = 'completed' AND c.assignedVendorId != null ${dateFilter}
-        GROUP BY c.assignedVendorId, c.assignedVendorName
-        ORDER BY AVG(c.qcScore) DESC
-      `).fetchAll();
+      const topVendorRes = await this.ordersContainer.items.query({
+        query: `SELECT c.assignedVendorId as vendorId,
+                       c.assignedVendorName as vendorName,
+                       AVG(c.qcScore) as score
+                FROM c WHERE c.status = 'completed' AND IS_DEFINED(c.assignedVendorId) AND c.assignedVendorId != null ${dateFilter}
+                GROUP BY c.assignedVendorId, c.assignedVendorName`,
+        parameters: [...dateParams]
+      }).fetchAll();
+      // Cosmos DB doesn't support ORDER BY on aggregates in GROUP BY — sort client-side
+      topVendorRes.resources.sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
+      topVendorRes.resources.splice(5);
 
       // --- Build PerformanceMetrics shape expected by FE ---
       return {
