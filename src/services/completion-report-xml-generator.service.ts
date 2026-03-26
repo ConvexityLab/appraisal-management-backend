@@ -140,7 +140,7 @@ export class CompletionReportXmlGenerator {
       .ele('COLLATERALS')
       .ele('COLLATERAL');
 
-    collateral.ele('SubjectPropertyIdentifier', 'SUBJECT');
+    collateral.ele('SubjectPropertyIdentifier').txt( 'SUBJECT');
 
     const property = collateral
       .ele('PROPERTIES')
@@ -148,38 +148,38 @@ export class CompletionReportXmlGenerator {
 
     // Address
     const addrNode = property.ele('ADDRESS');
-    addrNode.ele('AddressLineText', addr.streetAddress);
+    addrNode.ele('AddressLineText').txt( addr.streetAddress);
     if (addr.unitIdentifier) {
-      addrNode.ele('AddressUnitIdentifier', addr.unitIdentifier);
-      addrNode.ele('AddressUnitDesignatorType', 'Unit');
+      addrNode.ele('AddressUnitIdentifier').txt( addr.unitIdentifier);
+      addrNode.ele('AddressUnitDesignatorType').txt( 'Unit');
     }
-    addrNode.ele('CityName', addr.city);
-    addrNode.ele('PostalCode', addr.postalCode);
-    addrNode.ele('StateCode', addr.state);
-    addrNode.ele('CountyName', addr.county);
+    addrNode.ele('CityName').txt( addr.city);
+    addrNode.ele('PostalCode').txt( addr.postalCode);
+    addrNode.ele('StateCode').txt( addr.state);
+    addrNode.ele('CountyName').txt( addr.county);
 
     // Legal description — text form
     if (doc.subjectProperty.legalDescriptionText) {
       property
         .ele('PROPERTY_DETAIL')
-        .ele('PropertyLegalDescription', doc.subjectProperty.legalDescriptionText);
+        .ele('PropertyLegalDescription').txt( doc.subjectProperty.legalDescriptionText);
     }
 
     // Legal description image — stored as an IMAGE on the PROPERTY
     if (doc.subjectProperty.legalDescriptionImageUrl) {
       const imgNode = property.ele('IMAGES').ele('IMAGE');
-      imgNode.ele('ImageCategoryType', 'LegalDescription');
-      imgNode.ele('ImageFileLocationURL', doc.subjectProperty.legalDescriptionImageUrl);
+      imgNode.ele('ImageCategoryType').txt( 'LegalDescription');
+      imgNode.ele('ImageFileLocationURL').txt( doc.subjectProperty.legalDescriptionImageUrl);
       if (doc.subjectProperty.legalDescriptionCaption) {
-        imgNode.ele('ImageCaptionCommentDescription', doc.subjectProperty.legalDescriptionCaption);
+        imgNode.ele('ImageCaptionCommentDescription').txt( doc.subjectProperty.legalDescriptionCaption);
       }
     }
 
     // Subject photo (Section 01 only — does NOT re-appear in Exhibits)
     if (doc.subjectProperty.subjectPhotoUrl) {
       const imgNode = property.ele('IMAGES').ele('IMAGE');
-      imgNode.ele('ImageCategoryType', 'PropertyPhoto');
-      imgNode.ele('ImageFileLocationURL', doc.subjectProperty.subjectPhotoUrl);
+      imgNode.ele('ImageCategoryType').txt( 'PropertyPhoto');
+      imgNode.ele('ImageFileLocationURL').txt( doc.subjectProperty.subjectPhotoUrl);
     }
   }
 
@@ -197,44 +197,44 @@ export class CompletionReportXmlGenerator {
     loan.ele('DOCUMENT_SPECIFIC_DATA_SETS')
       .ele('DOCUMENT_SPECIFIC_DATA_SET')
       .ele('APPRAISAL_DOCUMENT')
-      .ele('AppraisalDocumentType', DOC_FORM_ID);
+      .ele('AppraisalDocumentType').txt( DOC_FORM_ID);
 
     // Header/footer reference IDs (UID: 2100.0029-0025)
     const hf = doc.headerFooterIds;
     const identifiers = loan.ele('LOAN_IDENTIFIERS');
-    identifiers.ele('LOAN_IDENTIFIER').ele('LoanIdentifier', submissionInfo.loanNumber);
+    identifiers.ele('LOAN_IDENTIFIER').ele('LoanIdentifier').txt( submissionInfo.loanNumber);
     if (hf.appraiserFileIdentifier) {
       identifiers.ele('LOAN_IDENTIFIER', {
         LoanIdentifierType: 'AppraiserFile',
-      }).ele('LoanIdentifier', hf.appraiserFileIdentifier);
+      }).ele('LoanIdentifier').txt( hf.appraiserFileIdentifier);
     }
     if (hf.agencyCaseFileId) {
       identifiers.ele('LOAN_IDENTIFIER', {
         LoanIdentifierType: 'GovernmentAgency',
-      }).ele('LoanIdentifier', hf.agencyCaseFileId);
+      }).ele('LoanIdentifier').txt( hf.agencyCaseFileId);
     }
     if (hf.clientReferenceId) {
       identifiers.ele('LOAN_IDENTIFIER', {
         LoanIdentifierType: 'Client',
-      }).ele('LoanIdentifier', hf.clientReferenceId);
+      }).ele('LoanIdentifier').txt( hf.clientReferenceId);
     }
     if (hf.amcReferenceId) {
       identifiers.ele('LOAN_IDENTIFIER', {
         LoanIdentifierType: 'ManagementCompany',
-      }).ele('LoanIdentifier', hf.amcReferenceId);
+      }).ele('LoanIdentifier').txt( hf.amcReferenceId);
     }
 
     // Borrower (FID 08.001)
     if (ai.borrowerFirstName || ai.borrowerLegalEntityName) {
       const borrower = loan.ele('BORROWERS').ele('BORROWER');
       if (ai.borrowerLegalEntityName) {
-        borrower.ele('NAME').ele('FullName', ai.borrowerLegalEntityName);
+        borrower.ele('NAME').ele('FullName').txt( ai.borrowerLegalEntityName);
       } else {
         const name = borrower.ele('NAME');
-        if (ai.borrowerFirstName) name.ele('FirstName', ai.borrowerFirstName);
-        if (ai.borrowerMiddleName) name.ele('MiddleName', ai.borrowerMiddleName);
-        if (ai.borrowerLastName) name.ele('LastName', ai.borrowerLastName);
-        if (ai.borrowerSuffix) name.ele('SuffixName', ai.borrowerSuffix);
+        if (ai.borrowerFirstName) name.ele('FirstName').txt( ai.borrowerFirstName);
+        if (ai.borrowerMiddleName) name.ele('MiddleName').txt( ai.borrowerMiddleName);
+        if (ai.borrowerLastName) name.ele('LastName').txt( ai.borrowerLastName);
+        if (ai.borrowerSuffix) name.ele('SuffixName').txt( ai.borrowerSuffix);
       }
     }
 
@@ -243,26 +243,26 @@ export class CompletionReportXmlGenerator {
       const fees = loan.ele('FEES');
       if (ai.appraisalFee != null) {
         fees.ele('FEE', { FeeType: 'AppraisalFee' })
-          .ele('ProvidedServiceActualCostAmount', String(ai.appraisalFee));
+          .ele('ProvidedServiceActualCostAmount').txt( String(ai.appraisalFee));
       }
       if (ai.amcFee != null) {
         fees.ele('FEE', { FeeType: 'AppraisalManagementCompanyFee' })
-          .ele('ProvidedServiceActualCostAmount', String(ai.amcFee));
+          .ele('ProvidedServiceActualCostAmount').txt( String(ai.amcFee));
       }
     }
 
     // Government agency (FID 08.004)
     if (ai.governmentAgencyAppraisal) {
       const gov = loan.ele('GOVERNMENT_LOAN_INDICATORS');
-      gov.ele('GovernmentAgencyAppraisalIndicator', 'true');
+      gov.ele('GovernmentAgencyAppraisalIndicator').txt( 'true');
       if (ai.governmentAgencyType) {
-        gov.ele('GovernmentAgencyAppraisalType', ai.governmentAgencyType);
+        gov.ele('GovernmentAgencyAppraisalType').txt( ai.governmentAgencyType);
       }
     }
 
     // Investor ID (FID 08.005)
     if (ai.investorRequestedId) {
-      loan.ele('InvestorRequestedIdentificationCode', ai.investorRequestedId);
+      loan.ele('InvestorRequestedIdentificationCode').txt( ai.investorRequestedId);
     }
   }
 
@@ -290,25 +290,25 @@ export class CompletionReportXmlGenerator {
   private _buildClientParty(parties: XMLBuilder, cp: CrContactParty, idx: number): void {
     const party = parties.ele('PARTY', { label: `PARTY_CLIENT_${idx}` });
     const roles = party.ele('ROLES');
-    roles.ele('ROLE').ele('PartyRoleType', cp.primaryRole);
+    roles.ele('ROLE').ele('PartyRoleType').txt( cp.primaryRole);
     if (cp.secondaryRole) {
-      roles.ele('ROLE').ele('PartyRoleType', cp.secondaryRole);
+      roles.ele('ROLE').ele('PartyRoleType').txt( cp.secondaryRole);
     }
     const contact = party.ele('CONTACT_INFORMATION');
-    contact.ele('Name').ele('FullName', cp.companyName);
+    contact.ele('Name').ele('FullName').txt( cp.companyName);
     if (cp.addressLine) {
       const addr = contact.ele('ADDRESS');
-      addr.ele('AddressLineText', cp.addressLine);
-      if (cp.city) addr.ele('CityName', cp.city);
-      if (cp.state) addr.ele('StateCode', cp.state);
-      if (cp.postalCode) addr.ele('PostalCode', cp.postalCode);
+      addr.ele('AddressLineText').txt( cp.addressLine);
+      if (cp.city) addr.ele('CityName').txt( cp.city);
+      if (cp.state) addr.ele('StateCode').txt( cp.state);
+      if (cp.postalCode) addr.ele('PostalCode').txt( cp.postalCode);
     }
     // AMC credentials (UID: 2400.0362-0364)
     if (cp.licenseId) {
       const creds = party.ele('INDIVIDUAL');
-      creds.ele('LicenseIdentifier', cp.licenseId);
-      if (cp.licenseState) creds.ele('LicenseIssuingAuthorityStateCode', cp.licenseState);
-      if (cp.licenseExpires) creds.ele('LicenseExpirationDate', cp.licenseExpires);
+      creds.ele('LicenseIdentifier').txt( cp.licenseId);
+      if (cp.licenseState) creds.ele('LicenseIssuingAuthorityStateCode').txt( cp.licenseState);
+      if (cp.licenseExpires) creds.ele('LicenseExpirationDate').txt( cp.licenseExpires);
     }
   }
 
@@ -319,42 +319,42 @@ export class CompletionReportXmlGenerator {
   ): void {
     const label = role === 'Appraiser' ? 'PARTY_APPRAISER' : 'PARTY_SUPERVISOR';
     const party = parties.ele('PARTY', { label });
-    party.ele('ROLES').ele('ROLE', { label: `ROLE_${role}` }).ele('PartyRoleType', role);
+    party.ele('ROLES').ele('ROLE', { label: `ROLE_${role}` }).ele('PartyRoleType').txt( role);
 
     // Name
     const individual = party.ele('INDIVIDUAL');
     const name = individual.ele('NAME');
-    name.ele('FirstName', app.firstName);
-    if (app.middleName) name.ele('MiddleName', app.middleName);
-    name.ele('LastName', app.lastName);
-    if (app.suffixName) name.ele('SuffixName', app.suffixName);
+    name.ele('FirstName').txt( app.firstName);
+    if (app.middleName) name.ele('MiddleName').txt( app.middleName);
+    name.ele('LastName').txt( app.lastName);
+    if (app.suffixName) name.ele('SuffixName').txt( app.suffixName);
 
     // License / credentials (FID 08.020-08.024)
-    individual.ele('LicenseIdentifier', app.licenseId);
-    individual.ele('LicenseIssuingAuthorityStateCode', app.licenseState);
-    individual.ele('LicenseExpirationDate', app.licenseExpires);
-    individual.ele('AppraiserLicenseType', app.licenseType);
+    individual.ele('LicenseIdentifier').txt( app.licenseId);
+    individual.ele('LicenseIssuingAuthorityStateCode').txt( app.licenseState);
+    individual.ele('LicenseExpirationDate').txt( app.licenseExpires);
+    individual.ele('AppraiserLicenseType').txt( app.licenseType);
 
-    if (app.ascId) individual.ele('AppraisalSubCommitteeAppraiserIdentifier', app.ascId);
-    if (app.designation) individual.ele('AppraiserDesignationType', app.designation);
+    if (app.ascId) individual.ele('AppraisalSubCommitteeAppraiserIdentifier').txt( app.ascId);
+    if (app.designation) individual.ele('AppraiserDesignationType').txt( app.designation);
     if (app.agencyAppraiserId) {
-      individual.ele('AgencyAppraiserIdentifier', app.agencyAppraiserId);
+      individual.ele('AgencyAppraiserIdentifier').txt( app.agencyAppraiserId);
       if (app.agencyAppraiserIdType) {
-        individual.ele('AgencyAppraiserIdentifierType', app.agencyAppraiserIdType);
+        individual.ele('AgencyAppraiserIdentifierType').txt( app.agencyAppraiserIdType);
       }
     }
-    if (app.vaEmploymentType) individual.ele('AppraiserEmploymentType', app.vaEmploymentType);
+    if (app.vaEmploymentType) individual.ele('AppraiserEmploymentType').txt( app.vaEmploymentType);
 
     // Company
     if (app.companyName) {
       const contact = party.ele('CONTACT_INFORMATION');
-      contact.ele('Name').ele('FullName', app.companyName);
+      contact.ele('Name').ele('FullName').txt( app.companyName);
       if (app.companyAddressLine) {
         const addr = contact.ele('ADDRESS');
-        addr.ele('AddressLineText', app.companyAddressLine);
-        if (app.companyCity) addr.ele('CityName', app.companyCity);
-        if (app.companyState) addr.ele('StateCode', app.companyState);
-        if (app.companyPostalCode) addr.ele('PostalCode', app.companyPostalCode);
+        addr.ele('AddressLineText').txt( app.companyAddressLine);
+        if (app.companyCity) addr.ele('CityName').txt( app.companyCity);
+        if (app.companyState) addr.ele('StateCode').txt( app.companyState);
+        if (app.companyPostalCode) addr.ele('PostalCode').txt( app.companyPostalCode);
       }
     }
 
@@ -362,24 +362,23 @@ export class CompletionReportXmlGenerator {
     if (app.exteriorInspectionMethod || app.interiorInspectionMethod || app.inspectionDate) {
       const inspection = party.ele('INSPECTION', { label: `INSPECTION_${role}` });
       if (app.exteriorInspectionMethod) {
-        inspection.ele('PropertyExteriorInspectionMethodType', app.exteriorInspectionMethod);
+        inspection.ele('PropertyExteriorInspectionMethodType').txt( app.exteriorInspectionMethod);
       }
       if (app.interiorInspectionMethod) {
-        inspection.ele('PropertyInteriorInspectionMethodType', app.interiorInspectionMethod);
+        inspection.ele('PropertyInteriorInspectionMethodType').txt( app.interiorInspectionMethod);
       }
       if (app.inspectionDate) {
-        inspection.ele('InspectionDate', app.inspectionDate);
+        inspection.ele('InspectionDate').txt( app.inspectionDate);
       }
     }
 
     // Personal inspection indicator (drives Cert 6 text) (UID: 2200.0027)
-    individual.ele('PersonalInspectionPerformedIndicator',
+    individual.ele('PersonalInspectionPerformedIndicator').txt(
       app.personalInspectionPerformed ? 'true' : 'false',
     );
     // Verification statement when inspection not performed (UID: 2200.0026)
     if (!app.personalInspectionPerformed && app.conditionsSatisfiedVerificationDescription) {
-      individual.ele(
-        'AppraisalConditionsSatisfiedVerificationDescription',
+      individual.ele('AppraisalConditionsSatisfiedVerificationDescription').txt(
         app.conditionsSatisfiedVerificationDescription,
       );
     }
@@ -453,16 +452,16 @@ export class CompletionReportXmlGenerator {
 
     service.ele('SERVICE_IDENTIFIERS')
       .ele('SERVICE_IDENTIFIER')
-      .ele('ServiceIdentifier', doc.reportId);
+      .ele('ServiceIdentifier').txt( doc.reportId);
 
     const valuation = service.ele('VALUATION');
 
     // Document form metadata (header/footer FIDs HF.001-HF.004)
     const formInfo = valuation.ele('VALUATION_FORM_INFORMATION');
-    formInfo.ele('DocumentType', DOC_FORM_ID);
-    formInfo.ele('AboutVersionIdentifier', doc.schemaVersion);
-    formInfo.ele('DocumentFormIssuingEntityNameType', FORM_ISSUER);
-    formInfo.ele('DocumentFormIssuingEntityVersionIdentifier', FORM_VERSION);
+    formInfo.ele('DocumentType').txt( DOC_FORM_ID);
+    formInfo.ele('AboutVersionIdentifier').txt( doc.schemaVersion);
+    formInfo.ele('DocumentFormIssuingEntityNameType').txt( FORM_ISSUER);
+    formInfo.ele('DocumentFormIssuingEntityVersionIdentifier').txt( FORM_VERSION);
 
     // Section 02 — Original Appraisal
     this._buildOriginalAppraisalSection(valuation, doc);
@@ -490,7 +489,7 @@ export class CompletionReportXmlGenerator {
     if (ctx.showSection06 && doc.completionCommentary) {
       valuation
         .ele('VALUATION_COMPLETION_DETAIL')
-        .ele('AppraisalCompletionCommentText', doc.completionCommentary);
+        .ele('AppraisalCompletionCommentText').txt( doc.completionCommentary);
     }
 
     // Section 07 — Additional Exhibits (standalone images)
@@ -502,7 +501,7 @@ export class CompletionReportXmlGenerator {
     if (doc.assignmentInformation.scopeOfWorkCommentary) {
       valuation
         .ele('VALUATION_COMMENTS', { ValuationAnalysisCategoryType: 'Assignment' })
-        .ele('ValuationCommentText', doc.assignmentInformation.scopeOfWorkCommentary);
+        .ele('ValuationCommentText').txt( doc.assignmentInformation.scopeOfWorkCommentary);
     }
 
     // Section 09 — Certifications and signatures
@@ -519,29 +518,29 @@ export class CompletionReportXmlGenerator {
     const appraisal = valuation.ele('APPRAISAL');
 
     // Effective date (UID: 2800.0032)
-    appraisal.ele('OriginalAppraisalEffectiveDate', oa.effectiveDate);
+    appraisal.ele('OriginalAppraisalEffectiveDate').txt( oa.effectiveDate);
 
     // Appraised value (UID: 2800.0033)
-    appraisal.ele('OriginalAppraisedValueAmount', String(oa.appraisedValue));
+    appraisal.ele('OriginalAppraisedValueAmount').txt( String(oa.appraisedValue));
 
     // Market value conditions — one element per condition (UID: 2800.0002)
     oa.marketValueConditions.forEach((cond) => {
-      appraisal.ele('PropertyValuationConditionalConclusionType', cond);
+      appraisal.ele('PropertyValuationConditionalConclusionType').txt( cond);
     });
 
     // Original appraiser name (UID: 2800.0034)
-    appraisal.ele('OriginalAppraiserUnparsedName', oa.appraiserName);
+    appraisal.ele('OriginalAppraiserUnparsedName').txt( oa.appraiserName);
 
     // Appraiser reference ID (UID: 2800.0035)
-    appraisal.ele('OriginalAppraiserFileIdentifier', oa.appraiserReferenceId);
+    appraisal.ele('OriginalAppraiserFileIdentifier').txt( oa.appraiserReferenceId);
 
     // Original lender (UID: 2800.0046)
-    appraisal.ele('OriginalLenderUnparsedName', oa.originalLenderName);
+    appraisal.ele('OriginalLenderUnparsedName').txt( oa.originalLenderName);
 
     // Final Value Condition Statement (derived — UID: derived from 2800.0002)
     const fvcs = generateFinalValueConditionStatement(oa.marketValueConditions);
     if (fvcs) {
-      appraisal.ele('FinalValueConditionStatement', fvcs);
+      appraisal.ele('FinalValueConditionStatement').txt( fvcs);
     }
   }
 
@@ -555,31 +554,29 @@ export class CompletionReportXmlGenerator {
     const defect = valuation.ele('DEFECT');
 
     // CompletionReportNewDefectIndicator discriminator
-    defect.ele(
-      'CompletionReportNewDefectIndicator',
+    defect.ele('CompletionReportNewDefectIndicator').txt(
       item.isNewlyObserved ? 'true' : 'false',
     );
 
     // Feature / component label
     // Section 03 UID: 3900.0117 / Section 04 UID: 2800.0052
-    defect.ele('DefectComponentLabelType', item.feature);
+    defect.ele('DefectComponentLabelType').txt( item.feature);
 
     // Location
     // Section 03 UID: 3900.0010 / Section 04 UID: 2800.0056
-    defect.ele('DefectItemLocationType', item.locationType);
+    defect.ele('DefectItemLocationType').txt( item.locationType);
     if (item.locationOtherDescription) {
       // Section 03 UID: 3900.0162 / Section 04 UID: 2800.0057
-      defect.ele('DefectItemLocationTypeOtherDescription', item.locationOtherDescription);
+      defect.ele('DefectItemLocationTypeOtherDescription').txt( item.locationOtherDescription);
     }
 
     // Description
     // Section 03 UID: 3900.0011 / Section 04 UID: 2800.0055
-    defect.ele('DefectItemDescription', item.description);
+    defect.ele('DefectItemDescription').txt( item.description);
 
     // Affects soundness / structural integrity
     // Section 03 UID: 3900.0012 / Section 04 UID: 2800.0054
-    defect.ele(
-      'DefectItemAffectsSoundnessStructuralIntegrityIndicator',
+    defect.ele('DefectItemAffectsSoundnessStructuralIntegrityIndicator').txt(
       item.affectsSoundnessOrStructuralIntegrity ? 'true' : 'false',
     );
 
@@ -587,27 +584,27 @@ export class CompletionReportXmlGenerator {
       // Section 03 only fields
       if (item.repairCompleted != null) {
         // UID: 3900.0016
-        defect.ele('DefectItemRecommendedActionCompletedIndicator',
+        defect.ele('DefectItemRecommendedActionCompletedIndicator').txt(
           item.repairCompleted ? 'true' : 'false',
         );
       }
       if (item.inspectionDate) {
         // UID: 3900.0017
-        defect.ele('DefectItemRecommendedActionInspectionDate', item.inspectionDate);
+        defect.ele('DefectItemRecommendedActionInspectionDate').txt( item.inspectionDate);
       }
       if (item.completionComment) {
         // UID: 3900.0018
-        defect.ele('DefectItemRecommendedActionCompletionDescription', item.completionComment);
+        defect.ele('DefectItemRecommendedActionCompletionDescription').txt( item.completionComment);
       }
     } else {
       // Section 04 only fields
       if (item.recommendedActionType) {
         // UID: 3900.0013
-        defect.ele('DefectItemRecommendedActionType', item.recommendedActionType);
+        defect.ele('DefectItemRecommendedActionType').txt( item.recommendedActionType);
       }
       if (item.inspectionDate) {
         // UID: 2800.0058
-        defect.ele('DefectItemRecommendedActionInspectionDate', item.inspectionDate);
+        defect.ele('DefectItemRecommendedActionInspectionDate').txt( item.inspectionDate);
       }
     }
 
@@ -617,7 +614,7 @@ export class CompletionReportXmlGenerator {
       item.photoUrls.forEach((url) => {
         images
           .ele('IMAGE')
-          .ele('ImageFileLocationURL', url);
+          .ele('ImageFileLocationURL').txt( url);
       });
     }
   }
@@ -629,13 +626,13 @@ export class CompletionReportXmlGenerator {
     const detail = valuation.ele('VALUATION_COMPLETION_DETAIL');
 
     // UID: 2800.0010
-    detail.ele('PropertyImprovementsCompletedIndicator',
+    detail.ele('PropertyImprovementsCompletedIndicator').txt(
       cs.constructionComplete ? 'true' : 'false',
     );
 
     if (cs.constructionComplete && cs.completedPerPlans != null) {
       // UID: 2800.0011
-      detail.ele('PropertyImprovementsCompletedPerPlansIndicator',
+      detail.ele('PropertyImprovementsCompletedPerPlansIndicator').txt(
         cs.completedPerPlans ? 'true' : 'false',
       );
     }
@@ -645,8 +642,8 @@ export class CompletionReportXmlGenerator {
       const images = detail.ele('IMAGES');
       cs.completedConstructionPhotoUrls.forEach((url) => {
         const img = images.ele('IMAGE');
-        img.ele('ImageCategoryType', 'CompletedConstruction');
-        img.ele('ImageFileLocationURL', url);
+        img.ele('ImageCategoryType').txt( 'CompletedConstruction');
+        img.ele('ImageFileLocationURL').txt( url);
       });
     }
 
@@ -661,16 +658,16 @@ export class CompletionReportXmlGenerator {
     f: CrInconsistentFeature,
   ): void {
     const item = parent.ele('SUBJECT_TO_COMPLETION_ITEM');
-    item.ele('SubjectToCompletionFeatureDescription', f.feature);            // UID: 2800.0003
-    item.ele('SubjectToCompletionFeatureLocationDescription', f.location);   // UID: 2800.0004
-    item.ele('SubjectToCompletionFeatureComparisonType', f.comparisonToPlans); // UID: 2800.0005
-    item.ele('SubjectToCompletionFeatureIncompleteOrInconsistentDescription', f.comment); // UID: 2800.0006
+    item.ele('SubjectToCompletionFeatureDescription').txt( f.feature);            // UID: 2800.0003
+    item.ele('SubjectToCompletionFeatureLocationDescription').txt( f.location);   // UID: 2800.0004
+    item.ele('SubjectToCompletionFeatureComparisonType').txt( f.comparisonToPlans); // UID: 2800.0005
+    item.ele('SubjectToCompletionFeatureIncompleteOrInconsistentDescription').txt( f.comment); // UID: 2800.0006
 
     // Photos — associated via this container
     if (f.photoUrls.length > 0) {
       const images = item.ele('IMAGES');
       f.photoUrls.forEach((url) => {
-        images.ele('IMAGE').ele('ImageFileLocationURL', url);
+        images.ele('IMAGE').ele('ImageFileLocationURL').txt( url);
       });
     }
   }
@@ -683,10 +680,10 @@ export class CompletionReportXmlGenerator {
     const images = valuation.ele('IMAGES');
     doc.additionalExhibits.forEach((exhibit) => {
       const img = images.ele('IMAGE');
-      img.ele('ImageCategoryType', exhibit.imageCategoryType);
-      img.ele('ImageFileLocationURL', exhibit.imageUrl);
+      img.ele('ImageCategoryType').txt( exhibit.imageCategoryType);
+      img.ele('ImageFileLocationURL').txt( exhibit.imageUrl);
       if (exhibit.caption) {
-        img.ele('ImageCaptionCommentDescription', exhibit.caption);  // UID: 1400.0943
+        img.ele('ImageCaptionCommentDescription').txt( exhibit.caption);  // UID: 1400.0943
       }
     });
   }
@@ -705,7 +702,7 @@ export class CompletionReportXmlGenerator {
     // Intended use (FID 09.001) — always displayed
     certNode.ele('VALUATION_CERTIFICATION', {
       ValuationCertificationType: 'IntendedUse',
-    }).ele('ValuationCertificationText',
+    }).ele('ValuationCertificationText').txt(
       'The intended use of this certification of completion is for the lender/client to confirm that the requirements or conditions stated in the appraisal report referenced above have been met.',
     );
 
@@ -713,21 +710,21 @@ export class CompletionReportXmlGenerator {
     if (certs.additionalIntendedUse && ai.governmentAgencyAppraisal) {
       certNode.ele('VALUATION_CERTIFICATION', {
         ValuationCertificationType: 'AdditionalIntendedUse',
-      }).ele('ValuationIntendedUseDescription', certs.additionalIntendedUse);
+      }).ele('ValuationIntendedUseDescription').txt( certs.additionalIntendedUse);
     }
 
     // Additional intended users (FID 09.007)
     if (certs.additionalIntendedUsersPresent && certs.additionalIntendedUsersDescription) {
       certNode.ele('VALUATION_CERTIFICATION', {
         ValuationCertificationType: 'AdditionalIntendedUsers',
-      }).ele('ValuationAdditionalIntendedUserDescription', certs.additionalIntendedUsersDescription);
+      }).ele('ValuationAdditionalIntendedUserDescription').txt( certs.additionalIntendedUsersDescription);
     }
 
     // Additional certifications
     if (certs.additionalCertifications) {
       certNode.ele('VALUATION_CERTIFICATION', {
         ValuationCertificationType: 'Additional',
-      }).ele('ValuationCertificationText', certs.additionalCertifications);
+      }).ele('ValuationCertificationText').txt( certs.additionalCertifications);
     }
 
     // Appraiser signature / SIGNATORY containers (FID 09.025-09.032)
@@ -756,22 +753,22 @@ export class CompletionReportXmlGenerator {
   ): void {
     const label = role === 'Appraiser' ? 'SIGNATORY_Appraiser' : 'SIGNATORY_AppraiserSupervisor';
     const signatory = certNode.ele('SIGNATORY', { label });
-    signatory.ele('PartyRoleType', role);
+    signatory.ele('PartyRoleType').txt( role);
 
     // Execution date (UID: 2200.0002)
-    signatory.ele('ExecutionDate', executionDate);
+    signatory.ele('ExecutionDate').txt( executionDate);
 
     // Contact info
     const name = signatory.ele('NAME');
-    name.ele('FirstName', app.firstName);
-    if (app.middleName) name.ele('MiddleName', app.middleName);
-    name.ele('LastName', app.lastName);
-    if (app.suffixName) name.ele('SuffixName', app.suffixName);
+    name.ele('FirstName').txt( app.firstName);
+    if (app.middleName) name.ele('MiddleName').txt( app.middleName);
+    name.ele('LastName').txt( app.lastName);
+    if (app.suffixName) name.ele('SuffixName').txt( app.suffixName);
 
     // License
-    signatory.ele('AppraiserLicenseType', app.licenseType);
-    signatory.ele('LicenseIdentifier', app.licenseId);
-    signatory.ele('LicenseIssuingAuthorityStateCode', app.licenseState);
-    signatory.ele('LicenseExpirationDate', app.licenseExpires);
+    signatory.ele('AppraiserLicenseType').txt( app.licenseType);
+    signatory.ele('LicenseIdentifier').txt( app.licenseId);
+    signatory.ele('LicenseIssuingAuthorityStateCode').txt( app.licenseState);
+    signatory.ele('LicenseExpirationDate').txt( app.licenseExpires);
   }
 }

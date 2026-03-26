@@ -7,18 +7,16 @@ describe('MopMapperService', () => {
         const service = new MopMapperService();
         
         const mockAppraisal: Partial<CanonicalReportDocument> = {
-            subjectProperty: {
-                conditionRating: 'C6',
-                zoningClassification: 'Commercial'
+            subject: {
+                condition: 'C6',
+                zoning: 'Commercial'
             } as any,
-            salesComparisonApproach: {
-                comparables: [
-                    { netAdjustmentPercentage: 10, grossAdjustmentPercentage: 20 },
-                    { netAdjustmentPercentage: 16, grossAdjustmentPercentage: 26 },
-                ]
-            } as any,
-            effectiveDates: ['2026-03-10'],
-            appraiser: {} as any // missing license number
+            comps: [
+                { adjustments: { netAdjustmentPct: 10, grossAdjustmentPct: 20 } },
+                { adjustments: { netAdjustmentPct: 16, grossAdjustmentPct: 26 } },
+            ] as any,
+            metadata: { effectiveDate: '2026-03-10' } as any,
+            appraiserInfo: {} as any // missing license number
         };
 
         const facts = service.mapAppraisalToMopFacts(mockAppraisal as CanonicalReportDocument);
