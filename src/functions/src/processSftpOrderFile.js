@@ -53,7 +53,7 @@ const sftpBlobClient = new BlobServiceClient(
 );
 
 // ─── Column indices for inbound pipe-delimited format ──────────────────────────
-// OrderID|LoanID|CollateralNumber|ProductType|Occupancy|PropertyType|
+// OrderID|LoanID|CollateralNumber|ProductType|Occupancy|
 // AddressLine1|AddressLine2|City|State|Zip|BorrowerName|LockboxCode
 const IN = {
   OrderID: 0,
@@ -61,14 +61,13 @@ const IN = {
   CollateralNumber: 2,
   ProductType: 3,
   Occupancy: 4,
-  PropertyType: 5,
-  AddressLine1: 6,
-  AddressLine2: 7,
-  City: 8,
-  State: 9,
-  Zip: 10,
-  BorrowerName: 11,
-  LockboxCode: 12,
+  AddressLine1: 5,
+  AddressLine2: 6,
+  City: 7,
+  State: 8,
+  Zip: 9,
+  BorrowerName: 10,
+  LockboxCode: 11,
 };
 
 // ─── Deterministic ID generation (idempotent across retries/duplicate events) ──
@@ -319,6 +318,7 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
 
   return {
     id: generateOrderId(sourceFileName, rowIndex),
+    type: 'order', // Required: findOrders query filters by c.type = 'order'
     clientId: statebridgeClientId,
     tenantId: statebridge_tenantId,
     // Engagement linkage
@@ -340,7 +340,6 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
     lockboxCode: (fields[IN.LockboxCode] || "").trim(),
     productType: "BPO",
     occupancy: (fields[IN.Occupancy] || "").trim(),
-    propertyType: (fields[IN.PropertyType] || "").trim(),
     // Lifecycle
     orderStatus: "pending",
     status: "NEW",
