@@ -237,7 +237,7 @@ function parseOrderFile(content) {
   return content
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("OrderID"))
+    .filter((line) => line.length > 0 && !line.startsWith("OrderID|"))
     .map((line) => line.split("|"));
 }
 

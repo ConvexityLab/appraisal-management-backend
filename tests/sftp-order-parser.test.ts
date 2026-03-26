@@ -83,6 +83,13 @@ describe('processSftpOrderFile — pure functions', () => {
       expect(rows[0][IN.OrderID]).toBe('1');
     });
 
+    it('should NOT skip data rows whose OrderID starts with "OrderID" prefix', () => {
+      const row = 'OrderID-001|6420340020|0|BPO|Owner Occupied|Single Family|123 Main|Suite A|Austin|TX|78701|Smith|0001';
+      const rows = parseOrderFile(row);
+      expect(rows.length).toBe(1);
+      expect(rows[0][IN.OrderID]).toBe('OrderID-001');
+    });
+
     it('should skip blank lines', () => {
       const content = '\n\n' + SAMPLE_ROW_FULL + '\n\n';
       const rows = parseOrderFile(content);

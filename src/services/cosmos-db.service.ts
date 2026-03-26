@@ -1202,7 +1202,9 @@ export class CosmosDbService {
       const [avgProcessRes, bottleneckRes] = await Promise.all([
         this.ordersContainer.items.query({
           query: `SELECT AVG(DateTimeDiff('hour', c.createdAt, c.completedAt)) as avgHours
-                  FROM c WHERE c.status = 'completed' AND IS_DEFINED(c.completedAt) AND c.completedAt != null ${dateFilter}`,
+                  FROM c WHERE c.status = 'completed'
+                    AND IS_DEFINED(c.createdAt) AND c.createdAt != null
+                    AND IS_DEFINED(c.completedAt) AND c.completedAt != null ${dateFilter}`,
           parameters: [...dateParams]
         }).fetchAll(),
         this.ordersContainer.items.query({

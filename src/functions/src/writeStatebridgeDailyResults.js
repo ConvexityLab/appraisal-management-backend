@@ -113,9 +113,9 @@ app.timer("writeStatebridgeDailyResults", {
   schedule: "0 55 23 * * *",
   runOnStartup: false,
   handler: async (timerInfo, context) => {
-    const now = timerInfo.scheduleStatus?.next
-      ? new Date(timerInfo.scheduleStatus.next)
-      : new Date();
+    // Use the actual wall-clock time — NOT scheduleStatus.next (which points to
+    // the NEXT scheduled run, i.e. tomorrow, causing zero results every night).
+    const now = new Date();
 
     // Build UTC day window for "today"
     const todayStart    = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
