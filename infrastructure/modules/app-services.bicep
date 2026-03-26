@@ -237,6 +237,11 @@ var containerApps = [
         value: storageAccountName
       }
       {
+        // Blob container holding uploaded appraisal/BPO documents — used by handleStatebridgeBpoDocument
+        name: 'STORAGE_CONTAINER_DOCUMENTS'
+        value: 'appraisal-documents'
+      }
+      {
         name: 'FUNCTIONS_EXTENSION_VERSION'
         value: '~4'
       }
