@@ -107,12 +107,7 @@ param statebridge_tenantId string
 @description('Base URL of the Axiom AI extraction API (e.g. https://axiom.internal.example.com)')
 param axiomApiBaseUrl string = ''
 
-@secure()
-@description('HMAC-SHA256 secret shared with Axiom for webhook signature verification')
-param axiomWebhookSecret string = ''
 
-@description('Externally reachable base URL of the functions Container App. Set post-deploy when the FQDN is known.')
-param apiCallbackBaseUrl string = ''
 
 @description('Object ID of the CI/CD service principal (GitHub Actions SP). Granted Key Vault Secrets Officer so it can write the SFTP password to Key Vault after provisioning local users.')
 param ciServicePrincipalId string = ''
@@ -380,8 +375,6 @@ module appServices 'modules/app-services.bicep' = {
     statebridgeClientName: statebridgeClientName
     statebridge_tenantId: statebridge_tenantId
     axiomApiBaseUrl: axiomApiBaseUrl
-    axiomWebhookSecret: axiomWebhookSecret
-    apiCallbackBaseUrl: apiCallbackBaseUrl
   }
 }
 

@@ -32,10 +32,6 @@ param statebridge_tenantId string = ''
 
 // Axiom AI platform integration (functions container)
 param axiomApiBaseUrl string = ''
-param axiomWebhookSecret string = ''
-// Externally reachable base URL of the functions Container App — used to build
-// the Axiom callback webhook URL.  Populated post-deploy once the FQDN is known.
-param apiCallbackBaseUrl string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -316,18 +312,6 @@ var containerApps = [
         // Axiom AI platform — extraction API endpoint used by BPO extraction functions
         name: 'AXIOM_API_BASE_URL'
         value: axiomApiBaseUrl
-      }
-      {
-        // HMAC-SHA256 secret shared with Axiom for webhook signature verification
-        name: 'AXIOM_WEBHOOK_SECRET'
-        value: axiomWebhookSecret
-      }
-      {
-        // External base URL of this functions Container App.
-        // Set after first deployment when the FQDN is known.
-        // Used to build the webhookUrl sent to Axiom for BPO extraction callbacks.
-        name: 'API_CALLBACK_BASE_URL'
-        value: apiCallbackBaseUrl
       }
       {
         // Cosmos Change Feed binding — identity-based connection requires
