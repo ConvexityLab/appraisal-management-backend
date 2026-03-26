@@ -228,3 +228,12 @@ app.timer("writeStatebridgeDailyResults", {
     );
   },
 });
+
+// ─── Exports for testing ──────────────────────────────────────────────────────
+
+module.exports = {
+  formatDate,
+  normaliseCondition,
+  formatCurrency,
+  escapeField,
+};

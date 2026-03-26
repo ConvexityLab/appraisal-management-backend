@@ -53,7 +53,7 @@ const sftpBlobClient = new BlobServiceClient(
 );
 
 // ─── Column indices for inbound pipe-delimited format ──────────────────────────
-// OrderID|LoanID|CollateralNumber|ProductType|Occupancy|
+// OrderID|LoanID|CollateralNumber|ProductType|Occupancy|PropertyType|
 // AddressLine1|AddressLine2|City|State|Zip|BorrowerName|LockboxCode
 const IN = {
   OrderID: 0,
@@ -61,14 +61,17 @@ const IN = {
   CollateralNumber: 2,
   ProductType: 3,
   Occupancy: 4,
-  AddressLine1: 5,
-  AddressLine2: 6,
-  City: 7,
-  State: 8,
-  Zip: 9,
-  BorrowerName: 10,
-  LockboxCode: 11,
+  PropertyType: 5,
+  AddressLine1: 6,
+  AddressLine2: 7,
+  City: 8,
+  State: 9,
+  Zip: 10,
+  BorrowerName: 11,
+  LockboxCode: 12,
 };
+
+const MIN_COLUMNS = 12; // at least through BorrowerName; LockboxCode may be absent
 
 // ─── Deterministic ID generation (idempotent across retries/duplicate events) ──
 
@@ -255,12 +258,13 @@ function buildLoanAndProduct(fields, sourceFile, rowIndex) {
       city: (fields[IN.City] || "").trim(),
       state: (fields[IN.State] || "").trim(),
       zipCode: (fields[IN.Zip] || "").trim(),
+      propertyType: (fields[IN.PropertyType] || "").trim(),
     },
     status: "PENDING",
     products: [
       {
         id: productId,
-        productType: "BPO",
+        productType: (fields[IN.ProductType] || "BPO").trim(),
         status: "PENDING",
         vendorOrderIds: [],
       },
@@ -338,7 +342,8 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
     // Order metadata
     borrowerName: (fields[IN.BorrowerName] || "").trim(),
     lockboxCode: (fields[IN.LockboxCode] || "").trim(),
-    productType: "BPO",
+    productType: (fields[IN.ProductType] || "BPO").trim(),
+    propertyType: (fields[IN.PropertyType] || "").trim(),
     occupancy: (fields[IN.Occupancy] || "").trim(),
     // Lifecycle
     orderStatus: "pending",
@@ -441,8 +446,8 @@ app.storageQueue("processSftpOrderFile", {
     const validRows = [];
     for (let i = 0; i < rows.length; i++) {
       const fields = rows[i];
-      if (fields.length < 11) {
-        context.log(`WARNING: Skipping malformed row ${i} (${fields.length} columns): ${fields.join("|")}`);
+      if (fields.length < MIN_COLUMNS) {
+        context.log(`WARNING: Skipping malformed row ${i} (${fields.length} columns, need ${MIN_COLUMNS}): ${fields.join("|")}`);
         continue;
       }
       // Per-field validation — warn but still process (Statebridge data may have quirks)
@@ -529,4 +534,20 @@ app.storageQueue("processSftpOrderFile", {
     await archiveProcessedBlob("statebridge", blobName, context);
   },
 });
+
+// ─── Exports for testing ──────────────────────────────────────────────────────
+
+module.exports = {
+  IN,
+  MIN_COLUMNS,
+  parseOrderFile,
+  validateRow,
+  parseEventGridMessage,
+  buildLoanAndProduct,
+  buildEngagementDocument,
+  buildOrderDocument,
+  deterministicId,
+  generateEngagementId,
+  generateOrderId,
+};
 
