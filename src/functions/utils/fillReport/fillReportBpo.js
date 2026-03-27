@@ -112,13 +112,21 @@ const appraisalContainer = database.container("appraisalData");
 
 const fillReportBpo = async (reporting, context) => {
   const reportType = `${reporting.productType}_${reporting.productSubType}`;
-  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  const storageAccountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
   const containerName = "pdf-report-templates";
+
+  if (!storageAccountName) {
+    const errorMessage = "AZURE_STORAGE_ACCOUNT_NAME is required for fillReportBpo — set it in the Azure Function app settings";
+    context.log(errorMessage);
+    throw new Error(errorMessage);
+  }
 
   let templateMapping;
   try {
-    const blobServiceClient =
-      BlobServiceClient.fromConnectionString(connectionString);
+    const blobServiceClient = new BlobServiceClient(
+      `https://${storageAccountName}.blob.core.windows.net`,
+      credential
+    );
     const containerClient = blobServiceClient.getContainerClient(containerName);
     const mappingBlobName = `${reportType}-template.json`;
     const mappingBlobClient = containerClient.getBlobClient(mappingBlobName);

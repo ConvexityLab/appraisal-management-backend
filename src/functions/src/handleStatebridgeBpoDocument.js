@@ -7,7 +7,7 @@
  *   When a BPO PDF document is inserted, this function:
  *     1. Verifies the document belongs to a Statebridge order
  *     2. Submits the PDF to Axiom's DOCUMENT_EXTRACTION pipeline
- *     3. Opens an SSE connection to GET /api/pipelines/:jobId/stream
+ *     3. Opens an SSE connection to GET /api/pipelines/:jobId/observe
  *     4. Waits for the pipeline.completed (or pipeline.failed) event
  *     5. Fetches full results via GET /api/pipelines/:jobId/results
  *     6. Copies the BPO PDF to the SFTP results/ folder with Statebridge naming
@@ -181,7 +181,7 @@ async function copyBpoToSftpResults(blobPath, documentContainerName, loanId, col
  */
 function awaitPipelineCompletion(jobId, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const url = new URL(`${axiomApiBaseUrl}/api/pipelines/${jobId}/stream?timeout=${timeoutMs}`);
+    const url = new URL(`${axiomApiBaseUrl}/api/pipelines/${jobId}/observe?timeout=${timeoutMs}`);
     const transport = url.protocol === "https:" ? https : http;
 
     const timer = setTimeout(() => {

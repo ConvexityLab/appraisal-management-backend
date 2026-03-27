@@ -10,6 +10,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { Request, Response, Router } from 'express';
+import { Logger } from '../utils/logger.js';
 import { AxiomService, AxiomDocumentNotification, AxiomWebhookPayload, DocumentType } from '../services/axiom.service';
 import { AxiomExecutionService } from '../services/axiom-execution.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
@@ -19,6 +20,7 @@ import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
 import type { AppraisalOrder } from '../types/index.js';
+import { BlobStorageService } from '../services/blob-storage.service';
 import type { AxiomEvaluationCompletedEvent, AxiomExecutionCompletedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -27,7 +29,9 @@ export class AxiomController {
   private axiomExecutionService: AxiomExecutionService;
   private dbService: CosmosDbService;
   private bulkPortfolioService: BulkPortfolioService;
+  private readonly blobService: BlobStorageService;
   private readonly eventPublisher: ServiceBusEventPublisher;
+  private readonly logger = new Logger('AxiomController');
 
   /**
    * Build structured Axiom pipeline fields from an order.
@@ -65,6 +69,7 @@ export class AxiomController {
     this.axiomService = axiomService || new AxiomService(dbService);
     this.axiomExecutionService = new AxiomExecutionService(dbService);
     this.bulkPortfolioService = new BulkPortfolioService(dbService);
+    this.blobService = new BlobStorageService();
     this.eventPublisher = new ServiceBusEventPublisher();
   }
 
@@ -86,7 +91,7 @@ export class AxiomController {
         }
       });
     } catch (error) {
-      console.error('Error checking Axiom status:', error);
+      this.logger.error('Error checking Axiom status', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -196,7 +201,7 @@ export class AxiomController {
         }
       });
     } catch (error) {
-      console.error('Error notifying Axiom of document:', error);
+      this.logger.error('Error notifying Axiom of document', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -288,9 +293,18 @@ export class AxiomController {
       }
 
       const fields = AxiomController.buildOrderFields(order);
+
+      // Generate a SAS URL so Axiom (external) can download the blob
+      const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
+      if (!docContainerName) {
+        res.status(500).json({ success: false, error: { code: 'CONFIG_ERROR', message: 'STORAGE_CONTAINER_DOCUMENTS not configured' } });
+        return;
+      }
+      const sasUrl = await this.blobService.generateReadSasUrl(docContainerName, doc.blobName);
+
       const documents = [{
         documentName: doc.name || doc.fileName || documentId,
-        documentReference: doc.blobUrl,
+        documentReference: sasUrl,
       }];
 
       const clientId = (order as any).clientInformation?.clientId || order.clientId;
@@ -324,7 +338,7 @@ export class AxiomController {
         }
       });
     } catch (error) {
-      console.error('Error analyzing document via Axiom:', error);
+      this.logger.error('Error analyzing document via Axiom', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -366,7 +380,7 @@ export class AxiomController {
         data: evaluations
       });
     } catch (error) {
-      console.error('Error retrieving Axiom evaluations:', error);
+      this.logger.error('Error retrieving Axiom evaluations', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -415,7 +429,7 @@ export class AxiomController {
         data: evaluation
       });
     } catch (error) {
-      console.error('Error retrieving Axiom evaluation by ID:', error);
+      this.logger.error('Error retrieving Axiom evaluation by ID', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -454,7 +468,7 @@ export class AxiomController {
       const result = body['result'] as Record<string, unknown> | undefined;
       const error = body['error'] as string | undefined;
 
-      console.log(`[Axiom Webhook] EXECUTION update - executionId=${executionId} status=${status} pipelineJobId=${pipelineJobId}`);
+      this.logger.info('Axiom webhook: EXECUTION update', { executionId, status, pipelineJobId });
 
       const executionStatus = status === 'completed' ? 'COMPLETED' : 'FAILED';
       
@@ -480,10 +494,10 @@ export class AxiomController {
           }
         };
         this.eventPublisher.publish(execCompletedEvent).catch((err: unknown) => {
-          console.error('[Axiom Webhook] failed to publish axiom.execution.completed event', err);
+          this.logger.error('Axiom webhook: failed to publish axiom.execution.completed event', { error: (err as Error).message });
         });
       } catch (err) {
-        console.error('[Axiom Webhook] failed to update execution status', err);
+        this.logger.error('Axiom webhook: failed to update execution status', { error: (err as Error).message });
       }
 
       return;
@@ -492,7 +506,7 @@ export class AxiomController {
       // correlationId is '{jobId}::{loanNumber}' for tape fan-out submissions
       const separatorIdx = rawCorrelationId.indexOf('::');
       if (separatorIdx === -1) {
-        console.error('❌ Axiom webhook TAPE_LOAN: malformed correlationId (missing ::)', { correlationId: rawCorrelationId });
+        this.logger.error('Axiom webhook TAPE_LOAN: malformed correlationId (missing ::)', { correlationId: rawCorrelationId });
         return;
       }
       const jobId = rawCorrelationId.slice(0, separatorIdx);
@@ -510,12 +524,12 @@ export class AxiomController {
         if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') loanEntry.decision = dec;
       }
 
-      console.log(`📨 Axiom TAPE_LOAN webhook — jobId=${jobId} loanNumber=${loanNumber} pipelineJobId=${pipelineJobId} status=${status}`);
+      this.logger.info('Axiom TAPE_LOAN webhook received', { jobId, loanNumber, pipelineJobId, status });
 
       this.bulkPortfolioService.stampBatchEvaluationResults(jobId, [loanEntry])
         .then(() => this.axiomService.broadcastBatchJobUpdate(jobId))
         .catch((err: unknown) => {
-          console.error('❌ Axiom TAPE_LOAN webhook: stampBatchEvaluationResults failed', {
+          this.logger.error('Axiom TAPE_LOAN webhook: stampBatchEvaluationResults failed', {
             jobId, loanNumber, pipelineJobId, error: (err as Error).message,
           });
         });
@@ -534,22 +548,26 @@ export class AxiomController {
       const axiomStatusValue = status as AppraisalOrder['axiomStatus'];
       if (axiomStatusValue !== undefined) updateData.axiomStatus = axiomStatusValue;
       if (pipelineJobId) updateData.axiomPipelineJobId = pipelineJobId;
+      // Stamp axiomCompletedAt on ALL terminal states so the timeout watcher can exclude
+      // already-finished orders via the axiomCompletedAt field (not just axiomStatus).
+      if (status === 'completed' || status === 'failed') {
+        updateData.axiomCompletedAt = new Date().toISOString();
+      }
       if (result) {
         if (typeof result['overallRiskScore'] === 'number') updateData.axiomRiskScore = result['overallRiskScore'];
         const dec = result['overallDecision'] as AppraisalOrder['axiomDecision'] | undefined;
         if (dec !== undefined) updateData.axiomDecision = dec;
         if (Array.isArray(result['flags'])) updateData.axiomFlags = result['flags'] as string[];
-        updateData.axiomCompletedAt = new Date().toISOString();
       }
 
       this.dbService.updateOrder(correlationId, updateData)
         .then((r) => {
           if (!r.success) {
-            console.error('❌ Axiom webhook: failed to stamp order', { orderId: correlationId, error: r.error });
+            this.logger.error('Axiom webhook: failed to stamp order', { orderId: correlationId, error: r.error });
           }
         })
         .catch((err: unknown) => {
-          console.error('❌ Axiom webhook: updateOrder threw', { orderId: correlationId, error: (err as Error).message });
+          this.logger.error('Axiom webhook: updateOrder threw', { orderId: correlationId, error: (err as Error).message });
         });
 
       // For completed pipelines, fetch full criteria results and store them in aiInsights.
@@ -558,7 +576,7 @@ export class AxiomController {
       if (status === 'completed' && pipelineJobId) {
         this.axiomService.fetchAndStorePipelineResults(correlationId, pipelineJobId)
           .catch((err: unknown) => {
-            console.error('❌ Axiom webhook: fetchAndStorePipelineResults failed', {
+            this.logger.error('Axiom webhook: fetchAndStorePipelineResults failed', {
               orderId: correlationId,
               pipelineJobId,
               error: (err as Error).message,
@@ -568,6 +586,13 @@ export class AxiomController {
 
       // Publish axiom.evaluation.completed to Service Bus so the orchestrator
       // can gate QC routing on Axiom completion when axiomAutoTrigger=true.
+      // P1-C: Load the order to get the real tenantId — (updateData as any).tenantId was
+      // always '' because updateData is Partial<AppraisalOrder> and tenantId is never set on it.
+      const orderForEvent = await this.dbService.findOrderById(correlationId).catch(() => null);
+      const resolvedTenantId: string = (orderForEvent?.data as any)?.tenantId ?? '';
+      if (!resolvedTenantId) {
+        this.logger.warn('Axiom webhook: could not resolve tenantId for axiom.evaluation.completed event', { orderId: correlationId });
+      }
       const evalCompletedEvent: AxiomEvaluationCompletedEvent = {
         id: uuidv4(),
         type: 'axiom.evaluation.completed',
@@ -577,8 +602,8 @@ export class AxiomController {
         category: EventCategory.QC,
         data: {
           orderId: correlationId,
-          orderNumber: correlationId, // orderNumber resolved by orchestrator from DB
-          tenantId: (updateData as any).tenantId ?? '',
+          orderNumber: (orderForEvent?.data as any)?.orderNumber ?? correlationId,
+          tenantId: resolvedTenantId,
           evaluationId: `eval-${correlationId}`,
           pipelineJobId: pipelineJobId ?? '',
           overallRiskScore: typeof updateData.axiomRiskScore === 'number' ? updateData.axiomRiskScore : 0,
@@ -588,7 +613,7 @@ export class AxiomController {
         },
       };
       this.eventPublisher.publish(evalCompletedEvent).catch((err: unknown) => {
-        console.warn('⚠️  Axiom webhook: failed to publish axiom.evaluation.completed', {
+        this.logger.warn('Axiom webhook: failed to publish axiom.evaluation.completed', {
           orderId: correlationId,
           error: (err as Error).message,
         });
@@ -601,12 +626,12 @@ export class AxiomController {
     const legacyPayload = body as unknown as AxiomWebhookPayload;
     if (legacyPayload.evaluationId && legacyPayload.orderId) {
       this.axiomService.handleWebhook(legacyPayload).catch((error: unknown) => {
-        console.error('❌ Background legacy webhook processing failed:', error);
+        this.logger.error('Background legacy webhook processing failed', { error: error instanceof Error ? error.message : String(error) });
       });
       return;
     }
 
-    console.warn('⚠️  Axiom webhook received with unrecognised payload shape', { keys: Object.keys(body) });
+    this.logger.warn('Axiom webhook received with unrecognised payload shape', { keys: Object.keys(body) });
   };
 
   /**
@@ -675,7 +700,7 @@ export class AxiomController {
         }
       });
     } catch (error) {
-      console.error('Error comparing documents via Axiom:', error);
+      this.logger.error('Error comparing documents via Axiom', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -706,7 +731,7 @@ export class AxiomController {
     const payload = req.body as TapeExtractionWebhookPayload;
 
     if (!payload.evaluationId || !payload.jobId || !payload.loanNumber) {
-      console.error('❌ Extraction webhook missing required fields', {
+      this.logger.error('Extraction webhook missing required fields', {
         hasEvaluationId: !!payload.evaluationId,
         hasJobId: !!payload.jobId,
         hasLoanNumber: !!payload.loanNumber,
@@ -717,7 +742,7 @@ export class AxiomController {
     try {
       await this.bulkPortfolioService.processExtractionCompletion(payload);
     } catch (error) {
-      console.error('❌ Failed to process extraction webhook', {
+      this.logger.error('Failed to process extraction webhook', {
         evaluationId: payload.evaluationId,
         jobId: payload.jobId,
         loanNumber: payload.loanNumber,
@@ -745,11 +770,11 @@ export class AxiomController {
     const rawResults = body['results'] as Array<Record<string, unknown>> | undefined;
 
     if (!jobId) {
-      console.warn('⚠️  Bulk webhook missing correlationId', { keys: Object.keys(body) });
+      this.logger.warn('Axiom bulk webhook missing correlationId', { keys: Object.keys(body) });
       return;
     }
 
-    console.log(`📨 Axiom bulk webhook — jobId=${jobId} pipelineJobId=${pipelineJobId} status=${status} loans=${rawResults?.length ?? 0}`);
+    this.logger.info('Axiom bulk webhook received', { jobId, pipelineJobId, status, loanCount: rawResults?.length ?? 0 });
 
     if (!rawResults || rawResults.length === 0) {
       // No per-loan results: just broadcast the job-level status change
@@ -780,7 +805,7 @@ export class AxiomController {
       this.axiomService.broadcastBatchJobUpdate(jobId, completedLoans, totalLoans)
         .catch(() => undefined);
     } catch (err) {
-      console.error('❌ Bulk webhook: stampBatchEvaluationResults failed', {
+      this.logger.error('Axiom bulk webhook: stampBatchEvaluationResults failed', {
         jobId,
         pipelineJobId,
         error: (err as Error).message,
@@ -822,7 +847,7 @@ export class AxiomController {
         data: result
       });
     } catch (error) {
-      console.error('Error running Axiom agent:', error);
+      this.logger.error('Error running Axiom agent', { error: error instanceof Error ? error.message : String(error) });
       res.status(500).json({
         success: false,
         error: {
@@ -833,14 +858,139 @@ export class AxiomController {
       });
     }
   };
+
+  // ── P2-B: GET /api/axiom/comparisons/:comparisonId ───────────────────────
+
+  getComparison = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { comparisonId } = req.params as { comparisonId: string };
+      if (!comparisonId) {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'comparisonId is required' } });
+        return;
+      }
+      const result = await this.axiomService.getComparison(comparisonId);
+      if (!result) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `Comparison ${comparisonId} not found` } });
+        return;
+      }
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.logger.error('getComparison failed', { error: (error as Error).message });
+      res.status(502).json({ success: false, error: { code: 'UPSTREAM_ERROR', message: 'Failed to retrieve comparison from Axiom' } });
+    }
+  };
+
+  // ── P2-C: POST /api/axiom/property/enrich ────────────────────────────────
+
+  enrichProperty = async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as unknown as import('../middleware/unified-auth.middleware.js').UnifiedAuthRequest;
+    try {
+      const tenantId = authReq.user?.tenantId;
+      const clientId = (authReq.user as any)?.clientId ?? (req.body?.clientId as string | undefined);
+      if (!tenantId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_TENANT', message: 'tenantId is required (ensure auth middleware is applied)' } });
+        return;
+      }
+      const { propertyInfo, orderId } = req.body as { propertyInfo: Record<string, unknown>; orderId: string };
+      if (!propertyInfo || !orderId) {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'propertyInfo and orderId are required' } });
+        return;
+      }
+      if (!clientId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_CLIENT', message: 'clientId is required' } });
+        return;
+      }
+      const result = await this.axiomService.enrichProperty(propertyInfo, orderId, tenantId, clientId);
+      res.status(202).json({ success: true, data: result });
+    } catch (error) {
+      this.logger.error('enrichProperty failed', { error: (error as Error).message });
+      res.status(502).json({ success: false, error: { code: 'UPSTREAM_ERROR', message: 'Failed to submit property enrichment to Axiom' } });
+    }
+  };
+
+  // ── P2-C: GET /api/axiom/property/enrichment/:orderId ─────────────────────
+
+  getPropertyEnrichment = async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as unknown as import('../middleware/unified-auth.middleware.js').UnifiedAuthRequest;
+    try {
+      const tenantId = authReq.user?.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_TENANT', message: 'tenantId is required' } });
+        return;
+      }
+      const { orderId } = req.params as { orderId: string };
+      const result = await this.axiomService.getPropertyEnrichment(orderId, tenantId);
+      if (!result) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `No enrichment found for order ${orderId}` } });
+        return;
+      }
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.logger.error('getPropertyEnrichment failed', { error: (error as Error).message });
+      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to retrieve property enrichment' } });
+    }
+  };
+
+  // ── P2-D: POST /api/axiom/scoring/complexity ─────────────────────────────
+
+  calculateComplexityScore = async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as unknown as import('../middleware/unified-auth.middleware.js').UnifiedAuthRequest;
+    try {
+      const tenantId = authReq.user?.tenantId;
+      const clientId = (authReq.user as any)?.clientId ?? (req.body?.clientId as string | undefined);
+      if (!tenantId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_TENANT', message: 'tenantId is required' } });
+        return;
+      }
+      if (!clientId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_CLIENT', message: 'clientId is required' } });
+        return;
+      }
+      const { propertyInfo, orderId } = req.body as { propertyInfo: Record<string, unknown>; orderId: string };
+      if (!propertyInfo || !orderId) {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'propertyInfo and orderId are required' } });
+        return;
+      }
+      const result = await this.axiomService.calculateComplexityScore(propertyInfo, orderId, tenantId, clientId);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.logger.error('calculateComplexityScore failed', { error: (error as Error).message });
+      res.status(502).json({ success: false, error: { code: 'UPSTREAM_ERROR', message: 'Failed to calculate complexity score' } });
+    }
+  };
+
+  // ── P2-D: GET /api/axiom/scoring/complexity/:orderId ─────────────────────
+
+  getComplexityScore = async (req: Request, res: Response): Promise<void> => {
+    const authReq = req as unknown as import('../middleware/unified-auth.middleware.js').UnifiedAuthRequest;
+    try {
+      const tenantId = authReq.user?.tenantId;
+      if (!tenantId) {
+        res.status(400).json({ success: false, error: { code: 'MISSING_TENANT', message: 'tenantId is required' } });
+        return;
+      }
+      const { orderId } = req.params as { orderId: string };
+      const result = await this.axiomService.getComplexityScore(orderId, tenantId);
+      if (!result) {
+        res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `No complexity score found for order ${orderId}` } });
+        return;
+      }
+      res.json({ success: true, data: result });
+    } catch (error) {
+      this.logger.error('getComplexityScore failed', { error: (error as Error).message });
+      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to retrieve complexity score' } });
+    }
+  };
 }
 
 /**
- * Create Axiom router with all endpoints
+ * Create Axiom router with all endpoints.
+ * Accepts an optional shared AxiomService so the in-memory compileCache is shared
+ * with the criteria-programs router (P1-H — avoid duplicate instance / split cache).
  */
-export function createAxiomRouter(dbService: CosmosDbService): Router {
+export function createAxiomRouter(dbService: CosmosDbService, axiomService?: AxiomService): Router {
   const router = Router();
-  const controller = new AxiomController(dbService);
+  const controller = new AxiomController(dbService, axiomService);
 
   // Status check
   router.get('/status', controller.getStatus);
@@ -863,8 +1013,18 @@ export function createAxiomRouter(dbService: CosmosDbService): Router {
   router.post('/webhook/bulk', verifyAxiomWebhook, controller.handleBulkWebhook);
   router.post('/webhook/extraction', verifyAxiomWebhook, controller.handleExtractionWebhook);
 
-  // Document comparison
+  // Document comparison (P2-A: was at /compare, now correctly at /documents/compare)
   router.post('/documents/compare', controller.compareDocuments);
+  // P2-B: comparison retrieval
+  router.get('/comparisons/:comparisonId', controller.getComparison);
+
+  // P2-C: property enrichment
+  router.post('/property/enrich', controller.enrichProperty);
+  router.get('/property/enrichment/:orderId', controller.getPropertyEnrichment);
+
+  // P2-D: complexity scoring
+  router.post('/scoring/complexity', controller.calculateComplexityScore);
+  router.get('/scoring/complexity/:orderId', controller.getComplexityScore);
 
   return router;
 }

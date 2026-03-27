@@ -17,6 +17,7 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { EventSource } from 'eventsource';
+import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { WebPubSubService } from './web-pubsub.service';
 import { EventPriority, EventCategory } from '../types/events.js';
@@ -192,6 +193,7 @@ interface LoomPipelineDefinition {
 // ============================================================================
 
 export class AxiomService {
+  private readonly logger = new Logger('AxiomService');
   private client: AxiosInstance;
   private dbService: CosmosDbService;
   private webPubSubService: WebPubSubService | null = null;
@@ -323,11 +325,12 @@ export class AxiomService {
     this.mockDelayMs = parseInt(process.env.AXIOM_MOCK_DELAY_MS || '8000', 10);
 
     if (!this.enabled) {
-      console.warn('⚠️  Axiom AI Platform not configured — AI features will use mock mode');
-      console.warn(`   Mock delay: ${this.mockDelayMs}ms (set AXIOM_MOCK_DELAY_MS to change)`);
-      console.warn('   Set AXIOM_API_BASE_URL to enable real Axiom (AXIOM_API_KEY is optional)');
+      this.logger.warn('Axiom AI Platform not configured — AI features will use mock mode', {
+        mockDelayMs: this.mockDelayMs,
+        hint: 'Set AXIOM_API_BASE_URL to enable real Axiom (AXIOM_API_KEY is optional)',
+      });
     } else {
-      console.log(`✅ Axiom live mode — ${baseURL}${apiKey ? ' (authenticated)' : ' (no auth — dev server)'}`);
+      this.logger.info('Axiom live mode', { baseURL, authenticated: !!apiKey });
     }
 
     // Build request headers; only attach Authorization when a key is actually set
@@ -353,7 +356,7 @@ export class AxiomService {
     try {
       this.webPubSubService = new WebPubSubService({ enableLocalEmulation: true });
     } catch {
-      console.warn('⚠️  WebPubSub not available for Axiom push notifications — updates will be poll-only');
+      this.logger.warn('WebPubSub not available for Axiom push notifications — updates will be poll-only');
     }
   }
 
@@ -375,8 +378,13 @@ export class AxiomService {
     totalLoans?: number,
   ): Promise<void> {
     if (!this.webPubSubService) return;
+    if (!jobId) {
+      this.logger.warn('broadcastBatchJobUpdate: jobId is missing — skipping broadcast');
+      return;
+    }
     try {
-      await this.webPubSubService.broadcastNotification({
+      // Broadcast to bulk-job-scoped group only (not all clients) to prevent cross-tenant data leak.
+      await this.webPubSubService.sendToGroup(`bulk-job:${jobId}`, {
         id: `axiom-batch-${jobId}-${Date.now()}`,
         title: 'Axiom AI Batch Update',
         message: `Axiom batch evaluation completed for job ${jobId}`,
@@ -392,7 +400,7 @@ export class AxiomService {
         },
       });
     } catch (err) {
-      console.warn('⚠️  Failed to broadcast Axiom batch status via WebPubSub', {
+      this.logger.warn('Failed to broadcast Axiom batch status via WebPubSub', {
         jobId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -401,6 +409,7 @@ export class AxiomService {
 
   /**
    * Broadcast Axiom evaluation status update via WebPubSub.
+   * Sends only to the order-scoped group ('order:{orderId}') to prevent cross-tenant data leaks.
    * Best-effort — logs a warning on failure but never throws.
    */
   private async broadcastAxiomStatus(
@@ -410,8 +419,13 @@ export class AxiomService {
     riskScore?: number,
   ): Promise<void> {
     if (!this.webPubSubService) return;
+    if (!orderId) {
+      this.logger.warn('broadcastAxiomStatus: orderId is missing — skipping broadcast to prevent cross-tenant leak');
+      return;
+    }
     try {
-      await this.webPubSubService.broadcastNotification({
+      // Broadcast to order-scoped group only (not all clients) to prevent cross-tenant data leak.
+      await this.webPubSubService.sendToGroup(`order:${orderId}`, {
         id: `axiom-${evaluationId}-${status}`,
         title: 'Axiom AI Analysis Update',
         message: `Axiom evaluation for order ${orderId} is now ${status}`,
@@ -428,7 +442,7 @@ export class AxiomService {
         },
       });
     } catch (err) {
-      console.warn('⚠️  Failed to broadcast Axiom status via WebPubSub', {
+      this.logger.warn('Failed to broadcast Axiom status via WebPubSub', {
         evaluationId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -478,17 +492,17 @@ export class AxiomService {
       if (cachedResult) {
         return cachedResult;
       }
-      console.log(`🧪 [MOCK] No Axiom evaluation found for order ${orderId} — document not yet submitted`);
+      this.logger.debug('[MOCK] No Axiom evaluation found for order — document not yet submitted', { orderId });
       return null;
     } catch (error) {
       const axiosError = error as AxiosError;
       
       if (axiosError.response?.status === 404) {
-        console.log(`ℹ️  No Axiom evaluation found for order ${orderId}`);
+        this.logger.info('No Axiom evaluation found for order', { orderId });
         return null;
       }
 
-      console.error('❌ Failed to retrieve Axiom evaluation', {
+      this.logger.error('Failed to retrieve Axiom evaluation', {
         orderId,
         error: axiosError.message
       });
@@ -578,7 +592,7 @@ export class AxiomService {
       const res = await this.client.post('/api/documents', payload);
       return res.data as { fileSetId: string; status: string; queueJobId?: string };
     } catch (error) {
-      console.error('[AxiomService] Error creating FileSet:', error);
+      this.logger.error('Error creating FileSet', { error: (error as Error).message });
       return null;
     }
   }
@@ -624,7 +638,7 @@ export class AxiomService {
       const res = await this.client.post('/api/pipelines', payload);
       return res.data as { jobId: string; status: string };
     } catch (error) {
-      console.error('[AxiomService] Error submitting pipeline:', error);
+      this.logger.error('Error submitting pipeline', { error: (error as Error).message });
       return null;
     }
   }
@@ -661,7 +675,7 @@ export class AxiomService {
         response.data.destroy();
       });
     } catch (error) {
-      console.error('[AxiomService] Error proxying SSE stream:', error);
+      this.logger.error('Error proxying SSE stream', { error: (error as Error).message });
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: 'Failed to proxy SSE stream' });
       } else {
@@ -710,7 +724,7 @@ export class AxiomService {
         cached.criteria = this.enrichCriteriaRefs(cached.criteria, meta);
         return cached;
       }
-      console.log(`🧪 [MOCK] No Axiom evaluation found for evaluationId ${evaluationId}`);
+      this.logger.debug('[MOCK] No Axiom evaluation found for evaluationId', { evaluationId });
       return null;
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -719,12 +733,14 @@ export class AxiomService {
         return null;
       }
 
-      console.error('❌ Failed to retrieve Axiom evaluation by ID', {
+      // Re-throw non-404 errors (500, 503, 429, network) so callers can distinguish
+      // "evaluation not found" from "upstream Axiom is unavailable".
+      this.logger.error('Failed to retrieve Axiom evaluation by ID', {
         evaluationId,
-        error: axiosError.message
+        statusCode: axiosError.response?.status,
+        error: axiosError.message,
       });
-
-      return null;
+      throw error;
     }
   }
 
@@ -734,7 +750,7 @@ export class AxiomService {
    * @param payload Webhook payload from Axiom
    */
   async handleWebhook(payload: AxiomWebhookPayload): Promise<void> {
-    console.log(`📨 Axiom webhook received`, {
+    this.logger.info('Axiom webhook received', {
       evaluationId: payload.evaluationId,
       orderId: payload.orderId,
       status: payload.status
@@ -745,7 +761,7 @@ export class AxiomService {
       const rawEvaluation = await this.getEvaluationById(payload.evaluationId);
 
       if (!rawEvaluation) {
-        console.error('❌ Failed to retrieve evaluation after webhook notification', {
+        this.logger.error('Failed to retrieve evaluation after webhook notification', {
           evaluationId: payload.evaluationId
         });
         return;
@@ -771,7 +787,7 @@ export class AxiomService {
         }
       });
 
-      console.log(`✅ Axiom evaluation completed and stored`, {
+      this.logger.info('Axiom evaluation completed and stored', {
         evaluationId: payload.evaluationId,
         orderId: payload.orderId,
         riskScore: evaluation.overallRiskScore,
@@ -792,7 +808,7 @@ export class AxiomService {
           axiomProgramId: evaluation.programId,
           ...(evaluation.programVersion ? { axiomProgramVersion: evaluation.programVersion } : {}),
         }).catch((err) =>
-          console.error('❌ Failed to stamp axiomProgramId on order from webhook', {
+          this.logger.error('Failed to stamp axiomProgramId on order from webhook', {
             orderId: payload.orderId,
             error: err instanceof Error ? err.message : String(err),
           }),
@@ -813,7 +829,7 @@ export class AxiomService {
       // - Update QC checklist with pre-filled criteria
 
     } catch (error) {
-      console.error('❌ Failed to handle Axiom webhook', {
+      this.logger.error('Failed to handle Axiom webhook', {
         evaluationId: payload.evaluationId,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -846,7 +862,7 @@ export class AxiomService {
     error?: string;
   }> {
     if (!this.enabled) {
-      console.log(`🧪 [MOCK] Axiom not configured — returning mock comparison for order ${orderId}`);
+      this.logger.debug('[MOCK] Axiom not configured — returning mock comparison', { orderId });
       return this.buildMockComparison(orderId);
     }
 
@@ -861,7 +877,7 @@ export class AxiomService {
         timestamp: new Date().toISOString()
       });
 
-      console.log(`✅ Axiom document comparison initiated`, {
+      this.logger.info('Axiom document comparison initiated', {
         orderId,
         evaluationId: response.data.evaluationId
       });
@@ -875,7 +891,7 @@ export class AxiomService {
       const axiosError = error as AxiosError;
       const errorMessage = axiosError.response?.data || axiosError.message;
       
-      console.error('❌ Failed to compare documents via Axiom', {
+      this.logger.error('Failed to compare documents via Axiom', {
         orderId,
         error: errorMessage
       });
@@ -908,9 +924,7 @@ export class AxiomService {
   }> {
     if (!this.enabled) {
       const mockEvalId = `mock-extract-${request.loanNumber}-${Date.now()}`;
-      console.log(
-        `🧪 [MOCK] Axiom extraction mock — creating pending record ${mockEvalId} for loan ${request.loanNumber}`,
-      );
+      this.logger.debug('[MOCK] Axiom extraction mock — creating pending record', { mockEvalId: mockEvalId ?? '', loanNumber: request.loanNumber });
 
       const pendingRecord: ExtractionRecord = {
         id: mockEvalId,
@@ -931,9 +945,9 @@ export class AxiomService {
             status: 'processing',
             timestamp: new Date().toISOString(),
           });
-          console.log(`🧪 [MOCK] Extraction ${mockEvalId} → processing`);
+          this.logger.debug('[MOCK] Extraction → processing', { evaluationId: pendingRecord.evaluationId });
         } catch (err) {
-          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to processing`, err);
+          this.logger.error('[MOCK] Failed to transition extraction to processing', { evaluationId: pendingRecord.evaluationId, error: (err as Error).message });
         }
       }, 1000);
 
@@ -948,9 +962,9 @@ export class AxiomService {
             extractionConfidence: 0.87,
           };
           await this.storeEvaluationRecord(completedRecord);
-          console.log(`✅ [MOCK] Extraction ${mockEvalId} → completed`);
+          this.logger.debug('[MOCK] Extraction → completed', { evaluationId: pendingRecord.evaluationId });
         } catch (err) {
-          console.error(`🧪 [MOCK] Failed to transition ${mockEvalId} to completed`, err);
+          this.logger.error('[MOCK] Failed to transition extraction to completed', { evaluationId: pendingRecord.evaluationId, error: (err as Error).message });
         }
       }, this.mockDelayMs);
 
@@ -996,7 +1010,7 @@ export class AxiomService {
       };
       await this.storeEvaluationRecord(pendingRecord);
 
-      console.log(`✅ Axiom extraction submitted`, {
+      this.logger.info('Axiom extraction submitted', {
         jobId: request.jobId,
         loanNumber: request.loanNumber,
         evaluationId,
@@ -1006,7 +1020,7 @@ export class AxiomService {
     } catch (error) {
       const axiosError = error as AxiosError;
       const errorMessage = (axiosError.response?.data as any)?.message ?? axiosError.message;
-      console.error('❌ Failed to submit document for extraction via Axiom', {
+      this.logger.error('Failed to submit document for extraction via Axiom', {
         jobId: request.jobId,
         loanNumber: request.loanNumber,
         error: errorMessage,
@@ -1034,7 +1048,7 @@ export class AxiomService {
       }
       return null;
     } catch (error) {
-      console.error('❌ Failed to retrieve extraction record from Cosmos', {
+      this.logger.error('Failed to retrieve extraction record from Cosmos', {
         evaluationId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1077,6 +1091,34 @@ export class AxiomService {
       throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
     }
 
+    // P3-F: Idempotency guard — if an in-flight evaluation already exists for this
+    // order, return its identifiers rather than submitting again. This prevents double-
+    // submission when the auto-trigger service and inline submission path race each other.
+    try {
+      const existingQuery = `
+        SELECT TOP 1 c.evaluationId, c.pipelineJobId FROM c
+        WHERE c.orderId = @orderId AND c.tenantId = @tenantId
+          AND (c.status = 'pending' OR c.status = 'processing')
+        ORDER BY c.timestamp DESC`;
+      const existingResult = await this.dbService.queryItems<{ evaluationId: string; pipelineJobId: string }>(
+        this.containerName,
+        existingQuery,
+        [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }],
+      );
+      if (existingResult.success && existingResult.data && existingResult.data.length > 0) {
+        const existing = existingResult.data[0]!;
+        this.logger.warn('submitOrderEvaluation: in-flight evaluation already exists — skipping duplicate submission', {
+          orderId, existingEvaluationId: existing.evaluationId, existingPipelineJobId: existing.pipelineJobId,
+        });
+        return { pipelineJobId: existing.pipelineJobId, evaluationId: existing.evaluationId };
+      }
+    } catch (checkErr) {
+      // Non-fatal: if the idempotency check fails we proceed and let Axiom deduplicate.
+      this.logger.warn('submitOrderEvaluation: idempotency check failed — proceeding with submission', {
+        orderId, error: (checkErr as Error).message,
+      });
+    }
+
     try {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         ...this.buildPipelineParam('RISK_EVAL'),
@@ -1114,14 +1156,14 @@ export class AxiomService {
       });
 
       this.watchPipelineStream(pipelineJobId, orderId, 'ORDER').catch((err) => {
-        console.error('⚠️  Axiom SSE stream error for order', { orderId, pipelineJobId, error: (err as Error).message });
+        this.logger.error('Axiom SSE stream error for order', { orderId, pipelineJobId, error: (err as Error).message });
       });
 
       return { pipelineJobId, evaluationId };
     } catch (error) {
       const axiosError = error as AxiosError;
       const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
-      console.error('❌ Failed to submit order evaluation to Axiom pipeline', { orderId, error: errorMessage });
+      this.logger.error('Failed to submit order evaluation to Axiom pipeline', { orderId, error: errorMessage });
       return null;
     }
   }
@@ -1191,14 +1233,14 @@ export class AxiomService {
       });
 
       this.watchPipelineStream(pipelineJobId, jobId, 'BULK_JOB').catch((err) => {
-        console.error('⚠️  Axiom SSE stream error for bulk job', { jobId, pipelineJobId, error: (err as Error).message });
+        this.logger.error('Axiom SSE stream error for bulk job', { jobId, pipelineJobId, error: (err as Error).message });
       });
 
       return { pipelineJobId, batchId };
     } catch (error) {
       const axiosError = error as AxiosError;
       const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
-      console.error('❌ Failed to submit batch evaluation to Axiom pipeline', { jobId, error: errorMessage });
+      this.logger.error('Failed to submit batch evaluation to Axiom pipeline', { jobId, error: errorMessage });
       return null;
     }
   }
@@ -1268,14 +1310,14 @@ export class AxiomService {
       });
 
       this.watchPipelineStream(pipelineJobId, `${jobId}:${loanNumber}`, 'ORDER').catch((err) => {
-        console.error('⚠️  Axiom SSE stream error for extraction', { jobId, loanNumber, error: (err as Error).message });
+        this.logger.error('Axiom SSE stream error for extraction', { jobId, loanNumber, error: (err as Error).message });
       });
 
       return { pipelineJobId, evaluationId };
     } catch (error) {
       const axiosError = error as AxiosError;
       const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
-      console.error('❌ Failed to submit document extraction to Axiom pipeline', { jobId, loanNumber, error: errorMessage });
+      this.logger.error('Failed to submit document extraction to Axiom pipeline', { jobId, loanNumber, error: errorMessage });
       return null;
     }
   }
@@ -1292,7 +1334,7 @@ export class AxiomService {
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
-      console.error('❌ Failed to fetch Axiom pipeline results', {
+      this.logger.error('Failed to fetch Axiom pipeline results', {
         pipelineJobId,
         status: axiosError.response?.status,
         error: axiosError.message,
@@ -1420,15 +1462,15 @@ export class AxiomService {
         _metadata: { ...meta, completedAt: new Date().toISOString() },
       };
       await this.storeEvaluationRecord(enriched);
-      console.log(`✅ Axiom pipeline results stored`, {
+      this.logger.info('Axiom pipeline results stored', {
         orderId, pipelineJobId, evalId, criteriaCount: mapped.criteria.length, riskScore: mapped.overallRiskScore,
       });
       await this.broadcastAxiomStatus(orderId, evalId, 'completed', mapped.overallRiskScore);
     } else {
-      // Axiom results not available yet (409 still running, or transient error).
-      // Still broadcast so frontend knows to refetch via polling.
-      console.warn('⚠️  fetchAndStorePipelineResults: no results returned from Axiom', { orderId, pipelineJobId, evalId });
-      await this.broadcastAxiomStatus(orderId, evalId, 'completed', fallbackRiskScore);
+      // Axiom results not available (still running or transient error).
+      // Broadcast 'error' so the frontend does not loop expecting a completed state.
+      this.logger.warn('fetchAndStorePipelineResults: no results returned from Axiom', { orderId, pipelineJobId, evalId });
+      await this.broadcastAxiomStatus(orderId, evalId, 'error');
     }
   }
 
@@ -1448,7 +1490,12 @@ export class AxiomService {
     correlationType: 'ORDER' | 'BULK_JOB',
   ): Promise<void> {
     const baseURL = process.env['AXIOM_API_BASE_URL'];
-    if (!baseURL) return; // should never reach here in production, but guard anyway
+    if (!baseURL) {
+      this.logger.warn('watchPipelineStream: AXIOM_API_BASE_URL not set — cannot open SSE stream', {
+        pipelineJobId, correlationId,
+      });
+      return;
+    }
 
     const apiKey = process.env['AXIOM_API_KEY'];
     const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes hard limit
@@ -1493,7 +1540,7 @@ export class AxiomService {
           // Fire-and-forget: settle the stream immediately; result storage runs concurrently
           this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore)
             .catch((err) => {
-              console.error('⚠️  SSE pipeline_completed: failed to store Axiom results', {
+              this.logger.error('SSE pipeline_completed: failed to store Axiom results', {
                 pipelineJobId, correlationId, error: (err as Error).message,
               });
               // Best-effort broadcast even if result fetch failed
@@ -1520,7 +1567,7 @@ export class AxiomService {
               });
             })
             .catch((err) => {
-              console.error('⚠️  SSE pipeline_failed: could not mark record as failed', {
+              this.logger.error('SSE pipeline_failed: could not mark record as failed', {
                 evaluationId, error: (err as Error).message,
               });
             });
@@ -1581,9 +1628,7 @@ export class AxiomService {
     const pipelineJobId = `mock-pipeline-${storageKey}-${Date.now()}`;
     const evaluationId = `mock-eval-${storageKey}-${Date.now()}`;
 
-    console.log(
-      `🧪 [MOCK] Axiom pipeline submit — correlationId=${correlationId} correlationType=${correlationType} pipelineJobId=${pipelineJobId}`,
-    );
+    this.logger.debug('[MOCK] Axiom pipeline submit', { correlationId, correlationType, pipelineJobId });
 
     const pendingRecord = {
       id: evaluationId,
@@ -1603,9 +1648,9 @@ export class AxiomService {
     setTimeout(async () => {
       try {
         await this.storeEvaluationRecord({ ...pendingRecord, status: 'processing', timestamp: new Date().toISOString() });
-        console.log(`🧪 [MOCK] Pipeline ${pipelineJobId} → processing`);
+        this.logger.debug('[MOCK] Pipeline → processing', { pipelineJobId });
         await this.broadcastAxiomStatus(correlationId, evaluationId, 'processing');
-      } catch (err) { console.error('🧪 [MOCK] Failed transition to processing', err); }
+      } catch (err) { this.logger.error('[MOCK] Failed transition to processing', { pipelineJobId, error: (err as Error).message }); }
     }, 1000);
 
     setTimeout(async () => {
@@ -1614,9 +1659,9 @@ export class AxiomService {
           ? this.buildMockEvaluation(correlationId, evaluationId)
           : { ...pendingRecord, status: 'completed' as const, overallRiskScore: 35, timestamp: new Date().toISOString() };
         await this.storeEvaluationRecord({ id: evaluationId, ...completed });
-        console.log(`✅ [MOCK] Pipeline ${pipelineJobId} → completed`);
+        this.logger.debug('[MOCK] Pipeline → completed', { pipelineJobId });
         await this.broadcastAxiomStatus(correlationId, evaluationId, 'completed', 35);
-      } catch (err) { console.error('🧪 [MOCK] Failed transition to completed', err); }
+      } catch (err) { this.logger.error('[MOCK] Failed transition to completed', { pipelineJobId, error: (err as Error).message }); }
     }, this.mockDelayMs);
 
     return { pipelineJobId, evaluationId };
@@ -2094,14 +2139,30 @@ export class AxiomService {
    * Store evaluation record in Cosmos DB aiInsights container
    */
   private async storeEvaluationRecord(record: any): Promise<void> {
-    try {
-      await this.dbService.upsertItem(this.containerName, record);
-    } catch (error) {
-      console.error('❌ Failed to store Axiom evaluation in Cosmos DB', {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const response = await this.dbService.upsertItem(this.containerName, record);
+      if (response.success) return;
+
+      const isLastAttempt = attempt === MAX_RETRIES;
+      if (isLastAttempt) {
+        const msg = `Failed to store Axiom evaluation after ${MAX_RETRIES} attempts: ${response.error?.message ?? 'unknown'}`;
+        this.logger.error('Failed to store Axiom evaluation in Cosmos DB (all retries exhausted)', {
+          evaluationId: record.id,
+          attempts: MAX_RETRIES,
+          error: response.error?.message,
+        });
+        throw new Error(msg);
+      }
+
+      const delay = RETRY_DELAYS_MS[attempt - 1]!;
+      this.logger.warn(`storeEvaluationRecord attempt ${attempt} failed, retrying in ${delay}ms`, {
         evaluationId: record.id,
-        error: error instanceof Error ? error.message : String(error)
+        error: response.error?.message,
       });
-      // Don't throw - this is a caching issue, not critical
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
     }
   }
 
@@ -2109,13 +2170,15 @@ export class AxiomService {
    * Get ALL evaluations for an order (for the order-level list view)
    */
   async getEvaluationsForOrder(orderId: string, tenantId?: string): Promise<AxiomEvaluationResult[]> {
+    if (!tenantId) {
+      throw new Error(
+        `getEvaluationsForOrder: tenantId is required to prevent cross-tenant data access. ` +
+        `orderId=${orderId} — ensure req.user.tenantId is populated by the auth middleware.`,
+      );
+    }
     try {
-      const query = tenantId
-        ? `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.timestamp DESC`
-        : `SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.timestamp DESC`;
-      const params = tenantId
-        ? [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }]
-        : [{ name: '@orderId', value: orderId }];
+      const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.timestamp DESC`;
+      const params = [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }];
       const response = await this.dbService.queryItems<AxiomEvaluationResult>(
         this.containerName,
         query,
@@ -2134,7 +2197,7 @@ export class AxiomService {
 
       return [];
     } catch (error) {
-      console.error('❌ Failed to retrieve evaluations for order', {
+      this.logger.error('Failed to retrieve evaluations for order', {
         orderId,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -2160,7 +2223,7 @@ export class AxiomService {
 
       return null;
     } catch (error) {
-      console.error('❌ Failed to retrieve evaluation from cache', {
+      this.logger.error('Failed to retrieve evaluation from cache', {
         orderId,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -2234,12 +2297,21 @@ export class AxiomService {
   /**
    * Task 4.4: The Agentic Exception 
    * Synchronous /api/agent/run proxy.
+   * P2-E: Returns a mock response when not in live mode instead of throwing.
    */
   public async runAgent(prompt: string, context?: Record<string, unknown>, maxIterations?: number): Promise<any> {
     if (!this.enabled) {
-      throw new Error('Axiom Platform is not enabled or configured.');
+      this.logger.debug('[MOCK] Axiom not configured — returning mock agent response', { promptPreview: prompt.slice(0, 80) });
+      return {
+        response: `Mock agent response for: ${prompt.slice(0, 120)}`,
+        confidence: 0.75,
+        sources: [],
+        iterations: 1,
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+      };
     }
-    
+
     try {
       const response = await this.client.post('/api/agent/run', {
         goal: prompt,
@@ -2248,8 +2320,165 @@ export class AxiomService {
       });
       return response.data;
     } catch (error) {
-      console.error('❌ Failed to run agent:', error instanceof Error ? error.message : String(error));
+      this.logger.error('Failed to run agent', { error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
+  }
+
+  // ── P2-B: Get document comparison by ID ─────────────────────────────────────
+
+  /**
+   * Retrieve a previously-submitted document comparison by its ID.
+   * Returns null on 404; re-throws all other Axiom errors.
+   */
+  async getComparison(comparisonId: string): Promise<any | null> {
+    if (!this.enabled) {
+      this.logger.debug('[MOCK] Axiom not configured — returning mock comparison', { comparisonId });
+      return {
+        comparisonId,
+        status: 'completed',
+        changes: [],
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    try {
+      const response = await this.client.get(`/documents/comparisons/${comparisonId}`);
+      return response.data;
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      if (axiosError.response?.status === 404) return null;
+      this.logger.error('Failed to retrieve Axiom comparison', { comparisonId, error: axiosError.message });
+      throw error;
+    }
+  }
+
+  // ── P2-C: Property enrichment ───────────────────────────────────────────────
+
+  /** Submit a property enrichment pipeline and store the pending record. */
+  async enrichProperty(
+    propertyInfo: Record<string, unknown>,
+    orderId: string,
+    tenantId: string,
+    clientId: string,
+  ): Promise<{ enrichmentId: string; status: 'queued' }> {
+    const enrichmentId = `enrich-${orderId}-${Date.now()}`;
+
+    const pendingRecord = {
+      id: enrichmentId,
+      type: 'property-enrichment',
+      orderId,
+      tenantId,
+      clientId,
+      status: 'queued',
+      propertyInfo,
+      timestamp: new Date().toISOString(),
+    };
+    await this.storeEvaluationRecord(pendingRecord);
+
+    if (!this.enabled) {
+      this.logger.debug('[MOCK] Axiom not configured — queued mock enrichment', { enrichmentId });
+      return { enrichmentId, status: 'queued' };
+    }
+
+    const callbackUrl = process.env['API_BASE_URL']
+      ? `${process.env['API_BASE_URL']}/api/axiom/webhook`
+      : undefined;
+
+    try {
+      await this.client.post('/api/pipelines', {
+        ...this.buildPipelineParam('DOC_EXTRACT'),
+        trigger: { propertyInfo, tenantId, clientId },
+        correlationId: enrichmentId,
+        correlationType: 'ORDER',
+        ...(callbackUrl ? { webhookUrl: callbackUrl } : {}),
+      });
+    } catch (error) {
+      this.logger.error('Failed to submit Axiom property enrichment pipeline', {
+        enrichmentId, orderId, error: (error as Error).message,
+      });
+      throw error;
+    }
+
+    return { enrichmentId, status: 'queued' };
+  }
+
+  /** Retrieve the most recent property enrichment record for an order. */
+  async getPropertyEnrichment(orderId: string, tenantId: string): Promise<any | null> {
+    if (!tenantId) {
+      throw new Error(`getPropertyEnrichment: tenantId is required. orderId=${orderId}`);
+    }
+    const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND c.type = 'property-enrichment' ORDER BY c.timestamp DESC OFFSET 0 LIMIT 1`;
+    const response = await this.dbService.queryItems<any>(this.containerName, query, [
+      { name: '@orderId', value: orderId },
+      { name: '@tenantId', value: tenantId },
+    ]);
+    if (!response.success || !response.data || response.data.length === 0) return null;
+    return response.data[0];
+  }
+
+  // ── P2-D: Complexity scoring ─────────────────────────────────────────────────
+
+  /**
+   * Calculate and store a complexity/risk score for an order.
+   * Synchronous — calls Axiom and stores result immediately.
+   */
+  async calculateComplexityScore(
+    propertyInfo: Record<string, unknown>,
+    orderId: string,
+    tenantId: string,
+    clientId: string,
+  ): Promise<{ complexityScore: number; drivers: string[]; riskFactors: string[] }> {
+    if (!this.enabled) {
+      this.logger.debug('[MOCK] Axiom not configured — returning mock complexity score', { orderId });
+      const mock = { complexityScore: 42, drivers: ['mock-driver-1'], riskFactors: ['mock-risk-1'] };
+      await this.storeEvaluationRecord({
+        id: `complexity-${orderId}`,
+        type: 'complexity-score',
+        orderId,
+        tenantId,
+        clientId,
+        ...mock,
+        timestamp: new Date().toISOString(),
+      });
+      return mock;
+    }
+
+    let result: { complexityScore: number; drivers: string[]; riskFactors: string[] };
+    try {
+      const response = await this.client.post('/api/scoring/complexity', { propertyInfo, tenantId, clientId });
+      result = response.data as typeof result;
+    } catch (error) {
+      this.logger.error('Failed to calculate Axiom complexity score', {
+        orderId, error: (error as Error).message,
+      });
+      throw error;
+    }
+
+    await this.storeEvaluationRecord({
+      id: `complexity-${orderId}`,
+      type: 'complexity-score',
+      orderId,
+      tenantId,
+      clientId,
+      ...result,
+      timestamp: new Date().toISOString(),
+    });
+
+    return result;
+  }
+
+  /** Retrieve a stored complexity score for an order. */
+  async getComplexityScore(orderId: string, tenantId: string): Promise<any | null> {
+    if (!tenantId) {
+      throw new Error(`getComplexityScore: tenantId is required. orderId=${orderId}`);
+    }
+    const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND c.type = 'complexity-score' ORDER BY c.timestamp DESC OFFSET 0 LIMIT 1`;
+    const response = await this.dbService.queryItems<any>(this.containerName, query, [
+      { name: '@orderId', value: orderId },
+      { name: '@tenantId', value: tenantId },
+    ]);
+    if (!response.success || !response.data || response.data.length === 0) return null;
+    return response.data[0];
   }
 }

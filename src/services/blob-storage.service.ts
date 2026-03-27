@@ -1,4 +1,4 @@
-import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
+import { BlobServiceClient, ContainerClient, generateBlobSASQueryParameters, BlobSASPermissions } from '@azure/storage-blob';
 import { DefaultAzureCredential, AzureCliCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 
@@ -227,6 +227,42 @@ export class BlobStorageService {
       this.logger.error('Failed to check blob existence', { error, containerName, blobName });
       return false;
     }
+  }
+
+  /**
+   * Generate a read-only SAS URL for a blob so external services (e.g. Axiom)
+   * can download it without needing Azure credentials.
+   *
+   * Uses user-delegation key (Managed Identity) — no account keys involved.
+   */
+  async generateReadSasUrl(containerName: string, blobName: string, expiresInMinutes = 30): Promise<string> {
+    if (!this.client) {
+      throw new Error('Blob storage not initialized - set AZURE_STORAGE_ACCOUNT_NAME');
+    }
+
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    if (!accountName) {
+      throw new Error('AZURE_STORAGE_ACCOUNT_NAME is required for SAS URL generation');
+    }
+
+    const startsOn = new Date();
+    const expiresOn = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+
+    const userDelegationKey = await this.client.getUserDelegationKey(startsOn, expiresOn);
+
+    const blobClient = this.client.getContainerClient(containerName).getBlobClient(blobName);
+    const sasParams = generateBlobSASQueryParameters(
+      {
+        containerName,
+        blobName,
+        permissions: BlobSASPermissions.parse('r'),
+        expiresOn,
+      },
+      userDelegationKey,
+      accountName,
+    );
+
+    return `${blobClient.url}?${sasParams.toString()}`;
   }
 
   /**

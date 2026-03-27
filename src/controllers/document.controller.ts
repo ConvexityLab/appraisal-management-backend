@@ -306,20 +306,26 @@ export class DocumentController {
       if (savedDoc.orderId && AXIOM_AUTO_SUBMIT_CATEGORIES.has(category || '')) {
         const orderId = savedDoc.orderId;
         setImmediate(() => {
-          this.dbService.findOrderById(orderId).then((orderResult) => {
+          this.dbService.findOrderById(orderId).then(async (orderResult) => {
             const order = orderResult.success ? orderResult.data : null;
             if (!order) {
               console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} not found`);
-              return Promise.resolve(null);
+              return null;
             }
             const clientId = (order as any).clientInformation?.clientId || order.clientId;
             if (!order.tenantId || !clientId) {
               console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} missing tenantId or clientId`);
-              return Promise.resolve(null);
+              return null;
             }
+            const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
+            if (!docContainerName) {
+              console.error('[DocumentController] Cannot auto-submit to Axiom: STORAGE_CONTAINER_DOCUMENTS not configured');
+              return null;
+            }
+            const sasUrl = await this.blobService.generateReadSasUrl(docContainerName, savedDoc.blobName);
             const fields = buildOrderFields(order);
             const documents = [
-              { documentName: savedDoc.name, documentReference: savedDoc.blobUrl },
+              { documentName: savedDoc.name, documentReference: sasUrl },
             ];
             return this.axiomService.submitOrderEvaluation(orderId, fields, documents, order.tenantId, clientId);
           }).then((axiomResult) => {
