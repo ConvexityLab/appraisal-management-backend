@@ -36,6 +36,7 @@ export interface QCExecutionSession {
   id: string;
   checklistId: string;
   targetId: string;
+  tenantId: string;
   documentData: any;
   status: QCExecutionStatus;
   startedAt: Date;
@@ -197,6 +198,7 @@ export class QCExecutionController {
         id: sessionId,
         checklistId,
         targetId,
+        tenantId: (req.user as any)?.tenantId || '',
         documentData,
         status: QCExecutionStatus.RUNNING,
         progress: {
@@ -217,9 +219,10 @@ export class QCExecutionController {
       // Execute QC review
       // ── Axiom → QC bridge: inject Axiom evaluation if available ──
       let axiomEvaluation: QCExecutionContext['axiomEvaluation'] | undefined;
+      const tenantId = (req.user as any)?.tenantId as string | undefined;
       try {
         // targetId is typically the orderId — look up the Axiom evaluation
-        const axiomResult = await this.axiomService.getEvaluation(targetId);
+        const axiomResult = tenantId ? await this.axiomService.getEvaluation(targetId, tenantId) : null;
         if (axiomResult && axiomResult.status === 'completed') {
           axiomEvaluation = {
             evaluationId: axiomResult.evaluationId,
@@ -346,6 +349,7 @@ export class QCExecutionController {
         id: sessionId,
         checklistId: executionRequest.checklistId,
         targetId: executionRequest.targetId,
+        tenantId: (req.user as any)?.tenantId || '',
         documentData: executionRequest.documentData,
         status: QCExecutionStatus.QUEUED,
         progress: {
@@ -1262,7 +1266,7 @@ export class QCExecutionController {
       // ── Axiom → QC bridge: inject Axiom evaluation if available ──
       let axiomEvaluation: QCExecutionContext['axiomEvaluation'] | undefined;
       try {
-        const axiomResult = await this.axiomService.getEvaluation(session.targetId);
+        const axiomResult = session.tenantId ? await this.axiomService.getEvaluation(session.targetId, session.tenantId) : null;
         if (axiomResult && axiomResult.status === 'completed') {
           axiomEvaluation = {
             evaluationId: axiomResult.evaluationId,

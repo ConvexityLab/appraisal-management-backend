@@ -453,12 +453,19 @@ export class AxiomService {
    * Retrieve evaluation results for an order
    * 
    * @param orderId Order ID to retrieve evaluation for
+   * @param tenantId Tenant ID for multi-tenant data isolation
    * @returns Evaluation results or null if not found
    */
-  async getEvaluation(orderId: string): Promise<AxiomEvaluationResult | null> {
+  async getEvaluation(orderId: string, tenantId: string): Promise<AxiomEvaluationResult | null> {
+    if (!tenantId) {
+      throw new Error(
+        `getEvaluation: tenantId is required to prevent cross-tenant data access. ` +
+        `orderId=${orderId} — ensure req.user.tenantId is populated by the auth middleware.`,
+      );
+    }
     try {
       // First try to get from Cosmos DB cache
-      const cachedResult = await this.getEvaluationFromCache(orderId);
+      const cachedResult = await this.getEvaluationFromCache(orderId, tenantId);
       
       if (cachedResult && cachedResult.status === 'completed') {
         return cachedResult;
@@ -508,7 +515,7 @@ export class AxiomService {
       });
 
       // Fall back to cached result even if stale
-      return await this.getEvaluationFromCache(orderId);
+      return await this.getEvaluationFromCache(orderId, tenantId);
     }
   }
 
@@ -2208,13 +2215,13 @@ export class AxiomService {
   /**
    * Get evaluation from Cosmos DB cache
    */
-  private async getEvaluationFromCache(orderId: string): Promise<AxiomEvaluationResult | null> {
+  private async getEvaluationFromCache(orderId: string, tenantId: string): Promise<AxiomEvaluationResult | null> {
     try {
-      const query = `SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.timestamp DESC`;
+      const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.timestamp DESC`;
       const response = await this.dbService.queryItems<AxiomEvaluationResult>(
         this.containerName,
         query,
-        [{ name: '@orderId', value: orderId }]
+        [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }]
       );
 
       if (response.success && response.data && response.data.length > 0) {

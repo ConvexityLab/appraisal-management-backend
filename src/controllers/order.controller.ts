@@ -684,7 +684,8 @@ export class OrderController {
 
             // Axiom→QC bridge: fetch AI evaluation to pre-populate QC findings
             if (this.axiomService.isEnabled()) {
-              this.axiomService.getEvaluation(orderId).then((evaluation) => {
+              const orderTenantId = (order as any).tenantId || req.user!.tenantId;
+              this.axiomService.getEvaluation(orderId, orderTenantId).then((evaluation) => {
                 if (evaluation && evaluation.status === 'completed') {
                   logger.info('Axiom evaluation attached to QC queue item', {
                     orderId,
