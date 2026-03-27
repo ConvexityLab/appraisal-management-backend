@@ -32,7 +32,11 @@ export class SupervisionTimeoutWatcherJob {
   private readonly tenantConfigService: TenantAutomationConfigService;
 
   private isRunning = false;
-  private firewallBlocked = false;
+  // Circuit-breaker: opens after 3 consecutive 403 errors, half-opens after 5 min.
+  private cbFailureCount = 0;
+  private cbOpenedAt: number | null = null;
+  private readonly CB_FAILURE_THRESHOLD = 3;
+  private readonly CB_HALF_OPEN_MS = 5 * 60 * 1000; // 5 minutes
   private intervalId?: NodeJS.Timeout;
 
   private readonly CHECK_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
@@ -49,7 +53,8 @@ export class SupervisionTimeoutWatcherJob {
       return;
     }
 
-    this.firewallBlocked = false;
+    this.cbFailureCount = 0;
+    this.cbOpenedAt = null;
     this.logger.info('Starting SupervisionTimeoutWatcherJob', {
       intervalMinutes: this.CHECK_INTERVAL_MS / 60_000,
     });
@@ -75,8 +80,38 @@ export class SupervisionTimeoutWatcherJob {
     this.logger.info('SupervisionTimeoutWatcherJob stopped');
   }
 
+  private isCircuitOpen(): boolean {
+    if (this.cbOpenedAt === null) return false;
+    return (Date.now() - this.cbOpenedAt) < this.CB_HALF_OPEN_MS;
+  }
+
+  private recordCbSuccess(): void {
+    if (this.cbOpenedAt !== null) {
+      this.logger.info('SupervisionTimeoutWatcherJob: circuit-breaker closed after successful probe');
+    }
+    this.cbFailureCount = 0;
+    this.cbOpenedAt = null;
+  }
+
+  private recordCbFailure(): void {
+    this.cbFailureCount++;
+    if (this.cbFailureCount >= this.CB_FAILURE_THRESHOLD) {
+      if (this.cbOpenedAt === null) {
+        this.cbOpenedAt = Date.now();
+        this.logger.warn(
+          `SupervisionTimeoutWatcherJob: circuit-breaker OPEN after ${this.cbFailureCount} consecutive 403 errors — will retry in ${this.CB_HALF_OPEN_MS / 60_000} min`,
+        );
+      } else {
+        this.cbOpenedAt = Date.now(); // reset the half-open timer
+      }
+    }
+  }
+
   private async checkTimeouts(): Promise<void> {
-    if (this.firewallBlocked) return;
+    if (this.isCircuitOpen()) {
+      this.logger.debug('SupervisionTimeoutWatcherJob: circuit-breaker open — skipping check');
+      return;
+    }
 
     try {
       const container = this.cosmosService.getContainer('orders');
@@ -91,11 +126,13 @@ export class SupervisionTimeoutWatcherJob {
           SELECT * FROM c
           WHERE c.type = 'order'
             AND c.requiresSupervisoryReview = true
-            AND (NOT IS_DEFINED(c.supervisoryCosignedAt) OR c.supervisoryCosignedAt = null)
+            AND (NOT IS_DEFINED(c.supervisoryCosignedAt) OR IS_NULL(c.supervisoryCosignedAt))
             AND (NOT IS_DEFINED(c.requiresHumanIntervention) OR c.requiresHumanIntervention != true)
             AND IS_DEFINED(c.supervisorId)
         `,
       }).fetchAll();
+
+      this.recordCbSuccess();
 
       if (candidates.length === 0) {
         this.logger.debug('Supervision timeout check: no candidates found');
@@ -109,8 +146,7 @@ export class SupervisionTimeoutWatcherJob {
       }
     } catch (err: any) {
       if (err?.code === 403 || err?.statusCode === 403) {
-        this.firewallBlocked = true;
-        this.logger.warn('SupervisionTimeoutWatcherJob blocked by Cosmos firewall — suspending checks');
+        this.recordCbFailure();
       } else {
         this.logger.error('Supervision timeout check failed', {
           error: err instanceof Error ? err.message : String(err),
@@ -120,6 +156,11 @@ export class SupervisionTimeoutWatcherJob {
   }
 
   private async processCandidate(order: any): Promise<void> {
+    // Guard: skip records with no tenantId — cannot use as partition key and getConfig would throw.
+    if (!order.tenantId) {
+      this.logger.warn('Supervision timeout watcher: order has no tenantId — skipping', { orderId: order.id });
+      return;
+    }
     try {
       // Determine when supervision was requested — fall back to order update time.
       const requestedAtRaw: string | undefined =

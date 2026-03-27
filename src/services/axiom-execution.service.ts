@@ -59,7 +59,10 @@ export class AxiomExecutionService {
   }
 
   /**
-   * Update the status and/or results of an existing execution
+   * Update the status and/or results of an existing execution.
+   * P1-F: Uses a cross-partition query to read the record first so the correct partition
+   * key value (either /id or /tenantId depending on container provisioning) is resolved
+   * from the fetched document, then used for the replace point-write.
    */
   async updateExecutionStatus(
     id: string,
@@ -68,14 +71,21 @@ export class AxiomExecutionService {
     failureReason?: string
   ): Promise<ApiResponse<AxiomExecutionRecord>> {
     try {
-      const { resource: existing } = await this.container.item(id, id).read<AxiomExecutionRecord>();
+      // Cross-partition query handles both /id and /tenantId partition key configs.
+      // SDK v3 runs cross-partition by default when no partition key is specified.
+      const { resources } = await this.container.items
+        .query<AxiomExecutionRecord>(
+          { query: 'SELECT * FROM c WHERE c.id = @id', parameters: [{ name: '@id', value: id }] },
+        )
+        .fetchAll();
+      const existing = resources[0];
       if (!existing) {
         return { success: false, error: createApiError('NOT_FOUND', `Execution record ${id} not found`) };
       }
 
       existing.status = status;
       existing.updatedAt = new Date().toISOString();
-      
+
       if (results) existing.results = results;
       if (failureReason) existing.failureReason = failureReason;
 
@@ -83,7 +93,9 @@ export class AxiomExecutionService {
         existing.completedAt = existing.updatedAt;
       }
 
-      const { resource: updated } = await this.container.item(id, id).replace(existing);
+      // Use the partition key resolved from the fetched record (tenantId if present, else id).
+      const partitionKeyValue = existing.tenantId ?? existing.id;
+      const { resource: updated } = await this.container.item(id, partitionKeyValue).replace(existing);
       return { success: true, data: updated as AxiomExecutionRecord };
     } catch (error) {
       console.error(`[AxiomExecutionService] updateExecutionStatus error for ${id}:`, error);
@@ -92,11 +104,18 @@ export class AxiomExecutionService {
   }
 
   /**
-   * Get an execution by standard platform ID
+   * Get an execution by standard platform ID.
+   * P1-F: Cross-partition query works regardless of whether the container is provisioned
+   * with /id or /tenantId as the partition key.
    */
   async getExecutionById(id: string): Promise<ApiResponse<AxiomExecutionRecord>> {
     try {
-      const { resource } = await this.container.item(id, id).read<AxiomExecutionRecord>();
+      const { resources } = await this.container.items
+        .query<AxiomExecutionRecord>(
+          { query: 'SELECT * FROM c WHERE c.id = @id', parameters: [{ name: '@id', value: id }] },
+        )
+        .fetchAll();
+      const resource = resources[0];
       if (!resource) return { success: false, error: createApiError('NOT_FOUND', 'Not found') };
       return { success: true, data: resource };
     } catch (error) {

@@ -183,6 +183,7 @@ import { AutoDeliveryService } from '../services/auto-delivery.service';
 import { EngagementLifecycleService } from '../services/engagement-lifecycle.service';
 import { CommunicationEventHandler } from '../services/communication-event-handler.service';
 import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service';
+import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
 import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.service.js';
@@ -296,6 +297,7 @@ export class AppraisalManagementAPIServer {
   private engagementLifecycleService?: EngagementLifecycleService;
   private communicationEventHandler?: CommunicationEventHandler;
   private axiomAutoTriggerService?: AxiomAutoTriggerService;
+  private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
   private ucdpEadAutoSubmitService?: UcdpEadAutoSubmitService;
@@ -789,15 +791,17 @@ export class AppraisalManagementAPIServer {
 
     // Axiom AI Platform - Document analysis, criteria evaluation, risk scoring (authenticated users)
     // Powers AI features: USPAP compliance, QC automation, revision comparison, ROV analysis
+    // P1-H: Create a single shared AxiomService so both routers share the in-memory compileCache.
+    const sharedAxiomService = new AxiomService(this.dbService);
     this.app.use('/api/axiom',
       this.unifiedAuth.authenticate(),
-      createAxiomRouter(this.dbService)
+      createAxiomRouter(this.dbService, sharedAxiomService)
     );
 
     // Axiom Criteria Programs — GET compiled criteria (cache-first) / POST force-recompile
     this.app.use('/api/criteria',
       this.unifiedAuth.authenticate(),
-      createCriteriaProgramsRouter(new AxiomService(this.dbService))
+      createCriteriaProgramsRouter(sharedAxiomService)
     );
 
     // ===== ITEM 3: ENHANCED VENDOR MANAGEMENT SYSTEM =====
@@ -1673,7 +1677,15 @@ export class AppraisalManagementAPIServer {
   private async getHealthCheck(req: express.Request, res: express.Response): Promise<void> {
     try {
       const dbHealth = await this.dbService.healthCheck();
-      
+
+      // P6-A: Axiom integration health
+      const axiomHealth = {
+        enabled: !!(this.axiomAutoTriggerService),
+        autoTriggerRunning: this.axiomAutoTriggerService?.isRunning ?? false,
+        timeoutWatcherCircuitState: this.axiomTimeoutWatcherJob?.getCircuitState() ?? 'unknown',
+        missedTriggerJobRunning: this.axiomMissedTriggerJob?.isRunning ?? false,
+      };
+
       const health = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
@@ -1687,6 +1699,7 @@ export class AppraisalManagementAPIServer {
           name: dbHealth.database,
           latency: dbHealth.latency
         },
+        axiom: axiomHealth,
         version: '1.0.0'
       };
       res.json(health);
@@ -3526,6 +3539,18 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Axiom Missed-Trigger recovery job (finds SUBMITTED orders that never reached Axiom)
+    if (this.axiomAutoTriggerService) {
+      try {
+        this.axiomMissedTriggerJob = new AxiomMissedTriggerJob(this.dbService, this.axiomAutoTriggerService);
+        this.axiomMissedTriggerJob.start();
+      } catch (err) {
+        this.logger.warn('AxiomMissedTriggerJob could not be created', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
     // Start Engagement Letter Auto-Send Service (sends letters on bid acceptance/staff assignment)
     try {
       this.engagementLetterAutoSendService = new EngagementLetterAutoSendService(this.dbService);
@@ -3677,6 +3702,12 @@ export class AppraisalManagementAPIServer {
     if (this.axiomAutoTriggerService) {
       this.axiomAutoTriggerService.stop().catch(() => {});
     }
+    if (this.axiomMissedTriggerJob) {
+      this.axiomMissedTriggerJob.stop();
+    }
+    if (this.axiomTimeoutWatcherJob) {
+      this.axiomTimeoutWatcherJob.stop();
+    }
     if (this.engagementLetterAutoSendService) {
       this.engagementLetterAutoSendService.stop().catch(() => {});
     }
@@ -3697,6 +3728,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.mismoAutoGenerateService) {
       this.mismoAutoGenerateService.stop().catch(() => {});
+    }
+    if (this.supervisionTimeoutWatcherJob) {
+      this.supervisionTimeoutWatcherJob.stop();
     }
     this.logger.info('Background jobs stopped');
   }

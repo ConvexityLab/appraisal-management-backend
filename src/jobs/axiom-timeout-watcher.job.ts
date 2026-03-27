@@ -30,8 +30,14 @@ export class AxiomTimeoutWatcherJob {
   private readonly tenantConfigService: TenantAutomationConfigService;
 
   private isRunning = false;
-  private firewallBlocked = false;
   private intervalId?: NodeJS.Timeout;
+
+  // Circuit-breaker state for Cosmos 403 (firewall) errors.
+  // Opens after 3 consecutive failures; half-opens after 5 min; closes on first success.
+  private cbFailureCount = 0;
+  private cbOpenedAt: number | null = null;
+  private readonly CB_FAILURE_THRESHOLD = 3;
+  private readonly CB_HALF_OPEN_MS = 5 * 60 * 1000; // 5 minutes
 
   private readonly CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -47,7 +53,8 @@ export class AxiomTimeoutWatcherJob {
       return;
     }
 
-    this.firewallBlocked = false;
+    this.cbFailureCount = 0;
+    this.cbOpenedAt = null;
     this.logger.info('Starting AxiomTimeoutWatcherJob', {
       intervalMinutes: this.CHECK_INTERVAL_MS / 60_000,
     });
@@ -74,8 +81,50 @@ export class AxiomTimeoutWatcherJob {
     this.logger.info('AxiomTimeoutWatcherJob stopped');
   }
 
+  /** P6-A: Returns circuit-breaker state string for the health endpoint. */
+  public getCircuitState(): 'closed' | 'open' | 'half-open' {
+    if (this.cbOpenedAt === null) return 'closed';
+    const elapsed = Date.now() - this.cbOpenedAt;
+    if (elapsed >= this.CB_HALF_OPEN_MS) return 'half-open';
+    return 'open';
+  }
+
+  /** Returns true when the circuit-breaker is open (Cosmos unreachable). */
+  private isCircuitOpen(): boolean {
+    if (this.cbOpenedAt === null) return false; // closed
+    const elapsed = Date.now() - this.cbOpenedAt;
+    if (elapsed >= this.CB_HALF_OPEN_MS) return false; // half-open — allow one probe
+    return true; // open
+  }
+
+  private recordCbSuccess(): void {
+    if (this.cbOpenedAt !== null) {
+      this.logger.info('AxiomTimeoutWatcherJob: circuit-breaker closed after successful probe');
+    }
+    this.cbFailureCount = 0;
+    this.cbOpenedAt = null;
+  }
+
+  private recordCbFailure(): void {
+    this.cbFailureCount++;
+    if (this.cbFailureCount >= this.CB_FAILURE_THRESHOLD) {
+      if (this.cbOpenedAt === null) {
+        this.cbOpenedAt = Date.now();
+        this.logger.warn(
+          `AxiomTimeoutWatcherJob: circuit-breaker OPEN after ${this.cbFailureCount} consecutive 403 errors — will retry in ${this.CB_HALF_OPEN_MS / 60_000} min`,
+        );
+      } else {
+        // Already open; reset the half-open timer
+        this.cbOpenedAt = Date.now();
+      }
+    }
+  }
+
   private async checkTimeouts(): Promise<void> {
-    if (this.firewallBlocked) return;
+    if (this.isCircuitOpen()) {
+      this.logger.debug('AxiomTimeoutWatcherJob: circuit-breaker open — skipping check');
+      return;
+    }
 
     try {
       const container = this.cosmosService.getContainer('orders');
@@ -91,12 +140,15 @@ export class AxiomTimeoutWatcherJob {
           SELECT * FROM c
           WHERE c.type = 'order'
             AND IS_DEFINED(c.axiomSubmittedAt)
-            AND (NOT IS_DEFINED(c.axiomEvaluationCompletedAt) OR c.axiomEvaluationCompletedAt = null)
+            AND (NOT IS_DEFINED(c.axiomCompletedAt) OR IS_NULL(c.axiomCompletedAt))
+            AND (NOT IS_DEFINED(c.axiomStatus) OR (c.axiomStatus != 'completed' AND c.axiomStatus != 'failed'))
             AND (NOT IS_DEFINED(c.axiomTimedOut) OR c.axiomTimedOut != true)
             AND c.axiomSubmittedAt > @cutoff
         `,
         parameters: [{ name: '@cutoff', value: thirtyDaysAgoIso }],
       }).fetchAll();
+
+      this.recordCbSuccess();
 
       if (candidates.length === 0) {
         this.logger.debug('Axiom timeout check: no candidates found');
@@ -110,8 +162,7 @@ export class AxiomTimeoutWatcherJob {
       }
     } catch (err: any) {
       if (err?.code === 403 || err?.statusCode === 403) {
-        this.firewallBlocked = true;
-        this.logger.warn('AxiomTimeoutWatcherJob blocked by Cosmos firewall — suspending checks');
+        this.recordCbFailure();
       } else {
         this.logger.error('Axiom timeout check failed', {
           error: err instanceof Error ? err.message : String(err),
@@ -121,6 +172,20 @@ export class AxiomTimeoutWatcherJob {
   }
 
   private async processCandidate(order: any): Promise<void> {
+    // P3-E: skip records with no tenantId — cannot use as partition key
+    if (!order.tenantId) {
+      this.logger.warn('Axiom timeout watcher: order has no tenantId — skipping', { orderId: order.id });
+      return;
+    }
+    // Defense-in-depth: skip orders already completed or failed (the query should exclude them
+    // via axiomCompletedAt, but axiomStatus is an additional safety net).
+    if (order.axiomStatus === 'completed' || order.axiomStatus === 'failed') {
+      this.logger.debug('Axiom timeout watcher: order already in terminal axiomStatus — skipping', {
+        orderId: order.id, axiomStatus: order.axiomStatus,
+      });
+      return;
+    }
+
     try {
       const tenantConfig = await this.tenantConfigService.getConfig(order.tenantId);
       if (!tenantConfig.axiomAutoTrigger) {

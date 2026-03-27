@@ -48,7 +48,11 @@ export class ReviewSLAWatcherJob {
   private readonly logger = new Logger('ReviewSLAWatcherJob');
   private readonly publisher: ServiceBusEventPublisher;
   private isRunning = false;
-  private firewallBlocked = false;
+  // Circuit-breaker: opens after 3 consecutive DB errors, half-opens after 5 min.
+  private cbFailureCount = 0;
+  private cbOpenedAt: number | null = null;
+  private readonly CB_FAILURE_THRESHOLD = 3;
+  private readonly CB_HALF_OPEN_MS = 5 * 60 * 1000;
   private intervalId: NodeJS.Timeout | undefined = undefined;
 
   private readonly CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -65,7 +69,8 @@ export class ReviewSLAWatcherJob {
       this.logger.warn('ReviewSLAWatcherJob already running');
       return;
     }
-    this.firewallBlocked = false;
+    this.cbFailureCount = 0;
+    this.cbOpenedAt = null;
     this.isRunning = true;
     this.logger.info('ReviewSLAWatcherJob started', {
       intervalMinutes: this.CHECK_INTERVAL_MS / 60_000,
@@ -93,10 +98,40 @@ export class ReviewSLAWatcherJob {
     this.logger.info('ReviewSLAWatcherJob stopped');
   }
 
-  // ── Core check ─────────────────────────────────────────────────────────────
+  private isCircuitOpen(): boolean {
+    if (this.cbOpenedAt === null) return false;
+    return (Date.now() - this.cbOpenedAt) < this.CB_HALF_OPEN_MS;
+  }
+
+  private recordCbSuccess(): void {
+    if (this.cbOpenedAt !== null) {
+      this.logger.info('ReviewSLAWatcherJob: circuit-breaker closed after successful probe');
+    }
+    this.cbFailureCount = 0;
+    this.cbOpenedAt = null;
+  }
+
+  private recordCbFailure(): void {
+    this.cbFailureCount++;
+    if (this.cbFailureCount >= this.CB_FAILURE_THRESHOLD) {
+      if (this.cbOpenedAt === null) {
+        this.cbOpenedAt = Date.now();
+        this.logger.warn(
+          `ReviewSLAWatcherJob: circuit-breaker OPEN after ${this.cbFailureCount} consecutive errors — will retry in ${this.CB_HALF_OPEN_MS / 60_000} min`,
+        );
+      } else {
+        this.cbOpenedAt = Date.now();
+      }
+    }
+  }
+
+  // ── Core check ──────────────────────────────────────────────────────────────────────────
 
   private async checkReviewSLAs(): Promise<void> {
-    if (this.firewallBlocked) return;
+    if (this.isCircuitOpen()) {
+      this.logger.debug('ReviewSLAWatcherJob: circuit-breaker open — skipping check');
+      return;
+    }
 
     try {
       const container = this.dbService.getContainer('qc-reviews');
@@ -110,6 +145,8 @@ export class ReviewSLAWatcherJob {
             AND (c.slaBreachFired != true OR c.slaWarningFired != true)
         `,
       }).fetchAll();
+
+      this.recordCbSuccess();
 
       let warnCount = 0;
       let breachCount = 0;
@@ -152,9 +189,9 @@ export class ReviewSLAWatcherJob {
         this.logger.info('Review SLA alerts fired', { warnCount, breachCount });
       }
     } catch (err) {
-      if ((err as Error).message?.includes('ECONNREFUSED') || (err as Error).message?.includes('TIMEOUT')) {
-        this.firewallBlocked = true;
-        this.logger.warn('ReviewSLAWatcherJob: DB unreachable — suspending checks');
+      if ((err as Error).message?.includes('ECONNREFUSED') || (err as Error).message?.includes('TIMEOUT') ||
+          (err as any)?.code === 403 || (err as any)?.statusCode === 403) {
+        this.recordCbFailure();
       } else {
         this.logger.error('ReviewSLAWatcherJob: error during SLA check', { error: (err as Error).message });
       }
