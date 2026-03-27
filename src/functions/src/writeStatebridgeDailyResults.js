@@ -117,7 +117,11 @@ app.timer("writeStatebridgeDailyResults", {
     // the NEXT scheduled run, i.e. tomorrow, causing zero results every night).
     const now = new Date();
 
-    // Build UTC day window for "today"
+    // Build UTC day window for "today".
+    // NOTE: All timestamps are UTC. If Statebridge expects orders by Eastern-time business day,
+    // orders completed between 23:00 UTC and 23:59 UTC may land in a different day bucket from
+    // their perspective. The schedule (23:55 UTC) is intentionally near the UTC day end so
+    // any same-day Eastern completions are included before the file is generated.
     const todayStart    = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
     const yyyymmdd      = todayStart.toISOString().slice(0, 10).replace(/-/g, "");
@@ -153,6 +157,7 @@ app.timer("writeStatebridgeDailyResults", {
             AND c.status         = 'COMPLETED'
             AND c.dateCompleted >= @todayStart
             AND c.dateCompleted  < @tomorrowStart
+            AND (NOT IS_DEFINED(c.sftpDeliveryStatus) OR c.sftpDeliveryStatus = 'DELIVERED')
         `,
         parameters: [
           { name: "@tenantId",      value: statebridge_tenantId },

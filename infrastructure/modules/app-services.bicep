@@ -234,8 +234,13 @@ var containerApps = [
         secretRef: 'azurewebjobsstorage'
       }
       {
-        name: 'AZURE_STORAGE_CONNECTION_STRING'
-        secretRef: 'azurewebjobsstorage'
+        // Managed-identity queue trigger binding.
+        // The Azure Functions SDK resolves "<prefix>__queueServiceUri" automatically and
+        // authenticates via DefaultAzureCredential (AZURE_CLIENT_ID set below).
+        // Required RBAC: Storage Queue Data Contributor (974c5e8b) is already granted to
+        // all container app identities in data-services.bicep :: primaryStorageQueueRoleAssignments.
+        name: 'SFTP_ORDER_QUEUE_STORAGE__queueServiceUri'
+        value: 'https://${storageAccountName}.queue.core.windows.net'
       }
       {
         name: 'AZURE_STORAGE_ACCOUNT_NAME'

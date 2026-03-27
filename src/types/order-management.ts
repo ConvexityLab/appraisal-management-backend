@@ -182,6 +182,26 @@ export type OrderSource =
 export type BillingMethod =
   | 'CLIENT_INVOICE' | 'CREDIT_CARD' | 'ACH' | 'CHECK' | 'PURCHASE_ORDER' | 'NET_30' | 'NET_60';
 
+export type BpoExtractionStatus =
+  | 'AXIOM_PENDING'
+  | 'COMPLETED'
+  | 'AXIOM_SUBMISSION_FAILED'
+  | 'AXIOM_SSE_TIMEOUT'
+  | 'AXIOM_TIMEOUT'
+  | 'AXIOM_FAILED'
+  | 'AXIOM_CANCELLED'
+  | 'AXIOM_PROCESSING_FAILED'
+  | 'AXIOM_UNKNOWN_STATUS';
+
+export interface BpoExtractedData {
+  county: string | null;
+  propertyCondition: string | null;
+  asIsValue: number | null;
+  repairedValue: number | null;
+  extractedAt: string;
+  pipelineJobId: string;
+}
+
 // =========================
 // ORDER DEFINITIONS
 // =========================
@@ -271,7 +291,25 @@ export interface AppraisalOrder {
 
   // ── BPO-specific details (only populated when orderType === OrderType.BPO) ────
   bpoDetails?: BpoOrderDetails;
-
+  // ── BPO Axiom extraction (Statebridge automated change-feed flow) ─────────────
+  bpoExtractionStatus?: BpoExtractionStatus;
+  bpoExtractedData?: BpoExtractedData;
+  /** Full raw Axiom extraction output — preserved for audit and future field additions. */
+  bpoRawExtractedData?: Record<string, unknown>;
+  /** Axiom pipeline job ID for the BPO extraction run. */
+  axiomBpoPipelineJobId?: string;
+  /** Blob storage path of the uploaded BPO PDF — used for SFTP delivery. */
+  bpoBlobName?: string;
+  /** Cosmos document ID of the uploaded BPO PDF. */
+  bpoDocumentId?: string;
+  /** Filename of the result PDF delivered to the SFTP results/ folder. */
+  sftpResultPdfName?: string;
+  /** 'DELIVERED' = PDF copied to SFTP; 'FAILED' = copy failed; 'SKIPPED' = no blob present. */
+  sftpDeliveryStatus?: 'DELIVERED' | 'FAILED' | 'SKIPPED';
+  /** ISO timestamp of the last automated retry attempt (set by retryStalledBpoOrders). */
+  lastRetryAt?: string;
+  /** ISO timestamp of the last successful automated retry completion (set by retryStalledBpoOrders). */
+  retriedAt?: string;
   // ── Audit trail ──────────────────────────────────────────────────────────
   lastUpdatedByStaffId?: string;
   lastUpdatedByStaffName?: string;

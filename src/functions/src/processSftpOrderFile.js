@@ -371,14 +371,17 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
  */
 async function fileAlreadyProcessed(sourceFileName) {
   const { resources } = await engagementsContainer.items
-    .query({
-      query:
-        "SELECT c.id FROM c WHERE c.tenantId = @tenantId AND c.sourceFile = @sourceFile OFFSET 0 LIMIT 1",
-      parameters: [
-        { name: "@tenantId", value: statebridge_tenantId },
-        { name: "@sourceFile", value: sourceFileName },
-      ],
-    })
+    .query(
+      {
+        query:
+          "SELECT c.id FROM c WHERE c.tenantId = @tenantId AND c.sourceFile = @sourceFile OFFSET 0 LIMIT 1",
+        parameters: [
+          { name: "@tenantId", value: statebridge_tenantId },
+          { name: "@sourceFile", value: sourceFileName },
+        ],
+      },
+      { partitionKey: statebridge_tenantId }
+    )
     .fetchAll();
   return resources.length > 0;
 }
@@ -387,8 +390,12 @@ async function fileAlreadyProcessed(sourceFileName) {
 
 app.storageQueue("processSftpOrderFile", {
   // Queue on the MAIN storage account (where Event Grid delivers notifications).
+  // Managed identity auth: Functions resolves SFTP_ORDER_QUEUE_STORAGE__queueServiceUri
+  // from env and uses DefaultAzureCredential (AZURE_CLIENT_ID) to authenticate.
+  // Required RBAC on the storage account: Storage Queue Data Contributor (already granted
+  // to all container app identities in data-services.bicep :: primaryStorageQueueRoleAssignments).
   queueName: "sftp-order-events",
-  connection: "AZURE_STORAGE_CONNECTION_STRING",
+  connection: "SFTP_ORDER_QUEUE_STORAGE",
 
   handler: async (queueMessage, context) => {
     context.log("processSftpOrderFile: received queue message from SFTP Event Grid");
@@ -447,7 +454,17 @@ app.storageQueue("processSftpOrderFile", {
     for (let i = 0; i < rows.length; i++) {
       const fields = rows[i];
       if (fields.length < MIN_COLUMNS) {
-        context.log(`WARNING: Skipping malformed row ${i} (${fields.length} columns, need ${MIN_COLUMNS}): ${fields.join("|")}`);
+        context.log(`WARNING: Skipping malformed row ${i} (${fields.length} columns, need ${MIN_COLUMNS}): ${fields.join("|")}`)
+        continue;
+      }
+      // Reject non-BPO product types — this function exclusively handles BPO orders.
+      // Skip (not hard-fail) so a single unexpected row does not abort the whole file.
+      const productType = (fields[IN.ProductType] || "").trim().toUpperCase();
+      if (productType && productType !== "BPO") {
+        context.log(
+          `WARNING: Skipping row ${i} — unexpected ProductType "${fields[IN.ProductType]}" in ${blobName} ` +
+          `(this function handles BPO orders only)`
+        );
         continue;
       }
       // Per-field validation — warn but still process (Statebridge data may have quirks)

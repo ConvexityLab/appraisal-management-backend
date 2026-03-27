@@ -47,8 +47,14 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
   };
 }
 
-/** Appraisal-report categories eligible for auto-submission to Axiom AI */
-const AXIOM_AUTO_SUBMIT_CATEGORIES = new Set(['appraisal-report', 'appraisal_report']);
+/**
+ * Categories that trigger auto-submission to Axiom AI on upload.
+ *   appraisal-report : full order-evaluation pipeline (form 1004, 1073, etc.)
+ *   bpo-report       : document-extraction pipeline for non-Statebridge BPO orders
+ *                      (Statebridge BPOs are handled by the Cosmos Change Feed function;
+ *                       uploading a bpo-report on any other order goes here instead)
+ */
+const AXIOM_AUTO_SUBMIT_CATEGORIES = new Set(['appraisal-report', 'appraisal_report', 'bpo-report']);
 
 /**
  * Build the Axiom fields array from an AppraisalOrder for use in submitOrderEvaluation.
@@ -317,11 +323,17 @@ export class DocumentController {
               console.error(`[DocumentController] Cannot auto-submit to Axiom: order ${orderId} missing tenantId or clientId`);
               return null;
             }
-            const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
-            if (!docContainerName) {
-              console.error('[DocumentController] Cannot auto-submit to Axiom: STORAGE_CONTAINER_DOCUMENTS not configured');
+            // Statebridge BPO orders are processed exclusively by the Cosmos Change Feed function
+            // (handleStatebridgeBpoDocument). Auto-submitting here would cause a double Axiom
+            // pipeline submission — one for document-extraction (change feed) and one for the
+            // full evaluation pipeline (here). Skip this path for Statebridge BPOs.
+            if (category === 'bpo-report' && (order as any).source === 'statebridge-sftp') {
+              console.log(`[DocumentController] Skipping auto-submit for Statebridge BPO order ${orderId} — handled by Change Feed`);
               return null;
             }
+            // BLOB_CONTAINER is already validated at cold-start (throws if env var missing),
+            // so reaching this point guarantees a non-empty value.
+            const docContainerName = DocumentController.BLOB_CONTAINER;
             const sasUrl = await this.blobService.generateReadSasUrl(docContainerName, savedDoc.blobName);
             const fields = buildOrderFields(order);
             const documents = [
