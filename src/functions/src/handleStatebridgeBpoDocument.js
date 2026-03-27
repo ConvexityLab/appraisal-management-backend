@@ -272,8 +272,10 @@ async function processBpoExtractionResult(orderId, pipelineJobId, order, blobNam
       { maxRetries: 2, initialDelayMs: 1000, label: `Axiom results order ${orderId}` }
     );
     const raw = resp.data;
-    const inner = raw?.results ?? raw;
-    extractedData = inner?.extractedData ?? inner?.stages?.extract?.extractedData ?? {};
+    // execution.result = result.stages keyed by stage name (each is an array).
+    // Our pipeline stores BPO fields in: stages.extract_bpo_fields[0].extractedData
+    const stages = raw?.results;
+    extractedData = stages?.extract_bpo_fields?.[0]?.extractedData ?? {};
   } catch (err) {
     context.error(`[processBpoResult] Failed to fetch Axiom results for order ${orderId}: ${err.message}`);
     throw err;
@@ -414,18 +416,17 @@ async function processBpoDocument(doc, context) {
         {
           pipeline: BPO_EXTRACTION_PIPELINE,
           input: {
-            tenantId: statebridge_tenantId,
-            clientId: statebridgeClientId,
-            correlationId: doc.orderId,
+            // Infrastructure / routing fields
+            tenantId:       statebridge_tenantId,
+            clientId:       statebridgeClientId,
+            correlationId:  doc.orderId,
             correlationType: "BPO_EXTRACTION",
-            documentType: "bpo-report",
-            documents: [
-              {
-                documentName: doc.name ?? doc.fileName ?? "bpo-report.pdf",
-                documentReference: blobSasUrl,
-                mimeType: "application/pdf",
-              },
-            ],
+            // Fields consumed by pipeline stage inputs (see bpo-pipeline-config.js)
+            documentId:    doc.orderId,
+            fileSetId:     doc.orderId,
+            blobUrl:       blobSasUrl,
+            fileName:      doc.name ?? doc.fileName ?? "bpo-report.pdf",
+            documentType:  "BPO_REPORT",
           },
         },
         {

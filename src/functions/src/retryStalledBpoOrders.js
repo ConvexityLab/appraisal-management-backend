@@ -203,8 +203,10 @@ async function fetchAxiomResults(pipelineJobId) {
     { maxRetries: 2, initialDelayMs: 1000, label: `fetchResults ${pipelineJobId}` }
   );
   const raw   = resp.data;
-  const inner = raw?.results ?? raw;
-  return inner?.extractedData ?? inner?.stages?.extract?.extractedData ?? {};
+  // execution.result = result.stages keyed by stage name (each is an array).
+  // Our pipeline stores BPO fields in: stages.extract_bpo_fields[0].extractedData
+  const stages = raw?.results;
+  return stages?.extract_bpo_fields?.[0]?.extractedData ?? {};
 }
 
 async function processResults(orderId, pipelineJobId, order, blobName, extractedData, context) {
@@ -299,17 +301,17 @@ async function retryOrder(order, context) {
         {
           pipeline: BPO_EXTRACTION_PIPELINE,
           input: {
+            // Infrastructure / routing fields
             tenantId:       statebridge_tenantId,
             clientId:       statebridgeClientId,
             correlationId:  orderId,
             correlationType: "BPO_EXTRACTION_RETRY",
-            documentType:   "bpo-report",
-            documents: [{
-              // bpoDocumentId is a Cosmos UUID, not a filename — use a constant name.
-              documentName:      "bpo-report.pdf",
-              documentReference: blobSasUrl,
-              mimeType:          "application/pdf",
-            }],
+            // Fields consumed by pipeline stage inputs (see bpo-pipeline-config.js)
+            documentId:    orderId,
+            fileSetId:     orderId,
+            blobUrl:       blobSasUrl,
+            fileName:      "bpo-report.pdf",
+            documentType:  "BPO_REPORT",
           },
         },
         { headers: { "Content-Type": "application/json" }, timeout: 15000 }
