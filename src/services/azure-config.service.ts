@@ -203,6 +203,17 @@ export class AzureConfigService {
       }
     }
 
+    // AZURE_STORAGE_ACCOUNT_NAME is required in production: BlobStorageService reads this
+    // env var directly and throws on first use if it is missing. Catch it here at startup
+    // so the failure is immediate and actionable rather than surfacing mid-request.
+    if (process.env.NODE_ENV === 'production' && !process.env.AZURE_STORAGE_ACCOUNT_NAME) {
+      errors.push(
+        'AZURE_STORAGE_ACCOUNT_NAME must be set in production. '
+        + 'It is required for blob document storage (upload, download, SAS URL generation). '
+        + 'Set it to the Azure Storage account name (not a connection string).'
+      );
+    }
+
     return errors;
   }
 }

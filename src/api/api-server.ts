@@ -441,6 +441,17 @@ export class AppraisalManagementAPIServer {
         '(e.g. https://app.example.com,https://admin.example.com).'
       );
     }
+
+    // Warn operators if the health diagnostic endpoints are publicly accessible in production.
+    // These endpoints expose service topology (which providers, which endpoints, error details)
+    // and should be protected by setting HEALTH_CHECK_API_KEY.
+    if (process.env.NODE_ENV === 'production' && !process.env.HEALTH_CHECK_API_KEY) {
+      this.logger.warn(
+        'HEALTH_CHECK_API_KEY is not set — /api/health/services endpoints are publicly accessible. ' +
+        'These endpoints expose infrastructure topology (Cosmos, Blob, Service Bus, AI providers). ' +
+        'Set HEALTH_CHECK_API_KEY and pass X-Health-Api-Key: <key> to restrict access.'
+      );
+    }
     const corsOrigin = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
       : process.env.NODE_ENV === 'production'
@@ -457,14 +468,46 @@ export class AppraisalManagementAPIServer {
     this.app.use(correlationIdMiddleware);
     this.app.use(requestLoggingMiddleware);
 
-    // Rate limiting - configurable for different environments
+    // ── Rate limiting ────────────────────────────────────────────────────────
+    // Rule 1 — Document uploads: tighter per-IP limit (30 req/window).
+    //   Uploading many documents quickly is not a legitimate browser use-case
+    //   and is the most expensive operation in the stack.
+    const documentsLimiter = rateLimit({
+      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+      max: parseInt(process.env.RATE_LIMIT_DOCUMENTS_MAX_REQUESTS || '30'),
+      message: { error: 'Too many document requests from this IP, please try again later.', code: 'RATE_LIMIT_EXCEEDED' },
+    });
+    this.app.use('/api/documents/', documentsLimiter);
+
+    // Rule 2 — Axiom analysis submissions: tighter per-IP limit (20 req/window).
+    //   Excludes /axiom/webhook and /axiom/callback — those are server-to-server
+    //   callbacks secured by HMAC and must never be rate-limited by IP.
+    const axiomLimiter = rateLimit({
+      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+      max: parseInt(process.env.RATE_LIMIT_AXIOM_MAX_REQUESTS || '20'),
+      message: { error: 'Too many Axiom analysis requests from this IP, please try again later.', code: 'RATE_LIMIT_EXCEEDED' },
+      skip: (req) => {
+        const url = req.originalUrl;
+        return url.includes('/axiom/webhook') || url.includes('/axiom/callback');
+      },
+    });
+    this.app.use('/api/axiom/', axiomLimiter);
+
+    // Rule 3 — Global catch-all: 100 req/15-min window.
+    //   Webhook and callback routes are exempted — they are server-to-server
+    //   calls from Axiom secured by HMAC-SHA256 and should never be blocked
+    //   based on the originating IP.
     const limiter = rateLimit({
       windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // Default: 15 minutes
       max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // Default: 100 requests per window
       message: {
         error: 'Too many requests from this IP, please try again later.',
         code: 'RATE_LIMIT_EXCEEDED'
-      }
+      },
+      skip: (req) => {
+        const url = req.originalUrl;
+        return url.includes('/axiom/webhook') || url.includes('/axiom/callback');
+      },
     });
     this.app.use('/api/', limiter);
 

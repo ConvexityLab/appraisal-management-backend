@@ -10,6 +10,10 @@ import { AzureCommunicationService } from './azure-communication.service.js';
 import { AcsIdentityService } from './acs-identity.service.js';
 import { TeamsService } from './teams.service.js';
 import { UniversalAIService } from './universal-ai.service.js';
+import { CosmosClient } from '@azure/cosmos';
+import { BlobServiceClient } from '@azure/storage-blob';
+import { ServiceBusAdministrationClient } from '@azure/service-bus';
+import { DefaultAzureCredential } from '@azure/identity';
 
 interface ServiceHealthStatus {
   name: string;
@@ -26,6 +30,11 @@ interface SystemHealthReport {
   timestamp: Date;
   overallStatus: 'healthy' | 'degraded' | 'critical';
   services: {
+    infrastructure: {
+      cosmosDb: ServiceHealthStatus;
+      blobStorage: ServiceHealthStatus;
+      serviceBus: ServiceHealthStatus;
+    };
     communication: {
       acs: ServiceHealthStatus;
       acsIdentity: ServiceHealthStatus;
@@ -66,11 +75,15 @@ export class ServiceHealthCheckService {
   async performHealthCheck(): Promise<SystemHealthReport> {
     this.logger.info('Starting comprehensive service health check...');
 
-    const communicationHealth = await this.checkCommunicationServices();
-    const aiHealth = await this.checkAIServices();
+    const [infrastructureHealth, communicationHealth, aiHealth] = await Promise.all([
+      this.checkInfrastructureServices(),
+      this.checkCommunicationServices(),
+      this.checkAIServices(),
+    ]);
 
-    // Calculate overall status
+    // Calculate overall status across all service groups
     const allStatuses = [
+      ...Object.values(infrastructureHealth),
       ...Object.values(communicationHealth),
       ...Object.values(aiHealth)
     ];
@@ -83,7 +96,32 @@ export class ServiceHealthCheckService {
     const warnings: string[] = [];
     const recommendations: string[] = [];
 
-    // Analyze critical issues
+    // Infrastructure is critical — degraded means the app cannot serve requests reliably
+    if (infrastructureHealth.cosmosDb.status === 'degraded') {
+      criticalIssues.push(`Cosmos DB connectivity probe failed: ${infrastructureHealth.cosmosDb.error ?? 'unknown error'}`);
+      recommendations.push('Check COSMOS_ENDPOINT and managed identity role assignments on the Cosmos DB account');
+    } else if (infrastructureHealth.cosmosDb.status === 'unavailable') {
+      criticalIssues.push('Cosmos DB endpoint not configured — all database operations will fail');
+      recommendations.push('Set COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT environment variable');
+    }
+
+    if (infrastructureHealth.blobStorage.status === 'degraded') {
+      criticalIssues.push(`Blob Storage connectivity probe failed: ${infrastructureHealth.blobStorage.error ?? 'unknown error'}`);
+      recommendations.push('Check AZURE_STORAGE_ACCOUNT_NAME and managed identity Storage Blob Data Contributor role assignment');
+    } else if (infrastructureHealth.blobStorage.status === 'unavailable') {
+      warnings.push('Blob Storage not configured — document upload/download will fail');
+      recommendations.push('Set AZURE_STORAGE_ACCOUNT_NAME environment variable');
+    }
+
+    if (infrastructureHealth.serviceBus.status === 'degraded') {
+      warnings.push(`Service Bus connectivity probe failed: ${infrastructureHealth.serviceBus.error ?? 'unknown error'}`);
+      recommendations.push('Check AZURE_SERVICE_BUS_NAMESPACE and managed identity Azure Service Bus Data Owner role assignment');
+    } else if (infrastructureHealth.serviceBus.status === 'unavailable') {
+      warnings.push('Service Bus not configured — event publishing/subscribing disabled (mock mode active)');
+      recommendations.push('Set AZURE_SERVICE_BUS_NAMESPACE to enable event-driven features');
+    }
+
+    // Analyze communication issues
     if (communicationHealth.acs.status === 'unavailable') {
       criticalIssues.push('Azure Communication Services not configured - email, SMS, and chat unavailable');
       recommendations.push('Set AZURE_COMMUNICATION_ENDPOINT environment variable');
@@ -124,6 +162,7 @@ export class ServiceHealthCheckService {
       timestamp: new Date(),
       overallStatus,
       services: {
+        infrastructure: infrastructureHealth,
         communication: communicationHealth,
         ai: aiHealth
       },
@@ -146,6 +185,175 @@ export class ServiceHealthCheckService {
     });
 
     return report;
+  }
+
+  /**
+   * Probe core Azure infrastructure services (Cosmos DB, Blob Storage, Service Bus).
+   * Each probe is a lightweight metadata call — no data reads or writes.
+   */
+  private async checkInfrastructureServices(): Promise<{
+    cosmosDb: ServiceHealthStatus;
+    blobStorage: ServiceHealthStatus;
+    serviceBus: ServiceHealthStatus;
+  }> {
+    const [cosmosDb, blobStorage, serviceBus] = await Promise.all([
+      this.probeCosmosDb(),
+      this.probeBlobStorage(),
+      this.probeServiceBus(),
+    ]);
+    return { cosmosDb, blobStorage, serviceBus };
+  }
+
+  private async probeCosmosDb(): Promise<ServiceHealthStatus> {
+    const endpoint = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT;
+    const required = ['COSMOS_ENDPOINT (or AZURE_COSMOS_ENDPOINT)'];
+
+    if (!endpoint) {
+      return {
+        name: 'Azure Cosmos DB',
+        status: 'unavailable',
+        configured: false,
+        details: 'Cosmos DB endpoint env var not set',
+        requiredEnvVars: required,
+        missingEnvVars: ['COSMOS_ENDPOINT'],
+      };
+    }
+
+    try {
+      const isEmulator = endpoint.includes('localhost') || endpoint.includes('127.0.0.1');
+      let client: CosmosClient;
+
+      if (isEmulator) {
+        // Emulator key is public knowledge — safe to use here
+        client = new CosmosClient({
+          endpoint,
+          key: 'C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==',
+          connectionPolicy: { enableEndpointDiscovery: false, requestTimeout: 5000 },
+        } as any);
+      } else {
+        client = new CosmosClient({
+          endpoint,
+          aadCredentials: new DefaultAzureCredential(),
+          connectionPolicy: { requestTimeout: 5000 },
+        } as any);
+      }
+
+      await client.getDatabaseAccount();
+
+      return {
+        name: 'Azure Cosmos DB',
+        status: 'healthy',
+        configured: true,
+        details: `Reachable: ${endpoint}`,
+        requiredEnvVars: required,
+        missingEnvVars: [],
+        capabilities: ['read', 'write', 'query'],
+      };
+    } catch (error) {
+      return {
+        name: 'Azure Cosmos DB',
+        status: 'degraded',
+        configured: true,
+        details: 'Endpoint set but connectivity probe failed',
+        requiredEnvVars: required,
+        missingEnvVars: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async probeBlobStorage(): Promise<ServiceHealthStatus> {
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const required = ['AZURE_STORAGE_ACCOUNT_NAME'];
+
+    if (!accountName) {
+      return {
+        name: 'Azure Blob Storage',
+        status: 'unavailable',
+        configured: false,
+        details: 'AZURE_STORAGE_ACCOUNT_NAME not set',
+        requiredEnvVars: required,
+        missingEnvVars: ['AZURE_STORAGE_ACCOUNT_NAME'],
+      };
+    }
+
+    try {
+      const client = new BlobServiceClient(
+        `https://${accountName}.blob.core.windows.net`,
+        new DefaultAzureCredential(),
+      );
+      await client.getProperties();
+
+      return {
+        name: 'Azure Blob Storage',
+        status: 'healthy',
+        configured: true,
+        details: `Reachable: ${accountName}.blob.core.windows.net`,
+        requiredEnvVars: required,
+        missingEnvVars: [],
+        capabilities: ['upload', 'download', 'sas-url'],
+      };
+    } catch (error) {
+      return {
+        name: 'Azure Blob Storage',
+        status: 'degraded',
+        configured: true,
+        details: 'Account name set but getProperties probe failed',
+        requiredEnvVars: required,
+        missingEnvVars: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async probeServiceBus(): Promise<ServiceHealthStatus> {
+    // AZURE_SERVICE_BUS_NAMESPACE is the fully-qualified host, e.g.
+    // my-namespace.servicebus.windows.net (set by Bicep/infrastructure)
+    const namespace = process.env.AZURE_SERVICE_BUS_NAMESPACE;
+    const required = ['AZURE_SERVICE_BUS_NAMESPACE'];
+
+    // local-emulator sentinel means the app is running in mock mode — treat as unconfigured
+    if (!namespace || namespace === 'local-emulator') {
+      return {
+        name: 'Azure Service Bus',
+        status: 'unavailable',
+        configured: false,
+        details: namespace === 'local-emulator'
+          ? 'Running in mock/local mode — real Service Bus not connected'
+          : 'AZURE_SERVICE_BUS_NAMESPACE not set',
+        requiredEnvVars: required,
+        missingEnvVars: ['AZURE_SERVICE_BUS_NAMESPACE'],
+      };
+    }
+
+    try {
+      const adminClient = new ServiceBusAdministrationClient(
+        namespace,
+        new DefaultAzureCredential(),
+      );
+      // Lightweight connectivity check: fetch first page of queues metadata
+      await adminClient.listQueues().next();
+
+      return {
+        name: 'Azure Service Bus',
+        status: 'healthy',
+        configured: true,
+        details: `Reachable: ${namespace}`,
+        requiredEnvVars: required,
+        missingEnvVars: [],
+        capabilities: ['publish', 'subscribe', 'dead-letter'],
+      };
+    } catch (error) {
+      return {
+        name: 'Azure Service Bus',
+        status: 'degraded',
+        configured: true,
+        details: 'Namespace set but connectivity probe failed',
+        requiredEnvVars: required,
+        missingEnvVars: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   /**
