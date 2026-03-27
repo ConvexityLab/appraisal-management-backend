@@ -30,7 +30,7 @@ let testOrderId: string;
 let testVendorId: string;
 let testClientId: string;
 
-describe.skipIf(!AZURE_COSMOS_ENDPOINT, 'Set AZURE_COSMOS_ENDPOINT to run these tests')('Comprehensive Production API Integration Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATION=true to run live-infra tests')('Comprehensive Production API Integration Tests', () => {
   beforeAll(async () => {
     serverInstance = new AppraisalManagementAPIServer(0);
     app = serverInstance.getExpressApp();

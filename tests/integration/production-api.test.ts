@@ -21,7 +21,7 @@ import {
 
 const TEST_TIMEOUT = 30000;
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Production API Integration Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Production API Integration Tests', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let testOrderId: string;

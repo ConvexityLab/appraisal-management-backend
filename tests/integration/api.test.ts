@@ -6,7 +6,7 @@ import request from 'supertest'
 import { AppraisalManagementAPIServer } from '../../src/api/api-server'
 import type { Application } from 'express'
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Production API Server Integration Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Production API Server Integration Tests', () => {
   let app: Application
   let server: AppraisalManagementAPIServer
   let authToken: string

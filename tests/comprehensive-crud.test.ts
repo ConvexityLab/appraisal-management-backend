@@ -23,7 +23,7 @@ import {
  * Tests all fundamental entity management functionality
  */
 // INTEGRATION TEST — VendorController requires CosmosDbService.
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not configured')('Comprehensive CRUD API Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not configured')('Comprehensive CRUD API Tests', () => {
   let app: express.Application;
   let orderController: OrderController;
   let vendorController: VendorController;

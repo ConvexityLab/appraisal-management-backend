@@ -8,6 +8,12 @@
       "@types/express-serve-static-core": "^4.19.8"
     }
   },
+  "overrides": {
+    "fast-xml-parser": "^5.5.7",
+    "flatted": "^3.4.2",
+    "js-yaml": "^4.1.1",
+    "qs": "^6.15.0"
+  },
   "scripts": {
     "build": "npx tsc",
     "build:production": "npx tsc",
@@ -109,8 +115,8 @@
     "eventsource": "^4.1.0",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
-    "express-validator": "^7.0.1",
-    "handlebars": "^4.7.8",
+    "express-validator": "^7.2.2",
+    "handlebars": "^4.7.9",
     "helmet": "^7.1.0",
     "intuit-oauth": "^4.2.2",
     "ioredis": "^5.3.2",
@@ -134,7 +140,6 @@
     "stripe": "^20.3.1",
     "swagger-ui-express": "^5.0.0",
     "uuid": "^9.0.1",
-    "vm2": "^3.9.19",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1",
     "xmlbuilder2": "^4.0.3",
@@ -159,7 +164,7 @@
     "@types/supertest": "^2.0.16",
     "@types/swagger-ui-express": "^4.1.6",
     "@types/uuid": "^9.0.8",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^3.2.4",
     "@vitest/ui": "^3.2.4",
     "cross-env": "^10.1.0",
     "prettier": "^3.1.0",

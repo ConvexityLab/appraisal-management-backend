@@ -23,7 +23,7 @@ const UNIQUE_COORDINATES = [
   { lat: 34.0522, lng: -118.2437, name: 'Los Angeles' }
 ];
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Real API Validation Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Real API Validation Tests', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let authToken: string;

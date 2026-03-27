@@ -18,7 +18,7 @@ import {
   VendorStatus 
 } from '../../src/types/index';
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Production API Manual Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Production API Manual Tests', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let adminToken: string;

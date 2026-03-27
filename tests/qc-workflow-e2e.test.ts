@@ -622,7 +622,7 @@ if (process.env.INTEGRATION_TESTS === 'true') {
 // ──────────────────────────────────────────────────────────────────────────────
 const AZURE_COSMOS_ENDPOINT = process.env.AZURE_COSMOS_ENDPOINT;
 
-describe.skipIf(!AZURE_COSMOS_ENDPOINT, 'Set AZURE_COSMOS_ENDPOINT to run these tests')('QC Workflow E2E Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATION=true to run live-infra tests')('QC Workflow E2E Tests', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let authToken: string;

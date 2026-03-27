@@ -18,7 +18,7 @@ const TEST_COORDINATES = {
   longitude: -122.0842499
 };
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Minimal Server Integration Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process API server tests')('Minimal Server Integration Tests', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let authToken: string = '';

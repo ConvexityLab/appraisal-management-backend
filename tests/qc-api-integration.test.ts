@@ -9,7 +9,7 @@ import { TestTokenGenerator } from '../src/utils/test-token-generator.js';
 import jwt from 'jsonwebtoken';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process QC API tests')('QC API Endpoints Integration Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process QC API tests')('QC API Endpoints Integration Tests', () => {
   let app: any;
   let server: AppraisalManagementAPIServer;
   let authToken: string;

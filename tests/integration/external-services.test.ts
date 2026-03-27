@@ -20,7 +20,7 @@ const FLOOD_ZONE_COORDINATES = {
   longitude: -95.3698
 };
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set ï¿½ skipping in-process API server tests')('External Services Integration Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set ï¿½ skipping in-process API server tests')('External Services Integration Tests', () => {
   let serverInstance;
   let app: Application;
   let adminToken: string;

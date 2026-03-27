@@ -8,7 +8,7 @@ import { AppraisalManagementAPIServer } from '../src/api/api-server';
 import type { Application } from 'express';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
-describe.skipIf(!process.env.AZURE_COSMOS_ENDPOINT, 'AZURE_COSMOS_ENDPOINT not set — skipping in-process comprehensive API tests')('Appraisal Management API - Comprehensive Tests', () => {
+describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not set — skipping in-process comprehensive API tests')('Appraisal Management API - Comprehensive Tests', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let authToken: string;
