@@ -294,6 +294,18 @@ export class AxiomController {
 
       const fields = AxiomController.buildOrderFields(order);
 
+      // Guard: document must have a blobName (uploaded blob path) to generate a SAS URL
+      if (!doc.blobName) {
+        res.status(422).json({
+          success: false,
+          error: {
+            code: 'MISSING_BLOB',
+            message: `Document ${documentId} has no blobName — cannot generate SAS URL for Axiom`,
+          },
+        });
+        return;
+      }
+
       // Generate a SAS URL so Axiom (external) can download the blob
       const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
       if (!docContainerName) {

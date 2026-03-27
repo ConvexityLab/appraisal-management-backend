@@ -180,6 +180,11 @@ var containerApps = [
         value: azureTenantId
       }
       {
+        // Blob container holding uploaded appraisal documents — used by DocumentService, AxiomController, auto-trigger
+        name: 'STORAGE_CONTAINER_DOCUMENTS'
+        value: 'appraisal-documents'
+      }
+      {
         name: 'AZURE_SERVICE_BUS_NAMESPACE'
         value: serviceBusNamespace
       }
