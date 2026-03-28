@@ -202,12 +202,6 @@ var containerApps = [
         name: 'AZURE_SERVICE_BUS_NAMESPACE'
         value: serviceBusNamespace
       }
-      // AXIOM_API_BASE_URL: resolved at startup from App Config key 'services.axiom-api.base-url'
-      // when AZURE_APP_CONFIGURATION_ENDPOINT is set; axiomApiBaseUrl param is a fallback only.
-      {
-        name: 'AXIOM_API_BASE_URL'
-        value: axiomApiBaseUrl
-      }
       {
         name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
         value: axiomPipelineIdSchemaExtract
@@ -360,11 +354,6 @@ var containerApps = [
         // Cosmos partition key (tenantId) for all Statebridge engagement + order documents
         name: 'STATEBRIDGE_TENANT_ID'
         value: statebridge_tenantId
-      }
-      {
-        // Axiom AI platform — extraction API endpoint
-        name: 'AXIOM_API_BASE_URL'
-        value: axiomApiBaseUrl
       }
       {
         // Registered UUID for the pdf-schema-extraction pipeline (leave empty to use inline definition)
