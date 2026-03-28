@@ -63,6 +63,10 @@ param azureClientSecret string = ''
 @description('Azure Fluid Relay primary tenant key — fetched at runtime from listKeys(), stored here so Container Apps can retrieve it via Managed Identity')
 param fluidRelayTenantKey string = ''
 
+@secure()
+@description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration.')
+param axiomWebhookSecret string = ''
+
 // Reference existing resources to get their secrets
 // cosmosAccount and serviceBusNamespace removed - using managed identity instead of keys
 
@@ -332,6 +336,21 @@ resource fluidRelayKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if
   }
 }
 
+// Axiom webhook HMAC signing secret — used by AxiomService to verify the signature on
+// every inbound POST from Axiom. Referenced as a Container App secret (secretRef) so
+// the value is never stored in plain-text environment variables.
+resource axiomWebhookSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(axiomWebhookSecret)) {
+  parent: keyVault
+  name: 'axiom-webhook-secret'
+  properties: {
+    value: axiomWebhookSecret
+    contentType: 'hmac-secret'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
 // Outputs
 output secretNames array = concat(
   [
@@ -353,5 +372,7 @@ output secretNames array = concat(
   !empty(azureCommunicationEndpoint) ? [azureCommunicationEndpointSecret.name] : [],
   !empty(azureTenantId) ? [azureTenantIdSecret.name] : [],
   !empty(azureClientId) ? [azureClientIdSecret.name] : [],
-  !empty(azureClientSecret) ? [azureClientSecretSecret.name] : []
+  !empty(azureClientSecret) ? [azureClientSecretSecret.name] : [],
+  !empty(fluidRelayTenantKey) ? [fluidRelayKeySecret.name] : [],
+  !empty(axiomWebhookSecret) ? [axiomWebhookSecretResource.name] : []
 )

@@ -31,9 +31,16 @@ param statebridgeClientName string = 'Statebridge'
 param statebridge_tenantId string = ''
 
 // Axiom AI platform integration
+// URL is populated at runtime from Azure App Configuration (key: services.axiom-api.base-url).
+// This param is a deploy-time fallback for environments not yet using App Config.
 param axiomApiBaseUrl string = ''
 @description('Registered UUID for the Axiom pdf-schema-extraction pipeline. Leave empty to use the inline two-stage pipeline definition.')
 param axiomPipelineIdSchemaExtract string = ''
+@secure()
+@description('Shared secret used to verify HMAC-SHA256 signatures on inbound Axiom webhooks. Must match the secret configured in Axiom outbound webhook settings. Store in Key Vault as "axiom-webhook-secret".')
+param axiomWebhookSecret string = ''
+@description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
+param appConfigEndpoint string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -61,12 +68,17 @@ var baseContainerSecrets = [
     value: applicationInsightsInstrumentationKey
   }
 ]
-var containerAppSecrets = useBootstrapImage ? [] : concat(baseContainerSecrets, empty(batchDataApiKey) ? [] : [
-  {
+var containerAppSecrets = useBootstrapImage ? [] : concat(
+  baseContainerSecrets,
+  empty(batchDataApiKey) ? [] : [{
     name: 'batchdata-key'
     value: batchDataApiKey
-  }
-])
+  }],
+  empty(axiomWebhookSecret) ? [] : [{
+    name: 'axiom-webhook-secret'
+    value: axiomWebhookSecret
+  }]
+)
 
 // Container Registry for application images
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -190,6 +202,8 @@ var containerApps = [
         name: 'AZURE_SERVICE_BUS_NAMESPACE'
         value: serviceBusNamespace
       }
+      // AXIOM_API_BASE_URL: resolved at startup from App Config key 'services.axiom-api.base-url'
+      // when AZURE_APP_CONFIGURATION_ENDPOINT is set; axiomApiBaseUrl param is a fallback only.
       {
         name: 'AXIOM_API_BASE_URL'
         value: axiomApiBaseUrl
@@ -197,6 +211,20 @@ var containerApps = [
       {
         name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
         value: axiomPipelineIdSchemaExtract
+      }
+      {
+        // HMAC secret for verifying inbound Axiom webhook signatures (AXIOM_WEBHOOK_SECRET).
+        // Value lives in Key Vault; passed here as a Container App secret so it is never
+        // stored in plain text in the Container App environment variables.
+        name: 'AXIOM_WEBHOOK_SECRET'
+        secretRef: 'axiom-webhook-secret'
+      }
+      {
+        // Azure App Configuration endpoint — enables Managed Identity–based service discovery.
+        // When set, loadAppConfig() at startup resolves AXIOM_API_BASE_URL and other service
+        // URLs from App Config (key: services.axiom-api.base-url, label: environment).
+        name: 'AZURE_APP_CONFIGURATION_ENDPOINT'
+        value: appConfigEndpoint
       }
       {
         name: 'AZURE_WEB_PUBSUB_ENDPOINT'
@@ -349,12 +377,16 @@ var containerApps = [
         name: 'CosmosDbConnection__accountEndpoint'
         value: cosmosEndpoint
       }
-    ], empty(batchDataApiKey) ? [] : [
-      {
+    ], empty(batchDataApiKey) && empty(axiomWebhookSecret) ? [] : concat(
+      empty(batchDataApiKey) ? [] : [{
         name: 'BATCHDATA_KEY'
         secretRef: 'batchdata-key'
-      }
-    ])
+      }],
+      empty(axiomWebhookSecret) ? [] : [{
+        name: 'AXIOM_WEBHOOK_SECRET'
+        secretRef: 'axiom-webhook-secret'
+      }]
+    ))
     scaleRule: {
       name: 'functions-http-scaling'
       http: {

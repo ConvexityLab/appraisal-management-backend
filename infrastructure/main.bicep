@@ -104,11 +104,18 @@ param statebridgeClientName string = 'Statebridge'
 @description('Tenant ID for all Statebridge Cosmos documents (partition key). Set to your Statebridge tenant GUID.')
 param statebridge_tenantId string
 
-@description('Base URL of the Axiom AI extraction API (e.g. https://axiom.internal.example.com)')
+@description('Base URL of the Axiom AI extraction API (e.g. https://axiom.internal.example.com). Used as a fallback — in deployed environments this is resolved from Azure App Configuration.')
 param axiomApiBaseUrl string = ''
 
 @description('Registered UUID for the Axiom pdf-schema-extraction pipeline. Leave empty to use the inline two-stage pipeline definition.')
 param axiomPipelineIdSchemaExtract string = ''
+
+@secure()
+@description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
+param axiomWebhookSecret string = ''
+
+@description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When provided, AXIOM_API_BASE_URL and other service-discovery URLs are resolved from App Config at startup via Managed Identity, overriding the axiomApiBaseUrl param.')
+param appConfigEndpoint string = ''
 
 
 
@@ -379,6 +386,8 @@ module appServices 'modules/app-services.bicep' = {
     statebridge_tenantId: statebridge_tenantId
     axiomApiBaseUrl: axiomApiBaseUrl
     axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
+    axiomWebhookSecret: axiomWebhookSecret
+    appConfigEndpoint: appConfigEndpoint
   }
 }
 
@@ -478,6 +487,7 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     azureClientId: azureClientId
     azureClientSecret: azureClientSecret
     fluidRelayTenantKey: fluidRelay.outputs.fluidRelayPrimaryKey
+    axiomWebhookSecret: axiomWebhookSecret
   }
 }
 

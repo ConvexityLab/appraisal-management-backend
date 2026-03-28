@@ -894,6 +894,64 @@ var containers = [
       ]
     }
   }
+  // Axiom AI evaluation results — one document per evaluation run, keyed by tenant.
+  // Primary access patterns: list by orderId within tenant, look up by evaluationId.
+  // Partition key /tenantId matches platform convention and ensures tenant isolation.
+  {
+    name: 'aiInsights'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/insights/rawResponse/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/orderId', order: 'ascending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  // Axiom pipeline execution records — tracks individual document processing runs.
+  // Used by AxiomExecutionService to record submission, progress, and terminal states.
+  // Partition key /tenantId matches platform convention for all execution records.
+  {
+    name: 'axiom-executions'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/orderId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
 ]
 
 // Cosmos DB Account with enterprise settings
