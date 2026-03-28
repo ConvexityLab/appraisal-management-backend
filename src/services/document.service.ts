@@ -3,8 +3,10 @@ import { createHash } from 'crypto';
 import { Container } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service';
 import { BlobStorageService } from './blob-storage.service';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { DocumentMetadata, DocumentListQuery, DocumentUpdateRequest } from '../types/document.types';
 import { ApiResponse } from '../types/index';
+import { EventCategory } from '../types/events.js';
 
 export class DocumentService {
   /** Cosmos container for document metadata */
@@ -12,6 +14,7 @@ export class DocumentService {
   /** Azure Blob Storage container for document files */
   private readonly blobContainerName: string;
   private container: Container;
+  private readonly publisher: ServiceBusEventPublisher;
 
   constructor(
     private readonly cosmosService: CosmosDbService,
@@ -23,6 +26,7 @@ export class DocumentService {
     }
     this.blobContainerName = blobContainer;
     this.container = this.cosmosService.getContainer(this.containerName);
+    this.publisher = new ServiceBusEventPublisher();
   }
 
   /**
@@ -90,6 +94,27 @@ export class DocumentService {
 
       // Save to Cosmos DB
       await this.container.items.create(document);
+
+      // Notify interested services (e.g. AxiomDocumentProcessingService) that a new document is available.
+      await this.publisher.publish({
+        id: uuidv4(),
+        type: 'document.uploaded' as const,
+        timestamp: new Date(),
+        source: 'document-service',
+        version: '1.0',
+        correlationId: document.id,
+        category: EventCategory.DOCUMENT,
+        data: {
+          documentId: document.id,
+          ...(document.orderId && { orderId: document.orderId }),
+          tenantId: document.tenantId,
+          ...(document.category && { category: document.category }),
+          ...(document.documentType && { documentType: document.documentType }),
+          blobName: document.blobName,
+          mimeType: document.mimeType,
+          uploadedBy: document.uploadedBy,
+        },
+      });
 
       return {
         success: true,

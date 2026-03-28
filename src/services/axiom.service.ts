@@ -1330,6 +1330,116 @@ export class AxiomService {
   }
 
   /**
+   * Submit a single PDF document for schema-based extraction.
+   *
+   * Uses the `pdf-schema-extraction` pipeline (PdfTextExtractor → SchemaBasedExtraction).
+   * Axiom resolves the correct schema from Cosmos automatically using the
+   * combination of clientId + tenantId + documentType.
+   *
+   * Set AXIOM_PIPELINE_ID_SCHEMA_EXTRACT=<uuid> when Axiom has a registered
+   * template; otherwise an inline two-stage definition is sent.
+   */
+  async submitDocumentForSchemaExtraction(params: {
+    documentId: string;
+    orderId?: string;
+    blobSasUrl: string;
+    fileName: string;
+    documentType: string;
+    tenantId: string;
+    clientId: string;
+  }): Promise<{ pipelineJobId: string } | null> {
+    if (!this.enabled) {
+      const mockJobId = `mock-schema-extract-${Date.now()}`;
+      this.logger.info('Axiom mock mode — skipping submitDocumentForSchemaExtraction', {
+        documentId: params.documentId,
+        mockJobId,
+      });
+      return { pipelineJobId: mockJobId };
+    }
+
+    const apiBaseUrl = process.env['API_BASE_URL'];
+    if (!apiBaseUrl) {
+      throw new Error('API_BASE_URL is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+    const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
+    if (!webhookSecret) {
+      throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
+    }
+
+    /** Registered template UUID overrides inline definition when set. */
+    const schemaExtractPipelineId = process.env['AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'];
+    const pipelineParam: { pipelineId: string } | { pipeline: LoomPipelineDefinition } = schemaExtractPipelineId
+      ? { pipelineId: schemaExtractPipelineId }
+      : {
+          pipeline: {
+            name: 'pdf-schema-extraction',
+            version: '1.0.0',
+            stages: [
+              {
+                name: 'extract-text',
+                actor: 'PdfTextExtractor',
+                mode: 'single' as const,
+                input: {
+                  blobUrl: { path: 'trigger.blobUrl' },
+                  tenantId: { path: 'trigger.tenantId' },
+                  clientId: { path: 'trigger.clientId' },
+                },
+                timeout: 120_000,
+              },
+              {
+                name: 'extract-schema',
+                actor: 'SchemaBasedExtraction',
+                mode: 'single' as const,
+                input: {
+                  text:         { path: 'stages.extract-text.text' },
+                  documentType: { path: 'trigger.documentType' },
+                  tenantId:     { path: 'trigger.tenantId' },
+                  clientId:     { path: 'trigger.clientId' },
+                },
+                timeout: 60_000,
+              },
+            ],
+          },
+        };
+
+    try {
+      const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
+        ...pipelineParam,
+        input: {
+          blobUrl: params.blobSasUrl,
+          fileName: params.fileName,
+          documentId: params.documentId,
+          ...(params.orderId && { fileSetId: params.orderId }),
+          documentType: params.documentType,
+          tenantId: params.tenantId,
+          clientId: params.clientId,
+          correlationId: params.documentId,
+          correlationType: 'DOCUMENT',
+          webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
+          webhookSecret,
+        },
+      });
+
+      this.logger.info('Document submitted to Axiom schema extraction pipeline', {
+        documentId: params.documentId,
+        pipelineJobId: response.data.jobId,
+        documentType: params.documentType,
+      });
+
+      return { pipelineJobId: response.data.jobId };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      const errorMessage =
+        (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
+      this.logger.error('Failed to submit document to Axiom schema extraction pipeline', {
+        documentId: params.documentId,
+        error: errorMessage,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Fetch final results from a completed Axiom pipeline job.
    *
    * Called internally after SSE signals completion (or by the webhook handler

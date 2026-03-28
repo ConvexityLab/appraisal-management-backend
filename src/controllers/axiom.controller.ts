@@ -549,6 +549,45 @@ export class AxiomController {
       return;
     }
 
+    if (rawCorrelationId && correlationType === 'DOCUMENT') {
+      // correlationId is the documentId set by AxiomDocumentProcessingService.
+      const documentId = rawCorrelationId;
+      const pipelineJobId = body['pipelineJobId'] as string | undefined;
+      const status = (body['status'] as string) ?? 'completed';
+      const result = body['result'] as Record<string, unknown> | undefined;
+
+      const extractionStatus = status === 'completed' ? 'COMPLETED' : 'AXIOM_FAILED';
+
+      this.logger.info('Axiom webhook: DOCUMENT extraction update', {
+        documentId,
+        pipelineJobId,
+        extractionStatus,
+      });
+
+      this.dbService.updateItem<import('../types/document.types.js').DocumentMetadata>(
+        'documents',
+        documentId,
+        {
+          extractionStatus,
+          ...(result ? { extractedData: result as Record<string, unknown> } : {}),
+        },
+      ).then((r) => {
+        if (!r.success) {
+          this.logger.error('Axiom webhook: failed to stamp document extraction result', {
+            documentId,
+            error: r.error,
+          });
+        }
+      }).catch((err: unknown) => {
+        this.logger.error('Axiom webhook: updateItem for document threw', {
+          documentId,
+          error: (err as Error).message,
+        });
+      });
+
+      return;
+    }
+
     if (rawCorrelationId && correlationType === 'ORDER') {
       const correlationId = rawCorrelationId;
       const pipelineJobId = body['pipelineJobId'] as string | undefined;

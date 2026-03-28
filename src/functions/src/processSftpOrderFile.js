@@ -264,7 +264,7 @@ function buildLoanAndProduct(fields, sourceFile, rowIndex) {
     products: [
       {
         id: productId,
-        productType: (fields[IN.ProductType] || "BPO").trim(),
+        productType: (fields[IN.ProductType] || "").trim(),
         status: "PENDING",
         vendorOrderIds: [],
       },
@@ -342,7 +342,7 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
     // Order metadata
     borrowerName: (fields[IN.BorrowerName] || "").trim(),
     lockboxCode: (fields[IN.LockboxCode] || "").trim(),
-    productType: (fields[IN.ProductType] || "BPO").trim(),
+    productType: (fields[IN.ProductType] || "").trim(),
     propertyType: (fields[IN.PropertyType] || "").trim(),
     occupancy: (fields[IN.Occupancy] || "").trim(),
     // Lifecycle
@@ -353,8 +353,8 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
     source: "statebridge-sftp",
     sourceFile: sourceFileName,
     // PDF naming helper — surfaced so outbound leg doesn't re-parse
-    // Output PDF name: <loanNumber>_BPO_<collateralNumber>_<yyyymmdd#hhmmss>.pdf
-    expectedPdfPrefix: `${loanNumber}_BPO_${collateralNumber}`,
+    // Output PDF name: <loanNumber>_<productType>_<collateralNumber>_<yyyymmdd#hhmmss>.pdf
+    expectedPdfPrefix: `${loanNumber}_${(fields[IN.ProductType] || "").trim()}_${collateralNumber}`,
   };
 }
 
@@ -455,16 +455,6 @@ app.storageQueue("processSftpOrderFile", {
       const fields = rows[i];
       if (fields.length < MIN_COLUMNS) {
         context.log(`WARNING: Skipping malformed row ${i} (${fields.length} columns, need ${MIN_COLUMNS}): ${fields.join("|")}`)
-        continue;
-      }
-      // Reject non-BPO product types — this function exclusively handles BPO orders.
-      // Skip (not hard-fail) so a single unexpected row does not abort the whole file.
-      const productType = (fields[IN.ProductType] || "").trim().toUpperCase();
-      if (productType && productType !== "BPO") {
-        context.log(
-          `WARNING: Skipping row ${i} — unexpected ProductType "${fields[IN.ProductType]}" in ${blobName} ` +
-          `(this function handles BPO orders only)`
-        );
         continue;
       }
       // Per-field validation — warn but still process (Statebridge data may have quirks)

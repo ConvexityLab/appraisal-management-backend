@@ -20,6 +20,13 @@ export interface DocumentMetadata {
   isLatestVersion: boolean;
   contentHash?: string;  // SHA-256 hex digest of file content — for dedup & integrity checks
   evaluationId?: string;  // Axiom AI evaluation ID — set when auto-submitted for analysis
+  // ── Axiom extraction tracking ─────────────────────────────────────────────
+  /** Lifecycle: undefined → 'AXIOM_PENDING' → 'COMPLETED' | 'AXIOM_FAILED' | 'AXIOM_SSE_TIMEOUT' */
+  extractionStatus?: 'AXIOM_PENDING' | 'COMPLETED' | 'AXIOM_FAILED' | 'AXIOM_SSE_TIMEOUT';
+  /** Axiom pipeline job ID set when the document is submitted for extraction. */
+  axiomPipelineJobId?: string;
+  /** Structured data extracted by Axiom — shape varies by documentType / registered schema. */
+  extractedData?: Record<string, unknown>;
   uploadedBy: string;
   uploadedAt: Date;
   updatedAt?: Date;

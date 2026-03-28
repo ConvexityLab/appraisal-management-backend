@@ -183,6 +183,7 @@ import { AutoDeliveryService } from '../services/auto-delivery.service';
 import { EngagementLifecycleService } from '../services/engagement-lifecycle.service';
 import { CommunicationEventHandler } from '../services/communication-event-handler.service';
 import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service';
+import { AxiomDocumentProcessingService } from '../services/axiom-document-processing.service';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
@@ -297,6 +298,7 @@ export class AppraisalManagementAPIServer {
   private engagementLifecycleService?: EngagementLifecycleService;
   private communicationEventHandler?: CommunicationEventHandler;
   private axiomAutoTriggerService?: AxiomAutoTriggerService;
+  private axiomDocumentProcessingService?: AxiomDocumentProcessingService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
@@ -3610,6 +3612,20 @@ export class AppraisalManagementAPIServer {
           error: err instanceof Error ? err.message : String(err)
         });
       }
+    }
+
+    // Start Axiom Document Processing Service (subscribes to document.uploaded, auto-extracts PDFs)
+    try {
+      this.axiomDocumentProcessingService = new AxiomDocumentProcessingService(this.dbService);
+      this.axiomDocumentProcessingService.start().catch(err => {
+        this.logger.warn('AxiomDocumentProcessingService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AxiomDocumentProcessingService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
 
     // Start Engagement Letter Auto-Send Service (sends letters on bid acceptance/staff assignment)

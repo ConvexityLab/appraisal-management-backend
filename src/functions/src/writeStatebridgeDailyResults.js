@@ -50,6 +50,7 @@ const credential = new DefaultAzureCredential();
 const cosmosClient = new CosmosClient({ endpoint: cosmosEndpoint, aadCredentials: credential });
 const db = cosmosClient.database(databaseName);
 const ordersContainer = db.container("orders");
+const documentsContainer = db.container("documents");
 
 const sftpBlobClient = new BlobServiceClient(
   `https://${sftpStorageAccountName}.blob.core.windows.net`,
@@ -149,8 +150,7 @@ app.timer("writeStatebridgeDailyResults", {
             c.state,
             c.zip,
             c.dateOrdered,
-            c.dateCompleted,
-            c.bpoExtractedData
+            c.dateCompleted
           FROM c
           WHERE c.tenantId       = @tenantId
             AND c.source         = 'statebridge-sftp'
@@ -175,6 +175,45 @@ app.timer("writeStatebridgeDailyResults", {
       return;
     }
 
+    // ── Load extracted data from documents for each order ─────────────────────
+    // The extracted fields (county, propertyCondition, asIsValue, repairedValue)
+    // are stored on the document record rather than on the order.
+    // We batch the order IDs into groups of 50 to stay within Cosmos query limits.
+    const orderIds = orders.map((o) => o.id);
+    const extractedDataByOrderId = {};
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
+      const batch = orderIds.slice(i, i + BATCH_SIZE);
+      const paramList = batch.map((id, idx) => ({ name: `@oid${idx}`, value: id }));
+      const inClause = paramList.map((p) => p.name).join(", ");
+
+      const { resources: docs } = await documentsContainer.items.query(
+        {
+          query: `
+            SELECT c.orderId, c.extractedData
+            FROM c
+            WHERE c.orderId IN (${inClause})
+              AND c.extractionStatus = 'COMPLETED'
+              AND IS_DEFINED(c.extractedData)
+          `,
+          parameters: paramList,
+        }
+      ).fetchAll();
+
+      for (const doc of docs) {
+        if (doc.orderId && doc.extractedData) {
+          // Last writer wins if multiple docs exist — they should all agree.
+          extractedDataByOrderId[doc.orderId] = doc.extractedData;
+        }
+      }
+    }
+
+    context.log(
+      `[writeStatebridgeDailyResults] Loaded extracted data for ` +
+      `${Object.keys(extractedDataByOrderId).length} of ${orders.length} orders`
+    );
+
     // ── Build tab-delimited output (14 columns per Statebridge spec) ────────────
     const HEADER = [
       "OrderID", "LoanID", "CollateralNumber",
@@ -185,7 +224,7 @@ app.timer("writeStatebridgeDailyResults", {
     const lines = [HEADER];
 
     for (const order of orders) {
-      const bpo = order.bpoExtractedData ?? {};
+      const bpo = extractedDataByOrderId[order.id] ?? {};
 
       // Orders from processSftpOrderFile store address as flat fields (streetAddress,
       // addressLine2, city, state, zip). Also support the object form (propertyAddress)

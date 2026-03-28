@@ -36,6 +36,7 @@ export enum EventCategory {
   DELIVERY = 'delivery',
   CONSENT = 'consent',
   NEGOTIATION = 'negotiation',
+  DOCUMENT = 'document',
 }
 
 // Order-related events
@@ -1026,7 +1027,9 @@ export type AppEvent =
   // Negotiation events
   | NegotiationCounterOfferSubmittedEvent
   | NegotiationAcceptedEvent
-  | NegotiationRejectedEvent;
+  | NegotiationRejectedEvent
+  // Document events
+  | DocumentUploadedEvent;
 
 // Event handler interface
 export interface EventHandler<T extends BaseEvent = BaseEvent> {
@@ -1075,4 +1078,22 @@ export interface NotificationMessage {
   data?: Record<string, any>;
   retryCount?: number;
   scheduledFor?: Date;
+}
+
+// ── Document events ────────────────────────────────────────────────────────────
+
+/** Fired by DocumentService.uploadDocument() after the blob and Cosmos record are created. */
+export interface DocumentUploadedEvent extends BaseEvent {
+  type: 'document.uploaded';
+  category: EventCategory.DOCUMENT;
+  data: {
+    documentId: string;
+    orderId?: string;
+    tenantId: string;
+    category?: string;
+    documentType?: string;
+    blobName: string;
+    mimeType: string;
+    uploadedBy: string;
+  };
 }
