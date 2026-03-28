@@ -48,13 +48,8 @@ jobs:
         ENVIRONMENT_INPUT: ${{ github.event.inputs.environment }}
         DEPLOY_INFRA_INPUT: ${{ github.event.inputs.deploy_infrastructure }}
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          echo "environment=dev" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
-        elif [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
-          echo "environment=staging" >> $GITHUB_OUTPUT
-          echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
-        elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Manual dispatch always wins — use the explicit input values
           DISPATCH_ENV="${ENVIRONMENT_INPUT}"
           DISPATCH_DEPLOY="${DEPLOY_INFRA_INPUT}"
 
@@ -68,6 +63,12 @@ jobs:
 
           echo "environment=$DISPATCH_ENV" >> $GITHUB_OUTPUT
           echo "deploy-infrastructure=$DISPATCH_DEPLOY" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          echo "environment=dev" >> $GITHUB_OUTPUT
+          echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
         else
           echo "environment=dev" >> $GITHUB_OUTPUT
           echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
