@@ -24,4 +24,17 @@ resource storageRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }]
 
+// Assign Reader role so runtime diagnostics can read storage account service metadata
+// used by health probes (without granting write/admin management-plane permissions).
+resource storageReaderRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(storageAccount.id, principalId, 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7') // Reader
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to read storage account metadata for health probes'
+  }
+}]
+
 output roleAssignmentsCount int = length(containerAppPrincipalIds)
