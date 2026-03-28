@@ -145,6 +145,12 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   tags: tags
 }
 
+// Reference to the shared Certo platform resource group (different subscription/RG from appraisal).
+// Used for cross-RG RBAC grants (App Config Data Reader).
+resource certoGlobalRg 'Microsoft.Resources/resourceGroups@2023-07-01' existing = {
+  name: 'certo-global-${environment}-rg'
+}
+
 // Application Insights and Log Analytics (deployed first - required by other modules)
 module monitoring 'modules/monitoring.bicep' = {
   name: 'monitoring-deployment'
@@ -495,12 +501,11 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
 // Scoped to certo-global-{environment}-rg where the shared App Config store lives.
 module appConfigReaderRole 'modules/appconfig-reader-role.bicep' = if (!empty(appConfigEndpoint)) {
   name: 'appconfig-reader-role-deployment'
-  scope: resourceGroup('certo-global-${environment}-rg')
+  scope: certoGlobalRg
   params: {
     appConfigName: 'appconfig-certo-${environment}'
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
-  dependsOn: [appServices]
 }
 
 // Key Vault Role Assignments for Container Apps + CI/CD service principal
