@@ -283,7 +283,9 @@ export class ServiceHealthCheckService {
         `https://${accountName}.blob.core.windows.net`,
         new DefaultAzureCredential(),
       );
-      await client.getProperties();
+      // Use a data-plane operation that aligns with Storage Blob Data Contributor.
+      // getProperties() can require additional permissions depending on account policy.
+      await client.listContainers().next();
 
       return {
         name: 'Azure Blob Storage',
@@ -299,7 +301,7 @@ export class ServiceHealthCheckService {
         name: 'Azure Blob Storage',
         status: 'degraded',
         configured: true,
-        details: 'Account name set but getProperties probe failed',
+        details: 'Account name set but listContainers probe failed',
         requiredEnvVars: required,
         missingEnvVars: [],
         error: error instanceof Error ? error.message : String(error),
