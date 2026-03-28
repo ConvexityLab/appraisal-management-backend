@@ -105,8 +105,13 @@ jobs:
       id: override
       run: |
         if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          DISPATCH_DEPLOY="${{ github.event.inputs.deploy_infrastructure }}"
+          if [[ -z "$DISPATCH_DEPLOY" ]]; then
+            DISPATCH_DEPLOY="true"
+          fi
+
           echo "code=true" >> $GITHUB_OUTPUT
-          echo "infrastructure=true" >> $GITHUB_OUTPUT
+          echo "infrastructure=$DISPATCH_DEPLOY" >> $GITHUB_OUTPUT
         else
           echo "code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
           echo "infrastructure=${{ steps.filter.outputs.infrastructure }}" >> $GITHUB_OUTPUT
@@ -279,8 +284,8 @@ jobs:
     name: Deploy Infrastructure
     needs: [determine-environment, detect-changes]
     if: |
-      needs.detect-changes.outputs.infrastructure == 'true' ||
-      needs.determine-environment.outputs.deploy-infrastructure == 'true'
+      (github.event_name == 'workflow_dispatch' && needs.determine-environment.outputs.deploy-infrastructure == 'true') ||
+      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.infrastructure == 'true')
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: ${{ needs.determine-environment.outputs.environment }}
