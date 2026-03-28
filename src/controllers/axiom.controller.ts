@@ -23,6 +23,7 @@ import type { AppraisalOrder } from '../types/index.js';
 import { BlobStorageService } from '../services/blob-storage.service';
 import type { AxiomEvaluationCompletedEvent, AxiomExecutionCompletedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
+import { normalizeAxiomPropertyRequestBody } from './axiom-request-normalizer.js';
 
 export class AxiomController {
   private axiomService: AxiomService;
@@ -942,9 +943,9 @@ export class AxiomController {
         res.status(400).json({ success: false, error: { code: 'MISSING_TENANT', message: 'tenantId is required (ensure auth middleware is applied)' } });
         return;
       }
-      const { propertyInfo, orderId } = req.body as { propertyInfo: Record<string, unknown>; orderId: string };
+      const { propertyInfo, orderId } = normalizeAxiomPropertyRequestBody(req.body);
       if (!propertyInfo || !orderId) {
-        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'propertyInfo and orderId are required' } });
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'propertyInfo and orderId are required (canonical: { orderId, propertyInfo })' } });
         return;
       }
       if (!clientId) {
@@ -997,9 +998,9 @@ export class AxiomController {
         res.status(400).json({ success: false, error: { code: 'MISSING_CLIENT', message: 'clientId is required' } });
         return;
       }
-      const { propertyInfo, orderId } = req.body as { propertyInfo: Record<string, unknown>; orderId: string };
+      const { propertyInfo, orderId } = normalizeAxiomPropertyRequestBody(req.body);
       if (!propertyInfo || !orderId) {
-        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'propertyInfo and orderId are required' } });
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'propertyInfo and orderId are required (canonical: { orderId, propertyInfo })' } });
         return;
       }
       const result = await this.axiomService.calculateComplexityScore(propertyInfo, orderId, tenantId, clientId);
