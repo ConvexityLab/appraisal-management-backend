@@ -62,7 +62,7 @@ resource orderEventsQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-pre
     defaultMessageTimeToLive: 'P14D'
     deadLetteringOnMessageExpiration: true
     duplicateDetectionHistoryTimeWindow: 'PT10M'
-    requiresDuplicateDetection: true
+    requiresDuplicateDetection: config.sku != 'Basic'
     enablePartitioning: config.sku != 'Premium'
   }
 }
@@ -78,7 +78,7 @@ resource propertyIntelligenceQueue 'Microsoft.ServiceBus/namespaces/queues@2023-
     defaultMessageTimeToLive: 'P7D'
     deadLetteringOnMessageExpiration: true
     duplicateDetectionHistoryTimeWindow: 'PT10M'
-    requiresDuplicateDetection: true
+    requiresDuplicateDetection: config.sku != 'Basic'
     enablePartitioning: config.sku != 'Premium'
   }
 }
@@ -94,7 +94,7 @@ resource vendorAssignmentQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-0
     defaultMessageTimeToLive: 'P14D'
     deadLetteringOnMessageExpiration: true
     duplicateDetectionHistoryTimeWindow: 'PT10M'
-    requiresDuplicateDetection: true
+    requiresDuplicateDetection: config.sku != 'Basic'
     enablePartitioning: config.sku != 'Premium'
   }
 }

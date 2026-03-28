@@ -311,13 +311,15 @@ resource communicationTranscriptsContainer 'Microsoft.DocumentDB/databaseAccount
   }
 }
 
-// AI insights container - sentiment, action items, compliance
-resource aiInsightsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+// Communication AI context container - sentiment, action items, compliance scoring for communication threads
+// NOTE: The 'aiInsights' container (PK: /tenantId) is owned by cosmos-production.bicep for Axiom AI results.
+//       This separate container holds communication-specific AI context keyed on contextId.
+resource communicationAiContextContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   parent: database
-  name: 'aiInsights'
+  name: 'communicationAiContext'
   properties: {
     resource: {
-      id: 'aiInsights'
+      id: 'communicationAiContext'
       partitionKey: {
         paths: ['/contextId']
         kind: 'Hash'
@@ -355,6 +357,6 @@ output acsUserMappingsContainerId string = acsUserMappingsContainer.id
 output teamsMeetingsContainerId string = teamsMeetingsContainer.id
 output communicationContextsContainerId string = communicationContextsContainer.id
 output communicationTranscriptsContainerId string = communicationTranscriptsContainer.id
-output aiInsightsContainerId string = aiInsightsContainer.id
+output aiInsightsContainerId string = communicationAiContextContainer.id
 
 
