@@ -16,10 +16,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
@@ -42,10 +42,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
@@ -79,7 +79,7 @@ jobs:
         flags: unittests
         
     - name: Archive production artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: production-build
         path: |
@@ -94,10 +94,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Azure login
-      uses: azure/login@v1
+      uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
       continue-on-error: true
@@ -124,7 +124,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
@@ -155,10 +155,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'

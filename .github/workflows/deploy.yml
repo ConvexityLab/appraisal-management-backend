@@ -84,8 +84,8 @@ jobs:
       infrastructure: ${{ steps.override.outputs.infrastructure }}
       code: ${{ steps.override.outputs.code }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: dorny/paths-filter@v3
+    - uses: actions/checkout@v5
+    - uses: dorny/paths-filter@v4
       id: filter
       with:
         filters: |
@@ -124,15 +124,15 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup pnpm
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v5
       with:
         version: 9
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'pnpm'
@@ -150,7 +150,7 @@ jobs:
       run: pnpm run build
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: dist
         path: dist/
@@ -163,15 +163,15 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Setup pnpm
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v5
       with:
         version: 9
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'pnpm'
@@ -205,10 +205,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Azure login
-      uses: azure/login@v1
+      uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -308,7 +308,7 @@ jobs:
     
     steps:
     - name: Azure login
-      uses: azure/login@v1
+      uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
