@@ -10,6 +10,7 @@ dotenv.config(); // Loads from .env in current working directory (project root)
 
 // Now safe to import modules that need env vars
 import { AppraisalManagementAPIServer } from './api/api-server.js';
+import { loadAppConfig } from './config/appConfigLoader.js';
 
 // Environment validation
 // In production ALL of these are required; in dev/test we warn only so local
@@ -55,28 +56,8 @@ const config = {
   nodeEnv: process.env.NODE_ENV || 'production'
 };
 
-console.log('🚀 Starting Production Appraisal Management API...');
-console.log(`📦 Environment: ${config.nodeEnv}`);
-console.log(`🔧 Port: ${config.port}`);
-
-if (process.env.WEBSITE_SITE_NAME) {
-  console.log(`☁️  Azure App Service: ${process.env.WEBSITE_SITE_NAME}`);
-}
-
-// Start server
-const server = new AppraisalManagementAPIServer(config.port);
-
-// Graceful shutdown
-const gracefulShutdown = (signal: string) => {
-  console.log(`\n🛑 ${signal} received, shutting down gracefully...`);
-  server.stopBackgroundJobs();
-  process.exit(0);
-};
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Error handling
+// Error handling — register before the async startup so crashes before server creation
+// are also caught.
 process.on('uncaughtException', (error) => {
   console.error('💥 Uncaught Exception:', error);
   process.exit(1);
@@ -96,8 +77,35 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-// Start the server
-server.start().catch((error: Error) => {
+// Async startup — wrapped in IIFE because CommonJS modules do not support top-level await.
+void (async () => {
+  console.log('🚀 Starting Production Appraisal Management API...');
+  console.log(`📦 Environment: ${config.nodeEnv}`);
+  console.log(`🔧 Port: ${config.port}`);
+
+  if (process.env.WEBSITE_SITE_NAME) {
+    console.log(`☁️  Azure App Service: ${process.env.WEBSITE_SITE_NAME}`);
+  }
+
+  // Load service-discovery URLs from Azure App Configuration BEFORE constructing
+  // the server so that services (e.g. AxiomService) pick up AXIOM_API_BASE_URL.
+  await loadAppConfig();
+
+  // Construct and start the server
+  const server = new AppraisalManagementAPIServer(config.port);
+
+  // Graceful shutdown
+  const gracefulShutdown = (signal: string) => {
+    console.log(`\n🛑 ${signal} received, shutting down gracefully...`);
+    server.stopBackgroundJobs();
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+  await server.start();
+})().catch((error: Error) => {
   console.error('❌ Failed to start server:', error);
   process.exit(1);
 });

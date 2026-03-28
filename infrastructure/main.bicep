@@ -491,6 +491,18 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   }
 }
 
+// App Configuration Data Reader role for Container Apps
+// Scoped to certo-global-{environment}-rg where the shared App Config store lives.
+module appConfigReaderRole 'modules/appconfig-reader-role.bicep' = if (!empty(appConfigEndpoint)) {
+  name: 'appconfig-reader-role-deployment'
+  scope: resourceGroup('certo-global-${environment}-rg')
+  params: {
+    appConfigName: 'appconfig-certo-${environment}'
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+  dependsOn: [appServices]
+}
+
 // Key Vault Role Assignments for Container Apps + CI/CD service principal
 module keyVaultRoleAssignments 'modules/keyvault-role-assignments.bicep' = {
   name: 'keyvault-role-assignments-deployment'
