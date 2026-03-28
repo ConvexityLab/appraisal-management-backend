@@ -216,10 +216,25 @@ describe('processSftpOrderFile — pure functions', () => {
       expect(doc.loanId).toBe('0000012345');
     });
 
-    it('should set expected PDF prefix for result naming', () => {
+    it('should set expected PDF prefix using the row ProductType dynamically', () => {
       const fields = SAMPLE_ROW_FULL.split('|');
+      // SAMPLE_ROW_FULL has ProductType = 'Appraisal', so prefix uses that value
+      const doc = buildOrderDocument(fields, 'eng-123', 'loan-1', 'prod-1', 'test.txt', 0);
+      expect(doc.expectedPdfPrefix).toBe('6420340020_Appraisal_0');
+    });
+
+    it('should set expected PDF prefix using BPO when ProductType is BPO', () => {
+      const fields = SAMPLE_ROW_FULL.split('|');
+      fields[IN.ProductType] = 'BPO';
       const doc = buildOrderDocument(fields, 'eng-123', 'loan-1', 'prod-1', 'test.txt', 0);
       expect(doc.expectedPdfPrefix).toBe('6420340020_BPO_0');
+    });
+
+    it('should set expectedPdfPrefix to loanId__collateral when ProductType is empty', () => {
+      const fields = SAMPLE_ROW_FULL.split('|');
+      fields[IN.ProductType] = '';
+      const doc = buildOrderDocument(fields, 'eng-123', 'loan-1', 'prod-1', 'test.txt', 0);
+      expect(doc.expectedPdfPrefix).toBe('6420340020__0');
     });
 
     it('should set type=order for Cosmos query compatibility', () => {
