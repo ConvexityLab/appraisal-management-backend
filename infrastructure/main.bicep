@@ -107,6 +107,9 @@ param statebridge_tenantId string
 @description('Base URL of the Axiom AI extraction API (e.g. https://axiom.internal.example.com)')
 param axiomApiBaseUrl string = ''
 
+@description('Registered UUID for the Axiom pdf-schema-extraction pipeline. Leave empty to use the inline two-stage pipeline definition.')
+param axiomPipelineIdSchemaExtract string = ''
+
 
 
 @description('Object ID of the CI/CD service principal (GitHub Actions SP). Granted Key Vault Secrets Officer so it can write the SFTP password to Key Vault after provisioning local users.')
@@ -375,6 +378,7 @@ module appServices 'modules/app-services.bicep' = {
     statebridgeClientName: statebridgeClientName
     statebridge_tenantId: statebridge_tenantId
     axiomApiBaseUrl: axiomApiBaseUrl
+    axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
   }
 }
 

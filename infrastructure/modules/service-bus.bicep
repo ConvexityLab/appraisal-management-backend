@@ -346,6 +346,18 @@ resource communicationEventHandlerSubscription 'Microsoft.ServiceBus/namespaces/
   }
 }
 
+// Axiom Document Processing Service Subscription (consumed by AxiomDocumentProcessingService — triggers generic PDF extraction via Axiom on document.uploaded events)
+resource axiomDocumentProcessingServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'axiom-document-processing-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id

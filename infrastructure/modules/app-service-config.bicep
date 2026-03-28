@@ -19,6 +19,12 @@ param storageAccountName string
 @description('Service Bus namespace (e.g., myservicebus.servicebus.windows.net)')
 param serviceBusNamespace string
 
+@description('Axiom base URL (e.g., https://axiom.example.com)')
+param axiomBaseUrl string
+
+@description('Axiom registered pipeline UUID for pdf-schema-extraction. When empty the service falls back to the inline two-stage pipeline definition.')
+param axiomPipelineIdSchemaExtract string = ''
+
 // Reference existing App Service
 resource appService 'Microsoft.Web/sites@2023-12-01' existing = {
   name: appServiceName
@@ -98,6 +104,11 @@ resource appServiceConfig 'Microsoft.Web/sites/config@2023-12-01' = {
     SERVICEBUS_QUEUE_NOTIFICATIONS: 'notifications'
     SERVICEBUS_TOPIC_QC_EVENTS: 'qc-events'
     SERVICEBUS_TOPIC_AUDIT_EVENTS: 'audit-events'
+    SERVICEBUS_TOPIC_APPRAISAL_EVENTS: 'appraisal-events'
+
+    // Axiom Configuration
+    AXIOM_BASE_URL: axiomBaseUrl
+    AXIOM_PIPELINE_ID_SCHEMA_EXTRACT: axiomPipelineIdSchemaExtract
     
     // Storage Configuration
     STORAGE_CONTAINER_DOCUMENTS: 'appraisal-documents'

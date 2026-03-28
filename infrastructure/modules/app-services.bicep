@@ -30,8 +30,10 @@ param statebridgeClientId string = 'statebridge'
 param statebridgeClientName string = 'Statebridge'
 param statebridge_tenantId string = ''
 
-// Axiom AI platform integration (functions container)
+// Axiom AI platform integration
 param axiomApiBaseUrl string = ''
+@description('Registered UUID for the Axiom pdf-schema-extraction pipeline. Leave empty to use the inline two-stage pipeline definition.')
+param axiomPipelineIdSchemaExtract string = ''
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -189,6 +191,14 @@ var containerApps = [
         value: serviceBusNamespace
       }
       {
+        name: 'AXIOM_API_BASE_URL'
+        value: axiomApiBaseUrl
+      }
+      {
+        name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
+        value: axiomPipelineIdSchemaExtract
+      }
+      {
         name: 'AZURE_WEB_PUBSUB_ENDPOINT'
         value: webPubSubEndpoint
       }
@@ -324,9 +334,14 @@ var containerApps = [
         value: statebridge_tenantId
       }
       {
-        // Axiom AI platform — extraction API endpoint used by BPO extraction functions
+        // Axiom AI platform — extraction API endpoint
         name: 'AXIOM_API_BASE_URL'
         value: axiomApiBaseUrl
+      }
+      {
+        // Registered UUID for the pdf-schema-extraction pipeline (leave empty to use inline definition)
+        name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
+        value: axiomPipelineIdSchemaExtract
       }
       {
         // Cosmos Change Feed binding — identity-based connection requires
