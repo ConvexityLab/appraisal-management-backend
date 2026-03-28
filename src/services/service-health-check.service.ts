@@ -44,6 +44,7 @@ interface SystemHealthReport {
       chat: ServiceHealthStatus;
     };
     ai: {
+      axiom: ServiceHealthStatus;
       azureOpenAI: ServiceHealthStatus;
       googleGemini: ServiceHealthStatus;
       sambaNova: ServiceHealthStatus;
@@ -378,6 +379,7 @@ export class ServiceHealthCheckService {
    * Check AI services
    */
   private async checkAIServices() {
+    const axiomStatus = this.checkAxiomConfiguration();
     const azureOpenAIStatus = this.checkAzureOpenAI();
     const geminiStatus = this.checkGoogleGemini();
     const sambaNovaStatus = this.checkSambaNova();
@@ -415,11 +417,53 @@ export class ServiceHealthCheckService {
     }
 
     return {
+      axiom: axiomStatus,
       azureOpenAI: azureOpenAIStatus,
       googleGemini: geminiStatus,
       sambaNova: sambaNovaStatus,
       certo: certoStatus,
       universalAI: universalAIStatus
+    };
+  }
+
+  /**
+   * Check Axiom runtime configuration loaded via App Config.
+   */
+  private checkAxiomConfiguration(): ServiceHealthStatus {
+    const appConfigEndpoint = process.env.AZURE_APP_CONFIGURATION_ENDPOINT;
+    const appConfigLabel = process.env.APP_CONFIG_LABEL || 'dev';
+    const axiomBaseUrl = process.env.AXIOM_API_BASE_URL;
+
+    if (!appConfigEndpoint) {
+      return {
+        name: 'Axiom Configuration',
+        status: 'unavailable',
+        configured: false,
+        details: 'AZURE_APP_CONFIGURATION_ENDPOINT is not set',
+        requiredEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT', 'APP_CONFIG_LABEL', 'AXIOM_API_BASE_URL'],
+        missingEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT'],
+      };
+    }
+
+    if (!axiomBaseUrl) {
+      return {
+        name: 'Axiom Configuration',
+        status: 'degraded',
+        configured: false,
+        details: `App Config enabled (label=${appConfigLabel}) but AXIOM_API_BASE_URL is not loaded`,
+        requiredEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT', 'APP_CONFIG_LABEL', 'AXIOM_API_BASE_URL'],
+        missingEnvVars: ['AXIOM_API_BASE_URL'],
+      };
+    }
+
+    return {
+      name: 'Axiom Configuration',
+      status: 'healthy',
+      configured: true,
+      details: `AXIOM_API_BASE_URL is set (label=${appConfigLabel})`,
+      requiredEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT', 'APP_CONFIG_LABEL', 'AXIOM_API_BASE_URL'],
+      missingEnvVars: [],
+      capabilities: ['evaluation-submit', 'evaluation-status', 'document-processing'],
     };
   }
 

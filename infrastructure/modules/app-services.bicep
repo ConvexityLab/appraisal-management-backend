@@ -221,6 +221,12 @@ var containerApps = [
         value: appConfigEndpoint
       }
       {
+        // Explicitly bind startup label to deployment environment (dev/staging/prod)
+        // so App Config lookups are deterministic.
+        name: 'APP_CONFIG_LABEL'
+        value: environment
+      }
+      {
         name: 'AZURE_WEB_PUBSUB_ENDPOINT'
         value: webPubSubEndpoint
       }
