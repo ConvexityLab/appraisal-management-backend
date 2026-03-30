@@ -502,7 +502,6 @@ module appConfig 'modules/app-config.bicep' = {
     namingPrefix: namingPrefix
     environment: environment
     tags: tags
-    axiomApiBaseUrl: axiomApiBaseUrl
   }
 }
 

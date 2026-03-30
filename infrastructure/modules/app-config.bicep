@@ -15,9 +15,6 @@ param environment string
 @description('Tags to apply to resources')
 param tags object
 
-@description('Axiom API base URL to seed into App Config under key "services.axiom-api.base-url". Leave empty to skip seeding this key.')
-param axiomApiBaseUrl string = ''
-
 // SKU: Free tier has 1 req/s and 10 MB limit — fine for dev.
 // Standard is required for prod/staging (geo-replication, higher limits, soft-delete).
 var sku = environment == 'prod' || environment == 'staging' ? 'Standard' : 'Free'
@@ -41,20 +38,6 @@ resource appConfig 'Microsoft.AppConfiguration/configurationStores@2023-03-01' =
     enablePurgeProtection: sku == 'Standard'
     softDeleteRetentionInDays: sku == 'Standard' ? 7 : null
     publicNetworkAccess: 'Enabled'
-  }
-}
-
-// Seed service-discovery key-values. The child resource name format is
-// "{key}${label}" where "$" is a literal separator (not string interpolation).
-// ARM management-plane writes are NOT affected by disableLocalAuth (data plane only).
-resource axiomBaseUrlKv 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' = if (!empty(axiomApiBaseUrl)) {
-  parent: appConfig
-  // "$$" in Bicep string: first "$" is treated as literal (next char is "$" not "{"),
-  // second "${environment}" is normal interpolation → produces "key$label" e.g. "services.axiom-api.base-url$staging"
-  name: 'services.axiom-api.base-url$${environment}'
-  properties: {
-    value: axiomApiBaseUrl
-    // contentType left empty — plain string (not JSON, not Key Vault ref)
   }
 }
 

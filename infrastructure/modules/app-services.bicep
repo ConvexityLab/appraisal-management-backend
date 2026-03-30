@@ -207,6 +207,13 @@ var containerApps = [
         value: axiomPipelineIdSchemaExtract
       }
       {
+        // Deploy-time Axiom API base URL. When set, loadAppConfig() at startup sees the env
+        // var is already populated and skips the App Config lookup for this key.
+        // Empty string falls through to the App Config lookup path.
+        name: 'AXIOM_API_BASE_URL'
+        value: axiomApiBaseUrl
+      }
+      {
         // HMAC secret for verifying inbound Axiom webhook signatures (AXIOM_WEBHOOK_SECRET).
         // Value lives in Key Vault; passed here as a Container App secret so it is never
         // stored in plain text in the Container App environment variables.
