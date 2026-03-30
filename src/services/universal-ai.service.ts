@@ -253,7 +253,7 @@ export class UniversalAIService {
     // Certo (Custom vLLM) Configuration
     const certoConfig: ProviderConfig = {
       name: 'Certo AI',
-      enabled: !!(process.env.CERTO_ENDPOINT && process.env.CERTO_API_KEY),
+      enabled: !!process.env.CERTO_ENDPOINT,
       endpoint: process.env.CERTO_ENDPOINT || 'http://localhost:8000/v1',
       apiKey: process.env.CERTO_API_KEY || '',
       models: {

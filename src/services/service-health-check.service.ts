@@ -435,6 +435,17 @@ export class ServiceHealthCheckService {
     const appConfigEndpoint = process.env.AZURE_APP_CONFIGURATION_ENDPOINT;
     const appConfigLabel = process.env.APP_CONFIG_LABEL || 'dev';
     const axiomBaseUrl = process.env.AXIOM_API_BASE_URL;
+    const apiBaseUrl = process.env.API_BASE_URL;
+    const webhookSecret = process.env.AXIOM_WEBHOOK_SECRET;
+    const storageContainerDocuments = process.env.STORAGE_CONTAINER_DOCUMENTS;
+    const requiredEnvVars = [
+      'AZURE_APP_CONFIGURATION_ENDPOINT',
+      'APP_CONFIG_LABEL',
+      'AXIOM_API_BASE_URL',
+      'API_BASE_URL',
+      'AXIOM_WEBHOOK_SECRET',
+      'STORAGE_CONTAINER_DOCUMENTS',
+    ];
 
     if (!appConfigEndpoint) {
       return {
@@ -442,7 +453,7 @@ export class ServiceHealthCheckService {
         status: 'unavailable',
         configured: false,
         details: 'AZURE_APP_CONFIGURATION_ENDPOINT is not set',
-        requiredEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT', 'APP_CONFIG_LABEL', 'AXIOM_API_BASE_URL'],
+        requiredEnvVars,
         missingEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT'],
       };
     }
@@ -453,8 +464,26 @@ export class ServiceHealthCheckService {
         status: 'degraded',
         configured: false,
         details: `App Config enabled (label=${appConfigLabel}) but AXIOM_API_BASE_URL is not loaded`,
-        requiredEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT', 'APP_CONFIG_LABEL', 'AXIOM_API_BASE_URL'],
+        requiredEnvVars,
         missingEnvVars: ['AXIOM_API_BASE_URL'],
+      };
+    }
+
+    const missingRuntimeVars: string[] = [];
+    if (!apiBaseUrl) missingRuntimeVars.push('API_BASE_URL');
+    if (!webhookSecret) missingRuntimeVars.push('AXIOM_WEBHOOK_SECRET');
+    if (!storageContainerDocuments) missingRuntimeVars.push('STORAGE_CONTAINER_DOCUMENTS');
+
+    if (missingRuntimeVars.length > 0) {
+      return {
+        name: 'Axiom Configuration',
+        status: 'degraded',
+        configured: false,
+        details:
+          `AXIOM_API_BASE_URL is set (label=${appConfigLabel}) but runtime env is incomplete for ` +
+          `submission/webhook/document-processing`,
+        requiredEnvVars,
+        missingEnvVars: missingRuntimeVars,
       };
     }
 
@@ -463,7 +492,7 @@ export class ServiceHealthCheckService {
       status: 'healthy',
       configured: true,
       details: `AXIOM_API_BASE_URL is set (label=${appConfigLabel})`,
-      requiredEnvVars: ['AZURE_APP_CONFIGURATION_ENDPOINT', 'APP_CONFIG_LABEL', 'AXIOM_API_BASE_URL'],
+      requiredEnvVars,
       missingEnvVars: [],
       capabilities: ['evaluation-submit', 'evaluation-status', 'document-processing'],
     };
@@ -644,7 +673,7 @@ export class ServiceHealthCheckService {
    * Check Certo AI
    */
   private checkCerto(): ServiceHealthStatus {
-    const requiredVars = ['CERTO_ENDPOINT', 'CERTO_API_KEY'];
+    const requiredVars = ['CERTO_ENDPOINT'];
     const missingVars = requiredVars.filter(v => !process.env[v]);
     const isConfigured = missingVars.length === 0;
 

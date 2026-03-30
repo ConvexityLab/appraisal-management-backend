@@ -52,6 +52,7 @@ param googleGeminiApiKey string = ''
 @secure()
 param sambanovaApiKey string = ''
 param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
+param certoEndpoint string = 'https://certo-apim-dev-eastus2.azure-api.net/tgi/v1'
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -286,6 +287,10 @@ var containerApps = [
       {
         name: 'SAMBANOVA_ENDPOINT'
         value: sambanovaEndpoint
+      }
+      {
+        name: 'CERTO_ENDPOINT'
+        value: certoEndpoint
       }
     ], concat(
       empty(azureOpenAiApiKey) ? [] : [{
