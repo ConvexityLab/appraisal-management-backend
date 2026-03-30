@@ -27,6 +27,9 @@ var sftpSku = environment == 'prod' ? 'Standard_GRS' : environment == 'staging' 
 // 'apprsftp' (8) + take(env,3) (3) + take(unique,6) (6) = 17 chars
 var sftpStorageAccountName = 'apprsftp${take(environment, 3)}${take(uniqueString(resourceGroup().id, 'sftp'), 6)}'
 
+// Soft-delete retention: shorter in dev (reduces noise), longer toward prod.
+var softDeleteRetentionDays = environment == 'prod' ? 30 : environment == 'staging' ? 14 : 7
+
 // ─── Storage Account ──────────────────────────────────────────────────────────
 resource sftpStorageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
   name: sftpStorageAccountName
@@ -72,15 +75,73 @@ resource sftpStorageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
 }
 
 // ─── Blob Service ─────────────────────────────────────────────────────────────
-// Minimal properties only — HNS/ADLS Gen2 accounts do not support:
-//   • changeFeed (removed above)
-//   • deleteRetentionPolicy (blob soft delete)
-//   • containerDeleteRetentionPolicy (container soft delete)
-//   • isVersioningEnabled (blob versioning)
-// Setting any of these causes the storage stamp to return HTTP 400.
+// HNS/ADLS Gen2 limitation notes (API version 2023-04-01):
+//   • isVersioningEnabled — NOT supported on HNS (HTTP 409); use soft delete instead.
+//   • changeFeed          — NOT supported on HNS.
+//   • deleteRetentionPolicy        — IS supported on HNS (added 2021); enabled below.
+//   • containerDeleteRetentionPolicy — IS supported on HNS; enabled below.
+//
+// Soft delete: blobs are retained for softDeleteRetentionDays after deletion,
+// enabling recovery of accidentally-deleted order files and result PDFs.
+// WinSCP .filepart temp files also produce soft-delete entries when WinSCP
+// removes them after rename, but those entries are invisible in normal blob
+// listings and auto-expire. allowPermanentDelete:true lets admin scripts
+// bypass soft delete for explicit cleanup if ever needed.
 resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01' = {
   parent: sftpStorageAccount
   name: 'default'
+  properties: {
+    deleteRetentionPolicy: {
+      enabled: true
+      days: softDeleteRetentionDays
+      allowPermanentDelete: true
+    }
+    containerDeleteRetentionPolicy: {
+      enabled: true
+      days: softDeleteRetentionDays
+    }
+  }
+}
+
+// ─── Lifecycle Management Policy ─────────────────────────────────────────────
+// Deletes ACTIVE blobs left in uploads/ after 2 days. The processSftpOrderFile
+// function moves every successfully-processed file from uploads/ → processed/
+// within seconds of the BlobCreated event. Any blob still in uploads/ 2 days
+// later is a stuck .filepart temp file or a partial/failed transfer.
+// Safety: with soft delete enabled, this "delete" creates a soft-delete entry —
+// the blob remains recoverable for softDeleteRetentionDays additional days.
+resource managementPolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-04-01' = {
+  parent: sftpStorageAccount
+  name: 'default'
+  dependsOn: [blobService]
+  properties: {
+    policy: {
+      rules: [
+        {
+          name: 'cleanup-stale-uploads'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: ['blockBlob']
+              // prefixMatch is matched against containerName/blobPath
+              prefixMatch: ['statebridge/uploads/']
+            }
+            actions: {
+              baseBlob: {
+                delete: {
+                  // Any blob still in uploads/ after 2 days was not successfully
+                  // processed (function archives to processed/ on success).
+                  // With soft delete, this is NOT a permanent deletion.
+                  daysAfterModificationGreaterThan: 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }
 
 // ─── Container ────────────────────────────────────────────────────────────────

@@ -74,10 +74,22 @@ resource sftpEventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscripti
       // Exclude the hdi_isfolder marker blobs that HNS creates for directories
       advancedFilters: [
         {
+          // Exclude the hdi_isfolder marker blobs that HNS creates for directories
           operatorType: 'StringNotContains'
           key: 'subject'
           values: [
             'hdi_isfolder=true'
+          ]
+        }
+        {
+          // Exclude WinSCP .filepart temp files — created during upload and deleted
+          // within milliseconds after rename. They must never reach the processing
+          // queue. Belt-and-suspenders: the function also rejects them via extension
+          // check, but filtering here avoids unnecessary queue messages entirely.
+          operatorType: 'StringNotEndsWith'
+          key: 'subject'
+          values: [
+            '.filepart'
           ]
         }
       ]
