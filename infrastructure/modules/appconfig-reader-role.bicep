@@ -1,14 +1,13 @@
 // infrastructure/modules/appconfig-reader-role.bicep
 // Grants App Configuration Data Reader to every Container App managed identity
-// on the shared App Config store (which lives in a different resource group).
+// on OUR OWN App Configuration store (deployed by app-config.bicep in the same RG).
 //
-// Deploy-time scope: the certo-global-{environment}-rg resource group
-// (set via `scope: resourceGroup(...)` in main.bicep).
+// Deploy-time scope: our own appraisal-mgmt resource group.
 
 @description('Principal IDs of the Container App managed identities that need read access.')
 param containerAppPrincipalIds array
 
-@description('Name of the App Configuration store (e.g. appconfig-certo-dev).')
+@description('Name of our App Configuration store (output of app-config.bicep).')
 param appConfigName string
 
 // App Configuration Data Reader built-in role

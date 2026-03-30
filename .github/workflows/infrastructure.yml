@@ -183,26 +183,36 @@ jobs:
         USER_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge?api-version=2023-04-01"
         REGEN_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/localUsers/statebridge/regeneratePassword?api-version=2023-04-01"
 
-        # Desired config: homeDirectory=statebridge, full rcwl on the statebridge container.
+        # Desired config: homeDirectory=statebridge, rcwld on the statebridge container.
+        # 'd' (delete) is REQUIRED for SFTP rename operations on ADLS Gen2 (HNS).
+        # Without 'd', SFTP clients using resume/transfer support (WinSCP, FileZilla)
+        # upload as .filepart then rename — and Azure returns InsufficientAccountPermissions
+        # on the rename because the rename operation checks delete permission on the source.
         # NOTE: Azure permissionScope.resourceName must be a plain container name — path-scoped
         # values like "statebridge/uploads" are rejected by the API (InvalidRequestPropertyValue).
-        DESIRED_BODY='{"properties":{"hasSshKey":false,"hasSharedKey":false,"homeDirectory":"statebridge","permissionScopes":[{"permissions":"rcwl","service":"blob","resourceName":"statebridge"}]}}'
+        DESIRED_BODY='{"properties":{"hasSshKey":false,"hasSharedKey":false,"homeDirectory":"statebridge","permissionScopes":[{"permissions":"rcwld","service":"blob","resourceName":"statebridge"}]}}'
+        DESIRED_PERMISSIONS="rcwld"
 
         # ── Step 1: Ensure user exists with correct config ────────────────────
-        # Read current homeDirectory. If user doesn't exist, az rest returns non-zero
-        # and the output is empty; if user exists with wrong config, we PUT to fix it.
-        # ARM PUT always resets hasSshPassword — so we regenerate and update KV after any PUT.
-        CURRENT_HOME=$(az rest --method get --url "$USER_URL" \
-          --query 'properties.homeDirectory' -o tsv 2>/dev/null || echo "")
+        # Read current homeDirectory AND permissions. If either differ from desired,
+        # do a PUT to fix — ARM PUT always resets hasSshPassword so we regenerate after.
+        CURRENT_STATE=$(az rest --method get --url "$USER_URL" \
+          --query '{home:properties.homeDirectory,perms:properties.permissionScopes[0].permissions}' \
+          -o json 2>/dev/null || echo "{}")
+        CURRENT_HOME=$(echo "$CURRENT_STATE" | jq -r '.home // ""')
+        CURRENT_PERMS=$(echo "$CURRENT_STATE" | jq -r '.perms // ""')
 
-        if [[ "$CURRENT_HOME" == "statebridge" ]]; then
-          echo "👤 SFTP local user 'statebridge' exists with correct homeDirectory — no PUT needed."
+        if [[ "$CURRENT_HOME" == "statebridge" && "$CURRENT_PERMS" == "$DESIRED_PERMISSIONS" ]]; then
+          echo "👤 SFTP local user 'statebridge' exists with correct homeDirectory and permissions ($DESIRED_PERMISSIONS) — no PUT needed."
           NEED_REGEN=false
         else
           if [[ -z "$CURRENT_HOME" ]]; then
             echo "👤 SFTP local user 'statebridge' does not exist — creating..."
-          else
+          elif [[ "$CURRENT_HOME" != "statebridge" ]]; then
             echo "👤 SFTP local user 'statebridge' has wrong homeDirectory ('${CURRENT_HOME}') — fixing..."
+          else
+            echo "👤 SFTP local user 'statebridge' has wrong permissions ('${CURRENT_PERMS}', expected '${DESIRED_PERMISSIONS}') — fixing..."
+            echo "   NOTE: Missing 'd' (delete) permission causes SFTP rename to fail with InsufficientAccountPermissions."
           fi
           az rest --method put --url "$USER_URL" --body "$DESIRED_BODY"
           echo "✅ User 'statebridge' created/updated."

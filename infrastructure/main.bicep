@@ -114,8 +114,8 @@ param axiomPipelineIdSchemaExtract string = ''
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
 
-@description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When provided, AXIOM_API_BASE_URL and other service-discovery URLs are resolved from App Config at startup via Managed Identity, overriding the axiomApiBaseUrl param.')
-param appConfigEndpoint string = ''
+// appConfigEndpoint is no longer an input param — it is computed from our own
+// App Configuration store (deployed by the appConfig module below).
 
 
 
@@ -145,11 +145,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   tags: tags
 }
 
-// Reference to the shared Certo platform resource group (different subscription/RG from appraisal).
-// Used for cross-RG RBAC grants (App Config Data Reader).
-resource certoGlobalRg 'Microsoft.Resources/resourceGroups@2023-07-01' existing = {
-  name: 'certo-global-${environment}-rg'
-}
+// (certoGlobalRg removed — we deploy and own our App Configuration store within our own RG)
 
 // Application Insights and Log Analytics (deployed first - required by other modules)
 module monitoring 'modules/monitoring.bicep' = {
@@ -393,7 +389,7 @@ module appServices 'modules/app-services.bicep' = {
     axiomApiBaseUrl: axiomApiBaseUrl
     axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
     axiomWebhookSecret: axiomWebhookSecret
-    appConfigEndpoint: appConfigEndpoint
+    appConfigEndpoint: appConfig.outputs.appConfigEndpoint
   }
 }
 
@@ -497,13 +493,24 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
   }
 }
 
-// App Configuration Data Reader role for Container Apps
-// Scoped to certo-global-{environment}-rg where the shared App Config store lives.
-module appConfigReaderRole 'modules/appconfig-reader-role.bicep' = if (!empty(appConfigEndpoint)) {
-  name: 'appconfig-reader-role-deployment'
-  scope: certoGlobalRg
+// Our own App Configuration store (replaces the cross-RG Certo dependency).
+module appConfig 'modules/app-config.bicep' = {
+  name: 'app-config-deployment'
+  scope: resourceGroup
   params: {
-    appConfigName: 'appconfig-certo-${environment}'
+    location: location
+    namingPrefix: namingPrefix
+    environment: environment
+    tags: tags
+  }
+}
+
+// App Configuration Data Reader role for Container Apps — scoped to our own RG.
+module appConfigReaderRole 'modules/appconfig-reader-role.bicep' = {
+  name: 'appconfig-reader-role-deployment'
+  scope: resourceGroup
+  params: {
+    appConfigName: appConfig.outputs.appConfigName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
   }
 }
