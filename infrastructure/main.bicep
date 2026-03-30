@@ -390,6 +390,10 @@ module appServices 'modules/app-services.bicep' = {
     axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
     axiomWebhookSecret: axiomWebhookSecret
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
+    azureOpenAiApiKey: azureOpenAiApiKey
+    azureOpenAiEndpoint: azureOpenAiEndpoint
+    googleGeminiApiKey: googleGeminiApiKey
+    sambanovaApiKey: sambanovaApiKey
   }
 }
 

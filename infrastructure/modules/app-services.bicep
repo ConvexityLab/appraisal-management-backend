@@ -42,6 +42,16 @@ param axiomWebhookSecret string = ''
 @description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
 param appConfigEndpoint string = ''
 
+// AI provider credentials
+@secure()
+param azureOpenAiApiKey string = ''
+param azureOpenAiEndpoint string = ''
+param azureOpenAiDeployment string = 'gpt-4o-mini'
+@secure()
+param googleGeminiApiKey string = ''
+@secure()
+param sambanovaApiKey string = ''
+
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
@@ -77,6 +87,18 @@ var containerAppSecrets = useBootstrapImage ? [] : concat(
   empty(axiomWebhookSecret) ? [] : [{
     name: 'axiom-webhook-secret'
     value: axiomWebhookSecret
+  }],
+  empty(azureOpenAiApiKey) ? [] : [{
+    name: 'azure-openai-api-key'
+    value: azureOpenAiApiKey
+  }],
+  empty(googleGeminiApiKey) ? [] : [{
+    name: 'google-gemini-api-key'
+    value: googleGeminiApiKey
+  }],
+  empty(sambanovaApiKey) ? [] : [{
+    name: 'sambanova-api-key'
+    value: sambanovaApiKey
   }]
 )
 
@@ -148,7 +170,7 @@ var containerApps = [
     minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 5
     targetPort: appPort
-    env: [
+    env: concat([
       {
         name: 'NODE_ENV'
         value: environment == 'prod' ? 'production' : 'development'
@@ -247,7 +269,33 @@ var containerApps = [
         name: 'AZURE_FLUID_RELAY_ENDPOINT'
         value: fluidRelayEndpoint
       }
-    ]
+      // Non-secret AI config
+      {
+        name: 'AZURE_OPENAI_ENDPOINT'
+        value: azureOpenAiEndpoint
+      }
+      {
+        name: 'AZURE_OPENAI_DEPLOYMENT'
+        value: azureOpenAiDeployment
+      }
+      {
+        name: 'AZURE_OPENAI_MODEL_NAME'
+        value: azureOpenAiDeployment
+      }
+    ], concat(
+      empty(azureOpenAiApiKey) ? [] : [{
+        name: 'AZURE_OPENAI_API_KEY'
+        secretRef: 'azure-openai-api-key'
+      }],
+      empty(googleGeminiApiKey) ? [] : [{
+        name: 'GOOGLE_GEMINI_API_KEY'
+        secretRef: 'google-gemini-api-key'
+      }],
+      empty(sambanovaApiKey) ? [] : [{
+        name: 'SAMBANOVA_API_KEY'
+        secretRef: 'sambanova-api-key'
+      }]
+    ))
     scaleRule: {
       name: 'api-http-scaling'
       http: {
