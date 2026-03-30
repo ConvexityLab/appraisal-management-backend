@@ -394,6 +394,7 @@ module appServices 'modules/app-services.bicep' = {
     azureOpenAiEndpoint: azureOpenAiEndpoint
     googleGeminiApiKey: googleGeminiApiKey
     sambanovaApiKey: sambanovaApiKey
+    sambanovaEndpoint: 'https://api.sambanova.ai/v1'
   }
 }
 

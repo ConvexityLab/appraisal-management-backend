@@ -51,6 +51,7 @@ param azureOpenAiDeployment string = 'gpt-4o-mini'
 param googleGeminiApiKey string = ''
 @secure()
 param sambanovaApiKey string = ''
+param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -281,6 +282,10 @@ var containerApps = [
       {
         name: 'AZURE_OPENAI_MODEL_NAME'
         value: azureOpenAiDeployment
+      }
+      {
+        name: 'SAMBANOVA_ENDPOINT'
+        value: sambanovaEndpoint
       }
     ], concat(
       empty(azureOpenAiApiKey) ? [] : [{
