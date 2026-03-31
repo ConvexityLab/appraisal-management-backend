@@ -182,9 +182,10 @@ export class BridgeInteractiveService {
     try {
       const { address, datasetId = this.testDatasetId } = params;
 
-      // Use tolower for case-insensitive search
+      // Use tolower for case-insensitive search; $top=1 — we only need the
+      // best matching record and never want to page through bulk results.
       const filter = `tolower(UnparsedAddress) eq '${address.toLowerCase()}'`;
-      const url = `${this.baseUrl}/${datasetId}/Property?$filter=${encodeURIComponent(filter)}`;
+      const url = `${this.baseUrl}/${datasetId}/Property?$filter=${encodeURIComponent(filter)}&$top=1`;
 
       const response = await this.makeRequest(url);
       return this.parseResponse(response);
