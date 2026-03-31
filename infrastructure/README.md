@@ -14,6 +14,7 @@ We use **Bicep** with **GitHub Actions** as our deployment framework for consist
 - **Environment Isolation**: Separate workflows for dev/prod environments
 - **Validation**: Built-in template validation and what-if analysis
 - **Security**: Service principal authentication with secrets
+- **On-call runbook**: Service Bus subscription restore steps are documented in [../AXIOM_INTEGRATION_PLAN_V2.md](../AXIOM_INTEGRATION_PLAN_V2.md) under **Incident Recovery Runbook (March 29)**
 
 ## File Structure
 

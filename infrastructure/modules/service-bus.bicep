@@ -358,6 +358,18 @@ resource axiomDocumentProcessingServiceSubscription 'Microsoft.ServiceBus/namesp
   }
 }
 
+// Axiom Bulk Submission Service Subscription (consumed by AxiomBulkSubmissionService — submits queued tape-evaluation jobs to Axiom)
+resource axiomBulkSubmissionServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'axiom-bulk-submission-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id
