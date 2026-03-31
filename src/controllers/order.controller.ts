@@ -18,7 +18,9 @@
  *   POST   /:orderId/cancel        → cancelOrder         (validated)
  *   POST   /:orderId/deliver       → deliverOrder
  *   POST   /:orderId/assign        → assignVendor
- *   GET    /:orderId/timeline      → getOrderTimeline
+ *   GET    /:orderId/timeline                       → getOrderTimeline
+ *   GET    /:orderId/property-enrichment           → getOrderPropertyEnrichment
+ *   POST   /:orderId/property-enrichment/refresh   → refreshOrderPropertyEnrichment
  */
 
 import { Router, Response } from 'express';
@@ -52,6 +54,8 @@ import type { AppraisalOrder } from '../types/index.js';
 import { DuplicateOrderDetectionService } from '../services/duplicate-order-detection.service.js';
 import { WaiverScreeningService } from '../services/waiver-screening.service.js';
 import { ComplianceService } from '../services/ComplianceService.js';
+import { PropertyEnrichmentService } from '../services/property-enrichment.service.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
 
 const logger = new Logger('OrderController');
 
@@ -116,7 +120,8 @@ export class OrderController {
   private _documentService: DocumentService | null = null;
   private duplicateDetection: DuplicateOrderDetectionService;
   private waiverScreening: WaiverScreeningService;
-    private complianceService: ComplianceService;
+  private complianceService: ComplianceService;
+  private enrichmentService: PropertyEnrichmentService;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -130,7 +135,9 @@ export class OrderController {
   constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.dbService = dbService;
-    this.eventService = new OrderEventService();
+    const propertyRecordService = new PropertyRecordService(dbService);
+    this.enrichmentService = new PropertyEnrichmentService(dbService, propertyRecordService);
+    this.eventService = new OrderEventService(this.enrichmentService);
     this.auditService = new AuditTrailService();
     this.slaService = new SLATrackingService();
     this.qcQueueService = new QCReviewQueueService();
@@ -179,6 +186,8 @@ export class OrderController {
     this.router.post('/:orderId/vendor-bid/:bidId/accept', this.acceptVendorBid.bind(this));
     this.router.post('/:orderId/vendor-bid/:bidId/decline', this.declineVendorBid.bind(this));
     this.router.post('/:orderId/acknowledge-attention', this.acknowledgeAttention.bind(this));
+    this.router.get('/:orderId/property-enrichment', this.getOrderPropertyEnrichment.bind(this));
+    this.router.post('/:orderId/property-enrichment/refresh', this.refreshOrderPropertyEnrichment.bind(this));
   }
 
   // ─── POST / ──────────────────────────────────────────────────────────────
@@ -612,52 +621,6 @@ export class OrderController {
         // Auto-route to QC queue when order is SUBMITTED
         if (newStatus === OrderStatus.SUBMITTED) {
           const order = result.data!;
-
-          // Auto-submit appraisal-report documents to Axiom AI via pipeline (A-1)
-          setImmediate(() => {
-            this.dbService.findOrderById(orderId).then((orderResult) => {
-              const orderData = orderResult.success ? orderResult.data : null;
-              // Derive tenantId from the order record itself — never hardcode.
-              // All orders are created with a tenantId; if it is missing the record is corrupt.
-              const tenantId = orderData?.tenantId;
-              if (!tenantId) {
-                logger.error('Cannot auto-submit to Axiom: order has no tenantId', { orderId });
-                return;
-              }
-              const clientId = orderData?.clientId;
-              if (!clientId) {
-                logger.error('Cannot auto-submit to Axiom: order has no clientId', { orderId });
-                return;
-              }
-              const fields = orderData ? buildOrderFields(orderData) : [];
-              return this.documentService.listDocuments(tenantId, { orderId }).then((docResult) => {
-                const appraisalDocs = docResult.success && docResult.data
-                  ? docResult.data.filter(
-                      (d) => d.category === 'appraisal-report' && !(d.metadata as any)?.axiomEvaluationId,
-                    )
-                  : [];
-                // Submit to Axiom even with no documents — fields-only evaluation is valid
-                // per AXIOM_TEAM_REQUIREMENTS: "Either array may be empty"
-                const documents = appraisalDocs.map((d) => ({
-                  documentName: d.name,
-                  documentReference: d.blobUrl,
-                }));
-                return this.axiomService.submitOrderEvaluation(orderId, fields, documents, tenantId, clientId);
-              });
-            }).then((axiomResult) => {
-              if (axiomResult) {
-                this.dbService.updateOrder(orderId, {
-                  axiomEvaluationId: axiomResult.evaluationId,
-                  axiomPipelineJobId: axiomResult.pipelineJobId,
-                  axiomStatus: 'submitted',
-                }).catch((err) =>
-                  logger.error('Failed to stamp Axiom fields on order after SUBMITTED', { orderId, error: err }),
-                );
-              }
-            }).catch((err) =>
-              logger.error('Auto-submit to Axiom failed on SUBMITTED status change', { orderId, error: err }),
-            );
-          });
 
           this.qcQueueService.addToQueue({
             orderId,
@@ -2141,6 +2104,108 @@ export class OrderController {
       result[f] = this.getNestedValue(obj, f);
     }
     return result;
+  }
+
+  // ─── GET /:orderId/property-enrichment ───────────────────────────────────
+
+  /**
+   * Returns the most recent Bridge Interactive enrichment record for this order.
+   * 404 when no enrichment has run yet.
+   *
+   * GET /api/v1/orders/:orderId/property-enrichment
+   */
+  public async getOrderPropertyEnrichment(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      if (!orderId) {
+        res.status(400).json({ error: 'orderId is required' });
+        return;
+      }
+
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ error: 'Authenticated tenant context is required' });
+        return;
+      }
+
+      const record = await this.enrichmentService.getLatestEnrichment(orderId, tenantId);
+
+      if (!record) {
+        res.status(404).json({ error: 'No property enrichment record found for this order' });
+        return;
+      }
+
+      res.json(record);
+    } catch (err) {
+      logger.error('getOrderPropertyEnrichment failed', {
+        orderId: req.params.orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ error: 'Failed to retrieve property enrichment data' });
+    }
+  }
+
+  // ─── POST /:orderId/property-enrichment/refresh ───────────────────────────
+
+  /**
+   * Re-runs Bridge Interactive enrichment for the given order on demand.
+   * Useful when the initial enrichment on ORDER_CREATED was a miss or error.
+   *
+   * POST /api/v1/orders/:orderId/property-enrichment/refresh
+   */
+  public async refreshOrderPropertyEnrichment(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      if (!orderId) {
+        res.status(400).json({ error: 'orderId is required' });
+        return;
+      }
+
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ error: 'Authenticated tenant context is required' });
+        return;
+      }
+
+      // Fetch the order to extract its property address
+      const orderResult = await this.dbService.findOrderById(orderId);
+      if (!orderResult.success || !orderResult.data) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      const order = orderResult.data as any;
+      const addr = order.propertyAddress;
+
+      // Normalise — backend stores the street as either `streetAddress` or `street`
+      const street: string = addr?.streetAddress ?? addr?.street ?? '';
+      const city: string = addr?.city ?? '';
+      const state: string = addr?.state ?? '';
+      const zipCode: string = addr?.zipCode ?? addr?.zip ?? '';
+
+      if (!street || !city || !state || !zipCode) {
+        res.status(422).json({
+          error: 'Order property address is incomplete — cannot run enrichment',
+          details: { street, city, state, zipCode },
+        });
+        return;
+      }
+
+      const result = await this.enrichmentService.enrichOrder(orderId, tenantId, {
+        street,
+        city,
+        state,
+        zipCode,
+      });
+
+      res.json(result);
+    } catch (err) {
+      logger.error('refreshOrderPropertyEnrichment failed', {
+        orderId: req.params.orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ error: 'Failed to refresh property enrichment data' });
+    }
   }
 }
 

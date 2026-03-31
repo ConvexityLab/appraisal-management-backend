@@ -80,6 +80,9 @@ func.log
 tmp/
 temp/
 
+# Live-fire auth token cache
+scripts/live-fire/.livefire-token-cache.json
+
 # Security - Never commit credentials or secrets
 github-secrets.md
 DEPLOYMENT_QUICKSTART.md

@@ -16,6 +16,7 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { TapeEvaluationService } from './tape-evaluation.service.js';
 import { AxiomService } from './axiom.service.js';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ReviewDocumentExtractionService } from './review-document-extraction.service.js';
 import { BlobStorageService } from './blob-storage.service.js';
 import { DocumentService } from './document.service.js';
@@ -38,6 +39,8 @@ import type {
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority, type AppraisalOrder } from '../types/index.js';
+import type { AxiomBulkEvaluationRequestedEvent } from '../types/events.js';
+import { EventCategory, EventPriority } from '../types/events.js';
 
 /** Per-order Axiom evaluation summary returned by getJobAxiomStatus() */
 export interface BulkJobAxiomStatusItem {
@@ -80,6 +83,7 @@ const DEFAULT_TURN_TIME_DAYS: Record<BulkAnalysisType, number> = {
 
 export class BulkPortfolioService {
   private readonly logger: Logger;
+  private readonly eventPublisher: ServiceBusEventPublisher;
   private _tapeEvaluationService: TapeEvaluationService | null = null;
   private _axiomService: AxiomService | null = null;
   private _extractionService: ReviewDocumentExtractionService | null = null;
@@ -87,6 +91,7 @@ export class BulkPortfolioService {
 
   constructor(private readonly dbService: CosmosDbService) {
     this.logger = new Logger();
+    this.eventPublisher = new ServiceBusEventPublisher();
   }
 
   private get tapeEvaluationService(): TapeEvaluationService {
@@ -260,34 +265,6 @@ export class BulkPortfolioService {
             });
           }
 
-          // Auto-submit to Axiom AI pipeline — fire-and-forget, never blocks order creation
-          setImmediate(() => {
-            this.axiomService
-              .submitOrderEvaluation(createdOrderId, this._orderToLoanData(item), undefined, tenantId, request.clientId)
-              .then((axiomResult) => {
-                if (axiomResult) {
-                  this.dbService
-                    .updateOrder(createdOrderId, {
-                      axiomEvaluationId: axiomResult.evaluationId,
-                      axiomPipelineJobId: axiomResult.pipelineJobId,
-                      axiomStatus: 'submitted',
-                    })
-                    .catch((err: Error) =>
-                      this.logger.warn('Failed to stamp Axiom fields on bulk order', {
-                        orderId: createdOrderId,
-                        error: err.message,
-                      }),
-                    );
-                }
-              })
-              .catch((err: Error) =>
-                this.logger.warn('Axiom auto-submit failed for bulk order', {
-                  orderId: createdOrderId,
-                  error: err.message,
-                }),
-              );
-          });
-
           // ── Additional products (product_2 through product_5) ─────────────
           if (item.additionalProducts && item.additionalProducts.length > 0) {
             const additionalResults: import('../types/bulk-portfolio.types.js').AdditionalProduct[] = [];
@@ -312,18 +289,6 @@ export class BulkPortfolioService {
                   });
                   successCount++;
 
-                  // Axiom auto-submit for additional product order
-                  const addlOrderId = addlResult.data.id;
-                  setImmediate(() => {
-                    this.axiomService
-                      .submitOrderEvaluation(addlOrderId, this._orderToLoanData(item), undefined, tenantId, request.clientId)
-                      .catch((err: Error) =>
-                        this.logger.warn('Axiom auto-submit failed for additional product order', {
-                          orderId: addlOrderId,
-                          error: err.message,
-                        }),
-                      );
-                  });
                 } else {
                   const addlMsg = addlResult.error?.message ?? 'Order creation failed';
                   additionalResults.push({ ...addlProduct, status: 'FAILED', errorMessage: addlMsg });
@@ -505,28 +470,113 @@ export class BulkPortfolioService {
       avgRiskScore: summary.avgRiskScore,
     });
 
-    // Auto-submit each loan individually to Axiom for AI enrichment (fire-and-forget).
-    // We fan-out via the single-order RISK_EVAL pipeline, one pipeline job per loan.
-    // correlationId is '{jobId}::{loanNumber}' — the webhook handler splits this to
-    // route the result back to the correct ReviewTapeResult row via stampTapeLoanResult.
-    setImmediate(() => {
-      for (const result of results) {
-        const loanNumber = result.loanNumber ?? String(result.rowIndex);
-        const correlationId = `${jobId}::${loanNumber}`;
-        const fields = this._tapeResultToLoanDataSingle(result);
-        this.axiomService
-          .submitOrderEvaluation(correlationId, fields, undefined, tenantId, request.clientId, request.reviewProgramId, 'TAPE_LOAN')
-          .catch((err: Error) => {
-            this.logger.warn('Axiom per-loan auto-submit failed', {
-              jobId,
-              loanNumber,
-              error: err.message,
-            });
-          });
-      }
-    });
+    const submitRequestedEvent: AxiomBulkEvaluationRequestedEvent = {
+      id: uuidv4(),
+      type: 'axiom.bulk-evaluation.requested',
+      timestamp: new Date(),
+      source: 'bulk-portfolio-service',
+      version: '1.0',
+      category: EventCategory.QC,
+      data: {
+        jobId,
+        tenantId,
+        clientId: request.clientId,
+        ...(request.reviewProgramId ? { reviewProgramId: request.reviewProgramId } : {}),
+        priority: EventPriority.NORMAL,
+      },
+    };
+
+    try {
+      await this.eventPublisher.publish(submitRequestedEvent);
+      await this._saveJob({ ...job, axiomSubmissionStatus: 'queued' });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      await this._saveJob({ ...job, axiomSubmissionStatus: 'failed', axiomSubmissionError: errorMessage });
+      throw new Error(
+        `Failed to queue Axiom bulk submission event for jobId=${jobId}. ` +
+        `Resolve Service Bus publishing and requeue this job. Root error: ${errorMessage}`,
+      );
+    }
 
     return job;
+  }
+
+  /**
+   * Submit a completed TAPE_EVALUATION job to Axiom in the background.
+   * Idempotent: if the job already has axiomPipelineJobId, it is treated as already submitted.
+   */
+  async submitTapeEvaluationJobToAxiom(
+    jobId: string,
+    tenantId: string,
+    clientId: string,
+    reviewProgramId?: string,
+  ): Promise<{ pipelineJobId: string; batchId: string }> {
+    const job = await this.getJob(jobId, tenantId);
+    if (!job) {
+      throw new Error(`submitTapeEvaluationJobToAxiom: job '${jobId}' not found for tenant '${tenantId}'`);
+    }
+
+    if (job.processingMode !== 'TAPE_EVALUATION') {
+      throw new Error(
+        `submitTapeEvaluationJobToAxiom: job '${jobId}' is not TAPE_EVALUATION (processingMode: ${job.processingMode ?? 'ORDER_CREATION'})`,
+      );
+    }
+
+    if (job.axiomPipelineJobId && job.axiomBatchId) {
+      this.logger.info('submitTapeEvaluationJobToAxiom: job already submitted, skipping duplicate', {
+        jobId,
+        axiomPipelineJobId: job.axiomPipelineJobId,
+      });
+      return { pipelineJobId: job.axiomPipelineJobId, batchId: job.axiomBatchId };
+    }
+
+    const tapeResults = job.items as ReviewTapeResult[];
+    if (!Array.isArray(tapeResults) || tapeResults.length === 0) {
+      throw new Error(`submitTapeEvaluationJobToAxiom: job '${jobId}' has no tape results to submit`);
+    }
+
+    const loans = this._tapeResultsToLoanData(tapeResults);
+    const submitResult = await this.axiomService.submitBatchEvaluation(
+      jobId,
+      loans,
+      tenantId,
+      clientId,
+      reviewProgramId ?? job.reviewProgramId,
+    );
+
+    if (!submitResult) {
+      const failedJob: BulkPortfolioJob = {
+        ...job,
+        axiomSubmissionStatus: 'failed',
+        axiomSubmissionError: `Axiom submitBatchEvaluation returned null for jobId=${jobId}`,
+      };
+      await this._saveJob(failedJob);
+      throw new Error(`submitTapeEvaluationJobToAxiom: submitBatchEvaluation returned null for jobId=${jobId}`);
+    }
+
+    const updatedItems = tapeResults.map((item) => ({
+      ...item,
+      axiomStatus: item.axiomStatus ?? 'submitted',
+    }));
+
+    const submittedJob: BulkPortfolioJob = {
+      ...job,
+      items: updatedItems,
+      axiomSubmissionStatus: 'submitted',
+      axiomSubmittedAt: new Date().toISOString(),
+      axiomPipelineJobId: submitResult.pipelineJobId,
+      axiomBatchId: submitResult.batchId,
+    };
+
+    await this._saveJob(submittedJob);
+    this.logger.info('submitTapeEvaluationJobToAxiom: submitted tape job to Axiom', {
+      jobId,
+      pipelineJobId: submitResult.pipelineJobId,
+      batchId: submitResult.batchId,
+      loanCount: loans.length,
+    });
+
+    return submitResult;
   }
 
   // ─── _submitDocumentExtraction ────────────────────────────────────────────

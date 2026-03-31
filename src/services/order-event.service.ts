@@ -1,6 +1,7 @@
 import { ServiceBusClient, ServiceBusSender, ServiceBusReceiver } from '@azure/service-bus';
 import { Logger } from '../utils/logger.js';
 import { AppraisalOrder, OrderStatus } from '../types/index.js';
+import { PropertyEnrichmentService } from './property-enrichment.service.js';
 
 /**
  * Azure Service Bus Integration for Order Events
@@ -14,10 +15,10 @@ export class OrderEventService {
   private vendorTopicName: string = 'vendor-events';
   private qcTopicName: string = 'quality-control-events';
 
-  constructor() {
+  constructor(private readonly enrichmentService?: PropertyEnrichmentService) {
     this.logger = new Logger();
     this.connectionString = process.env.AZURE_SERVICEBUS_CONNECTION_STRING || '';
-    
+
     if (this.connectionString) {
       this.initializeServiceBus();
     } else {
@@ -45,6 +46,7 @@ export class OrderEventService {
     const event = {
       eventType: 'ORDER_CREATED',
       orderId: order.id,
+      tenantId: order.tenantId,
       clientId: order.clientId,
       productType: order.productType,
       priority: order.priority,
@@ -281,19 +283,53 @@ export class OrderEventService {
   }
 
   /**
-   * Handle order created event
+   * Handle order created event — triggers subject property data enrichment.
    */
   private async handleOrderCreated(eventData: any): Promise<void> {
-    // Trigger downstream processes like:
-    // - Automated compliance checks
-    // - Initial risk assessment
-    // - Vendor pool filtering
-    // - Customer notifications
-    
-    this.logger.info('Order created event processed', {
-      orderId: eventData.orderId,
-      actions: ['compliance-check-initiated', 'risk-assessment-started']
-    });
+    this.logger.info('Order created event received', { orderId: eventData.orderId });
+
+    // ── Property data enrichment ────────────────────────────────────────────
+    if (this.enrichmentService) {
+      const addr = eventData.propertyAddress;
+      // propertyAddress is a PropertyAddress struct published by publishOrderCreated
+      if (addr?.streetAddress && addr?.city && addr?.state && addr?.zipCode) {
+        try {
+          const result = await this.enrichmentService.enrichOrder(
+            eventData.orderId,
+            eventData.tenantId,
+            {
+              street: addr.streetAddress,
+              city: addr.city,
+              state: addr.state,
+              zipCode: addr.zipCode,
+            },
+          );
+          this.logger.info('Order created event: property enrichment complete', {
+            orderId: eventData.orderId,
+            propertyId: result.propertyId,
+            status: result.status,
+          });
+        } catch (err) {
+          // Enrichment failure must never block the order-creation flow.
+          // Log the error and continue — the order is not affected.
+          this.logger.error('Order created event: property enrichment failed (non-fatal)', {
+            orderId: eventData.orderId,
+            error: (err as Error).message,
+          });
+        }
+      } else {
+        this.logger.warn('Order created event: propertyAddress incomplete, skipping enrichment', {
+          orderId: eventData.orderId,
+          propertyAddress: addr,
+        });
+      }
+    } else {
+      this.logger.info(
+        'Order created event: PropertyEnrichmentService not wired — skipping enrichment. ' +
+        'Pass a PropertyEnrichmentService instance to OrderEventService to enable it.',
+        { orderId: eventData.orderId },
+      );
+    }
   }
 
   /**

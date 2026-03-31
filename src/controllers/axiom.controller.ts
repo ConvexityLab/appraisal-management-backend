@@ -466,31 +466,27 @@ export class AxiomController {
    * Protected by HMAC signature verification via verifyAxiomWebhook middleware.
    */
   handleWebhook = async (req: Request, res: Response): Promise<void> => {
-    // Acknowledge immediately so Axiom doesn't retry
-    res.status(200).json({ success: true, message: 'Webhook received' });
+    try {
+      const body = req.body as Record<string, unknown>;
 
-    const body = req.body as Record<string, unknown>;
+      // ── New pipeline shape ────────────────────────────────────────────────
+      const correlationType = body['correlationType'] as string | undefined;
+      const rawCorrelationId = body['correlationId'] as string | undefined;
+      if (rawCorrelationId && correlationType === 'EXECUTION') {
+        const executionId = rawCorrelationId;
+        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        const status = (body['status'] as string) ?? 'completed';
+        const result = body['result'] as Record<string, unknown> | undefined;
+        const error = body['error'] as string | undefined;
 
-    // ── New pipeline shape ────────────────────────────────────────────────
-    const correlationType = body['correlationType'] as string | undefined;
-    const rawCorrelationId = body['correlationId'] as string | undefined;
-    if (rawCorrelationId && correlationType === 'EXECUTION') {
-      const executionId = rawCorrelationId;
-      const pipelineJobId = body['pipelineJobId'] as string | undefined;
-      const status = (body['status'] as string) ?? 'completed';
-      const result = body['result'] as Record<string, unknown> | undefined;
-      const error = body['error'] as string | undefined;
+        this.logger.info('Axiom webhook: EXECUTION update', { executionId, status, pipelineJobId });
 
-      this.logger.info('Axiom webhook: EXECUTION update', { executionId, status, pipelineJobId });
-
-      const executionStatus = status === 'completed' ? 'COMPLETED' : 'FAILED';
-      
-      try {
+        const executionStatus = status === 'completed' ? 'COMPLETED' : 'FAILED';
         await this.axiomExecutionService.updateExecutionStatus(
           executionId,
           executionStatus,
           result,
-          error
+          error,
         );
 
         const execCompletedEvent: AxiomExecutionCompletedEvent = {
@@ -503,187 +499,167 @@ export class AxiomController {
           data: {
             executionId,
             status: executionStatus,
-            ...(pipelineJobId !== undefined ? { pipelineJobId } : {})
-          }
+            ...(pipelineJobId !== undefined ? { pipelineJobId } : {}),
+          },
         };
-        this.eventPublisher.publish(execCompletedEvent).catch((err: unknown) => {
-          this.logger.error('Axiom webhook: failed to publish axiom.execution.completed event', { error: (err as Error).message });
-        });
-      } catch (err) {
-        this.logger.error('Axiom webhook: failed to update execution status', { error: (err as Error).message });
-      }
-
-      return;
-    }
-    if (rawCorrelationId && correlationType === 'TAPE_LOAN') {
-      // correlationId is '{jobId}::{loanNumber}' for tape fan-out submissions
-      const separatorIdx = rawCorrelationId.indexOf('::');
-      if (separatorIdx === -1) {
-        this.logger.error('Axiom webhook TAPE_LOAN: malformed correlationId (missing ::)', { correlationId: rawCorrelationId });
+        await this.eventPublisher.publish(execCompletedEvent);
+        res.status(200).json({ success: true, message: 'Webhook processed' });
         return;
       }
-      const jobId = rawCorrelationId.slice(0, separatorIdx);
-      const loanNumber = rawCorrelationId.slice(separatorIdx + 2);
-      const pipelineJobId = body['pipelineJobId'] as string | undefined;
-      const status = (body['status'] as string) ?? 'completed';
-      const result = body['result'] as Record<string, unknown> | undefined;
 
-      type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
-      const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
-      const loanEntry: LoanResult = { loanNumber, status: loanStatus };
-      if (result) {
-        if (typeof result['overallRiskScore'] === 'number') loanEntry.riskScore = result['overallRiskScore'];
-        const dec = result['overallDecision'];
-        if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') loanEntry.decision = dec;
-      }
-
-      this.logger.info('Axiom TAPE_LOAN webhook received', { jobId, loanNumber, pipelineJobId, status });
-
-      this.bulkPortfolioService.stampBatchEvaluationResults(jobId, [loanEntry])
-        .then(() => this.axiomService.broadcastBatchJobUpdate(jobId))
-        .catch((err: unknown) => {
-          this.logger.error('Axiom TAPE_LOAN webhook: stampBatchEvaluationResults failed', {
-            jobId, loanNumber, pipelineJobId, error: (err as Error).message,
-          });
-        });
-
-      return;
-    }
-
-    if (rawCorrelationId && correlationType === 'DOCUMENT') {
-      // correlationId is the documentId set by AxiomDocumentProcessingService.
-      const documentId = rawCorrelationId;
-      const pipelineJobId = body['pipelineJobId'] as string | undefined;
-      const status = (body['status'] as string) ?? 'completed';
-      const result = body['result'] as Record<string, unknown> | undefined;
-
-      const extractionStatus = status === 'completed' ? 'COMPLETED' : 'AXIOM_FAILED';
-
-      this.logger.info('Axiom webhook: DOCUMENT extraction update', {
-        documentId,
-        pipelineJobId,
-        extractionStatus,
-      });
-
-      this.dbService.updateItem<import('../types/document.types.js').DocumentMetadata>(
-        'documents',
-        documentId,
-        {
-          extractionStatus,
-          ...(result ? { extractedData: result as Record<string, unknown> } : {}),
-        },
-      ).then((r) => {
-        if (!r.success) {
-          this.logger.error('Axiom webhook: failed to stamp document extraction result', {
-            documentId,
-            error: r.error,
-          });
+      if (rawCorrelationId && correlationType === 'TAPE_LOAN') {
+        // correlationId is '{jobId}::{loanNumber}' for tape fan-out submissions
+        const separatorIdx = rawCorrelationId.indexOf('::');
+        if (separatorIdx === -1) {
+          this.logger.error('Axiom webhook TAPE_LOAN: malformed correlationId (missing ::)', { correlationId: rawCorrelationId });
+          res.status(400).json({ success: false, error: 'Malformed correlationId for TAPE_LOAN (expected jobId::loanNumber)' });
+          return;
         }
-      }).catch((err: unknown) => {
-        this.logger.error('Axiom webhook: updateItem for document threw', {
+        const jobId = rawCorrelationId.slice(0, separatorIdx);
+        const loanNumber = rawCorrelationId.slice(separatorIdx + 2);
+        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        const status = (body['status'] as string) ?? 'completed';
+        const result = body['result'] as Record<string, unknown> | undefined;
+
+        type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
+        const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
+        const loanEntry: LoanResult = { loanNumber, status: loanStatus };
+        if (result) {
+          if (typeof result['overallRiskScore'] === 'number') loanEntry.riskScore = result['overallRiskScore'];
+          const dec = result['overallDecision'];
+          if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') loanEntry.decision = dec;
+        }
+
+        this.logger.info('Axiom TAPE_LOAN webhook received', { jobId, loanNumber, pipelineJobId, status });
+
+        await this.bulkPortfolioService.stampBatchEvaluationResults(jobId, [loanEntry]);
+        await this.axiomService.broadcastBatchJobUpdate(jobId);
+        res.status(200).json({ success: true, message: 'Webhook processed' });
+        return;
+      }
+
+      if (rawCorrelationId && correlationType === 'DOCUMENT') {
+        // correlationId is the documentId set by AxiomDocumentProcessingService.
+        const documentId = rawCorrelationId;
+        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        const status = (body['status'] as string) ?? 'completed';
+        const result = body['result'] as Record<string, unknown> | undefined;
+
+        const extractionStatus = status === 'completed' ? 'COMPLETED' : 'AXIOM_FAILED';
+
+        this.logger.info('Axiom webhook: DOCUMENT extraction update', {
           documentId,
-          error: (err as Error).message,
+          pipelineJobId,
+          extractionStatus,
         });
+
+        const updateResult = await this.dbService.updateItem<import('../types/document.types.js').DocumentMetadata>(
+          'documents',
+          documentId,
+          {
+            extractionStatus,
+            ...(result ? { extractedData: result as Record<string, unknown> } : {}),
+          },
+        );
+
+        if (!updateResult.success) {
+          throw new Error(`Failed to stamp document extraction result for documentId=${documentId}: ${updateResult.error ?? 'unknown error'}`);
+        }
+
+        res.status(200).json({ success: true, message: 'Webhook processed' });
+        return;
+      }
+
+      if (rawCorrelationId && correlationType === 'ORDER') {
+        const correlationId = rawCorrelationId;
+        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        const status = (body['status'] as string) ?? 'completed';
+        const result = body['result'] as Record<string, unknown> | undefined;
+
+        const updateData: Partial<AppraisalOrder> = {};
+        // Narrow the status string so exactOptionalPropertyTypes is satisfied
+        const axiomStatusValue = status as AppraisalOrder['axiomStatus'];
+        if (axiomStatusValue !== undefined) updateData.axiomStatus = axiomStatusValue;
+        if (pipelineJobId) updateData.axiomPipelineJobId = pipelineJobId;
+        // Stamp axiomCompletedAt on ALL terminal states so the timeout watcher can exclude
+        // already-finished orders via the axiomCompletedAt field (not just axiomStatus).
+        if (status === 'completed' || status === 'failed') {
+          updateData.axiomCompletedAt = new Date().toISOString();
+        }
+        if (result) {
+          if (typeof result['overallRiskScore'] === 'number') updateData.axiomRiskScore = result['overallRiskScore'];
+          const dec = result['overallDecision'] as AppraisalOrder['axiomDecision'] | undefined;
+          if (dec !== undefined) updateData.axiomDecision = dec;
+          if (Array.isArray(result['flags'])) updateData.axiomFlags = result['flags'] as string[];
+        }
+
+        const orderUpdateResult = await this.dbService.updateOrder(correlationId, updateData);
+        if (!orderUpdateResult.success) {
+          throw new Error(`Failed to stamp order from webhook for orderId=${correlationId}: ${orderUpdateResult.error ?? 'unknown error'}`);
+        }
+
+        // For completed pipelines, fetch full criteria results and store them in aiInsights.
+        // This is the authoritative path — it fires even when the SSE stream was not open
+        // (e.g. server restarted between submit and completion).
+        if (status === 'completed' && pipelineJobId) {
+          await this.axiomService.fetchAndStorePipelineResults(correlationId, pipelineJobId);
+        }
+
+        // Publish axiom.evaluation.completed to Service Bus so the orchestrator
+        // can gate QC routing on Axiom completion when axiomAutoTrigger=true.
+        const orderForEvent = await this.dbService.findOrderById(correlationId);
+        const resolvedTenantId: string = (orderForEvent?.data as any)?.tenantId ?? '';
+        if (!resolvedTenantId) {
+          this.logger.warn('Axiom webhook: could not resolve tenantId for axiom.evaluation.completed event', { orderId: correlationId });
+        }
+        const evalCompletedEvent: AxiomEvaluationCompletedEvent = {
+          id: uuidv4(),
+          type: 'axiom.evaluation.completed',
+          timestamp: new Date(),
+          source: 'axiom-controller',
+          version: '1.0',
+          category: EventCategory.QC,
+          data: {
+            orderId: correlationId,
+            orderNumber: (orderForEvent?.data as any)?.orderNumber ?? correlationId,
+            tenantId: resolvedTenantId,
+            evaluationId: `eval-${correlationId}`,
+            pipelineJobId: pipelineJobId ?? '',
+            overallRiskScore: typeof updateData.axiomRiskScore === 'number' ? updateData.axiomRiskScore : 0,
+            overallDecision: (updateData.axiomDecision as 'ACCEPT' | 'CONDITIONAL' | 'REJECT' | 'UNKNOWN') ?? 'UNKNOWN',
+            status: (status === 'completed' ? 'completed' : 'failed') as 'completed' | 'failed',
+            priority: EventPriority.HIGH,
+          },
+        };
+        await this.eventPublisher.publish(evalCompletedEvent);
+
+        res.status(200).json({ success: true, message: 'Webhook processed' });
+        return;
+      }
+
+      // ── Legacy shape (mock / dev tests) ──────────────────────────────────
+      const legacyPayload = body as unknown as AxiomWebhookPayload;
+      if (legacyPayload.evaluationId && legacyPayload.orderId) {
+        await this.axiomService.handleWebhook(legacyPayload);
+        res.status(200).json({ success: true, message: 'Webhook processed' });
+        return;
+      }
+
+      this.logger.warn('Axiom webhook received with unrecognised payload shape', { keys: Object.keys(body) });
+      res.status(400).json({ success: false, error: 'Unrecognized webhook payload shape' });
+    } catch (error) {
+      this.logger.error('Axiom webhook durable processing failed', {
+        error: error instanceof Error ? error.message : String(error),
       });
-
-      return;
-    }
-
-    if (rawCorrelationId && correlationType === 'ORDER') {
-      const correlationId = rawCorrelationId;
-      const pipelineJobId = body['pipelineJobId'] as string | undefined;
-      const status = (body['status'] as string) ?? 'completed';
-      const result = body['result'] as Record<string, unknown> | undefined;
-
-      const updateData: Partial<AppraisalOrder> = {};
-      // Narrow the status string so exactOptionalPropertyTypes is satisfied
-      const axiomStatusValue = status as AppraisalOrder['axiomStatus'];
-      if (axiomStatusValue !== undefined) updateData.axiomStatus = axiomStatusValue;
-      if (pipelineJobId) updateData.axiomPipelineJobId = pipelineJobId;
-      // Stamp axiomCompletedAt on ALL terminal states so the timeout watcher can exclude
-      // already-finished orders via the axiomCompletedAt field (not just axiomStatus).
-      if (status === 'completed' || status === 'failed') {
-        updateData.axiomCompletedAt = new Date().toISOString();
-      }
-      if (result) {
-        if (typeof result['overallRiskScore'] === 'number') updateData.axiomRiskScore = result['overallRiskScore'];
-        const dec = result['overallDecision'] as AppraisalOrder['axiomDecision'] | undefined;
-        if (dec !== undefined) updateData.axiomDecision = dec;
-        if (Array.isArray(result['flags'])) updateData.axiomFlags = result['flags'] as string[];
-      }
-
-      this.dbService.updateOrder(correlationId, updateData)
-        .then((r) => {
-          if (!r.success) {
-            this.logger.error('Axiom webhook: failed to stamp order', { orderId: correlationId, error: r.error });
-          }
-        })
-        .catch((err: unknown) => {
-          this.logger.error('Axiom webhook: updateOrder threw', { orderId: correlationId, error: (err as Error).message });
-        });
-
-      // For completed pipelines, fetch full criteria results and store them in aiInsights.
-      // This is the authoritative path — it fires even when the SSE stream was not open
-      // (e.g. server restarted between submit and completion).
-      if (status === 'completed' && pipelineJobId) {
-        this.axiomService.fetchAndStorePipelineResults(correlationId, pipelineJobId)
-          .catch((err: unknown) => {
-            this.logger.error('Axiom webhook: fetchAndStorePipelineResults failed', {
-              orderId: correlationId,
-              pipelineJobId,
-              error: (err as Error).message,
-            });
-          });
-      }
-
-      // Publish axiom.evaluation.completed to Service Bus so the orchestrator
-      // can gate QC routing on Axiom completion when axiomAutoTrigger=true.
-      // P1-C: Load the order to get the real tenantId — (updateData as any).tenantId was
-      // always '' because updateData is Partial<AppraisalOrder> and tenantId is never set on it.
-      const orderForEvent = await this.dbService.findOrderById(correlationId).catch(() => null);
-      const resolvedTenantId: string = (orderForEvent?.data as any)?.tenantId ?? '';
-      if (!resolvedTenantId) {
-        this.logger.warn('Axiom webhook: could not resolve tenantId for axiom.evaluation.completed event', { orderId: correlationId });
-      }
-      const evalCompletedEvent: AxiomEvaluationCompletedEvent = {
-        id: uuidv4(),
-        type: 'axiom.evaluation.completed',
-        timestamp: new Date(),
-        source: 'axiom-controller',
-        version: '1.0',
-        category: EventCategory.QC,
-        data: {
-          orderId: correlationId,
-          orderNumber: (orderForEvent?.data as any)?.orderNumber ?? correlationId,
-          tenantId: resolvedTenantId,
-          evaluationId: `eval-${correlationId}`,
-          pipelineJobId: pipelineJobId ?? '',
-          overallRiskScore: typeof updateData.axiomRiskScore === 'number' ? updateData.axiomRiskScore : 0,
-          overallDecision: (updateData.axiomDecision as 'ACCEPT' | 'CONDITIONAL' | 'REJECT' | 'UNKNOWN') ?? 'UNKNOWN',
-          status: (status === 'completed' ? 'completed' : 'failed') as 'completed' | 'failed',
-          priority: EventPriority.HIGH,
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'WEBHOOK_PROCESSING_FAILED',
+          message: 'Webhook processing failed before durable completion',
+          details: error instanceof Error ? error.message : String(error),
         },
-      };
-      this.eventPublisher.publish(evalCompletedEvent).catch((err: unknown) => {
-        this.logger.warn('Axiom webhook: failed to publish axiom.evaluation.completed', {
-          orderId: correlationId,
-          error: (err as Error).message,
-        });
       });
-
-      return;
     }
-
-    // ── Legacy shape (mock / dev tests) ──────────────────────────────────
-    const legacyPayload = body as unknown as AxiomWebhookPayload;
-    if (legacyPayload.evaluationId && legacyPayload.orderId) {
-      this.axiomService.handleWebhook(legacyPayload).catch((error: unknown) => {
-        this.logger.error('Background legacy webhook processing failed', { error: error instanceof Error ? error.message : String(error) });
-      });
-      return;
-    }
-
-    this.logger.warn('Axiom webhook received with unrecognised payload shape', { keys: Object.keys(body) });
   };
 
   /**
@@ -773,13 +749,9 @@ export class AxiomController {
    * mapped to a RiskTapeItem, evaluated against the ReviewProgram, and stored
    * as a ReviewTapeResult on the originating BulkPortfolioJob.
    *
-   * Always returns 200 immediately — processing is fire-and-log so Axiom
-   * does not need to retry on our behalf.
+   * Returns 200 only after durable processing succeeds.
    */
   handleExtractionWebhook = async (req: Request, res: Response): Promise<void> => {
-    // Acknowledge immediately — Axiom should not wait on our processing
-    res.status(200).json({ success: true, message: 'Extraction webhook received' });
-
     const payload = req.body as TapeExtractionWebhookPayload;
 
     if (!payload.evaluationId || !payload.jobId || !payload.loanNumber) {
@@ -788,11 +760,13 @@ export class AxiomController {
         hasJobId: !!payload.jobId,
         hasLoanNumber: !!payload.loanNumber,
       });
+      res.status(400).json({ success: false, error: 'evaluationId, jobId, and loanNumber are required' });
       return;
     }
 
     try {
       await this.bulkPortfolioService.processExtractionCompletion(payload);
+      res.status(200).json({ success: true, message: 'Extraction webhook processed' });
     } catch (error) {
       this.logger.error('Failed to process extraction webhook', {
         evaluationId: payload.evaluationId,
@@ -800,6 +774,7 @@ export class AxiomController {
         loanNumber: payload.loanNumber,
         error: error instanceof Error ? error.message : String(error),
       });
+      res.status(500).json({ success: false, error: 'Extraction webhook processing failed' });
     }
   };
 
@@ -812,58 +787,54 @@ export class AxiomController {
    * Protected by HMAC signature verification.
    */
   handleBulkWebhook = async (req: Request, res: Response): Promise<void> => {
-    // Acknowledge immediately — Axiom must not wait on our processing
-    res.status(200).json({ success: true, message: 'Bulk webhook received' });
-
-    const body = req.body as Record<string, unknown>;
-    const jobId = body['correlationId'] as string | undefined;
-    const pipelineJobId = body['pipelineJobId'] as string | undefined;
-    const status = (body['status'] as string) ?? 'completed';
-    const rawResults = body['results'] as Array<Record<string, unknown>> | undefined;
-
-    if (!jobId) {
-      this.logger.warn('Axiom bulk webhook missing correlationId', { keys: Object.keys(body) });
-      return;
-    }
-
-    this.logger.info('Axiom bulk webhook received', { jobId, pipelineJobId, status, loanCount: rawResults?.length ?? 0 });
-
-    if (!rawResults || rawResults.length === 0) {
-      // No per-loan results: just broadcast the job-level status change
-      this.axiomService.broadcastBatchJobUpdate(jobId).catch(() => undefined);
-      return;
-    }
-
-    // Map raw Axiom payload rows → typed loanResults
-    // exactOptionalPropertyTypes: omit optional fields entirely when value is not present
-    type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
-    const loanResults: LoanResult[] = rawResults
-      .filter((r) => typeof r['loanNumber'] === 'string')
-      .map((r) => {
-        const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
-        const entry: LoanResult = { loanNumber: r['loanNumber'] as string, status: loanStatus };
-        if (typeof r['riskScore'] === 'number') entry.riskScore = r['riskScore'];
-        const dec = r['decision'];
-        if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') entry.decision = dec;
-        return entry;
-      });
-
     try {
+      const body = req.body as Record<string, unknown>;
+      const jobId = body['correlationId'] as string | undefined;
+      const pipelineJobId = body['pipelineJobId'] as string | undefined;
+      const status = (body['status'] as string) ?? 'completed';
+      const rawResults = body['results'] as Array<Record<string, unknown>> | undefined;
+
+      if (!jobId) {
+        this.logger.warn('Axiom bulk webhook missing correlationId', { keys: Object.keys(body) });
+        res.status(400).json({ success: false, error: 'correlationId is required' });
+        return;
+      }
+
+      this.logger.info('Axiom bulk webhook received', { jobId, pipelineJobId, status, loanCount: rawResults?.length ?? 0 });
+
+      if (!rawResults || rawResults.length === 0) {
+        // No per-loan results: just broadcast the job-level status change
+        await this.axiomService.broadcastBatchJobUpdate(jobId);
+        res.status(200).json({ success: true, message: 'Bulk webhook processed' });
+        return;
+      }
+
+      // Map raw Axiom payload rows → typed loanResults
+      // exactOptionalPropertyTypes: omit optional fields entirely when value is not present
+      type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
+      const loanResults: LoanResult[] = rawResults
+        .filter((r) => typeof r['loanNumber'] === 'string')
+        .map((r) => {
+          const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
+          const entry: LoanResult = { loanNumber: r['loanNumber'] as string, status: loanStatus };
+          if (typeof r['riskScore'] === 'number') entry.riskScore = r['riskScore'];
+          const dec = r['decision'];
+          if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') entry.decision = dec;
+          return entry;
+        });
+
       const updatedJob = await this.bulkPortfolioService.stampBatchEvaluationResults(jobId, loanResults);
       const completedLoans = (updatedJob.items as Array<{ axiomStatus?: string }>)
         .filter((r) => r.axiomStatus === 'completed').length;
       const totalLoans = updatedJob.items?.length ?? loanResults.length;
 
-      this.axiomService.broadcastBatchJobUpdate(jobId, completedLoans, totalLoans)
-        .catch(() => undefined);
+      await this.axiomService.broadcastBatchJobUpdate(jobId, completedLoans, totalLoans);
+      res.status(200).json({ success: true, message: 'Bulk webhook processed' });
     } catch (err) {
-      this.logger.error('Axiom bulk webhook: stampBatchEvaluationResults failed', {
-        jobId,
-        pipelineJobId,
+      this.logger.error('Axiom bulk webhook durable processing failed', {
         error: (err as Error).message,
       });
-      // Still broadcast so the frontend knows to refresh (it will see any partial stamps)
-      this.axiomService.broadcastBatchJobUpdate(jobId).catch(() => undefined);
+      res.status(500).json({ success: false, error: 'Bulk webhook processing failed' });
     }
   };
 
@@ -1077,6 +1048,25 @@ export function createAxiomRouter(dbService: CosmosDbService, axiomService?: Axi
   // P2-D: complexity scoring
   router.post('/scoring/complexity', controller.calculateComplexityScore);
   router.get('/scoring/complexity/:orderId', controller.getComplexityScore);
+
+  return router;
+}
+
+/**
+ * Create webhook-only Axiom router.
+ *
+ * This router is intentionally unauthenticated (no UnifiedAuth) because Axiom
+ * callbacks are server-to-server and must be validated by HMAC signature,
+ * not by end-user JWTs.
+ */
+export function createAxiomWebhookRouter(dbService: CosmosDbService, axiomService?: AxiomService): Router {
+  const router = Router();
+  const controller = new AxiomController(dbService, axiomService);
+
+  // Webhooks — HMAC verification applied before handlers
+  router.post('/webhook', verifyAxiomWebhook, controller.handleWebhook);
+  router.post('/webhook/bulk', verifyAxiomWebhook, controller.handleBulkWebhook);
+  router.post('/webhook/extraction', verifyAxiomWebhook, controller.handleExtractionWebhook);
 
   return router;
 }

@@ -215,6 +215,12 @@ export interface BulkPortfolioJob {
   engagementId?: string;
   /** Portfolio-level summary appended after tape evaluation completes */
   reviewSummary?: ReviewTapeJobSummary;
+  /** Axiom bulk pipeline correlation metadata for TAPE_EVALUATION jobs */
+  axiomPipelineJobId?: string;
+  axiomBatchId?: string;
+  axiomSubmittedAt?: string;
+  axiomSubmissionStatus?: 'queued' | 'submitted' | 'failed';
+  axiomSubmissionError?: string;
   items: BulkPortfolioItem[] | ReviewTapeResult[];
   // ── Document Extraction tracking (processingMode === 'DOCUMENT_EXTRACTION') ──
   /** Per-loan extraction state; replaces items[] for DOCUMENT_EXTRACTION jobs */

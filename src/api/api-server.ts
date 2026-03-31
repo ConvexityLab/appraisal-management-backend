@@ -108,7 +108,7 @@ import { createAcsTokenRouter } from '../controllers/acs-token.controller';
 import { createTeamsRouter } from '../controllers/teams.controller';
 import { createServiceHealthRouter } from '../controllers/service-health.controller';
 import { createUnifiedCommunicationRouter } from '../controllers/unified-communication.controller';
-import { createAxiomRouter } from '../controllers/axiom.controller';
+import { createAxiomRouter, createAxiomWebhookRouter } from '../controllers/axiom.controller';
 import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
@@ -183,6 +183,7 @@ import { AutoDeliveryService } from '../services/auto-delivery.service';
 import { EngagementLifecycleService } from '../services/engagement-lifecycle.service';
 import { CommunicationEventHandler } from '../services/communication-event-handler.service';
 import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service';
+import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service';
 import { AxiomDocumentProcessingService } from '../services/axiom-document-processing.service';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
@@ -298,6 +299,7 @@ export class AppraisalManagementAPIServer {
   private engagementLifecycleService?: EngagementLifecycleService;
   private communicationEventHandler?: CommunicationEventHandler;
   private axiomAutoTriggerService?: AxiomAutoTriggerService;
+  private axiomBulkSubmissionService?: AxiomBulkSubmissionService;
   private axiomDocumentProcessingService?: AxiomDocumentProcessingService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
@@ -851,6 +853,11 @@ export class AppraisalManagementAPIServer {
     // Powers AI features: USPAP compliance, QC automation, revision comparison, ROV analysis
     // P1-H: Create a single shared AxiomService so both routers share the in-memory compileCache.
     const sharedAxiomService = new AxiomService(this.dbService);
+    // Webhook callbacks are server-to-server and must be validated by HMAC signature,
+    // not end-user auth tokens.
+    this.app.use('/api/axiom',
+      createAxiomWebhookRouter(this.dbService, sharedAxiomService)
+    );
     this.app.use('/api/axiom',
       this.unifiedAuth.authenticate(),
       createAxiomRouter(this.dbService, sharedAxiomService)
@@ -3602,6 +3609,20 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Axiom Bulk Submission Service (submits TAPE_EVALUATION jobs from queued events)
+    try {
+      this.axiomBulkSubmissionService = new AxiomBulkSubmissionService(this.dbService);
+      this.axiomBulkSubmissionService.start().catch(err => {
+        this.logger.warn('AxiomBulkSubmissionService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AxiomBulkSubmissionService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Axiom Missed-Trigger recovery job (finds SUBMITTED orders that never reached Axiom)
     if (this.axiomAutoTriggerService) {
       try {
@@ -3738,7 +3759,7 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
     });
   }
 
@@ -3778,6 +3799,12 @@ export class AppraisalManagementAPIServer {
     }
     if (this.axiomAutoTriggerService) {
       this.axiomAutoTriggerService.stop().catch(() => {});
+    }
+    if (this.axiomBulkSubmissionService) {
+      this.axiomBulkSubmissionService.stop().catch(() => {});
+    }
+    if (this.axiomDocumentProcessingService) {
+      this.axiomDocumentProcessingService.stop().catch(() => {});
     }
     if (this.axiomMissedTriggerJob) {
       this.axiomMissedTriggerJob.stop();

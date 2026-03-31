@@ -19,7 +19,7 @@ function required(name: string): string {
 }
 
 async function main(): Promise<void> {
-  const context = loadLiveFireContext();
+  const context = await loadLiveFireContext();
   const orderId = required('AXIOM_LIVE_ORDER_ID');
   const documentUrl = required('AXIOM_LIVE_DOCUMENT_URL');
   const revisedDocumentUrl = required('AXIOM_LIVE_REVISED_DOCUMENT_URL');

@@ -5,6 +5,56 @@
 > **Approach:** TDD — every fix has its test cases listed first; no code ships without a passing test  
 > **Test runner:** `pnpm vitest` (backend) · `pnpm vitest` (frontend)
 
+## March 29, 2026 — Live-Fire Hardening Delta
+
+### Completed
+
+- Consolidated to canonical event-driven submission paths:
+  - Removed inline order-status submitter from `OrderController` (`order.status.changed` + `AxiomAutoTriggerService` is now source-of-truth)
+  - Removed inline document-upload submitter from `DocumentController` (`document.uploaded` + `AxiomDocumentProcessingService` is now source-of-truth)
+  - Removed inline bulk-order submitters from `BulkPortfolioService`
+- Strengthened preflight data prerequisite validation:
+  - `axiom-live-fire-preflight-probe.ts` now requires order tenant/client linkage + blob-backed document metadata
+- Added deployed-env validation for Axiom runtime prerequisites:
+  - `ServiceHealthCheckService.checkAxiomConfiguration()` now validates `AXIOM_API_BASE_URL`, `API_BASE_URL`, `AXIOM_WEBHOOK_SECRET`, `STORAGE_CONTAINER_DOCUMENTS`
+- Added full remote-first runner:
+  - `pnpm axiom:livefire:remote-suite`
+  - validates deployed Axiom env via `/api/health/services`, validates local live-fire inputs, then runs `preflight` → `property-intake` → `document-flow` → `analyze-webhook`
+- Expanded backend coverage with new unit tests:
+  - `verify-axiom-webhook.middleware.test.ts`
+  - `axiom-document-processing.test.ts`
+  - `axiom-timeout-watcher.test.ts`
+  - `axiom-pipeline-result-stamping.test.ts`
+
+### Verification (March 29)
+
+- ✅ `pnpm type-check` passes
+- ✅ Targeted Axiom suites pass: 60/60 tests
+- ⚠️ Remote live-fire suite is blocked in this session by interactive delegated auth requirement (device-code login needed at runtime)
+
+### Incident Recovery Runbook (March 29)
+
+- **Scenario:** `axiom.bulk-evaluation.requested` publishes successfully but worker consumption fails with `MessagingEntityNotFound` for subscription `axiom-bulk-submission-service`.
+- **Required approach:** restore infrastructure via **Bicep** (no imperative Service Bus entity creation commands).
+- **Targeted restore template:** `infrastructure/modules/service-bus-subscription-restore.bicep`
+
+```powershell
+Push-Location "c:\source\appraisal-management-backend"
+
+$nsHost = (Get-Content .env | Where-Object { $_ -match '^AZURE_SERVICE_BUS_NAMESPACE=' } | Select-Object -First 1).Split('=')[1].Trim()
+$nsName = $nsHost -replace '\.servicebus\.windows\.net$',''
+$rg = az resource list --name $nsName --resource-type Microsoft.ServiceBus/namespaces --query "[0].resourceGroup" -o tsv
+
+az deployment group create \
+  --resource-group $rg \
+  --name "restore-axiom-bulk-sub-$(Get-Date -Format yyyyMMddHHmmss)" \
+  --template-file infrastructure/modules/service-bus-subscription-restore.bicep \
+  --parameters serviceBusNamespaceName=$nsName topicName=appraisal-events subscriptionName=axiom-bulk-submission-service \
+  --only-show-errors
+```
+
+- **Post-restore verification:** run the publish/consume probe (or equivalent live-fire check) and confirm both `PROBE_PUBLISHED` and `PROBE_RECEIVED` for event type `axiom.bulk-evaluation.requested`.
+
 ---
 
 ## ✅ Implementation Progress

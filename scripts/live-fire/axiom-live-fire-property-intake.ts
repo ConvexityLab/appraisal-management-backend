@@ -19,7 +19,7 @@ function required(name: string): string {
 }
 
 async function main(): Promise<void> {
-  const context = loadLiveFireContext();
+  const context = await loadLiveFireContext();
   const orderId = required('AXIOM_LIVE_ORDER_ID');
   const pollAttempts = Number(process.env['AXIOM_LIVE_POLL_ATTEMPTS'] ?? '20');
   const pollIntervalMs = Number(process.env['AXIOM_LIVE_POLL_INTERVAL_MS'] ?? '3000');

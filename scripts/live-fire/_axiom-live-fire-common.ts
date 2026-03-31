@@ -1,7 +1,23 @@
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
+import { DefaultAzureCredential, DeviceCodeCredential } from '@azure/identity';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 type Primitive = string | number | boolean;
+
+type TokenMode = 'device-code' | 'default-credential';
+
+interface TokenCacheRecord {
+  token: string;
+  expiresOnTimestamp: number;
+  scope: string;
+  mode: TokenMode;
+  tenantId: string;
+  clientId: string;
+  cachedAt: string;
+}
 
 interface LiveFireContext {
   baseUrl: string;
@@ -28,6 +44,11 @@ function optionalEnv(name: string): string | undefined {
   return value && value.trim() ? value.trim() : undefined;
 }
 
+function isEnvTrue(name: string): boolean {
+  const raw = optionalEnv(name);
+  return raw === 'true' || raw === '1' || raw?.toLowerCase() === 'yes';
+}
+
 function envNumber(name: string, fallback: number): number {
   const raw = optionalEnv(name);
   if (!raw) return fallback;
@@ -36,6 +57,133 @@ function envNumber(name: string, fallback: number): number {
     throw new Error(`Environment variable ${name} must be a positive number. Received: ${raw}`);
   }
   return parsed;
+}
+
+const currentFilePath = fileURLToPath(import.meta.url);
+const currentDir = path.dirname(currentFilePath);
+
+function tokenCacheFilePath(): string {
+  const configured = optionalEnv('AXIOM_LIVE_TOKEN_CACHE_FILE');
+  if (configured) {
+    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+  }
+  return path.resolve(currentDir, '.livefire-token-cache.json');
+}
+
+function tokenCacheSkewSeconds(): number {
+  return envNumber('AXIOM_LIVE_TOKEN_CACHE_SKEW_SECONDS', 120);
+}
+
+function isTokenCacheDisabled(): boolean {
+  return isEnvTrue('AXIOM_LIVE_DISABLE_TOKEN_CACHE');
+}
+
+function parseJwtExpiry(token: string): number | undefined {
+  const decoded = jwt.decode(token);
+  if (!decoded || typeof decoded !== 'object') {
+    return undefined;
+  }
+  const exp = (decoded as Record<string, unknown>)['exp'];
+  if (typeof exp !== 'number' || !Number.isFinite(exp) || exp <= 0) {
+    return undefined;
+  }
+  return exp;
+}
+
+function isCacheMatch(
+  record: TokenCacheRecord,
+  mode: TokenMode,
+  scope: string,
+  tenantId: string,
+  clientId: string,
+): boolean {
+  return (
+    record.mode === mode &&
+    record.scope === scope &&
+    record.tenantId === tenantId &&
+    record.clientId === clientId
+  );
+}
+
+async function readTokenCache(
+  mode: TokenMode,
+  scope: string,
+  tenantId: string,
+  clientId: string,
+): Promise<string | undefined> {
+  if (isTokenCacheDisabled()) {
+    return undefined;
+  }
+
+  const cachePath = tokenCacheFilePath();
+  try {
+    const raw = await fs.readFile(cachePath, 'utf8');
+    const parsed = JSON.parse(raw) as TokenCacheRecord;
+
+    if (!isCacheMatch(parsed, mode, scope, tenantId, clientId)) {
+      return undefined;
+    }
+
+    const nowEpochSeconds = Math.floor(Date.now() / 1000);
+    const skew = tokenCacheSkewSeconds();
+    if (parsed.expiresOnTimestamp <= nowEpochSeconds + skew) {
+      return undefined;
+    }
+
+    return parsed.token;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeTokenCache(
+  mode: TokenMode,
+  scope: string,
+  tenantId: string,
+  clientId: string,
+  token: string,
+): Promise<void> {
+  if (isTokenCacheDisabled()) {
+    return;
+  }
+
+  const exp = parseJwtExpiry(token);
+  if (!exp) {
+    return;
+  }
+
+  const record: TokenCacheRecord = {
+    token,
+    expiresOnTimestamp: exp,
+    scope,
+    mode,
+    tenantId,
+    clientId,
+    cachedAt: new Date().toISOString(),
+  };
+
+  const cachePath = tokenCacheFilePath();
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  await fs.writeFile(cachePath, JSON.stringify(record, null, 2), 'utf8');
+}
+
+function resolveTokenScope(): string {
+  const explicitScope = optionalEnv('AXIOM_LIVE_TOKEN_SCOPE');
+  if (explicitScope) {
+    return explicitScope;
+  }
+
+  const audienceClientId =
+    optionalEnv('AXIOM_LIVE_AUDIENCE_CLIENT_ID') ??
+    optionalEnv('AZURE_API_CLIENT_ID');
+
+  if (!audienceClientId) {
+    throw new Error(
+      'Missing token scope. Set AXIOM_LIVE_TOKEN_SCOPE, or AXIOM_LIVE_AUDIENCE_CLIENT_ID (or AZURE_API_CLIENT_ID).',
+    );
+  }
+
+  return `api://${audienceClientId}/.default`;
 }
 
 function buildTestToken(tenantId: string, clientId: string): string {
@@ -65,12 +213,84 @@ function buildTestToken(tenantId: string, clientId: string): string {
   );
 }
 
-export function loadLiveFireContext(): LiveFireContext {
+async function resolveBearerToken(tenantId: string, clientId: string): Promise<string> {
+  const explicitBearer = optionalEnv('AXIOM_LIVE_BEARER_TOKEN');
+  if (explicitBearer) {
+    return explicitBearer;
+  }
+
+  const useDeviceCode = isEnvTrue('AXIOM_LIVE_USE_DEVICE_CODE');
+  const useDefaultCredential = isEnvTrue('AXIOM_LIVE_USE_DEFAULT_CREDENTIAL');
+  if (useDeviceCode && useDefaultCredential) {
+    throw new Error(
+      'Set only one auth mode: AXIOM_LIVE_USE_DEVICE_CODE=true OR AXIOM_LIVE_USE_DEFAULT_CREDENTIAL=true (not both).',
+    );
+  }
+
+  if (useDeviceCode) {
+    const scope = resolveTokenScope();
+    const deviceCodeClientId = requiredEnv('AXIOM_LIVE_DEVICE_CODE_CLIENT_ID');
+    const deviceCodeTenantId =
+      optionalEnv('AXIOM_LIVE_DEVICE_CODE_TENANT_ID') ??
+      optionalEnv('AZURE_TENANT_ID');
+
+    if (!deviceCodeTenantId) {
+      throw new Error(
+        'AXIOM_LIVE_USE_DEVICE_CODE=true requires AXIOM_LIVE_DEVICE_CODE_TENANT_ID or AZURE_TENANT_ID.',
+      );
+    }
+
+    const cached = await readTokenCache('device-code', scope, tenantId, clientId);
+    if (cached) {
+      return cached;
+    }
+
+    const credential = new DeviceCodeCredential({
+      clientId: deviceCodeClientId,
+      tenantId: deviceCodeTenantId,
+      userPromptCallback: (info) => {
+        console.log(info.message);
+      },
+    });
+
+    const token = await credential.getToken(scope);
+    if (!token?.token) {
+      throw new Error(`DeviceCodeCredential returned no token for scope: ${scope}`);
+    }
+
+    await writeTokenCache('device-code', scope, tenantId, clientId, token.token);
+
+    return token.token;
+  }
+
+  if (useDefaultCredential) {
+    const scope = resolveTokenScope();
+
+    const cached = await readTokenCache('default-credential', scope, tenantId, clientId);
+    if (cached) {
+      return cached;
+    }
+
+    const credential = new DefaultAzureCredential();
+    const token = await credential.getToken(scope);
+    if (!token?.token) {
+      throw new Error(`DefaultAzureCredential returned no token for scope: ${scope}`);
+    }
+
+    await writeTokenCache('default-credential', scope, tenantId, clientId, token.token);
+
+    return token.token;
+  }
+
+  return buildTestToken(tenantId, clientId);
+}
+
+export async function loadLiveFireContext(): Promise<LiveFireContext> {
   const baseUrl = requiredEnv('AXIOM_LIVE_BASE_URL').replace(/\/$/, '');
   const tenantId = requiredEnv('AXIOM_LIVE_TENANT_ID');
   const clientId = requiredEnv('AXIOM_LIVE_CLIENT_ID');
 
-  const bearer = optionalEnv('AXIOM_LIVE_BEARER_TOKEN') ?? buildTestToken(tenantId, clientId);
+  const bearer = await resolveBearerToken(tenantId, clientId);
 
   return {
     baseUrl,

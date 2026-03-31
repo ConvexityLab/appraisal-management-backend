@@ -485,6 +485,19 @@ export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
   };
 }
 
+/** Fired when a completed tape-evaluation job should be submitted to Axiom in the background. */
+export interface AxiomBulkEvaluationRequestedEvent extends BaseEvent {
+  type: 'axiom.bulk-evaluation.requested';
+  category: EventCategory.QC;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    reviewProgramId?: string;
+    priority: EventPriority;
+  };
+}
+
 /** Fired when Axiom completes the evaluation (published from the webhook handler). */
 export interface AxiomEvaluationCompletedEvent extends BaseEvent {
   type: 'axiom.evaluation.completed';
@@ -993,6 +1006,7 @@ export type AppEvent =
   | EngagementLetterDeclinedEvent
   // Axiom evaluation events
   | AxiomEvaluationSubmittedEvent
+  | AxiomBulkEvaluationRequestedEvent
   | AxiomEvaluationCompletedEvent
   | AxiomEvaluationTimedOutEvent
   // Review SLA events
