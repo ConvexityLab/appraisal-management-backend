@@ -103,46 +103,17 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01'
   }
 }
 
-// ─── Lifecycle Management Policy ─────────────────────────────────────────────
-// Deletes ACTIVE blobs left in uploads/ after 2 days. The processSftpOrderFile
-// function moves every successfully-processed file from uploads/ → processed/
-// within seconds of the BlobCreated event. Any blob still in uploads/ 2 days
-// later is a stuck .filepart temp file or a partial/failed transfer.
-// Safety: with soft delete enabled, this "delete" creates a soft-delete entry —
-// the blob remains recoverable for softDeleteRetentionDays additional days.
-resource managementPolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-04-01' = {
-  parent: sftpStorageAccount
-  name: 'default'
-  dependsOn: [blobService]
-  properties: {
-    policy: {
-      rules: [
-        {
-          name: 'cleanup-stale-uploads'
-          enabled: true
-          type: 'Lifecycle'
-          definition: {
-            filters: {
-              blobTypes: ['blockBlob']
-              // prefixMatch is matched against containerName/blobPath
-              prefixMatch: ['statebridge/uploads/']
-            }
-            actions: {
-              baseBlob: {
-                delete: {
-                  // Any blob still in uploads/ after 2 days was not successfully
-                  // processed (function archives to processed/ on success).
-                  // With soft delete, this is NOT a permanent deletion.
-                  daysAfterModificationGreaterThan: 2
-                }
-              }
-            }
-          }
-        }
-      ]
-    }
-  }
-}
+// ─── NO lifecycle delete policy ───────────────────────────────────────────────
+// Order files are NEVER auto-deleted. Audit and recovery requirements demand
+// permanent retention of all inbound files.
+//
+// File lifecycle (managed by processSftpOrderFile, not by ARM policy):
+//   uploads/<file>   → written by Statebridge via SFTP
+//   processed/<file> → function moves here after successful ingestion
+//
+// Files stuck in uploads/ (parse failure, function error, etc.) stay there
+// indefinitely so they can be investigated. No ARM management policy is
+// declared here — omitting the resource leaves no policy in place.
 
 // ─── Container ────────────────────────────────────────────────────────────────
 // Single container 'statebridge' — Statebridge's SFTP home directory.

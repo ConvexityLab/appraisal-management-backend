@@ -178,24 +178,38 @@ async function downloadSftpBlob(containerName, blobName, context) {
 }
 
 /**
- * Move a processed blob from uploads/ to processed/ so the uploads directory
- * doesn't accumulate indefinitely and operators can see what's been handled.
+ * Move a blob from uploads/ to archive/processed/ or archive/failed/.
+ *
+ * This is the sole mechanism for clearing the uploads/ inbox — no ARM lifecycle
+ * policies exist on this account (permanent audit/recovery retention requirement).
+ *
+ * Called for every terminal outcome so uploads/ contains only files that are
+ * actively being processed or pending a queue retry:
+ *   "processed" — file was successfully ingested into Cosmos
+ *   "failed"    — file was permanently rejected (bad extension, empty, all-malformed)
+ *
+ * Retryable errors (Cosmos down, download failure) are thrown WITHOUT calling
+ * this function so the queue retries from uploads/.
  */
-async function archiveProcessedBlob(containerName, blobName, context) {
+async function moveBlobToArchive(containerName, blobName, dest, context) {
   const containerClient = sftpBlobClient.getContainerClient(containerName);
   const sourceBlobClient = containerClient.getBlobClient(blobName);
-  const destPath = blobName.replace(/^uploads\//, "processed/");
+
+  // Strip the uploads/ prefix, keep any sub-path after it
+  const relativeName = blobName.replace(/^uploads\//, "");
+  const destPath = `archive/${dest}/${relativeName}`;
   const destBlobClient = containerClient.getBlobClient(destPath);
 
   try {
-    // Copy then delete (ADLS Gen2 / HNS doesn't support rename via SDK)
+    // Copy then delete (ADLS Gen2 / HNS doesn't support server-side rename via SDK)
     const poller = await destBlobClient.beginCopyFromURL(sourceBlobClient.url);
     await poller.pollUntilDone();
     await sourceBlobClient.delete();
-    context.log(`Archived ${blobName} → ${destPath}`);
+    context.log(`Moved ${blobName} → ${destPath}`);
   } catch (err) {
-    // Archival failure is non-fatal — the file was already processed successfully
-    context.log(`WARNING: Failed to archive ${blobName} → ${destPath}: ${err.message}`);
+    // Non-fatal — for "processed", data is already in Cosmos; for "failed", file
+    // stays in uploads/ where ops can investigate.
+    context.log(`WARNING: Failed to move ${blobName} → ${destPath}: ${err.message}`);
   }
 }
 
@@ -416,13 +430,16 @@ app.storageQueue("processSftpOrderFile", {
     if (!VALID_FILE_EXTENSIONS.includes(ext)) {
       context.log(
         `REJECTED: File "${blobName}" has unsupported extension "${ext}". ` +
-        `Expected one of: ${VALID_FILE_EXTENSIONS.join(", ")}. Discarding.`
+        `Expected one of: ${VALID_FILE_EXTENSIONS.join(", ")}. Moving to archive/failed/.`
       );
+      await moveBlobToArchive("statebridge", blobName, "failed", context);
       return;
     }
 
     // 3. Reject re-uploads of already-processed filenames.
     //    Statebridge must use a unique filename for corrections (e.g., _v2 suffix).
+    //    Do NOT attempt to move the blob — it was already moved to archive/processed/
+    //    by the first invocation and no longer exists in uploads/.
     if (await fileAlreadyProcessed(blobName)) {
       context.log(
         `REJECTED: File "${blobName}" has already been processed. ` +
@@ -444,7 +461,8 @@ app.storageQueue("processSftpOrderFile", {
     // 5. Parse rows
     const rows = parseOrderFile(fileContent);
     if (rows.length === 0) {
-      context.log(`WARNING: No data rows found in ${blobName} — nothing to process`);
+      context.log(`WARNING: No data rows found in ${blobName} — moving to archive/failed/`);
+      await moveBlobToArchive("statebridge", blobName, "failed", context);
       return;
     }
     context.log(`Parsed ${rows.length} order row(s) from ${blobName}`);
@@ -466,7 +484,8 @@ app.storageQueue("processSftpOrderFile", {
     }
 
     if (validRows.length === 0) {
-      context.log(`ERROR: All rows in ${blobName} were malformed — nothing to process`);
+      context.log(`ERROR: All rows in ${blobName} were malformed — moving to archive/failed/`);
+      await moveBlobToArchive("statebridge", blobName, "failed", context);
       return;
     }
 
@@ -531,14 +550,15 @@ app.storageQueue("processSftpOrderFile", {
       `processSftpOrderFile complete — file: ${blobName} | engagement: ${engagementId} | orders created: ${created} | skipped (already exist): ${skipped} | errors: ${errors.length}`
     );
 
+    // 8. Move to archive/processed/ — engagement exists in Cosmos regardless of partial
+    //    order errors, so the file is permanently archived before surfacing the error.
+    await moveBlobToArchive("statebridge", blobName, "processed", context);
+
     if (errors.length > 0) {
       throw new Error(
         `${errors.length} order(s) failed to create. First error: ${errors[0].error}. File: ${blobName}`
       );
     }
-
-    // 8. Archive file from uploads/ to processed/ (non-fatal on failure)
-    await archiveProcessedBlob("statebridge", blobName, context);
   },
 });
 

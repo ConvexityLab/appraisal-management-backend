@@ -250,6 +250,34 @@ jobs:
         echo "✅ Password stored in Key Vault as 'sftp-statebridge-password'."
         echo "   Retrieve: az keyvault secret show --vault-name $KV_NAME --name sftp-statebridge-password --query value -o tsv"
 
+    - name: Enforce no SFTP lifecycle delete policy (audit retention)
+      # Order files must NEVER be auto-deleted — they are required for audit and
+      # recovery. This step explicitly removes any management policy that may have
+      # been deployed to the SFTP storage account, since Bicep incremental mode
+      # does not delete Azure resources that are removed from the template.
+      run: |
+        SFTP_ACCOUNT="${{ steps.deploy.outputs.sftpStorageAccountName }}"
+        RG="${{ steps.deploy.outputs.resourceGroupName }}"
+        SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+
+        if [[ -z "$SFTP_ACCOUNT" || "$SFTP_ACCOUNT" == "null" ]]; then
+          echo "⏭️  Skipping — sftpStorageAccountName not in deployment outputs."
+          exit 0
+        fi
+
+        POLICY_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Storage/storageAccounts/${SFTP_ACCOUNT}/managementPolicies/default?api-version=2023-04-01"
+
+        HTTP_STATUS=$(az rest --method get --url "$POLICY_URL" \
+          --query 'id' -o tsv 2>/dev/null && echo "EXISTS" || echo "NOT_FOUND")
+
+        if [[ "$HTTP_STATUS" == "NOT_FOUND" ]]; then
+          echo "✅ No management policy exists on SFTP account — audit retention intact."
+        else
+          echo "⚠️  Management policy found on SFTP account — deleting to enforce permanent file retention..."
+          az rest --method delete --url "$POLICY_URL"
+          echo "✅ Management policy deleted. Order files will never be auto-deleted."
+        fi
+
     - name: Import API swagger into APIM
       run: |
         APIM_NAME="${{ steps.deploy.outputs.apimName }}"
