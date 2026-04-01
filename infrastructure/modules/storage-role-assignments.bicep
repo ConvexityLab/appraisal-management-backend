@@ -37,4 +37,30 @@ resource storageReaderRoleAssignments 'Microsoft.Authorization/roleAssignments@2
   }
 }]
 
+// Assign Storage Queue Data Message Processor — required by BulkUploadEventListenerJob
+// to receive and delete messages from the bulk-upload-events queue (populated by Event Grid).
+resource storageQueueProcessorRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(storageAccount.id, principalId, '8a0f0c08-91a1-4084-bc3d-661d67233fed')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8a0f0c08-91a1-4084-bc3d-661d67233fed') // Storage Queue Data Message Processor
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to receive and delete messages from storage queues (bulk-upload-events)'
+  }
+}]
+
+// Assign Storage Queue Data Contributor — allows the functions app to enqueue messages
+// (e.g. outbound notifications or retry queues).
+resource storageQueueContributorRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in containerAppPrincipalIds: if (!empty(containerAppPrincipalIds)) {
+  name: guid(storageAccount.id, principalId, '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88') // Storage Queue Data Contributor
+    principalId: principalId
+    principalType: 'ServicePrincipal'
+    description: 'Allows container app ${i} to read, write and delete queue messages'
+  }
+}]
+
 output roleAssignmentsCount int = length(containerAppPrincipalIds)

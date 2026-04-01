@@ -182,9 +182,12 @@ export class BulkUploadEventListenerJob {
   // ── Message processing ──────────────────────────────────────────────────────
 
   private async processMessage(rawText: string): Promise<void> {
-    // Storage Queue messages from Event Grid are base64-encoded
+    // Storage Queue messages from Event Grid are base64-encoded.
+    // The payload may be a single event object or an array of events depending
+    // on the Event Grid delivery schema version — normalise to always be an array.
     const decoded = Buffer.from(rawText, 'base64').toString('utf8');
-    const events: EventGridEvent[] = JSON.parse(decoded);
+    const parsed: unknown = JSON.parse(decoded);
+    const events: EventGridEvent[] = Array.isArray(parsed) ? parsed : [parsed as EventGridEvent];
 
     for (const event of events) {
       if (event.eventType !== 'Microsoft.Storage.BlobCreated') {

@@ -370,6 +370,78 @@ resource axiomBulkSubmissionServiceSubscription 'Microsoft.ServiceBus/namespaces
   }
 }
 
+// Bulk Ingestion Processor Service Subscription (consumed by BulkIngestionProcessorService — parses CSV and dispatches per-row jobs)
+resource bulkIngestionProcessorServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'bulk-ingestion-processor-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+// Bulk Ingestion Canonical Worker Service Subscription (consumed by BulkIngestionCanonicalWorkerService — canonicalizes raw appraisal blobs)
+resource bulkIngestionCanonicalWorkerServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'bulk-ingestion-canonical-worker-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+// Bulk Ingestion Extraction Worker Service Subscription (consumed by BulkIngestionExtractionWorkerService — triggers Axiom extraction per appraisal)
+resource bulkIngestionExtractionWorkerServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'bulk-ingestion-extraction-worker-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+// Bulk Ingestion Order Creation Worker Service Subscription (consumed by BulkIngestionOrderCreationWorkerService — creates appraisal orders from ingested rows)
+resource bulkIngestionOrderCreationWorkerServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'bulk-ingestion-order-creation-worker-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+// Bulk Ingestion Criteria Worker Service Subscription (consumed by BulkIngestionCriteriaWorkerService — validates loan criteria before order creation)
+resource bulkIngestionCriteriaWorkerServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'bulk-ingestion-criteria-worker-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
+// Bulk Ingestion Finalizer Service Subscription (consumed by BulkIngestionFinalizerService — marks jobs complete and emits summary events)
+resource bulkIngestionFinalizerServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'bulk-ingestion-finalizer-service'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Outputs
 output namespaceName string = serviceBusNamespace.name
 output namespaceId string = serviceBusNamespace.id
