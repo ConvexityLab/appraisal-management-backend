@@ -2,16 +2,53 @@
 /**
  * Bulk-Upload End-to-End Live-Fire Script
  *
- * Uploads a CSV file and a PDF to our staging storage container, then watches
+ * Uploads a CSV file and PDFs to the staging storage container, then watches
  * the entire execution pipeline until the bulk-ingestion job reaches a terminal
  * state (COMPLETED or FAILED).
  *
- * Required env vars:
- *   BULK_UPLOAD_STORAGE_ACCOUNT_NAME — our staging storage account name (set by Bicep in app-services.bicep)
- *   APPRAISAL_API_BASE_URL           — e.g. https://ca-appraisal-mgmt-staging.eastus.azurecontainerapps.io
+ * Auth: uses InteractiveBrowserCredential (real Azure AD token via the frontend
+ * app registration). A browser window will open for login on first run; the
+ * token is then used for both BlobServiceClient uploads and API calls.
  *
- * Optional env vars:
- *   TEST_JWT_SECRET              — JWT signing secret (defaults to the dev test secret)
+ * ─── HOW TO RUN (staging) ────────────────────────────────────────────────────
+ *
+ *   cd C:\source\appraisal-management-backend
+ *   $env:BULK_UPLOAD_STORAGE_ACCOUNT_NAME = "apprstaginglqxl5vst"
+ *   $env:APPRAISAL_API_BASE_URL           = "https://ca-appraisalapi-sta-lqxl.jollysand-19372da7.eastus.azurecontainerapps.io"
+ *   $env:AZURE_API_CLIENT_ID              = "dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a"
+ *   $env:AZURE_AUTH_CLIENT_ID             = "ee1cad4a-3049-409d-96e4-70c73fad2139"
+ *   $env:AZURE_TENANT_ID                  = "885097ba-35ea-48db-be7a-a0aa7ff451bd"
+ *   npx tsx scripts/live-fire/bulk-upload-e2e.ts
+ *
+ * ─── STAGING RESOURCE REFERENCE ─────────────────────────────────────────────
+ *
+ *   Azure AD tenant          : 885097ba-35ea-48db-be7a-a0aa7ff451bd
+ *   API app registration     : dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a  (audience / AZURE_API_CLIENT_ID)
+ *   Frontend app registration: ee1cad4a-3049-409d-96e4-70c73fad2139  (AZURE_AUTH_CLIENT_ID — has native redirect http://localhost)
+ *   Storage account          : apprstaginglqxl5vst
+ *   Storage container        : bulk-upload
+ *   Storage queue            : bulk-upload-events  (Event Grid BlobCreated target)
+ *   API container app        : ca-appraisalapi-sta-lqxl.jollysand-19372da7.eastus.azurecontainerapps.io
+ *   Resource group           : rg-appraisal-mgmt-staging-eastus
+ *   Key Vault                : kvapprmstastanktl4a
+ *   API managed identity     : principalId 23e6b738-0bde-4eb7-99c5-f0cd24ea9ee0
+ *                              clientId    9b6fa4b8-07f9-4778-bdd8-225edf6ba909
+ *
+ * ─── BLOB PATH CONVENTION ────────────────────────────────────────────────────
+ *
+ *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/{filename}
+ *   e.g. bulk-upload/test-tenant/test-client/statebridge-{suffix}/loans.csv
+ *
+ * ─── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────
+ *
+ * Required:
+ *   BULK_UPLOAD_STORAGE_ACCOUNT_NAME — staging storage account name
+ *   APPRAISAL_API_BASE_URL           — API base URL (no trailing slash)
+ *   AZURE_API_CLIENT_ID              — API app registration client ID (token audience)
+ *   AZURE_AUTH_CLIENT_ID             — frontend app registration client ID (browser login)
+ *   AZURE_TENANT_ID                  — Azure AD tenant ID
+ *
+ * Optional:
  *   BULK_UPLOAD_TEST_TENANT_ID   — (default: test-tenant)
  *   BULK_UPLOAD_TEST_CLIENT_ID   — (default: test-client)
  *   BULK_UPLOAD_TEST_ADAPTER_KEY — (default: statebridge)
