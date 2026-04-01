@@ -1,8 +1,8 @@
 // Event Grid Bulk Upload Module
-// Wires BlobCreated events from the Axiom storage account's bulk-upload container
-// → a storage queue on the main storage account so the backend API can react to them.
+// Wires BlobCreated events from our own main storage account's bulk-upload container
+// → a storage queue on the same account so the backend API can react to them.
 //
-// Flow: axiomdevst/bulk-upload BlobCreated → Event Grid System Topic
+// Flow: <mainStorage>/bulk-upload BlobCreated → Event Grid System Topic
 //       → Event Grid Subscription (filter: bulk-upload container, CSV/XLSX files only)
 //       → Storage Queue "bulk-upload-events" on main backend storage account
 //       → BulkUploadEventListenerJob in the API server (queue-receive loop)
@@ -14,28 +14,25 @@
 //
 // The listener reads tenantId / clientId / adapterKey from the blob path segments.
 
-@description('Resource ID of the Axiom storage account (source of BlobCreated events)')
-param axiomStorageAccountId string
-
-@description('Name of the Axiom storage account (e.g. axiomdevst)')
-param axiomStorageAccountName string
-
-@description('Resource ID of the main backend storage account (queue destination)')
+@description('Resource ID of the main backend storage account (source of BlobCreated events AND queue destination)')
 param mainStorageAccountId string
+
+@description('Name of the main backend storage account — used for naming the Event Grid system topic')
+param mainStorageAccountName string
 
 @description('Tags to apply to resources')
 param tags object
 
 // ─── Event Grid System Topic ──────────────────────────────────────────────────
 resource bulkUploadEventGridTopic 'Microsoft.EventGrid/systemTopics@2023-12-15-preview' = {
-  name: 'egt-bulk-upload-${axiomStorageAccountName}'
+  name: 'egt-bulk-upload-${mainStorageAccountName}'
   location: resourceGroup().location
   tags: tags
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
-    source: axiomStorageAccountId
+    source: mainStorageAccountId
     topicType: 'Microsoft.Storage.StorageAccounts'
   }
 }

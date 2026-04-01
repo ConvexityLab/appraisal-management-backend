@@ -311,7 +311,7 @@ resource bulkUploadEventsQueue 'Microsoft.Storage/storageAccounts/queueServices/
   name: 'bulk-upload-events'
   properties: {
     metadata: {
-      purpose: 'Event Grid delivery queue for bulk-upload BlobCreated notifications from axiomdevst'
+      purpose: 'Event Grid delivery queue for bulk-upload BlobCreated notifications from main storage account'
       environment: environment
     }
   }

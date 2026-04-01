@@ -39,8 +39,5 @@
     "axiomApiBaseUrl": {
       "value": "https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"
     },
-    "axiomStorageAccountName": {
-      "value": "axiomdevst"
-    }
   }
 }

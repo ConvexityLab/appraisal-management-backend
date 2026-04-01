@@ -34,8 +34,6 @@ param statebridge_tenantId string = ''
 // URL is populated at runtime from Azure App Configuration (key: services.axiom-api.base-url).
 // This param is a deploy-time fallback for environments not yet using App Config.
 param axiomApiBaseUrl string = ''
-@description('Name of the Axiom storage account (e.g. axiomdevst). Set as AXIOM_STORAGE_ACCOUNT_NAME in the Container App so BulkUploadEventListenerJob can reference it in SHARED_STORAGE payloads.')
-param axiomStorageAccountName string = 'axiomdevst'
 @description('Registered UUID for the Axiom pdf-schema-extraction pipeline. Leave empty to use the inline two-stage pipeline definition.')
 param axiomPipelineIdSchemaExtract string = ''
 @secure()
@@ -238,17 +236,17 @@ var containerApps = [
         value: axiomPipelineIdSchemaExtract
       }
       {
+        // Storage account name that owns the bulk-upload container + bulk-upload-events queue.
+        // Used by BulkUploadEventListenerJob for both queue polling and SHARED_STORAGE ingestion payloads.
+        name: 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME'
+        value: storageAccountName
+      }
+      {
         // Deploy-time Axiom API base URL. When set, loadAppConfig() at startup sees the env
         // var is already populated and skips the App Config lookup for this key.
         // Empty string falls through to the App Config lookup path.
         name: 'AXIOM_API_BASE_URL'
         value: axiomApiBaseUrl
-      }
-      {
-        // Source storage account for bulk-upload blob events. Used by BulkUploadEventListenerJob
-        // as the sharedStorage account reference in SHARED_STORAGE ingestion payloads.
-        name: 'AXIOM_STORAGE_ACCOUNT_NAME'
-        value: axiomStorageAccountName
       }
       {
         // HMAC secret for verifying inbound Axiom webhook signatures (AXIOM_WEBHOOK_SECRET).
@@ -373,6 +371,10 @@ var containerApps = [
         value: 'bulk-upload'
       }
       {
+        name: 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME'
+        value: storageAccountName
+      }
+      {
         name: 'FUNCTIONS_EXTENSION_VERSION'
         value: '~4'
       }
@@ -448,10 +450,6 @@ var containerApps = [
         // Registered UUID for the pdf-schema-extraction pipeline (leave empty to use inline definition)
         name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
         value: axiomPipelineIdSchemaExtract
-      }
-      {
-        name: 'AXIOM_STORAGE_ACCOUNT_NAME'
-        value: axiomStorageAccountName
       }
       {
         // Cosmos Change Feed binding — identity-based connection requires

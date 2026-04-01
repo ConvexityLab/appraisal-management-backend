@@ -214,11 +214,10 @@ export class BulkUploadEventListenerJob {
       );
     }
 
-    const axiomStorageAccountName = process.env.AXIOM_STORAGE_ACCOUNT_NAME;
-    if (!axiomStorageAccountName) {
+    const bulkUploadStorageAccountName = process.env.BULK_UPLOAD_STORAGE_ACCOUNT_NAME;
+    if (!bulkUploadStorageAccountName) {
       throw new Error(
-        'AXIOM_STORAGE_ACCOUNT_NAME is required for bulk-upload event processing. ' +
-        'Set it to the Axiom storage account name (e.g. axiomdevst).',
+        'BULK_UPLOAD_STORAGE_ACCOUNT_NAME is required for bulk-upload event processing.',
       );
     }
 
@@ -264,7 +263,7 @@ export class BulkUploadEventListenerJob {
         adapterKey: parsed.adapterKey,
         items,
         sharedStorage: {
-          storageAccountName: axiomStorageAccountName,
+          storageAccountName: bulkUploadStorageAccountName,
           containerName: BULK_UPLOAD_CONTAINER,
           dataFileBlobName: parsed.blobName,
           documentBlobNames,
