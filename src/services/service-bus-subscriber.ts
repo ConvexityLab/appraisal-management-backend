@@ -7,6 +7,7 @@ import { ServiceBusClient, ServiceBusReceiver, ServiceBusReceivedMessage } from 
 import { DefaultAzureCredential } from '@azure/identity';
 import { AppEvent, BaseEvent, EventHandler, EventSubscriber } from '../types/events.js';
 import { Logger } from '../utils/logger.js';
+import { inMemoryEventBus } from './in-memory-event-bus.js';
 
 export class ServiceBusEventSubscriber implements EventSubscriber {
   private client: ServiceBusClient;
@@ -16,6 +17,8 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
   private readonly topicName: string;
   private readonly subscriptionName: string;
   private readonly logger: Logger;
+  private readonly useMockBus: boolean;
+  private mockUnsubscribers: Map<string, () => void> = new Map();
   private isListening: boolean = false;
   private startPromise?: Promise<void>;
 
@@ -29,13 +32,22 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
     this.subscriptionName = subscriptionName;
 
     const resolvedNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE;
+    const forceMock = process.env.USE_MOCK_SERVICE_BUS === 'true';
+    this.useMockBus = forceMock || !resolvedNamespace || resolvedNamespace === 'local-emulator';
 
-    if (!resolvedNamespace || resolvedNamespace === 'local-emulator') {
+    if (this.useMockBus) {
       // Only use mock when there truly is no namespace configured
       this.serviceBusNamespace = 'local-emulator';
-      this.logger.info('No AZURE_SERVICE_BUS_NAMESPACE configured — using mock Service Bus');
+      this.logger.info(
+        forceMock
+          ? 'USE_MOCK_SERVICE_BUS=true — using in-memory mock Service Bus'
+          : 'No AZURE_SERVICE_BUS_NAMESPACE configured — using in-memory mock Service Bus',
+      );
       this.client = this.createMockClient();
     } else {
+      if (!resolvedNamespace) {
+        throw new Error('AZURE_SERVICE_BUS_NAMESPACE is required when USE_MOCK_SERVICE_BUS is not enabled');
+      }
       this.serviceBusNamespace = resolvedNamespace;
       const credential = new DefaultAzureCredential();
       this.client = new ServiceBusClient(this.serviceBusNamespace, credential);
@@ -116,6 +128,13 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
       }
       this.handlers.get(eventType)!.push(handler as EventHandler);
 
+      if (this.useMockBus && !this.mockUnsubscribers.has(eventType)) {
+        const dispose = inMemoryEventBus.subscribe(eventType, async (event) => {
+          await this.processEvent(event);
+        });
+        this.mockUnsubscribers.set(eventType, dispose);
+      }
+
       this.logger.info(`Subscribed to event type: ${eventType}`);
 
       // Start listening if not already listening
@@ -131,6 +150,11 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
   async unsubscribe(eventType: string): Promise<void> {
     try {
       this.handlers.delete(eventType);
+      const dispose = this.mockUnsubscribers.get(eventType);
+      if (dispose) {
+        dispose();
+        this.mockUnsubscribers.delete(eventType);
+      }
       this.logger.info(`Unsubscribed from event type: ${eventType}`);
     } catch (error) {
       this.logger.error('Failed to unsubscribe from event', { error, eventType });
@@ -139,6 +163,11 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
   }
 
   private startListening(): Promise<void> {
+    if (this.useMockBus) {
+      this.isListening = true;
+      return Promise.resolve();
+    }
+
     if (this.isListening) return Promise.resolve();
     if (this.startPromise) return this.startPromise;
 
@@ -246,6 +275,11 @@ export class ServiceBusEventSubscriber implements EventSubscriber {
   async close(): Promise<void> {
     try {
       this.isListening = false;
+
+      for (const dispose of this.mockUnsubscribers.values()) {
+        dispose();
+      }
+      this.mockUnsubscribers.clear();
 
       // Close all receivers
       for (const [key, receiver] of this.receivers) {

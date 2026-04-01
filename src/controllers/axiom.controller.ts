@@ -21,15 +21,28 @@ import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middlewar
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
 import type { AppraisalOrder } from '../types/index.js';
 import { BlobStorageService } from '../services/blob-storage.service';
-import type { AxiomEvaluationCompletedEvent, AxiomExecutionCompletedEvent } from '../types/events.js';
+import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service.js';
+import type {
+  AxiomBulkSubmissionDlqAgeBucket,
+  AxiomBulkSubmissionDlqSortPreset,
+  AxiomBulkSubmissionDlqStatus,
+} from '../services/axiom-bulk-submission.service.js';
+import type {
+  AxiomEvaluationCompletedEvent,
+  AxiomExecutionCompletedEvent,
+  BulkIngestionExtractionCompletedEvent,
+} from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { normalizeAxiomPropertyRequestBody } from './axiom-request-normalizer.js';
+
+const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion::';
 
 export class AxiomController {
   private axiomService: AxiomService;
   private axiomExecutionService: AxiomExecutionService;
   private dbService: CosmosDbService;
   private bulkPortfolioService: BulkPortfolioService;
+  private axiomBulkSubmissionService: AxiomBulkSubmissionService;
   private readonly blobService: BlobStorageService;
   private readonly eventPublisher: ServiceBusEventPublisher;
   private readonly logger = new Logger('AxiomController');
@@ -70,9 +83,284 @@ export class AxiomController {
     this.axiomService = axiomService || new AxiomService(dbService);
     this.axiomExecutionService = new AxiomExecutionService(dbService);
     this.bulkPortfolioService = new BulkPortfolioService(dbService);
+    this.axiomBulkSubmissionService = new AxiomBulkSubmissionService(dbService);
     this.blobService = new BlobStorageService();
     this.eventPublisher = new ServiceBusEventPublisher();
   }
+
+  /**
+   * Get operational metrics for Axiom bulk submission orchestration.
+   * GET /api/axiom/bulk-submission/metrics
+   */
+  getBulkSubmissionMetrics = async (_req: UnifiedAuthRequest, res: Response): Promise<void> => {
+    try {
+      const metrics = await this.axiomBulkSubmissionService.getOperationalMetrics();
+      res.json({
+        success: true,
+        data: {
+          metrics,
+          asOf: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to get Axiom bulk submission metrics', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'AXIOM_BULK_METRICS_ERROR',
+          message: 'Failed to retrieve Axiom bulk submission metrics',
+          details: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  };
+
+  /**
+   * List Axiom bulk submission DLQ entries with optional filters.
+   * GET /api/axiom/bulk-submission/dlq?tenantId=&jobId=&status=&fromFailedAt=&toFailedAt=&sortPreset=&ageBucket=&page=&pageSize=
+   */
+  getBulkSubmissionDlq = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+    try {
+      const tenantId = typeof req.query['tenantId'] === 'string' ? req.query['tenantId'].trim() : undefined;
+      const jobId = typeof req.query['jobId'] === 'string' ? req.query['jobId'].trim() : undefined;
+      const rawStatus = typeof req.query['status'] === 'string' ? req.query['status'].trim().toUpperCase() : undefined;
+      const status = rawStatus as AxiomBulkSubmissionDlqStatus | undefined;
+      const rawSortPreset = typeof req.query['sortPreset'] === 'string'
+        ? req.query['sortPreset'].trim().toUpperCase()
+        : undefined;
+      const sortPreset = rawSortPreset as AxiomBulkSubmissionDlqSortPreset | undefined;
+      const rawAgeBucket = typeof req.query['ageBucket'] === 'string'
+        ? req.query['ageBucket'].trim().toUpperCase()
+        : undefined;
+      const ageBucket = rawAgeBucket as AxiomBulkSubmissionDlqAgeBucket | undefined;
+      const fromFailedAt = typeof req.query['fromFailedAt'] === 'string'
+        ? req.query['fromFailedAt'].trim()
+        : undefined;
+      const toFailedAt = typeof req.query['toFailedAt'] === 'string'
+        ? req.query['toFailedAt'].trim()
+        : undefined;
+      const rawLimit = typeof req.query['limit'] === 'string' ? Number.parseInt(req.query['limit'], 10) : undefined;
+      const rawPage = typeof req.query['page'] === 'string' ? Number.parseInt(req.query['page'], 10) : undefined;
+      const rawPageSize = typeof req.query['pageSize'] === 'string' ? Number.parseInt(req.query['pageSize'], 10) : undefined;
+
+      if (rawStatus && status !== 'OPEN' && status !== 'REPLAYED') {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: "status must be one of: OPEN, REPLAYED",
+          },
+        });
+        return;
+      }
+
+      if (rawLimit !== undefined && (!Number.isFinite(rawLimit) || rawLimit < 1 || rawLimit > 500)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'limit must be an integer between 1 and 500',
+          },
+        });
+        return;
+      }
+
+      if (rawPage !== undefined && (!Number.isFinite(rawPage) || rawPage < 1)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'page must be an integer greater than or equal to 1',
+          },
+        });
+        return;
+      }
+
+      if (rawPageSize !== undefined && (!Number.isFinite(rawPageSize) || rawPageSize < 1 || rawPageSize > 500)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'pageSize must be an integer between 1 and 500',
+          },
+        });
+        return;
+      }
+
+      if (rawSortPreset && !['FAILED_AT_DESC', 'FAILED_AT_ASC', 'RETRY_COUNT_DESC'].includes(rawSortPreset)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'sortPreset must be one of: FAILED_AT_DESC, FAILED_AT_ASC, RETRY_COUNT_DESC',
+          },
+        });
+        return;
+      }
+
+      if (rawAgeBucket && !['ANY', 'LAST_24_HOURS', 'LAST_7_DAYS', 'OLDER_THAN_7_DAYS'].includes(rawAgeBucket)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'ageBucket must be one of: ANY, LAST_24_HOURS, LAST_7_DAYS, OLDER_THAN_7_DAYS',
+          },
+        });
+        return;
+      }
+
+      if (fromFailedAt && Number.isNaN(Date.parse(fromFailedAt))) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'fromFailedAt must be a valid ISO-8601 datetime',
+          },
+        });
+        return;
+      }
+
+      if (toFailedAt && Number.isNaN(Date.parse(toFailedAt))) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'toFailedAt must be a valid ISO-8601 datetime',
+          },
+        });
+        return;
+      }
+
+      if (fromFailedAt && toFailedAt && Date.parse(fromFailedAt) > Date.parse(toFailedAt)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'fromFailedAt must be less than or equal to toFailedAt',
+          },
+        });
+        return;
+      }
+
+      const result = await this.axiomBulkSubmissionService.listDlqEvents({
+        ...(tenantId ? { tenantId } : {}),
+        ...(jobId ? { jobId } : {}),
+        ...(status ? { status } : {}),
+        ...(fromFailedAt ? { fromFailedAt } : {}),
+        ...(toFailedAt ? { toFailedAt } : {}),
+        ...(sortPreset ? { sortPreset } : {}),
+        ...(ageBucket ? { ageBucket } : {}),
+        ...(rawPage !== undefined ? { page: rawPage } : {}),
+        ...(rawPageSize !== undefined ? { pageSize: rawPageSize } : {}),
+        ...(rawLimit !== undefined ? { limit: rawLimit } : {}),
+      });
+
+      res.json({
+        success: true,
+        data: {
+          asOf: new Date().toISOString(),
+          count: result.items.length,
+          filters: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(jobId ? { jobId } : {}),
+            ...(status ? { status } : {}),
+            ...(fromFailedAt ? { fromFailedAt } : {}),
+            ...(toFailedAt ? { toFailedAt } : {}),
+            ...(sortPreset ? { sortPreset } : { sortPreset: result.sortPreset }),
+            ...(ageBucket ? { ageBucket } : { ageBucket: result.ageBucket }),
+            ...(rawPage !== undefined ? { page: rawPage } : { page: result.page }),
+            ...(rawPageSize !== undefined
+              ? { pageSize: rawPageSize }
+              : rawLimit !== undefined
+                ? { pageSize: rawLimit }
+                : { pageSize: result.pageSize }),
+          },
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            hasMore: result.hasMore,
+          },
+          items: result.items,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to list Axiom bulk submission DLQ events', {
+        error: error instanceof Error ? error.message : String(error),
+        tenantId: req.query['tenantId'],
+        jobId: req.query['jobId'],
+        status: req.query['status'],
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'AXIOM_BULK_DLQ_LIST_ERROR',
+          message: 'Failed to list Axiom bulk submission DLQ events',
+          details: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  };
+
+  /**
+   * Replay a failed Axiom bulk submission event from DLQ.
+   * POST /api/axiom/bulk-submission/dlq/:eventId/replay
+   */
+  replayBulkSubmissionDlqEvent = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+    try {
+      const eventId = req.params['eventId'];
+      if (!eventId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'eventId route parameter is required',
+          },
+        });
+        return;
+      }
+
+      const requestedBy = req.user?.id ?? 'unknown';
+      const replayResult = await this.axiomBulkSubmissionService.replayDlqEvent(eventId, requestedBy);
+
+      res.status(202).json({
+        success: true,
+        data: {
+          eventId,
+          replayEventId: replayResult.replayEventId,
+          pipelineJobId: replayResult.pipelineJobId,
+          batchId: replayResult.batchId,
+        },
+        message: `Replay accepted for DLQ event '${eventId}'`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes('not found')) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message,
+          },
+        });
+        return;
+      }
+
+      this.logger.error('Failed to replay Axiom bulk submission DLQ event', {
+        eventId: req.params['eventId'],
+        error: message,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'AXIOM_BULK_DLQ_REPLAY_ERROR',
+          message: 'Failed to replay Axiom bulk submission DLQ event',
+          details: message,
+        },
+      });
+    }
+  };
 
   /**
    * Check if Axiom integration is enabled
@@ -544,6 +832,104 @@ export class AxiomController {
         const pipelineJobId = body['pipelineJobId'] as string | undefined;
         const status = (body['status'] as string) ?? 'completed';
         const result = body['result'] as Record<string, unknown> | undefined;
+
+        if (documentId.startsWith(BULK_INGESTION_AXIOM_CORRELATION_PREFIX)) {
+          const parts = documentId.split('::');
+          const [, jobId, itemId] = parts;
+          if (!jobId || !itemId) {
+            this.logger.error('Axiom webhook: malformed bulk-ingestion DOCUMENT correlation id', {
+              correlationId: documentId,
+            });
+            res.status(400).json({ success: false, error: 'Malformed bulk-ingestion correlationId for DOCUMENT webhook' });
+            return;
+          }
+
+          const jobResult = await this.dbService.queryItems<import('../types/bulk-ingestion.types.js').BulkIngestionJob>(
+            'bulk-portfolio-jobs',
+            'SELECT * FROM c WHERE c.id = @id AND c.type = @type',
+            [
+              { name: '@id', value: jobId },
+              { name: '@type', value: 'bulk-ingestion-job' },
+            ],
+          );
+
+          const job = jobResult.success && jobResult.data?.[0] ? jobResult.data[0] : null;
+          if (!job) {
+            this.logger.error('Axiom webhook: bulk-ingestion job not found for DOCUMENT correlation id', {
+              correlationId: documentId,
+              jobId,
+              itemId,
+            });
+            res.status(404).json({ success: false, error: `Bulk ingestion job '${jobId}' not found` });
+            return;
+          }
+
+          const itemIndex = job.items.findIndex((item) => item.id === itemId);
+          if (itemIndex === -1) {
+            this.logger.error('Axiom webhook: bulk-ingestion item not found for DOCUMENT correlation id', {
+              correlationId: documentId,
+              jobId,
+              itemId,
+            });
+            res.status(404).json({ success: false, error: `Bulk ingestion item '${itemId}' not found on job '${jobId}'` });
+            return;
+          }
+
+          const updatedItems = [...job.items];
+          const targetItem = { ...updatedItems[itemIndex]! };
+          const currentExtractionStatus = typeof targetItem.canonicalRecord?.['axiomExtractionStatus'] === 'string'
+            ? (targetItem.canonicalRecord?.['axiomExtractionStatus'] as string)
+            : undefined;
+
+          const terminal = currentExtractionStatus === 'COMPLETED' || currentExtractionStatus === 'FAILED';
+          if (!terminal) {
+            targetItem.canonicalRecord = {
+              ...(targetItem.canonicalRecord ?? {}),
+              ...(pipelineJobId ? { axiomPipelineJobId: pipelineJobId } : {}),
+              axiomExtractionStatus: status === 'completed' ? 'COMPLETED' : 'FAILED',
+              ...(result ? { axiomExtractionResult: result } : {}),
+              axiomCompletedAt: new Date().toISOString(),
+            };
+            targetItem.updatedAt = new Date().toISOString();
+            updatedItems[itemIndex] = targetItem;
+
+            const saveResult = await this.dbService.upsertItem('bulk-portfolio-jobs', {
+              ...job,
+              items: updatedItems,
+            });
+            if (!saveResult.success || !saveResult.data) {
+              throw new Error(`Failed to persist bulk-ingestion webhook stamp for job '${job.id}' item '${itemId}'`);
+            }
+          }
+
+          const extractionCompletedEvent: BulkIngestionExtractionCompletedEvent = {
+            id: uuidv4(),
+            type: 'bulk.ingestion.extraction.completed',
+            timestamp: new Date(),
+            source: 'axiom-controller',
+            version: '1.0',
+            correlationId: documentId,
+            category: EventCategory.DOCUMENT,
+            data: {
+              jobId: job.id,
+              tenantId: job.tenantId,
+              clientId: job.clientId,
+              itemId,
+              rowIndex: targetItem.rowIndex,
+              correlationId: documentId,
+              ...(pipelineJobId ? { pipelineJobId } : {}),
+              status: status === 'completed' ? 'completed' : 'failed',
+              completedAt: new Date().toISOString(),
+              ...(status !== 'completed' ? { error: (body['error'] as string | undefined) ?? 'Axiom extraction failed' } : {}),
+              ...(result ? { result } : {}),
+              priority: status === 'completed' ? EventPriority.NORMAL : EventPriority.HIGH,
+            },
+          };
+
+          await this.eventPublisher.publish(extractionCompletedEvent);
+          res.status(200).json({ success: true, message: 'Webhook processed' });
+          return;
+        }
 
         const extractionStatus = status === 'completed' ? 'COMPLETED' : 'AXIOM_FAILED';
 
@@ -1026,6 +1412,9 @@ export function createAxiomRouter(dbService: CosmosDbService, axiomService?: Axi
 
   // Agent proxy
   router.post('/agent/run', controller.runAgent);
+  router.get('/bulk-submission/metrics', controller.getBulkSubmissionMetrics);
+  router.get('/bulk-submission/dlq', controller.getBulkSubmissionDlq);
+  router.post('/bulk-submission/dlq/:eventId/replay', controller.replayBulkSubmissionDlqEvent);
 
   // Evaluation retrieval
   router.get('/evaluations/order/:orderId', controller.getEvaluationByOrder);

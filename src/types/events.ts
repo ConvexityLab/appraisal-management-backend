@@ -498,6 +498,141 @@ export interface AxiomBulkEvaluationRequestedEvent extends BaseEvent {
   };
 }
 
+/** Fired when a bulk data+document package has been staged and is ready for async processing. */
+export interface BulkIngestionRequestedEvent extends BaseEvent {
+  type: 'bulk.ingestion.requested';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE';
+    adapterKey: string;
+    dataFileName: string;
+    dataFileBlobName?: string;
+    documentFileNames: string[];
+    sharedStorage?: {
+      storageAccountName: string;
+      containerName: string;
+      dataFileBlobName: string;
+      documentBlobNames: string[];
+      pathPrefix?: string;
+    };
+    priority: EventPriority;
+  };
+}
+
+/** Fired when a bulk ingestion job has completed processing (completed/partial/failed). */
+export interface BulkIngestionProcessedEvent extends BaseEvent {
+  type: 'bulk.ingestion.processed';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE';
+    status: 'COMPLETED' | 'PARTIAL' | 'FAILED';
+    adapterKey: string;
+    totalItems: number;
+    successItems: number;
+    failedItems: number;
+    completedAt: string;
+    lastError?: string;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when canonical validation + persistence finishes for a processed bulk ingestion job. */
+export interface BulkIngestionCanonicalizedEvent extends BaseEvent {
+  type: 'bulk.ingestion.canonicalized';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    adapterKey: string;
+    totalCandidateItems: number;
+    persistedCount: number;
+    failedCount: number;
+    processedAt: string;
+    priority: EventPriority;
+  };
+}
+
+/** Fired after canonicalization when the pipeline should create engagement + orders. */
+export interface BulkIngestionOrderingRequestedEvent extends BaseEvent {
+  type: 'bulk.ingestion.ordering.requested';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    adapterKey: string;
+    totalCandidateItems: number;
+    persistedCount: number;
+    failedCount: number;
+    processedAt: string;
+    priority: EventPriority;
+  };
+}
+
+/** Fired after engagement/order creation completes for a bulk-ingestion job. */
+export interface BulkIngestionOrdersCreatedEvent extends BaseEvent {
+  type: 'bulk.ingestion.orders.created';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    adapterKey: string;
+    engagementId?: string;
+    totalCandidateItems: number;
+    createdOrderCount: number;
+    failedOrderCount: number;
+    completedAt: string;
+    status: 'COMPLETED' | 'PARTIAL' | 'FAILED';
+    priority: EventPriority;
+  };
+}
+
+/** Fired when an item's Axiom extraction lifecycle reaches a terminal webhook result. */
+export interface BulkIngestionExtractionCompletedEvent extends BaseEvent {
+  type: 'bulk.ingestion.extraction.completed';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    itemId: string;
+    rowIndex: number;
+    correlationId: string;
+    pipelineJobId?: string;
+    status: 'completed' | 'failed';
+    completedAt: string;
+    error?: string;
+    result?: Record<string, unknown>;
+    priority: EventPriority;
+  };
+}
+
+/** Fired when criteria evaluation (or explicit criteria bypass) reaches a terminal state for an item. */
+export interface BulkIngestionCriteriaCompletedEvent extends BaseEvent {
+  type: 'bulk.ingestion.criteria.completed';
+  category: EventCategory.DOCUMENT;
+  data: {
+    jobId: string;
+    tenantId: string;
+    clientId: string;
+    itemId: string;
+    rowIndex: number;
+    status: 'completed' | 'failed';
+    criteriaStatus: 'completed' | 'skipped' | 'failed';
+    completedAt: string;
+    reason?: string;
+    priority: EventPriority;
+  };
+}
+
 /** Fired when Axiom completes the evaluation (published from the webhook handler). */
 export interface AxiomEvaluationCompletedEvent extends BaseEvent {
   type: 'axiom.evaluation.completed';
@@ -1007,6 +1142,13 @@ export type AppEvent =
   // Axiom evaluation events
   | AxiomEvaluationSubmittedEvent
   | AxiomBulkEvaluationRequestedEvent
+  | BulkIngestionRequestedEvent
+  | BulkIngestionProcessedEvent
+  | BulkIngestionCanonicalizedEvent
+  | BulkIngestionOrderingRequestedEvent
+  | BulkIngestionOrdersCreatedEvent
+  | BulkIngestionExtractionCompletedEvent
+  | BulkIngestionCriteriaCompletedEvent
   | AxiomEvaluationCompletedEvent
   | AxiomEvaluationTimedOutEvent
   // Review SLA events

@@ -7,6 +7,7 @@ import { ServiceBusClient, ServiceBusSender, ServiceBusMessage } from '@azure/se
 import { DefaultAzureCredential } from '@azure/identity';
 import { AppEvent, EventPublisher } from '../types/events.js';
 import { Logger } from '../utils/logger.js';
+import { inMemoryEventBus } from './in-memory-event-bus.js';
 
 export class ServiceBusEventPublisher implements EventPublisher {
   private client: ServiceBusClient;
@@ -14,19 +15,29 @@ export class ServiceBusEventPublisher implements EventPublisher {
   private readonly serviceBusNamespace: string;
   private readonly topicName: string;
   private readonly logger: Logger;
+  private readonly useMockBus: boolean;
 
   constructor(serviceBusNamespace?: string, topicName: string = 'appraisal-events') {
     this.topicName = topicName;
     this.logger = new Logger('ServiceBusEventPublisher');
 
     const resolvedNamespace = serviceBusNamespace || process.env.AZURE_SERVICE_BUS_NAMESPACE;
+    const forceMock = process.env.USE_MOCK_SERVICE_BUS === 'true';
+    this.useMockBus = forceMock || !resolvedNamespace || resolvedNamespace === 'local-emulator';
 
-    if (!resolvedNamespace || resolvedNamespace === 'local-emulator') {
+    if (this.useMockBus) {
       // Only use mock when there truly is no namespace configured
       this.serviceBusNamespace = 'local-emulator';
-      this.logger.info('No AZURE_SERVICE_BUS_NAMESPACE configured — using mock Service Bus');
+      this.logger.info(
+        forceMock
+          ? 'USE_MOCK_SERVICE_BUS=true — using in-memory mock Service Bus'
+          : 'No AZURE_SERVICE_BUS_NAMESPACE configured — using in-memory mock Service Bus',
+      );
       this.client = this.createMockClient();
     } else {
+      if (!resolvedNamespace) {
+        throw new Error('AZURE_SERVICE_BUS_NAMESPACE is required when USE_MOCK_SERVICE_BUS is not enabled');
+      }
       this.serviceBusNamespace = resolvedNamespace;
       const credential = new DefaultAzureCredential();
       this.client = new ServiceBusClient(this.serviceBusNamespace, credential);
@@ -71,8 +82,30 @@ export class ServiceBusEventPublisher implements EventPublisher {
     return this.senders.get(topicName)!;
   }
 
+  private dispatchMockAsync(event: AppEvent): void {
+    setImmediate(() => {
+      void inMemoryEventBus.publish(event).then(
+        () => {
+          this.logger.info(`Published event (mock bus): ${event.type}`, { eventId: event.id });
+        },
+        (error) => {
+          this.logger.error('Mock bus handler failed', {
+            error,
+            eventId: event.id,
+            eventType: event.type,
+          });
+        },
+      );
+    });
+  }
+
   async publish(event: AppEvent): Promise<void> {
     try {
+      if (this.useMockBus) {
+        this.dispatchMockAsync(event);
+        return;
+      }
+
       const sender = await this.getSender(this.topicName);
       
       const message: ServiceBusMessage = {
@@ -101,6 +134,14 @@ export class ServiceBusEventPublisher implements EventPublisher {
     if (events.length === 0) return;
 
     try {
+      if (this.useMockBus) {
+        for (const event of events) {
+          this.dispatchMockAsync(event);
+        }
+        this.logger.info(`Queued batch of ${events.length} events (mock bus)`);
+        return;
+      }
+
       const sender = await this.getSender(this.topicName);
       
       const messages: ServiceBusMessage[] = events.map(event => ({

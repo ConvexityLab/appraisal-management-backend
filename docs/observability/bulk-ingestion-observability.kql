@@ -1,0 +1,65 @@
+// Bulk Ingestion + Axiom Bulk Submission — App Insights KQL Pack
+// Scope: ingestion-stage SLOs, failures, DLQ pressure, and replay effectiveness.
+
+// -----------------------------------------------------------------------------
+// Q1) Ingestion request volume + error trend (5m bins)
+// -----------------------------------------------------------------------------
+traces
+| where timestamp > ago(24h)
+| where customDimensions has 'bulk-ingestion'
+| extend level = tostring(severityLevel)
+| summarize requests=countif(message has 'submitted'), errors=countif(level in ('3','4') or message has 'failed') by bin(timestamp, 5m)
+| extend errorRatePct = iff(requests == 0, 0.0, round((todouble(errors) / todouble(requests)) * 100.0, 2))
+| order by timestamp asc;
+
+// -----------------------------------------------------------------------------
+// Q2) Bulk ingestion stage failures by stage/code (last 24h)
+// -----------------------------------------------------------------------------
+traces
+| where timestamp > ago(24h)
+| where customDimensions has 'bulk-ingestion'
+| where message has 'failed' or message has 'error'
+| extend stage = coalesce(tostring(customDimensions.stage), 'unknown')
+| extend code = coalesce(tostring(customDimensions.code), 'unknown')
+| summarize failures=count() by stage, code
+| order by failures desc;
+
+// -----------------------------------------------------------------------------
+// Q3) End-to-end ingestion latency distribution (P50/P95/P99)
+// Assumes customDimensions.durationMs is emitted for terminal job lifecycle events.
+// -----------------------------------------------------------------------------
+traces
+| where timestamp > ago(24h)
+| where customDimensions has 'bulk-ingestion'
+| where message has 'completed' or message has 'terminal'
+| extend durationMs = todouble(customDimensions.durationMs)
+| where isnotnull(durationMs) and durationMs > 0
+| summarize p50=percentile(durationMs, 50), p95=percentile(durationMs, 95), p99=percentile(durationMs, 99), sample=count();
+
+// -----------------------------------------------------------------------------
+// Q4) Axiom bulk submission DLQ growth + replay outcomes (15m bins)
+// -----------------------------------------------------------------------------
+traces
+| where timestamp > ago(24h)
+| where customDimensions has 'axiom-bulk-submission'
+| summarize dlqCreated=countif(message has 'DLQ' or message has 'dlqCreated'), replaySucceeded=countif(message has 'replay' and message has 'succeeded'), replayFailed=countif(message has 'replay' and message has 'failed') by bin(timestamp, 15m)
+| order by timestamp asc;
+
+// -----------------------------------------------------------------------------
+// Q5) Open DLQ pressure snapshot from customEvents (if emitted)
+// -----------------------------------------------------------------------------
+customEvents
+| where timestamp > ago(24h)
+| where name in ('axiom.bulk.dlq.open.snapshot', 'axiom.bulk.dlq.replay')
+| extend openCount = todouble(customDimensions.openCount)
+| summarize latestOpenCount=arg_max(timestamp, openCount)
+| project timestamp, latestOpenCount;
+
+// -----------------------------------------------------------------------------
+// Q6) Alerting effectiveness for AXIOM_BULK_SUBMISSION
+// -----------------------------------------------------------------------------
+customEvents
+| where timestamp > ago(24h)
+| where tostring(customDimensions.alertType) == 'AXIOM_BULK_SUBMISSION'
+| summarize alerts=count(), failedAlerts=countif(tostring(customDimensions.status) == 'failed')
+| extend alertFailurePct = iff(alerts == 0, 0.0, round((todouble(failedAlerts) / todouble(alerts)) * 100.0, 2));

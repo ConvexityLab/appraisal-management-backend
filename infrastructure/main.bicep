@@ -114,6 +114,12 @@ param axiomPipelineIdSchemaExtract string = ''
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
 
+@description('Resource ID of the Axiom storage account (axiomdevst). Required to wire the Event Grid subscription for the bulk-upload container trigger. Get the value via: az storage account show -n axiomdevst --query id -o tsv')
+param axiomStorageAccountId string = ''
+
+@description('Name of the Axiom storage account (e.g. axiomdevst). Used when naming the Event Grid system topic resource.')
+param axiomStorageAccountName string = 'axiomdevst'
+
 // appConfigEndpoint is no longer an input param — it is computed from our own
 // App Configuration store (deployed by the appConfig module below).
 
@@ -355,6 +361,21 @@ module sftpEventGrid 'modules/eventgrid-sftp.bicep' = {
   ]
 }
 
+// Event Grid subscription: axiomdevst/bulk-upload BlobCreated → bulk-upload-events queue
+// Deployed whenever axiomStorageAccountId is passed. Run deploy.sh to resolve the ID
+// automatically (see infrastructure/deploy.sh). Leave empty to skip EG wiring on a
+// storage-only redeploy (all other modules are unaffected).
+module bulkUploadEventGrid 'modules/eventgrid-bulk-upload.bicep' = if (!empty(axiomStorageAccountId)) {
+  name: 'bulk-upload-eventgrid-deployment'
+  scope: resourceGroup
+  params: {
+    axiomStorageAccountId: axiomStorageAccountId
+    axiomStorageAccountName: axiomStorageAccountName
+    mainStorageAccountId: storage.outputs.storageAccountId
+    tags: tags
+  }
+}
+
 // Container Apps and Container Registry (deployed after data services)
 module appServices 'modules/app-services.bicep' = {
   name: 'app-services-deployment'
@@ -389,6 +410,7 @@ module appServices 'modules/app-services.bicep' = {
     axiomApiBaseUrl: axiomApiBaseUrl
     axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
     axiomWebhookSecret: axiomWebhookSecret
+    axiomStorageAccountName: axiomStorageAccountName
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     azureOpenAiApiKey: azureOpenAiApiKey
     azureOpenAiEndpoint: azureOpenAiEndpoint

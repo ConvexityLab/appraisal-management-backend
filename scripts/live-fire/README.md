@@ -23,6 +23,11 @@ These scripts run against a live backend deployment and exercise real Axiom inte
   - `POST /api/axiom/webhook` unsigned (expects `401` if webhook secret configured, else `200`)
   - `POST /api/axiom/webhook` signed (when `AXIOM_LIVE_WEBHOOK_SECRET` is provided)
 
+- `axiom-live-fire-bulk-submit.ts`
+  - `POST /api/bulk-ingestion/submit` (multipart `CSV + PDF`)
+  - `GET /api/bulk-ingestion/:jobId` (poll)
+  - Validates live submission + job persistence path for engagement/order + related document intake
+
 - `axiom-live-fire-preflight-probe.ts`
   - `GET /api/orders` (paged)
   - `GET /api/documents?orderId=...`
@@ -90,6 +95,10 @@ Script-specific required values:
 - `AXIOM_LIVE_DOCUMENT_ID` (must exist in backend `documents` collection for that tenant)
 - Optional: `AXIOM_LIVE_WEBHOOK_SECRET` (enables signed webhook acceptance check)
 
+### Bulk submit
+
+- `AXIOM_LIVE_BULK_ADAPTER_KEY`
+
 Optional poll tuning for all scripts:
 
 - `AXIOM_LIVE_POLL_ATTEMPTS` (default `20`)
@@ -105,6 +114,7 @@ Optional preflight tuning:
 - `pnpm axiom:livefire:property-intake`
 - `pnpm axiom:livefire:document-flow`
 - `pnpm axiom:livefire:analyze-webhook`
+- `pnpm axiom:livefire:bulk-submit`
 - `pnpm axiom:livefire:preflight`
 - `pnpm axiom:livefire:remote-suite`
 - `pnpm axiom:livefire:verify-local-remote -- <flow>`

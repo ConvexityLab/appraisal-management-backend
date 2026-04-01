@@ -9,6 +9,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Test/perf run output — generated files, never commit
+output/
+
 # Environment variables
 .env
 .env.local

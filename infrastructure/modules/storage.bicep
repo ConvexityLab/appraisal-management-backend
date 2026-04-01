@@ -111,6 +111,19 @@ resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
+// Bulk Upload Container (shared-storage source for bulk ingestion orchestration)
+resource bulkUploadContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
+  parent: blobService
+  name: 'bulk-upload'
+  properties: {
+    publicAccess: 'None'
+    metadata: {
+      purpose: 'Source package drop-zone for bulk ingestion shared-storage mode'
+      environment: environment
+    }
+  }
+}
+
 // Orders Container (for order-specific documents and workflow files)
 resource ordersContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-04-01' = {
   parent: blobService
@@ -289,6 +302,21 @@ resource sftpOrderEventsQueue 'Microsoft.Storage/storageAccounts/queueServices/q
   }
 }
 
+// Bulk Upload Events Queue
+// Receives Event Grid BlobCreated notifications from the Axiom storage account's
+// bulk-upload container. The BulkUploadEventListenerJob in the API server drains
+// this queue and submits a SHARED_STORAGE bulk-ingestion job for each CSV drop.
+resource bulkUploadEventsQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-04-01' = {
+  parent: queueService
+  name: 'bulk-upload-events'
+  properties: {
+    metadata: {
+      purpose: 'Event Grid delivery queue for bulk-upload BlobCreated notifications from axiomdevst'
+      environment: environment
+    }
+  }
+}
+
 // Outputs
 output storageAccountName string = storageAccount.name
 output storageAccountId string = storageAccount.id
@@ -312,4 +340,5 @@ output queueNames array = [
   documentProcessingQueue.name
   imageResizeQueue.name
   sftpOrderEventsQueue.name
+  bulkUploadEventsQueue.name
 ]

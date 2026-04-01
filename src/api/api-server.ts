@@ -44,6 +44,7 @@ import { createBridgeMlsRouter } from '../controllers/bridge-mls.controller';
 import avmRouter from '../controllers/avm.controller';
 import fraudDetectionRouter from '../controllers/fraud-detection.controller';
 import { createBulkPortfolioRouter } from '../controllers/bulk-portfolio.controller.js';
+import { createBulkIngestionRouter } from '../controllers/bulk-ingestion.controller.js';
 import { createReviewProgramsRouter } from '../controllers/review-programs.controller.js';
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
@@ -185,6 +186,13 @@ import { CommunicationEventHandler } from '../services/communication-event-handl
 import { AxiomAutoTriggerService } from '../services/axiom-auto-trigger.service';
 import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service';
 import { AxiomDocumentProcessingService } from '../services/axiom-document-processing.service';
+import { BulkIngestionProcessorService } from '../services/bulk-ingestion-processor.service.js';
+import { BulkIngestionCanonicalWorkerService } from '../services/bulk-ingestion-canonical-worker.service.js';
+import { BulkIngestionOrderCreationWorkerService } from '../services/bulk-ingestion-order-creation-worker.service.js';
+import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.job.js';
+import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion-extraction-worker.service.js';
+import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
+import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
@@ -301,6 +309,13 @@ export class AppraisalManagementAPIServer {
   private axiomAutoTriggerService?: AxiomAutoTriggerService;
   private axiomBulkSubmissionService?: AxiomBulkSubmissionService;
   private axiomDocumentProcessingService?: AxiomDocumentProcessingService;
+  private bulkIngestionProcessorService?: BulkIngestionProcessorService;
+  private bulkIngestionCanonicalWorkerService?: BulkIngestionCanonicalWorkerService;
+  private bulkIngestionOrderCreationWorkerService?: BulkIngestionOrderCreationWorkerService;
+  private bulkUploadEventListenerJob?: BulkUploadEventListenerJob;
+  private bulkIngestionExtractionWorkerService?: BulkIngestionExtractionWorkerService;
+  private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
+  private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
@@ -1158,6 +1173,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/bulk-portfolios',
       this.unifiedAuth.authenticate(),
       createBulkPortfolioRouter(this.dbService)
+    );
+
+    // Bulk Ingestion — canonical intake for mixed data files + document packages
+    this.app.use('/api/bulk-ingestion',
+      this.unifiedAuth.authenticate(),
+      createBulkIngestionRouter(this.dbService)
     );
 
     // Review Programs — versioned criteria programs used by tape evaluation
@@ -2454,6 +2475,662 @@ export class AppraisalManagementAPIServer {
             }
           }
         },
+        '/api/axiom/bulk-submission/metrics': {
+          get: {
+            summary: 'Get Axiom bulk submission operational metrics',
+            description: 'Returns counters for event intake, duplicate/replay suppression, submissions, DLQ creation, and replay outcomes.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Axiom Integration'],
+            responses: {
+              '200': {
+                description: 'Axiom bulk submission metrics retrieved successfully',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        success: { type: 'boolean', example: true },
+                        data: {
+                          type: 'object',
+                          properties: {
+                            asOf: { type: 'string', format: 'date-time' },
+                            metrics: {
+                              type: 'object',
+                              additionalProperties: { type: 'number' },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '500': { description: 'Failed to retrieve Axiom bulk submission metrics' },
+            },
+          },
+        },
+        '/api/axiom/bulk-submission/dlq/{eventId}/replay': {
+          post: {
+            summary: 'Replay a failed Axiom bulk submission DLQ event',
+            description: 'Replays a failed `axiom.bulk-evaluation.requested` submission from DLQ and updates replay tracking metadata.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Axiom Integration'],
+            parameters: [
+              {
+                name: 'eventId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Original failed event id',
+              },
+            ],
+            responses: {
+              '202': {
+                description: 'Replay accepted',
+              },
+              '404': { description: 'DLQ event not found' },
+              '500': { description: 'Failed to replay Axiom bulk submission DLQ event' },
+            },
+          },
+        },
+        '/api/axiom/bulk-submission/dlq': {
+          get: {
+            summary: 'List Axiom bulk submission DLQ events',
+            description: 'Returns failed Axiom bulk submission events from DLQ with optional tenant/job/status/date-range filters, sort presets, age buckets, and pagination metadata.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Axiom Integration'],
+            parameters: [
+              {
+                name: 'tenantId',
+                in: 'query',
+                required: false,
+                schema: { type: 'string' },
+                description: 'Filter DLQ entries by tenant id',
+              },
+              {
+                name: 'jobId',
+                in: 'query',
+                required: false,
+                schema: { type: 'string' },
+                description: 'Filter DLQ entries by bulk portfolio job id',
+              },
+              {
+                name: 'status',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  enum: ['OPEN', 'REPLAYED'],
+                },
+                description: 'Filter by DLQ item status',
+              },
+              {
+                name: 'fromFailedAt',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  format: 'date-time',
+                },
+                description: 'Include DLQ entries where failedAt is greater than or equal to this timestamp (ISO-8601)',
+              },
+              {
+                name: 'toFailedAt',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  format: 'date-time',
+                },
+                description: 'Include DLQ entries where failedAt is less than or equal to this timestamp (ISO-8601)',
+              },
+              {
+                name: 'limit',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'integer',
+                  minimum: 1,
+                  maximum: 500,
+                  default: 100,
+                },
+                description: 'Deprecated alias for pageSize. Maximum number of DLQ records to return.',
+              },
+              {
+                name: 'sortPreset',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  enum: ['FAILED_AT_DESC', 'FAILED_AT_ASC', 'RETRY_COUNT_DESC'],
+                  default: 'FAILED_AT_DESC',
+                },
+                description: 'Sorting preset for DLQ records',
+              },
+              {
+                name: 'ageBucket',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  enum: ['ANY', 'LAST_24_HOURS', 'LAST_7_DAYS', 'OLDER_THAN_7_DAYS'],
+                  default: 'ANY',
+                },
+                description: 'Optional relative age filter based on failedAt',
+              },
+              {
+                name: 'page',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'integer',
+                  minimum: 1,
+                  default: 1,
+                },
+                description: '1-based page number for offset pagination',
+              },
+              {
+                name: 'pageSize',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'integer',
+                  minimum: 1,
+                  maximum: 500,
+                  default: 100,
+                },
+                description: 'Number of items per page',
+              },
+            ],
+            responses: {
+              '200': {
+                description: 'Axiom bulk submission DLQ events retrieved successfully',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        success: { type: 'boolean', example: true },
+                        data: {
+                          type: 'object',
+                          properties: {
+                            asOf: { type: 'string', format: 'date-time' },
+                            count: { type: 'number', example: 2 },
+                            filters: {
+                              type: 'object',
+                              additionalProperties: true,
+                            },
+                            pagination: {
+                              type: 'object',
+                              properties: {
+                                page: { type: 'number', example: 1 },
+                                pageSize: { type: 'number', example: 100 },
+                                hasMore: { type: 'boolean', example: true },
+                              },
+                            },
+                            items: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                properties: {
+                                  id: { type: 'string' },
+                                  type: { type: 'string', example: 'axiom-bulk-submission-dlq' },
+                                  tenantId: { type: 'string' },
+                                  clientId: { type: 'string' },
+                                  jobId: { type: 'string' },
+                                  eventId: { type: 'string' },
+                                  status: { type: 'string', enum: ['OPEN', 'REPLAYED'] },
+                                  error: { type: 'string' },
+                                  failedAt: { type: 'string', format: 'date-time' },
+                                  retryCount: { type: 'number' },
+                                  replayedAt: { type: 'string', format: 'date-time', nullable: true },
+                                  replayedBy: { type: 'string', nullable: true },
+                                  lastReplayAttemptAt: { type: 'string', format: 'date-time', nullable: true },
+                                  lastReplayError: { type: 'string', nullable: true },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '400': { description: 'Invalid DLQ list query parameters' },
+              '500': { description: 'Failed to retrieve Axiom bulk submission DLQ events' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/retry-failed': {
+          post: {
+            summary: 'Retry failed bulk ingestion items',
+            description: 'Queues retries for FAILED items in the job that are allowed by stage-level retry policy.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+            ],
+            responses: {
+              '400': { description: 'Invalid request parameters' },
+              '202': {
+                description: 'Retry request accepted',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        message: { type: 'string', example: 'Retry request accepted for failed items' },
+                        job: {
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string' },
+                            status: { type: 'string', example: 'PENDING' },
+                            failedItems: { type: 'number', example: 0 },
+                          },
+                          additionalProperties: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '404': { description: 'Bulk ingestion job not found' },
+              '500': { description: 'Failed to retry failed items' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/items/{itemId}/retry': {
+          post: {
+            summary: 'Retry a specific bulk ingestion item',
+            description: 'Queues a retry for one FAILED item when allowed by stage-level retry policy.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+              {
+                name: 'itemId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion item id',
+              },
+            ],
+            responses: {
+              '400': { description: 'Invalid request parameters' },
+              '202': {
+                description: 'Item retry request accepted',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        message: { type: 'string', example: "Retry request accepted for item 'item-001'" },
+                        job: {
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string' },
+                            status: { type: 'string', example: 'PENDING' },
+                            failedItems: { type: 'number', example: 0 },
+                          },
+                          additionalProperties: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '404': { description: 'Bulk ingestion job or item not found' },
+              '409': { description: 'Item cannot be retried due to status/policy constraints' },
+              '500': { description: 'Failed to retry item' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/pause': {
+          post: {
+            summary: 'Pause a bulk ingestion job',
+            description: 'Pauses an active bulk ingestion job. Allowed only from PENDING or PROCESSING states.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+            ],
+            responses: {
+              '400': { description: 'Invalid request parameters' },
+              '202': { description: 'Pause request accepted' },
+              '404': { description: 'Bulk ingestion job not found' },
+              '409': { description: 'Pause not allowed from current state' },
+              '500': { description: 'Failed to pause bulk ingestion job' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/resume': {
+          post: {
+            summary: 'Resume a paused bulk ingestion job',
+            description: 'Resumes a paused bulk ingestion job. Allowed only from PAUSED state.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+            ],
+            responses: {
+              '400': { description: 'Invalid request parameters' },
+              '202': { description: 'Resume request accepted' },
+              '404': { description: 'Bulk ingestion job not found' },
+              '409': { description: 'Resume not allowed from current state' },
+              '500': { description: 'Failed to resume bulk ingestion job' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/cancel': {
+          post: {
+            summary: 'Cancel a bulk ingestion job',
+            description: 'Cancels an active bulk ingestion job and marks in-flight/pending items as CANCELLED.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+            ],
+            responses: {
+              '400': { description: 'Invalid request parameters' },
+              '202': { description: 'Cancel request accepted' },
+              '404': { description: 'Bulk ingestion job not found' },
+              '409': { description: 'Cancel not allowed from current state' },
+              '500': { description: 'Failed to cancel bulk ingestion job' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/canonicalization': {
+          get: {
+            summary: 'Get bulk ingestion canonicalization summary and records',
+            description: 'Returns canonical validation outcomes for a bulk ingestion job so operators can inspect adapter-level persistence results.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+            ],
+            responses: {
+              '200': {
+                description: 'Canonicalization details retrieved successfully',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        jobId: { type: 'string', example: 'bulk-ingest-7d7c1d5d-cb7d-4e58-a57b-8f4cd3f598f5' },
+                        adapterKey: { type: 'string', example: 'bridge-standard' },
+                        status: { type: 'string', example: 'COMPLETED' },
+                        summary: {
+                          nullable: true,
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string' },
+                            type: { type: 'string', example: 'bulk-ingestion-canonicalization-summary' },
+                            tenantId: { type: 'string' },
+                            clientId: { type: 'string' },
+                            jobId: { type: 'string' },
+                            adapterKey: { type: 'string' },
+                            totalCandidateItems: { type: 'number', example: 25 },
+                            persistedCount: { type: 'number', example: 23 },
+                            failedCount: { type: 'number', example: 2 },
+                            failures: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                properties: {
+                                  itemId: { type: 'string' },
+                                  rowIndex: { type: 'number' },
+                                  code: { type: 'string' },
+                                  message: { type: 'string' },
+                                },
+                              },
+                            },
+                            processedAt: { type: 'string', format: 'date-time' },
+                          },
+                        },
+                        records: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'string' },
+                              type: { type: 'string', example: 'bulk-ingestion-canonical-record' },
+                              tenantId: { type: 'string' },
+                              clientId: { type: 'string' },
+                              jobId: { type: 'string' },
+                              itemId: { type: 'string' },
+                              rowIndex: { type: 'number' },
+                              adapterKey: { type: 'string' },
+                              canonicalData: { type: 'object', additionalProperties: true },
+                              sourceData: { type: 'object', additionalProperties: true },
+                              documentBlobName: { type: 'string', nullable: true },
+                              persistedAt: { type: 'string', format: 'date-time' },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '404': { description: 'Bulk ingestion job not found' },
+              '500': { description: 'Failed to retrieve canonicalization details' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/failures/export': {
+          get: {
+            summary: 'Export bulk ingestion failures report',
+            description: 'Exports per-item failure rows for a bulk ingestion job as CSV for operator triage.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+              {
+                name: 'format',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  enum: ['csv', 'xlsx'],
+                  default: 'csv',
+                },
+                description: 'Export format for failure report download.',
+              },
+            ],
+            responses: {
+              '200': {
+                description: 'Failure export generated successfully',
+                content: {
+                  'text/csv': {
+                    schema: {
+                      type: 'string',
+                    },
+                  },
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+                    schema: {
+                      type: 'string',
+                      format: 'binary',
+                    },
+                  },
+                },
+              },
+              '400': { description: 'Invalid request parameters or unsupported format' },
+              '404': { description: 'Bulk ingestion job not found' },
+              '500': { description: 'Failed to export bulk ingestion failures' },
+            },
+          },
+        },
+        '/api/bulk-ingestion/{jobId}/failures': {
+          get: {
+            summary: 'List bulk ingestion failures',
+            description: 'Returns per-item failure rows for a bulk ingestion job in JSON with filtering, sorting, and pagination for operator triage workflows.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'jobId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Bulk ingestion job id',
+              },
+              {
+                name: 'stage',
+                in: 'query',
+                required: false,
+                schema: { type: 'string' },
+                description: 'Filter by exact failure stage (case-insensitive)',
+              },
+              {
+                name: 'code',
+                in: 'query',
+                required: false,
+                schema: { type: 'string' },
+                description: 'Filter by exact failure code (case-insensitive)',
+              },
+              {
+                name: 'retryable',
+                in: 'query',
+                required: false,
+                schema: { type: 'boolean' },
+                description: 'Filter by retryable flag',
+              },
+              {
+                name: 'itemStatus',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED'],
+                },
+                description: 'Filter by ingestion item status',
+              },
+              {
+                name: 'search',
+                in: 'query',
+                required: false,
+                schema: { type: 'string' },
+                description: 'Case-insensitive substring match across stage/code/message/item/document identifiers',
+              },
+              {
+                name: 'sort',
+                in: 'query',
+                required: false,
+                schema: {
+                  type: 'string',
+                  enum: ['occurredAt_desc', 'occurredAt_asc', 'rowIndex_asc', 'rowIndex_desc', 'stage_asc', 'stage_desc', 'code_asc', 'code_desc'],
+                  default: 'occurredAt_desc',
+                },
+                description: 'Sort order for returned failure rows',
+              },
+              {
+                name: 'cursor',
+                in: 'query',
+                required: false,
+                schema: { type: 'string' },
+                description: 'Opaque cursor returned by previous response to fetch the next page',
+              },
+              {
+                name: 'limit',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 1, maximum: 500, default: 50 },
+                description: 'Maximum number of rows to return',
+              },
+            ],
+            responses: {
+              '200': {
+                description: 'Bulk ingestion failures listed successfully',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        jobId: { type: 'string' },
+                        total: { type: 'integer', example: 14 },
+                        limit: { type: 'integer', example: 50 },
+                        prevCursor: { type: 'string', nullable: true },
+                        nextCursor: { type: 'string', nullable: true },
+                        hasMore: { type: 'boolean', example: true },
+                        sort: { type: 'string', example: 'occurredAt_desc' },
+                        filters: {
+                          type: 'object',
+                          additionalProperties: true,
+                        },
+                        items: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              jobId: { type: 'string' },
+                              itemId: { type: 'string' },
+                              rowIndex: { type: 'integer' },
+                              itemStatus: { type: 'string' },
+                              failureStage: { type: 'string' },
+                              failureCode: { type: 'string' },
+                              failureMessage: { type: 'string' },
+                              retryable: { type: 'boolean' },
+                              occurredAt: { type: 'string', format: 'date-time' },
+                              loanNumber: { type: 'string' },
+                              externalId: { type: 'string' },
+                              documentFileName: { type: 'string' },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '400': { description: 'Invalid request parameters' },
+              '404': { description: 'Bulk ingestion job not found' },
+              '500': { description: 'Failed to list bulk ingestion failures' },
+            },
+          },
+        },
         '/api/qc/checklists': {
           post: {
             summary: 'Create QC checklist',
@@ -3649,6 +4326,106 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Bulk Upload Event Listener Job (receives Event Grid BlobCreated messages from
+    // bulk-upload-events queue; fires SHARED_STORAGE bulk-ingestion jobs when a CSV is dropped
+    // in axiomdevst/bulk-upload/{tenantId}/{clientId}/{adapterKey}/)
+    try {
+      this.bulkUploadEventListenerJob = new BulkUploadEventListenerJob(this.dbService);
+      this.bulkUploadEventListenerJob.start().catch(err => {
+        this.logger.warn('BulkUploadEventListenerJob failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkUploadEventListenerJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Bulk Ingestion Processor Service (subscribes to bulk.ingestion.requested)
+    try {
+      this.bulkIngestionProcessorService = new BulkIngestionProcessorService(this.dbService);
+      this.bulkIngestionProcessorService.start().catch(err => {
+        this.logger.warn('BulkIngestionProcessorService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkIngestionProcessorService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Bulk Ingestion Canonical Worker Service (subscribes to bulk.ingestion.processed)
+    try {
+      this.bulkIngestionCanonicalWorkerService = new BulkIngestionCanonicalWorkerService(this.dbService);
+      this.bulkIngestionCanonicalWorkerService.start().catch(err => {
+        this.logger.warn('BulkIngestionCanonicalWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkIngestionCanonicalWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Bulk Ingestion Order Creation Worker Service (subscribes to bulk.ingestion.ordering.requested)
+    try {
+      this.bulkIngestionOrderCreationWorkerService = new BulkIngestionOrderCreationWorkerService(this.dbService);
+      this.bulkIngestionOrderCreationWorkerService.start().catch(err => {
+        this.logger.warn('BulkIngestionOrderCreationWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkIngestionOrderCreationWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Bulk Ingestion Extraction Worker Service (subscribes to bulk.ingestion.orders.created)
+    try {
+      this.bulkIngestionExtractionWorkerService = new BulkIngestionExtractionWorkerService(this.dbService);
+      this.bulkIngestionExtractionWorkerService.start().catch(err => {
+        this.logger.warn('BulkIngestionExtractionWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkIngestionExtractionWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Bulk Ingestion Finalizer Service (subscribes to bulk.ingestion.criteria.completed)
+    try {
+      this.bulkIngestionFinalizerService = new BulkIngestionFinalizerService(this.dbService);
+      this.bulkIngestionFinalizerService.start().catch(err => {
+        this.logger.warn('BulkIngestionFinalizerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkIngestionFinalizerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Bulk Ingestion Criteria Worker Service (subscribes to bulk.ingestion.extraction.completed)
+    try {
+      this.bulkIngestionCriteriaWorkerService = new BulkIngestionCriteriaWorkerService();
+      this.bulkIngestionCriteriaWorkerService.start().catch(err => {
+        this.logger.warn('BulkIngestionCriteriaWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BulkIngestionCriteriaWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Engagement Letter Auto-Send Service (sends letters on bid acceptance/staff assignment)
     try {
       this.engagementLetterAutoSendService = new EngagementLetterAutoSendService(this.dbService);
@@ -3759,7 +4536,7 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'bulk-upload-event-listener', 'bulk-ingestion-processor', 'bulk-ingestion-canonical-worker', 'bulk-ingestion-order-creation-worker', 'bulk-ingestion-extraction-worker', 'bulk-ingestion-criteria-worker', 'bulk-ingestion-finalizer', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
     });
   }
 
@@ -3805,6 +4582,27 @@ export class AppraisalManagementAPIServer {
     }
     if (this.axiomDocumentProcessingService) {
       this.axiomDocumentProcessingService.stop().catch(() => {});
+    }
+    if (this.bulkIngestionProcessorService) {
+      this.bulkIngestionProcessorService.stop().catch(() => {});
+    }
+    if (this.bulkIngestionCanonicalWorkerService) {
+      this.bulkIngestionCanonicalWorkerService.stop().catch(() => {});
+    }
+    if (this.bulkUploadEventListenerJob) {
+      this.bulkUploadEventListenerJob.stop();
+    }
+    if (this.bulkIngestionOrderCreationWorkerService) {
+      this.bulkIngestionOrderCreationWorkerService.stop().catch(() => {});
+    }
+    if (this.bulkIngestionExtractionWorkerService) {
+      this.bulkIngestionExtractionWorkerService.stop().catch(() => {});
+    }
+    if (this.bulkIngestionCriteriaWorkerService) {
+      this.bulkIngestionCriteriaWorkerService.stop().catch(() => {});
+    }
+    if (this.bulkIngestionFinalizerService) {
+      this.bulkIngestionFinalizerService.stop().catch(() => {});
     }
     if (this.axiomMissedTriggerJob) {
       this.axiomMissedTriggerJob.stop();

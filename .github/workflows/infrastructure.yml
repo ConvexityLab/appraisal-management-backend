@@ -104,6 +104,18 @@ jobs:
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
+
+        # Resolve Axiom storage account resource ID for Event Grid wiring.
+        # axiomStorageAccountName is sourced from the parameters file (default: axiomdevst).
+        # If the account cannot be found in this subscription the EG module is skipped (param stays empty).
+        AXIOM_STORAGE_ACCOUNT_NAME=$(jq -r '.parameters.axiomStorageAccountName.value // "axiomdevst"' "$PARAM_FILE")
+        AXIOM_STORAGE_ACCOUNT_ID=$(az storage account show --name "$AXIOM_STORAGE_ACCOUNT_NAME" --query id --output tsv 2>/dev/null || true)
+        if [ -n "$AXIOM_STORAGE_ACCOUNT_ID" ]; then
+          PARAM_ARGS+=("axiomStorageAccountId=$AXIOM_STORAGE_ACCOUNT_ID")
+          echo "✓ axiomStorageAccountId resolved for '$AXIOM_STORAGE_ACCOUNT_NAME'"
+        else
+          echo "⚠️  Could not resolve '$AXIOM_STORAGE_ACCOUNT_NAME' in this subscription — Event Grid bulk-upload wiring will be skipped."
+        fi
         
         az deployment sub validate \
           --name "main-${GITHUB_RUN_ID}" \
@@ -133,6 +145,16 @@ jobs:
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
+
+        # Resolve Axiom storage account resource ID for Event Grid wiring.
+        AXIOM_STORAGE_ACCOUNT_NAME=$(jq -r '.parameters.axiomStorageAccountName.value // "axiomdevst"' "$PARAM_FILE")
+        AXIOM_STORAGE_ACCOUNT_ID=$(az storage account show --name "$AXIOM_STORAGE_ACCOUNT_NAME" --query id --output tsv 2>/dev/null || true)
+        if [ -n "$AXIOM_STORAGE_ACCOUNT_ID" ]; then
+          PARAM_ARGS+=("axiomStorageAccountId=$AXIOM_STORAGE_ACCOUNT_ID")
+          echo "✓ axiomStorageAccountId resolved for '$AXIOM_STORAGE_ACCOUNT_NAME'"
+        else
+          echo "⚠️  Could not resolve '$AXIOM_STORAGE_ACCOUNT_NAME' in this subscription — Event Grid bulk-upload wiring will be skipped."
+        fi
         
         deployment_output=$(az deployment sub create \
           --name "main-${GITHUB_RUN_ID}" \
