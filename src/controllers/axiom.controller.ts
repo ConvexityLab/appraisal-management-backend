@@ -946,6 +946,39 @@ export class AxiomController {
             return;
           }
 
+          // Axiom's webhook body carries no result payload for DOCUMENT type — fetch it explicitly.
+          // Do this before the idempotency check so results are available for both the DB save and the event.
+          let axiomPipelineResults: Record<string, unknown> | undefined;
+          let axiomExtractionResult: unknown;
+          let axiomCriteriaResult: unknown;
+          if (status === 'completed' && pipelineJobId) {
+            try {
+              const rawResults = await this.axiomService.fetchPipelineResults(pipelineJobId);
+              if (rawResults) {
+                axiomPipelineResults = rawResults;
+                // Pull the structured extraction output from the pipeline stages
+                const stages = (rawResults['stages'] as Record<string, unknown> | undefined) ?? {};
+                const extractStage = stages['extractStructuredData'];
+                if (Array.isArray(extractStage) && extractStage.length > 0) {
+                  axiomExtractionResult = extractStage;
+                } else if (rawResults['extractedData']) {
+                  axiomExtractionResult = rawResults['extractedData'];
+                }
+                // Pull criteria evaluation summary from aggregateResults stage
+                const aggregateStage = stages['aggregateResults'];
+                if (Array.isArray(aggregateStage) && aggregateStage.length > 0) {
+                  axiomCriteriaResult = aggregateStage[0];
+                } else if (rawResults['criteriaResults']) {
+                  axiomCriteriaResult = rawResults['criteriaResults'];
+                }
+              }
+            } catch (fetchErr) {
+              this.logger.warn('Axiom bulk-ingestion webhook: could not fetch pipeline results — stamping status only', {
+                jobId, itemId, pipelineJobId, error: (fetchErr as Error).message,
+              });
+            }
+          }
+
           const updatedItems = [...job.items];
           const targetItem = { ...updatedItems[itemIndex]! };
           const currentExtractionStatus = typeof targetItem.canonicalRecord?.['axiomExtractionStatus'] === 'string'
@@ -958,7 +991,9 @@ export class AxiomController {
               ...(targetItem.canonicalRecord ?? {}),
               ...(pipelineJobId ? { axiomPipelineJobId: pipelineJobId } : {}),
               axiomExtractionStatus: status === 'completed' ? 'COMPLETED' : 'FAILED',
-              ...(result ? { axiomExtractionResult: result } : {}),
+              ...(axiomPipelineResults ? { axiomPipelineResults } : {}),
+              ...(axiomExtractionResult !== undefined ? { axiomExtractionResult } : {}),
+              ...(axiomCriteriaResult !== undefined ? { axiomCriteriaResult } : {}),
               axiomCompletedAt: new Date().toISOString(),
             };
             targetItem.updatedAt = new Date().toISOString();
@@ -992,7 +1027,9 @@ export class AxiomController {
               status: status === 'completed' ? 'completed' : 'failed',
               completedAt: new Date().toISOString(),
               ...(status !== 'completed' ? { error: (body['error'] as string | undefined) ?? 'Axiom extraction failed' } : {}),
-              ...(result ? { result } : {}),
+              ...(axiomPipelineResults ? { result: axiomPipelineResults } : {}),
+              ...(axiomExtractionResult !== undefined ? { extractionResult: axiomExtractionResult } : {}),
+              ...(axiomCriteriaResult !== undefined ? { criteriaResult: axiomCriteriaResult } : {}),
               priority: status === 'completed' ? EventPriority.NORMAL : EventPriority.HIGH,
             },
           };
