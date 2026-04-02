@@ -450,6 +450,46 @@ export class AxiomService {
   }
 
   /**
+   * Broadcast a pipeline stage lifecycle event via WebPubSub.
+   * Used to stream live stage progress to the UI so a stage-by-stage timeline
+   * can be rendered without polling.
+   * Best-effort — logs a warning on failure but never throws.
+   */
+  private async broadcastPipelineStage(
+    orderId: string,
+    pipelineJobId: string,
+    stage: string,
+    event: 'started' | 'completed' | 'failed',
+    durationMs?: number,
+  ): Promise<void> {
+    if (!this.webPubSubService || !orderId) return;
+    try {
+      await this.webPubSubService.sendToGroup(`order:${orderId}`, {
+        id: `axiom-stage-${pipelineJobId}-${stage}-${event}`,
+        title: 'Axiom Pipeline Stage',
+        message: `Stage ${stage} ${event}`,
+        priority: EventPriority.NORMAL,
+        category: EventCategory.QC,
+        targets: [],
+        data: {
+          eventType: 'axiom.pipeline.stage',
+          orderId,
+          pipelineJobId,
+          stage,
+          event,
+          ...(durationMs !== undefined ? { durationMs } : {}),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      this.logger.warn('Failed to broadcast Axiom pipeline stage via WebPubSub', {
+        pipelineJobId, stage, event,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
    * Retrieve evaluation results for an order
    * 
    * @param orderId Order ID to retrieve evaluation for
@@ -1618,6 +1658,7 @@ export class AxiomService {
     pipelineJobId: string,
     evaluationId?: string,
     fallbackRiskScore?: number,
+    stageLog?: Array<{ stage: string; event: 'started' | 'completed' | 'failed'; timestamp: string; durationMs?: number; error?: string }>,
   ): Promise<void> {
     const evalId = evaluationId ?? `eval-${orderId}-${pipelineJobId}`;
 
@@ -1631,6 +1672,19 @@ export class AxiomService {
     if (rawResults) {
       const mapped = this.mapPipelineResultsToEvaluation(rawResults, orderId, evalId, pipelineJobId);
       const pending = pendingResponse?.data ?? {};
+
+      // Extract the pipeline's structured outputs for direct UI visibility.
+      const rawStages = (rawResults['stages'] as Record<string, unknown> | undefined) ?? {};
+      const axiomExtractionResult =
+        (Array.isArray(rawStages['extractStructuredData']) && (rawStages['extractStructuredData'] as unknown[]).length > 0
+          ? rawStages['extractStructuredData']
+          : rawResults['extractedData']) ?? undefined;
+      const aggregateStage = rawStages['aggregateResults'];
+      const axiomCriteriaResult =
+        (Array.isArray(aggregateStage) && (aggregateStage as unknown[]).length > 0
+          ? (aggregateStage as unknown[])[0]
+          : rawResults['criteriaResults']) ?? undefined;
+
       const enriched = {
         id: evalId,
         ...mapped,
@@ -1641,6 +1695,11 @@ export class AxiomService {
         ...(pending.clientId ? { clientId: pending.clientId } : {}),
         ...(pending.programId ? { programId: pending.programId } : {}),
         criteria: this.enrichCriteriaRefs(mapped.criteria, meta),
+        // Raw Axiom pipeline outputs — stored for full UI visibility.
+        ...(axiomExtractionResult !== undefined ? { axiomExtractionResult } : {}),
+        ...(axiomCriteriaResult !== undefined ? { axiomCriteriaResult } : {}),
+        // Stage-by-stage execution log — populated from SSE stream events when available.
+        ...(stageLog && stageLog.length > 0 ? { pipelineExecutionLog: stageLog } : {}),
         _metadata: { ...meta, completedAt: new Date().toISOString() },
       };
       await this.storeEvaluationRecord(enriched);
@@ -1676,6 +1735,9 @@ export class AxiomService {
    * Open a server-to-server SSE stream to the Axiom pipeline and relay each
    * progress event to the frontend via WebPubSub.
    *
+   * Also accumulates a stage-by-stage execution log that is flushed to the
+   * evaluation record in Cosmos when the pipeline reaches a terminal state.
+   *
    * The stream is resumable: if we reconnect, we pass the last received event
    * id as `?from=<cursor>` so Axiom replays missed events.
    *
@@ -1697,6 +1759,12 @@ export class AxiomService {
 
     const apiKey = process.env['AXIOM_API_KEY'];
     const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes hard limit
+
+    // Stage execution log accumulated across the lifetime of this stream
+    type StageLogEntry = { stage: string; event: 'started' | 'completed' | 'failed'; timestamp: string; durationMs?: number; error?: string };
+    const stageLog: StageLogEntry[] = [];
+    // Track start times so we can compute durationMs for 'started' entries that lack it
+    const stageStartTimes = new Map<string, number>();
 
     return new Promise<void>((resolve, reject) => {
       let lastEventId: string | undefined;
@@ -1730,59 +1798,84 @@ export class AxiomService {
           try { return JSON.parse(event.data as string) as Record<string, unknown>; } catch { return {}; }
         };
 
-        // Terminal: pipeline completed — fetch full results and store them in aiInsights
-        es.addEventListener('pipeline_completed', (event) => {
+        // ── Stage lifecycle events — Axiom sends 'stage.started' / 'stage.completed' ──
+        // NOTE: event names use dots, not underscores — EventSource addEventListener requires exact match.
+
+        es.addEventListener('stage.started', (event) => {
           const payload = extractPayload(event);
-          const riskScore = payload['riskScore'] as number | undefined;
+          const data = (payload['data'] as Record<string, unknown> | undefined) ?? {};
+          const stage = (data['stage'] as string | undefined) ?? 'unknown';
+          const timestamp = (payload['timestamp'] as string | undefined) ?? new Date().toISOString();
+          stageLog.push({ stage, event: 'started', timestamp });
+          stageStartTimes.set(stage, Date.now());
+          this.broadcastPipelineStage(correlationId, pipelineJobId, stage, 'started').catch(() => {});
+          this.broadcastAxiomStatus(correlationId, pipelineJobId, 'running').catch(() => {});
+        });
+
+        es.addEventListener('stage.completed', (event) => {
+          const payload = extractPayload(event);
+          const data = (payload['data'] as Record<string, unknown> | undefined) ?? {};
+          const stage = (data['stage'] as string | undefined) ?? 'unknown';
+          const timestamp = (payload['timestamp'] as string | undefined) ?? new Date().toISOString();
+          const durationMs = typeof payload['durationMs'] === 'number'
+            ? (payload['durationMs'] as number)
+            : stageStartTimes.has(stage) ? Date.now() - stageStartTimes.get(stage)! : undefined;
+          stageLog.push({ stage, event: 'completed', timestamp, ...(durationMs !== undefined ? { durationMs } : {}) });
+          this.broadcastPipelineStage(correlationId, pipelineJobId, stage, 'completed', durationMs).catch(() => {});
+          this.broadcastAxiomStatus(correlationId, pipelineJobId, 'running').catch(() => {});
+        });
+
+        es.addEventListener('stage.failed', (event) => {
+          const payload = extractPayload(event);
+          const data = (payload['data'] as Record<string, unknown> | undefined) ?? {};
+          const stage = (data['stage'] as string | undefined) ?? 'unknown';
+          const timestamp = (payload['timestamp'] as string | undefined) ?? new Date().toISOString();
+          const error = (data['error'] as string | undefined) ?? (payload['error'] as string | undefined);
+          stageLog.push({ stage, event: 'failed', timestamp, ...(error ? { error } : {}) });
+          this.broadcastPipelineStage(correlationId, pipelineJobId, stage, 'failed').catch(() => {});
+        });
+
+        // ── Terminal: pipeline_final carries status='completed'|'failed' ──────────────
+        es.addEventListener('pipeline_final', (event) => {
+          const payload = extractPayload(event);
+          const status = (payload['status'] as string | undefined) ?? 'completed';
           const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
-          // Fire-and-forget: settle the stream immediately; result storage runs concurrently
-          this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore)
-            .catch((err) => {
-              this.logger.error('SSE pipeline_completed: failed to store Axiom results', {
-                pipelineJobId, correlationId, error: (err as Error).message,
+
+          if (status === 'completed') {
+            const riskScore = payload['riskScore'] as number | undefined;
+            // Fire-and-forget: settle the stream immediately; result + log storage runs concurrently
+            this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore, stageLog)
+              .catch((err) => {
+                this.logger.error('SSE pipeline_final: failed to store Axiom results', {
+                  pipelineJobId, correlationId, error: (err as Error).message,
+                });
+                this.broadcastAxiomStatus(correlationId, evaluationId, 'completed', riskScore).catch(() => {});
               });
-              // Best-effort broadcast even if result fetch failed
-              this.broadcastAxiomStatus(correlationId, evaluationId, 'completed', riskScore).catch(() => {/* logged inside */});
-            });
+          } else {
+            // Failed — persist the stage log so we know how far it got
+            const errorMsg = (payload['error'] as string | undefined) ?? 'Pipeline execution failed';
+            this.dbService.getItem<any>(this.containerName, evaluationId)
+              .then((r) => {
+                const existing = (r.success && r.data) ? r.data : {};
+                return this.storeEvaluationRecord({
+                  ...existing,
+                  id: evaluationId,
+                  status: 'failed',
+                  error: { code: 'PIPELINE_FAILED', message: errorMsg },
+                  ...(stageLog.length > 0 ? { pipelineExecutionLog: stageLog } : {}),
+                  timestamp: new Date().toISOString(),
+                });
+              })
+              .catch((err) => {
+                this.logger.error('SSE pipeline_final(failed): could not mark record as failed', {
+                  evaluationId, error: (err as Error).message,
+                });
+              });
+            this.broadcastAxiomStatus(correlationId, evaluationId, 'failed').catch(() => {});
+          }
+
           es.close();
           settle();
-        });
-
-        // Terminal: pipeline failed — mark stored record as failed, broadcast to frontend
-        es.addEventListener('pipeline_failed', (event) => {
-          const payload = extractPayload(event);
-          const errorMsg = (payload['error'] as string | undefined) ?? 'Pipeline execution failed';
-          const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
-          this.dbService.getItem<any>(this.containerName, evaluationId)
-            .then((r) => {
-              const existing = (r.success && r.data) ? r.data : {};
-              return this.storeEvaluationRecord({
-                ...existing,
-                id: evaluationId,
-                status: 'failed',
-                error: { code: 'PIPELINE_FAILED', message: errorMsg },
-                timestamp: new Date().toISOString(),
-              });
-            })
-            .catch((err) => {
-              this.logger.error('SSE pipeline_failed: could not mark record as failed', {
-                evaluationId, error: (err as Error).message,
-              });
-            });
-          this.broadcastAxiomStatus(correlationId, evaluationId, 'failed').catch(() => {/* logged inside */});
-          es.close();
-          settle();
-        });
-
-        // Progress: stage lifecycle — relay 'running' status to frontend
-        es.addEventListener('stage_started', (event) => {
-          extractPayload(event);
-          this.broadcastAxiomStatus(correlationId, pipelineJobId, 'running').catch(() => {/* logged inside */});
-        });
-
-        es.addEventListener('stage_completed', (event) => {
-          extractPayload(event);
-          this.broadcastAxiomStatus(correlationId, pipelineJobId, 'running').catch(() => {/* logged inside */});
         });
 
         // Snapshot: full pipeline state at connection time — relay if not already terminal
@@ -1790,7 +1883,7 @@ export class AxiomService {
           const payload = extractPayload(event);
           const snapshotStatus = (payload['status'] as string | undefined) ?? 'running';
           if (snapshotStatus !== 'completed' && snapshotStatus !== 'failed') {
-            this.broadcastAxiomStatus(correlationId, pipelineJobId, snapshotStatus).catch(() => {/* logged inside */});
+            this.broadcastAxiomStatus(correlationId, pipelineJobId, snapshotStatus).catch(() => {});
           }
         });
 

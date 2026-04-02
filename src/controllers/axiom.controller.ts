@@ -951,6 +951,7 @@ export class AxiomController {
           let axiomPipelineResults: Record<string, unknown> | undefined;
           let axiomExtractionResult: unknown;
           let axiomCriteriaResult: unknown;
+          let pipelineExecutionLog: Array<{ stage: string; event: 'completed' | 'failed'; timestamp: string; error?: string }> | undefined;
           if (status === 'completed' && pipelineJobId) {
             try {
               const rawResults = await this.axiomService.fetchPipelineResults(pipelineJobId);
@@ -971,6 +972,19 @@ export class AxiomController {
                 } else if (rawResults['criteriaResults']) {
                   axiomCriteriaResult = rawResults['criteriaResults'];
                 }
+                // Build a best-effort stage execution log from the stages map.
+                // The results endpoint carries no per-stage timing, so durationMs is omitted.
+                pipelineExecutionLog = Object.entries(stages).map(([stageName, output]) => {
+                  const out = output as Record<string, unknown> | null | undefined;
+                  const failed = !!(out?.['_processingFailed']);
+                  const error = out?.['_failureDetail'] as string | undefined;
+                  return {
+                    stage: stageName,
+                    event: failed ? 'failed' as const : 'completed' as const,
+                    timestamp: new Date().toISOString(),
+                    ...(error ? { error } : {}),
+                  };
+                });
               }
             } catch (fetchErr) {
               this.logger.warn('Axiom bulk-ingestion webhook: could not fetch pipeline results — stamping status only', {
@@ -994,6 +1008,7 @@ export class AxiomController {
               ...(axiomPipelineResults ? { axiomPipelineResults } : {}),
               ...(axiomExtractionResult !== undefined ? { axiomExtractionResult } : {}),
               ...(axiomCriteriaResult !== undefined ? { axiomCriteriaResult } : {}),
+              ...(pipelineExecutionLog && pipelineExecutionLog.length > 0 ? { pipelineExecutionLog } : {}),
               axiomCompletedAt: new Date().toISOString(),
             };
             targetItem.updatedAt = new Date().toISOString();
