@@ -551,7 +551,16 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
               name: 'AZURE_CLIENT_ID'
               value: containerAppIdentities[i].properties.clientId
             }
-          ])
+          ], app.name == 'appraisal-api' ? [
+            {
+              // The API app's own public ingress URL — used by AxiomService as the
+              // webhookUrl base for Axiom pipeline callback registrations.
+              // Computed here (not passed as a param) because it is self-referential:
+              //   {appName}.{managedEnvironment.defaultDomain}
+              name: 'API_BASE_URL'
+              value: 'https://ca-${replace(app.name, '-', '')}-${take(environment, 3)}-${take(suffix, 4)}.${containerAppEnvironment.properties.defaultDomain}'
+            }
+          ] : [])
         }
       ]
       scale: {
