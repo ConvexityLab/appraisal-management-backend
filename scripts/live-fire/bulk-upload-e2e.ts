@@ -178,10 +178,9 @@ interface BulkIngestionJob {
   jobName: string;
   status: string;
   totalItems: number;
-  completedItems: number;
+  successItems: number;
   failedItems: number;
-  processingItems: number;
-  pendingItems?: number;
+  pendingItems: number;
   createdAt: string;
   updatedAt?: string;
   completedAt?: string;
@@ -534,13 +533,13 @@ async function main(): Promise<void> {
 
     // Summary counters
     const total = job.totalItems;
-    const done = job.completedItems;
+    const done = job.successItems;
     const failed = job.failedItems;
-    const processing = job.processingItems;
+    const processing = job.pendingItems;
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     log(
       `  … ${Math.round(elapsedMs() / 1000)}s  ` +
-      `total=${total}  done=${done}(${pct}%)  processing=${processing}  failed=${failed}`,
+      `total=${total}  done=${done}(${pct}%)  pending=${processing}  failed=${failed}`,
     );
 
     if (isTerminal(job.status)) {
@@ -562,7 +561,7 @@ async function main(): Promise<void> {
   log(`Job ID       : ${jobId}`);
   log(`Final status : ${terminalJob.status}`);
   log(`Total items  : ${terminalJob.totalItems}`);
-  log(`Completed    : ${terminalJob.completedItems}`);
+  log(`Completed    : ${terminalJob.successItems}`);
   log(`Failed       : ${terminalJob.failedItems}`);
   log(`Elapsed      : ${Math.round(elapsed / 1000)}s`);
   log('');
