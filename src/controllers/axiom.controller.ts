@@ -1023,6 +1023,25 @@ export class AxiomController {
             }
           }
 
+          // Also write to aiInsights (the same path as single-order / SSE flow) so the
+          // evaluation record is queryable and visible in the UI regardless of ingestion path.
+          const canonicalOrderId = typeof targetItem.canonicalRecord?.['orderId'] === 'string'
+            ? (targetItem.canonicalRecord['orderId'] as string)
+            : undefined;
+          if (status === 'completed' && canonicalOrderId && pipelineJobId) {
+            await this.axiomService.fetchAndStorePipelineResults(
+              canonicalOrderId,
+              pipelineJobId,
+              undefined,
+              undefined,
+              pipelineExecutionLog,
+            ).catch((err: Error) =>
+              this.logger.warn('Axiom bulk-ingestion webhook: failed to write aiInsights record', {
+                jobId, itemId, canonicalOrderId, pipelineJobId, error: err.message,
+              }),
+            );
+          }
+
           const extractionCompletedEvent: BulkIngestionExtractionCompletedEvent = {
             id: uuidv4(),
             type: 'bulk.ingestion.extraction.completed',
