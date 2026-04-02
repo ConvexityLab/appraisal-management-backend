@@ -458,6 +458,16 @@ export class BulkPortfolioService {
       items: results,
     };
 
+    // Thread document blob URLs from the request onto each result so Axiom
+    // submission can fan out one pipeline job per loan using its document.
+    if (request.documentUrls) {
+      for (const result of results) {
+        const key = result.loanNumber ?? String(result.rowIndex);
+        const docUrl = request.documentUrls[key];
+        if (docUrl) result.documentBlobUrl = docUrl;
+      }
+    }
+
     await this._saveJob(job);
 
     this.logger.info('Tape evaluation complete', {
@@ -535,10 +545,18 @@ export class BulkPortfolioService {
       throw new Error(`submitTapeEvaluationJobToAxiom: job '${jobId}' has no tape results to submit`);
     }
 
-    const loans = this._tapeResultsToLoanData(tapeResults);
+    // Map each tape result to a per-loan submission descriptor.
+    // documentBlobUrl is a pre-generated SAS URL (or direct URL) threaded
+    // through from BulkSubmitRequest.documentUrls at evaluation time.
+    const loanSubmissions = tapeResults.map((r) => ({
+      loanNumber: r.loanNumber ?? String(r.rowIndex),
+      ...(r.documentBlobUrl ? { documentBlobUrl: r.documentBlobUrl } : {}),
+      ...(r.loanNumber ? { documentFileName: `appraisal-${r.loanNumber}.pdf` } : {}),
+    }));
+
     const submitResult = await this.axiomService.submitBatchEvaluation(
       jobId,
-      loans,
+      loanSubmissions,
       tenantId,
       clientId,
       reviewProgramId ?? job.reviewProgramId,
@@ -573,7 +591,7 @@ export class BulkPortfolioService {
       jobId,
       pipelineJobId: submitResult.pipelineJobId,
       batchId: submitResult.batchId,
-      loanCount: loans.length,
+      loanCount: loanSubmissions.length,
     });
 
     return submitResult;

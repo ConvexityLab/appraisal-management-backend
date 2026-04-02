@@ -1207,17 +1207,26 @@ export class AxiomService {
   }
 
   /**
-   * Submit a bulk tape job (multiple loans) to the Axiom Loom pipeline.
+   * Submit a bulk tape job to Axiom by fanning out one pipeline job per loan
+   * that has an associated document.
    *
-   * Each loan provides its own fields and optional documents. Axiom evaluates
-   * them in parallel and posts a single webhook back when all are complete.
+   * Uses the same confirmed contract as submitOrderEvaluation:
+   *   pipelineId: "complete-document-criteria-evaluation"
+   *   input: { files[], storageAccountName, containerName, correlationType: "BULK_JOB" }
+   *
+   * Submissions are throttled to MAX_BULK_CONCURRENCY concurrent calls to avoid
+   * overwhelming the Axiom endpoint.  Loans without a documentBlobUrl are logged
+   * and skipped — they cannot be evaluated without a document.
+   *
+   * Returns the first successful pipelineJobId + a caller-generated batchId,
+   * or null if every loan failed or no loans had documents.
    */
   async submitBatchEvaluation(
     jobId: string,
-    loans: Array<{
+    loanSubmissions: Array<{
       loanNumber: string;
-      fields: Array<{ fieldName: string; fieldType: string; value: unknown }>;
-      documents?: Array<{ documentName: string; documentReference: string }>;
+      documentBlobUrl?: string;   // SAS URL or direct blob URL
+      documentFileName?: string;
     }>,
     tenantId: string,
     clientId: string,
@@ -1238,49 +1247,128 @@ export class AxiomService {
       throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
     }
 
-    try {
-      const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
-        ...this.buildPipelineParam('BULK_EVAL'),
-        input: {
-          subClientId: tenantId,
-          clientId,
-          correlationId: jobId,
-          correlationType: 'BULK_JOB',
-          webhookUrl: `${apiBaseUrl}/api/axiom/webhook/bulk`,
-          webhookSecret,
-          loans,
-          schemaMode: 'RISK_EVALUATION',
-          ...(programId ? { programId } : {}),
-        },
-      });
-
-      const pipelineJobId = response.data.jobId;
-      const batchId = `batch-${jobId}-${pipelineJobId}`;
-
-      await this.storeEvaluationRecord({
-        id: batchId,
+    const withDoc = loanSubmissions.filter((s) => !!s.documentBlobUrl);
+    if (withDoc.length === 0) {
+      this.logger.warn('submitBatchEvaluation: no loans have documentBlobUrl — cannot submit to Axiom', {
         jobId,
-        batchId,
-        pipelineJobId,
-        correlationType: 'BULK_JOB',
-        tenantId,
-        clientId,
-        ...(programId ? { programId } : {}),
-        status: 'pending',
-        timestamp: new Date().toISOString(),
+        totalLoans: loanSubmissions.length,
       });
-
-      this.watchPipelineStream(pipelineJobId, jobId, 'BULK_JOB').catch((err) => {
-        this.logger.error('Axiom SSE stream error for bulk job', { jobId, pipelineJobId, error: (err as Error).message });
-      });
-
-      return { pipelineJobId, batchId };
-    } catch (error) {
-      const axiosError = error as AxiosError;
-      const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
-      this.logger.error('Failed to submit batch evaluation to Axiom pipeline', { jobId, error: errorMessage });
       return null;
     }
+
+    if (withDoc.length < loanSubmissions.length) {
+      this.logger.warn('submitBatchEvaluation: some loans have no documentBlobUrl and will be skipped', {
+        jobId,
+        withDoc: withDoc.length,
+        skipped: loanSubmissions.length - withDoc.length,
+      });
+    }
+
+    const requiredDocumentTypes = process.env['AXIOM_REQUIRED_DOCUMENT_TYPES']
+      ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
+      : ['appraisal-report'];
+
+    const MAX_CONCURRENCY = 3;
+    const batchId = `batch-${jobId}-${Date.now().toString(36)}`;
+    let firstPipelineJobId: string | null = null;
+    let submittedCount = 0;
+    let failedCount = 0;
+
+    // Process in groups of MAX_CONCURRENCY to throttle Axiom submissions.
+    for (let i = 0; i < withDoc.length; i += MAX_CONCURRENCY) {
+      const chunk = withDoc.slice(i, i + MAX_CONCURRENCY);
+
+      const settled = await Promise.allSettled(
+        chunk.map(async (loan) => {
+          const blobUrl = loan.documentBlobUrl!;
+          const fileName = loan.documentFileName ?? `${loan.loanNumber}.pdf`;
+
+          // Parse storageAccountName and containerName from the blob URL.
+          // Works for both plain blob URLs and SAS URLs.
+          let storageAccountName: string | undefined;
+          let containerName: string | undefined;
+          try {
+            const parsedUrl = new URL(blobUrl);
+            storageAccountName = parsedUrl.hostname.split('.')[0];
+            containerName = parsedUrl.pathname.split('/').filter(Boolean)[0];
+          } catch {
+            // Malformed URL — Axiom will reject if storage coords are required
+          }
+
+          const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
+            pipelineId: process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation',
+            input: {
+              subClientId: tenantId,
+              clientId,
+              fileSetId: `fs-${jobId}-${loan.loanNumber}`,
+              files: [{
+                fileName,
+                url: blobUrl,
+                mediaType: 'application/pdf',
+                downloadMethod: 'azure-sdk' as const,
+              }],
+              ...(storageAccountName ? { storageAccountName } : {}),
+              ...(containerName ? { containerName } : {}),
+              requiredDocuments: requiredDocumentTypes,
+              correlationId: jobId,
+              correlationType: 'BULK_JOB',
+              webhookUrl: `${apiBaseUrl}/api/axiom/webhook/bulk`,
+              webhookSecret,
+              ...(programId ? { programId } : {}),
+            },
+          });
+          return { loanNumber: loan.loanNumber, pipelineJobId: response.data.jobId };
+        }),
+      );
+
+      for (const result of settled) {
+        if (result.status === 'fulfilled') {
+          const { loanNumber, pipelineJobId } = result.value;
+          submittedCount++;
+          if (!firstPipelineJobId) firstPipelineJobId = pipelineJobId;
+          // Store a lightweight evaluation record per loan for result stamping.
+          this.storeEvaluationRecord({
+            id: `${batchId}-${loanNumber}`,
+            jobId,
+            batchId,
+            pipelineJobId,
+            correlationType: 'BULK_JOB',
+            tenantId,
+            clientId,
+            ...(programId ? { programId } : {}),
+            status: 'pending',
+            timestamp: new Date().toISOString(),
+          }).catch((err: Error) =>
+            this.logger.warn('submitBatchEvaluation: failed to store evaluation record', {
+              jobId, loanNumber, error: err.message,
+            }),
+          );
+          this.watchPipelineStream(pipelineJobId, jobId, 'BULK_JOB').catch((err: Error) =>
+            this.logger.error('Axiom SSE stream error for bulk job loan', {
+              jobId, loanNumber, pipelineJobId, error: err.message,
+            }),
+          );
+        } else {
+          failedCount++;
+          const axiosError = result.reason as AxiosError;
+          const msg = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
+          this.logger.error('submitBatchEvaluation: individual loan submission failed', {
+            jobId, error: msg,
+          });
+        }
+      }
+    }
+
+    this.logger.info('submitBatchEvaluation: fanout complete', {
+      jobId, batchId, submittedCount, failedCount, total: withDoc.length,
+    });
+
+    if (!firstPipelineJobId) {
+      this.logger.error('submitBatchEvaluation: all loan submissions failed', { jobId });
+      return null;
+    }
+
+    return { pipelineJobId: firstPipelineJobId, batchId };
   }
 
   /**

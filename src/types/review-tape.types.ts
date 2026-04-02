@@ -163,6 +163,13 @@ export interface RiskTapeItem {
   /** Client-provided decision (may differ from server-computed) */
   overallDecision?: string;
   reviewerNotes?: string;
+  /**
+   * Blob URL (direct or SAS) of the appraisal document for this tape row.
+   * Set from BulkSubmitRequest.documentUrls[loanNumber] when the caller provides
+   * a document URL map.  Used by AxiomService.submitBatchEvaluation to fan out
+   * one pipeline submission per loan that has an associated document.
+   */
+  documentBlobUrl?: string;
 }
 
 // ─── Review Thresholds ────────────────────────────────────────────────────────
