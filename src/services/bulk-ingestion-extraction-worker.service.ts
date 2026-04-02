@@ -253,7 +253,10 @@ export class BulkIngestionExtractionWorkerService {
   }
 
   private buildCorrelationId(jobId: string, itemId: string): string {
-    return `${BULK_INGESTION_AXIOM_CORRELATION_PREFIX}::${jobId}::${itemId}`;
+    // BullMQ (used internally by Axiom) rejects job custom IDs that contain colons.
+    // Replace all colons (from the :: separators and the :N item suffix) with hyphens.
+    const raw = `${BULK_INGESTION_AXIOM_CORRELATION_PREFIX}::${jobId}::${itemId}`;
+    return raw.replace(/:/g, '-');
   }
 
   private getString(input: unknown): string | undefined {
