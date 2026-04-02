@@ -1551,10 +1551,20 @@ export class AxiomService {
    * to hydrate the full result set).
    */
   async fetchPipelineResults(pipelineJobId: string): Promise<Record<string, unknown> | null> {
-    // Axiom may return 409 with currentStatus='running' for a brief window after pipeline_final fires,
-    // while it commits results to its DB.  Retry up to MAX_RETRIES times before giving up.
-    const MAX_RETRIES = 5;
-    const RETRY_DELAY_MS = 1500; // 5 × 1.5 s = 7.5 s total window
+    // WHY the long retry window:
+    // Axiom's /observe SSE fires pipeline_final when Loom's Redis orchestrator marks the run
+    // completed — but the runner's post-processing (blob upload → updateExecutionStatus →
+    // Cosmos write) happens *after* that Redis flip and can take up to ~90 seconds.
+    // GET /results returns 409 currentStatus='running' during that entire window.
+    //
+    // Axiom is fixing this in observe.ts (gating pipeline_final on Cosmos status, not Redis).
+    // Until that fix is confirmed live, we poll for up to 2.5 minutes to bridge the gap.
+    // Once Axiom's fix is live, results will be available within seconds of pipeline_final
+    // and the first or second attempt will succeed.
+    //
+    // WORKAROUND TRACKING: remove/reduce once Axiom observe.ts fix is confirmed in prod.
+    const MAX_RETRIES = 15;
+    const RETRY_DELAY_MS = 10_000; // 15 × 10 s = 150 s total window (~2.5 min)
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
