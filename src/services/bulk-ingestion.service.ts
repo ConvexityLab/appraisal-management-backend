@@ -93,6 +93,8 @@ export interface BulkIngestionJobSummary {
   id: string;
   tenantId: string;
   clientId: string;
+  jobName?: string;
+  adapterKey?: string;
   status: BulkIngestionJobStatus;
   submittedAt: string;
   completedAt?: string;
@@ -331,7 +333,7 @@ export class BulkIngestionService {
 
   async listJobs(tenantId: string, clientId?: string): Promise<BulkIngestionJobSummary[]> {
     let query =
-      'SELECT c.id, c.tenantId, c.clientId, c.status, c.submittedAt, c.completedAt, c.totalItems, c.successItems, c.failedItems, c.pendingItems FROM c WHERE c.type = @type AND c.tenantId = @tenantId';
+      'SELECT c.id, c.tenantId, c.clientId, c.jobName, c.adapterKey, c.status, c.submittedAt, c.completedAt, c.totalItems, c.successItems, c.failedItems, c.pendingItems FROM c WHERE c.type = @type AND c.tenantId = @tenantId';
     const parameters: Array<{ name: string; value: string }> = [
       { name: '@type', value: 'bulk-ingestion-job' },
       { name: '@tenantId', value: tenantId },

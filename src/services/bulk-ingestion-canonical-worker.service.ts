@@ -218,7 +218,18 @@ export class BulkIngestionCanonicalWorkerService {
 
   private validateAndBuildCanonical(job: BulkIngestionJob, item: BulkIngestionItem): CanonicalValidationResult {
     const normalizedAdapter = job.adapterKey.toLowerCase();
-    const canonicalizer = this.adapterRegistry.get(normalizedAdapter);
+
+    // Exact match first, then prefix fallback so e.g. 'statebridge-mngvr5xl' matches 'statebridge'
+    let canonicalizer = this.adapterRegistry.get(normalizedAdapter);
+    if (!canonicalizer) {
+      for (const [key, value] of this.adapterRegistry) {
+        if (normalizedAdapter.startsWith(`${key}-`)) {
+          canonicalizer = value;
+          break;
+        }
+      }
+    }
+
     if (!canonicalizer) {
       return {
         ok: false,
@@ -285,6 +296,55 @@ export class BulkIngestionCanonicalWorkerService {
     };
   }
 
+  private validateStatebridge(job: BulkIngestionJob, item: BulkIngestionItem): CanonicalValidationResult {
+    const loanNumber = item.source.loanNumber?.trim();
+    const externalId = item.source.externalId?.trim();
+    const documentBlobName = this.resolveDocumentBlobName(job, item.source.documentFileName);
+
+    if (!loanNumber && !externalId) {
+      return {
+        ok: false,
+        code: 'STATEBRIDGE_ID_REQUIRED',
+        message: `statebridge requires loanNumber or externalId (item '${item.id}')`,
+        stage: 'canonical-validation',
+        severity: 'error',
+        diagnostics: {
+          itemId: item.id,
+          rowIndex: item.rowIndex,
+          adapterKey: job.adapterKey,
+        },
+      };
+    }
+
+    if (!documentBlobName) {
+      return {
+        ok: false,
+        code: 'STATEBRIDGE_DOCUMENT_REQUIRED',
+        message: `statebridge requires mapped document blob for item '${item.id}'`,
+        stage: 'canonical-validation',
+        severity: 'error',
+        diagnostics: {
+          itemId: item.id,
+          requestedDocumentFileName: item.source.documentFileName,
+          availableMappedDocuments: Object.keys(job.documentBlobMap ?? {}),
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      canonicalData: {
+        sourceAdapter: 'statebridge',
+        correlationKey: item.correlationKey,
+        loanNumber,
+        externalId,
+        propertyAddress: item.source.propertyAddress,
+        dataFileBlobName: job.dataFileBlobName,
+      },
+      documentBlobName,
+    };
+  }
+
   private validateBpoReport(job: BulkIngestionJob, item: BulkIngestionItem): CanonicalValidationResult {
     const documentBlobName = this.resolveDocumentBlobName(job, item.source.documentFileName);
     if (!documentBlobName) {
@@ -324,6 +384,10 @@ export class BulkIngestionCanonicalWorkerService {
       {
         adapterKey: 'bpo-report-v1',
         canonicalize: (job, item) => this.validateBpoReport(job, item),
+      },
+      {
+        adapterKey: 'statebridge',
+        canonicalize: (job, item) => this.validateStatebridge(job, item),
       },
     ];
 

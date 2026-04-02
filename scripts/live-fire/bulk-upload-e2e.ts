@@ -221,7 +221,12 @@ async function listJobs(
     );
   }
 
-  return (resp.data.jobs ?? resp.data.data ?? []) as BulkIngestionJob[];
+  // The API returns a plain array — guard against {jobs:[]} or {data:[]} wrappers
+  // that legacy callers may have expected.
+  const raw = resp.data as unknown;
+  if (Array.isArray(raw)) return raw as BulkIngestionJob[];
+  const obj = raw as Record<string, unknown>;
+  return ((obj['jobs'] ?? obj['data'] ?? []) as BulkIngestionJob[]);
 }
 
 async function getJob(
@@ -399,9 +404,9 @@ async function main(): Promise<void> {
     // Find a job whose name contains our unique prefix (adapter key with runId)
     const match = jobs.find((j) => {
       if (j.jobName && j.jobName.includes(adapterKeyWithRunId)) return true;
-      // Fallback: recently created job for this clientId (within last 2 minutes)
-      const createdAt = new Date(j.createdAt).getTime();
-      return createdAt >= csvUploadedAt.getTime() - 5_000 && j.clientId === clientId;
+      // Fallback: recently submitted job for this clientId
+      const submittedAt = new Date((j as any).submittedAt).getTime();
+      return !isNaN(submittedAt) && submittedAt >= csvUploadedAt.getTime() - 5_000 && j.clientId === clientId;
     });
 
     if (match) {
