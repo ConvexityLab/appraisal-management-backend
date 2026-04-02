@@ -1745,9 +1745,38 @@ export class AxiomService {
       );
       await this.broadcastAxiomStatus(orderId, evalId, 'completed', mapped.overallRiskScore);
     } else {
-      // Axiom results not available (still running or transient error).
-      // Broadcast 'error' so the frontend does not loop expecting a completed state.
-      this.logger.warn('fetchAndStorePipelineResults: no results returned from Axiom', { orderId, pipelineJobId, evalId });
+      // Axiom results not available (pipeline completed-partial, still running, or transient error).
+      // If the SSE stream accumulated stage-log data, write a partial record to aiInsights so the
+      // frontend sees the item rather than nothing.  Full extraction/criteria fields will be absent.
+      this.logger.warn('fetchAndStorePipelineResults: no results returned from Axiom', {
+        orderId, pipelineJobId, evalId, stageLogCount: stageLog?.length ?? 0,
+      });
+      if (stageLog && stageLog.length > 0) {
+        const pendingRec = (pendingResponse?.data ?? {}) as Record<string, unknown>;
+        await this.storeEvaluationRecord({
+          id: evalId,
+          orderId,
+          pipelineJobId,
+          evaluationId: evalId,
+          status: 'completed' as const,
+          overallRiskScore: fallbackRiskScore ?? 0,
+          criteria: [],
+          pipelineExecutionLog: stageLog,
+          documentType: (pendingRec['documentType'] ?? 'appraisal') as any,
+          ...(pendingRec['tenantId'] ? { tenantId: pendingRec['tenantId'] as string } : {}),
+          ...(pendingRec['clientId'] ? { clientId: pendingRec['clientId'] as string } : {}),
+          ...(pendingRec['programId'] ? { programId: pendingRec['programId'] as string } : {}),
+          timestamp: new Date().toISOString(),
+          _metadata: { ...meta, completedAt: new Date().toISOString(), partialResults: true },
+        }).catch((err: Error) => {
+          this.logger.error('fetchAndStorePipelineResults: failed to write partial record', {
+            orderId, pipelineJobId, evalId, error: err.message,
+          });
+        });
+        this.logger.info('fetchAndStorePipelineResults: wrote partial record with stage log', {
+          orderId, pipelineJobId, evalId, stageCount: stageLog.length,
+        });
+      }
       await this.broadcastAxiomStatus(orderId, evalId, 'error');
     }
   }
@@ -1793,6 +1822,7 @@ export class AxiomService {
 
     const apiKey = process.env['AXIOM_API_KEY'];
     const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes hard limit
+    this.logger.info('watchPipelineStream: opening SSE stream', { pipelineJobId, correlationId, correlationType });
 
     // Stage execution log accumulated across the lifetime of this stream
     type StageLogEntry = { stage: string; event: 'started' | 'completed' | 'failed'; timestamp: string; durationMs?: number; error?: string };
@@ -1875,7 +1905,10 @@ export class AxiomService {
           const status = (payload['status'] as string | undefined) ?? 'completed';
           const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
 
-          if (status === 'completed') {
+          // Treat 'completed-partial' as a successful terminal state — Axiom uses this when
+          // the pipeline finishes but not all optional stages succeeded.  We still attempt
+          // to fetch results; if GET /results 409s we fall back to what the stage log has.
+          if (status === 'completed' || status === 'completed-partial') {
             const riskScore = payload['riskScore'] as number | undefined;
             // Fire-and-forget: settle the stream immediately; result + log storage runs concurrently
             this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore, stageLog)

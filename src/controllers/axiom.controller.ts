@@ -814,9 +814,11 @@ export class AxiomController {
       if (rawCorrelationId && correlationType === 'EXECUTION') {
         const executionId = rawCorrelationId;
         const pipelineJobId = body['pipelineJobId'] as string | undefined;
-        const status = (body['status'] as string) ?? 'completed';
-        const result = body['result'] as Record<string, unknown> | undefined;
-        const error = body['error'] as string | undefined;
+        // Axiom nests status/result/error inside body.payload; fall back to root-level for legacy/mock shapes.
+        const webhookPayload0 = body['payload'] as Record<string, unknown> | undefined;
+        const status = (webhookPayload0?.['status'] ?? body['status'] as string | undefined) ?? 'completed';
+        const result = (webhookPayload0?.['result'] ?? body['result']) as Record<string, unknown> | undefined;
+        const error = (webhookPayload0?.['error'] ?? body['error']) as string | undefined;
 
         this.logger.info('Axiom webhook: EXECUTION update', { executionId, status, pipelineJobId });
 
@@ -858,7 +860,9 @@ export class AxiomController {
         const loanNumber = rawCorrelationId.slice(separatorIdx + 2);
         // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
         const executionId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
-        const status = (body['status'] as string) ?? 'completed';
+        // Axiom nests status inside body.payload; fall back to root-level for legacy/mock shapes.
+        const webhookPayload1 = body['payload'] as Record<string, unknown> | undefined;
+        const status = (webhookPayload1?.['status'] ?? body['status'] as string | undefined) ?? 'completed';
 
         type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
         const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
@@ -900,8 +904,10 @@ export class AxiomController {
         const documentId = rawCorrelationId;
         // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
         const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
-        const status = (body['status'] as string) ?? 'completed';
-        const result = body['result'] as Record<string, unknown> | undefined;
+        // Axiom nests status/result inside body.payload; fall back to root-level for legacy/mock shapes.
+        const webhookPayload2 = body['payload'] as Record<string, unknown> | undefined;
+        const status = (webhookPayload2?.['status'] ?? body['status'] as string | undefined) ?? 'completed';
+        const result = (webhookPayload2?.['result'] ?? body['result']) as Record<string, unknown> | undefined;
 
         if (documentId.startsWith(BULK_INGESTION_AXIOM_CORRELATION_PREFIX)) {
           // correlationId format: 'bulk-ingestion--<jobId>--<itemId>' (colons replaced with hyphens for BullMQ compatibility)
@@ -1135,8 +1141,10 @@ export class AxiomController {
         const correlationId = rawCorrelationId;
         // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
         const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
-        const status = (body['status'] as string) ?? 'completed';
-        const result = body['result'] as Record<string, unknown> | undefined;
+        // Axiom nests status/result inside body.payload; fall back to root-level for legacy/mock shapes.
+        const webhookPayload3 = body['payload'] as Record<string, unknown> | undefined;
+        const status = (webhookPayload3?.['status'] ?? body['status'] as string | undefined) ?? 'completed';
+        const result = (webhookPayload3?.['result'] ?? body['result']) as Record<string, unknown> | undefined;
 
         const updateData: Partial<AppraisalOrder> = {};
         // Narrow the status string so exactOptionalPropertyTypes is satisfied
@@ -1354,7 +1362,9 @@ export class AxiomController {
       const jobId = body['correlationId'] as string | undefined;
       // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
       const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
-      const status = (body['status'] as string) ?? 'completed';
+      // Axiom nests status inside body.payload; fall back to root-level for legacy/mock shapes.
+      const webhookPayload4 = body['payload'] as Record<string, unknown> | undefined;
+      const status = (webhookPayload4?.['status'] ?? body['status'] as string | undefined) ?? 'completed';
       // BULK_JOB is now a legacy correlationType. The primary bulk submission path uses
       // TAPE_LOAN (correlationId: '{jobId}::{loanNumber}') handled by handleWebhook, which
       // calls GET /api/pipelines/{executionId}/results per loan for score+decision stamping.
