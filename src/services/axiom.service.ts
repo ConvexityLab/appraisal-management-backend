@@ -1928,13 +1928,12 @@ export class AxiomService {
           const status = (payload['status'] as string | undefined) ?? 'completed';
           const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
 
-          // Axiom's pipeline_final payload may carry a 'pipelineId' (e.g. 'pipeline_idempotent_...')
-          // that is the correct key for GET /results, distinct from the raw execution ID (pipelineJobId).
-          // Always prefer pipelineId from the event; fall back to the submission ID.
-          const resultsFetchId = (payload['pipelineId'] as string | undefined) ?? pipelineJobId;
+          // executionId (== pipelineJobId) is the correct key for GET /results — it is the
+          // Cosmos document id echoed back as jobId in the 202 response.
+          // payload['pipelineId'] is Loom's internal idempotency namespace key and must NOT
+          // be passed to /results (confirmed by Axiom 2026-04-02).
           this.logger.info('SSE pipeline_final received', {
-            pipelineJobId, correlationId, status, resultsFetchId,
-            hasDistinctFetchId: resultsFetchId !== pipelineJobId,
+            pipelineJobId, correlationId, status,
             payloadKeys: Object.keys(payload),
           });
 
@@ -1944,7 +1943,7 @@ export class AxiomService {
           if (status === 'completed' || status === 'completed-partial') {
             const riskScore = payload['riskScore'] as number | undefined;
             // Fire-and-forget: settle the stream immediately; result + log storage runs concurrently
-            this.fetchAndStorePipelineResults(correlationId, resultsFetchId, evaluationId, riskScore, stageLog)
+            this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore, stageLog)
               .catch((err) => {
                 this.logger.error('SSE pipeline_final: failed to store Axiom results', {
                   pipelineJobId, correlationId, error: (err as Error).message,
