@@ -193,6 +193,18 @@ export class BulkIngestionExtractionWorkerService {
       };
       item.updatedAt = new Date().toISOString();
       submitted++;
+
+      // Stamp axiomPipelineJobId on the order document so the SSE proxy endpoint
+      // (GET /api/axiom/evaluations/order/:orderId/stream) can look it up.
+      await this.dbService.updateOrder(orderId, {
+        axiomPipelineJobId: submitResult.pipelineJobId,
+        axiomStatus: 'submitted' as any,
+      }).catch((err: Error) =>
+        this.logger.warn('ExtractionWorker: failed to stamp axiomPipelineJobId on order', {
+          orderId,
+          error: err.message,
+        }),
+      );
     }
 
     const saveResult = await this.dbService.upsertItem<BulkIngestionJob>('bulk-portfolio-jobs', {
