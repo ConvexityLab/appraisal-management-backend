@@ -1732,6 +1732,19 @@ export class AxiomService {
   }
 
   /**
+   * Public entry-point for watching a pipeline stream for a single order.
+   *
+   * Callers outside AxiomService (e.g. BulkIngestionExtractionWorkerService) should use
+   * this method instead of calling the private `watchPipelineStream` directly.
+   * Fire-and-forget: starts the SSE stream and returns immediately; errors are logged.
+   */
+  watchOrderPipelineStream(pipelineJobId: string, orderId: string): void {
+    this.watchPipelineStream(pipelineJobId, orderId, 'ORDER').catch((err: Error) => {
+      this.logger.error('watchOrderPipelineStream: SSE stream error', { pipelineJobId, orderId, error: err.message });
+    });
+  }
+
+  /**
    * Open a server-to-server SSE stream to the Axiom pipeline and relay each
    * progress event to the frontend via WebPubSub.
    *

@@ -194,6 +194,14 @@ export class BulkIngestionExtractionWorkerService {
       item.updatedAt = new Date().toISOString();
       submitted++;
 
+      // Open an SSE stream to Axiom for this item's pipeline execution.
+      // The stream fires fetchAndStorePipelineResults when pipeline_final arrives,
+      // writing axiomExtractionResult / axiomCriteriaResult to aiInsights while
+      // Axiom's results window is still open.  The subsequent DOCUMENT webhook
+      // will attempt the same call and receive a 409 (already consumed) — that
+      // is harmless since the data has already been persisted via this path.
+      this.axiomService.watchOrderPipelineStream(submitResult.pipelineJobId, orderId);
+
       // Stamp axiomPipelineJobId on the order document so the SSE proxy endpoint
       // (GET /api/axiom/evaluations/order/:orderId/stream) can look it up.
       await this.dbService.updateOrder(orderId, {
