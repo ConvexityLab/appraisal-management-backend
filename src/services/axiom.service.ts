@@ -1551,20 +1551,20 @@ export class AxiomService {
    * to hydrate the full result set).
    */
   async fetchPipelineResults(pipelineJobId: string): Promise<Record<string, unknown> | null> {
-    // WHY the long retry window:
-    // Axiom's /observe SSE fires pipeline_final when Loom's Redis orchestrator marks the run
-    // completed — but the runner's post-processing (blob upload → updateExecutionStatus →
-    // Cosmos write) happens *after* that Redis flip and can take up to ~90 seconds.
-    // GET /results returns 409 currentStatus='running' during that entire window.
+    // Retry strategy:
+    // ROOT CAUSE (Axiom 2026-04-02): pipeline_final SSE fires when Loom's Redis orchestrator
+    // marks the run completed — BEFORE the runner's post-processing (blob upload →
+    // updateExecutionStatus → Cosmos write) finishes. That gap is up to ~90s.
     //
-    // Axiom is fixing this in observe.ts (gating pipeline_final on Cosmos status, not Redis).
-    // Until that fix is confirmed live, we poll for up to 2.5 minutes to bridge the gap.
-    // Once Axiom's fix is live, results will be available within seconds of pipeline_final
-    // and the first or second attempt will succeed.
+    // Axiom's fix (commit b3f03f9, observe.ts): pipeline_final will only fire once the Cosmos
+    // execution record is in a terminal status — so when it fires, results are guaranteed
+    // present. Once that fix is confirmed live, these retries will collapse to near-zero in
+    // practice (cross-pod replication lag only).
     //
-    // WORKAROUND TRACKING: remove/reduce once Axiom observe.ts fix is confirmed in prod.
+    // Until b3f03f9 is confirmed live on axiom-dev-api, keep the 150s window to bridge the
+    // ~90s runner post-processing gap. Safe to reduce to 3×2s after confirmation.
     const MAX_RETRIES = 15;
-    const RETRY_DELAY_MS = 10_000; // 15 × 10 s = 150 s total window (~2.5 min)
+    const RETRY_DELAY_MS = 10_000; // 15 × 10 s = 150 s — covers worst-case ~90s runner lag
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
