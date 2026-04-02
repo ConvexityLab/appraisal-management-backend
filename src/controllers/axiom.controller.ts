@@ -796,7 +796,7 @@ export class AxiomController {
       }
 
       if (rawCorrelationId && correlationType === 'TAPE_LOAN') {
-        // correlationId is '{jobId}::{loanNumber}' for tape fan-out submissions
+        // correlationId is '{jobId}::{loanNumber}' — encoded by submitBatchEvaluation
         const separatorIdx = rawCorrelationId.indexOf('::');
         if (separatorIdx === -1) {
           this.logger.error('Axiom webhook TAPE_LOAN: malformed correlationId (missing ::)', { correlationId: rawCorrelationId });
@@ -805,20 +805,38 @@ export class AxiomController {
         }
         const jobId = rawCorrelationId.slice(0, separatorIdx);
         const loanNumber = rawCorrelationId.slice(separatorIdx + 2);
-        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
+        const executionId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
         const status = (body['status'] as string) ?? 'completed';
-        const result = body['result'] as Record<string, unknown> | undefined;
 
         type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
         const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
         const loanEntry: LoanResult = { loanNumber, status: loanStatus };
-        if (result) {
-          if (typeof result['overallRiskScore'] === 'number') loanEntry.riskScore = result['overallRiskScore'];
-          const dec = result['overallDecision'];
-          if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') loanEntry.decision = dec;
+
+        // Axiom's pipeline.completed webhook is a status notification only — no inline result payload.
+        // Call GET /api/pipelines/{executionId}/results to get the actual score and decision.
+        if (status === 'completed' && executionId) {
+          try {
+            const rawResults = await this.axiomService.fetchPipelineResults(executionId);
+            if (rawResults) {
+              const inner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
+              const riskScore = typeof inner['overallRiskScore'] === 'number'
+                ? inner['overallRiskScore'] as number
+                : typeof rawResults['overallRiskScore'] === 'number'
+                ? rawResults['overallRiskScore'] as number
+                : undefined;
+              if (riskScore !== undefined) loanEntry.riskScore = riskScore;
+              const dec = (inner['overallDecision'] ?? rawResults['overallDecision']) as string | undefined;
+              if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') loanEntry.decision = dec;
+            }
+          } catch (fetchErr) {
+            this.logger.warn('Axiom TAPE_LOAN webhook: could not fetch pipeline results — stamping status only', {
+              jobId, loanNumber, executionId, error: (fetchErr as Error).message,
+            });
+          }
         }
 
-        this.logger.info('Axiom TAPE_LOAN webhook received', { jobId, loanNumber, pipelineJobId, status });
+        this.logger.info('Axiom TAPE_LOAN webhook received', { jobId, loanNumber, executionId, status });
 
         await this.bulkPortfolioService.stampBatchEvaluationResults(jobId, [loanEntry]);
         await this.axiomService.broadcastBatchJobUpdate(jobId);
@@ -829,7 +847,8 @@ export class AxiomController {
       if (rawCorrelationId && correlationType === 'DOCUMENT') {
         // correlationId is the documentId set by AxiomDocumentProcessingService.
         const documentId = rawCorrelationId;
-        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
+        const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
         const status = (body['status'] as string) ?? 'completed';
         const result = body['result'] as Record<string, unknown> | undefined;
 
@@ -958,7 +977,8 @@ export class AxiomController {
 
       if (rawCorrelationId && correlationType === 'ORDER') {
         const correlationId = rawCorrelationId;
-        const pipelineJobId = body['pipelineJobId'] as string | undefined;
+        // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
+        const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
         const status = (body['status'] as string) ?? 'completed';
         const result = body['result'] as Record<string, unknown> | undefined;
 
@@ -1176,9 +1196,14 @@ export class AxiomController {
     try {
       const body = req.body as Record<string, unknown>;
       const jobId = body['correlationId'] as string | undefined;
-      const pipelineJobId = body['pipelineJobId'] as string | undefined;
+      // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
+      const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
       const status = (body['status'] as string) ?? 'completed';
-      const rawResults = body['results'] as Array<Record<string, unknown>> | undefined;
+      // BULK_JOB is now a legacy correlationType. The primary bulk submission path uses
+      // TAPE_LOAN (correlationId: '{jobId}::{loanNumber}') handled by handleWebhook, which
+      // calls GET /api/pipelines/{executionId}/results per loan for score+decision stamping.
+      // Axiom's pipeline.completed payload is { executionId, entityId, status, durationMs };
+      // there is no inline results[] array.
 
       if (!jobId) {
         this.logger.warn('Axiom bulk webhook missing correlationId', { keys: Object.keys(body) });
@@ -1186,35 +1211,11 @@ export class AxiomController {
         return;
       }
 
-      this.logger.info('Axiom bulk webhook received', { jobId, pipelineJobId, status, loanCount: rawResults?.length ?? 0 });
+      this.logger.info('Axiom bulk webhook received', { jobId, pipelineJobId, status });
 
-      if (!rawResults || rawResults.length === 0) {
-        // No per-loan results: just broadcast the job-level status change
-        await this.axiomService.broadcastBatchJobUpdate(jobId);
-        res.status(200).json({ success: true, message: 'Bulk webhook processed' });
-        return;
-      }
-
-      // Map raw Axiom payload rows → typed loanResults
-      // exactOptionalPropertyTypes: omit optional fields entirely when value is not present
-      type LoanResult = Parameters<typeof this.bulkPortfolioService.stampBatchEvaluationResults>[1][number];
-      const loanResults: LoanResult[] = rawResults
-        .filter((r) => typeof r['loanNumber'] === 'string')
-        .map((r) => {
-          const loanStatus: 'completed' | 'failed' = status === 'completed' ? 'completed' : 'failed';
-          const entry: LoanResult = { loanNumber: r['loanNumber'] as string, status: loanStatus };
-          if (typeof r['riskScore'] === 'number') entry.riskScore = r['riskScore'];
-          const dec = r['decision'];
-          if (dec === 'ACCEPT' || dec === 'CONDITIONAL' || dec === 'REJECT') entry.decision = dec;
-          return entry;
-        });
-
-      const updatedJob = await this.bulkPortfolioService.stampBatchEvaluationResults(jobId, loanResults);
-      const completedLoans = (updatedJob.items as Array<{ axiomStatus?: string }>)
-        .filter((r) => r.axiomStatus === 'completed').length;
-      const totalLoans = updatedJob.items?.length ?? loanResults.length;
-
-      await this.axiomService.broadcastBatchJobUpdate(jobId, completedLoans, totalLoans);
+      // Broadcast the job-level status change. Per-loan results are stamped by
+      // the TAPE_LOAN webhook handler as each individual pipeline job completes.
+      await this.axiomService.broadcastBatchJobUpdate(jobId);
       res.status(200).json({ success: true, message: 'Bulk webhook processed' });
     } catch (err) {
       this.logger.error('Axiom bulk webhook durable processing failed', {

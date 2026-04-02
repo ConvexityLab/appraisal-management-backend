@@ -1283,9 +1283,10 @@ export class AxiomService {
                 downloadMethod: 'fetch' as const,
               }],
               requiredDocuments: requiredDocumentTypes,
-              correlationId: jobId,
-              correlationType: 'BULK_JOB',
-              webhookUrl: `${apiBaseUrl}/api/axiom/webhook/bulk`,
+              // Per-loan correlationId so the TAPE_LOAN webhook branch can parse jobId and loanNumber.
+              correlationId: `${jobId}::${loan.loanNumber}`,
+              correlationType: 'TAPE_LOAN',
+              webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
               webhookSecret,
               ...(programId ? { programId } : {}),
             },
@@ -1305,7 +1306,8 @@ export class AxiomService {
             jobId,
             batchId,
             pipelineJobId,
-            correlationType: 'BULK_JOB',
+            correlationType: 'TAPE_LOAN',
+            loanNumber,
             tenantId,
             clientId,
             ...(programId ? { programId } : {}),
@@ -1316,11 +1318,9 @@ export class AxiomService {
               jobId, loanNumber, error: err.message,
             }),
           );
-          this.watchPipelineStream(pipelineJobId, jobId, 'BULK_JOB').catch((err: Error) =>
-            this.logger.error('Axiom SSE stream error for bulk job loan', {
-              jobId, loanNumber, pipelineJobId, error: err.message,
-            }),
-          );
+          // No SSE stream per loan — opening O(N) persistent connections for a bulk batch is
+          // not feasible. The TAPE_LOAN webhook (correlationId: jobId::loanNumber) is the
+          // canonical result delivery path.
         } else {
           failedCount++;
           const axiosError = result.reason as AxiosError;
@@ -1674,6 +1674,22 @@ export class AxiomService {
       this.logger.info('Axiom pipeline results stored', {
         orderId, pipelineJobId, evalId, criteriaCount: mapped.criteria.length, riskScore: mapped.overallRiskScore,
       });
+      // Axiom's completed webhook carries no inline result payload — the caller must GET
+      // /api/pipelines/{id}/results (done above). Stamp score/decision back on the order
+      // record so it is queryable without joining to aiInsights.
+      const resultInner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
+      const rawDecision = resultInner['overallDecision'];
+      const axiomDecision = (rawDecision === 'ACCEPT' || rawDecision === 'CONDITIONAL' || rawDecision === 'REJECT')
+        ? (rawDecision as 'ACCEPT' | 'CONDITIONAL' | 'REJECT')
+        : undefined;
+      await this.dbService.updateOrder(orderId, {
+        axiomRiskScore: mapped.overallRiskScore,
+        ...(axiomDecision ? { axiomDecision } : {}),
+      }).catch((err: Error) =>
+        this.logger.warn('fetchAndStorePipelineResults: could not stamp score/decision on order', {
+          orderId, error: err.message,
+        }),
+      );
       await this.broadcastAxiomStatus(orderId, evalId, 'completed', mapped.overallRiskScore);
     } else {
       // Axiom results not available (still running or transient error).
@@ -1696,7 +1712,7 @@ export class AxiomService {
   private async watchPipelineStream(
     pipelineJobId: string,
     correlationId: string,
-    correlationType: 'ORDER' | 'BULK_JOB',
+    correlationType: 'ORDER' | 'BULK_JOB' | 'TAPE_LOAN',
   ): Promise<void> {
     const baseURL = process.env['AXIOM_API_BASE_URL'];
     if (!baseURL) {
