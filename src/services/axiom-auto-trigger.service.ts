@@ -46,6 +46,39 @@ interface OrderSnapshot {
   [key: string]: unknown;
 }
 
+/**
+ * Returns the document category string (matching DocumentCategory enum in the frontend)
+ * that holds the primary deliverable for a given product type.
+ *
+ * BPO products file their report under 'bpo-report'.  Every other product type
+ * (all appraisal variants, DVR, AVM, field/desk review, ROV, fraud analysis, 1033)
+ * uses 'appraisal-report' because all those products review or are an appraisal document.
+ *
+ * If productType is unknown or absent we fall back to 'appraisal-report' so that
+ * pre-existing orders without a populated productType continue to work.
+ */
+function primaryDocumentCategory(productType: string | undefined): string {
+  switch (productType) {
+    case 'bpo_exterior':
+    case 'bpo_interior':
+      return 'bpo-report';
+    // All appraisal-family, review, and AI-analysis products use an appraisal PDF as input.
+    case 'full_appraisal':
+    case 'desktop_appraisal':
+    case 'hybrid_appraisal':
+    case 'evaluation':
+    case 'dvr':               // Desktop Valuation Review — reviews an existing appraisal
+    case 'avm':               // AVM validates against the appraisal report
+    case 'field_review':
+    case 'desk_review':
+    case 'rov':               // Reconsideration of Value — references the original appraisal
+    case 'fraud_analysis':
+    case 'analysis_1033':     // FNMA Form 1033 Field Review
+    default:
+      return 'appraisal-report';
+  }
+}
+
 export class AxiomAutoTriggerService {
   private readonly logger = new Logger('AxiomAutoTriggerService');
   private readonly publisher: ServiceBusEventPublisher;
@@ -203,19 +236,23 @@ export class AxiomAutoTriggerService {
     const fields = this.buildOrderFields(order);
 
     // P3-B: Guard against empty document list — skip rather than submit an empty evaluation.
+    // The required document category depends on product type: BPO orders produce bpo-report
+    // documents; all other product types (appraisals, DVR, AVM, reviews, ROV, etc.) use
+    // appraisal-report as the primary deliverable.
     const docResult = await this.documentService.listDocuments(resolvedTenantId, { orderId });
     const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
-    const rawAppraisalDocs = docResult.success && docResult.data
-      ? docResult.data.filter((d) => d.category === 'appraisal-report' && d.blobName)
+    const requiredCategory = primaryDocumentCategory(order.productType);
+    const rawPrimaryDocs = docResult.success && docResult.data
+      ? docResult.data.filter((d) => d.category === requiredCategory && d.blobName)
       : [];
 
     // Generate SAS URLs so Axiom (external) can download the blobs
-    const appraisalDocs: Array<{ documentName: string; documentReference: string }> = [];
+    const primaryDocs: Array<{ documentName: string; documentReference: string }> = [];
     if (docContainerName) {
-      for (const d of rawAppraisalDocs) {
+      for (const d of rawPrimaryDocs) {
         try {
           const sasUrl = await this.blobService.generateReadSasUrl(docContainerName, d.blobName);
-          appraisalDocs.push({ documentName: d.name, documentReference: sasUrl });
+          primaryDocs.push({ documentName: d.name, documentReference: sasUrl });
         } catch (err) {
           this.logger.warn('AxiomAutoTrigger: failed to generate SAS URL for document', {
             orderId, documentId: d.id, error: (err as Error).message,
@@ -226,7 +263,7 @@ export class AxiomAutoTriggerService {
       this.logger.error('AxiomAutoTrigger: STORAGE_CONTAINER_DOCUMENTS not configured — cannot generate SAS URLs');
     }
 
-    if (appraisalDocs.length === 0) {
+    if (primaryDocs.length === 0) {
       // If already marked skipped, return silently — avoids re-publishing axiom.evaluation.skipped
       // on every missed-trigger recovery pass (every 15 min × 48 h = 192 duplicate events per order).
       if (order.axiomStatus === 'skipped-no-documents') {
@@ -236,7 +273,10 @@ export class AxiomAutoTriggerService {
         );
         return;
       }
-      this.logger.warn('AxiomAutoTrigger: order has no appraisal-report documents — skipping Axiom submission', { orderId });
+      this.logger.warn(
+        `AxiomAutoTrigger: order has no '${requiredCategory}' documents for productType='${order.productType ?? 'unknown'}' — skipping Axiom submission`,
+        { orderId, requiredCategory, productType: order.productType },
+      );
       await this.dbService.updateOrder(orderId, { axiomStatus: 'skipped-no-documents' as any }).catch(() => undefined);
       await this.publisher.publish({
         id: uuidv4(),
@@ -257,7 +297,7 @@ export class AxiomAutoTriggerService {
       result = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
-        appraisalDocs,
+        primaryDocs,
         resolvedTenantId,
         clientId,
       );
