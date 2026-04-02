@@ -14,6 +14,7 @@ export * from './engagement.types.js';
 // Exports: ProductType, DocumentCategory, PRODUCT_CATALOG, lookupProductDefinition,
 //          BULK_ANALYSIS_TYPE_TO_PRODUCT_TYPE, ProductDefinition
 export * from './product-catalog.js';
+import type { ProductType } from './product-catalog.js';
 
 // Import geospatial risk assessment types
 export * from './geospatial';
@@ -43,8 +44,7 @@ export interface AppraisalOrder {
   propertyAddress: PropertyAddress;
   propertyDetails: PropertyDetails;
   orderType: OrderType;
-  /** @see ProductType in src/types/product-catalog.ts — use string during Ph4→Ph5 transition */
-  productType: string;
+  productType: ProductType;
   dueDate: Date;
   rushOrder: boolean;
   specialInstructions?: string;
@@ -180,7 +180,7 @@ export interface Vendor {
   licenseExpiry: Date;
   certifications: Certification[];
   serviceAreas: ServiceArea[];
-  productTypes: string[];
+  productTypes: ProductType[];
   specialties: Specialty[];
   performance: VendorPerformance;
   status: VendorStatus;
@@ -268,7 +268,7 @@ export interface ServiceArea {
 
 export interface ValuationResult {
   orderId: string;
-  productType: string;
+  productType: ProductType;
   estimatedValue: number;
   valuationRange: {
     low: number;
@@ -667,7 +667,7 @@ export interface InvoiceRecord {
 
 export interface VendorPreferences {
   orderTypes: OrderType[];
-  productTypes: string[];
+  productTypes: ProductType[];
   maxOrdersPerDay: number;
   workingHours: {
     start: string;
@@ -885,7 +885,7 @@ export interface AgentConfig {
 export interface OrderFilters {
   clientId?: string;
   status?: OrderStatus[];
-  productType?: string[];
+  productType?: ProductType[];
   priority?: Priority[];
   assignedVendorId?: string;
   dueDateFrom?: Date;

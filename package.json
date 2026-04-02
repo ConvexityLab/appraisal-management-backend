@@ -27,6 +27,8 @@
     "dev:production": "tsx --env-file .env --watch src/app-production.ts",
     "api": "tsx --env-file .env --watch src/app-production.ts",
     "verify:axiom-contract": "tsx scripts/verify-axiom-contract.ts",
+    "migrate:product-type-case": "tsx scripts/migrate-product-type-to-screaming-snake.ts",
+    "migrate:product-type-case:dry-run": "DRY_RUN=true tsx scripts/migrate-product-type-to-screaming-snake.ts",
     "axiom:livefire:property-intake": "tsx scripts/live-fire/axiom-live-fire-property-intake.ts",
     "axiom:livefire:document-flow": "tsx scripts/live-fire/axiom-live-fire-document-flow.ts",
     "axiom:livefire:analyze-webhook": "tsx scripts/live-fire/axiom-live-fire-analyze-and-webhook.ts",
