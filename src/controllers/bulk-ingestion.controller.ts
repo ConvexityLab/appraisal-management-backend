@@ -38,7 +38,10 @@ function getService(dbService: CosmosDbService): BulkIngestionService {
 }
 
 function resolveTenantId(req: UnifiedAuthRequest): string {
-  const tid = req.user?.tenantId ?? (req.headers['x-tenant-id'] as string | undefined);
+  // Prefer the explicit x-tenant-id header when present — the caller knows which
+  // business tenant they're operating on. Fall back to whatever the auth layer
+  // placed on req.user.tenantId (useful for future token-carried claims).
+  const tid = (req.headers['x-tenant-id'] as string | undefined) ?? req.user?.tenantId;
   if (!tid) {
     throw new Error('Tenant ID is required but missing from auth token and x-tenant-id header');
   }

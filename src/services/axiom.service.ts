@@ -223,9 +223,9 @@ export class AxiomService {
         actor: 'DocumentProcessor',
         mode: 'single',
         input: {
-          documents: { path: 'trigger.documents' },
-          tenantId:  { path: 'trigger.tenantId' },
-          clientId:  { path: 'trigger.clientId' },
+          documents:   { path: 'trigger.documents' },
+          subClientId: { path: 'trigger.subClientId' },
+          clientId:    { path: 'trigger.clientId' },
         },
         timeout: 120000,
       },
@@ -234,11 +234,11 @@ export class AxiomService {
         actor: 'CriterionEvaluator',
         mode: 'single',
         input: {
-          fields:    { path: 'trigger.fields' },
-          programId: { path: 'trigger.programId' },
-          documents: { path: 'stages.process-documents' },
-          tenantId:  { path: 'trigger.tenantId' },
-          clientId:  { path: 'trigger.clientId' },
+          fields:      { path: 'trigger.fields' },
+          programId:   { path: 'trigger.programId' },
+          documents:   { path: 'stages.process-documents' },
+          subClientId: { path: 'trigger.subClientId' },
+          clientId:    { path: 'trigger.clientId' },
         },
         timeout: 180000,
       },
@@ -255,9 +255,9 @@ export class AxiomService {
         actor: 'DocumentProcessor',
         mode: 'single',
         input: {
-          documents: { path: 'trigger.documents' },
-          tenantId:  { path: 'trigger.tenantId' },
-          clientId:  { path: 'trigger.clientId' },
+          documents:   { path: 'trigger.documents' },
+          subClientId: { path: 'trigger.subClientId' },
+          clientId:    { path: 'trigger.clientId' },
         },
         timeout: 120000,
       },
@@ -274,9 +274,9 @@ export class AxiomService {
         actor: 'CriteriaLoader',
         mode: 'single',
         input: {
-          programId: { path: 'trigger.programId' },
-          tenantId:  { path: 'trigger.tenantId' },
-          clientId:  { path: 'trigger.clientId' },
+          programId:   { path: 'trigger.programId' },
+          subClientId: { path: 'trigger.subClientId' },
+          clientId:    { path: 'trigger.clientId' },
         },
       },
       {
@@ -635,7 +635,7 @@ export class AxiomService {
       const payload = {
         pipeline: pipelineBody,
         input: {
-          tenantId,
+          subClientId: tenantId,
           clientId,
           fileSetId,
           ...metadata,
@@ -1130,7 +1130,7 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         ...this.buildPipelineParam('RISK_EVAL'),
         input: {
-          tenantId,
+          subClientId: tenantId,
           clientId,
           correlationId: orderId,
           correlationType,
@@ -1211,7 +1211,7 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         ...this.buildPipelineParam('BULK_EVAL'),
         input: {
-          tenantId,
+          subClientId: tenantId,
           clientId,
           correlationId: jobId,
           correlationType: 'BULK_JOB',
@@ -1284,7 +1284,7 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         ...this.buildPipelineParam('DOC_EXTRACT'),
         input: {
-          tenantId,
+          subClientId: tenantId,
           clientId,
           correlationId: `${jobId}:${loanNumber}`,
           correlationType: 'ORDER',
@@ -1380,9 +1380,9 @@ export class AxiomService {
                 actor: 'PdfTextExtractor',
                 mode: 'single' as const,
                 input: {
-                  blobUrl: { path: 'trigger.blobUrl' },
-                  tenantId: { path: 'trigger.tenantId' },
-                  clientId: { path: 'trigger.clientId' },
+                  blobUrl:     { path: 'trigger.blobUrl' },
+                  subClientId: { path: 'trigger.subClientId' },
+                  clientId:    { path: 'trigger.clientId' },
                 },
                 timeout: 120_000,
               },
@@ -1393,7 +1393,7 @@ export class AxiomService {
                 input: {
                   text:         { path: 'stages.extract-text.text' },
                   documentType: { path: 'trigger.documentType' },
-                  tenantId:     { path: 'trigger.tenantId' },
+                  subClientId:  { path: 'trigger.subClientId' },
                   clientId:     { path: 'trigger.clientId' },
                 },
                 timeout: 60_000,
@@ -1411,7 +1411,7 @@ export class AxiomService {
           documentId: params.documentId,
           ...(params.orderId && { fileSetId: params.orderId }),
           documentType: params.documentType,
-          tenantId: params.tenantId,
+          subClientId: params.tenantId,
           clientId: params.clientId,
           correlationId: params.documentId,
           correlationType: 'DOCUMENT',
@@ -2505,7 +2505,7 @@ export class AxiomService {
     try {
       await this.client.post('/api/pipelines', {
         ...this.buildPipelineParam('DOC_EXTRACT'),
-        trigger: { propertyInfo, tenantId, clientId },
+        trigger: { propertyInfo, subClientId: tenantId, clientId },
         correlationId: enrichmentId,
         correlationType: 'ORDER',
         ...(callbackUrl ? { webhookUrl: callbackUrl } : {}),
