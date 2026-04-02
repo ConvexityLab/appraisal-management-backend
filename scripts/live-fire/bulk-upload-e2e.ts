@@ -59,7 +59,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { BlobServiceClient } from '@azure/storage-blob';
-import { DefaultAzureCredential, InteractiveBrowserCredential } from '@azure/identity';
+import { AzureCliCredential, InteractiveBrowserCredential } from '@azure/identity';
 import axios from 'axios';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -300,7 +300,9 @@ async function main(): Promise<void> {
 
   // Acquire a real Azure AD access token using the same app registration the
   // frontend uses (ee1cad4a...). Opens a browser window for interactive login.
-  const credential = new DefaultAzureCredential();
+  // NOTE: authCredential cannot be used for BlobServiceClient — the frontend
+  // app reg (ee1cad4a) does not have Azure Storage in its permitted resources.
+  // blobCredential uses AzureCliCredential (az login on Windows) instead.
   const authCredential = new InteractiveBrowserCredential({
     clientId: authClientId,
     tenantId: azureTenantId,
@@ -359,9 +361,12 @@ async function main(): Promise<void> {
   // ── Phase 2: Upload blobs ─────────────────────────────────────────────────
   printSection('Phase 2 — Uploading blobs to Azure Storage');
 
+  // AzureCliCredential uses `az account get-access-token --resource https://storage.azure.com`
+  // which works with any az login session on Windows (no app-reg permissions needed).
+  const blobCredential = new AzureCliCredential({ tenantId: azureTenantId });
   const blobServiceClient = new BlobServiceClient(
     `https://${storageAccountName}.blob.core.windows.net`,
-    credential,
+    blobCredential,
   );
 
   // Upload one PDF copy per loan row under the exact name referenced in the CSV.
