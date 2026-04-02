@@ -905,8 +905,11 @@ export class AxiomController {
 
         if (documentId.startsWith(BULK_INGESTION_AXIOM_CORRELATION_PREFIX)) {
           // correlationId format: 'bulk-ingestion--<jobId>--<itemId>' (colons replaced with hyphens for BullMQ compatibility)
+          // buildCorrelationId() replaces ALL colons with hyphens, so itemId 'jobId:rowIndex'
+          // becomes 'jobId-rowIndex'.  Reverse by restoring the trailing row-index colon.
           const parts = documentId.split('--');
-          const [, jobId, itemId] = parts;
+          const [, jobId, rawItemId] = parts;
+          const itemId = rawItemId ? rawItemId.replace(/-(\d+)$/, ':$1') : rawItemId;
           if (!jobId || !itemId) {
             this.logger.error('Axiom webhook: malformed bulk-ingestion DOCUMENT correlation id', {
               correlationId: documentId,
