@@ -1126,20 +1126,51 @@ export class AxiomService {
       });
     }
 
+    // Map our document references to the Axiom files[] shape.
+    // documentReference is a full blob URL (direct or SAS); Axiom downloads via azure-sdk.
+    const axiomFiles = (documents ?? []).map((doc) => ({
+      fileName: doc.documentName,
+      url: doc.documentReference,
+      mediaType: 'application/pdf',
+      downloadMethod: 'azure-sdk' as const,
+    }));
+
+    // Derive storageAccountName and containerName from the first blob URL.
+    // Format: https://{account}.blob.core.windows.net/{container}/...
+    let storageAccountName: string | undefined;
+    let containerName: string | undefined;
+    const firstFileUrl = axiomFiles[0]?.url;
+    if (firstFileUrl) {
+      try {
+        const parsedUrl = new URL(firstFileUrl);
+        storageAccountName = parsedUrl.hostname.split('.')[0];
+        containerName = parsedUrl.pathname.split('/').filter(Boolean)[0];
+      } catch {
+        // Malformed URL — proceed without storage coordinates; Axiom will reject if required
+      }
+    }
+
+    // Document types Axiom should expect in this file set.
+    // Override via AXIOM_REQUIRED_DOCUMENT_TYPES (comma-separated) for non-default pipelines.
+    const requiredDocumentTypes = process.env['AXIOM_REQUIRED_DOCUMENT_TYPES']
+      ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
+      : ['appraisal-report'];
+
     try {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
-        ...this.buildPipelineParam('RISK_EVAL'),
+        pipelineId: process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation',
         input: {
           subClientId: tenantId,
           clientId,
+          fileSetId: `fs-${orderId}`,
+          files: axiomFiles,
+          ...(storageAccountName ? { storageAccountName } : {}),
+          ...(containerName ? { containerName } : {}),
+          requiredDocuments: requiredDocumentTypes,
           correlationId: orderId,
           correlationType,
           webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
           webhookSecret,
-          fields,
-          documents: documents ?? [],
-          schemaMode: 'RISK_EVALUATION',
-          ...(programId ? { programId } : {}),
         },
       });
 

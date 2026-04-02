@@ -44,6 +44,7 @@ const axiomOptionalVars = [
   'AXIOM_WEBHOOK_SECRET', 'AXIOM_API_URL', 'AXIOM_API_KEY', 'AXIOM_API_BASE_URL',
   'AXIOM_TENANT_ID', 'AXIOM_CLIENT_ID',
   'AXIOM_PIPELINE_ID_RISK_EVAL', 'AXIOM_PIPELINE_ID_DOC_EXTRACT', 'AXIOM_PIPELINE_ID_BULK_EVAL',
+  'AXIOM_REQUIRED_DOCUMENT_TYPES',  // comma-separated doc type IDs, e.g. "appraisal-report,credit-report"; defaults to "appraisal-report"
 ];
 const missingAxiom = axiomOptionalVars.filter(v => !process.env[v]);
 if (missingAxiom.length > 0) {
