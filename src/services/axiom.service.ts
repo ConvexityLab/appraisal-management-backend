@@ -1127,28 +1127,14 @@ export class AxiomService {
     }
 
     // Map our document references to the Axiom files[] shape.
-    // documentReference is a full blob URL (direct or SAS); Axiom downloads via azure-sdk.
+    // documentReference is a SAS URL — Axiom fetches via plain HTTPS GET (downloadMethod: 'fetch').
+    // storageAccountName/containerName are only required for 'azure-sdk' (Managed Identity) path.
     const axiomFiles = (documents ?? []).map((doc) => ({
       fileName: doc.documentName,
       url: doc.documentReference,
       mediaType: 'application/pdf',
-      downloadMethod: 'azure-sdk' as const,
+      downloadMethod: 'fetch' as const,
     }));
-
-    // Derive storageAccountName and containerName from the first blob URL.
-    // Format: https://{account}.blob.core.windows.net/{container}/...
-    let storageAccountName: string | undefined;
-    let containerName: string | undefined;
-    const firstFileUrl = axiomFiles[0]?.url;
-    if (firstFileUrl) {
-      try {
-        const parsedUrl = new URL(firstFileUrl);
-        storageAccountName = parsedUrl.hostname.split('.')[0];
-        containerName = parsedUrl.pathname.split('/').filter(Boolean)[0];
-      } catch {
-        // Malformed URL — proceed without storage coordinates; Axiom will reject if required
-      }
-    }
 
     // Document types Axiom should expect in this file set.
     // Override via AXIOM_REQUIRED_DOCUMENT_TYPES (comma-separated) for non-default pipelines.
@@ -1164,8 +1150,6 @@ export class AxiomService {
           clientId,
           fileSetId: `fs-${orderId}`,
           files: axiomFiles,
-          ...(storageAccountName ? { storageAccountName } : {}),
-          ...(containerName ? { containerName } : {}),
           requiredDocuments: requiredDocumentTypes,
           correlationId: orderId,
           correlationType,
@@ -1212,7 +1196,8 @@ export class AxiomService {
    *
    * Uses the same confirmed contract as submitOrderEvaluation:
    *   pipelineId: "complete-document-criteria-evaluation"
-   *   input: { files[], storageAccountName, containerName, correlationType: "BULK_JOB" }
+   *   input: { files[], downloadMethod: "fetch", correlationType: "BULK_JOB" }
+   *   (storageAccountName/containerName omitted — only needed for 'azure-sdk' Managed Identity path)
    *
    * Submissions are throttled to MAX_BULK_CONCURRENCY concurrent calls to avoid
    * overwhelming the Axiom endpoint.  Loans without a documentBlobUrl are logged
@@ -1283,18 +1268,8 @@ export class AxiomService {
           const blobUrl = loan.documentBlobUrl!;
           const fileName = loan.documentFileName ?? `${loan.loanNumber}.pdf`;
 
-          // Parse storageAccountName and containerName from the blob URL.
-          // Works for both plain blob URLs and SAS URLs.
-          let storageAccountName: string | undefined;
-          let containerName: string | undefined;
-          try {
-            const parsedUrl = new URL(blobUrl);
-            storageAccountName = parsedUrl.hostname.split('.')[0];
-            containerName = parsedUrl.pathname.split('/').filter(Boolean)[0];
-          } catch {
-            // Malformed URL — Axiom will reject if storage coords are required
-          }
-
+          // blobUrl is a SAS URL — Axiom fetches via plain HTTPS GET (downloadMethod: 'fetch').
+          // storageAccountName/containerName are only for the 'azure-sdk' Managed Identity path.
           const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
             pipelineId: process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation',
             input: {
@@ -1305,10 +1280,8 @@ export class AxiomService {
                 fileName,
                 url: blobUrl,
                 mediaType: 'application/pdf',
-                downloadMethod: 'azure-sdk' as const,
+                downloadMethod: 'fetch' as const,
               }],
-              ...(storageAccountName ? { storageAccountName } : {}),
-              ...(containerName ? { containerName } : {}),
               requiredDocuments: requiredDocumentTypes,
               correlationId: jobId,
               correlationType: 'BULK_JOB',
