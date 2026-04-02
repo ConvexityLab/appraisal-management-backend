@@ -58,6 +58,7 @@
 
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { createInterface } from 'readline';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { AzureCliCredential, InteractiveBrowserCredential } from '@azure/identity';
 import axios from 'axios';
@@ -436,40 +437,13 @@ async function main(): Promise<void> {
 
   const jobId = foundJob.id;
 
-  // ── Phase 4: Monitor full pipeline — job stages, order creation, Axiom ──────
-  printSection('Phase 4 — Monitoring full pipeline');
+  // ── Phase 4a: Wait for bulk ingestion job to reach a terminal status ────────
+  printSection('Phase 4a — Waiting for bulk ingestion job to complete');
   log(`Polling GET /api/bulk-ingestion/${jobId} every ${pollIntervalMs / 1000}s …`);
-  log(`Watching: job status → canonicalization → order creation → Axiom extraction → Axiom callback`);
 
-  // Track last-seen state per item so we only log transitions, not noise
-  interface ItemSnapshot {
-    status: string;
-    orderId: string;
-    axiomPipelineJobId: string;
-    axiomExtractionStatus: string;
-  }
-  const itemSnapshots = new Map<string, ItemSnapshot>();
+  const itemSnapshots = new Map<string, string>(); // itemId → status
   let lastJobStatus = '';
   let terminalJob: BulkIngestionJob | null = null;
-
-  function snapshotKey(item: BulkIngestionItemDetail): ItemSnapshot {
-    const cr = item.canonicalRecord ?? {};
-    return {
-      status: item.status,
-      orderId: String(cr['orderId'] ?? ''),
-      axiomPipelineJobId: String(cr['axiomPipelineJobId'] ?? ''),
-      axiomExtractionStatus: String(cr['axiomExtractionStatus'] ?? ''),
-    };
-  }
-
-  function snapshotChanged(a: ItemSnapshot, b: ItemSnapshot): boolean {
-    return (
-      a.status !== b.status ||
-      a.orderId !== b.orderId ||
-      a.axiomPipelineJobId !== b.axiomPipelineJobId ||
-      a.axiomExtractionStatus !== b.axiomExtractionStatus
-    );
-  }
 
   function loanLabel(item: BulkIngestionItemDetail): string {
     const ln = item.source?.loanNumber ?? `row[${item.rowIndex}]`;
@@ -515,28 +489,26 @@ async function main(): Promise<void> {
       lastJobStatus = job.status;
     }
 
-    // Per-item transitions
+    // Per-item status transitions
     const items = job.items ?? [];
     let anyItemChanged = false;
     for (const item of items) {
       const prev = itemSnapshots.get(item.id);
-      const curr = snapshotKey(item);
-      if (!prev || snapshotChanged(prev, curr)) {
+      if (prev !== item.status) {
         if (!anyItemChanged) {
           log(`  ── Item updates at ${Math.round(elapsedMs() / 1000)}s ──`);
           anyItemChanged = true;
         }
         printItemRow(item);
-        itemSnapshots.set(item.id, curr);
+        itemSnapshots.set(item.id, item.status);
       }
     }
 
-    // Summary counters
-    const total = job.totalItems;
-    const done = job.successItems;
-    const failed = job.failedItems;
+    const total      = job.totalItems;
+    const done       = job.successItems;
+    const failed     = job.failedItems;
     const processing = job.pendingItems;
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const pct        = total > 0 ? Math.round((done / total) * 100) : 0;
     log(
       `  … ${Math.round(elapsedMs() / 1000)}s  ` +
       `total=${total}  done=${done}(${pct}%)  pending=${processing}  failed=${failed}`,
@@ -544,8 +516,43 @@ async function main(): Promise<void> {
 
     if (isTerminal(job.status)) {
       terminalJob = job;
+      log(`  ✓ Bulk ingestion job reached terminal status: ${job.status}`);
       break;
     }
+  }
+
+  if (!terminalJob) {
+    printSection('TIMEOUT');
+    log(`ERROR: Bulk ingestion job did not reach a terminal state within ${pollTimeoutMs / 1000}s.`);
+    process.exit(1);
+  }
+
+  // ── Phase 4b: Stream Axiom pipeline events per order via SSE ─────────────────
+  printSection('Phase 4b — Streaming Axiom pipeline results (SSE)');
+
+  // Collect orderIds from the completed job items
+  const orderIds = (terminalJob.items ?? [])
+    .map((item) => String(item.canonicalRecord?.['orderId'] ?? '').trim())
+    .filter(Boolean);
+
+  if (orderIds.length === 0) {
+    log('  WARN: No order IDs found in job items — items may not have been canonicalized yet.');
+    log('  Tip: check item canonicalRecord.orderId — it is set when the order is created in Cosmos.');
+  } else {
+    log(`  Found ${orderIds.length} order(s) to stream:`);
+    for (const id of orderIds) log(`    • ${id}`);
+    log('');
+    log('  Opening parallel SSE connections — events will stream live as Axiom processes each appraisal …');
+    log('');
+
+    // Open one SSE stream per order; all run concurrently.
+    // consumeOrderStream resolves when the Axiom pipeline terminates or the stream closes.
+    await Promise.all(
+      orderIds.map((orderId) => consumeOrderStream(apiBaseUrl, authHeader, tenantId, orderId)),
+    );
+
+    log('');
+    log('  ✓ All Axiom SSE streams closed.');
   }
 
   // ── Phase 5: Final report ─────────────────────────────────────────────────
@@ -589,6 +596,110 @@ async function main(): Promise<void> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─── SSE helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Open an SSE connection to /api/axiom/evaluations/order/:orderId/stream and
+ * print each event until the stream closes or a terminal event arrives.
+ * The server-side handler waits up to 30 s for the Axiom pipeline job ID to
+ * appear on the order, then proxies the raw Axiom /observe stream.
+ */
+async function consumeOrderStream(
+  baseUrl: string,
+  authHeader: string,
+  tenantId: string,
+  orderId: string,
+): Promise<void> {
+  const short = orderId.slice(-16);
+  log(`  [SSE:${short}]  opening stream for order ${orderId} …`);
+
+  let stream: import('stream').Readable;
+  try {
+    const resp = await axios.get(
+      `${baseUrl}/api/axiom/evaluations/order/${orderId}/stream`,
+      {
+        responseType: 'stream',
+        headers: {
+          Authorization: authHeader,
+          'x-tenant-id': tenantId,
+          Accept: 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        // No axios-level timeout — the server stream is long-lived.
+        // The server will 409 after 30 s if Axiom hasn't triggered yet.
+        timeout: 0,
+      },
+    );
+    stream = resp.data as import('stream').Readable;
+  } catch (err) {
+    log(`  [SSE:${short}]  ERROR opening stream: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const TERMINAL_EVENTS = new Set([
+    'pipeline_completed', 'pipeline_failed', 'COMPLETE', 'error',
+  ]);
+
+  return new Promise<void>((resolve) => {
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    let currentEventType = '';
+    let done = false;
+
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      rl.close();
+      stream.destroy();
+      resolve();
+    };
+
+    rl.on('line', (line) => {
+      if (line.startsWith('event:')) {
+        currentEventType = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        const dataStr = line.slice(5).trim();
+        if (!dataStr) return;
+
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = JSON.parse(dataStr) as Record<string, unknown>;
+        } catch {
+          log(`  [SSE:${short}]  raw=${dataStr}`);
+          currentEventType = '';
+          return;
+        }
+
+        const eventName = currentEventType || (parsed['type'] as string) || 'message';
+        const stage   = (parsed['stageName'] ?? parsed['stage'] ?? '') as string;
+        const status  = (parsed['status'] ?? '') as string;
+        log(
+          `  [SSE:${short}]  event=${eventName.padEnd(22)}` +
+          (stage  ? `  stage=${stage}`   : '') +
+          (status ? `  status=${status}` : '') +
+          `  payload=${JSON.stringify(parsed)}`,
+        );
+
+        if (TERMINAL_EVENTS.has(eventName) || TERMINAL_EVENTS.has(parsed['type'] as string)) {
+          log(`  [SSE:${short}]  ✓ terminal event received — closing stream`);
+          finish();
+        }
+        currentEventType = '';
+      }
+      // blank lines separate SSE events — no action needed
+    });
+
+    rl.on('close', () => {
+      log(`  [SSE:${short}]  stream closed`);
+      finish();
+    });
+    stream.on('error', (err) => {
+      log(`  [SSE:${short}]  stream error: ${(err as Error).message}`);
+      finish();
+    });
+    stream.on('end', () => finish());
+  });
 }
 
 main().catch((err) => {

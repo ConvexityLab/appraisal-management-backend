@@ -694,6 +694,57 @@ export class AxiomController {
   };
 
   /**
+   * SSE stream of Axiom pipeline events for a given order.
+   * GET /api/axiom/evaluations/order/:orderId/stream
+   *
+   * Looks up axiomPipelineJobId on the order document (retrying up to 30 s
+   * because the auto-trigger may not have stamped it yet), then proxies the
+   * raw Axiom /api/pipelines/:jobId/observe SSE stream directly to the caller.
+   */
+  streamOrderPipeline = async (req: Request, res: Response): Promise<void> => {
+    const { orderId } = req.params;
+
+    if (!orderId) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'orderId parameter is required' },
+      });
+      return;
+    }
+
+    // Wait up to 30 s for axiomPipelineJobId to appear (auto-trigger fires within
+    // a second or two of order creation; we give it 6 × 5 s to handle slow starts).
+    let pipelineJobId: string | undefined;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const orderResult = await this.dbService.findOrderById(orderId);
+      if (!orderResult.success || !orderResult.data) {
+        res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Order ${orderId} not found` },
+        });
+        return;
+      }
+      pipelineJobId = (orderResult.data as unknown as Record<string, unknown>)['axiomPipelineJobId'] as string | undefined;
+      if (pipelineJobId) break;
+      // Not stamped yet — wait and retry
+      await new Promise<void>((r) => setTimeout(r, 5_000));
+    }
+
+    if (!pipelineJobId) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'AXIOM_NOT_TRIGGERED',
+          message: `No Axiom pipeline job found for order ${orderId} after waiting 30 s. The auto-trigger may not have fired yet.`,
+        },
+      });
+      return;
+    }
+
+    await this.axiomService.proxyPipelineStream(pipelineJobId, req, res);
+  };
+
+  /**
    * Retrieve evaluation results by evaluation ID
    * GET /api/axiom/evaluations/:evaluationId
    */
@@ -1419,6 +1470,7 @@ export function createAxiomRouter(dbService: CosmosDbService, axiomService?: Axi
 
   // Evaluation retrieval
   router.get('/evaluations/order/:orderId', controller.getEvaluationByOrder);
+  router.get('/evaluations/order/:orderId/stream', controller.streamOrderPipeline);
   router.get('/evaluations/:evaluationId', controller.getEvaluationById);
 
   // Webhooks — HMAC verification applied before handlers
