@@ -17,6 +17,7 @@
  */
 
 import { OrderPriority, PropertyDetails } from './order-management.js';
+import type { ProductType } from './product-catalog.js';
 
 // ── Re-exports for consumers who only import from engagement.types ────────────
 export { OrderPriority } from './order-management.js';
@@ -75,23 +76,15 @@ export enum EngagementProductStatus {
 
 /**
  * What the lender ordered from us (our service catalog).
- * NOTE: These are OUR products — not vendor fulfillment types.
- * A vendor may fulfill a single EngagementProductType with multiple VendorOrders.
+ *
+ * EngagementProductType is now a type alias for the canonical ProductType from
+ * src/types/product-catalog.ts.  All former enum values are present unchanged
+ * — this is a drop-in replacement for existing consumers.
+ *
+ * Import ProductType directly from product-catalog.ts for new code.
+ * EngagementProductType is retained here for backward compatibility.
  */
-export enum EngagementProductType {
-  FULL_APPRAISAL  = 'FULL_APPRAISAL',
-  DRIVE_BY        = 'DRIVE_BY',
-  EXTERIOR_ONLY   = 'EXTERIOR_ONLY',
-  DESKTOP_REVIEW  = 'DESKTOP_REVIEW',
-  FIELD_REVIEW    = 'FIELD_REVIEW',
-  DESK_REVIEW     = 'DESK_REVIEW',
-  AVM             = 'AVM',
-  BPO             = 'BPO',
-  ARV             = 'ARV',
-  AVB             = 'AVB',
-  ROV             = 'ROV',     // Reconsideration of Value (FHFA 2024)
-  HYBRID          = 'HYBRID',  // Hybrid appraisal (inspector + desk appraiser)
-}
+export { ProductType as EngagementProductType } from './product-catalog.js';
 
 // =============================================================================
 // INTERFACES
@@ -116,7 +109,7 @@ export interface EngagementClient {
 export interface EngagementProduct {
   /** ID scoped within the engagement document */
   id: string;
-  productType: EngagementProductType;
+  productType: ProductType;
   status: EngagementProductStatus;
   /** Instructions specific to this product from the lender */
   instructions?: string | undefined;

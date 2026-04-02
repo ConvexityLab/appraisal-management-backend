@@ -25,6 +25,7 @@ import type {
   ReviewTapeExtractionItem,
 } from './review-tape.types.js';
 export type { TapeProcessingMode } from './review-tape.types.js';
+import { BULK_ANALYSIS_TYPE_TO_PRODUCT_TYPE } from './product-catalog.js';
 
 // ─── Analysis Type ───────────────────────────────────────────────────────────
 
@@ -36,15 +37,20 @@ export type BulkAnalysisType =
   | 'DVR'
   | 'ROV';
 
-/** Maps BulkAnalysisType → ProductType enum value (string) */
-export const ANALYSIS_TYPE_TO_PRODUCT_TYPE: Record<BulkAnalysisType, string> = {
-  AVM: 'avm',
-  FRAUD: 'fraud_analysis',
-  ANALYSIS_1033: 'analysis_1033',
-  QUICK_REVIEW: 'desk_review',
-  DVR: 'dvr',
-  ROV: 'rov',
-};
+/**
+ * Maps BulkAnalysisType → canonical ProductType string.
+ *
+ * Derived from PRODUCT_CATALOG — do NOT edit this table directly.
+ * To change a mapping: update the `bulkAnalysisType` field on the relevant
+ * ProductDefinition in src/types/product-catalog.ts.
+ */
+export const ANALYSIS_TYPE_TO_PRODUCT_TYPE: Record<BulkAnalysisType, string> =
+  Object.fromEntries(
+    Object.entries(BULK_ANALYSIS_TYPE_TO_PRODUCT_TYPE)
+      .filter(([key]) => ([
+        'AVM', 'FRAUD', 'ANALYSIS_1033', 'QUICK_REVIEW', 'DVR', 'ROV',
+      ] as string[]).includes(key)),
+  ) as Record<BulkAnalysisType, string>;
 
 /** Display labels for the UI */
 export const BULK_ANALYSIS_LABELS: Record<BulkAnalysisType, string> = {

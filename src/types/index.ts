@@ -10,6 +10,11 @@ export * from './comparable-sale.types.js';
 // â”€â”€â”€ Engagement domain (aggregate root for lender-side work) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export * from './engagement.types.js';
 
+// ─── Product catalog (single source of truth for all product / document types) ───
+// Exports: ProductType, DocumentCategory, PRODUCT_CATALOG, lookupProductDefinition,
+//          BULK_ANALYSIS_TYPE_TO_PRODUCT_TYPE, ProductDefinition
+export * from './product-catalog.js';
+
 // Import geospatial risk assessment types
 export * from './geospatial';
 import { PropertyRiskAssessment } from './geospatial';
@@ -38,7 +43,8 @@ export interface AppraisalOrder {
   propertyAddress: PropertyAddress;
   propertyDetails: PropertyDetails;
   orderType: OrderType;
-  productType: ProductType;
+  /** @see ProductType in src/types/product-catalog.ts — use string during Ph4→Ph5 transition */
+  productType: string;
   dueDate: Date;
   rushOrder: boolean;
   specialInstructions?: string;
@@ -174,7 +180,7 @@ export interface Vendor {
   licenseExpiry: Date;
   certifications: Certification[];
   serviceAreas: ServiceArea[];
-  productTypes: ProductType[];
+  productTypes: string[];
   specialties: Specialty[];
   performance: VendorPerformance;
   status: VendorStatus;
@@ -262,7 +268,7 @@ export interface ServiceArea {
 
 export interface ValuationResult {
   orderId: string;
-  productType: ProductType;
+  productType: string;
   estimatedValue: number;
   valuationRange: {
     low: number;
@@ -338,21 +344,14 @@ export enum OrderType {
   OTHER = 'other'
 }
 
-export enum ProductType {
-  FULL_APPRAISAL = 'full_appraisal',
-  DESKTOP_APPRAISAL = 'desktop_appraisal',
-  HYBRID_APPRAISAL = 'hybrid_appraisal',
-  BPO_EXTERIOR = 'bpo_exterior',
-  BPO_INTERIOR = 'bpo_interior',
-  EVALUATION = 'evaluation',
-  DVR = 'dvr',               // Desktop Valuation Review
-  AVM = 'avm',               // Automated Valuation Model
-  FIELD_REVIEW = 'field_review',
-  DESK_REVIEW = 'desk_review',
-  ROV = 'rov',               // Reconsideration of Value (FHFA 2024 guidance)
-  FRAUD_ANALYSIS = 'fraud_analysis',  // AI-powered fraud / collusion analysis
-  ANALYSIS_1033 = 'analysis_1033',    // FNMA Form 1033 Individual Appraisal Field Review
-}
+/**
+ * @deprecated The old snake_case ProductType enum has been replaced by the
+ * canonical SCREAMING_SNAKE ProductType const in src/types/product-catalog.ts.
+ * Import ProductType from there (or from src/types/index.ts which re-exports it).
+ * Values have changed: 'full_appraisal' → 'FULL_APPRAISAL', etc.
+ * Cosmos data migration will happen in Phase 5.
+ */
+// ProductType is now exported from product-catalog.ts above (SCREAMING_SNAKE values).
 
 // OrderStatus â€” canonical definition lives in order-status.ts
 export { OrderStatus } from './order-status.js';
@@ -668,7 +667,7 @@ export interface InvoiceRecord {
 
 export interface VendorPreferences {
   orderTypes: OrderType[];
-  productTypes: ProductType[];
+  productTypes: string[];
   maxOrdersPerDay: number;
   workingHours: {
     start: string;
@@ -886,7 +885,7 @@ export interface AgentConfig {
 export interface OrderFilters {
   clientId?: string;
   status?: OrderStatus[];
-  productType?: ProductType[];
+  productType?: string[];
   priority?: Priority[];
   assignedVendorId?: string;
   dueDateFrom?: Date;

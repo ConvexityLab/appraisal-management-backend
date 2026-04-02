@@ -32,6 +32,7 @@ import type {
   AxiomEvaluationSubmittedEvent,
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
+import { lookupProductDefinition } from '../types/product-catalog.js';
 
 /** Minimal fields the service reads from an AppraisalOrder document. */
 interface OrderSnapshot {
@@ -47,36 +48,20 @@ interface OrderSnapshot {
 }
 
 /**
- * Returns the document category string (matching DocumentCategory enum in the frontend)
- * that holds the primary deliverable for a given product type.
+ * Returns the primary document category for the given productType, derived
+ * from PRODUCT_CATALOG.
  *
- * BPO products file their report under 'bpo-report'.  Every other product type
- * (all appraisal variants, DVR, AVM, field/desk review, ROV, fraud analysis, 1033)
- * uses 'appraisal-report' because all those products review or are an appraisal document.
+ * Accepts both SCREAMING_SNAKE ('FULL_APPRAISAL') and legacy snake_case
+ * ('full_appraisal') values — normalises via .toUpperCase() before lookup.
  *
- * If productType is unknown or absent we fall back to 'appraisal-report' so that
- * pre-existing orders without a populated productType continue to work.
+ * Returns null when productType is absent or unknown; the caller handles
+ * those as hard errors (stamps axiomStatus and aborts) so there is no
+ * silent fallback to a wrong category.
  */
-function primaryDocumentCategory(productType: string | undefined): string {
-  switch (productType) {
-    case 'bpo_exterior':
-    case 'bpo_interior':
-      return 'bpo-report';
-    // All appraisal-family, review, and AI-analysis products use an appraisal PDF as input.
-    case 'full_appraisal':
-    case 'desktop_appraisal':
-    case 'hybrid_appraisal':
-    case 'evaluation':
-    case 'dvr':               // Desktop Valuation Review — reviews an existing appraisal
-    case 'avm':               // AVM validates against the appraisal report
-    case 'field_review':
-    case 'desk_review':
-    case 'rov':               // Reconsideration of Value — references the original appraisal
-    case 'fraud_analysis':
-    case 'analysis_1033':     // FNMA Form 1033 Field Review
-    default:
-      return 'appraisal-report';
-  }
+function primaryDocumentCategory(productType: string | undefined): string | null {
+  if (!productType) return null;
+  const def = lookupProductDefinition(productType);
+  return def?.primaryDocumentCategory ?? null;
 }
 
 export class AxiomAutoTriggerService {
@@ -242,6 +227,18 @@ export class AxiomAutoTriggerService {
     const docResult = await this.documentService.listDocuments(resolvedTenantId, { orderId });
     const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
     const requiredCategory = primaryDocumentCategory(order.productType);
+
+    // If the productType is absent or not in PRODUCT_CATALOG, stamp a distinct
+    // status instead of silently falling back to the wrong document category.
+    if (requiredCategory === null) {
+      this.logger.error(
+        `AxiomAutoTrigger: productType '${order.productType ?? 'undefined'}' is not in PRODUCT_CATALOG — cannot determine document category. Add it to src/types/product-catalog.ts.`,
+        { orderId, productType: order.productType },
+      );
+      await this.dbService.updateOrder(orderId, { axiomStatus: 'skipped-unknown-product-type' as any }).catch(() => undefined);
+      return;
+    }
+
     const rawPrimaryDocs = docResult.success && docResult.data
       ? docResult.data.filter((d) => d.category === requiredCategory && d.blobName)
       : [];
