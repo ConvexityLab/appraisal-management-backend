@@ -956,42 +956,69 @@ export class AxiomController {
           let axiomCriteriaResult: unknown;
           let pipelineExecutionLog: Array<{ stage: string; event: 'completed' | 'failed'; timestamp: string; error?: string }> | undefined;
           if (status === 'completed' && pipelineJobId) {
-            try {
-              const rawResults = await this.axiomService.fetchPipelineResults(pipelineJobId);
-              if (rawResults) {
-                axiomPipelineResults = rawResults;
-                // Pull the structured extraction output from the pipeline stages
-                const stages = (rawResults['stages'] as Record<string, unknown> | undefined) ?? {};
-                const extractStage = stages['extractStructuredData'];
-                if (Array.isArray(extractStage) && extractStage.length > 0) {
-                  axiomExtractionResult = extractStage;
-                } else if (rawResults['extractedData']) {
-                  axiomExtractionResult = rawResults['extractedData'];
+            // Log the full webhook body once (at debug level) so we can inspect Axiom's payload structure.
+            // This helps determine whether Axiom sends inline results for DOCUMENT/bulk executions.
+            this.logger.info('Axiom bulk-ingestion DOCUMENT webhook body (diagnostic)', {
+              jobId, itemId, pipelineJobId,
+              bodyKeys: Object.keys(body),
+              hasResult: 'result' in body,
+              hasOutput: 'output' in body,
+              hasData: 'data' in body,
+              hasStages: 'stages' in body,
+              resultSample: result ? JSON.stringify(result).slice(0, 300) : undefined,
+            });
+
+            // First attempt: use inline result from the webhook body if present
+            // (some Axiom API versions embed results directly in the completion webhook).
+            const inlineResult = (result ?? body['output'] ?? body['data']) as Record<string, unknown> | undefined;
+            if (inlineResult && typeof inlineResult === 'object' && Object.keys(inlineResult).length > 0) {
+              this.logger.info('Axiom bulk-ingestion webhook: using inline result from webhook body', {
+                jobId, itemId, pipelineJobId, resultKeys: Object.keys(inlineResult),
+              });
+              axiomPipelineResults = inlineResult;
+            } else {
+              // Second attempt: fetch via REST (works for standard executions; 409 for bulk idempotent IDs).
+              // fetchPipelineResults will attempt to use the 409 response body if it contains result fields.
+              try {
+                const rawResults = await this.axiomService.fetchPipelineResults(pipelineJobId);
+                if (rawResults) {
+                  axiomPipelineResults = rawResults;
                 }
-                // Pull criteria evaluation summary from aggregateResults stage
-                const aggregateStage = stages['aggregateResults'];
-                if (Array.isArray(aggregateStage) && aggregateStage.length > 0) {
-                  axiomCriteriaResult = aggregateStage[0];
-                } else if (rawResults['criteriaResults']) {
-                  axiomCriteriaResult = rawResults['criteriaResults'];
-                }
-                // Build a best-effort stage execution log from the stages map.
-                // The results endpoint carries no per-stage timing, so durationMs is omitted.
-                pipelineExecutionLog = Object.entries(stages).map(([stageName, output]) => {
-                  const out = output as Record<string, unknown> | null | undefined;
-                  const failed = !!(out?.['_processingFailed']);
-                  const error = out?.['_failureDetail'] as string | undefined;
-                  return {
-                    stage: stageName,
-                    event: failed ? 'failed' as const : 'completed' as const,
-                    timestamp: new Date().toISOString(),
-                    ...(error ? { error } : {}),
-                  };
+              } catch (fetchErr) {
+                this.logger.warn('Axiom bulk-ingestion webhook: could not fetch pipeline results — stamping status only', {
+                  jobId, itemId, pipelineJobId, error: (fetchErr as Error).message,
                 });
               }
-            } catch (fetchErr) {
-              this.logger.warn('Axiom bulk-ingestion webhook: could not fetch pipeline results — stamping status only', {
-                jobId, itemId, pipelineJobId, error: (fetchErr as Error).message,
+            }
+
+            if (axiomPipelineResults) {
+              // Pull the structured extraction output from the pipeline stages
+              const stages = (axiomPipelineResults['stages'] as Record<string, unknown> | undefined) ?? {};
+              const extractStage = stages['extractStructuredData'];
+              if (Array.isArray(extractStage) && extractStage.length > 0) {
+                axiomExtractionResult = extractStage;
+              } else if (axiomPipelineResults['extractedData']) {
+                axiomExtractionResult = axiomPipelineResults['extractedData'];
+              }
+              // Pull criteria evaluation summary from aggregateResults stage
+              const aggregateStage = stages['aggregateResults'];
+              if (Array.isArray(aggregateStage) && aggregateStage.length > 0) {
+                axiomCriteriaResult = aggregateStage[0];
+              } else if (axiomPipelineResults['criteriaResults']) {
+                axiomCriteriaResult = axiomPipelineResults['criteriaResults'];
+              }
+              // Build a best-effort stage execution log from the stages map.
+              // The results endpoint carries no per-stage timing, so durationMs is omitted.
+              pipelineExecutionLog = Object.entries(stages).map(([stageName, output]) => {
+                const out = output as Record<string, unknown> | null | undefined;
+                const failed = !!(out?.['_processingFailed']);
+                const error = out?.['_failureDetail'] as string | undefined;
+                return {
+                  stage: stageName,
+                  event: failed ? 'failed' as const : 'completed' as const,
+                  timestamp: new Date().toISOString(),
+                  ...(error ? { error } : {}),
+                };
               });
             }
           }

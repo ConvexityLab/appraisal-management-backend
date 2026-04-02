@@ -1556,9 +1556,30 @@ export class AxiomService {
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
+      const responseBody = axiosError.response?.data as Record<string, unknown> | undefined;
+
+      // Axiom returns 409 for idempotent/bulk-ingestion execution IDs.  The response body
+      // may still contain the result payload (some versions of the Axiom API embed results
+      // in 409 responses instead of a separate GET endpoint).  Capture and return it so
+      // the caller can use it.
+      if (axiosError.response?.status === 409 && responseBody && typeof responseBody === 'object') {
+        this.logger.info('fetchPipelineResults: 409 response — attempting to use response body as results', {
+          pipelineJobId,
+          bodyKeys: Object.keys(responseBody),
+        });
+        // Only return if the body looks like a results payload (has known result fields)
+        const hasResultFields = 'stages' in responseBody || 'results' in responseBody
+          || 'extractedData' in responseBody || 'criteriaResults' in responseBody
+          || 'criteria' in responseBody || 'overallDecision' in responseBody;
+        if (hasResultFields) {
+          return responseBody;
+        }
+      }
+
       this.logger.error('Failed to fetch Axiom pipeline results', {
         pipelineJobId,
         status: axiosError.response?.status,
+        responseBody: responseBody ? JSON.stringify(responseBody).slice(0, 500) : undefined,
         error: axiosError.message,
       });
       return null;
