@@ -34,8 +34,8 @@ param statebridge_tenantId string = ''
 // URL is populated at runtime from Azure App Configuration (key: services.axiom-api.base-url).
 // This param is a deploy-time fallback for environments not yet using App Config.
 param axiomApiBaseUrl string = ''
-@description('Registered UUID for the Axiom pdf-schema-extraction pipeline. Leave empty to use the inline two-stage pipeline definition.')
-param axiomPipelineIdSchemaExtract string = ''
+@description('Registered ID for the Axiom pdf-schema-extraction pipeline. Defaults to the canonical registered pipeline; override only if Axiom publishes a new pipeline version.')
+param axiomPipelineIdSchemaExtract string = 'complete-document-criteria-evaluation'
 @secure()
 @description('Shared secret used to verify HMAC-SHA256 signatures on inbound Axiom webhooks. Must match the secret configured in Axiom outbound webhook settings. Store in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
