@@ -1458,57 +1458,29 @@ export class AxiomService {
       throw new Error('AXIOM_WEBHOOK_SECRET is required for Axiom pipeline submissions — configure it in environment settings');
     }
 
-    /** Registered template UUID overrides inline definition when set. */
-    const schemaExtractPipelineId = process.env['AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'];
-    const pipelineParam: { pipelineId: string } | { pipeline: LoomPipelineDefinition } = schemaExtractPipelineId
-      ? { pipelineId: schemaExtractPipelineId }
-      : {
-          pipeline: {
-            name: 'pdf-schema-extraction',
-            version: '1.0.0',
-            stages: [
-              {
-                name: 'extract-text',
-                actor: 'PdfTextExtractor',
-                mode: 'single' as const,
-                input: {
-                  blobUrl:     { path: 'trigger.blobUrl' },
-                  subClientId: { path: 'trigger.subClientId' },
-                  clientId:    { path: 'trigger.clientId' },
-                },
-                timeout: 120_000,
-              },
-              {
-                name: 'extract-schema',
-                actor: 'SchemaBasedExtraction',
-                mode: 'single' as const,
-                input: {
-                  text:         { path: 'stages.extract-text.text' },
-                  documentType: { path: 'trigger.documentType' },
-                  documentId:   { path: 'trigger.documentId' },
-                  subClientId:  { path: 'trigger.subClientId' },
-                  clientId:     { path: 'trigger.clientId' },
-                },
-                timeout: 60_000,
-              },
-            ],
-          },
-        };
+    // Use registered pipeline — Axiom owns the stage definitions, we never maintain them.
+    // Override via AXIOM_PIPELINE_ID_SCHEMA_EXTRACT if Axiom publishes a new ID.
+    const pipelineId = process.env['AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'] || 'complete-document-criteria-evaluation';
 
     try {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
-        ...pipelineParam,
+        pipelineId,
         input: {
-          blobUrl: params.blobSasUrl,
-          fileName: params.fileName,
-          documentId: params.documentId,
-          ...(params.orderId && { fileSetId: params.orderId }),
-          documentType: params.documentType,
+          clientId:    params.clientId,
           subClientId: params.tenantId,
-          clientId: params.clientId,
-          correlationId: params.documentId,
+          fileSetId:   params.orderId ?? params.documentId,
+          documentType: params.documentType,
+          files: [
+            {
+              fileName:       params.fileName,
+              url:            params.blobSasUrl,
+              mediaType:      'application/pdf',
+              downloadMethod: 'fetch',
+            },
+          ],
+          correlationId:   params.documentId,
           correlationType: 'DOCUMENT',
-          webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
+          webhookUrl:    `${apiBaseUrl}/api/axiom/webhook`,
           webhookSecret,
         },
       });
