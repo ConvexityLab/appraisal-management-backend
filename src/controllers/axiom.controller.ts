@@ -35,7 +35,7 @@ import type {
 import { EventCategory, EventPriority } from '../types/events.js';
 import { normalizeAxiomPropertyRequestBody } from './axiom-request-normalizer.js';
 
-const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion::';
+const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion--';
 
 export class AxiomController {
   private axiomService: AxiomService;
@@ -904,7 +904,8 @@ export class AxiomController {
         const result = body['result'] as Record<string, unknown> | undefined;
 
         if (documentId.startsWith(BULK_INGESTION_AXIOM_CORRELATION_PREFIX)) {
-          const parts = documentId.split('::');
+          // correlationId format: 'bulk-ingestion--<jobId>--<itemId>' (colons replaced with hyphens for BullMQ compatibility)
+          const parts = documentId.split('--');
           const [, jobId, itemId] = parts;
           if (!jobId || !itemId) {
             this.logger.error('Axiom webhook: malformed bulk-ingestion DOCUMENT correlation id', {
@@ -1019,7 +1020,10 @@ export class AxiomController {
         );
 
         if (!updateResult.success) {
-          throw new Error(`Failed to stamp document extraction result for documentId=${documentId}: ${updateResult.error ?? 'unknown error'}`);
+          const errDetail = typeof updateResult.error === 'string'
+            ? updateResult.error
+            : JSON.stringify(updateResult.error ?? 'unknown error');
+          throw new Error(`Failed to stamp document extraction result for documentId=${documentId}: ${errDetail}`);
         }
 
         res.status(200).json({ success: true, message: 'Webhook processed' });
