@@ -176,7 +176,7 @@ describe('BulkIngestionService', () => {
 
     expect(db.queryItems).toHaveBeenCalledWith(
       'bulk-portfolio-jobs',
-      expect.stringContaining('SELECT c.id, c.tenantId, c.clientId, c.status, c.submittedAt, c.completedAt, c.totalItems, c.successItems, c.failedItems, c.pendingItems FROM c'),
+      expect.stringContaining('SELECT c.id, c.tenantId, c.clientId, c.jobName, c.adapterKey, c.status, c.submittedAt, c.completedAt, c.totalItems, c.successItems, c.failedItems, c.pendingItems FROM c'),
       [
         { name: '@type', value: 'bulk-ingestion-job' },
         { name: '@tenantId', value: 'tenant-001' },

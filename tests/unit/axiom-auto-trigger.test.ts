@@ -120,7 +120,7 @@ function makeOrder(overrides: Record<string, unknown> = {}) {
     tenantId: TENANT,
     clientId: CLIENT_ID,
     orderNumber: 'ORD-001',
-    productType: 'appraisal',
+    productType: 'FULL_APPRAISAL',
     propertyAddress: { streetAddress: '123 Main St', city: 'Anytown', state: 'CA', zipCode: '90210' },
     ...overrides,
   };

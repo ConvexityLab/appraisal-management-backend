@@ -37,6 +37,7 @@ describe('AxiomService pipeline result stamping', () => {
       upsertItem,
       getItem,
       queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      updateOrder: vi.fn().mockResolvedValue({ success: true }),
     };
 
     const service = new AxiomService(dbStub as any);
