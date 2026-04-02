@@ -1551,39 +1551,62 @@ export class AxiomService {
    * to hydrate the full result set).
    */
   async fetchPipelineResults(pipelineJobId: string): Promise<Record<string, unknown> | null> {
-    try {
-      const response = await this.client.get<Record<string, unknown>>(`/api/pipelines/${pipelineJobId}/results`);
-      return response.data;
-    } catch (error) {
-      const axiosError = error as AxiosError;
-      const responseBody = axiosError.response?.data as Record<string, unknown> | undefined;
+    // Axiom may return 409 with currentStatus='running' for a brief window after pipeline_final fires,
+    // while it commits results to its DB.  Retry up to MAX_RETRIES times before giving up.
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 1500; // 5 × 1.5 s = 7.5 s total window
 
-      // Axiom returns 409 for idempotent/bulk-ingestion execution IDs.  The response body
-      // may still contain the result payload (some versions of the Axiom API embed results
-      // in 409 responses instead of a separate GET endpoint).  Capture and return it so
-      // the caller can use it.
-      if (axiosError.response?.status === 409 && responseBody && typeof responseBody === 'object') {
-        this.logger.info('fetchPipelineResults: 409 response — attempting to use response body as results', {
-          pipelineJobId,
-          bodyKeys: Object.keys(responseBody),
-        });
-        // Only return if the body looks like a results payload (has known result fields)
-        const hasResultFields = 'stages' in responseBody || 'results' in responseBody
-          || 'extractedData' in responseBody || 'criteriaResults' in responseBody
-          || 'criteria' in responseBody || 'overallDecision' in responseBody;
-        if (hasResultFields) {
-          return responseBody;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await this.client.get<Record<string, unknown>>(`/api/pipelines/${pipelineJobId}/results`);
+        if (attempt > 1) {
+          this.logger.info(`fetchPipelineResults: succeeded on attempt ${attempt}`, { pipelineJobId });
         }
-      }
+        return response.data;
+      } catch (error) {
+        const axiosError = error as AxiosError;
+        const responseBody = axiosError.response?.data as Record<string, unknown> | undefined;
 
-      this.logger.error('Failed to fetch Axiom pipeline results', {
-        pipelineJobId,
-        status: axiosError.response?.status,
-        responseBody: responseBody ? JSON.stringify(responseBody).slice(0, 500) : undefined,
-        error: axiosError.message,
-      });
-      return null;
+        if (axiosError.response?.status === 409 && responseBody && typeof responseBody === 'object') {
+          // Check if the body itself contains result fields (some Axiom versions embed results in 409)
+          const hasResultFields = 'stages' in responseBody || 'results' in responseBody
+            || 'extractedData' in responseBody || 'criteriaResults' in responseBody
+            || 'criteria' in responseBody || 'overallDecision' in responseBody;
+          if (hasResultFields) {
+            this.logger.info('fetchPipelineResults: 409 body contains result fields — using inline result', {
+              pipelineJobId, bodyKeys: Object.keys(responseBody),
+            });
+            return responseBody;
+          }
+
+          // currentStatus='running' means Axiom hasn't committed yet — retry
+          const currentStatus = (responseBody as Record<string, unknown>)['currentStatus'] as string | undefined;
+          if (attempt < MAX_RETRIES) {
+            this.logger.warn(
+              `fetchPipelineResults: 409 (currentStatus=${currentStatus ?? 'unknown'}) on attempt ${attempt}/${MAX_RETRIES} — retrying in ${RETRY_DELAY_MS}ms`,
+              { pipelineJobId },
+            );
+            await new Promise<void>((r) => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+
+          this.logger.error('fetchPipelineResults: 409 — exhausted retries', {
+            pipelineJobId, currentStatus,
+            bodyKeys: Object.keys(responseBody),
+          });
+          return null;
+        }
+
+        this.logger.error('Failed to fetch Axiom pipeline results', {
+          pipelineJobId,
+          status: axiosError.response?.status,
+          responseBody: responseBody ? JSON.stringify(responseBody).slice(0, 500) : undefined,
+          error: axiosError.message,
+        });
+        return null;
+      }
     }
+    return null;
   }
 
   /**
@@ -1905,13 +1928,23 @@ export class AxiomService {
           const status = (payload['status'] as string | undefined) ?? 'completed';
           const evaluationId = `eval-${correlationId}-${pipelineJobId}`;
 
+          // Axiom's pipeline_final payload may carry a 'pipelineId' (e.g. 'pipeline_idempotent_...')
+          // that is the correct key for GET /results, distinct from the raw execution ID (pipelineJobId).
+          // Always prefer pipelineId from the event; fall back to the submission ID.
+          const resultsFetchId = (payload['pipelineId'] as string | undefined) ?? pipelineJobId;
+          this.logger.info('SSE pipeline_final received', {
+            pipelineJobId, correlationId, status, resultsFetchId,
+            hasDistinctFetchId: resultsFetchId !== pipelineJobId,
+            payloadKeys: Object.keys(payload),
+          });
+
           // Treat 'completed-partial' as a successful terminal state — Axiom uses this when
           // the pipeline finishes but not all optional stages succeeded.  We still attempt
           // to fetch results; if GET /results 409s we fall back to what the stage log has.
           if (status === 'completed' || status === 'completed-partial') {
             const riskScore = payload['riskScore'] as number | undefined;
             // Fire-and-forget: settle the stream immediately; result + log storage runs concurrently
-            this.fetchAndStorePipelineResults(correlationId, pipelineJobId, evaluationId, riskScore, stageLog)
+            this.fetchAndStorePipelineResults(correlationId, resultsFetchId, evaluationId, riskScore, stageLog)
               .catch((err) => {
                 this.logger.error('SSE pipeline_final: failed to store Axiom results', {
                   pipelineJobId, correlationId, error: (err as Error).message,
