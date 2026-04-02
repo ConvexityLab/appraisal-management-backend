@@ -1552,19 +1552,12 @@ export class AxiomService {
    */
   async fetchPipelineResults(pipelineJobId: string): Promise<Record<string, unknown> | null> {
     // Retry strategy:
-    // ROOT CAUSE (Axiom 2026-04-02): pipeline_final SSE fires when Loom's Redis orchestrator
-    // marks the run completed — BEFORE the runner's post-processing (blob upload →
-    // updateExecutionStatus → Cosmos write) finishes. That gap is up to ~90s.
-    //
-    // Axiom's fix (commit b3f03f9, observe.ts): pipeline_final will only fire once the Cosmos
-    // execution record is in a terminal status — so when it fires, results are guaranteed
-    // present. Once that fix is confirmed live, these retries will collapse to near-zero in
-    // practice (cross-pod replication lag only).
-    //
-    // Until b3f03f9 is confirmed live on axiom-dev-api, keep the 150s window to bridge the
-    // ~90s runner post-processing gap. Safe to reduce to 3×2s after confirmation.
-    const MAX_RETRIES = 15;
-    const RETRY_DELAY_MS = 10_000; // 15 × 10 s = 150 s — covers worst-case ~90s runner lag
+    // Axiom b3f03f9 (observe.ts, live 2026-04-02): pipeline_final only fires after the Cosmos
+    // execution record is terminal — results are guaranteed present when we call GET /results.
+    // Axiom e3a9b93: server-side 3×600ms retry handles cross-pod Cosmos replication lag.
+    // These 3×2s client retries are a last-resort safety net if a pod still reads stale state.
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 2_000; // 3 × 2 s = 6 s total
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
