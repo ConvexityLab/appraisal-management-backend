@@ -1485,6 +1485,7 @@ export class AxiomService {
                 input: {
                   text:         { path: 'stages.extract-text.text' },
                   documentType: { path: 'trigger.documentType' },
+                  documentId:   { path: 'trigger.documentId' },
                   subClientId:  { path: 'trigger.subClientId' },
                   clientId:     { path: 'trigger.clientId' },
                 },
