@@ -62,6 +62,22 @@ export const BULK_ANALYSIS_LABELS: Record<BulkAnalysisType, string> = {
   ROV: 'ROV',
 };
 
+/**
+ * Maps BulkAnalysisType → the Axiom program and version to invoke for document
+ * schema extraction and criteria evaluation.
+ *
+ * This is domain knowledge and must live in code — not in env vars.
+ * To change a mapping: update the entry here. All callers derive from this table.
+ */
+export const ANALYSIS_TYPE_TO_AXIOM_PROGRAM: Record<BulkAnalysisType, { programId: string; programVersion: string }> = {
+  AVM:           { programId: 'FNMA-URAR', programVersion: '1.0.0' },
+  FRAUD:         { programId: 'FNMA-URAR', programVersion: '1.0.0' },
+  ANALYSIS_1033: { programId: 'FNMA-URAR', programVersion: '1.0.0' },
+  QUICK_REVIEW:  { programId: 'FNMA-URAR', programVersion: '1.0.0' },
+  DVR:           { programId: 'FNMA-URAR', programVersion: '1.0.0' },
+  ROV:           { programId: 'FNMA-URAR', programVersion: '1.0.0' },
+};
+
 // ─── Multi-product support ────────────────────────────────────────────────────
 
 /** Maximum number of additional product slots (product_2 through product_5) */

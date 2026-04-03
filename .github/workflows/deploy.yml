@@ -181,13 +181,13 @@ jobs:
       run: pnpm install --frozen-lockfile
       
     - name: Run type checking
-      run: pnpm run type-check || echo "Type checking completed with errors"
+      run: pnpm run type-check
       
     - name: Run tests
-      run: pnpm run test || echo "Tests completed"
+      run: pnpm run test
       
     - name: Build application
-      run: pnpm run build || pnpm run build:production || echo "Build completed"
+      run: pnpm run build
 
   build-and-push-container:
     name: Build and Push Container Image
@@ -442,7 +442,9 @@ jobs:
             GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
             SAMBANOVA_API_KEY=secretref:sambanova-api-key \
             AZURE_FLUID_RELAY_TENANT_ID=${{ secrets.AZURE_FLUID_RELAY_TENANT_ID }} \
-            AZURE_FLUID_RELAY_ENDPOINT=${{ secrets.AZURE_FLUID_RELAY_ENDPOINT }}
+            AZURE_FLUID_RELAY_ENDPOINT=${{ secrets.AZURE_FLUID_RELAY_ENDPOINT }} \
+            AXIOM_PROGRAM_ID=${{ secrets.AXIOM_PROGRAM_ID }} \
+            AXIOM_PROGRAM_VERSION=${{ secrets.AXIOM_PROGRAM_VERSION }}
           # NOTE: AZURE_CLIENT_ID is intentionally NOT set here.
           # DefaultAzureCredential uses it to select a user-assigned managed identity.
           # It is provisioned by Bicep (infrastructure) alongside the identity assignment.

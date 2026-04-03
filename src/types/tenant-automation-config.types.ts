@@ -187,6 +187,20 @@ export interface TenantAutomationConfig {
    */
   axiomTimeoutMinutes: number;
 
+  /**
+   * Axiom program ID to invoke when axiomAutoTrigger fires for a document
+   * upload in this tenant.  Required when axiomAutoTrigger is true.
+   * Example: 'FNMA-URAR'
+   */
+  axiomProgramId?: string;
+
+  /**
+   * Version of the Axiom program to invoke.
+   * Required when axiomAutoTrigger is true.
+   * Example: '1.0.0'
+   */
+  axiomProgramVersion?: string;
+
   // ── Metadata ──────────────────────────────────────────────────────────────
 
   updatedAt: string; // ISO

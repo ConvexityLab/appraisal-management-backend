@@ -175,10 +175,15 @@ export class AxiomDocumentProcessingService {
       return;
     }
 
-    const programId = process.env['AXIOM_PROGRAM_ID'];
-    const programVersion = process.env['AXIOM_PROGRAM_VERSION'];
-    if (!programId) throw new Error('AXIOM_PROGRAM_ID is required for document schema extraction but is not set.');
-    if (!programVersion) throw new Error('AXIOM_PROGRAM_VERSION is required for document schema extraction but is not set.');
+    const { axiomProgramId: programId, axiomProgramVersion: programVersion } = config;
+    if (!programId) throw new Error(
+      `Tenant '${tenantId}' has axiomAutoTrigger=true but axiomProgramId is not set on its automation config. ` +
+      `Set axiomProgramId (e.g. 'FNMA-URAR') in the tenant-automation-configs record for this tenant.`,
+    );
+    if (!programVersion) throw new Error(
+      `Tenant '${tenantId}' has axiomAutoTrigger=true but axiomProgramVersion is not set on its automation config. ` +
+      `Set axiomProgramVersion (e.g. '1.0.0') in the tenant-automation-configs record for this tenant.`,
+    );
 
     const submitResult = await this.axiomService.submitDocumentForSchemaExtraction({
       documentId,
