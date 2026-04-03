@@ -29,6 +29,12 @@ if (!process.env.AZURE_STORAGE_ACCOUNT_NAME) {
 if (!process.env.WEBSOCKET_NOTIFICATION_URL) {
   process.env.WEBSOCKET_NOTIFICATION_URL = 'ws://localhost:8080/notifications';
 }
+if (!process.env.STORAGE_CONTAINER_DOCUMENTS) {
+  process.env.STORAGE_CONTAINER_DOCUMENTS = 'test-documents';
+}
+if (!process.env.STORAGE_CONTAINER_DOCUMENTS) {
+  process.env.STORAGE_CONTAINER_DOCUMENTS = 'test-documents';
+}
 
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 
