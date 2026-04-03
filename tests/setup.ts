@@ -6,6 +6,14 @@
 import dotenv from 'dotenv';
 dotenv.config(); // reads .env from CWD (project root when running vitest)
 
+// In CI there is no .env file, so services whose constructors validate
+// COSMOS_ENDPOINT at instantiation time would throw before any test runs.
+// Set a dummy endpoint so construction succeeds; tests that actually talk
+// to Cosmos are gated behind VITEST_INTEGRATION=true and are skipped in CI.
+if (!process.env.COSMOS_ENDPOINT && !process.env.AZURE_COSMOS_ENDPOINT) {
+  process.env.COSMOS_ENDPOINT = 'https://test-placeholder.documents.azure.com:443/';
+}
+
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 
 // Global test configuration
