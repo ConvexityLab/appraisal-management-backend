@@ -63,6 +63,7 @@ describe('BulkIngestionController retry routes', () => {
       .set('x-tenant-id', 'tenant-123')
       .field('clientId', 'client-1')
       .field('adapterKey', 'bridge-standard')
+      .field('analysisType', 'QUICK_REVIEW')
       .field('items', JSON.stringify([{ rowIndex: 1, loanNumber: 'LN-1' }]))
       .attach('dataFile', Buffer.from('hello'), {
         filename: 'tape.txt',
@@ -82,6 +83,7 @@ describe('BulkIngestionController retry routes', () => {
       .set('x-tenant-id', 'tenant-123')
       .field('clientId', 'client-1')
       .field('adapterKey', 'bridge-standard')
+      .field('analysisType', 'QUICK_REVIEW')
       .field('items', JSON.stringify([{ rowIndex: 1, loanNumber: 'LN-1', documentFileName: 'bad.txt' }]))
       .attach('dataFile', Buffer.from('a,b\n1,2'), {
         filename: 'tape.csv',

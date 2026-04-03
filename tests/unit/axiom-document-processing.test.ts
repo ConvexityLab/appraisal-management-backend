@@ -82,7 +82,7 @@ describe('AxiomDocumentProcessingService', () => {
     vi.clearAllMocks();
     process.env.STORAGE_CONTAINER_DOCUMENTS = 'documents';
 
-    mockGetConfig.mockResolvedValue({ axiomAutoTrigger: true });
+    mockGetConfig.mockResolvedValue({ axiomAutoTrigger: true, axiomProgramId: 'FNMA-URAR', axiomProgramVersion: '1.0.0' });
     mockSubmitDocumentForSchemaExtraction.mockResolvedValue({ pipelineJobId: 'pipeline-001' });
   });
 
