@@ -147,6 +147,7 @@ export class BulkIngestionService {
       tenantId,
       clientId: request.clientId,
       ...(request.jobName !== undefined ? { jobName: request.jobName } : {}),
+      analysisType: request.analysisType,
       ingestionMode: request.ingestionMode,
       status: 'PENDING',
       adapterKey: request.adapterKey,

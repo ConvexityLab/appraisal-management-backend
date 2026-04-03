@@ -1,3 +1,5 @@
+import type { BulkAnalysisType } from './bulk-portfolio.types.js';
+
 export type BulkIngestionJobStatus =
   | 'PENDING'
   | 'PROCESSING'
@@ -35,6 +37,7 @@ export interface BulkIngestionItemInput {
 export interface BulkIngestionSubmitRequest {
   clientId: string;
   jobName?: string;
+  analysisType: BulkAnalysisType;
   ingestionMode: BulkIngestionMode;
   dataFileName: string;
   documentFileNames: string[];
@@ -76,6 +79,7 @@ export interface BulkIngestionJob {
   tenantId: string;
   clientId: string;
   jobName?: string;
+  analysisType: BulkAnalysisType;
   ingestionMode: BulkIngestionMode;
   status: BulkIngestionJobStatus;
   adapterKey: string;

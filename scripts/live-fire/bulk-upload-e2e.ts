@@ -274,13 +274,17 @@ async function main(): Promise<void> {
   const tenantId = optionalEnv('BULK_UPLOAD_TEST_TENANT_ID', 'test-tenant');
   const clientId = optionalEnv('BULK_UPLOAD_TEST_CLIENT_ID', 'test-client');
   const adapterKey = optionalEnv('BULK_UPLOAD_TEST_ADAPTER_KEY', 'statebridge');
+  // analysisType is embedded in the blob path and determines productType on created orders.
+  // Dev Cosmos seed is registered for FNMA-URAR criteria — use QUICK_REVIEW unless overridden.
+  const analysisType = optionalEnv('BULK_UPLOAD_TEST_ANALYSIS_TYPE', 'QUICK_REVIEW');
   const pollTimeoutMs = envNumber('BULK_UPLOAD_POLL_TIMEOUT_MS', 300_000);
   const pollIntervalMs = envNumber('BULK_UPLOAD_POLL_INTERVAL_MS', 5_000);
 
   // Unique run suffix prevents collisions between script runs
   const runId = Date.now().toString(36);
   const adapterKeyWithRunId = `${adapterKey}-${runId}`;
-  const prefix = `${tenantId}/${clientId}/${adapterKeyWithRunId}`;
+  // Path convention: {tenantId}/{clientId}/{adapterKey}/{analysisType}/{filename}
+  const prefix = `${tenantId}/${clientId}/${adapterKeyWithRunId}/${analysisType}`;
   const csvBlobName = `${prefix}/loans.csv`;
 
   const containerName = 'bulk-upload';
@@ -294,7 +298,9 @@ async function main(): Promise<void> {
   log(`Tenant ID       : ${tenantId}`);
   log(`Client ID       : ${clientId}`);
   log(`Adapter key     : ${adapterKeyWithRunId}`);
-  log(`Blob prefix     : ${prefix}`);
+  log(`Analysis type   : ${analysisType}  (BULK_UPLOAD_TEST_ANALYSIS_TYPE)`);
+  log(`Blob prefix     : ${prefix}  [{tenantId}/{clientId}/{adapterKey}/{analysisType}]`);
+  log(`  Server needs  : AXIOM_PROGRAM_ID=FNMA-URAR  AXIOM_PROGRAM_VERSION=1.0.0`);
   log(`Poll timeout    : ${pollTimeoutMs / 1000}s`);
   log(`Poll interval   : ${pollIntervalMs / 1000}s`);
 

@@ -20,6 +20,17 @@ import type {
 
 const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion';
 
+function resolveRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is required for bulk ingestion extraction but is not set. ` +
+      `Configure it in the application environment settings.`,
+    );
+  }
+  return value;
+}
+
 export class BulkIngestionExtractionWorkerService {
   private readonly logger = new Logger('BulkIngestionExtractionWorkerService');
   private readonly dbService: CosmosDbService;
@@ -161,6 +172,9 @@ export class BulkIngestionExtractionWorkerService {
       const correlationId = this.buildCorrelationId(job.id, item.id);
       const fileName = record.documentBlobName.split('/').pop() ?? record.documentBlobName;
 
+      const programId = resolveRequiredEnv('AXIOM_PROGRAM_ID');
+      const programVersion = resolveRequiredEnv('AXIOM_PROGRAM_VERSION');
+
       const blobSasUrl = await this.blobStorageService.generateReadSasUrl(containerName, record.documentBlobName);
       const submitResult = await this.axiomService.submitDocumentForSchemaExtraction({
         documentId: correlationId,
@@ -169,6 +183,8 @@ export class BulkIngestionExtractionWorkerService {
         documentType: 'APPRAISAL_REPORT',
         tenantId: job.tenantId,
         clientId: job.clientId,
+        programId,
+        programVersion,
       });
 
       if (!submitResult) {

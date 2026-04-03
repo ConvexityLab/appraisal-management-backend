@@ -149,7 +149,7 @@ export class BulkIngestionOrderCreationWorkerService {
             state: parsed.state,
             zipCode: parsed.zipCode,
           },
-          products: [{ productType: 'full_appraisal' }],
+          products: [{ productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType] }],
         };
       }),
     } as any);
@@ -216,7 +216,7 @@ export class BulkIngestionOrderCreationWorkerService {
             occupancyType: 'owner_occupied',
             purpose: 'purchase',
           },
-          productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE.FRAUD,
+          productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType],
           serviceLevel: 'standard',
           dueDate,
           fee: 0,

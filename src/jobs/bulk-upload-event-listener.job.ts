@@ -7,14 +7,16 @@
  * message → this job receives it and kicks off a SHARED_STORAGE bulk-ingestion job.
  *
  * Blob path convention (must be honoured by the uploader):
- *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/loans.csv
- *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/appraisal-001.pdf
- *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/appraisal-002.pdf
+ *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/{analysisType}/loans.csv
+ *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/{analysisType}/appraisal-001.pdf
+ *   bulk-upload/{tenantId}/{clientId}/{adapterKey}/{analysisType}/appraisal-002.pdf
+ *
+ * Where {analysisType} must be one of: AVM, FRAUD, ANALYSIS_1033, QUICK_REVIEW, DVR, ROV.
  *
  * The job:
  *  1. Receives messages from the queue (Azure Storage Queue long-receive pattern)
  *  2. Parses the Event Grid BlobCreated envelope
- *  3. Extracts tenantId / clientId / adapterKey from the blob path
+ *  3. Extracts tenantId / clientId / adapterKey / analysisType from the blob path
  *  4. Lists all blobs under the same path prefix to collect document file names
  *  5. Downloads and parses the CSV data file → BulkIngestionItemInput[]
  *  6. Submits via BulkIngestionService (SHARED_STORAGE mode)
@@ -28,6 +30,7 @@ import { BlobStorageService } from '../services/blob-storage.service.js';
 import { BulkIngestionService } from '../services/bulk-ingestion.service.js';
 import type { CosmosDbService } from '../services/cosmos-db.service.js';
 import type { BulkIngestionItemInput } from '../types/bulk-ingestion.types.js';
+import type { BulkAnalysisType } from '../types/bulk-portfolio.types.js';
 
 // ── Event Grid schema types ───────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ interface BulkUploadPath {
   tenantId: string;
   clientId: string;
   adapterKey: string;
+  analysisType: BulkAnalysisType;
   blobName: string;   // full blob name including prefix
   prefix: string;     // everything before the filename — used to list related blobs
   fileName: string;   // just the filename
@@ -212,7 +216,7 @@ export class BulkUploadEventListenerJob {
     if (!parsed) {
       throw new Error(
         `Blob path '${blobPath}' does not match expected convention ` +
-        `'{tenantId}/{clientId}/{adapterKey}/{dataFile.csv|xlsx}'. ` +
+        `'{tenantId}/{clientId}/{adapterKey}/{analysisType}/{dataFile.csv|xlsx}'. ` +
         `Got ${blobPath.split('/').length} segments.`,
       );
     }
@@ -228,6 +232,7 @@ export class BulkUploadEventListenerJob {
       tenantId: parsed.tenantId,
       clientId: parsed.clientId,
       adapterKey: parsed.adapterKey,
+      analysisType: parsed.analysisType,
       dataFile: parsed.fileName,
       prefix: parsed.prefix,
     });
@@ -252,6 +257,7 @@ export class BulkUploadEventListenerJob {
       tenantId: parsed.tenantId,
       clientId: parsed.clientId,
       adapterKey: parsed.adapterKey,
+      analysisType: parsed.analysisType,
       itemCount: items.length,
       documentCount: documentBlobNames.length,
     });
@@ -260,6 +266,7 @@ export class BulkUploadEventListenerJob {
       {
         clientId: parsed.clientId,
         jobName: `bulk-upload:${parsed.prefix}`,
+        analysisType: parsed.analysisType,
         ingestionMode: 'SHARED_STORAGE',
         dataFileName: parsed.fileName,
         documentFileNames: documentBlobNames.map((b) => b.split('/').pop() ?? b),
@@ -281,6 +288,7 @@ export class BulkUploadEventListenerJob {
       tenantId: parsed.tenantId,
       clientId: parsed.clientId,
       adapterKey: parsed.adapterKey,
+      analysisType: parsed.analysisType,
       dataFile: parsed.blobName,
       itemCount: items.length,
     });
@@ -305,7 +313,7 @@ export class BulkUploadEventListenerJob {
    */
   private parseBulkUploadPath(blobName: string): BulkUploadPath | null {
     const parts = blobName.split('/');
-    if (parts.length < 4) return null;
+    if (parts.length < 5) return null;
 
     const fileName = parts[parts.length - 1]!;
     if (!this.isDataFile(fileName)) return null;
@@ -313,13 +321,23 @@ export class BulkUploadEventListenerJob {
     const tenantId = parts[0]!;
     const clientId = parts[1]!;
     const adapterKey = parts[2]!;
+    const rawAnalysisType = parts[3]!;
+
+    const VALID_ANALYSIS_TYPES: BulkAnalysisType[] = ['AVM', 'FRAUD', 'ANALYSIS_1033', 'QUICK_REVIEW', 'DVR', 'ROV'];
+    if (!VALID_ANALYSIS_TYPES.includes(rawAnalysisType as BulkAnalysisType)) {
+      throw new Error(
+        `Blob path segment '${rawAnalysisType}' is not a valid analysisType. ` +
+        `Expected one of: ${VALID_ANALYSIS_TYPES.join(', ')}. ` +
+        `Path: ${blobName}`,
+      );
+    }
 
     if (!tenantId || !clientId || !adapterKey || !fileName) return null;
 
     // prefix is everything except the filename — used for listing sibling blobs
     const prefix = parts.slice(0, -1).join('/');
 
-    return { tenantId, clientId, adapterKey, blobName, prefix, fileName };
+    return { tenantId, clientId, adapterKey, analysisType: rawAnalysisType as BulkAnalysisType, blobName, prefix, fileName };
   }
 
   private isDataFile(name: string): boolean {

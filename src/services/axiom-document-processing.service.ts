@@ -175,6 +175,11 @@ export class AxiomDocumentProcessingService {
       return;
     }
 
+    const programId = process.env['AXIOM_PROGRAM_ID'];
+    const programVersion = process.env['AXIOM_PROGRAM_VERSION'];
+    if (!programId) throw new Error('AXIOM_PROGRAM_ID is required for document schema extraction but is not set.');
+    if (!programVersion) throw new Error('AXIOM_PROGRAM_VERSION is required for document schema extraction but is not set.');
+
     const submitResult = await this.axiomService.submitDocumentForSchemaExtraction({
       documentId,
       ...(orderId && { orderId }),
@@ -183,6 +188,8 @@ export class AxiomDocumentProcessingService {
       documentType: resolvedDocumentType,
       tenantId,
       clientId,
+      programId,
+      programVersion,
     });
 
     if (!submitResult) {

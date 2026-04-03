@@ -12,6 +12,7 @@ import type {
   BulkIngestionSharedStorageRef,
   BulkIngestionSubmitRequest,
 } from '../types/bulk-ingestion.types.js';
+import type { BulkAnalysisType } from '../types/bulk-portfolio.types.js';
 import type {
   BulkIngestionFailureExportFormat,
   BulkIngestionFailureSort,
@@ -48,9 +49,14 @@ function resolveTenantId(req: UnifiedAuthRequest): string {
   return tid;
 }
 
+const VALID_ANALYSIS_TYPES: BulkAnalysisType[] = ['AVM', 'FRAUD', 'ANALYSIS_1033', 'QUICK_REVIEW', 'DVR', 'ROV'];
+
 const validateSubmit = [
   body('clientId').isString().notEmpty().withMessage('clientId is required'),
   body('adapterKey').isString().notEmpty().withMessage('adapterKey is required'),
+  body('analysisType')
+    .isString().notEmpty().withMessage('analysisType is required')
+    .isIn(VALID_ANALYSIS_TYPES).withMessage(`analysisType must be one of: ${VALID_ANALYSIS_TYPES.join(', ')}`),
   body('ingestionMode').optional().isIn(['MULTIPART', 'SHARED_STORAGE']),
   body('items.*.loanNumber').optional().isString(),
   body('items.*.externalId').optional().isString(),
@@ -268,6 +274,7 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
       const baseRequest: BulkIngestionSubmitRequest = {
         clientId: String(requestBody.clientId || ''),
         ...(requestBody.jobName ? { jobName: String(requestBody.jobName) } : {}),
+        analysisType: String(requestBody.analysisType) as BulkAnalysisType,
         ingestionMode,
         dataFileName: String(requestBody.dataFileName || dataFile?.originalname || ''),
         adapterKey: String(requestBody.adapterKey || ''),

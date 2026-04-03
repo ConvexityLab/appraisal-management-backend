@@ -1479,6 +1479,8 @@ export class AxiomService {
     documentType: string;
     tenantId: string;
     clientId: string;
+    programId: string;
+    programVersion: string;
   }): Promise<{ pipelineJobId: string } | null> {
     if (!this.enabled) {
       const mockJobId = `mock-schema-extract-${Date.now()}`;
@@ -1506,10 +1508,12 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         pipelineId,
         input: {
-          clientId:    params.clientId,
-          subClientId: params.tenantId,
-          fileSetId:   params.orderId ?? params.documentId,
-          documentType: params.documentType,
+          clientId:       params.clientId,
+          subClientId:    params.tenantId,
+          programId:      params.programId,
+          programVersion: params.programVersion,
+          fileSetId:      params.orderId ?? params.documentId,
+          documentType:   params.documentType,
           files: [
             {
               fileName:       params.fileName,
