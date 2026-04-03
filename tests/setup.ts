@@ -17,6 +17,9 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 if (!process.env.COSMOS_ENDPOINT && !process.env.AZURE_COSMOS_ENDPOINT) {
   process.env.COSMOS_ENDPOINT = 'https://test-placeholder.documents.azure.com:443/';
 }
+if (!process.env.AZURE_COSMOS_ENDPOINT) {
+  process.env.AZURE_COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT || 'https://test-placeholder.documents.azure.com:443/';
+}
 
 // CI does not provide these by default; set non-production placeholders so
 // constructor-time validation in services does not fail test collection.
