@@ -1721,10 +1721,11 @@ export class AxiomService {
       const pending = pendingResponse?.data ?? {};
 
       // Extract the pipeline's structured outputs for direct UI visibility.
-      const rawStages = (rawResults['stages'] as Record<string, unknown> | undefined) ?? {};
+      // Axiom response shape: { results: { extractStructuredData: [...], aggregateResults: [...], ... } }
+      const rawStages = (rawResults['results'] as Record<string, unknown> | undefined) ?? {};
       const axiomExtractionResult =
-        (Array.isArray(rawStages['extractDocumentData']) && (rawStages['extractDocumentData'] as unknown[]).length > 0
-          ? rawStages['extractDocumentData']
+        (Array.isArray(rawStages['extractStructuredData']) && (rawStages['extractStructuredData'] as unknown[]).length > 0
+          ? rawStages['extractStructuredData']
           : rawResults['extractedData']) ?? undefined;
       const aggregateStage = rawStages['aggregateResults'];
       const axiomCriteriaResult =
