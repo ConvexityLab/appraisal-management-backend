@@ -519,7 +519,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
         external: true
         targetPort: useBootstrapImage ? bootstrapPort : app.targetPort
         allowInsecure: false
-        transport: 'http'
+        transport: 'auto'
         traffic: [
           {
             weight: 100
