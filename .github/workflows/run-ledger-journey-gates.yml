@@ -50,12 +50,7 @@ jobs:
   deployed-canary:
     name: Deployed Journey Canary
     runs-on: ubuntu-latest
-    if: >-
-      (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_canary == 'true')) &&
-      secrets.RUN_LEDGER_CANARY_BASE_URL != '' &&
-      secrets.RUN_LEDGER_CANARY_BEARER_TOKEN != '' &&
-      secrets.RUN_LEDGER_CANARY_BEARER_TOKEN != '__SET_REAL_TOKEN__' &&
-      (secrets.RUN_LEDGER_CANARY_ORDER_ID != '' || secrets.RUN_LEDGER_CANARY_ENGAGEMENT_ID != '')
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_canary == 'true')
     timeout-minutes: 15
 
     steps:
@@ -71,7 +66,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate canary secret configuration
+        id: canary-config
+        run: |
+          if [ -z "$CANARY_BASE_URL" ] || [ -z "$CANARY_BEARER_TOKEN" ] || [ "$CANARY_BEARER_TOKEN" = "__SET_REAL_TOKEN__" ] || { [ -z "$CANARY_ORDER_ID" ] && [ -z "$CANARY_ENGAGEMENT_ID" ]; }; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Canary skipped: secrets are missing or placeholder values are still configured."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Canary enabled: required secrets are configured."
+          fi
+        env:
+          CANARY_BASE_URL: ${{ secrets.RUN_LEDGER_CANARY_BASE_URL }}
+          CANARY_BEARER_TOKEN: ${{ secrets.RUN_LEDGER_CANARY_BEARER_TOKEN }}
+          CANARY_ORDER_ID: ${{ secrets.RUN_LEDGER_CANARY_ORDER_ID }}
+          CANARY_ENGAGEMENT_ID: ${{ secrets.RUN_LEDGER_CANARY_ENGAGEMENT_ID }}
+
       - name: Run run-ledger canary
+        if: steps.canary-config.outputs.enabled == 'true'
         run: npx tsx scripts/canary/run-ledger-journey-canary.ts
         env:
           CANARY_BASE_URL: ${{ secrets.RUN_LEDGER_CANARY_BASE_URL }}
