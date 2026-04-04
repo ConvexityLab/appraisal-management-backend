@@ -277,6 +277,18 @@ module cosmosPropertyRecordsContainer 'modules/cosmos-property-records-container
   }
 }
 
+// Cosmos DB Property Data Cache Container
+// Persistent cache for all third-party property data (ATTOM, Bridge, etc.).
+// Pre-populated with ATTOM FL/LA CSV data; write-through on every live API call.
+module cosmosPropertyDataCacheContainer 'modules/cosmos-property-data-cache-container.bicep' = {
+  name: 'cosmos-property-data-cache-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

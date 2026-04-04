@@ -201,6 +201,24 @@ export interface TenantAutomationConfig {
    */
   axiomProgramVersion?: string;
 
+  /**
+   * Sub-client identifier used for document schema and criteria program keys
+   * in run-ledger orchestration.
+   */
+  axiomSubClientId?: string;
+
+  /**
+   * Document schema version used for extraction run schemaKey.version.
+   * If omitted, orchestrators may use axiomProgramVersion from tenant config.
+   */
+  axiomDocumentSchemaVersion?: string;
+
+  /**
+   * Optional default criteria step keys for document-triggered criteria runs.
+   * When omitted, RUN_DEFAULT_CRITERIA_STEPS env var is used.
+   */
+  axiomDefaultCriteriaStepKeys?: string[];
+
   // ── Metadata ──────────────────────────────────────────────────────────────
 
   updatedAt: string; // ISO

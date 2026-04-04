@@ -544,3 +544,130 @@ describe('OrderEventService with PropertyEnrichmentService', () => {
     expect(enrichSpy).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PropertyEnrichmentService.enrichEngagement
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PropertyEnrichmentService.enrichEngagement', () => {
+  it('delegates to enrichOrder using loanId as the entity reference', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const enrichOrderSpy = vi.spyOn(svc, 'enrichOrder').mockResolvedValue({
+      enrichmentId: 'enrich-loan-001-123',
+      propertyId:   'prop-001',
+      status:       'enriched',
+    });
+
+    const result = await svc.enrichEngagement('eng-001', 'loan-001', TENANT, BASE_ADDRESS);
+
+    expect(enrichOrderSpy).toHaveBeenCalledOnce();
+    expect(enrichOrderSpy).toHaveBeenCalledWith('loan-001', TENANT, BASE_ADDRESS, { engagementId: 'eng-001' });
+    expect(result.status).toBe('enriched');
+  });
+
+  it('throws when engagementId is missing', async () => {
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    await expect(
+      svc.enrichEngagement('', 'loan-001', TENANT, BASE_ADDRESS),
+    ).rejects.toThrow('engagementId is required');
+  });
+
+  it('throws when loanId is missing', async () => {
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    await expect(
+      svc.enrichEngagement('eng-001', '', TENANT, BASE_ADDRESS),
+    ).rejects.toThrow('loanId is required');
+  });
+
+  it('propagates enrichOrder result status=provider_miss when provider returns null', async () => {
+    const provider = makeProvider(null);
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    vi.spyOn(svc, 'enrichOrder').mockResolvedValue({
+      enrichmentId: 'enrich-loan-001-123',
+      propertyId:   'prop-001',
+      status:       'provider_miss',
+    });
+
+    const result = await svc.enrichEngagement('eng-001', 'loan-001', TENANT, BASE_ADDRESS);
+    expect(result.status).toBe('provider_miss');
+  });
+
+  it('stores engagementId on the persisted enrichment record', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichEngagement('eng-abc', 'loan-xyz', TENANT, BASE_ADDRESS);
+
+    const [, storedDoc] = (cosmos.createDocument as ReturnType<typeof vi.fn>).mock.calls[0] as [string, any];
+    expect(storedDoc.engagementId).toBe('eng-abc');
+    expect(storedDoc.orderId).toBe('loan-xyz');
+  });
+});
+
+// ─── getEnrichmentsByEngagement ─────────────────────────────────────────────────────────────
+
+describe('PropertyEnrichmentService.getEnrichmentsByEngagement', () => {
+  const engRecord: PropertyEnrichmentRecord = {
+    id: 'enrich-loan-001-111',
+    type: 'property-enrichment',
+    orderId: 'loan-001',
+    engagementId: 'eng-001',
+    tenantId: TENANT,
+    propertyId: PROPERTY_ID,
+    status: 'enriched',
+    dataResult: null,
+    createdAt: '2026-03-30T12:00:00.000Z',
+  };
+
+  it('returns enrichment records for the engagement', async () => {
+    const cosmos = makeCosmosService([engRecord]);
+    const svc = new PropertyEnrichmentService(
+      cosmos as any,
+      makePropertyRecordService() as any,
+      makeProvider(null),
+    );
+
+    const results = await svc.getEnrichmentsByEngagement('eng-001', TENANT);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual(engRecord);
+    expect(cosmos.queryDocuments).toHaveBeenCalledOnce();
+    const [, , params] = (cosmos.queryDocuments as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string, any[]];
+    expect(params).toContainEqual({ name: '@engagementId', value: 'eng-001' });
+    expect(params).toContainEqual({ name: '@tenantId', value: TENANT });
+  });
+
+  it('returns an empty array when no records exist', async () => {
+    const cosmos = makeCosmosService([]);
+    const svc = new PropertyEnrichmentService(
+      cosmos as any,
+      makePropertyRecordService() as any,
+      makeProvider(null),
+    );
+
+    const results = await svc.getEnrichmentsByEngagement('eng-002', TENANT);
+    expect(results).toEqual([]);
+  });
+
+  it('throws when engagementId is missing', async () => {
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    await expect(
+      svc.getEnrichmentsByEngagement('', TENANT),
+    ).rejects.toThrow('engagementId is required');
+  });
+
+  it('throws when tenantId is missing', async () => {
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    await expect(
+      svc.getEnrichmentsByEngagement('eng-001', ''),
+    ).rejects.toThrow('tenantId is required');
+  });
+});

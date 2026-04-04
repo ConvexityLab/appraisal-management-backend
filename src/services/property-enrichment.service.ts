@@ -70,6 +70,8 @@ export interface PropertyEnrichmentRecord {
   id: string;
   type: 'property-enrichment';
   orderId: string;
+  /** Present when the record was created via enrichEngagement(). Indexed for engagement-level queries. */
+  engagementId?: string;
   tenantId: string;
   propertyId: string;
   status: EnrichmentStatus;
@@ -114,6 +116,7 @@ export class PropertyEnrichmentService {
     orderId: string,
     tenantId: string,
     address: { street: string; city: string; state: string; zipCode: string },
+    meta?: { engagementId?: string },
   ): Promise<EnrichmentResult> {
     if (!orderId) {
       throw new Error('PropertyEnrichmentService.enrichOrder: orderId is required');
@@ -181,6 +184,7 @@ export class PropertyEnrichmentService {
         id: `enrich-${orderId}-${Date.now()}`,
         type: 'property-enrichment',
         orderId,
+        ...(meta?.engagementId != null && { engagementId: meta.engagementId }),
         tenantId,
         propertyId: resolution.propertyId,
         status: 'cached',
@@ -276,6 +280,7 @@ export class PropertyEnrichmentService {
       id: `enrich-${orderId}-${Date.now()}`,
       type: 'property-enrichment',
       orderId,
+      ...(meta?.engagementId != null && { engagementId: meta.engagementId }),
       tenantId,
       propertyId: resolution.propertyId,
       status,
@@ -335,6 +340,78 @@ export class PropertyEnrichmentService {
     );
 
     return results.length > 0 ? (results[0] ?? null) : null;
+  }
+
+  /**
+   * Retrieves all enrichment records for a given engagement, ordered newest-first.
+   * Returns an empty array when no records exist.
+   */
+  async getEnrichmentsByEngagement(
+    engagementId: string,
+    tenantId: string,
+  ): Promise<PropertyEnrichmentRecord[]> {
+    if (!engagementId) {
+      throw new Error(
+        'PropertyEnrichmentService.getEnrichmentsByEngagement: engagementId is required',
+      );
+    }
+    if (!tenantId) {
+      throw new Error(
+        `PropertyEnrichmentService.getEnrichmentsByEngagement: tenantId is required. engagementId=${engagementId}`,
+      );
+    }
+
+    const query = `
+      SELECT * FROM c
+      WHERE c.engagementId = @engagementId
+        AND c.tenantId = @tenantId
+        AND c.type = 'property-enrichment'
+      ORDER BY c.createdAt DESC
+    `;
+
+    return this.cosmosService.queryDocuments<PropertyEnrichmentRecord>(
+      PROPERTY_ENRICHMENTS_CONTAINER,
+      query,
+      [
+        { name: '@engagementId', value: engagementId },
+        { name: '@tenantId', value: tenantId },
+      ],
+    );
+  }
+
+  /**
+   * Fires enrichment for a single loan within an engagement.
+   *
+   * Stores a `PropertyEnrichmentRecord` keyed by `loanId` as the entity reference
+   * (the loanId is the finest-grained property-owning entity in an engagement).
+   * `getLatestEnrichment(loanId, tenantId)` retrieves engagement enrichments.
+   *
+   * @param engagementId  Parent engagement — used for log context only.
+   * @param loanId        The loan whose collateral is being enriched.
+   * @param tenantId      Tenant scope for all Cosmos operations.
+   * @param address       The subject property address from the loan.
+   */
+  async enrichEngagement(
+    engagementId: string,
+    loanId: string,
+    tenantId: string,
+    address: { street: string; city: string; state: string; zipCode: string },
+  ): Promise<EnrichmentResult> {
+    if (!engagementId) {
+      throw new Error('PropertyEnrichmentService.enrichEngagement: engagementId is required');
+    }
+    if (!loanId) {
+      throw new Error('PropertyEnrichmentService.enrichEngagement: loanId is required');
+    }
+    this.logger.info('PropertyEnrichmentService.enrichEngagement: starting', {
+      engagementId,
+      loanId,
+      tenantId,
+      address: `${address.street}, ${address.city}, ${address.state} ${address.zipCode}`,
+    });
+    // Delegate to enrichOrder using loanId as the entity reference.
+    // Pass engagementId in meta so the persisted record is queryable by engagement.
+    return this.enrichOrder(loanId, tenantId, address, { engagementId });
   }
 
   // ─── Private field mappers ───────────────────────────────────────────────────

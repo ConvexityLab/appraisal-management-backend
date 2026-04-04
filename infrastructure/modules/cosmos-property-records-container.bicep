@@ -44,6 +44,16 @@ resource propertyRecordsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
             { path: '/createdAt', order: 'descending' }
           ]
         ]
+        // Geospatial index — enables ST_DISTANCE / ST_WITHIN queries for map-based search.
+        // Documents MUST store coordinates as GeoJSON:
+        //   location: { type: 'Point', coordinates: [longitude, latitude] }
+        // IMPORTANT: GeoJSON order is [longitude, latitude] — NOT [lat, lon].
+        spatialIndexes: [
+          {
+            path: '/location/?'
+            types: ['Point']
+          }
+        ]
       }
       defaultTtl: -1
     }
@@ -83,6 +93,15 @@ resource comparableSalesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
             { path: '/propertyType', order: 'ascending' }
             { path: '/saleDate', order: 'descending' }
           ]
+        ]
+        // Geospatial index — enables radius search for comparable selection (e.g. within 1 mile).
+        // Documents MUST store coordinates as GeoJSON:
+        //   location: { type: 'Point', coordinates: [longitude, latitude] }
+        spatialIndexes: [
+          {
+            path: '/location/?'
+            types: ['Point']
+          }
         ]
       }
       defaultTtl: -1

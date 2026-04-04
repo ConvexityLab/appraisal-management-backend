@@ -23,7 +23,8 @@ export class NullPropertyDataProvider implements PropertyDataProvider {
   async lookupByAddress(params: PropertyDataLookupParams): Promise<PropertyDataResult | null> {
     this.logger.warn(
       'NullPropertyDataProvider: no property data provider is configured. ' +
-      'Set BRIDGE_SERVER_TOKEN to enable Bridge Interactive lookups. ' +
+      'Set BRIDGE_SERVER_TOKEN to enable Bridge Interactive lookups, or ' +
+      'ATTOM_API_KEY to enable ATTOM Data Solutions lookups. ' +
       'Property data enrichment will be skipped for this order.',
       { address: `${params.street}, ${params.city}, ${params.state} ${params.zipCode}` },
     );

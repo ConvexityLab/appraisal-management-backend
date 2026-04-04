@@ -89,6 +89,24 @@ router.get('/schema', (_req: Request, res: Response) => {
         type: 'string[]',
         description: 'Email address or user IDs to notify on automation failures and escalations.',
       },
+      {
+        key: 'axiomSubClientId',
+        label: 'Axiom Sub-Client ID',
+        type: 'string',
+        description: 'Sub-client key used to build run-ledger schema/program keys for document orchestration.',
+      },
+      {
+        key: 'axiomDocumentSchemaVersion',
+        label: 'Axiom Document Schema Version',
+        type: 'string',
+        description: 'Schema version used for extraction run schemaKey.version (falls back to axiomProgramVersion when omitted).',
+      },
+      {
+        key: 'axiomDefaultCriteriaStepKeys',
+        label: 'Default Criteria Step Keys',
+        type: 'string[]',
+        description: 'Optional default step keys for auto-created criteria runs after extraction completion.',
+      },
     ],
     defaults: DEFAULT_TENANT_AUTOMATION_CONFIG,
   };

@@ -1,0 +1,75 @@
+name: Run Ledger Journey Gates
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      run_canary:
+        description: 'Run deployed-environment canary checks'
+        required: false
+        default: 'false'
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-run-ledger-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22.x'
+
+jobs:
+  backend-run-ledger-gates:
+    name: Backend Run Ledger Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run focused run-ledger controller tests
+        run: npm run test -- tests/unit/runs.controller.test.ts
+
+  deployed-canary:
+    name: Deployed Journey Canary
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_canary == 'true')
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run run-ledger canary
+        run: npx tsx scripts/canary/run-ledger-journey-canary.ts
+        env:
+          CANARY_BASE_URL: ${{ secrets.RUN_LEDGER_CANARY_BASE_URL }}
+          CANARY_BEARER_TOKEN: ${{ secrets.RUN_LEDGER_CANARY_BEARER_TOKEN }}
+          CANARY_ORDER_ID: ${{ secrets.RUN_LEDGER_CANARY_ORDER_ID }}
+          CANARY_ENGAGEMENT_ID: ${{ secrets.RUN_LEDGER_CANARY_ENGAGEMENT_ID }}

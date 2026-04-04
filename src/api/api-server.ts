@@ -110,6 +110,7 @@ import { createTeamsRouter } from '../controllers/teams.controller';
 import { createServiceHealthRouter } from '../controllers/service-health.controller';
 import { createUnifiedCommunicationRouter } from '../controllers/unified-communication.controller';
 import { createAxiomRouter, createAxiomWebhookRouter } from '../controllers/axiom.controller';
+import { createRunsRouter } from '../controllers/runs.controller.js';
 import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
@@ -498,7 +499,10 @@ export class AppraisalManagementAPIServer {
     });
     this.app.use('/api/documents/', documentsLimiter);
 
-    // Rule 2 — Axiom analysis submissions: tighter per-IP limit (20 req/window).
+    // Rule 2 — Axiom mutation requests: per-IP limit for expensive writes.
+    //   Only mutating methods count (POST/PUT/PATCH/DELETE). Read/poll endpoints
+    //   and preflight OPTIONS are excluded so operator UI polling does not exhaust
+    //   the submission budget.
     //   Excludes /axiom/webhook and /axiom/callback — those are server-to-server
     //   callbacks secured by HMAC and must never be rate-limited by IP.
     const axiomLimiter = rateLimit({
@@ -507,7 +511,10 @@ export class AppraisalManagementAPIServer {
       message: { error: 'Too many Axiom analysis requests from this IP, please try again later.', code: 'RATE_LIMIT_EXCEEDED' },
       skip: (req) => {
         const url = req.originalUrl;
-        return url.includes('/axiom/webhook') || url.includes('/axiom/callback');
+        if (req.method === 'OPTIONS') return true;
+        if (url.includes('/axiom/webhook') || url.includes('/axiom/callback')) return true;
+        const method = req.method.toUpperCase();
+        return method !== 'POST' && method !== 'PUT' && method !== 'PATCH' && method !== 'DELETE';
       },
     });
     this.app.use('/api/axiom/', axiomLimiter);
@@ -525,6 +532,7 @@ export class AppraisalManagementAPIServer {
       },
       skip: (req) => {
         const url = req.originalUrl;
+        if (req.method === 'OPTIONS') return true;
         return url.includes('/axiom/webhook') || url.includes('/axiom/callback');
       },
     });
@@ -876,6 +884,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/axiom',
       this.unifiedAuth.authenticate(),
       createAxiomRouter(this.dbService, sharedAxiomService)
+    );
+
+    // Run Ledger APIs — extraction/criteria run creation + retrieval with idempotency and engine metadata.
+    this.app.use('/api/runs',
+      this.unifiedAuth.authenticate(),
+      createRunsRouter(this.dbService)
     );
 
     // Axiom Criteria Programs — GET compiled criteria (cache-first) / POST force-recompile

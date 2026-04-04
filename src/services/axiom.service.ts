@@ -200,6 +200,12 @@ export class AxiomService {
   private containerName = 'aiInsights';
   private enabled: boolean;
   private mockDelayMs: number;
+  private lastPipelineSubmissionError: {
+    code: string;
+    message: string;
+    details?: unknown;
+    status?: number;
+  } | null = null;
 
   // ── Inline Loom pipeline definitions ───────────────────────────────────────
   // Axiom's POST /api/pipelines accepts either:
@@ -365,6 +371,15 @@ export class AxiomService {
    */
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  getLastPipelineSubmissionError(): {
+    code: string;
+    message: string;
+    details?: unknown;
+    status?: number;
+  } | null {
+    return this.lastPipelineSubmissionError;
   }
 
   /**
@@ -1125,6 +1140,8 @@ export class AxiomService {
     programId?: string,
     correlationType: 'ORDER' | 'TAPE_LOAN' = 'ORDER',
   ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
+    this.lastPipelineSubmissionError = null;
+
     if (!this.enabled) {
       return this.mockPipelineSubmit(orderId, correlationType, orderId, programId);
     }
@@ -1139,8 +1156,9 @@ export class AxiomService {
     }
 
     // P3-F: Idempotency guard — if an in-flight evaluation already exists for this
-    // order, return its identifiers rather than submitting again. This prevents double-
-    // submission when the auto-trigger service and inline submission path race each other.
+    // order, return the existing run keys (evaluationId + pipelineJobId) rather than
+    // submitting again. This prevents double-submission when the auto-trigger service
+    // and inline submission path race each other.
     try {
       const existingQuery = `
         SELECT TOP 1 c.evaluationId, c.pipelineJobId FROM c
@@ -1224,7 +1242,53 @@ export class AxiomService {
       return { pipelineJobId, evaluationId };
     } catch (error) {
       const axiosError = error as AxiosError;
-      const errorMessage = (axiosError.response?.data as Record<string, unknown>)?.['message'] ?? axiosError.message;
+      const responseData = axiosError.response?.data as Record<string, unknown> | undefined;
+      const errorMessage = responseData?.['message'] ?? axiosError.message;
+
+      if (axiosError.response?.status === 409) {
+        this.logger.warn('Axiom returned duplicate submission conflict; attempting to reuse latest local evaluation', {
+          orderId,
+          status: axiosError.response?.status,
+          error: errorMessage,
+        });
+
+        try {
+          const latestQuery = `
+            SELECT TOP 1 c.evaluationId, c.pipelineJobId FROM c
+            WHERE c.orderId = @orderId AND c.tenantId = @tenantId
+            ORDER BY c.timestamp DESC`;
+          const latestResult = await this.dbService.queryItems<{ evaluationId: string; pipelineJobId: string }>(
+            this.containerName,
+            latestQuery,
+            [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }],
+          );
+
+          const latest = latestResult.success && latestResult.data && latestResult.data.length > 0
+            ? latestResult.data[0]
+            : null;
+
+          if (latest?.evaluationId && latest?.pipelineJobId) {
+            this.logger.info('Reusing latest evaluation after duplicate submission conflict', {
+              orderId,
+              evaluationId: latest.evaluationId,
+              pipelineJobId: latest.pipelineJobId,
+            });
+            return { pipelineJobId: latest.pipelineJobId, evaluationId: latest.evaluationId };
+          }
+        } catch (reuseErr) {
+          this.logger.warn('Failed to reuse latest evaluation after duplicate conflict', {
+            orderId,
+            error: reuseErr instanceof Error ? reuseErr.message : String(reuseErr),
+          });
+        }
+      }
+
+      this.lastPipelineSubmissionError = {
+        code: 'AXIOM_PIPELINE_SUBMIT_FAILED',
+        message: typeof errorMessage === 'string' ? errorMessage : 'Axiom pipeline submission failed',
+        ...(responseData !== undefined ? { details: responseData } : {}),
+        ...(axiosError.response?.status !== undefined ? { status: axiosError.response.status } : {}),
+      };
       this.logger.error('Failed to submit order evaluation to Axiom pipeline', { orderId, error: errorMessage });
       return null;
     }

@@ -22,8 +22,8 @@ export class TenantAutomationConfigService {
   private readonly db: CosmosDbService;
   private readonly logger: Logger;
 
-  constructor() {
-    this.db = new CosmosDbService();
+  constructor(dbService?: CosmosDbService) {
+    this.db = dbService ?? new CosmosDbService();
     this.logger = new Logger('TenantAutomationConfigService');
   }
 

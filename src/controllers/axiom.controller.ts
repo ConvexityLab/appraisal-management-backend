@@ -22,6 +22,13 @@ import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js
 import type { AppraisalOrder } from '../types/index.js';
 import { BlobStorageService } from '../services/blob-storage.service';
 import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service.js';
+import { TenantAutomationConfigService } from '../services/tenant-automation-config.service.js';
+import { RunLedgerService } from '../services/run-ledger.service.js';
+import { CanonicalSnapshotService } from '../services/canonical-snapshot.service.js';
+import { EngineDispatchService } from '../services/engine-dispatch.service.js';
+import { CriteriaStepInputService } from '../services/criteria-step-input.service.js';
+import type { DocumentMetadata } from '../types/document.types.js';
+import type { RunStatus } from '../types/run-ledger.types.js';
 import type {
   AxiomBulkSubmissionDlqAgeBucket,
   AxiomBulkSubmissionDlqSortPreset,
@@ -45,6 +52,11 @@ export class AxiomController {
   private axiomBulkSubmissionService: AxiomBulkSubmissionService;
   private readonly blobService: BlobStorageService;
   private readonly eventPublisher: ServiceBusEventPublisher;
+  private readonly tenantAutomationConfigService: TenantAutomationConfigService;
+  private readonly runLedgerService: RunLedgerService;
+  private readonly snapshotService: CanonicalSnapshotService;
+  private readonly engineDispatchService: EngineDispatchService;
+  private readonly criteriaStepInputService: CriteriaStepInputService;
   private readonly logger = new Logger('AxiomController');
 
   /**
@@ -78,6 +90,223 @@ export class AxiomController {
     );
   }
 
+  private mapWebhookStatusToRunStatus(status: string): RunStatus {
+    const normalized = status.toLowerCase();
+    if (normalized === 'completed' || normalized === 'success') return 'completed';
+    if (normalized === 'failed' || normalized === 'error') return 'failed';
+    if (normalized === 'pending' || normalized === 'queued') return 'queued';
+    return 'running';
+  }
+
+  private normalizeDocumentType(document: DocumentMetadata): string {
+    if (document.documentType && document.documentType.trim().length > 0) {
+      return document.documentType.trim().toUpperCase();
+    }
+
+    if (document.category && document.category.trim().length > 0) {
+      return document.category.trim().toUpperCase().replace(/-/g, '_');
+    }
+
+    throw new Error(`Document '${document.id}' is missing both documentType and category`);
+  }
+
+  private async orchestrateDocumentRunLedger(params: {
+    documentId: string;
+    pipelineJobId?: string;
+    webhookStatus: string;
+  }): Promise<void> {
+    const documentResult = await this.dbService.getItem<DocumentMetadata>('documents', params.documentId);
+    if (!documentResult.success || !documentResult.data) {
+      throw new Error(`Document '${params.documentId}' was not found for run orchestration`);
+    }
+
+    const document = documentResult.data;
+    if (!document.tenantId) {
+      throw new Error(`Document '${document.id}' is missing tenantId required for run orchestration`);
+    }
+    if (!document.orderId) {
+      throw new Error(`Document '${document.id}' is missing orderId required for run orchestration`);
+    }
+
+    const orderResult = await this.dbService.findOrderById(document.orderId);
+    if (!orderResult.success || !orderResult.data) {
+      throw new Error(`Order '${document.orderId}' was not found for document '${document.id}'`);
+    }
+
+    const order = orderResult.data as unknown as Record<string, unknown>;
+    const clientId = typeof order['clientId'] === 'string' ? order['clientId'] : undefined;
+    if (!clientId) {
+      throw new Error(`Order '${document.orderId}' is missing clientId required for schema/program keys`);
+    }
+
+    const tenantConfig = await this.tenantAutomationConfigService.getConfig(document.tenantId);
+    const subClientId = tenantConfig.axiomSubClientId;
+    if (!subClientId) {
+      throw new Error(
+        `Tenant '${document.tenantId}' is missing axiomSubClientId in tenant automation config required for run orchestration`,
+      );
+    }
+
+    const schemaVersion = tenantConfig.axiomDocumentSchemaVersion ?? tenantConfig.axiomProgramVersion;
+    if (!schemaVersion) {
+      throw new Error(
+        `Tenant '${document.tenantId}' is missing axiomDocumentSchemaVersion (or axiomProgramVersion fallback) in tenant automation config`,
+      );
+    }
+
+    const documentType = this.normalizeDocumentType(document);
+    const correlationId = `axiom-document:${params.pipelineJobId ?? params.documentId}`;
+    const extractionIdempotency = `axiom-document-extraction:${params.pipelineJobId ?? params.documentId}`;
+
+    const extractionRun = await this.runLedgerService.createExtractionRun({
+      tenantId: document.tenantId,
+      initiatedBy: 'SYSTEM:axiom-webhook',
+      correlationId,
+      idempotencyKey: extractionIdempotency,
+      documentId: document.id,
+      schemaKey: {
+        clientId,
+        subClientId,
+        documentType,
+        version: schemaVersion,
+      },
+      runReason: 'AUTO_DOCUMENT_EXTRACTION_WEBHOOK',
+      engineTarget: 'AXIOM',
+      ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
+      loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
+        ? order['engagementLoanId']
+        : document.orderId,
+    });
+
+    const extractionStatus = this.mapWebhookStatusToRunStatus(params.webhookStatus);
+    const updatedExtractionRun = await this.runLedgerService.setRunStatus(
+      extractionRun.id,
+      document.tenantId,
+      extractionStatus,
+      {
+        engineRunRef: params.pipelineJobId ?? extractionRun.engineRunRef,
+        engineVersion: extractionRun.engineVersion === 'pending'
+          ? (process.env.AXIOM_API_VERSION ?? 'axiom-current')
+          : extractionRun.engineVersion,
+        engineRequestRef: extractionRun.engineRequestRef === 'pending'
+          ? `axiom:webhook:req:${params.documentId}`
+          : extractionRun.engineRequestRef,
+        engineResponseRef: params.pipelineJobId
+          ? `axiom:job:${params.pipelineJobId}`
+          : extractionRun.engineResponseRef,
+        statusDetails: {
+          providerStatus: params.webhookStatus,
+          source: 'axiom-webhook-document',
+        },
+      },
+    );
+
+    if (extractionStatus !== 'completed') {
+      return;
+    }
+
+    const snapshot = await this.snapshotService.createFromExtractionRun(updatedExtractionRun);
+    await this.runLedgerService.updateRun(updatedExtractionRun.id, document.tenantId, {
+      canonicalSnapshotId: snapshot.id,
+    });
+
+    if (!tenantConfig.axiomProgramId || !tenantConfig.axiomProgramVersion) {
+      throw new Error(
+        `Tenant '${document.tenantId}' must set axiomProgramId and axiomProgramVersion for criteria orchestration`,
+      );
+    }
+
+    const criteriaIdempotency = `axiom-document-criteria:${params.pipelineJobId ?? params.documentId}`;
+    const criteriaRun = await this.runLedgerService.createCriteriaRun({
+      tenantId: document.tenantId,
+      initiatedBy: 'SYSTEM:axiom-webhook',
+      correlationId: `${correlationId}:criteria`,
+      idempotencyKey: criteriaIdempotency,
+      snapshotId: snapshot.id,
+      programKey: {
+        clientId,
+        subClientId,
+        programId: tenantConfig.axiomProgramId,
+        version: tenantConfig.axiomProgramVersion,
+      },
+      runMode: 'FULL',
+      engineTarget: 'AXIOM',
+      ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
+      loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
+        ? order['engagementLoanId']
+        : document.orderId,
+    });
+
+    const criteriaDispatch = await this.engineDispatchService.dispatchCriteria(criteriaRun);
+    const criteriaStepKeys =
+      Array.isArray(tenantConfig.axiomDefaultCriteriaStepKeys) && tenantConfig.axiomDefaultCriteriaStepKeys.length > 0
+        ? tenantConfig.axiomDefaultCriteriaStepKeys
+        : (process.env.RUN_DEFAULT_CRITERIA_STEPS
+            ? process.env.RUN_DEFAULT_CRITERIA_STEPS.split(',').map((value) => value.trim()).filter(Boolean)
+            : ['overall-criteria']);
+
+    const updatedCriteriaRun = await this.runLedgerService.setRunStatus(
+      criteriaRun.id,
+      document.tenantId,
+      criteriaDispatch.status,
+      {
+        engineRunRef: criteriaDispatch.engineRunRef,
+        engineVersion: criteriaDispatch.engineVersion,
+        engineRequestRef: criteriaDispatch.engineRequestRef,
+        engineResponseRef: criteriaDispatch.engineResponseRef,
+        canonicalSnapshotId: snapshot.id,
+        criteriaStepKeys,
+        ...(criteriaDispatch.statusDetails ? { statusDetails: criteriaDispatch.statusDetails } : {}),
+      },
+    );
+
+    const stepRunIds: string[] = [];
+    for (const stepKey of criteriaStepKeys) {
+      const stepRun = await this.runLedgerService.createCriteriaStepRun({
+        tenantId: document.tenantId,
+        initiatedBy: 'SYSTEM:axiom-webhook',
+        correlationId: `${correlationId}:criteria:${stepKey}`,
+        idempotencyKey: `${criteriaIdempotency}:${stepKey}`,
+        parentCriteriaRunId: updatedCriteriaRun.id,
+        stepKey,
+        engineTarget: 'AXIOM',
+      });
+
+      const stepInputSlice = await this.criteriaStepInputService.createStepInputSlice({
+        tenantId: document.tenantId,
+        initiatedBy: 'SYSTEM:axiom-webhook',
+        criteriaRun: updatedCriteriaRun,
+        stepRun,
+        snapshot,
+      });
+
+      const stepDispatch = await this.engineDispatchService.dispatchCriteriaStep(stepRun, {
+        inputSliceRef: stepInputSlice.payloadRef,
+        inputSlice: stepInputSlice.payload,
+        evidenceRefs: stepInputSlice.evidenceRefs,
+      });
+
+      await this.runLedgerService.setRunStatus(stepRun.id, document.tenantId, stepDispatch.status, {
+        engineRunRef: stepDispatch.engineRunRef,
+        engineVersion: stepDispatch.engineVersion,
+        engineRequestRef: stepDispatch.engineRequestRef,
+        engineResponseRef: stepDispatch.engineResponseRef,
+        statusDetails: {
+          ...(stepDispatch.statusDetails ?? {}),
+          stepInputSliceId: stepInputSlice.id,
+          stepInputPayloadRef: stepInputSlice.payloadRef,
+          stepEvidenceRefs: stepInputSlice.evidenceRefs,
+        },
+      });
+
+      stepRunIds.push(stepRun.id);
+    }
+
+    await this.runLedgerService.updateRun(updatedCriteriaRun.id, document.tenantId, {
+      criteriaStepRunIds: stepRunIds,
+    });
+  }
+
   constructor(dbService: CosmosDbService, axiomService?: AxiomService) {
     this.dbService = dbService;
     this.axiomService = axiomService || new AxiomService(dbService);
@@ -86,6 +315,11 @@ export class AxiomController {
     this.axiomBulkSubmissionService = new AxiomBulkSubmissionService(dbService);
     this.blobService = new BlobStorageService();
     this.eventPublisher = new ServiceBusEventPublisher();
+    this.tenantAutomationConfigService = new TenantAutomationConfigService(dbService);
+    this.runLedgerService = new RunLedgerService(dbService);
+    this.snapshotService = new CanonicalSnapshotService(dbService);
+    this.engineDispatchService = new EngineDispatchService(this.axiomService);
+    this.criteriaStepInputService = new CriteriaStepInputService(dbService);
   }
 
   /**
@@ -618,11 +852,17 @@ export class AxiomController {
       );
 
       if (!pipelineResult) {
-        res.status(503).json({
+        const submissionError = this.axiomService.getLastPipelineSubmissionError();
+        const statusCode = submissionError?.status && submissionError.status >= 400 && submissionError.status <= 599
+          ? submissionError.status
+          : 503;
+        res.status(statusCode).json({
           success: false,
           error: {
             code: 'AXIOM_API_ERROR',
-            message: 'Failed to submit document to Axiom pipeline'
+            message: submissionError?.message || 'Failed to submit document to Axiom pipeline',
+            ...(submissionError?.status ? { status: submissionError.status } : {}),
+            ...(submissionError?.details ? { details: submissionError.details } : {})
           }
         });
         return;
@@ -1131,6 +1371,20 @@ export class AxiomController {
             ? updateResult.error
             : JSON.stringify(updateResult.error ?? 'unknown error');
           throw new Error(`Failed to stamp document extraction result for documentId=${documentId}: ${errDetail}`);
+        }
+
+        try {
+          await this.orchestrateDocumentRunLedger({
+            documentId,
+            ...(pipelineJobId ? { pipelineJobId } : {}),
+            webhookStatus: String(status),
+          });
+        } catch (orchestrationError) {
+          this.logger.warn('Axiom webhook: run-ledger orchestration failed for document', {
+            documentId,
+            pipelineJobId,
+            error: orchestrationError instanceof Error ? orchestrationError.message : String(orchestrationError),
+          });
         }
 
         res.status(200).json({ success: true, message: 'Webhook processed' });

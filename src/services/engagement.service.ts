@@ -16,6 +16,7 @@
 import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { PropertyRecordService } from './property-record.service.js';
+import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { Logger } from '../utils/logger.js';
 import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
@@ -122,11 +123,20 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
 
 export class EngagementService {
   private _container: Container | null = null;
+  private readonly enrichmentService: PropertyEnrichmentService;
 
   constructor(
     private readonly dbService: CosmosDbService,
     private readonly propertyRecordService: PropertyRecordService,
-  ) {}
+    /**
+     * Optional: inject a specific enrichment service (used in tests).
+     * When omitted, a default instance is constructed using the same dbService.
+     */
+    enrichmentService?: PropertyEnrichmentService,
+  ) {
+    this.enrichmentService = enrichmentService ??
+      new PropertyEnrichmentService(dbService, propertyRecordService);
+  }
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
   private get container(): Container {
@@ -221,6 +231,30 @@ export class EngagementService {
       engagementType,
       loanCount: loans.length,
     });
+
+    // Fire-and-forget property enrichment for each loan (non-fatal).
+    // The enrichment record is keyed by loanId so it can be retrieved via
+    // PropertyEnrichmentService.getLatestEnrichment(loanId, tenantId).
+    for (const loan of (resource as Engagement).loans) {
+      this.enrichmentService.enrichEngagement(
+        engagement.id,
+        loan.id,
+        engagement.tenantId,
+        {
+          street: loan.property.address,
+          city: loan.property.city,
+          state: loan.property.state,
+          zipCode: loan.property.zipCode,
+        },
+      ).catch(err => {
+        logger.warn('Property enrichment failed for engagement loan (non-fatal)', {
+          engagementId: engagement.id,
+          loanId: loan.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+
     return resource as Engagement;
   }
 

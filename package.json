@@ -36,6 +36,7 @@
     "axiom:livefire:preflight": "tsx scripts/live-fire/axiom-live-fire-preflight-probe.ts",
     "axiom:livefire:remote-suite": "tsx scripts/live-fire/axiom-live-fire-remote-suite.ts",
     "axiom:livefire:verify-local-remote": "tsx scripts/live-fire/axiom-live-fire-verify-local-remote.ts",
+    "canary:run-ledger-journey": "tsx scripts/canary/run-ledger-journey-canary.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run --reporter=verbose tests/integration",

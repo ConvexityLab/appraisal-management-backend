@@ -104,7 +104,38 @@ export class BulkUploadEventListenerJob {
     }
 
     const queueUrl = `https://${storageAccountName}.queue.core.windows.net/${QUEUE_NAME}`;
+    this.logger.info('BulkUploadEventListenerJob queue configuration resolved', {
+      queueName: QUEUE_NAME,
+      storageAccountName,
+      authMode: 'DefaultAzureCredential',
+      configuredManagedIdentityClientId: process.env.AZURE_CLIENT_ID || null,
+    });
     return new QueueClient(queueUrl, new DefaultAzureCredential());
+  }
+
+  private async probeQueueAccess(): Promise<boolean> {
+    if (!this.queueClient) return false;
+
+    try {
+      await this.queueClient.getProperties();
+      this.logger.info('BulkUploadEventListenerJob queue access probe succeeded', {
+        queueName: QUEUE_NAME,
+        storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME,
+      });
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error('BulkUploadEventListenerJob queue access probe failed', {
+        queueName: QUEUE_NAME,
+        storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME,
+        authMode: 'DefaultAzureCredential',
+        configuredManagedIdentityClientId: process.env.AZURE_CLIENT_ID || null,
+        error: errorMessage,
+        remediation:
+          'Grant Storage Queue Data Message Processor or Storage Queue Data Contributor to the identity resolved by DefaultAzureCredential on the configured storage account.',
+      });
+      return false;
+    }
   }
 
   async start(): Promise<void> {
@@ -115,6 +146,12 @@ export class BulkUploadEventListenerJob {
 
     if (!this.queueClient) {
       this.logger.error('BulkUploadEventListenerJob cannot start — QueueClient not initialised');
+      return;
+    }
+
+    const hasQueueAccess = await this.probeQueueAccess();
+    if (!hasQueueAccess) {
+      this.logger.error('BulkUploadEventListenerJob will not start because queue access probe failed');
       return;
     }
 

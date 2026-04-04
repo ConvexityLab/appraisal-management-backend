@@ -560,3 +560,96 @@ describe('addVendorOrderToProduct', () => {
     ).rejects.toThrow(/EngagementProduct not found/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 10. Property enrichment wiring
+// ---------------------------------------------------------------------------
+
+describe('createEngagement — enrichment wiring', () => {
+  function makeEnrichmentService() {
+    return {
+      enrichEngagement: vi.fn().mockResolvedValue({
+        enrichmentId: 'enrich-loan-001-123',
+        propertyId:   'prop-test-001',
+        status:       'enriched',
+      }),
+    };
+  }
+
+  it('calls enrichEngagement once per loan after creating the engagement', async () => {
+    const storedEng = makeEngagement({
+      loans: [
+        makeLoan({ id: 'loan-a', property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' } }),
+      ],
+    });
+    const container = makeMockContainer(storedEng);
+    const enrichSvc = makeEnrichmentService();
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrichSvc as any,
+    );
+    await svc.createEngagement({
+      tenantId:  'tenant-001',
+      createdBy: 'user-001',
+      client:    { clientId: 'c-001', clientName: 'Lender' },
+      loans: [{
+        loanNumber:   'LN-A',
+        borrowerName: 'Borrower',
+        property:     { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+        products:     [{ productType: EngagementProductType.FULL_APPRAISAL }],
+      }],
+    });
+
+    // Give fire-and-forget time to settle
+    await vi.waitFor(() => expect(enrichSvc.enrichEngagement).toHaveBeenCalled());
+    expect(enrichSvc.enrichEngagement).toHaveBeenCalledOnce();
+  });
+
+  it('calls enrichEngagement once per loan in a multi-loan engagement', async () => {
+    const storedEng = makeEngagement({
+      engagementType: EngagementType.PORTFOLIO,
+      loans: [
+        makeLoan({ id: 'loan-a', property: { address: '1 A St', city: 'Denver', state: 'CO', zipCode: '80201' } }),
+        makeLoan({ id: 'loan-b', property: { address: '2 B Ave', city: 'Boulder', state: 'CO', zipCode: '80302' } }),
+      ],
+    });
+    const container  = makeMockContainer(storedEng);
+    const enrichSvc  = makeEnrichmentService();
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrichSvc as any,
+    );
+    await svc.createEngagement({
+      tenantId:  'tenant-001',
+      createdBy: 'user-001',
+      client:    { clientId: 'c-001', clientName: 'Lender' },
+      loans: [
+        { loanNumber: 'LN-A', borrowerName: 'A', property: { address: '1 A St', city: 'Denver', state: 'CO', zipCode: '80201' }, products: [{ productType: EngagementProductType.FULL_APPRAISAL }] },
+        { loanNumber: 'LN-B', borrowerName: 'B', property: { address: '2 B Ave', city: 'Boulder', state: 'CO', zipCode: '80302' }, products: [{ productType: EngagementProductType.DRIVE_BY }] },
+      ],
+    });
+
+    await vi.waitFor(() => expect(enrichSvc.enrichEngagement).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not throw when enrichEngagement rejects (non-fatal)', async () => {
+    const storedEng = makeEngagement();
+    const container = makeMockContainer(storedEng);
+    const enrichSvc = {
+      enrichEngagement: vi.fn().mockRejectedValue(new Error('provider down')),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrichSvc as any,
+    );
+    await expect(
+      svc.createEngagement(makeCreateRequest()),
+    ).resolves.not.toThrow();
+  });
+});

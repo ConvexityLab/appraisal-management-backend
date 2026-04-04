@@ -64,6 +64,8 @@ export class CosmosDbService {
   // ── Property Aggregate Root (Phase R1) ──────────────────────────────────
   private propertyRecordsContainer: Container | null = null;
   private comparableSalesContainer: Container | null = null;
+  // ── Property Data Cache (third-party provider cache: ATTOM, Bridge, etc.) ─
+  private propertyDataCacheContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -111,6 +113,8 @@ export class CosmosDbService {
     // ── Property Aggregate Root (Phase R1) ────────────────────────────────
     propertyRecords: 'property-records',                   // PropertyRecord (partition: /tenantId)
     comparableSales: 'comparable-sales',                   // PropertyComparableSale (partition: /zipCode)
+    // ── Property Data Cache ───────────────────────────────────────────────
+    propertyDataCache: 'property-data-cache',              // Third-party property data cache (ATTOM, Bridge, etc.) (partition: /attomId)
   };
 
   constructor(
@@ -230,6 +234,8 @@ export class CosmosDbService {
       // ── Property Aggregate Root (Phase R1) ─────────────────────────────────
       this.propertyRecordsContainer = this.database.container(this.containers.propertyRecords);
       this.comparableSalesContainer = this.database.container(this.containers.comparableSales);
+      // ── Property Data Cache ──────────────────────────────────────────────────
+      this.propertyDataCacheContainer = this.database.container(this.containers.propertyDataCache);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
