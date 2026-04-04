@@ -50,7 +50,12 @@ jobs:
   deployed-canary:
     name: Deployed Journey Canary
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_canary == 'true')
+    if: >-
+      (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_canary == 'true')) &&
+      secrets.RUN_LEDGER_CANARY_BASE_URL != '' &&
+      secrets.RUN_LEDGER_CANARY_BEARER_TOKEN != '' &&
+      secrets.RUN_LEDGER_CANARY_BEARER_TOKEN != '__SET_REAL_TOKEN__' &&
+      (secrets.RUN_LEDGER_CANARY_ORDER_ID != '' || secrets.RUN_LEDGER_CANARY_ENGAGEMENT_ID != '')
     timeout-minutes: 15
 
     steps:
