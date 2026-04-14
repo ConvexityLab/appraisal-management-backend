@@ -270,6 +270,10 @@ export class AzureEntraAuthMiddleware {
         oid: payload.oid
       };
 
+      // Set req.tenantId so authorization middleware can find the user profile without
+      // falling back to req.user.id (the OID), which would produce the wrong tenant filter.
+      (req as any).tenantId = payload.tid;
+
       logger.info('User authenticated via Azure Entra ID', {
         userId: req.user.id,
         email: req.user.email,

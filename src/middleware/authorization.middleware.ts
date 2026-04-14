@@ -70,7 +70,7 @@ export class AuthorizationMiddleware {
           return;
         }
 
-        const tenantId = req.tenantId || req.user.id; // Default to user ID if no tenant
+        const tenantId = req.tenantId || req.user.tenantId; // Prefer explicit tenantId, fall back to tenantId from JWT claims
         const userProfile = await this.authzService.getUserProfile(req.user.id, tenantId);
 
         if (!userProfile) {
