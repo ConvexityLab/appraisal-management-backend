@@ -109,9 +109,11 @@ describe('AnalysisSubmissionService DOCUMENT_ANALYZE parity', () => {
       }],
       'tenant-123',
       'client-123',
-      undefined,
+      undefined,       // programId
+      undefined,       // programVersion
       'ORDER',
       evaluationMode,
+      false,           // forceResubmit
     );
     expect(response).toEqual({
       submissionId: 'eval-123',

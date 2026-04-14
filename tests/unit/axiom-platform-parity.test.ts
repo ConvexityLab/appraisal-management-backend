@@ -16,6 +16,7 @@ describe('AxiomService platform parity', () => {
     process.env.AXIOM_API_BASE_URL = 'https://axiom.example';
     process.env.API_BASE_URL = 'https://backend.example';
     process.env.AXIOM_WEBHOOK_SECRET = 'webhook-secret';
+    process.env.AXIOM_SUB_CLIENT_ID = 'tenant-123';
     delete process.env.AXIOM_REQUIRED_DOCUMENT_TYPES;
     delete process.env.AXIOM_PIPELINE_ID_DOC_EXTRACT;
     delete process.env.AXIOM_PIPELINE_ID_CRITERIA_EVAL;
@@ -45,7 +46,8 @@ describe('AxiomService platform parity', () => {
       [{ documentName: 'Appraisal Report.pdf', documentReference: 'https://blob.example/report.pdf?sas=1' }],
       'tenant-123',
       'client-123',
-      undefined,
+      undefined,   // programId
+      undefined,   // programVersion
       'ORDER',
       evaluationMode,
     );
