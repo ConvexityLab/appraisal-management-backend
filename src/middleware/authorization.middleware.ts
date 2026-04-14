@@ -20,6 +20,7 @@ export interface AuthorizedRequest extends Request {
     role: string;
     permissions?: string[];
     azureAdObjectId?: string;
+    tenantId?: string;
   };
   userProfile?: UserProfile;
   tenantId?: string;
@@ -70,7 +71,18 @@ export class AuthorizationMiddleware {
           return;
         }
 
-        const tenantId = req.tenantId || req.user.tenantId; // Prefer explicit tenantId, fall back to tenantId from JWT claims
+        const tenantId = req.tenantId ?? req.user.tenantId;
+        if (!tenantId) {
+          // Both req.tenantId and req.user.tenantId are absent — the authentication
+          // chain didn't populate tenant context, which should not happen.
+          this.logger.error('Cannot resolve tenantId for user profile lookup', { userId: req.user.id });
+          res.status(500).json({
+            error: 'Tenant context missing — authentication chain error',
+            code: 'TENANT_RESOLUTION_FAILED'
+          });
+          return;
+        }
+
         const userProfile = await this.authzService.getUserProfile(req.user.id, tenantId);
 
         if (!userProfile) {
