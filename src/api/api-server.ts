@@ -55,13 +55,13 @@ import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
 
 // Import QC Workflow controller
-import qcWorkflowRouter from '../controllers/qc-workflow.controller';
+import { createQCWorkflowRouter } from '../controllers/qc-workflow.controller';
 
 // Import new QC Checklist controller (separate from old criteria.controller)
 import qcChecklistNewRouter from '../controllers/qc-checklist.controller.js';
 
 // Import QC Rules controller
-import qcRulesRouter from '../controllers/qc-rules.controller.js';
+import { createQCRulesRouter } from '../controllers/qc-rules.controller.js';
 
 // Import Substantive Review (Phase 2) controller
 import substantiveReviewRouter from '../controllers/substantive-review.controller.js';
@@ -111,6 +111,7 @@ import { createServiceHealthRouter } from '../controllers/service-health.control
 import { createUnifiedCommunicationRouter } from '../controllers/unified-communication.controller';
 import { createAxiomRouter, createAxiomWebhookRouter } from '../controllers/axiom.controller';
 import { createRunsRouter } from '../controllers/runs.controller.js';
+import { createAnalysisSubmissionRouter } from '../controllers/analysis-submission.controller.js';
 import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
@@ -344,9 +345,11 @@ export class AppraisalManagementAPIServer {
     this.dynamicCodeService = new DynamicCodeExecutionService();
     
     // Initialize Azure Entra ID authentication
+    // Role mapping is defined in AzureEntraAuthMiddleware constructor — App Role value
+    // strings ('Admin', 'Manager', etc.) map directly from the JWT 'roles' claim.
+    // No runtime configuration needed; group-based mapping was removed.
     this.azureAuth = createAzureEntraAuth();
-    this.configureAzureRoles();
-    
+
     // Initialize Unified Authentication (Azure AD + Test Tokens)
     this.unifiedAuth = createUnifiedAuth();
     
@@ -375,8 +378,10 @@ export class AppraisalManagementAPIServer {
     this.logger.info('Authorization middleware initialized');
     
     // Register QC Results routes AFTER authz middleware is ready
-    this.app.use('/api/qc/results', 
+    this.app.use('/api/qc/results',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('qc_review', 'read'),
       this.qcResultsRouter
     );
     this.logger.info('QC Results routes registered');
@@ -410,32 +415,6 @@ export class AppraisalManagementAPIServer {
    */
   private loadUserProfileIfAvailable(): express.RequestHandler[] {
     return this.authzMiddleware ? [this.authzMiddleware.loadUserProfile()] : [];
-  }
-
-  /**
-   * Configure Azure AD group/role mappings
-   * Replace these IDs with your actual Azure AD group Object IDs
-   */
-  private configureAzureRoles(): void {
-    // Get group IDs from environment or use defaults
-    const adminGroupId = process.env.AZURE_ADMIN_GROUP_ID || 'admin-group-id';
-    const managerGroupId = process.env.AZURE_MANAGER_GROUP_ID || 'manager-group-id';
-    const qcAnalystGroupId = process.env.AZURE_QC_ANALYST_GROUP_ID || 'qc-analyst-group-id';
-    const appraiserGroupId = process.env.AZURE_APPRAISER_GROUP_ID || 'appraiser-group-id';
-
-    this.azureAuth.setRoleMapping(adminGroupId, 'admin', ['*']);
-    this.azureAuth.setRoleMapping(managerGroupId, 'manager', [
-      'order_manage', 'vendor_manage', 'vendor_assign', 'analytics_view', 
-      'qc_metrics', 'qc_validate'
-    ]);
-    this.azureAuth.setRoleMapping(qcAnalystGroupId, 'qc_analyst', [
-      'qc_validate', 'qc_execute', 'qc_metrics'
-    ]);
-    this.azureAuth.setRoleMapping(appraiserGroupId, 'appraiser', [
-      'order_view', 'order_update'
-    ]);
-
-    this.logger.info('Azure AD role mappings configured');
   }
 
   private setupMiddleware(): void {
@@ -539,7 +518,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/', limiter);
 
     // General middleware
-    this.app.use(compression());
+    // Exclude SSE (text/event-stream) from compression — the compression buffer
+    // prevents events from being flushed to the client until the stream ends.
+    this.app.use(compression({
+      filter: (req, res) => {
+        if (req.headers['accept']?.includes('text/event-stream')) return false;
+        return compression.filter(req, res);
+      },
+    }));
     this.app.use(morgan('combined'));
     this.app.use(express.json({
       limit: '10mb',
@@ -606,6 +592,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/vendor-performance',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
+      this.authorize('analytics', 'read'),
       createVendorPerformanceRouter()
     );
 
@@ -747,15 +734,14 @@ export class AppraisalManagementAPIServer {
 
     // Appraiser Management - Profiles, licenses, assignments, conflict checking (Phase 4.3)
     // Manages appraiser entities, license tracking, availability, and conflict-of-interest checks
-    const appraiserController = new AppraiserController(this.dbService);
+    const appraiserController = new AppraiserController(this.dbService, this.authzMiddleware);
     this.app.use('/api/appraisers',
       this.unifiedAuth.authenticate(),
       appraiserController.router
     );
 
-    // Vendor Management - CRUD, assignment, performance (Phase A - Live Data)
-    // Uses CosmosDbService directly for all vendor operations
-    const vendorController = new VendorController(this.dbService);
+    // Vendor Management - per-route ABAC handled by VendorController internally.
+    const vendorController = new VendorController(this.dbService, this.authzMiddleware);
     this.app.use('/api/vendors',
       this.unifiedAuth.authenticate(),
       vendorController.router
@@ -774,13 +760,12 @@ export class AppraisalManagementAPIServer {
     // Sole mount after merging with order-negotiation.controller.ts (Phase 0.4)
     this.app.use('/api/negotiations',
       this.unifiedAuth.authenticate(),
-      ...(this.authzMiddleware ? [this.authzMiddleware.loadUserProfile()] : []),
-      createNegotiationRouter()
+      createNegotiationRouter(this.authzMiddleware)
     );
 
     // Inspection Scheduling - Appointment management, availability, calendar integration (Phase 4.4)
     // Manages inspection appointments, scheduling, rescheduling, and appraiser calendar coordination
-    const inspectionController = new InspectionController(this.dbService);
+    const inspectionController = new InspectionController(this.dbService, this.authzMiddleware);
     this.app.use('/api/inspections',
       this.unifiedAuth.authenticate(),
       inspectionController.router
@@ -802,27 +787,33 @@ export class AppraisalManagementAPIServer {
       enhancedOrderController.router
     );
 
-    // Document Management - Upload, storage, metadata management (Phase 6)
-    // Manages document uploads to blob storage with metadata tracking and search
-    const documentController = new DocumentController(this.dbService);
+    // Document Management - per-route ABAC handled by DocumentController internally.
+    const documentController = new DocumentController(this.dbService, this.authzMiddleware);
     this.app.use('/api/documents',
       this.unifiedAuth.authenticate(),
       documentController.router
     );
 
     // E-Signature Management - Signing request lifecycle
-    const esignatureController = new ESignatureController(this.dbService);
+    const esignatureController = new ESignatureController(this.dbService, this.authzMiddleware);
     this.app.use('/api/esignature',
       this.unifiedAuth.authenticate(),
       esignatureController.router
     );
 
-    // NOTE: Order Management (/api/orders) registered in setupRoutes() — must work even when authzMiddleware is absent
+    // Order Management - per-route ABAC from OrderController.setupRoutes().
+    // Instantiated HERE (after authzMiddleware is available) so all Casbin guards are active.
+    this.orderController = new OrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      this.orderController.router
+    );
 
-    // QC Checklist Management - Manage QC checklists with document requirements
-    // Provides CRUD operations for checklists stored in criteria container
+    // QC Checklist Management - read-only reference data; all authenticated roles may read.
     this.app.use('/api/qc-checklists-new',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('qc_review', 'read'),
       qcChecklistNewRouter
     );
 
@@ -892,6 +883,12 @@ export class AppraisalManagementAPIServer {
       createRunsRouter(this.dbService)
     );
 
+    // Unified Analysis Submission API — canonical submission surface for document analyze/extraction/criteria.
+    this.app.use('/api/analysis',
+      this.unifiedAuth.authenticate(),
+      createAnalysisSubmissionRouter(this.dbService, sharedAxiomService)
+    );
+
     // Axiom Criteria Programs — GET compiled criteria (cache-first) / POST force-recompile
     this.app.use('/api/criteria',
       this.unifiedAuth.authenticate(),
@@ -901,9 +898,10 @@ export class AppraisalManagementAPIServer {
     // ===== ITEM 3: ENHANCED VENDOR MANAGEMENT SYSTEM =====
     
     // Vendor Certifications - License tracking, expiry monitoring, document storage (authenticated users)
-    // Manages vendor certifications, automatic renewal alerts, state board verification
     this.app.use('/api/vendor-certifications',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('vendor', 'update'),
       createVendorCertificationRouter(this.dbService)
     );
 
@@ -915,16 +913,18 @@ export class AppraisalManagementAPIServer {
     );
 
     // Vendor Onboarding - Multi-step workflow, document verification, approval process (authenticated users)
-    // Manages vendor onboarding from application to approval with background checks
     this.app.use('/api/vendor-onboarding',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('vendor', 'create'),
       createVendorOnboardingRouter()
     );
 
     // Vendor Analytics - Performance dashboards, trends, comparative analytics (authenticated users)
-    // Provides insights on vendor performance, rankings, tier analysis, historical trends
     this.app.use('/api/vendor-analytics',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('analytics', 'read'),
       createVendorAnalyticsRouter()
     );
 
@@ -1019,6 +1019,52 @@ export class AppraisalManagementAPIServer {
 
     // ===== END PHASE 1 =====
 
+    // Engagement Audit — timeline + raw audit log (before main router so /:id/audit matches first)
+    // Must be in setupAuthorizationRoutes() so authzMiddleware is available.
+    this.app.use('/api/engagements',
+      this.unifiedAuth.authenticate(),
+      createEngagementAuditRouter(this.dbService, this.authzMiddleware)
+    );
+
+    // Engagements — aggregate root for lender-side valuation requests
+    this.app.use('/api/engagements',
+      this.unifiedAuth.authenticate(),
+      createEngagementRouter(this.dbService, this.authzMiddleware)
+    );
+
+    // QC Workflow Automation - review queue, revisions, escalations, SLA tracking
+    // Per-route guards are baked into the router by createQCWorkflowRouter.
+    this.app.use('/api/qc-workflow',
+      this.unifiedAuth.authenticate(),
+      createQCWorkflowRouter(this.authzMiddleware)
+    );
+
+    // QC Rules Engine - automation rule configuration (admin + qc_analyst only)
+    // Per-route guards are baked into the router by createQCRulesRouter.
+    this.app.use('/api/qc-rules',
+      this.unifiedAuth.authenticate(),
+      createQCRulesRouter(this.authzMiddleware)
+    );
+
+    // Client (Lender / AMC / Broker) management — per-route ABAC handled by ClientController internally.
+    const clientController = new ClientController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/clients',
+      this.unifiedAuth.authenticate(),
+      clientController.router
+    );
+
+    // Construction Finance Module — Draw inspections (per-route ABAC)
+    const drawInspectionController = new DrawInspectionController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/construction/draw-inspections',
+      this.unifiedAuth.authenticate(),
+      drawInspectionController.router
+    );
+    // Alias: frontend calls /api/construction/inspections
+    this.app.use('/api/construction/inspections',
+      this.unifiedAuth.authenticate(),
+      drawInspectionController.router
+    );
+
     this.logger.info('✅ Authorization routes registered successfully');
   }
 
@@ -1081,23 +1127,8 @@ export class AppraisalManagementAPIServer {
       this.app.post('/api/auth/test-token', this.generateTestToken.bind(this));
     }
 
-    // NOTE: Authorization routes registered separately after authzMiddleware initialization
-
-    // Order Management - CRUD, status lifecycle, dashboard (Phase 0.2)
-    // Registered here (not in setupAuthorizationRoutes) so it works even when authzMiddleware is absent.
-    // OrderController handles its own authz internally via optional authzMiddleware param.
-    this.orderController = new OrderController(this.dbService, this.authzMiddleware);
-    this.app.use('/api/orders',
-      this.unifiedAuth.authenticate(),
-      this.orderController.router
-    );
-
-    // Client (Lender / AMC / Broker) management — G10
-    const clientController = new ClientController(this.dbService);
-    this.app.use('/api/clients',
-      this.unifiedAuth.authenticate(),
-      clientController.router
-    );
+    // NOTE: Order Management and other authz-guarded routes registered in setupAuthorizationRoutes()
+    // after authzMiddleware is initialized.
 
     // Construction Finance Module — Loan management
     const constructionLoanController = new ConstructionLoanController(this.dbService);
@@ -1113,12 +1144,7 @@ export class AppraisalManagementAPIServer {
       constructionConfigController.router
     );
 
-    // Construction Finance Module — Draw inspections
-    const drawInspectionController = new DrawInspectionController(this.dbService);
-    this.app.use('/api/construction/draw-inspections',
-      this.unifiedAuth.authenticate(),
-      drawInspectionController.router
-    );
+    // Construction Finance Module — Draw inspections — MOVED to setupAuthorizationRoutes() for per-route ABAC
 
     // Construction Finance Module — Change orders
     const changeOrderController = new ChangeOrderController(this.dbService);
@@ -1162,12 +1188,7 @@ export class AppraisalManagementAPIServer {
       constructionServicingController.router
     );
 
-    // Construction Finance Module — Inspection queue alias
-    // Frontend calls /api/construction/inspections; mount the same controller at both paths
-    this.app.use('/api/construction/inspections',
-      this.unifiedAuth.authenticate(),
-      drawInspectionController.router
-    );
+    // Construction Finance Module — Inspection queue alias — MOVED to setupAuthorizationRoutes()
 
     // Construction Finance Module — RSMeans-style unit cost catalog (read-only)
     const constructionCostCatalogController = new ConstructionCostCatalogController(this.dbService);
@@ -1225,17 +1246,7 @@ export class AppraisalManagementAPIServer {
       createArvRouter(this.dbService)
     );
 
-    // Engagement Audit — timeline + raw audit log (before main engagement router so /:id/audit matches first)
-    this.app.use('/api/engagements',
-      this.unifiedAuth.authenticate(),
-      createEngagementAuditRouter(this.dbService)
-    );
-
-    // Engagements — aggregate root for lender-side valuation requests
-    this.app.use('/api/engagements',
-      this.unifiedAuth.authenticate(),
-      createEngagementRouter(this.dbService)
-    );
+    // Engagements moved to setupAuthorizationRoutes() where authzMiddleware is available.
 
     // Appraisal Drafts — in-progress appraisals with section-level auto-save (UAD 3.6 Phase 1)
     this.app.use('/api/appraisal-drafts',
@@ -1253,7 +1264,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/qc/validate/:orderId',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('order', 'qc_validate'),
+      this.authorize('order', 'execute'),
       this.performQCValidation.bind(this)
     );
 
@@ -1266,7 +1277,7 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/qc/metrics',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('order', 'view'),
+      this.authorize('analytics', 'read'),
       this.getQCMetrics.bind(this)
     );
 
@@ -1291,13 +1302,49 @@ export class AppraisalManagementAPIServer {
     // Property Intelligence routes (with /api prefix)
     this.app.get('/api/property-intelligence/address/suggest',
       this.unifiedAuth.optionalAuth(),
-      this.propertyIntelligenceController.suggestAddresses
+      async (req, res) => {
+        try {
+          await this.propertyIntelligenceController.suggestAddresses(req, res);
+        } catch (error) {
+          if (!res.headersSent) {
+            const message = error instanceof Error ? error.message : 'Address suggestion service unavailable';
+            res.status(503).json({
+              success: false,
+              error: message,
+              metadata: {
+                processingTime: 0,
+                dataSourcesUsed: [],
+                lastUpdated: new Date(),
+                cacheHit: false
+              }
+            });
+          }
+        }
+      }
     );
 
     // Property Intelligence routes (backward compatibility - without /api prefix)
     this.app.get('/property-intelligence/address/suggest',
       this.unifiedAuth.optionalAuth(),
-      this.propertyIntelligenceController.suggestAddresses
+      async (req, res) => {
+        try {
+          await this.propertyIntelligenceController.suggestAddresses(req, res);
+        } catch (error) {
+          if (!res.headersSent) {
+            const message = error instanceof Error ? error.message : 'Address suggestion service unavailable';
+            res.status(503).json({
+              success: false,
+              error: message,
+              metadata: {
+                processingTime: 0,
+                dataSourcesUsed: [],
+                lastUpdated: new Date(),
+                cacheHit: false
+              }
+            });
+          }
+        }
+      }
     );
 
     this.app.post('/api/property-intelligence/address/geocode',
@@ -1507,17 +1554,7 @@ export class AppraisalManagementAPIServer {
     // QC Results routes registered in initializeDatabase() after dbService is ready
     // this.app.use('/api/qc/results', ...)
 
-    // QC Workflow Automation routes - review queue, revisions, escalations, SLA tracking
-    this.app.use('/api/qc-workflow',
-      this.unifiedAuth.authenticate(),
-      qcWorkflowRouter
-    );
-
-    // QC Rules Engine - automation rule configuration (CRUD + toggle/duplicate)
-    this.app.use('/api/qc-rules',
-      this.unifiedAuth.authenticate(),
-      qcRulesRouter
-    );
+    // QC Workflow and QC Rules moved to setupAuthorizationRoutes() where authzMiddleware is available.
 
     // Substantive Review (Phase 2) - 12 review services for appraisal report analysis
     this.app.use('/api/substantive-review',

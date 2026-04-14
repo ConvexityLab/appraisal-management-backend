@@ -15,8 +15,9 @@
  * - Phase 6: ROV comp analysis and value impact assessment
  */
 
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosHeaders, AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { EventSource } from 'eventsource';
+import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { WebPubSubService } from './web-pubsub.service';
@@ -36,6 +37,8 @@ export interface AxiomDocumentNotification {
   orderId: string;
   documentType: DocumentType;
   documentUrl: string; // Azure Blob Storage SAS URL
+  /** When true, bypasses the Cosmos idempotency guard and always submits a fresh pipeline run. */
+  forceResubmit?: boolean;
   metadata?: {
     fileName?: string;
     fileSize?: number;
@@ -193,6 +196,9 @@ interface LoomPipelineDefinition {
 // ============================================================================
 
 export class AxiomService {
+  private static readonly DEFAULT_AXIOM_API_RESOURCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
+  private static readonly PLACEHOLDER_API_KEYS = new Set(['live-fire-testing-key']);
+
   private readonly logger = new Logger('AxiomService');
   private client: AxiosInstance;
   private dbService: CosmosDbService;
@@ -200,12 +206,29 @@ export class AxiomService {
   private containerName = 'aiInsights';
   private enabled: boolean;
   private mockDelayMs: number;
+  private axiomStaticBearerToken?: string;
+  private axiomCredential?: DefaultAzureCredential;
+  private axiomTokenScope?: string;
+  private cachedAxiomToken?: { token: string; expiresOnTimestamp?: number };
   private lastPipelineSubmissionError: {
     code: string;
     message: string;
     details?: unknown;
     status?: number;
   } | null = null;
+
+  /**
+   * In-memory registry of pipeline terminal events delivered via webhook.
+   *
+   * Axiom emits `pipeline.completed` ONLY to the webhookBus (HTTP POST to our
+   * webhook endpoint) — it is never written to the Cosmos /api/admin/events store.
+   * The SSE proxy (`proxyPipelineStream`) polls that store so it would never see
+   * pipeline.completed. When the webhook handler confirms completion it calls
+   * `signalPipelineTermination`, and the polling loop checks here on every cycle.
+   *
+   * TTL: 30 minutes. Old entries are pruned lazily on each signal call.
+   */
+  private readonly pipelineTerminations = new Map<string, { status: 'completed' | 'failed'; timestamp: string; expiresAt: number }>();
 
   // ── Inline Loom pipeline definitions ───────────────────────────────────────
   // Axiom's POST /api/pipelines accepts either:
@@ -324,11 +347,20 @@ export class AxiomService {
 
   constructor(dbService?: CosmosDbService) {
     const baseURL = process.env.AXIOM_API_BASE_URL;
-    const apiKey  = process.env.AXIOM_API_KEY;
+    const forceMock = String(process.env.AXIOM_FORCE_MOCK || '').toLowerCase() === 'true';
+    const rawApiKey = process.env.AXIOM_API_KEY?.trim();
+    const useDefaultCredential = this.shouldUseDefaultCredential(rawApiKey);
 
     // Live mode requires only a base URL — API key is optional (server may be open in dev).
-    this.enabled = !!baseURL;
+    this.enabled = !!baseURL && !forceMock;
     this.mockDelayMs = parseInt(process.env.AXIOM_MOCK_DELAY_MS || '8000', 10);
+
+    if (useDefaultCredential) {
+      this.axiomTokenScope = this.resolveAxiomTokenScope();
+      this.axiomCredential = new DefaultAzureCredential();
+    } else if (rawApiKey) {
+      this.axiomStaticBearerToken = rawApiKey;
+    }
 
     if (!this.enabled) {
       this.logger.warn('Axiom AI Platform not configured — AI features will use mock mode', {
@@ -336,17 +368,17 @@ export class AxiomService {
         hint: 'Set AXIOM_API_BASE_URL to enable real Axiom (AXIOM_API_KEY is optional)',
       });
     } else {
-      this.logger.info('Axiom live mode', { baseURL, authenticated: !!apiKey });
+      this.logger.info('Axiom live mode', {
+        baseURL,
+        authenticated: !!this.axiomStaticBearerToken || !!this.axiomCredential,
+        authMode: this.axiomStaticBearerToken ? 'static-bearer' : this.axiomCredential ? 'default-credential' : 'none',
+      });
     }
 
-    // Build request headers; only attach Authorization when a key is actually set
     const axiomHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       'User-Agent': 'AppraisalManagementPlatform/1.0',
     };
-    if (apiKey) {
-      axiomHeaders['Authorization'] = `Bearer ${apiKey}`;
-    }
 
     // Initialize Axiom API client
     this.client = axios.create({
@@ -354,6 +386,7 @@ export class AxiomService {
       timeout: 30000, // 30 seconds
       headers: axiomHeaders,
     });
+    this.client.interceptors.request.use(async (config) => this.attachAxiomAuthorization(config));
 
     // Initialize Cosmos DB service for storing results
     this.dbService = dbService || new CosmosDbService();
@@ -371,6 +404,130 @@ export class AxiomService {
    */
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * Returns the platform client ID that identifies this tenant's Axiom partition.
+   * Must be configured via AXIOM_CLIENT_ID — no silent fallback.
+   */
+  private getAxiomClientId(): string {
+    const id = process.env['AXIOM_CLIENT_ID'];
+    if (!id) throw new Error('AXIOM_CLIENT_ID env var is required for Axiom pipeline submissions — configure it in environment settings');
+    return id;
+  }
+
+  /**
+   * Returns the platform sub-client ID that identifies this tenant's Axiom sub-partition.
+   * Must be configured via AXIOM_SUB_CLIENT_ID — no silent fallback.
+   */
+  private getAxiomSubClientId(): string {
+    const id = process.env['AXIOM_SUB_CLIENT_ID'];
+    if (!id) throw new Error('AXIOM_SUB_CLIENT_ID env var is required for Axiom pipeline submissions — configure it in environment settings');
+    return id;
+  }
+
+  /**
+   * Called by the webhook handler when Axiom delivers pipeline.completed or
+   * pipeline.failed via HTTP POST (not via Cosmos event store). The SSE proxy
+   * checks this registry on every poll so it can terminate immediately.
+   */
+  signalPipelineTermination(jobId: string, status: 'completed' | 'failed'): void {
+    const now = Date.now();
+    const TTL_MS = 30 * 60 * 1_000; // 30 minutes
+
+    // Lazy-prune stale entries
+    for (const [key, entry] of this.pipelineTerminations) {
+      if (entry.expiresAt < now) this.pipelineTerminations.delete(key);
+    }
+
+    this.pipelineTerminations.set(jobId, { status, timestamp: new Date().toISOString(), expiresAt: now + TTL_MS });
+    this.logger.info('Pipeline termination signalled to SSE registry', { jobId, status });
+  }
+
+  /** @internal — used by proxyPipelineStream only */
+  getPipelineTermination(jobId: string): { status: 'completed' | 'failed'; timestamp: string } | undefined {
+    const entry = this.pipelineTerminations.get(jobId);
+    if (!entry) return undefined;
+    if (entry.expiresAt < Date.now()) {
+      this.pipelineTerminations.delete(jobId);
+      return undefined;
+    }
+    return { status: entry.status, timestamp: entry.timestamp };
+  }
+
+  private shouldUseDefaultCredential(rawApiKey: string | undefined): boolean {
+    const explicit = String(process.env['AXIOM_USE_DEFAULT_CREDENTIAL'] || '').toLowerCase() === 'true';
+    if (explicit) {
+      return true;
+    }
+
+    if (rawApiKey && AxiomService.PLACEHOLDER_API_KEYS.has(rawApiKey)) {
+      this.logger.warn('AXIOM_API_KEY is a checked-in placeholder; switching the backend Axiom client to DefaultAzureCredential for live-fire parity.');
+      return true;
+    }
+
+    return false;
+  }
+
+  private resolveAxiomTokenScope(): string {
+    const explicitScope = process.env['AXIOM_API_TOKEN_SCOPE']?.trim();
+    if (explicitScope) {
+      return explicitScope;
+    }
+
+    const explicitResource = process.env['AXIOM_API_RESOURCE']?.trim();
+    if (explicitResource) {
+      return explicitResource.endsWith('/.default') ? explicitResource : `${explicitResource}/.default`;
+    }
+
+    return `${AxiomService.DEFAULT_AXIOM_API_RESOURCE}/.default`;
+  }
+
+  private async getAxiomAuthorizationHeader(): Promise<string | undefined> {
+    if (this.axiomStaticBearerToken) {
+      return `Bearer ${this.axiomStaticBearerToken}`;
+    }
+
+    if (!this.axiomCredential || !this.axiomTokenScope) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    const cachedExpiry = this.cachedAxiomToken?.expiresOnTimestamp;
+    if (this.cachedAxiomToken?.token && (!cachedExpiry || cachedExpiry - now > 120_000)) {
+      return `Bearer ${this.cachedAxiomToken.token}`;
+    }
+
+    const accessToken = await this.axiomCredential.getToken(this.axiomTokenScope);
+    if (!accessToken?.token) {
+      throw new Error(
+        `DefaultAzureCredential returned no token for Axiom scope '${this.axiomTokenScope}'. Sign in to Azure or set AXIOM_API_KEY with a valid bearer token.`,
+      );
+    }
+
+    this.cachedAxiomToken = {
+      token: accessToken.token,
+      expiresOnTimestamp: accessToken.expiresOnTimestamp,
+    };
+
+    return `Bearer ${accessToken.token}`;
+  }
+
+  private async attachAxiomAuthorization(
+    config: InternalAxiosRequestConfig,
+  ): Promise<InternalAxiosRequestConfig> {
+    const authorization = await this.getAxiomAuthorizationHeader();
+    if (!authorization) {
+      return config;
+    }
+
+    const headers = config.headers instanceof AxiosHeaders
+      ? config.headers
+      : new AxiosHeaders(config.headers ?? {});
+
+    headers.set('Authorization', authorization);
+    config.headers = headers;
+    return config;
   }
 
   getLastPipelineSubmissionError(): {
@@ -690,7 +847,7 @@ export class AxiomService {
       const payload = {
         pipeline: pipelineBody,
         input: {
-          subClientId: tenantId,
+          subClientId: this.getAxiomSubClientId(),
           clientId,
           fileSetId,
           ...metadata,
@@ -708,46 +865,237 @@ export class AxiomService {
 
 
     /**
-   * Proxies an SSE stream from Axiom directly to the client
+   * Streams Axiom pipeline events to the client as SSE.
+   *
+   * Axiom workers run on AKS and write events to Azure Redis Cache — a different
+   * Redis instance than the one accessible locally.  The `/api/pipelines/:id/stream`
+   * Redis-backed endpoint therefore never surfaces those events in a local-dev setup.
+   *
+   * Instead we poll Axiom's Cosmos-backed observability endpoint:
+   *   GET /api/admin/events?executionId={jobId}&orderBy=timestamp&order=asc
+   * which works regardless of where the worker ran, deduplicate by eventId, and
+   * forward each event as an SSE frame until a terminal pipeline event arrives.
+   *
+   * SSE event name: eventType with '.' replaced by '_'  (e.g. pipeline_completed)
+   * so that it matches the terminal set in the test client.
    */
-  async proxyPipelineStream(jobId: string, req: import('express').Request, res: import('express').Response): Promise<void> {
+  async proxyPipelineStream(
+    jobId: string,
+    req: import('express').Request,
+    res: import('express').Response,
+    options: { idleTimeoutMs?: number; pollIntervalMs?: number } = {},
+  ): Promise<void> {
     if (!this.enabled) {
       res.write('data: ' + JSON.stringify({ type: 'COMPLETE', status: 'completed' }) + '\n\n');
       res.end();
       return;
     }
 
-    try {
-      const response = await this.client.get('/api/pipelines/' + jobId + '/observe', {
-        responseType: 'stream',
-        headers: {
-          Accept: 'text/event-stream',
-        },
-      });
+    const POLL_INTERVAL_MS = options.pollIntervalMs ?? 3_000;
+    // How long to wait with no terminal event before declaring timeout.
+    // 10 minutes is generous but the client-side SSE consumer enforces its own
+    // AXIOM_LIVE_SSE_TIMEOUT_MS cutoff so this is just a server-side safety net.
+    const IDLE_TIMEOUT_MS = options.idleTimeoutMs ?? 10 * 60 * 1_000;
 
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      });
+    const TERMINAL_EVENT_TYPES = new Set([
+      'pipeline.completed',
+      'pipeline.failed',
+      'pipeline.cancelled',
+      'pipeline.timeout',
+      'pipeline.partial_complete',
+    ]);
 
-      response.data.pipe(res);
+    // Declare all state before touching res so nothing can use an uninitialised binding.
+    let done = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    const seenEventIds = new Set<string>();
+    let pollCount = 0;
+    // How often to fall back to a direct Axiom REST status check.
+    // Axiom only delivers pipeline.completed via webhook (not Cosmos), so when the
+    // webhook can't reach us (e.g. local dev), this ensures the SSE terminates.
+    const STATUS_CHECK_EVERY_N_POLLS = 10; // every ~30 s at 3 s poll interval
+    // Offset increases with each confirmed-delivered event so subsequent polls
+    // skip already-seen events without relying on timestamp comparisons
+    // (which can fail if Cosmos timestamps are not strictly monotonic or the
+    // startTime filter has boundary-inclusion bugs).
 
-      req.on('close', () => {
-        response.data.destroy();
-      });
-    } catch (error) {
-      this.logger.error('Error proxying SSE stream', { error: (error as Error).message });
-      if (!res.headersSent) {
-        res.status(500).json({ success: false, error: 'Failed to proxy SSE stream' });
+    const flush = () => {
+      // res.flush() is added by the compression middleware; call it if present
+      // so partial writes are not buffered by any middleware layer.
+      if (typeof (res as any).flush === 'function') (res as any).flush();
+    };
+
+    const stop = () => {
+      done = true;
+      clearTimeout(pollTimer);
+      clearTimeout(idleTimer);
+      clearInterval(heartbeatTimer);
+    };
+
+    req.on('close', stop);
+
+    // Open the SSE response.
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+    // Initial heartbeat so the client knows we're alive; flush forces
+    // any compression layer to emit the bytes immediately.
+    res.write(': connected\n\n');
+    flush();
+
+    // Periodic keep-alive heartbeats — prevents reverse-proxy / load-balancer
+    // idle-connection timeouts during long pipelines (every 20 s).
+    heartbeatTimer = setInterval(() => {
+      if (!done) {
+        res.write(': heartbeat\n\n');
+        flush();
       } else {
-        res.end();
+        clearInterval(heartbeatTimer);
       }
-    }
+    }, 20_000);
+
+    const sendTimeout = () => {
+      if (done) return;
+      res.write('event: timeout\n');
+      res.write(`data: ${JSON.stringify({ type: 'timeout', message: 'Timed out waiting for terminal pipeline event' })}\n\n`);
+      stop();
+      res.end();
+    };
+
+    idleTimer = setTimeout(sendTimeout, IDLE_TIMEOUT_MS);
+
+    const poll = async (): Promise<void> => {
+      if (done) return;
+
+      // Check the in-memory webhook registry FIRST.
+      // Axiom delivers pipeline.completed only via webhookBus (HTTP POST to our webhook
+      // endpoint), never to the Cosmos /api/admin/events store that we poll below.
+      // When the webhook handler calls signalPipelineTermination(), this poll cycle
+      // synthesises the terminal SSE event so the client can close cleanly.
+      const webhookSignal = this.getPipelineTermination(jobId);
+      if (webhookSignal) {
+        const syntheticEvent = {
+          eventId: `synthetic-${jobId}-${webhookSignal.status}`,
+          eventType: `pipeline.${webhookSignal.status}`,
+          timestamp: webhookSignal.timestamp,
+          source: 'webhook-relay',
+          data: { deliveredVia: 'webhook' },
+        };
+        const sseEventName = syntheticEvent.eventType.replace(/\./g, '_');
+        res.write(`event: ${sseEventName}\n`);
+        res.write(`data: ${JSON.stringify(syntheticEvent)}\n\n`);
+        flush();
+        this.logger.info('proxyPipelineStream: webhook terminal signal received — closing SSE', { jobId, status: webhookSignal.status });
+        stop();
+        res.end();
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({
+          executionId: jobId,
+          orderBy: 'timestamp',
+          order: 'asc',
+          limit: '100',
+          // Skip events already delivered — offset is the count of unique events seen so far.
+          offset: String(seenEventIds.size),
+        });
+
+        const response = await this.client.get<{
+          events: Array<{ eventId: string; eventType: string; timestamp: string; [key: string]: unknown }>;
+          hasMore: boolean;
+        }>(`/api/admin/events?${params}`);
+
+        const { events } = response.data;
+        let terminal = false;
+
+        for (const event of events) {
+          if (seenEventIds.has(event.eventId)) continue;
+          seenEventIds.add(event.eventId);
+
+          // Map dots → underscores so 'pipeline.completed' becomes
+          // 'pipeline_completed', which the SSE client recognises as terminal.
+          const sseEventName = event.eventType.replace(/\./g, '_');
+          res.write(`event: ${sseEventName}\n`);
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          flush();
+
+          this.logger.debug('SSE event forwarded', { jobId, eventType: event.eventType });
+
+          if (TERMINAL_EVENT_TYPES.has(event.eventType)) {
+            terminal = true;
+            break;
+          }
+        }
+
+        if (terminal || done) {
+          stop();
+          res.end();
+          return;
+        }
+      } catch (err) {
+        this.logger.error('proxyPipelineStream poll error', { jobId, error: (err as Error).message });
+        // Don't abort — a transient Axiom error shouldn't kill the stream.
+        // The idle timeout will fire if the terminal event never arrives.
+      }
+
+      pollCount++;
+
+      // Fallback: periodically call GET /api/pipelines/{jobId}/results to detect
+      // pipeline completion when the webhook cannot reach this server (e.g. local dev,
+      // or any scenario where signalPipelineTermination() was never called).
+      // 200 → completed; 409 → still running; other → ignore and keep polling.
+      if (!done && pollCount % STATUS_CHECK_EVERY_N_POLLS === 0) {
+        try {
+          await this.client.get(`/api/pipelines/${jobId}/results`);
+          // A 200 response means the pipeline committed its results — treat as completed.
+          const syntheticEvent = {
+            eventId: `synthetic-${jobId}-completed-status-poll`,
+            eventType: 'pipeline.completed',
+            timestamp: new Date().toISOString(),
+            source: 'status-poll-fallback',
+            data: { deliveredVia: 'status-poll' },
+          };
+          res.write(`event: pipeline_completed\n`);
+          res.write(`data: ${JSON.stringify(syntheticEvent)}\n\n`);
+          flush();
+          this.logger.info('proxyPipelineStream: pipeline completed detected via status poll — closing SSE', { jobId, pollCount });
+          stop();
+          res.end();
+          return;
+        } catch (statusErr) {
+          const axiosStatusErr = statusErr as import('axios').AxiosError;
+          if (axiosStatusErr.response?.status === 409) {
+            // 409 = pipeline still running on Axiom's side — normal, keep polling.
+            const body = axiosStatusErr.response.data as Record<string, unknown> | undefined;
+            this.logger.debug('proxyPipelineStream: status poll — pipeline still running', {
+              jobId, currentStatus: body?.['currentStatus'], pollCount,
+            });
+          } else {
+            // Any other error (network, 404, 5xx) is non-fatal — log and continue.
+            this.logger.warn('proxyPipelineStream: status poll non-fatal error', {
+              jobId, status: axiosStatusErr.response?.status, error: axiosStatusErr.message, pollCount,
+            });
+          }
+        }
+      }
+
+      if (!done) {
+        pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    };
+
+    // Kick off the first poll immediately so already-completed pipelines
+    // (where all events are already in Cosmos) are surfaced without delay.
+    void poll();
   }
 
 
-  async getEvaluationById(evaluationId: string): Promise<AxiomEvaluationResult | null> {
+  async getEvaluationById(evaluationId: string, bypassCache = false): Promise<AxiomEvaluationResult | null> {
     try {
       // Try Cosmos DB first
       const cachedResponse = await this.dbService.getItem<AxiomEvaluationResult>(
@@ -757,46 +1105,65 @@ export class AxiomService {
 
       const cached = cachedResponse.success && cachedResponse.data ? cachedResponse.data : null;
 
-      if (cached && cached.status === 'completed') {
-        const meta = (cached as any)._metadata ?? {};
-        cached.criteria = this.enrichCriteriaRefs(cached.criteria, meta);
-        return cached;
+      const refreshedCached = await this.refreshPendingEvaluationFromPipelineResults(cached);
+      const effectiveCached = refreshedCached ?? cached;
+
+      // Short-circuit on completed/failed — unless bypassCache=true, which forces a
+      // live Axiom fetch so callers (e.g. tests) always see the real upstream result.
+      if (!bypassCache && effectiveCached && (effectiveCached.status === 'completed' || effectiveCached.status === 'failed')) {
+        const meta = (effectiveCached as any)._metadata ?? {};
+        effectiveCached.criteria = this.enrichCriteriaRefs(effectiveCached.criteria, meta);
+        return effectiveCached;
       }
 
       // Fetch from Axiom API if enabled
       if (this.enabled) {
-        const response = await this.client.get<AxiomEvaluationResult>(`/evaluations/by-id/${evaluationId}`);
-        const evaluation = response.data;
+        try {
+          const response = await this.client.get<AxiomEvaluationResult>(`/evaluations/by-id/${evaluationId}`);
+          const evaluation = response.data;
 
-        // Store/update in Cosmos DB
-        if (evaluation.status === 'completed' || evaluation.status === 'failed') {
-          await this.storeEvaluationRecord({
-            id: evaluation.evaluationId,
-            ...evaluation
+          // Store/update in Cosmos DB
+          if (evaluation.status === 'completed' || evaluation.status === 'failed') {
+            await this.storeEvaluationRecord({
+              id: evaluation.evaluationId,
+              ...evaluation
+            });
+          }
+
+          return evaluation;
+        } catch (error) {
+          const axiosError = error as AxiosError;
+
+          if (axiosError.response?.status === 404) {
+            if (effectiveCached) {
+              const meta = (effectiveCached as any)._metadata ?? {};
+              effectiveCached.criteria = this.enrichCriteriaRefs(effectiveCached.criteria, meta);
+              return effectiveCached;
+            }
+            return null;
+          }
+
+          this.logger.error('Failed to retrieve Axiom evaluation by ID', {
+            evaluationId,
+            statusCode: axiosError.response?.status,
+            error: axiosError.message,
           });
+          throw error;
         }
-
-        return evaluation;
       }
 
       // In mock mode, return cached record (which may be pending/processing/completed)
       // or null if no submission has been made yet
-      if (cached) {
-        const meta = (cached as any)._metadata ?? {};
-        cached.criteria = this.enrichCriteriaRefs(cached.criteria, meta);
-        return cached;
+      if (effectiveCached) {
+        const meta = (effectiveCached as any)._metadata ?? {};
+        effectiveCached.criteria = this.enrichCriteriaRefs(effectiveCached.criteria, meta);
+        return effectiveCached;
       }
       this.logger.debug('[MOCK] No Axiom evaluation found for evaluationId', { evaluationId });
       return null;
     } catch (error) {
       const axiosError = error as AxiosError;
-      
-      if (axiosError.response?.status === 404) {
-        return null;
-      }
 
-      // Re-throw non-404 errors (500, 503, 429, network) so callers can distinguish
-      // "evaluation not found" from "upstream Axiom is unavailable".
       this.logger.error('Failed to retrieve Axiom evaluation by ID', {
         evaluationId,
         statusCode: axiosError.response?.status,
@@ -804,6 +1171,23 @@ export class AxiomService {
       });
       throw error;
     }
+  }
+
+  private async refreshPendingEvaluationFromPipelineResults(
+    cached: AxiomEvaluationResult | null,
+  ): Promise<AxiomEvaluationResult | null> {
+    if (!cached || (cached.status !== 'pending' && cached.status !== 'processing') || !cached.pipelineJobId || !cached.orderId) {
+      return cached;
+    }
+
+    await this.fetchAndStorePipelineResults(cached.orderId, cached.pipelineJobId, cached.evaluationId, cached.overallRiskScore);
+
+    const refreshedResponse = await this.dbService.getItem<AxiomEvaluationResult>(this.containerName, cached.evaluationId);
+    if (!refreshedResponse.success || !refreshedResponse.data) {
+      return cached;
+    }
+
+    return refreshedResponse.data;
   }
 
   /**
@@ -913,6 +1297,7 @@ export class AxiomService {
     revisedDocumentUrl: string
   ): Promise<{
     success: boolean;
+    comparisonId?: string;
     evaluationId?: string;
     changes?: {
       section: string;
@@ -925,33 +1310,91 @@ export class AxiomService {
   }> {
     if (!this.enabled) {
       this.logger.debug('[MOCK] Axiom not configured — returning mock comparison', { orderId });
-      return this.buildMockComparison(orderId);
+      const mock = this.buildMockComparison(orderId);
+      return {
+        ...mock,
+        ...(mock.evaluationId ? { comparisonId: mock.evaluationId } : {}),
+      };
     }
 
     try {
-      const response = await this.client.post<{
-        evaluationId: string;
-        changes: any[];
-      }>('/documents/compare', {
+      const orderResponse = await this.dbService.findOrderById(orderId);
+      const order = orderResponse.success ? orderResponse.data : null;
+      if (!order) {
+        return {
+          success: false,
+          error: `Order '${orderId}' not found`,
+        };
+      }
+
+      const tenantId = order.tenantId;
+      const clientId = (order as any).clientInformation?.clientId || order.clientId;
+      if (!tenantId || !clientId) {
+        return {
+          success: false,
+          error: `Order '${orderId}' is missing tenantId/clientId required for Axiom comparison`,
+        };
+      }
+
+      const comparisonId = `cmp-${orderId}-${Date.now().toString(36)}`;
+      const originalResults = await this.runSingleDocumentComparisonExtraction(
         orderId,
+        tenantId,
+        clientId,
+        originalDocumentUrl,
+        'original',
+      );
+      const revisedResults = await this.runSingleDocumentComparisonExtraction(
+        orderId,
+        tenantId,
+        clientId,
+        revisedDocumentUrl,
+        'revised',
+      );
+
+      const changes = this.buildComparisonChanges(
+        this.extractComparablePayload(originalResults),
+        this.extractComparablePayload(revisedResults),
+      );
+
+      const comparisonRecord = {
+        id: comparisonId,
+        comparisonId,
+        type: 'document-comparison',
+        orderId,
+        tenantId,
+        clientId,
+        status: 'completed',
+        changes,
+        changesSummary: `${changes.length} change${changes.length === 1 ? '' : 's'} detected`,
+        comparisonType: 'revision' as const,
+        timestamp: new Date().toISOString(),
         originalDocumentUrl,
         revisedDocumentUrl,
-        timestamp: new Date().toISOString()
-      });
+      };
 
-      this.logger.info('Axiom document comparison initiated', {
+      await this.storeEvaluationRecord(comparisonRecord);
+
+      this.logger.info('Axiom document comparison completed via unified pipeline flow', {
         orderId,
-        evaluationId: response.data.evaluationId
+        comparisonId,
+        changeCount: changes.length,
       });
 
       return {
         success: true,
-        evaluationId: response.data.evaluationId,
-        changes: response.data.changes
+        comparisonId,
+        evaluationId: comparisonId,
+        changes,
       };
     } catch (error) {
       const axiosError = error as AxiosError;
-      const errorMessage = axiosError.response?.data || axiosError.message;
+      const responseData = axiosError.response?.data;
+      const errorMessage = typeof responseData === 'string'
+        ? responseData
+        : responseData !== undefined
+          ? JSON.stringify(responseData)
+          : axiosError.message;
       
       this.logger.error('Failed to compare documents via Axiom', {
         orderId,
@@ -1138,7 +1581,10 @@ export class AxiomService {
     tenantId: string,
     clientId: string,
     programId?: string,
+    programVersion?: string,
     correlationType: 'ORDER' | 'TAPE_LOAN' = 'ORDER',
+    evaluationMode: 'EXTRACTION' | 'CRITERIA_EVALUATION' | 'COMPLETE_EVALUATION' = 'COMPLETE_EVALUATION',
+    forceResubmit = false,
   ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
     this.lastPipelineSubmissionError = null;
 
@@ -1159,7 +1605,12 @@ export class AxiomService {
     // order, return the existing run keys (evaluationId + pipelineJobId) rather than
     // submitting again. This prevents double-submission when the auto-trigger service
     // and inline submission path race each other.
-    try {
+    // forceResubmit=true bypasses this guard so callers (e.g. live-fire tests, manual
+    // resubmit flows) can always push a fresh pipeline run to Axiom.
+    if (forceResubmit) {
+      this.logger.info('submitOrderEvaluation: forceResubmit=true — skipping idempotency guard', { orderId });
+    }
+    if (!forceResubmit) try {
       const existingQuery = `
         SELECT TOP 1 c.evaluationId, c.pipelineJobId FROM c
         WHERE c.orderId = @orderId AND c.tenantId = @tenantId
@@ -1200,19 +1651,42 @@ export class AxiomService {
       ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
       : ['appraisal-report'];
 
+    const pipelineId =
+      evaluationMode === 'EXTRACTION'
+        ? process.env['AXIOM_PIPELINE_ID_DOC_EXTRACT'] ?? 'document-extraction'
+        : evaluationMode === 'CRITERIA_EVALUATION'
+          ? process.env['AXIOM_PIPELINE_ID_CRITERIA_EVAL'] ?? 'criteria-evaluation'
+          : process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation';
+
     try {
+      // Axiom uses `correlationId` as the Cosmos document ID for its execution record
+      // (executionId = normalizedCorrelationId in PipelineExecutionService.createExecution).
+      // Cosmos `.create()` — not `.upsert()` — means a second submission with the same
+      // correlationId always 409s.  For forceResubmit we append a `~r{timestamp}` suffix to
+      // produce a unique ID so Axiom creates a fresh Cosmos document.  The webhook handler
+      // strips this suffix (`rawCorrelationId.split('~r')[0]`) to recover the real orderId.
+      const submissionCorrelationId = forceResubmit ? `${orderId}~r${Date.now()}` : orderId;
+
+      // fileSetId is Axiom's BullMQ/Redis dedup key. Make it unique on forceResubmit as a
+      // second line of defense (prevents Redis idempotency gate from short-circuiting).
+      const fileSetId = forceResubmit ? `fs-${orderId}-r${Date.now()}` : `fs-${orderId}`;
+
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
-        pipelineId: process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation',
+        pipelineId,
         input: {
-          subClientId: tenantId,
+          subClientId: this.getAxiomSubClientId(),
           clientId,
-          fileSetId: `fs-${orderId}`,
+          fileSetId,
           files: axiomFiles,
           requiredDocuments: requiredDocumentTypes,
-          correlationId: orderId,
+          correlationId: submissionCorrelationId,
           correlationType,
           webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
           webhookSecret,
+          // programId + programVersion are both required for criteria evaluation — omitting either causes pipeline.partial_complete.
+          // Stage input specs read them as { path: 'trigger.programId' } / { path: 'trigger.programVersion' }.
+          ...(programId ? { programId } : {}),
+          ...(programVersion ? { programVersion } : {}),
         },
       });
 
@@ -1239,47 +1713,61 @@ export class AxiomService {
         this.logger.error('Axiom SSE stream error for order', { orderId, pipelineJobId, error: (err as Error).message });
       });
 
+      // Stamp axiomPipelineJobId on the order document so the SSE proxy endpoint
+      // (GET /api/axiom/evaluations/order/:orderId/stream) connects to this job.
+      // Non-fatal: if the update fails, SSE routing may fall back to the previous job.
+      if (correlationType === 'ORDER') {
+        await this.dbService.updateOrder(orderId, { axiomPipelineJobId: pipelineJobId }).catch((err: Error) =>
+          this.logger.warn('submitOrderEvaluation: failed to stamp axiomPipelineJobId on order', {
+            orderId, pipelineJobId, error: err.message,
+          }),
+        );
+      }
+
       return { pipelineJobId, evaluationId };
     } catch (error) {
       const axiosError = error as AxiosError;
       const responseData = axiosError.response?.data as Record<string, unknown> | undefined;
       const errorMessage = responseData?.['message'] ?? axiosError.message;
+      const normalizedErrorMessage = typeof errorMessage === 'string' ? errorMessage.toLowerCase() : '';
 
       if (axiosError.response?.status === 409) {
+        // When forceResubmit=true we deliberately used a unique correlationId+fileSetId,
+        // so a 409 from Axiom is genuinely unexpected — surface it rather than silently reusing.
+        if (forceResubmit) {
+          throw new Error(
+            `Axiom returned 409 on a force-resubmit for order '${orderId}'. ` +
+            `This is unexpected with unique correlationId+fileSetId. Axiom error: ${errorMessage}`,
+          );
+        }
         this.logger.warn('Axiom returned duplicate submission conflict; attempting to reuse latest local evaluation', {
           orderId,
           status: axiosError.response?.status,
           error: errorMessage,
         });
 
-        try {
-          const latestQuery = `
-            SELECT TOP 1 c.evaluationId, c.pipelineJobId FROM c
-            WHERE c.orderId = @orderId AND c.tenantId = @tenantId
-            ORDER BY c.timestamp DESC`;
-          const latestResult = await this.dbService.queryItems<{ evaluationId: string; pipelineJobId: string }>(
-            this.containerName,
-            latestQuery,
-            [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }],
+        const latest = await this.tryReuseLatestEvaluationForOrder(orderId, tenantId, 'duplicate submission conflict');
+        if (latest) {
+          return latest;
+        }
+      }
+
+      if (normalizedErrorMessage.includes('already exists')) {
+        if (forceResubmit) {
+          throw new Error(
+            `Axiom returned 'already exists' on a force-resubmit for order '${orderId}'. ` +
+            `This is unexpected with unique correlationId+fileSetId. Axiom error: ${errorMessage}`,
           );
+        }
+        this.logger.warn('Axiom returned duplicate already-exists error; attempting to reuse latest local evaluation', {
+          orderId,
+          status: axiosError.response?.status,
+          error: errorMessage,
+        });
 
-          const latest = latestResult.success && latestResult.data && latestResult.data.length > 0
-            ? latestResult.data[0]
-            : null;
-
-          if (latest?.evaluationId && latest?.pipelineJobId) {
-            this.logger.info('Reusing latest evaluation after duplicate submission conflict', {
-              orderId,
-              evaluationId: latest.evaluationId,
-              pipelineJobId: latest.pipelineJobId,
-            });
-            return { pipelineJobId: latest.pipelineJobId, evaluationId: latest.evaluationId };
-          }
-        } catch (reuseErr) {
-          this.logger.warn('Failed to reuse latest evaluation after duplicate conflict', {
-            orderId,
-            error: reuseErr instanceof Error ? reuseErr.message : String(reuseErr),
-          });
+        const latest = await this.tryReuseLatestEvaluationForOrder(orderId, tenantId, 'duplicate already-exists error');
+        if (latest) {
+          return latest;
         }
       }
 
@@ -1292,6 +1780,46 @@ export class AxiomService {
       this.logger.error('Failed to submit order evaluation to Axiom pipeline', { orderId, error: errorMessage });
       return null;
     }
+  }
+
+  private async tryReuseLatestEvaluationForOrder(
+    orderId: string,
+    tenantId: string,
+    reason: string,
+  ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
+    try {
+      const latestQuery = `
+        SELECT TOP 1 c.evaluationId, c.pipelineJobId FROM c
+        WHERE c.orderId = @orderId AND c.tenantId = @tenantId
+        ORDER BY c.timestamp DESC`;
+      const latestResult = await this.dbService.queryItems<{ evaluationId: string; pipelineJobId: string }>(
+        this.containerName,
+        latestQuery,
+        [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }],
+      );
+
+      const latest = latestResult.success && latestResult.data && latestResult.data.length > 0
+        ? latestResult.data[0]
+        : null;
+
+      if (latest?.evaluationId && latest?.pipelineJobId) {
+        this.logger.info('Reusing latest evaluation after upstream duplicate rejection', {
+          orderId,
+          reason,
+          evaluationId: latest.evaluationId,
+          pipelineJobId: latest.pipelineJobId,
+        });
+        return { pipelineJobId: latest.pipelineJobId, evaluationId: latest.evaluationId };
+      }
+    } catch (reuseErr) {
+      this.logger.warn('Failed to reuse latest evaluation after upstream duplicate rejection', {
+        orderId,
+        reason,
+        error: reuseErr instanceof Error ? reuseErr.message : String(reuseErr),
+      });
+    }
+
+    return null;
   }
 
   /**
@@ -1377,7 +1905,7 @@ export class AxiomService {
           const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
             pipelineId: process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation',
             input: {
-              subClientId: tenantId,
+              subClientId: this.getAxiomSubClientId(),
               clientId,
               fileSetId: `fs-${jobId}-${loan.loanNumber}`,
               files: [{
@@ -1480,7 +2008,7 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         ...this.buildPipelineParam('DOC_EXTRACT'),
         input: {
-          subClientId: tenantId,
+          subClientId: this.getAxiomSubClientId(),
           clientId,
           correlationId: `${jobId}:${loanNumber}`,
           correlationType: 'ORDER',
@@ -1943,9 +2471,12 @@ export class AxiomService {
           : `${baseURL}/api/pipelines/${pipelineJobId}/observe`;
 
         // eventsource v4 passes auth via a custom fetch wrapper
-        const fetchWithAuth: typeof globalThis.fetch = (input, init) => {
+        const fetchWithAuth: typeof globalThis.fetch = async (input, init) => {
           const headers = new Headers((init?.headers as HeadersInit | undefined) ?? {});
-          if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
+          const authorization = await this.getAxiomAuthorizationHeader();
+          if (authorization) {
+            headers.set('Authorization', authorization);
+          }
           return fetch(input, { ...init, headers });
         };
 
@@ -2805,14 +3336,232 @@ export class AxiomService {
     }
 
     try {
-      const response = await this.client.get(`/documents/comparisons/${comparisonId}`);
+      const response = await this.dbService.getItem<any>(this.containerName, comparisonId);
+      if (!response.success || !response.data || response.data.type !== 'document-comparison') {
+        return null;
+      }
       return response.data;
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) return null;
-      this.logger.error('Failed to retrieve Axiom comparison', { comparisonId, error: axiosError.message });
+      this.logger.error('Failed to retrieve stored comparison', {
+        comparisonId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
+  }
+
+  private async runSingleDocumentComparisonExtraction(
+    orderId: string,
+    tenantId: string,
+    clientId: string,
+    documentUrl: string,
+    label: 'original' | 'revised',
+  ): Promise<Record<string, unknown>> {
+    const pipelineId = process.env['AXIOM_PIPELINE_ID_DOC_EXTRACT'] ?? 'document-extraction';
+    const requiredDocumentTypes = process.env['AXIOM_REQUIRED_DOCUMENT_TYPES']
+      ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
+      : ['appraisal-report'];
+
+    const submission = await this.client.post<{ jobId: string }>('/api/pipelines', {
+      pipelineId,
+      input: {
+        subClientId: this.getAxiomSubClientId(),
+        clientId,
+        fileSetId: `cmp-${orderId}-${label}-${Date.now().toString(36)}`,
+        files: [{
+          fileName: `${label}-${orderId}.pdf`,
+          url: documentUrl,
+          mediaType: 'application/pdf',
+          downloadMethod: 'fetch' as const,
+        }],
+        requiredDocuments: requiredDocumentTypes,
+        correlationId: `${orderId}:comparison:${label}`,
+        correlationType: 'ORDER',
+      },
+    });
+
+    const pipelineJobId = submission.data.jobId;
+    const MAX_ATTEMPTS = 25;
+    const INTERVAL_MS = 3000;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const results = await this.fetchPipelineResults(pipelineJobId);
+      if (results) {
+        return results;
+      }
+
+      this.logger.info('Comparison extraction still pending', {
+        orderId,
+        label,
+        pipelineJobId,
+        attempt,
+        maxAttempts: MAX_ATTEMPTS,
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, INTERVAL_MS));
+    }
+
+    throw new Error(
+      `Comparison extraction for ${label} document did not complete within ${MAX_ATTEMPTS} attempts. orderId=${orderId} pipelineJobId=${pipelineJobId}`,
+    );
+  }
+
+  private extractComparablePayload(raw: Record<string, unknown>): Record<string, unknown> {
+    const resultRoot = (raw['results'] as Record<string, unknown> | undefined) ?? raw;
+    const extraction = resultRoot['extractStructuredData'];
+    const extractedData = resultRoot['extractedData'];
+
+    if (Array.isArray(extraction)) {
+      return { extractStructuredData: extraction };
+    }
+    if (extractedData && typeof extractedData === 'object') {
+      return extractedData as Record<string, unknown>;
+    }
+    return resultRoot;
+  }
+
+  private buildComparisonChanges(
+    originalPayload: Record<string, unknown>,
+    revisedPayload: Record<string, unknown>,
+  ): Array<{
+    section: string;
+    changeType: 'added' | 'removed' | 'modified';
+    original?: string;
+    revised?: string;
+    significance: 'minor' | 'moderate' | 'major';
+  }> {
+    const originalFlat = new Map<string, unknown>();
+    const revisedFlat = new Map<string, unknown>();
+
+    this.flattenComparisonValues(originalPayload, '', originalFlat);
+    this.flattenComparisonValues(revisedPayload, '', revisedFlat);
+
+    const allPaths = Array.from(new Set([...originalFlat.keys(), ...revisedFlat.keys()])).sort();
+    const changes: Array<{
+      section: string;
+      changeType: 'added' | 'removed' | 'modified';
+      original?: string;
+      revised?: string;
+      significance: 'minor' | 'moderate' | 'major';
+    }> = [];
+
+    for (const path of allPaths) {
+      const originalValue = originalFlat.get(path);
+      const revisedValue = revisedFlat.get(path);
+
+      if (JSON.stringify(originalValue) === JSON.stringify(revisedValue)) {
+        continue;
+      }
+
+      const changeType = originalValue === undefined
+        ? 'added'
+        : revisedValue === undefined
+          ? 'removed'
+          : 'modified';
+
+      changes.push({
+        section: this.humanizeComparisonPath(path),
+        changeType,
+        ...(originalValue !== undefined ? { original: this.formatComparisonValue(originalValue) } : {}),
+        ...(revisedValue !== undefined ? { revised: this.formatComparisonValue(revisedValue) } : {}),
+        significance: this.classifyComparisonSignificance(originalValue, revisedValue),
+      });
+
+      if (changes.length >= 25) {
+        break;
+      }
+    }
+
+    if (changes.length === 0) {
+      changes.push({
+        section: 'Document Payload',
+        changeType: 'modified',
+        original: this.formatComparisonValue(originalPayload),
+        revised: this.formatComparisonValue(revisedPayload),
+        significance: 'minor',
+      });
+    }
+
+    return changes;
+  }
+
+  private flattenComparisonValues(value: unknown, path: string, out: Map<string, unknown>, depth = 0): void {
+    if (depth > 4) {
+      out.set(path || 'root', value);
+      return;
+    }
+
+    if (value === null || value === undefined) {
+      out.set(path || 'root', value);
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        out.set(path || 'root', []);
+        return;
+      }
+
+      value.slice(0, 5).forEach((item, index) => {
+        this.flattenComparisonValues(item, path ? `${path}[${index}]` : `[${index}]`, out, depth + 1);
+      });
+      return;
+    }
+
+    if (typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, unknown>);
+      if (entries.length === 0) {
+        out.set(path || 'root', {});
+        return;
+      }
+
+      entries.slice(0, 20).forEach(([key, child]) => {
+        this.flattenComparisonValues(child, path ? `${path}.${key}` : key, out, depth + 1);
+      });
+      return;
+    }
+
+    out.set(path || 'root', value);
+  }
+
+  private humanizeComparisonPath(path: string): string {
+    const normalized = path.replace(/\[(\d+)\]/g, ' › item $1');
+    return normalized
+      .split('.')
+      .map((segment) => segment.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()))
+      .join(' › ');
+  }
+
+  private formatComparisonValue(value: unknown): string {
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private classifyComparisonSignificance(
+    originalValue: unknown,
+    revisedValue: unknown,
+  ): 'minor' | 'moderate' | 'major' {
+    if (typeof originalValue === 'number' && typeof revisedValue === 'number') {
+      const delta = Math.abs(revisedValue - originalValue);
+      const base = Math.max(Math.abs(originalValue), 1);
+      const ratio = delta / base;
+      if (ratio >= 0.1) return 'major';
+      if (ratio >= 0.02) return 'moderate';
+      return 'minor';
+    }
+
+    const originalText = this.formatComparisonValue(originalValue);
+    const revisedText = this.formatComparisonValue(revisedValue);
+    const lengthDelta = Math.abs(revisedText.length - originalText.length);
+    if (lengthDelta > 120) return 'major';
+    if (lengthDelta > 40) return 'moderate';
+    return 'minor';
   }
 
   // ── P2-C: Property enrichment ───────────────────────────────────────────────
@@ -2850,7 +3599,7 @@ export class AxiomService {
     try {
       await this.client.post('/api/pipelines', {
         ...this.buildPipelineParam('DOC_EXTRACT'),
-        trigger: { propertyInfo, subClientId: tenantId, clientId },
+        trigger: { propertyInfo, subClientId: this.getAxiomSubClientId(), clientId: this.getAxiomClientId() },
         correlationId: enrichmentId,
         correlationType: 'ORDER',
         ...(callbackUrl ? { webhookUrl: callbackUrl } : {}),

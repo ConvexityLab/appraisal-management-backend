@@ -209,10 +209,19 @@ export class EnhancedPropertyIntelligenceController {
       });
 
     } catch (error) {
-      this.logger.error('Address suggestions failed', { error, query: req.query });
-      res.status(500).json({
+      const errorMessage = error instanceof Error ? error.message : 'Address suggestion service unavailable';
+      const isProviderIssue = /provider unavailable|not configured|api key|billing|autocomplete/i.test(errorMessage);
+
+      this.logger.error('Address suggestions failed', {
+        error,
+        query: req.query,
+        errorMessage,
+        isProviderIssue
+      });
+
+      res.status(isProviderIssue ? 503 : 500).json({
         success: false,
-        error: 'Address suggestion service unavailable'
+        error: isProviderIssue ? errorMessage : 'Address suggestion service unavailable'
       });
     }
   };

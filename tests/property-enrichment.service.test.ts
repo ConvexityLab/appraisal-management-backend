@@ -410,6 +410,171 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     expect(result.status).toBe('enriched');
     expect(provider.lookupByAddress).toHaveBeenCalledOnce();
   });
+
+  // ── meta.propertyId: skips resolveOrCreate ─────────────────────────────────
+  it('skips resolveOrCreate and uses getById when meta.propertyId is provided', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS, {
+      propertyId: PROPERTY_ID,
+    });
+
+    // resolveOrCreate must NOT be called — caller already resolved the record
+    expect(propSvc.resolveOrCreate).not.toHaveBeenCalled();
+    // getById MUST be called to fetch the actual record
+    expect(propSvc.getById).toHaveBeenCalledWith(PROPERTY_ID, TENANT);
+    expect(result.propertyId).toBe(PROPERTY_ID);
+    expect(result.status).toBe('enriched');
+  });
+
+  it('returns status=enriched via the provided propertyId path even on a stale record', async () => {
+    const staleDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    const staleRecord = makeExistingPropertyRecord({ lastVerifiedAt: staleDate });
+
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc = {
+      resolveOrCreate: vi.fn(),
+      getById: vi.fn().mockResolvedValue(staleRecord),
+      createVersion: vi.fn().mockImplementation(async (_id: string, _tid: string, changes: any) => ({
+        ...staleRecord,
+        ...changes,
+      })),
+    };
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS, { propertyId: PROPERTY_ID });
+
+    expect(propSvc.resolveOrCreate).not.toHaveBeenCalled();
+    expect(propSvc.getById).toHaveBeenCalledWith(PROPERTY_ID, TENANT);
+    expect(result.status).toBe('enriched');
+  });
+
+  // ── propertyType: mapped from provider and written to PropertyRecord ────────
+  it('writes propertyType=SINGLE_FAMILY when provider returns "Residential"', async () => {
+    const provider = makeProvider(makeFullDataResult()); // core.propertyType = 'Residential'
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    const buildingCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.building != null,
+    );
+    expect(buildingCall).toBeDefined();
+    expect(buildingCall![2].propertyType).toBe(PropertyRecordType.SINGLE_FAMILY);
+  });
+
+  it('writes propertyType=CONDO when provider returns "Condominium"', async () => {
+    const condoResult: PropertyDataResult = {
+      ...makeFullDataResult(),
+      core: { ...makeFullDataResult().core!, propertyType: 'Condominium' },
+    };
+    const provider = makeProvider(condoResult);
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    const buildingCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.building != null,
+    );
+    expect(buildingCall).toBeDefined();
+    expect(buildingCall![2].propertyType).toBe(PropertyRecordType.CONDO);
+  });
+
+  it('does not overwrite propertyType when provider returns an unrecognised type string', async () => {
+    const unknownResult: PropertyDataResult = {
+      ...makeFullDataResult(),
+      core: { ...makeFullDataResult().core!, propertyType: 'UnknownNewType' },
+    };
+    const provider = makeProvider(unknownResult);
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    // buildTopLevelChanges should not include propertyType for unknown strings
+    const buildingCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.building != null,
+    );
+    expect(buildingCall).toBeDefined();
+    expect(buildingCall![2].propertyType).toBeUndefined();
+  });
+
+  // ── Address enrichment: county / latitude / longitude ──────────────────────
+  it('writes county to address when provider returns it and record has none', async () => {
+    const provider = makeProvider(makeFullDataResult()); // core.county = 'Dallas'
+    // Records from makePropertyRecordService default to no county on address
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    // Find the createVersion call that includes address changes
+    const addrCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.address?.county != null,
+    );
+    expect(addrCall).toBeDefined();
+    expect(addrCall![2].address.county).toBe('Dallas');
+  });
+
+  it('writes latitude and longitude when provider returns them and record has none', async () => {
+    const provider = makeProvider(makeFullDataResult()); // core.latitude = 32.8348, longitude = -96.7697
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    const addrCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.address?.latitude != null,
+    );
+    expect(addrCall).toBeDefined();
+    expect(addrCall![2].address.latitude).toBeCloseTo(32.8348);
+    expect(addrCall![2].address.longitude).toBeCloseTo(-96.7697);
+  });
+
+  it('does not overwrite existing county on PropertyRecord address', async () => {
+    const recordWithCounty = makeExistingPropertyRecord({
+      address: {
+        street:  '5432 MOCKINGBIRD LN',
+        city:    'DALLAS',
+        state:   'TX',
+        zip:     '75206',
+        county:  'Dallas', // already set
+      },
+    });
+    const propSvc = {
+      resolveOrCreate: vi.fn().mockResolvedValue({ propertyId: PROPERTY_ID, isNew: false, method: 'ADDRESS_NORM' }),
+      getById: vi.fn().mockResolvedValue(recordWithCounty),
+      createVersion: vi.fn().mockImplementation(async (_id: string, _tid: string, changes: any) => ({
+        ...recordWithCounty,
+        ...changes,
+      })),
+    };
+    const provider = makeProvider(makeFullDataResult()); // also returns county = 'Dallas'
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    // If no address patch was needed, no createVersion call with address block
+    // OR if there is one, the county must still equal 'Dallas' (not changed)
+    const addrCalls = propSvc.createVersion.mock.calls.filter(
+      (args: any[]) => args[2]?.address != null,
+    );
+    for (const call of addrCalls) {
+      expect(call[2].address.county).toBe('Dallas');
+    }
+  });
 });
 
 // ─── getLatestEnrichment ──────────────────────────────────────────────────────
@@ -610,6 +775,52 @@ describe('PropertyEnrichmentService.enrichEngagement', () => {
     const [, storedDoc] = (cosmos.createDocument as ReturnType<typeof vi.fn>).mock.calls[0] as [string, any];
     expect(storedDoc.engagementId).toBe('eng-abc');
     expect(storedDoc.orderId).toBe('loan-xyz');
+  });
+
+  it('passes propertyId to enrichOrder meta when provided as 5th argument', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const enrichOrderSpy = vi.spyOn(svc, 'enrichOrder').mockResolvedValue({
+      enrichmentId: 'enrich-loan-001-123',
+      propertyId:   PROPERTY_ID,
+      status:       'enriched',
+    });
+
+    await svc.enrichEngagement('eng-001', 'loan-001', TENANT, BASE_ADDRESS, PROPERTY_ID);
+
+    expect(enrichOrderSpy).toHaveBeenCalledWith(
+      'loan-001',
+      TENANT,
+      BASE_ADDRESS,
+      { engagementId: 'eng-001', propertyId: PROPERTY_ID },
+    );
+  });
+
+  it('does not include propertyId in enrichOrder meta when not provided', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc  = makePropertyRecordService(false);
+    const cosmos   = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const enrichOrderSpy = vi.spyOn(svc, 'enrichOrder').mockResolvedValue({
+      enrichmentId: 'enrich-loan-001-123',
+      propertyId:   PROPERTY_ID,
+      status:       'enriched',
+    });
+
+    await svc.enrichEngagement('eng-001', 'loan-001', TENANT, BASE_ADDRESS);
+
+    expect(enrichOrderSpy).toHaveBeenCalledWith(
+      'loan-001',
+      TENANT,
+      BASE_ADDRESS,
+      { engagementId: 'eng-001' }, // no propertyId key
+    );
+    const [, , , meta] = enrichOrderSpy.mock.calls[0] as any[];
+    expect(meta).not.toHaveProperty('propertyId');
   });
 });
 

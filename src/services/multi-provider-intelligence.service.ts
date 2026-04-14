@@ -135,8 +135,8 @@ export class MultiProviderPropertyIntelligenceService {
         },
         qualityScore: 0.95,
         reliability: 0.99,
-        enabled: !!process.env.GOOGLE_MAPS_API_KEY,
-        apiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+        enabled: !!(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY),
+        apiKey: process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '',
         services: {
           places: 'https://maps.googleapis.com/maps/api/place',
           elevation: 'https://maps.googleapis.com/maps/api/elevation/json',

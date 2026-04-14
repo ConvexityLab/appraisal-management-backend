@@ -17,6 +17,7 @@ import { Router, Request, Response } from 'express';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import type { AuditEventDoc } from '../services/audit-event-sink.service.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 // ── Timeline types (mirrored in the frontend types file) ─────────────────────
 
@@ -235,9 +236,11 @@ function computeTimeline(events: AuditEventDoc[]): TimelineStage[] {
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
-export function createEngagementAuditRouter(dbService: CosmosDbService): Router {
+export function createEngagementAuditRouter(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware): Router {
   const router = Router();
   const logger = new Logger('EngagementAuditController');
+
+  const read = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'read')] : [];
 
   // ── Helper: query all events for an engagement ────────────────────────────
 
@@ -311,7 +314,7 @@ export function createEngagementAuditRouter(dbService: CosmosDbService): Router 
 
   // ── GET /:id/audit ────────────────────────────────────────────────────────
 
-  router.get('/:id/audit', async (req: Request, res: Response) => {
+  router.get('/:id/audit', ...read, async (req: Request, res: Response) => {
     const id = req.params['id'] as string;
     const { page, pageSize, category, severity, eventType, search } = req.query as Record<string, string>;
 
@@ -354,7 +357,7 @@ export function createEngagementAuditRouter(dbService: CosmosDbService): Router 
 
   // ── GET /:id/timeline ─────────────────────────────────────────────────────
 
-  router.get('/:id/timeline', async (req: Request, res: Response) => {
+  router.get('/:id/timeline', ...read, async (req: Request, res: Response) => {
     const id = req.params['id'] as string;
 
     try {

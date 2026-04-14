@@ -40,10 +40,10 @@ export class GoogleMapsPropertyIntelligenceService {
   constructor() {
     this.logger = new Logger();
     this.cache = new GenericCacheService();
-    this.apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+    this.apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '';
     
     if (!this.apiKey) {
-      this.logger.warn('GOOGLE_MAPS_API_KEY is not configured. Google Maps features will be unavailable. Set GOOGLE_MAPS_API_KEY to enable.');
+      this.logger.warn('GOOGLE_PLACES_API_KEY/GOOGLE_MAPS_API_KEY is not configured. Google Places features will be unavailable. Set GOOGLE_PLACES_API_KEY (or GOOGLE_MAPS_API_KEY) to enable.');
     }
 
     this.baseUrls = {
@@ -723,36 +723,85 @@ export class GoogleMapsPropertyIntelligenceService {
       const results: POISearchResult[] = [];
 
       for (const type of types) {
-        const url = `${this.baseUrls.places}/nearbysearch/json?location=${coordinates.latitude},${coordinates.longitude}&radius=${radius}&type=${type}&key=${this.apiKey}`;
-        
-        const response = await fetch(url);
-        const data = await response.json();
+        const [rawCategory = type, rawSubcategory = type] = type.split('|');
+        const normalizedType = this.normalizePlacesType(rawSubcategory || rawCategory);
 
-        if (data.status === 'OK' && data.results) {
-          for (const place of data.results) {
-            results.push({
-              id: place.place_id,
-              name: place.name,
-              category: type.split('|')[0] || type,
-              subcategory: type.split('|')[1] || type,
-              coordinates: {
-                latitude: place.geometry.location.lat,
-                longitude: place.geometry.location.lng
-              },
-              distance: this.calculateDistance(coordinates, {
-                latitude: place.geometry.location.lat,
-                longitude: place.geometry.location.lng
-              }),
-              address: place.vicinity || '',
-              rating: place.rating,
-              priceLevel: place.price_level,
-              attributes: {
-                types: place.types,
-                businessStatus: place.business_status,
-                userRatingsTotal: place.user_ratings_total
+        const response = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': this.apiKey,
+            'X-Goog-FieldMask': [
+              'places.id',
+              'places.displayName',
+              'places.location',
+              'places.formattedAddress',
+              'places.types',
+              'places.businessStatus',
+              'places.rating',
+              'places.userRatingCount',
+              'places.priceLevel'
+            ].join(',')
+          },
+          body: JSON.stringify({
+            maxResultCount: 20,
+            includedTypes: [normalizedType],
+            locationRestriction: {
+              circle: {
+                center: {
+                  latitude: coordinates.latitude,
+                  longitude: coordinates.longitude
+                },
+                radius
               }
-            });
+            },
+            rankPreference: 'DISTANCE'
+          })
+        });
+
+        const rawBody = await response.text();
+        const data = rawBody ? JSON.parse(rawBody) : {};
+
+        if (!response.ok) {
+          this.logger.warn('Google Places API (New) nearby search failed', {
+            type,
+            normalizedType,
+            statusCode: response.status,
+            statusText: response.statusText,
+            errorMessage: data?.error?.message
+          });
+          continue;
+        }
+
+        const places = Array.isArray(data?.places) ? data.places : [];
+        for (const place of places) {
+          const location = place?.location;
+          if (typeof location?.latitude !== 'number' || typeof location?.longitude !== 'number') {
+            continue;
           }
+
+          results.push({
+            id: place?.id || `${normalizedType}-${location.latitude},${location.longitude}`,
+            name: place?.displayName?.text || place?.displayName || 'Unknown',
+            category: rawCategory,
+            subcategory: rawSubcategory,
+            coordinates: {
+              latitude: location.latitude,
+              longitude: location.longitude
+            },
+            distance: this.calculateDistance(coordinates, {
+              latitude: location.latitude,
+              longitude: location.longitude
+            }),
+            address: place?.formattedAddress || '',
+            rating: place?.rating,
+            priceLevel: place?.priceLevel,
+            attributes: {
+              types: place?.types,
+              businessStatus: place?.businessStatus,
+              userRatingsTotal: place?.userRatingCount
+            }
+          });
         }
       }
 
@@ -767,6 +816,26 @@ export class GoogleMapsPropertyIntelligenceService {
       this.logger.error('Failed to search nearby places', { error, coordinates, types });
       return [];
     }
+  }
+
+  private normalizePlacesType(type: string): string {
+    const normalized = type.trim().toLowerCase();
+
+    const aliases: Record<string, string> = {
+      water: 'natural_feature',
+      downtown: 'neighborhood',
+      forest: 'park',
+      preserve: 'park',
+      landfill: 'point_of_interest',
+      waste: 'point_of_interest',
+      industrial: 'point_of_interest',
+      factory: 'point_of_interest',
+      power_plant: 'point_of_interest',
+      prison: 'point_of_interest',
+      residential: 'neighborhood'
+    };
+
+    return aliases[normalized] || normalized;
   }
 
   private async getElevation(coordinates: Coordinates): Promise<number> {

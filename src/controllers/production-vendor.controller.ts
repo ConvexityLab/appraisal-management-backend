@@ -12,6 +12,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
 
 export class VendorController {
@@ -19,28 +20,38 @@ export class VendorController {
   private dbService: CosmosDbService;
   private logger: Logger;
 
-  constructor(dbService: CosmosDbService) {
+  constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.dbService = dbService;
     this.logger = new Logger('VendorController');
-    this.initializeRoutes();
+    this.initializeRoutes(authzMiddleware);
   }
 
   // ---------------------------------------------------------------------------
   // Routes
   // ---------------------------------------------------------------------------
 
-  private initializeRoutes(): void {
-    // Order matters: specific paths before parameterized paths
-    this.router.get('/performance/:vendorId', ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
-    this.router.post('/assign/:orderId', ...this.validateOrderIdParam(), this.assignVendor.bind(this));
+  private initializeRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    // ── Middleware arrays ─────────────────────────────────────────────────────
+    // loadUserProfile() followed by action-specific authorize().
+    // If authzMiddleware is absent, arrays are empty (auth-only mode).
+    const lp = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+    const read     = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'read')]   : [];
+    const create   = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'create')] : [];
+    const update   = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'update')] : [];
+    const del      = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'delete')] : [];
+    const analytics = authzMiddleware ? [...lp, authzMiddleware.authorize('analytics', 'read')]   : [];
 
-    this.router.get('/', this.getVendors.bind(this));
-    this.router.get('/:vendorId', ...this.validateVendorIdParam(), this.getVendorById.bind(this));
-    this.router.post('/', ...this.validateVendorCreation(), this.createVendor.bind(this));
-    this.router.patch('/:vendorId/availability', ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
-    this.router.put('/:vendorId', ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
-    this.router.delete('/:vendorId', ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
+    // Order matters: specific paths before parameterized paths
+    this.router.get('/performance/:vendorId', ...analytics,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
+    this.router.post('/assign/:orderId',       ...update,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
+
+    this.router.get('/',                       ...read,    this.getVendors.bind(this));
+    this.router.get('/:vendorId',              ...read,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));
+    this.router.post('/',                      ...create,  ...this.validateVendorCreation(), this.createVendor.bind(this));
+    this.router.patch('/:vendorId/availability', ...update, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
+    this.router.put('/:vendorId',              ...update,  ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
+    this.router.delete('/:vendorId',           ...del,     ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
   }
 
   // ---------------------------------------------------------------------------

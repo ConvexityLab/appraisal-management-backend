@@ -17,10 +17,19 @@ import express, { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { QCRulesService } from '../services/qc-rules.service.js';
 import { Logger } from '../utils/logger.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
-const router = express.Router();
+// Module-level service singletons (stateless — safe to share across requests)
 const logger = new Logger('QCRulesController');
 const rulesService = new QCRulesService();
+
+export function createQCRulesRouter(authzMiddleware?: AuthorizationMiddleware): express.Router {
+  const router = express.Router();
+
+  const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'read')]   : [];
+  const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'create')] : [];
+  const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'update')] : [];
+  const del    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'delete')] : [];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +90,7 @@ const updateValidation = [
  */
 router.get(
   '/',
+  ...read,
   [
     query('category').optional().isIn(VALID_CATEGORIES),
     query('severity').optional().isIn(VALID_SEVERITIES),
@@ -112,6 +122,7 @@ router.get(
  */
 router.get(
   '/:id',
+  ...read,
   [param('id').notEmpty()],
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
@@ -135,6 +146,7 @@ router.get(
  */
 router.post(
   '/',
+  ...create,
   createValidation,
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
@@ -161,6 +173,7 @@ router.post(
  */
 router.put(
   '/:id',
+  ...update,
   updateValidation,
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
@@ -184,6 +197,7 @@ router.put(
  */
 router.delete(
   '/:id',
+  ...del,
   [param('id').notEmpty()],
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
@@ -207,6 +221,7 @@ router.delete(
  */
 router.patch(
   '/:id/toggle',
+  ...update,
   [param('id').notEmpty()],
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
@@ -230,6 +245,7 @@ router.patch(
  */
 router.post(
   '/:id/duplicate',
+  ...create,
   [param('id').notEmpty()],
   async (req: Request, res: Response) => {
     if (!handleValidation(req, res)) return;
@@ -248,4 +264,5 @@ router.post(
   }
 );
 
-export default router;
+  return router;
+}

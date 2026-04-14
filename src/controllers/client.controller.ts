@@ -17,22 +17,29 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { CreateClientRequest, UpdateClientRequest } from '../types/index.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 const logger = new Logger('ClientController');
 
 export class ClientController {
   public router: Router;
 
-  constructor(private dbService: CosmosDbService) {
+  constructor(private dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
-    this.setupRoutes();
+    this.setupRoutes(authzMiddleware);
   }
 
-  private setupRoutes(): void {
-    this.router.get('/', this.listClients.bind(this));
+  private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'read')]   : [];
+    const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'create')] : [];
+    const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'update')] : [];
+    const del    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('client', 'delete')] : [];
+
+    this.router.get('/', ...read, this.listClients.bind(this));
 
     this.router.post(
       '/',
+      ...create,
       [
         body('clientName').notEmpty().withMessage('clientName is required'),
         body('clientType')
@@ -46,12 +53,14 @@ export class ClientController {
 
     this.router.get(
       '/:clientId',
+      ...read,
       [param('clientId').notEmpty()],
       this.getClient.bind(this)
     );
 
     this.router.put(
       '/:clientId',
+      ...update,
       [
         param('clientId').notEmpty(),
         body('contactEmail').optional().isEmail().withMessage('contactEmail must be a valid email'),
@@ -69,6 +78,7 @@ export class ClientController {
 
     this.router.delete(
       '/:clientId',
+      ...del,
       [param('clientId').notEmpty()],
       this.deleteClient.bind(this)
     );

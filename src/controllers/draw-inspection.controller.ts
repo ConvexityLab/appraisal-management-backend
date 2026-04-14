@@ -12,13 +12,14 @@
  *   PUT    /:inspectionId/dispute → disputeInspection
  */
 
-import { Router, Response } from 'express';
+import { Router, Response, RequestHandler } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { DrawInspectionService } from '../services/draw-inspection.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { DrawInspectionType } from '../types/index.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 const logger = new Logger('DrawInspectionController');
 
@@ -28,17 +29,24 @@ export class DrawInspectionController {
   public router: Router;
   private readonly service: DrawInspectionService;
 
-  constructor(private readonly dbService: CosmosDbService) {
+  constructor(
+    private readonly dbService: CosmosDbService,
+    private readonly authzMiddleware?: AuthorizationMiddleware
+  ) {
     this.service = new DrawInspectionService(dbService);
     this.router = Router();
     this.setupRoutes();
   }
 
   private setupRoutes(): void {
+    const read:   RequestHandler[] = this.authzMiddleware ? [this.authzMiddleware.loadUserProfile(), this.authzMiddleware.authorize('inspection', 'read')]   : [];
+    const create: RequestHandler[] = this.authzMiddleware ? [this.authzMiddleware.loadUserProfile(), this.authzMiddleware.authorize('inspection', 'create')] : [];
+    const update: RequestHandler[] = this.authzMiddleware ? [this.authzMiddleware.loadUserProfile(), this.authzMiddleware.authorize('inspection', 'update')] : [];
     // GET / — inspection queue (all inspections for the tenant, paginated)
     // Must be registered before /:inspectionId to avoid route collision
     this.router.get(
       '/',
+      ...read,
       [
         query('page').optional().isInt({ min: 1 }).withMessage('page must be a positive integer'),
         query('pageSize').optional().isInt({ min: 1, max: 100 }).withMessage('pageSize must be 1–100'),
@@ -50,6 +58,7 @@ export class DrawInspectionController {
     // List by draw — must be before /:inspectionId to avoid route collision
     this.router.get(
       '/by-draw/:drawRequestId',
+      ...read,
       [
         param('drawRequestId').notEmpty().withMessage('drawRequestId is required'),
         query('constructionLoanId').notEmpty().withMessage('constructionLoanId query param is required'),
@@ -59,6 +68,7 @@ export class DrawInspectionController {
 
     this.router.post(
       '/',
+      ...create,
       [
         body('drawRequestId').notEmpty().withMessage('drawRequestId is required'),
         body('constructionLoanId').notEmpty().withMessage('constructionLoanId is required'),
@@ -74,6 +84,7 @@ export class DrawInspectionController {
 
     this.router.get(
       '/:inspectionId',
+      ...read,
       [
         param('inspectionId').notEmpty(),
         query('constructionLoanId').notEmpty().withMessage('constructionLoanId query param is required'),
@@ -83,6 +94,7 @@ export class DrawInspectionController {
 
     this.router.put(
       '/:inspectionId/submit',
+      ...update,
       [
         param('inspectionId').notEmpty(),
         body('constructionLoanId').notEmpty().withMessage('constructionLoanId is required'),
@@ -102,6 +114,7 @@ export class DrawInspectionController {
 
     this.router.put(
       '/:inspectionId/accept',
+      ...update,
       [
         param('inspectionId').notEmpty(),
         body('constructionLoanId').notEmpty().withMessage('constructionLoanId is required'),
@@ -111,6 +124,7 @@ export class DrawInspectionController {
 
     this.router.put(
       '/:inspectionId/dispute',
+      ...update,
       [
         param('inspectionId').notEmpty(),
         body('constructionLoanId').notEmpty().withMessage('constructionLoanId is required'),

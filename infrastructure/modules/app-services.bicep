@@ -39,6 +39,10 @@ param axiomPipelineIdSchemaExtract string = 'complete-document-criteria-evaluati
 @secure()
 @description('Shared secret used to verify HMAC-SHA256 signatures on inbound Axiom webhooks. Must match the secret configured in Axiom outbound webhook settings. Store in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
+@description('Platform client ID for Axiom pipeline namespace scoping — written to AXIOM_CLIENT_ID env var.')
+param axiomClientId string = ''
+@description('Platform sub-client ID for Axiom pipeline namespace scoping — written to AXIOM_SUB_CLIENT_ID env var.')
+param axiomSubClientId string = ''
 @description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
 param appConfigEndpoint string = ''
 
@@ -254,6 +258,16 @@ var containerApps = [
         // stored in plain text in the Container App environment variables.
         name: 'AXIOM_WEBHOOK_SECRET'
         secretRef: 'axiom-webhook-secret'
+      }
+      {
+        // Platform client ID for Axiom pipeline namespace scoping.
+        name: 'AXIOM_CLIENT_ID'
+        value: axiomClientId
+      }
+      {
+        // Platform sub-client ID for Axiom pipeline namespace scoping.
+        name: 'AXIOM_SUB_CLIENT_ID'
+        value: axiomSubClientId
       }
       {
         // Azure App Configuration endpoint — enables Managed Identity–based service discovery.

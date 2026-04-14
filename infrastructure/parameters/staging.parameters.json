@@ -45,6 +45,12 @@
     "axiomApiBaseUrl": {
       "value": "https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io"
     },
+    "axiomClientId": {
+      "value": ""
+    },
+    "axiomSubClientId": {
+      "value": ""
+    },
     "ciServicePrincipalId": {
       "value": "88f0212b-840d-4ef8-872e-401f545c87bc"
     }

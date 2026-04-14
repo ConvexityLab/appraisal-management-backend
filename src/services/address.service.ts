@@ -52,9 +52,17 @@ export class AddressService {
     
     this.providers = {
       google: {
-        apiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_GEOCODING_API_KEY || '',
+        apiKey:
+          process.env.GOOGLE_PLACES_API_KEY ||
+          process.env.GOOGLE_MAPS_API_KEY ||
+          process.env.GOOGLE_GEOCODING_API_KEY ||
+          '',
         baseUrl: 'https://maps.googleapis.com/maps/api/geocode/json',
-        enabled: !!(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_GEOCODING_API_KEY)
+        enabled: !!(
+          process.env.GOOGLE_PLACES_API_KEY ||
+          process.env.GOOGLE_MAPS_API_KEY ||
+          process.env.GOOGLE_GEOCODING_API_KEY
+        )
       },
       mapbox: {
         apiKey: process.env.MAPBOX_ACCESS_TOKEN || '',
@@ -78,6 +86,11 @@ export class AddressService {
         enabled: !!(process.env.SMARTYSTREETS_AUTH_ID && process.env.SMARTYSTREETS_AUTH_TOKEN)
       }
     };
+
+    this.logger.info('Address provider configuration loaded', {
+      googleKeyConfigured: Boolean(this.providers.google.apiKey?.trim()),
+      mapboxTokenConfigured: Boolean(this.providers.mapbox.apiKey?.trim())
+    });
   }
 
   /**
@@ -242,26 +255,82 @@ export class AddressService {
    */
   async suggestAddresses(partial: string, limit: number = 5): Promise<string[]> {
     try {
+      const normalizedPartial = partial.trim();
+      if (!normalizedPartial) {
+        return [];
+      }
+
       const suggestions: string[] = [];
+      const providerResults: Array<{
+        provider: 'google' | 'mapbox';
+        status: 'ok' | 'zero_results' | 'provider_error' | 'not_configured';
+        suggestions: string[];
+        message?: string;
+      }> = [];
 
       // Use Google Places Autocomplete
       if (this.providers.google.enabled) {
-        const googleSuggestions = await this.suggestWithGoogle(partial, limit);
-        suggestions.push(...googleSuggestions);
+        const googleResult = await this.suggestWithGoogle(partial, limit);
+        providerResults.push(googleResult);
+        suggestions.push(...googleResult.suggestions);
+      } else {
+        providerResults.push({
+          provider: 'google',
+          status: 'not_configured',
+          suggestions: [],
+          message: 'GOOGLE_PLACES_API_KEY/GOOGLE_MAPS_API_KEY is not configured'
+        });
       }
 
       // Use Mapbox for additional suggestions
       if (this.providers.mapbox.enabled && suggestions.length < limit) {
-        const mapboxSuggestions = await this.suggestWithMapbox(partial, limit - suggestions.length);
-        suggestions.push(...mapboxSuggestions);
+        const mapboxResult = await this.suggestWithMapbox(partial, limit - suggestions.length);
+        providerResults.push(mapboxResult);
+        suggestions.push(...mapboxResult.suggestions);
+      } else if (!this.providers.mapbox.enabled) {
+        providerResults.push({
+          provider: 'mapbox',
+          status: 'not_configured',
+          suggestions: [],
+          message: 'MAPBOX_ACCESS_TOKEN is not configured'
+        });
       }
 
-      // Remove duplicates and return
-      return [...new Set(suggestions)].slice(0, limit);
+      const uniqueSuggestions = [...new Set(suggestions)].slice(0, limit);
+      if (uniqueSuggestions.length > 0) {
+        return uniqueSuggestions;
+      }
+
+      const configuredProviders = providerResults.filter(result => result.status !== 'not_configured');
+      if (configuredProviders.length === 0) {
+        this.logger.warn('Address autocomplete providers are not configured', {
+          partial: normalizedPartial,
+          providerResults
+        });
+        throw new Error('No address autocomplete providers are configured. Set GOOGLE_PLACES_API_KEY (or GOOGLE_MAPS_API_KEY) or MAPBOX_ACCESS_TOKEN.');
+      }
+
+      const providerErrors = configuredProviders.filter(result => result.status === 'provider_error');
+      if (providerErrors.length > 0) {
+        this.logger.warn('Address autocomplete provider unavailable', {
+          partial: normalizedPartial,
+          providerErrors
+        });
+        const details = providerErrors
+          .map(result => `${result.provider}: ${result.message || 'unknown provider error'}`)
+          .join('; ');
+        throw new Error(`Address autocomplete provider unavailable. ${details}`);
+      }
+
+      // Providers are healthy but no matches for query.
+      return [];
 
     } catch (error) {
       this.logger.error('Failed to get address suggestions', { error, partial });
-      return [];
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Address suggestion service unavailable');
     }
   }
 
@@ -605,43 +674,177 @@ export class AddressService {
     }
   }
 
-  private async suggestWithGoogle(partial: string, limit: number): Promise<string[]> {
+  private async suggestWithGoogle(
+    partial: string,
+    limit: number
+  ): Promise<{
+    provider: 'google';
+    status: 'ok' | 'zero_results' | 'provider_error' | 'not_configured';
+    suggestions: string[];
+    message?: string;
+  }> {
     try {
-      if (!this.providers.google.apiKey) {
-        return [];
+      const googleApiKey = this.providers.google.apiKey?.trim();
+
+      if (!googleApiKey) {
+        return {
+          provider: 'google',
+          status: 'not_configured',
+          suggestions: [],
+          message: 'GOOGLE_PLACES_API_KEY/GOOGLE_MAPS_API_KEY is not configured'
+        };
       }
 
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(partial)}&key=${this.providers.google.apiKey}&types=address`;
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.predictions) {
-        return data.predictions
-          .slice(0, limit)
-          .map((prediction: any) => prediction.description);
-      }
-      
-      if (data.status === 'ZERO_RESULTS') {
-        return [];
-      }
-      
-      this.logger.warn('Google Places Autocomplete returned non-OK status', { 
-        status: data.status, 
-        errorMessage: data.error_message 
+      const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googleApiKey
+        },
+        body: JSON.stringify({
+          input: partial,
+          includedPrimaryTypes: ['street_address']
+        })
       });
-      return [];
+
+      const rawBody = await response.text();
+      const data = rawBody ? JSON.parse(rawBody) : {};
+
+      if (!response.ok) {
+        const providerMessage = data?.error?.message || response.statusText || 'autocomplete request failed';
+
+        this.logger.warn('Google Places API (New) autocomplete request failed', {
+          statusCode: response.status,
+          statusText: response.statusText,
+          errorMessage: providerMessage
+        });
+
+        return {
+          provider: 'google',
+          status: 'provider_error',
+          suggestions: [],
+          message: providerMessage
+        };
+      }
+
+      const suggestions = (Array.isArray(data?.suggestions) ? data.suggestions : [])
+        .map((item: any) => {
+          const placePrediction = item?.placePrediction;
+          const predictionText =
+            placePrediction?.text?.text ||
+            placePrediction?.text ||
+            item?.queryPrediction?.text?.text ||
+            item?.queryPrediction?.text ||
+            item?.text?.text ||
+            item?.description;
+
+          return typeof predictionText === 'string' ? predictionText.trim() : '';
+        })
+        .filter((text: string) => text.length > 0)
+        .slice(0, limit);
+
+      if (suggestions.length > 0) {
+        return {
+          provider: 'google',
+          status: 'ok',
+          suggestions
+        };
+      }
+
+      return {
+        provider: 'google',
+        status: 'zero_results',
+        suggestions: []
+      };
       
     } catch (error) {
       this.logger.error('Google Places Autocomplete failed', { error, partial });
-      return [];
+      return {
+        provider: 'google',
+        status: 'provider_error',
+        suggestions: [],
+        message: error instanceof Error ? error.message : 'Google autocomplete request failed'
+      };
     }
   }
 
-  private async suggestWithMapbox(partial: string, limit: number): Promise<string[]> {
-    // Implementation would use Mapbox Search API
-    // Placeholder for now
-    return [];
+  private async suggestWithMapbox(
+    partial: string,
+    limit: number
+  ): Promise<{
+    provider: 'mapbox';
+    status: 'ok' | 'zero_results' | 'provider_error' | 'not_configured';
+    suggestions: string[];
+    message?: string;
+  }> {
+    try {
+      if (!this.providers.mapbox.apiKey) {
+        return {
+          provider: 'mapbox',
+          status: 'not_configured',
+          suggestions: [],
+          message: 'MAPBOX_ACCESS_TOKEN is not configured'
+        };
+      }
+
+      const clampedLimit = Math.max(1, Math.min(limit, 10));
+      const url = `${this.providers.mapbox.baseUrl}/${encodeURIComponent(partial)}.json?access_token=${this.providers.mapbox.apiKey}&autocomplete=true&types=address,place,postcode&limit=${clampedLimit}&country=US`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        return {
+          provider: 'mapbox',
+          status: 'provider_error',
+          suggestions: [],
+          message: `HTTP ${response.status} from Mapbox autocomplete`
+        };
+      }
+
+      const data = await response.json();
+      if (!Array.isArray(data.features)) {
+        return {
+          provider: 'mapbox',
+          status: 'provider_error',
+          suggestions: [],
+          message: 'Mapbox autocomplete returned malformed payload'
+        };
+      }
+
+      const suggestions = data.features
+        .map((feature: any) => {
+          if (typeof feature?.place_name === 'string' && feature.place_name.trim().length > 0) {
+            return feature.place_name.trim();
+          }
+          if (typeof feature?.text === 'string' && feature.text.trim().length > 0) {
+            return feature.text.trim();
+          }
+          return null;
+        })
+        .filter((value: string | null): value is string => value !== null)
+        .slice(0, clampedLimit);
+
+      if (suggestions.length === 0) {
+        return {
+          provider: 'mapbox',
+          status: 'zero_results',
+          suggestions: []
+        };
+      }
+
+      return {
+        provider: 'mapbox',
+        status: 'ok',
+        suggestions
+      };
+    } catch (error) {
+      this.logger.error('Mapbox Autocomplete failed', { error, partial });
+      return {
+        provider: 'mapbox',
+        status: 'provider_error',
+        suggestions: [],
+        message: error instanceof Error ? error.message : 'Mapbox autocomplete request failed'
+      };
+    }
   }
 
   private async validateWithUSPS(address: string): Promise<AddressValidationResult | null> {

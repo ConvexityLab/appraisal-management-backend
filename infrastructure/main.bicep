@@ -114,6 +114,15 @@ param axiomPipelineIdSchemaExtract string = 'complete-document-criteria-evaluati
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
 
+@description('Platform client ID for Axiom API namespace scoping (AXIOM_CLIENT_ID). Written to Container App env var.')
+param axiomClientId string = ''
+
+@description('Platform sub-client ID for Axiom API namespace scoping (AXIOM_SUB_CLIENT_ID). Written to Container App env var.')
+param axiomSubClientId string = ''
+
+@description('Object ID of the service principal for the backend app registration. Required by the entra-extension-attributes module. Leave empty to skip the Entra extension deployment.')
+param azureServicePrincipalObjectId string = ''
+
 // appConfigEndpoint is no longer an input param — it is computed from our own
 // App Configuration store (deployed by the appConfig module below).
 
@@ -416,12 +425,31 @@ module appServices 'modules/app-services.bicep' = {
     axiomApiBaseUrl: axiomApiBaseUrl
     axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
     axiomWebhookSecret: axiomWebhookSecret
+    axiomClientId: axiomClientId
+    axiomSubClientId: axiomSubClientId
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     azureOpenAiApiKey: azureOpenAiApiKey
     azureOpenAiEndpoint: azureOpenAiEndpoint
     googleGeminiApiKey: googleGeminiApiKey
     sambanovaApiKey: sambanovaApiKey
     sambanovaEndpoint: 'https://api.sambanova.ai/v1'
+  }
+}
+
+// Entra ID extension attributes — registers clientId/subClientId as directory extension properties
+// on the app registration and wires them into a ClaimsMappingPolicy.
+// Only deployed when azureServicePrincipalObjectId is supplied (avoids breaking CI with no SP object ID).
+module entraExtension 'modules/entra-extension-attributes.bicep' = if (!empty(azureServicePrincipalObjectId)) {
+  name: 'entra-extension-deployment'
+  scope: resourceGroup
+  params: {
+    tenantId: azureTenantId
+    appClientId: azureClientId
+    servicePrincipalObjectId: azureServicePrincipalObjectId
+    environment: environment
+    location: location
+    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
+    tags: tags
   }
 }
 

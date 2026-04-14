@@ -18,6 +18,10 @@ export interface UnifiedAuthRequest extends Request {
     name: string;
     role?: string;  // Set by Azure Entra auth middleware; used by collaboration authz
     tenantId: string;
+    /** Platform client ID (aligned with Axiom) — from JWT claim or AXIOM_CLIENT_ID env. */
+    clientId?: string;
+    /** Platform sub-client ID (aligned with Axiom) — from JWT claim or AXIOM_SUB_CLIENT_ID env. */
+    subClientId?: string;
     azureAdObjectId?: string;
     accessScope?: any;
     isTestUser?: boolean;
@@ -185,7 +189,8 @@ export class UnifiedAuthMiddleware {
         // Try Azure AD authentication (but don't fail if token is just missing)
         // Still reject malicious tokens
         try {
-          return this.azureAuth.authenticate(req as any, res, next);
+          await this.azureAuth.authenticate(req as any, res, next);
+          return;
         } catch (error: any) {
           // Only bypass auth for missing/expired tokens, not malformed ones
           if (error?.code === 'TOKEN_EXPIRED' || error?.code === 'TOKEN_INVALID') {

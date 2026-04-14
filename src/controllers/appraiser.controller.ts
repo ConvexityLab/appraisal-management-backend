@@ -8,6 +8,7 @@ import { AppraiserService } from '../services/appraiser.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 export class AppraiserController {
   public router: Router;
@@ -15,27 +16,31 @@ export class AppraiserController {
   private logger: Logger;
 
 
-  constructor(cosmosService: CosmosDbService) {
+  constructor(cosmosService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.appraiserService = new AppraiserService(cosmosService);
     this.logger = new Logger('AppraiserController');
-    this.initializeRoutes();
+    this.initializeRoutes(authzMiddleware);
   }
 
-  private initializeRoutes(): void {
-    this.router.get('/', this.getAllAppraisers.bind(this));
-    this.router.get('/available', this.getAvailableAppraisers.bind(this));
-    this.router.get('/:id', this.getAppraiser.bind(this));
-    this.router.post('/', this.createAppraiser.bind(this));
-    this.router.put('/:id', this.updateAppraiser.bind(this));
-    this.router.post('/:id/assign', this.assignAppraiser.bind(this));
-    this.router.get('/:id/conflicts', this.checkConflicts.bind(this));
-    this.router.get('/:id/licenses/expiring', this.checkLicenseExpiration.bind(this));
-    
+  private initializeRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('appraiser', 'read')]   : [];
+    const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('appraiser', 'create')] : [];
+    const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('appraiser', 'update')] : [];
+
+    this.router.get('/', ...read, this.getAllAppraisers.bind(this));
+    this.router.get('/available', ...read, this.getAvailableAppraisers.bind(this));
+    this.router.get('/:id', ...read, this.getAppraiser.bind(this));
+    this.router.post('/', ...create, this.createAppraiser.bind(this));
+    this.router.put('/:id', ...update, this.updateAppraiser.bind(this));
+    this.router.post('/:id/assign', ...update, this.assignAppraiser.bind(this));
+    this.router.get('/:id/conflicts', ...read, this.checkConflicts.bind(this));
+    this.router.get('/:id/licenses/expiring', ...read, this.checkLicenseExpiration.bind(this));
+
     // Assignment acceptance workflow
-    this.router.get('/:id/assignments/pending', this.getPendingAssignments.bind(this));
-    this.router.post('/:id/assignments/:assignmentId/accept', this.acceptAssignment.bind(this));
-    this.router.post('/:id/assignments/:assignmentId/reject', this.rejectAssignment.bind(this));
+    this.router.get('/:id/assignments/pending', ...read, this.getPendingAssignments.bind(this));
+    this.router.post('/:id/assignments/:assignmentId/accept', ...update, this.acceptAssignment.bind(this));
+    this.router.post('/:id/assignments/:assignmentId/reject', ...update, this.rejectAssignment.bind(this));
   }
 
   /**

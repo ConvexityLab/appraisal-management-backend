@@ -242,6 +242,173 @@ function buildQcReviews(tenantId: string): Record<string, unknown>[] {
         teamId: 'qc-team-west', visibilityScope: 'TEAM',
         assignedUserIds: [STAFF_IDS.QC_ANALYST_1, STAFF_IDS.QC_ANALYST_2],
       },
+      // Shape 1: top-level categoriesResults with questions[] and document citations.
+      // The adapter reads raw.categoriesResults to build the rich Evidence Panel.
+      categoriesResults: [
+        {
+          categoryId: 'salesComparison', categoryName: 'Sales Comparison', categoryCode: 'SALES_COMP',
+          score: 55, passed: false,
+          summary: { totalQuestions: 2, questionsAnswered: 2, errors: 2, warnings: 0, averageConfidence: 0.93 },
+          questions: [
+            {
+              questionId: 'COMP_MIN_THREE_CLOSED',
+              questionCode: 'COMP_MIN_THREE_CLOSED',
+              questionText: 'Are at least 3 closed comparables within 1 mile used?',
+              questionType: 'PASS_FAIL',
+              passed: false, severity: 'critical', verificationStatus: 'disputed',
+              issue: {
+                code: 'COMP_DISTANCE_EXCEEDED',
+                title: 'Comparable #2 Distance Exceeds Guidelines',
+                description: 'Comparable sale #2 is located 1.5 miles from the subject property, exceeding the 1-mile guideline for urban areas.',
+                category: 'salesComparison',
+                source: 'ai',
+                recommendedAction: 'Replace comparable #2 with a sale within 1 mile or provide detailed market support for the expanded search.',
+              },
+              criteria: {
+                ruleId: 'RULE-COMP-DISTANCE-URBAN',
+                description: 'Urban properties require at least 3 closed comparables within 1 mile absent market condition justification',
+                sourceDocument: {
+                  documentId: 'doc-fnma-guidelines',
+                  documentName: 'FNMA Selling Guide',
+                  documentType: 'guideline',
+                  pageNumber: 47,
+                  sectionReference: 'B4-1.3-09',
+                },
+              },
+              answer: {
+                questionId: 'COMP_MIN_THREE_CLOSED',
+                value: false, confidence: 0.96, source: 'ai',
+                evidence: { actual: 'Comparable #2 at 1.5 mi', expected: '\u22641.0 mi for urban market', variance: 0.5 },
+                citations: [
+                  {
+                    documentId: 'seed-doc-report-003',
+                    documentName: 'SEED-2026-00103_Rush_1004_Report.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 5,
+                    sectionReference: 'Sales Comparison Grid',
+                    highlightText: '1.50 miles',
+                  },
+                ],
+              },
+            },
+            {
+              questionId: 'GROSS_ADJUSTMENT_THRESHOLD',
+              questionCode: 'GROSS_ADJUSTMENT_THRESHOLD',
+              questionText: 'Are gross adjustments within the 25% UAD threshold?',
+              questionType: 'SCORED',
+              passed: false, severity: 'high', verificationStatus: 'pending',
+              issue: {
+                code: 'GROSS_ADJ_EXCEEDED',
+                title: 'Gross Adjustment Exceeds 25% Threshold',
+                description: 'Comparable #2 gross adjustment is 31% of sale price, exceeding the UAD 25% guideline. No explanatory addendum provided.',
+                category: 'salesComparison',
+                source: 'ai',
+                recommendedAction: 'Add an addendum explaining the adjustment rationale, or replace comparable #2.',
+              },
+              criteria: {
+                ruleId: 'RULE-COMP-ADJUSTMENT-LIMITS',
+                description: 'UAD requires gross adjustments \u226425% and net adjustments \u226415% of sale price without explanation',
+                sourceDocument: {
+                  documentId: 'doc-fnma-guidelines',
+                  documentName: 'FNMA Selling Guide',
+                  documentType: 'guideline',
+                  pageNumber: 49,
+                  sectionReference: 'B4-1.3-09',
+                },
+              },
+              answer: {
+                questionId: 'GROSS_ADJUSTMENT_THRESHOLD',
+                value: 4, confidence: 0.91, source: 'ai',
+                evidence: { actual: 'Comp #2 gross adj: 31%', expected: '\u226425% without addendum' },
+                citations: [
+                  {
+                    documentId: 'seed-doc-report-003',
+                    documentName: 'SEED-2026-00103_Rush_1004_Report.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 6,
+                    sectionReference: 'Adjustment Grid',
+                    highlightText: '31%',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          categoryId: 'appraiser', categoryName: 'Reconciliation & Value', categoryCode: 'APPRAISER',
+          score: 62, passed: false,
+          summary: { totalQuestions: 2, questionsAnswered: 2, errors: 1, warnings: 1, averageConfidence: 0.84 },
+          questions: [
+            {
+              questionId: 'VALUE_RECONCILIATION_SUPPORTED',
+              questionCode: 'VALUE_RECONCILIATION_SUPPORTED',
+              questionText: 'Is the final value opinion supported by the reconciliation narrative?',
+              questionType: 'SCORED',
+              passed: false, severity: 'high', verificationStatus: 'pending',
+              issue: {
+                code: 'VALUE_UNSUPPORTED',
+                title: 'Final Value Not Adequately Supported',
+                description: 'Final value is 3% higher than the indicated range from comparables without narrative justification.',
+                category: 'appraiser',
+                source: 'ai',
+                recommendedAction: 'Expand reconciliation narrative to explain the premium above the comparable-indicated range.',
+              },
+              criteria: {
+                ruleId: 'RULE-VALUE-SUPPORT',
+                description: 'The final value opinion must be supported by a reconciliation narrative referencing the weight given to each approach',
+                sourceDocument: {
+                  documentId: 'doc-uspap-standards',
+                  documentName: 'USPAP Standards',
+                  documentType: 'guideline',
+                  pageNumber: 22,
+                  sectionReference: 'Standards Rule 1-6',
+                },
+              },
+              answer: {
+                questionId: 'VALUE_RECONCILIATION_SUPPORTED',
+                value: 5, confidence: 0.82, source: 'ai',
+                evidence: { actual: '$525,000 — above comp range of $505K\u2013$518K', expected: 'Value within or explained above comp range' },
+                citations: [
+                  {
+                    documentId: 'seed-doc-report-003',
+                    documentName: 'SEED-2026-00103_Rush_1004_Report.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 8,
+                    sectionReference: 'Reconciliation',
+                    highlightText: '$525,000',
+                  },
+                ],
+              },
+            },
+            {
+              questionId: 'APPROACHES_CONSIDERED',
+              questionCode: 'APPROACHES_CONSIDERED',
+              questionText: 'Are all applicable approaches to value considered and reported?',
+              questionType: 'PASS_FAIL',
+              passed: true, severity: 'low', verificationStatus: 'verified',
+              criteria: {
+                ruleId: 'RULE-APPROACHES',
+                description: 'Sales comparison approach required; cost and income approaches must be considered and their exclusion explained',
+              },
+              answer: {
+                questionId: 'APPROACHES_CONSIDERED',
+                value: true, confidence: 0.92, source: 'ai',
+                evidence: { actual: 'Sales comparison used; cost approach noted not applicable', expected: 'All applicable approaches considered' },
+                citations: [
+                  {
+                    documentId: 'seed-doc-report-003',
+                    documentName: 'SEED-2026-00103_Rush_1004_Report.pdf',
+                    documentType: 'appraisal',
+                    pageNumber: 8,
+                    sectionReference: 'Reconciliation',
+                    highlightText: 'cost approach is not applicable',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
       version: 5,
       createdAt: daysAgo(3), updatedAt: daysAgo(3),
     },

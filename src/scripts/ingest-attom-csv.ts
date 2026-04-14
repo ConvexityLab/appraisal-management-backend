@@ -23,6 +23,7 @@
  *   ATTOM_CSV_DRY_RUN          Set to "true" to parse without writing to Cosmos
  */
 
+import 'dotenv/config';
 import * as readline from 'node:readline';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { DefaultAzureCredential } from '@azure/identity';
@@ -60,6 +61,49 @@ function loadConfig() {
   }
 
   return { storageAccount, cosmosEndpoint, container, blobs, batchSize, dryRun };
+}
+
+// ─── Retry helper ────────────────────────────────────────────────────────────
+
+/** Error codes treated as transient and eligible for retry. */
+const TRANSIENT_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE', 'ENOTFOUND']);
+
+function isTransient(err: unknown): boolean {
+  if (err instanceof Error) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code && TRANSIENT_CODES.has(code)) return true;
+    // Cosmos SDK wraps the error in a message string
+    if (err.message.includes('ECONNRESET') || err.message.includes('ETIMEDOUT') ||
+        err.message.includes('The operation was aborted')) return true;
+  }
+  return false;
+}
+
+/**
+ * Retry `fn` up to `maxAttempts` times on transient errors.
+ * Waits `baseDelayMs * 2^attempt` ms between retries.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = 4,
+  baseDelayMs = 2000,
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxAttempts || !isTransient(err)) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      console.warn(
+        `[retry] ${label} — attempt ${attempt}/${maxAttempts} failed (${(err as Error).message}). ` +
+        `Retrying in ${delay / 1000}s...`,
+      );
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  // Unreachable but TypeScript needs a return path
+  throw new Error(`[retry] ${label} — exhausted all ${maxAttempts} attempts`);
 }
 
 // ─── RFC 4180 CSV tokenizer ───────────────────────────────────────────────────
@@ -282,7 +326,10 @@ async function ingestBlob(
 
     if (batch.length >= batchSize) {
       if (!dryRun) {
-        const result = await cacheService.upsertBatch(batch);
+        const result = await withRetry(
+          () => cacheService.upsertBatch(batch),
+          `${blobName} batch at row ${lineNumber}`,
+        );
         totalFailed += result.failed;
       }
       totalProcessed += batch.length;
@@ -297,7 +344,10 @@ async function ingestBlob(
   // Flush remaining
   if (batch.length > 0) {
     if (!dryRun) {
-      const result = await cacheService.upsertBatch(batch);
+      const result = await withRetry(
+        () => cacheService.upsertBatch(batch),
+        `${blobName} final batch`,
+      );
       totalFailed += result.failed;
     }
     totalProcessed += batch.length;
@@ -339,13 +389,18 @@ async function main(): Promise<void> {
   const startTime = Date.now();
 
   for (const blobName of config.blobs) {
-    await ingestBlob(
-      blobServiceClient,
-      config.container,
-      blobName,
-      cacheService,
-      config.batchSize,
-      config.dryRun,
+    await withRetry(
+      () => ingestBlob(
+        blobServiceClient,
+        config.container,
+        blobName,
+        cacheService,
+        config.batchSize,
+        config.dryRun,
+      ),
+      `ingestBlob(${blobName})`,
+      3,   // max 3 attempts per blob
+      5000, // start at 5s between blob-level retries
     );
   }
 

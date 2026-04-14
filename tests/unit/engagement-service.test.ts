@@ -653,3 +653,274 @@ describe('createEngagement — enrichment wiring', () => {
     ).resolves.not.toThrow();
   });
 });
+// ---------------------------------------------------------------------------
+// 11. addLoanToEngagement — enrichment wiring
+// ---------------------------------------------------------------------------
+
+describe('addLoanToEngagement — enrichment wiring', () => {
+  function makeEnrichmentService() {
+    return {
+      enrichEngagement: vi.fn().mockResolvedValue({
+        enrichmentId: 'enrich-loan-new-123',
+        propertyId:   'prop-test-001',
+        status:       'enriched',
+      }),
+    };
+  }
+
+  it('resolves a PropertyRecord and sets propertyId on the new loan', async () => {
+    const doc = makeEngagement({ loans: [makeLoan()] });
+    const container = makeMockContainer(doc);
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
+    });
+    const propSvc = makePropertyRecordService(); // resolveOrCreate → prop-test-001
+
+    const svc = new EngagementService(makeDbService(container), propSvc, makeEnrichmentService() as any);
+    const result = await svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
+      loanNumber:   'LN-NEW',
+      borrowerName: 'New Borrower',
+      property: { address: '55 Oak St', city: 'Austin', state: 'TX', zipCode: '78701' },
+      products: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+    }, 'user-001');
+
+    expect(propSvc.resolveOrCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: { street: '55 Oak St', city: 'Austin', state: 'TX', zip: '78701' },
+        tenantId: 'tenant-001',
+        createdBy: 'user-001',
+      }),
+    );
+    const newLoan = result.loans.find(l => l.loanNumber === 'LN-NEW');
+    expect(newLoan?.propertyId).toBe('prop-test-001');
+  });
+
+  it('calls enrichEngagement for the newly added loan', async () => {
+    const doc = makeEngagement({ loans: [makeLoan()] });
+    const container = makeMockContainer(doc);
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
+    });
+    const enrichSvc = makeEnrichmentService();
+
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService(), enrichSvc as any);
+    await svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
+      loanNumber:   'LN-NEW',
+      borrowerName: 'New Borrower',
+      property: { address: '55 Oak St', city: 'Austin', state: 'TX', zipCode: '78701' },
+      products: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+    }, 'user-001');
+
+    await vi.waitFor(() => expect(enrichSvc.enrichEngagement).toHaveBeenCalled());
+    expect(enrichSvc.enrichEngagement).toHaveBeenCalledOnce();
+  });
+
+  it('passes engagementId, new loanId, resolved propertyId to enrichEngagement', async () => {
+    const doc = makeEngagement({ loans: [makeLoan()] });
+    const container = makeMockContainer(doc);
+
+    let savedDoc: Engagement | undefined;
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => { savedDoc = d; return { resource: d }; }),
+    });
+    const enrichSvc = makeEnrichmentService();
+
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService(), enrichSvc as any);
+    await svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
+      loanNumber:   'LN-NEW',
+      borrowerName: 'New Borrower',
+      property: { address: '55 Oak St', city: 'Austin', state: 'TX', zipCode: '78701' },
+      products: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+    }, 'user-001');
+
+    await vi.waitFor(() => expect(enrichSvc.enrichEngagement).toHaveBeenCalled());
+
+    const newLoan = savedDoc!.loans.find(l => l.loanNumber === 'LN-NEW')!;
+    expect(enrichSvc.enrichEngagement).toHaveBeenCalledWith(
+      'eng-test-001',          // engagementId
+      newLoan.id,              // loanId (generated)
+      'tenant-001',            // tenantId
+      { street: '55 Oak St', city: 'Austin', state: 'TX', zipCode: '78701' },
+      'prop-test-001',         // resolved propertyId
+    );
+  });
+
+  it('does not throw when enrichEngagement rejects for the added loan (non-fatal)', async () => {
+    const doc = makeEngagement({ loans: [makeLoan()] });
+    const container = makeMockContainer(doc);
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
+    });
+    const enrichSvc = {
+      enrichEngagement: vi.fn().mockRejectedValue(new Error('provider error')),
+    };
+
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService(), enrichSvc as any);
+    await expect(
+      svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
+        loanNumber:   'LN-NEW',
+        borrowerName: 'New Borrower',
+        property: { address: '55 Oak St', city: 'Austin', state: 'TX', zipCode: '78701' },
+        products: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+      }, 'user-001'),
+    ).resolves.not.toThrow();
+  });
+
+  it('does not throw when resolveOrCreate fails (non-fatal — loan saved without propertyId)', async () => {
+    const doc = makeEngagement({ loans: [makeLoan()] });
+    const container = makeMockContainer(doc);
+    container.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: doc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
+    });
+    const failingPropSvc = {
+      resolveOrCreate: vi.fn().mockRejectedValue(new Error('cosmos unavailable')),
+    };
+    const enrichSvc = makeEnrichmentService();
+
+    const svc = new EngagementService(makeDbService(container), failingPropSvc as any, enrichSvc as any);
+    const result = await svc.addLoanToEngagement('eng-test-001', 'tenant-001', {
+      loanNumber:   'LN-NEW',
+      borrowerName: 'New Borrower',
+      property: { address: '55 Oak St', city: 'Austin', state: 'TX', zipCode: '78701' },
+      products: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+    }, 'user-001');
+
+    // Loan is still added even without a resolved propertyId
+    expect(result.loans).toHaveLength(2);
+    const newLoan = result.loans.find(l => l.loanNumber === 'LN-NEW');
+    expect(newLoan).toBeDefined();
+    expect(newLoan?.propertyId).toBeUndefined();
+  });
+});
+// ---------------------------------------------------------------------------
+// 12. updateLoan — enrichment wiring on address change
+// ---------------------------------------------------------------------------
+
+describe('updateLoan — enrichment wiring on address change', () => {
+  function makeEnrichmentService() {
+    return {
+      enrichEngagement: vi.fn().mockResolvedValue({
+        enrichmentId: 'enrich-update-123',
+        propertyId:   'prop-test-001',
+        status:       'enriched',
+      }),
+    };
+  }
+
+  function makeContainer(storedDoc: Engagement) {
+    const c = makeMockContainer(storedDoc);
+    c.item = vi.fn().mockReturnValue({
+      read:    vi.fn().mockResolvedValue({ resource: storedDoc }),
+      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
+    });
+    return c;
+  }
+
+  it('does NOT fire enrichment when property is not part of the update', async () => {
+    const doc = makeEngagement({ loans: [makeLoan({ id: 'loan-001', loanNumber: 'LN-001' })] });
+    const enrichSvc = makeEnrichmentService();
+    const svc = new EngagementService(makeDbService(makeContainer(doc)), makePropertyRecordService(), enrichSvc as any);
+
+    await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', { loanNumber: 'LN-UPDATED' }, 'user-001');
+
+    // Give fire-and-forget a chance to run (it shouldn't)
+    await new Promise(r => setTimeout(r, 20));
+    expect(enrichSvc.enrichEngagement).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire enrichment when property is provided but address fields are unchanged', async () => {
+    const loan = makeLoan({ id: 'loan-001', property: { address: '123 Main St', city: 'Denver', state: 'CO', zipCode: '80203' } });
+    const doc = makeEngagement({ loans: [loan] });
+    const enrichSvc = makeEnrichmentService();
+    const svc = new EngagementService(makeDbService(makeContainer(doc)), makePropertyRecordService(), enrichSvc as any);
+
+    // Same address, only non-address field changed (county)
+    await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', {
+      property: { address: '123 Main St', city: 'Denver', state: 'CO', zipCode: '80203', county: 'Denver County' },
+    }, 'user-001');
+
+    await new Promise(r => setTimeout(r, 20));
+    expect(enrichSvc.enrichEngagement).not.toHaveBeenCalled();
+  });
+
+  it('re-resolves PropertyRecord and updates propertyId when street address changes', async () => {
+    const loan = makeLoan({ id: 'loan-001', property: { address: '123 Main St', state: 'CO', zipCode: '80203' } });
+    const doc = makeEngagement({ loans: [loan] });
+    const propSvc = makePropertyRecordService();
+    const svc = new EngagementService(makeDbService(makeContainer(doc)), propSvc, makeEnrichmentService() as any);
+
+    const result = await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', {
+      property: { address: '999 New Ave', city: 'Boulder', state: 'CO', zipCode: '80301' },
+    }, 'user-001');
+
+    expect(propSvc.resolveOrCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: { street: '999 New Ave', city: 'Boulder', state: 'CO', zip: '80301' },
+        tenantId: 'tenant-001',
+        createdBy: 'user-001',
+      }),
+    );
+    const updatedLoan = result.loans.find(l => l.id === 'loan-001')!;
+    expect(updatedLoan.propertyId).toBe('prop-test-001');
+  });
+
+  it('calls enrichEngagement with the new address when address changes', async () => {
+    const loan = makeLoan({ id: 'loan-001', property: { address: '123 Main St', state: 'CO', zipCode: '80203' } });
+    const doc = makeEngagement({ loans: [loan] });
+    const enrichSvc = makeEnrichmentService();
+    const svc = new EngagementService(makeDbService(makeContainer(doc)), makePropertyRecordService(), enrichSvc as any);
+
+    await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', {
+      property: { address: '999 New Ave', city: 'Boulder', state: 'CO', zipCode: '80301' },
+    }, 'user-001');
+
+    await vi.waitFor(() => expect(enrichSvc.enrichEngagement).toHaveBeenCalled());
+    expect(enrichSvc.enrichEngagement).toHaveBeenCalledWith(
+      'eng-test-001',
+      'loan-001',
+      'tenant-001',
+      { street: '999 New Ave', city: 'Boulder', state: 'CO', zipCode: '80301' },
+      'prop-test-001',
+    );
+  });
+
+  it('non-fatal: enrichEngagement rejection does not throw when address changes', async () => {
+    const loan = makeLoan({ id: 'loan-001', property: { address: '123 Main St', state: 'CO', zipCode: '80203' } });
+    const doc = makeEngagement({ loans: [loan] });
+    const enrichSvc = {
+      enrichEngagement: vi.fn().mockRejectedValue(new Error('provider down')),
+    };
+    const svc = new EngagementService(makeDbService(makeContainer(doc)), makePropertyRecordService(), enrichSvc as any);
+
+    await expect(
+      svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', {
+        property: { address: '999 New Ave', city: 'Boulder', state: 'CO', zipCode: '80301' },
+      }, 'user-001'),
+    ).resolves.not.toThrow();
+  });
+
+  it('non-fatal: resolveOrCreate failure still saves the updated address (no propertyId)', async () => {
+    const loan = makeLoan({ id: 'loan-001', property: { address: '123 Main St', state: 'CO', zipCode: '80203' } });
+    const doc = makeEngagement({ loans: [loan] });
+    const failingPropSvc = {
+      resolveOrCreate: vi.fn().mockRejectedValue(new Error('cosmos unavailable')),
+    };
+    const enrichSvc = makeEnrichmentService();
+    const svc = new EngagementService(makeDbService(makeContainer(doc)), failingPropSvc as any, enrichSvc as any);
+
+    const result = await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', {
+      property: { address: '999 New Ave', city: 'Boulder', state: 'CO', zipCode: '80301' },
+    }, 'user-001');
+
+    const updatedLoan = result.loans.find(l => l.id === 'loan-001')!;
+    // Address was updated
+    expect(updatedLoan.property.address).toBe('999 New Ave');
+    // But no propertyId since resolution failed
+    expect(updatedLoan.propertyId).toBeUndefined();
+  });
+});

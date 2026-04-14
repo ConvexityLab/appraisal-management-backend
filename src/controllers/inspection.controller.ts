@@ -9,33 +9,38 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { ScheduleInspectionRequest, RescheduleInspectionRequest } from '../types/inspection.types.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 export class InspectionController {
   public router: Router;
   private inspectionService: InspectionService;
   private logger: Logger;
 
-  constructor(cosmosService: CosmosDbService) {
+  constructor(cosmosService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.inspectionService = new InspectionService(cosmosService);
     this.logger = new Logger('InspectionController');
-    this.initializeRoutes();
+    this.initializeRoutes(authzMiddleware);
   }
 
-  private initializeRoutes(): void {
+  private initializeRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('inspection', 'read')]   : [];
+    const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('inspection', 'create')] : [];
+    const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('inspection', 'update')] : [];
+
     // List and query
-    this.router.get('/', this.getAllInspections.bind(this));
-    this.router.get('/order/:orderId', this.getInspectionsByOrder.bind(this));
-    this.router.get('/appraiser/:appraiserId', this.getInspectionsByAppraiser.bind(this));
-    this.router.get('/:id', this.getInspection.bind(this));
-    
+    this.router.get('/', ...read, this.getAllInspections.bind(this));
+    this.router.get('/order/:orderId', ...read, this.getInspectionsByOrder.bind(this));
+    this.router.get('/appraiser/:appraiserId', ...read, this.getInspectionsByAppraiser.bind(this));
+    this.router.get('/:id', ...read, this.getInspection.bind(this));
+
     // Schedule and manage
-    this.router.post('/', this.scheduleInspection.bind(this));
-    this.router.put('/:id/reschedule', this.rescheduleInspection.bind(this));
-    this.router.put('/:id/confirm', this.confirmInspection.bind(this));
-    this.router.put('/:id/start', this.startInspection.bind(this));
-    this.router.put('/:id/complete', this.completeInspection.bind(this));
-    this.router.put('/:id/cancel', this.cancelInspection.bind(this));
+    this.router.post('/', ...create, this.scheduleInspection.bind(this));
+    this.router.put('/:id/reschedule', ...update, this.rescheduleInspection.bind(this));
+    this.router.put('/:id/confirm', ...update, this.confirmInspection.bind(this));
+    this.router.put('/:id/start', ...update, this.startInspection.bind(this));
+    this.router.put('/:id/complete', ...update, this.completeInspection.bind(this));
+    this.router.put('/:id/cancel', ...update, this.cancelInspection.bind(this));
   }
 
   /**

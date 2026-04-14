@@ -1,0 +1,146 @@
+name: Set User Identities
+
+# Stamps Entra ID extension attributes (clientId / subClientId) onto platform
+# users so those values flow into JWTs and scope Cosmos / Axiom calls correctly.
+#
+# When to run:
+#   - After a first-time infrastructure deployment (Entra extension module must
+#     have run at least once before this will succeed).
+#   - Whenever scripts/user-identities.json is updated.
+#   - To onboard a new user — add them to user-identities.json and re-run.
+#
+# Required GitHub environment secrets (shared with infrastructure.yml):
+#   AZURE_CREDENTIALS   – Service principal JSON (az ad sp create-for-rbac --sdk-auth)
+#   AZURE_TENANT_ID     – Entra tenant GUID
+#   AZURE_CLIENT_ID     – App registration client ID (used to derive extension attr namespace)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (dev, staging, prod)'
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_CLIENT_ID:
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        description: 'Target environment'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  set-identities:
+    name: Set User Identities (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      # Used by set-user-identity.ts to derive the extension attribute namespace.
+      # Falls back to the hardcoded app reg ID in the script if not set.
+      AZURE_API_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Stamp user identities
+        run: |
+          ENV="${{ inputs.environment }}"
+          CONFIG_FILE="scripts/user-identities.json"
+
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "❌ Config file not found: $CONFIG_FILE"
+            exit 1
+          fi
+
+          # Extract users for this environment
+          USERS=$(jq -c --arg env "$ENV" '.[$env] // []' "$CONFIG_FILE")
+          COUNT=$(echo "$USERS" | jq 'length')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "⚠️  No users configured for environment '$ENV' in $CONFIG_FILE — nothing to do."
+            exit 0
+          fi
+
+          echo "👥 Stamping $COUNT user(s) for '$ENV'..."
+          FAILED=0
+
+          for row in $(echo "$USERS" | jq -r '.[] | @base64'); do
+            _jq() { echo "$row" | base64 --decode | jq -r "$1"; }
+            UPN=$(_jq '.upn')
+            CLIENT_ID=$(_jq '.clientId')
+            SUB_CLIENT_ID=$(_jq '.subClientId')
+            ROLE=$(_jq '.role // ""')
+
+            echo ""
+            echo "🔍 Resolving object ID for: $UPN"
+            # Resolve UPN → Entra object ID; fail clearly if user doesn't exist.
+            OBJECT_ID=$(az ad user show --id "$UPN" --query id -o tsv 2>/dev/null || echo '')
+
+            if [ -z "$OBJECT_ID" ]; then
+              echo "  ❌ Could not resolve '$UPN' — user may not exist in this tenant. Skipping."
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+
+            echo "  ✅ Resolved → $OBJECT_ID"
+            echo "  📝 clientId=$CLIENT_ID  subClientId=$SUB_CLIENT_ID  role=$ROLE"
+
+            npx tsx scripts/set-user-identity.ts \
+              --user "$OBJECT_ID" \
+              --clientId "$CLIENT_ID" \
+              --subClientId "$SUB_CLIENT_ID"
+
+            # Assign App Role if specified
+            if [ -n "$ROLE" ] && [ "$ROLE" != "null" ]; then
+              npx tsx scripts/assign-user-role.ts \
+                --user "$OBJECT_ID" \
+                --role "$ROLE"
+            else
+              echo "  ℹ️  No role configured for $UPN — skipping role assignment."
+            fi
+          done
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo ""
+            echo "❌ $FAILED user(s) could not be resolved. Check UPNs in $CONFIG_FILE."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All $COUNT user(s) stamped successfully."
+          echo "ℹ️  New values appear in tokens after the user's next sign-in or token refresh."

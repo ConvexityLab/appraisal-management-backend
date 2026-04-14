@@ -20,8 +20,8 @@ import { RevisionSeverity, CreateRevisionRequest } from '../types/qc-workflow.js
 import { FieldOverride } from '../types/final-report.types.js';
 import { FinalReportService } from '../services/final-report.service.js';
 import { Logger } from '../utils/logger.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
-const router = express.Router();
 const logger = new Logger();
 
 // Initialize services
@@ -32,7 +32,23 @@ const slaService = new SLATrackingService();
 const dbService = new CosmosDbService();
 const axiomService = new AxiomService();
 
-/** Lazy-init: resolved once for the controller-level CosmosDB instance */
+export function createQCWorkflowRouter(authzMiddleware?: AuthorizationMiddleware): express.Router {
+  const router = express.Router();
+
+  // Guard arrays — empty when authzMiddleware is absent (e.g. test/legacy mode)
+  const qcQueueRead     = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'read')]    : [];
+  const qcQueueUpdate   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'update')]  : [];
+  const qcQueueExecute  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'execute')] : [];
+  const revisionRead    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'read')]    : [];
+  const revisionCreate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'create')]  : [];
+  const revisionUpdate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'update')]  : [];
+  const escalationRead  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','read')]    : [];
+  const escalationCreate= authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','create')]  : [];
+  const escalationUpdate= authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','update')]  : [];
+  const analyticsRead   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('analytics', 'read')]    : [];
+  const qcReviewUpdate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'update')]  : [];
+
+  /** Lazy-init: resolved once for the controller-level CosmosDB instance */
 let _controllerDbInit: Promise<void> | null = null;
 function ensureControllerDb(): Promise<void> {
   if (!_controllerDbInit) _controllerDbInit = dbService.initialize();
@@ -68,6 +84,7 @@ const handleValidationErrors = (req: Request, res: Response, next: Function): vo
  */
 router.get(
   '/queue',
+  ...qcQueueRead,
   [
     query('status').optional().isString(),
     query('priorityLevel').optional().isString(),
@@ -110,7 +127,7 @@ router.get(
  * GET /api/qc-workflow/queue/statistics
  * Get queue statistics
  */
-router.get('/queue/statistics', async (req: Request, res: Response) => {
+router.get('/queue/statistics', ...qcQueueRead, async (req: Request, res: Response) => {
   try {
     const stats = await qcQueueService.getQueueStatistics();
 
@@ -149,6 +166,7 @@ router.get('/queue/statistics', async (req: Request, res: Response) => {
  */
 router.post(
   '/queue/assign',
+  ...qcQueueUpdate,
   [
     body('queueItemId').notEmpty(),
     body('analystId').notEmpty(),
@@ -183,7 +201,7 @@ router.post(
  * POST /api/qc-workflow/queue/auto-assign
  * Auto-assign reviews to balance workload
  */
-router.post('/queue/auto-assign', async (req: Request, res: Response) => {
+router.post('/queue/auto-assign', ...qcQueueUpdate, async (req: Request, res: Response) => {
   try {
     const assignedCount = await qcQueueService.autoAssignReviews();
 
@@ -208,6 +226,7 @@ router.post('/queue/auto-assign', async (req: Request, res: Response) => {
  */
 router.get(
   '/queue/next/:analystId',
+  ...qcQueueRead,
   [param('analystId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -241,7 +260,7 @@ router.get(
  * GET /api/qc-workflow/analysts/workload
  * Get all analysts with workload
  */
-router.get('/analysts/workload', async (req: Request, res: Response) => {
+router.get('/analysts/workload', ...qcQueueRead, async (req: Request, res: Response) => {
   try {
     const workloads = await qcQueueService.getAllAnalystWorkloads();
 
@@ -264,187 +283,10 @@ router.get('/analysts/workload', async (req: Request, res: Response) => {
 // ===========================
 
 /**
- * POST /api/qc-workflow/revisions
- * Create revision request
- */
-router.post(
-  '/revisions',
-  [
-    body('orderId').notEmpty(),
-    body('appraisalId').notEmpty(),
-    body('qcReportId').notEmpty(),
-    body('severity').isIn(['MINOR', 'MODERATE', 'MAJOR', 'CRITICAL']),
-    body('dueDate').optional().isISO8601(),
-    body('issues').isArray({ min: 1 }),
-    body('requestNotes').notEmpty(),
-    body('requestedBy').notEmpty()
-  ],
-  handleValidationErrors,
-  async (req: Request, res: Response) => {
-    try {
-      const revision = await revisionService.createRevisionRequest({
-        ...req.body,
-        dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined
-      });
-
-      return res.status(201).json({
-        success: true,
-        data: revision,
-        message: 'Revision request created successfully'
-      });
-
-    } catch (error) {
-      logger.error('Failed to create revision', { error });
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to create revision request'
-      });
-    }
-  }
-);
-
-/**
- * POST /api/qc-workflow/revisions/:revisionId/submit
- * Submit revised appraisal
- */
-router.post(
-  '/revisions/:revisionId/submit',
-  [
-    param('revisionId').notEmpty(),
-    body('responseNotes').notEmpty(),
-    body('submittedBy').notEmpty(),
-    body('resolvedIssues').isArray()
-  ],
-  handleValidationErrors,
-  async (req: Request, res: Response) => {
-    try {
-      const revision = await revisionService.submitRevision({
-        revisionId: req.params.revisionId!,
-        responseNotes: req.body.responseNotes,
-        submittedBy: req.body.submittedBy,
-        resolvedIssues: req.body.resolvedIssues
-      });
-
-      return res.json({
-        success: true,
-        data: revision,
-        message: 'Revision submitted successfully - auto re-QC triggered'
-      });
-
-    } catch (error) {
-      logger.error('Failed to submit revision', { error });
-      return res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to submit revision'
-      });
-    }
-  }
-);
-
-/**
- * POST /api/qc-workflow/revisions/:revisionId/accept
- * Accept revision
- */
-router.post(
-  '/revisions/:revisionId/accept',
-  [
-    param('revisionId').notEmpty(),
-    body('acceptedBy').notEmpty(),
-    body('notes').optional().isString()
-  ],
-  handleValidationErrors,
-  async (req: Request, res: Response) => {
-    try {
-      const revision = await revisionService.acceptRevision(
-        req.params.revisionId!,
-        req.body.acceptedBy,
-        req.body.notes
-      );
-
-      return res.json({
-        success: true,
-        data: revision,
-        message: 'Revision accepted'
-      });
-
-    } catch (error) {
-      logger.error('Failed to accept revision', { error });
-      return res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to accept revision'
-      });
-    }
-  }
-);
-
-/**
- * POST /api/qc-workflow/revisions/:revisionId/reject
- * Reject revision (needs more work)
- */
-router.post(
-  '/revisions/:revisionId/reject',
-  [
-    param('revisionId').notEmpty(),
-    body('rejectedBy').notEmpty(),
-    body('reason').notEmpty()
-  ],
-  handleValidationErrors,
-  async (req: Request, res: Response) => {
-    try {
-      const revision = await revisionService.rejectRevision(
-        req.params.revisionId!,
-        req.body.rejectedBy,
-        req.body.reason
-      );
-
-      return res.json({
-        success: true,
-        data: revision,
-        message: 'Revision rejected - appraiser notified'
-      });
-
-    } catch (error) {
-      logger.error('Failed to reject revision', { error });
-      return res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to reject revision'
-      });
-    }
-  }
-);
-
-/**
- * GET /api/qc-workflow/revisions/order/:orderId/history
- * Get revision history for order
- */
-router.get(
-  '/revisions/order/:orderId/history',
-  [param('orderId').notEmpty()],
-  handleValidationErrors,
-  async (req: Request, res: Response) => {
-    try {
-      const history = await revisionService.getRevisionHistory(req.params.orderId!);
-
-      return res.json({
-        success: true,
-        data: history
-      });
-
-    } catch (error) {
-      logger.error('Failed to get revision history', { error });
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to retrieve revision history'
-      });
-    }
-  }
-);
-
-/**
  * GET /api/qc-workflow/revisions/active
  * Get all active revisions
  */
-router.get('/revisions/active', async (req: Request, res: Response) => {
+router.get('/revisions/active', ...revisionRead, async (req: Request, res: Response) => {
   try {
     const revisions = await revisionService.getActiveRevisions();
 
@@ -467,7 +309,7 @@ router.get('/revisions/active', async (req: Request, res: Response) => {
  * GET /api/qc-workflow/revisions/overdue
  * Get overdue revisions
  */
-router.get('/revisions/overdue', async (req: Request, res: Response) => {
+router.get('/revisions/overdue', ...revisionRead, async (req: Request, res: Response) => {
   try {
     const revisions = await revisionService.getOverdueRevisions();
 
@@ -492,6 +334,7 @@ router.get('/revisions/overdue', async (req: Request, res: Response) => {
  */
 router.get(
   '/revisions/order/:orderId/history',
+  ...revisionRead,
   [param('orderId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -518,6 +361,7 @@ router.get(
  */
 router.post(
   '/revisions',
+  ...revisionCreate,
   [
     body('orderId').notEmpty().withMessage('orderId is required'),
     body('appraisalId').optional().isString(),
@@ -568,6 +412,7 @@ router.post(
  */
 router.post(
   '/revisions/:id/submit',
+  ...revisionUpdate,
   [
     param('id').notEmpty(),
     body('resolvedIssues').isArray().withMessage('resolvedIssues is required'),
@@ -606,6 +451,7 @@ router.post(
  */
 router.post(
   '/revisions/:id/accept',
+  ...revisionUpdate,
   [
     param('id').notEmpty(),
     body('acceptedBy').notEmpty().withMessage('acceptedBy is required'),
@@ -642,6 +488,7 @@ router.post(
  */
 router.post(
   '/revisions/:id/reject',
+  ...revisionUpdate,
   [
     param('id').notEmpty(),
     body('rejectedBy').notEmpty().withMessage('rejectedBy is required'),
@@ -682,6 +529,7 @@ router.post(
  */
 router.post(
   '/escalations',
+  ...escalationCreate,
   [
     body('orderId').notEmpty(),
     body('escalationType').isIn([
@@ -718,7 +566,7 @@ router.post(
  * GET /api/qc-workflow/escalations/open
  * Get all open escalations
  */
-router.get('/escalations/open', async (req: Request, res: Response) => {
+router.get('/escalations/open', ...escalationRead, async (req: Request, res: Response) => {
   try {
     const escalations = await escalationService.getOpenEscalations();
 
@@ -743,6 +591,7 @@ router.get('/escalations/open', async (req: Request, res: Response) => {
  */
 router.get(
   '/escalations/manager/:managerId',
+  ...escalationRead,
   [param('managerId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -771,6 +620,7 @@ router.get(
  */
 router.post(
   '/escalations/:escalationId/comment',
+  ...escalationUpdate,
   [
     param('escalationId').notEmpty(),
     body('commentBy').notEmpty(),
@@ -809,6 +659,7 @@ router.post(
  */
 router.post(
   '/escalations/:escalationId/resolve',
+  ...escalationUpdate,
   [
     param('escalationId').notEmpty(),
     body('resolution').notEmpty(),
@@ -851,6 +702,7 @@ router.post(
  */
 router.post(
   '/sla/start',
+  ...qcQueueExecute,
   [
     body('entityType').isIn(['QC_REVIEW', 'REVISION', 'ESCALATION']),
     body('entityId').notEmpty(),
@@ -891,6 +743,7 @@ router.post(
  */
 router.get(
   '/sla/metrics',
+  ...analyticsRead,
   [
     query('period').optional().isIn(['TODAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']),
     query('entityType').optional().isIn(['QC_REVIEW', 'REVISION', 'ESCALATION'])
@@ -970,6 +823,7 @@ router.get(
  */
 router.get(
   '/sla/:trackingId',
+  ...qcQueueRead,
   [param('trackingId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -997,6 +851,7 @@ router.get(
  */
 router.post(
   '/sla/:trackingId/extend',
+  ...qcQueueUpdate,
   [
     param('trackingId').notEmpty(),
     body('extensionMinutes').isInt({ min: 1 }),
@@ -1035,6 +890,7 @@ router.post(
  */
 router.post(
   '/sla/:trackingId/waive',
+  ...qcQueueUpdate,
   [
     param('trackingId').notEmpty(),
     body('reason').notEmpty(),
@@ -1078,6 +934,7 @@ router.post(
  */
 router.post(
   '/queue/:queueItemId/return',
+  ...qcQueueUpdate,
   [
     param('queueItemId').notEmpty().withMessage('queueItemId is required'),
     body('reason').isString().notEmpty().withMessage('reason is required'),
@@ -1114,6 +971,7 @@ router.post(
  */
 router.post(
   '/queue/:queueItemId/decision',
+  ...qcQueueUpdate,
   [
     param('queueItemId').notEmpty().withMessage('queueItemId is required'),
     body('outcome').isIn(['APPROVED', 'REJECTED', 'CONDITIONAL']).withMessage('outcome must be APPROVED, REJECTED, or CONDITIONAL'),
@@ -1308,6 +1166,7 @@ router.post(
  */
 router.post(
   '/:reviewId/field-overrides',
+  ...qcReviewUpdate,
   [
     param('reviewId').notEmpty().withMessage('reviewId is required'),
     body('fieldKey').notEmpty().withMessage('fieldKey is required'),
@@ -1345,4 +1204,5 @@ router.post(
   }
 );
 
-export default router;
+  return router;
+}

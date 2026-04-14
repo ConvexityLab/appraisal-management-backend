@@ -125,15 +125,28 @@ export class QuickBooksController {
   /**
    * Get AR/AP Summary for the dashboard.
    * Route: GET /api/v1/quickbooks/summary
+   *
+   * Returns a zeroed summary with connected:false when QuickBooks OAuth has not
+   * been completed so the UI renders an empty state instead of receiving a 500.
    */
   private async getSummary(req: Request, res: Response, next: NextFunction) {
+    const tokens = await QuickBooksOAuthService.getInstance().getTokens();
+    if (!tokens.realmId) {
+      return res.json({
+        connected: false,
+        totalCustomers: 0,
+        totalVendors: 0,
+        activeInvoices: 0,
+        uncollectedAR: 0,
+      });
+    }
     try {
       const qbOperations = new QuickBooksService();
       const summary = await qbOperations.getSummary();
-      res.json(summary);
+      return res.json({ connected: true, ...summary });
     } catch (error: any) {
       logger.error('Failed to retrieve QuickBooks summary', error);
-      res.status(500).json({ error: error.message || 'Error fetching summary' });
+      return res.status(500).json({ error: error.message || 'Error fetching summary' });
     }
   }
 

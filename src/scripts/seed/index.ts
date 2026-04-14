@@ -182,6 +182,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const clientId = process.env.AXIOM_CLIENT_ID;
+  if (!clientId) {
+    console.error('❌ AXIOM_CLIENT_ID is required. Set it in .env or environment.');
+    process.exit(1);
+  }
+
+  const subClientId = process.env.AXIOM_SUB_CLIENT_ID;
+  if (!subClientId) {
+    console.error('❌ AXIOM_SUB_CLIENT_ID is required. Set it in .env or environment.');
+    process.exit(1);
+  }
+
   const storageAccountName = process.env.AZURE_STORAGE_ACCOUNT_NAME ?? '';
 
   // Build Cosmos client
@@ -232,6 +244,8 @@ async function main(): Promise<void> {
     cosmosClient,
     db,
     tenantId,
+    clientId,
+    subClientId,
     now: new Date().toISOString(),
     clean: opts.clean || opts.cleanOnly,
     cleanOnly: opts.cleanOnly,
@@ -254,6 +268,7 @@ async function main(): Promise<void> {
   console.log('  🌱  Appraisal Management Platform — Seed Orchestrator');
   console.log('═══════════════════════════════════════════════════════════════');
   console.log(`  Tenant:     ${tenantId}`);
+  console.log(`  Client:     ${clientId} / ${subClientId}`);
   console.log(`  Endpoint:   ${cosmosEndpoint.substring(0, 50)}...`);
   console.log(`  Storage:    ${storageAccountName || '(not configured — blob seeds will skip)'}`);
   console.log(`  Clean:      ${ctx.clean ? 'YES' : 'no'}`);

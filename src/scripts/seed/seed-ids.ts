@@ -126,6 +126,7 @@ export const DOCUMENT_IDS = {
   REPORT_ORDER_001: 'seed-doc-report-001',
   ENGAGEMENT_ORDER_001: 'seed-doc-engagement-001',
   PHOTOS_ORDER_003: 'seed-doc-photos-003',
+  REPORT_ORDER_003: 'seed-doc-report-003',
   REPORT_ORDER_009: 'seed-doc-report-009',
   REPORT_ORDER_012: 'seed-doc-report-012',
   // Vendor-scoped

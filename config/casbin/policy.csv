@@ -78,6 +78,91 @@ p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "escala
 p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "escalation", read, allow
 
 # ============================================
+# DOCUMENT RESOURCE
+# ============================================
+p, admin:.*, document:.*, read, allow
+p, admin:.*, document:.*, create, allow
+p, admin:.*, document:.*, update, allow
+p, admin:.*, document:.*, delete, allow
+p, manager:.*, document:.*, read, allow
+p, manager:.*, document:.*, create, allow
+p, manager:.*, document:.*, update, allow
+p, qc_analyst:.*, document:.*, read, allow
+p, qc_analyst:.*, document:.*, create, allow
+p, qc_analyst:.*, document:.*, update, allow
+p, appraiser:.*, document:.*, read, allow
+p, appraiser:.*, document:.*, create, allow
+
+# ============================================
+# ENGAGEMENT RESOURCE
+# ============================================
+p, admin:.*, engagement:.*, read, allow
+p, admin:.*, engagement:.*, create, allow
+p, admin:.*, engagement:.*, update, allow
+p, admin:.*, engagement:.*, delete, allow
+p, admin:.*, engagement:.*, execute, allow
+p, manager:.*, engagement:.*, read, allow
+p, manager:.*, engagement:.*, create, allow
+p, manager:.*, engagement:.*, update, allow
+p, manager:.*, engagement:.*, execute, allow
+p, qc_analyst:.*, engagement:.*, read, allow
+p, appraiser:.*, engagement:.*, read, allow
+
+# ============================================
+# APPRAISER RESOURCE (profile management)
+# ============================================
+p, manager:.*, appraiser:.*, read, allow
+p, manager:.*, appraiser:.*, create, allow
+p, manager:.*, appraiser:.*, update, allow
+p, manager:.*, appraiser:.*, delete, allow
+p, qc_analyst:.*, appraiser:.*, read, allow
+p, appraiser:.*, appraiser:.*, read, allow
+
+# ============================================
+# INSPECTION RESOURCE
+# ============================================
+p, manager:.*, inspection:.*, read, allow
+p, manager:.*, inspection:.*, create, allow
+p, manager:.*, inspection:.*, update, allow
+p, manager:.*, inspection:.*, delete, allow
+p, qc_analyst:.*, inspection:.*, read, allow
+p, appraiser:.*, inspection:.*, read, allow
+p, appraiser:.*, inspection:.*, update, allow
+
+# ============================================
+# CLIENT RESOURCE (lender/AMC/broker)
+# ============================================
+p, manager:.*, client:.*, read, allow
+p, manager:.*, client:.*, create, allow
+p, manager:.*, client:.*, update, allow
+p, manager:.*, client:.*, delete, allow
+p, qc_analyst:.*, client:.*, read, allow
+p, appraiser:.*, client:.*, read, allow
+
+# ============================================
+# NEGOTIATION RESOURCE
+# ============================================
+p, manager:.*, negotiation:.*, read, allow
+p, manager:.*, negotiation:.*, create, allow
+p, manager:.*, negotiation:.*, update, allow
+p, manager:.*, negotiation:.*, execute, allow
+p, qc_analyst:.*, negotiation:.*, read, allow
+p, appraiser:.*, negotiation:.*, read, allow
+p, appraiser:.*, negotiation:.*, create, allow
+p, appraiser:.*, negotiation:.*, update, allow
+
+# ============================================
+# ESIGNATURE RESOURCE
+# ============================================
+p, manager:.*, esignature:.*, read, allow
+p, manager:.*, esignature:.*, create, allow
+p, manager:.*, esignature:.*, update, allow
+p, manager:.*, esignature:.*, delete, allow
+p, qc_analyst:.*, esignature:.*, read, allow
+p, appraiser:.*, esignature:.*, read, allow
+p, appraiser:.*, esignature:.*, create, allow
+
+# ============================================
 # AI ASSISTANT — available to all authenticated roles
 # ============================================
 p, admin:.*, ai:.*, generate, allow

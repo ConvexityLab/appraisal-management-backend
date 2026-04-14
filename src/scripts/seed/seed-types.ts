@@ -15,6 +15,10 @@ export interface SeedContext {
   db: Database;
   /** The tenant ID to stamp on every document (from AZURE_TENANT_ID). */
   tenantId: string;
+  /** The platform client ID aligned with Axiom (from AXIOM_CLIENT_ID). */
+  clientId: string;
+  /** The platform sub-client ID aligned with Axiom (from AXIOM_SUB_CLIENT_ID). */
+  subClientId: string;
   /** Current ISO timestamp — consistent across the entire run. */
   now: string;
   /** If true, delete seed data before upserting. */

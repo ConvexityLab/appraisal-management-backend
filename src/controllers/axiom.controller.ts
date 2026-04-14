@@ -27,8 +27,10 @@ import { RunLedgerService } from '../services/run-ledger.service.js';
 import { CanonicalSnapshotService } from '../services/canonical-snapshot.service.js';
 import { EngineDispatchService } from '../services/engine-dispatch.service.js';
 import { CriteriaStepInputService } from '../services/criteria-step-input.service.js';
+import { AnalysisSubmissionService } from '../services/analysis-submission.service.js';
 import type { DocumentMetadata } from '../types/document.types.js';
 import type { RunStatus } from '../types/run-ledger.types.js';
+import type { DocumentAnalyzeEvaluationMode } from '../types/analysis-submission.types.js';
 import type {
   AxiomBulkSubmissionDlqAgeBucket,
   AxiomBulkSubmissionDlqSortPreset,
@@ -57,7 +59,16 @@ export class AxiomController {
   private readonly snapshotService: CanonicalSnapshotService;
   private readonly engineDispatchService: EngineDispatchService;
   private readonly criteriaStepInputService: CriteriaStepInputService;
+  private readonly analysisSubmissionService: AnalysisSubmissionService;
   private readonly logger = new Logger('AxiomController');
+
+  private createHeaderOrGeneratedValue(req: UnifiedAuthRequest, headerName: string, prefix: string): string {
+    const value = req.header(headerName);
+    if (value && value.trim()) {
+      return value.trim();
+    }
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
 
   /**
    * Build structured Axiom pipeline fields from an order.
@@ -320,6 +331,7 @@ export class AxiomController {
     this.snapshotService = new CanonicalSnapshotService(dbService);
     this.engineDispatchService = new EngineDispatchService(this.axiomService);
     this.criteriaStepInputService = new CriteriaStepInputService(dbService);
+    this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
   }
 
   /**
@@ -700,6 +712,11 @@ export class AxiomController {
         documents,
         order.tenantId,
         order.clientId,
+        undefined, // programId
+        undefined, // programVersion
+        'ORDER',
+        'COMPLETE_EVALUATION',
+        notification.forceResubmit === true,
       );
 
       if (!pipelineResult) {
@@ -752,7 +769,12 @@ export class AxiomController {
    */
   analyzeDocument = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
-      const { documentId, orderId, documentType } = req.body;
+      const { documentId, orderId, documentType, evaluationMode, programId, programVersion, forceResubmit } = req.body;
+      const normalizedEvaluationMode =
+        typeof evaluationMode === 'string'
+        && ['EXTRACTION', 'CRITERIA_EVALUATION', 'COMPLETE_EVALUATION'].includes(evaluationMode)
+          ? evaluationMode as DocumentAnalyzeEvaluationMode
+          : undefined;
 
       if (!documentId) {
         res.status(400).json({
@@ -770,109 +792,44 @@ export class AxiomController {
         return;
       }
 
+      if (typeof evaluationMode === 'string' && !normalizedEvaluationMode) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `evaluationMode '${evaluationMode}' is invalid. Expected EXTRACTION, CRITERIA_EVALUATION, or COMPLETE_EVALUATION`,
+          },
+        });
+        return;
+      }
+
       const tenantId = req.user?.tenantId;
       if (!tenantId) {
         res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } });
         return;
       }
 
-      // Look up the document from Cosmos to get its blob URL
-      const queryResult = await this.dbService.queryItems<any>(
-        'documents',
-        'SELECT * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
-        [
-          { name: '@id', value: documentId },
-          { name: '@tenantId', value: tenantId }
-        ]
-      );
-
-      const doc = queryResult.success && queryResult.data && queryResult.data.length > 0
-        ? queryResult.data[0]
-        : null;
-
-      if (!doc) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: `Document ${documentId} not found`
-          }
-        });
-        return;
-      }
-
-      // Look up the order to build structured fields for the Axiom pipeline
-      const orderResult = await this.dbService.findOrderById(orderId);
-      const order: AppraisalOrder | null = orderResult.success ? orderResult.data ?? null : null;
-      if (!order) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: `Order ${orderId} not found — cannot submit to Axiom without tenant/client context`,
-          },
-        });
-        return;
-      }
-
-      const fields = AxiomController.buildOrderFields(order);
-
-      // Guard: document must have a blobName (uploaded blob path) to generate a SAS URL
-      if (!doc.blobName) {
-        res.status(422).json({
-          success: false,
-          error: {
-            code: 'MISSING_BLOB',
-            message: `Document ${documentId} has no blobName — cannot generate SAS URL for Axiom`,
-          },
-        });
-        return;
-      }
-
-      // Generate a SAS URL so Axiom (external) can download the blob
-      const docContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
-      if (!docContainerName) {
-        res.status(500).json({ success: false, error: { code: 'CONFIG_ERROR', message: 'STORAGE_CONTAINER_DOCUMENTS not configured' } });
-        return;
-      }
-      const sasUrl = await this.blobService.generateReadSasUrl(docContainerName, doc.blobName);
-
-      const documents = [{
-        documentName: doc.name || doc.fileName || documentId,
-        documentReference: sasUrl,
-      }];
-
-      const clientId = (order as any).clientInformation?.clientId || order.clientId;
-      const pipelineResult = await this.axiomService.submitOrderEvaluation(
+      const submission = await this.analysisSubmissionService.submit({
+        analysisType: 'DOCUMENT_ANALYZE',
+        documentId,
         orderId,
-        fields,
-        documents,
-        order.tenantId,
-        clientId,
-      );
-
-      if (!pipelineResult) {
-        const submissionError = this.axiomService.getLastPipelineSubmissionError();
-        const statusCode = submissionError?.status && submissionError.status >= 400 && submissionError.status <= 599
-          ? submissionError.status
-          : 503;
-        res.status(statusCode).json({
-          success: false,
-          error: {
-            code: 'AXIOM_API_ERROR',
-            message: submissionError?.message || 'Failed to submit document to Axiom pipeline',
-            ...(submissionError?.status ? { status: submissionError.status } : {}),
-            ...(submissionError?.details ? { details: submissionError.details } : {})
-          }
-        });
-        return;
-      }
+        ...(typeof documentType === 'string' && documentType.trim().length > 0 ? { documentType } : {}),
+        ...(normalizedEvaluationMode ? { evaluationMode: normalizedEvaluationMode } : {}),
+        ...(typeof programId === 'string' && programId.trim().length > 0 ? { programId } : {}),
+        ...(typeof programVersion === 'string' && programVersion.trim().length > 0 ? { programVersion } : {}),
+        ...(forceResubmit === true ? { forceResubmit: true } : {}),
+      }, {
+        tenantId,
+        initiatedBy: req.user?.id ?? req.user?.azureAdObjectId ?? 'unknown-user',
+        correlationId: this.createHeaderOrGeneratedValue(req, 'X-Correlation-Id', 'axiom-analyze-correlation'),
+        idempotencyKey: this.createHeaderOrGeneratedValue(req, 'Idempotency-Key', 'axiom-analyze-idempotency'),
+      });
 
       res.status(202).json({
         success: true,
         data: {
-          evaluationId: pipelineResult.evaluationId,
-          pipelineJobId: pipelineResult.pipelineJobId,
+          evaluationId: submission.evaluationId,
+          pipelineJobId: submission.pipelineJobId,
           orderId,
           documentId,
           message: 'Document submitted for AI analysis'
@@ -991,6 +948,7 @@ export class AxiomController {
   getEvaluationById = async (req: Request, res: Response): Promise<void> => {
     try {
       const { evaluationId } = req.params;
+      const bypassCache = req.query['bypassCache'] === 'true';
 
       if (!evaluationId) {
         res.status(400).json({
@@ -1003,7 +961,7 @@ export class AxiomController {
         return;
       }
 
-      const evaluation = await this.axiomService.getEvaluationById(evaluationId);
+      const evaluation = await this.axiomService.getEvaluationById(evaluationId, bypassCache);
 
       if (!evaluation) {
         res.status(404).json({
@@ -1392,7 +1350,12 @@ export class AxiomController {
       }
 
       if (rawCorrelationId && correlationType === 'ORDER') {
-        const correlationId = rawCorrelationId;
+        // On forceResubmit the service sends correlationId as `<orderId>~r<timestamp>` to
+        // bypass Axiom's Cosmos idempotency guard (which uses correlationId as its document id).
+        // Strip the `~r...` suffix here to recover the real orderId for all DB lookups.
+        const correlationId = rawCorrelationId.includes('~r')
+          ? rawCorrelationId.split('~r')[0]!
+          : rawCorrelationId;
         // Axiom sends executionId; our mock/test harness sends pipelineJobId — accept both.
         const pipelineJobId = (body['executionId'] ?? body['pipelineJobId']) as string | undefined;
         // Axiom nests status/result inside body.payload; fall back to root-level for legacy/mock shapes.
@@ -1427,6 +1390,16 @@ export class AxiomController {
         // (e.g. server restarted between submit and completion).
         if (status === 'completed' && pipelineJobId) {
           await this.axiomService.fetchAndStorePipelineResults(correlationId, pipelineJobId);
+        }
+
+        // Signal the SSE proxy so it can terminate any open stream for this job.
+        // pipeline.completed is NOT written to Cosmos — Axiom only delivers it via
+        // webhookBus (this HTTP call). The registry bridges that gap.
+        if (pipelineJobId) {
+          this.axiomService.signalPipelineTermination(
+            pipelineJobId,
+            status === 'completed' ? 'completed' : 'failed',
+          );
         }
 
         // Publish axiom.evaluation.completed to Service Bus so the orchestrator
@@ -1545,6 +1518,7 @@ export class AxiomController {
       res.status(202).json({
         success: true,
         data: {
+          comparisonId: result.comparisonId,
           evaluationId: result.evaluationId,
           orderId,
           changes: result.changes,

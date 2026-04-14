@@ -20,14 +20,6 @@ const mockGetPropertyDetailOwner = vi.fn();
 const mockGetAssessmentDetail = vi.fn();
 const mockGetSaleHistoryBasic = vi.fn();
 
-vi.mock('../../src/services/attom.service.js', () => ({
-  AttomService: vi.fn().mockImplementation(() => ({
-    getPropertyDetailOwner: mockGetPropertyDetailOwner,
-    getAssessmentDetail: mockGetAssessmentDetail,
-    getSaleHistoryBasic: mockGetSaleHistoryBasic,
-  })),
-}));
-
 vi.mock('../../src/utils/logger.js', () => ({
   Logger: vi.fn().mockImplementation(() => ({
     info: vi.fn(),
@@ -133,7 +125,11 @@ describe('AttomPropertyDataProvider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    provider = new AttomPropertyDataProvider();
+    provider = new AttomPropertyDataProvider({
+      getPropertyDetailOwner: mockGetPropertyDetailOwner,
+      getAssessmentDetail: mockGetAssessmentDetail,
+      getSaleHistoryBasic: mockGetSaleHistoryBasic,
+    } as any);
   });
 
   // ── null / miss cases ──────────────────────────────────────────────────────

@@ -18,12 +18,18 @@ import { OrderNegotiationService } from '../services/order-negotiation.service.j
 import { Logger } from '../utils/logger.js';
 import { WebPubSubService } from '../services/web-pubsub.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 const logger = new Logger('NegotiationController');
 
-export function createNegotiationRouter(): Router {
+export function createNegotiationRouter(authzMiddleware?: AuthorizationMiddleware): Router {
   const router = Router();
   const negotiationService = new OrderNegotiationService();
+
+  const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('negotiation', 'read')]    : [];
+  const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('negotiation', 'create')]  : [];
+  const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('negotiation', 'update')]  : [];
+  const exec   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('negotiation', 'execute')] : [];
 
   // ── WebPubSub: best-effort tenant-scoped notifications ────────────────────
   let webPubSub: WebPubSubService | null = null;
@@ -61,6 +67,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/accept',
+    ...update,
     [
       body('orderId').isString().notEmpty().withMessage('orderId is required'),
       body('vendorId').isString().notEmpty().withMessage('vendorId is required'),
@@ -102,6 +109,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/reject',
+    ...update,
     [
       body('orderId').isString().notEmpty().withMessage('orderId is required'),
       body('vendorId').isString().notEmpty().withMessage('vendorId is required'),
@@ -145,6 +153,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/counter-offer',
+    ...create,
     [
       body('orderId').isString().notEmpty().withMessage('orderId is required'),
       body('vendorId').isString().notEmpty().withMessage('vendorId is required'),
@@ -230,6 +239,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/respond-counter',
+    ...update,
     [
       body('orderId').isString().notEmpty().withMessage('orderId is required'),
       body('counterOfferId').isString().notEmpty().withMessage('counterOfferId is required'),
@@ -298,6 +308,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.get(
     '/pending-counter-offers',
+    ...read,
     async (req: Request, res: Response) => {
       try {
         const tenantId = (req as any).user?.tenantId || 'default';
@@ -324,6 +335,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.get(
     '/history/:orderId',
+    ...read,
     [param('orderId').notEmpty()],
     async (req: Request, res: Response) => {
       try {
@@ -352,6 +364,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.get(
     '/active/:orderId',
+    ...read,
     [param('orderId').notEmpty()],
     async (req: Request, res: Response) => {
       try {
@@ -379,6 +392,7 @@ export function createNegotiationRouter(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/check-expired',
+    ...exec,
     async (req: Request, res: Response) => {
       try {
         const tenantId = (req as any).user?.tenantId || 'default';

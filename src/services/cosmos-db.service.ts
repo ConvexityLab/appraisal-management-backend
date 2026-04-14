@@ -368,6 +368,18 @@ export class CosmosDbService {
       let query = 'SELECT * FROM c WHERE c.type = @type';
       const parameters: any[] = [{ name: '@type', value: 'order' }];
 
+      // Tenant isolation — always scope to the calling user's partition when provided.
+      if (filters.tenantId) {
+        query += ' AND c.tenantId = @tenantId';
+        parameters.push({ name: '@tenantId', value: filters.tenantId });
+      }
+
+      // Business-client scoping — filter by the lender/client that owns the order.
+      if (filters.clientId) {
+        query += ' AND c.clientId = @clientId';
+        parameters.push({ name: '@clientId', value: filters.clientId });
+      }
+
       // Build dynamic query based on filters
       if (filters.status && filters.status.length > 0) {
         query += ' AND c.status IN (' + filters.status.map((_, index) => `@status${index}`).join(', ') + ')';

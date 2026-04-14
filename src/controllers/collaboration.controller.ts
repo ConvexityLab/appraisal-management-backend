@@ -95,7 +95,19 @@ async function authorizeContainerAccess(
   }
 
   // Load the record from Cosmos.
-  const record = await dbService.getDocument<any>(mapped.containerName, recordId, user.tenantId);
+  // For containers like orders, the recordId IS the Cosmos document id.
+  // For containers like qc-reviews, rov-requests, arv-analyses, the containerId
+  // suffix is the orderId — the document's Cosmos `id` is a different value.
+  // Try a direct id lookup first, then fall back to querying by orderId.
+  let record = await dbService.getDocument<any>(mapped.containerName, recordId, user.tenantId);
+  if (!record) {
+    const byOrderId = await dbService.queryDocuments<any>(
+      mapped.containerName,
+      'SELECT TOP 1 * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId',
+      [{ name: '@orderId', value: recordId }, { name: '@tenantId', value: user.tenantId }]
+    );
+    record = byOrderId[0] ?? null;
+  }
   if (!record) {
     return { allowed: false, reason: 'RECORD_NOT_FOUND' };
   }

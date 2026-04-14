@@ -7,6 +7,7 @@ import { AxiomService } from '../services/axiom.service';
 import { AxiomExecutionService } from '../services/axiom-execution.service';
 import { DocumentUploadRequest, DocumentUpdateRequest, DocumentListQuery, DocumentMetadata } from '../types/document.types';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 /**
  * Maps a backend DocumentMetadata record to the shape the frontend expects.
@@ -70,7 +71,7 @@ export class DocumentController {
     }
   });
 
-  constructor(private dbService: CosmosDbService) {
+  constructor(private dbService: CosmosDbService, private authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     
     // Initialize services
@@ -82,12 +83,20 @@ export class DocumentController {
   }
 
   private initializeRoutes(): void {
+    const authz = this.authzMiddleware;
+    const lp     = authz ? [authz.loadUserProfile()] : [];
+    const read   = authz ? [...lp, authz.authorize('document', 'read')]   : [];
+    const create = authz ? [...lp, authz.authorize('document', 'create')] : [];
+    const update = authz ? [...lp, authz.authorize('document', 'update')] : [];
+    const del    = authz ? [...lp, authz.authorize('document', 'delete')] : [];
+
     /**
      * GET /stream/:executionId
      * Proxy SSE stream from Axiom for a document evaluation
      */
     this.router.get(
       '/stream/:executionId',
+      ...read,
       this.streamDocumentExecution.bind(this)
     );
 
@@ -98,6 +107,7 @@ export class DocumentController {
     this.router.post(
       '/upload',
       this.upload.single('file'),
+      ...create,
       this.uploadDocument.bind(this)
     );
 
@@ -107,6 +117,7 @@ export class DocumentController {
      */
     this.router.get(
       '/',
+      ...read,
       this.listDocuments.bind(this)
     );
 
@@ -117,6 +128,7 @@ export class DocumentController {
     this.router.post(
       '/:id/versions',
       this.upload.single('file'),
+      ...update,
       this.uploadNewVersion.bind(this)
     );
 
@@ -126,6 +138,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id/versions',
+      ...read,
       this.getVersionHistory.bind(this)
     );
 
@@ -135,6 +148,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id',
+      ...read,
       this.getDocument.bind(this)
     );
 
@@ -144,6 +158,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id/download',
+      ...read,
       this.downloadDocument.bind(this)
     );
 
@@ -153,6 +168,7 @@ export class DocumentController {
      */
     this.router.put(
       '/:id',
+      ...update,
       this.updateDocument.bind(this)
     );
 
@@ -162,6 +178,7 @@ export class DocumentController {
      */
     this.router.delete(
       '/:id',
+      ...del,
       this.deleteDocument.bind(this)
     );
   }
@@ -371,14 +388,39 @@ export class DocumentController {
       const result = await this.documentService.getDocument(id, tenantId);
 
       if (!result.success || !result.data) {
-        res.status(404).json({ success: false, error: 'Document not found' });
+        res.status(404).json({ success: false, error: `Document not found: ${id}` });
         return;
       }
 
       const doc = result.data;
 
+      // Guard: blobName is required to locate the file in storage.
+      // Seed data or manually-created records missing this field → 404, not 500.
+      if (!doc.blobName) {
+        res.status(404).json({
+          success: false,
+          error: `Document '${id}' has no blob path — the file has not been uploaded yet`
+        });
+        return;
+      }
+
       // Stream the blob through the backend
-      const { readableStream, contentType, contentLength } = await this.blobService.downloadBlob(DocumentController.BLOB_CONTAINER, doc.blobName);
+      let readableStream: NodeJS.ReadableStream;
+      let contentType: string;
+      let contentLength: number;
+      try {
+        ({ readableStream, contentType, contentLength } = await this.blobService.downloadBlob(DocumentController.BLOB_CONTAINER, doc.blobName));
+      } catch (blobError: any) {
+        // BlobNotFound from Azure Storage / Azurite — return 404 not 500
+        if (blobError?.statusCode === 404 || blobError?.code === 'BlobNotFound') {
+          res.status(404).json({
+            success: false,
+            error: `Blob file not found for document '${id}' (path: ${doc.blobName})`
+          });
+          return;
+        }
+        throw blobError; // re-throw non-404 storage errors
+      }
 
       res.setHeader('Content-Type', contentType);
       if (contentLength) {

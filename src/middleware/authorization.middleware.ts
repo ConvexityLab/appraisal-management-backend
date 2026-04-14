@@ -75,7 +75,7 @@ export class AuthorizationMiddleware {
 
         if (!userProfile) {
           this.logger.warn('User profile not found', { userId: req.user.id, tenantId });
-          res.status(404).json({
+          res.status(403).json({
             error: 'User profile not found',
             code: 'USER_PROFILE_NOT_FOUND'
           });

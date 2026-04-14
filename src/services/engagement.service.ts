@@ -235,6 +235,7 @@ export class EngagementService {
     // Fire-and-forget property enrichment for each loan (non-fatal).
     // The enrichment record is keyed by loanId so it can be retrieved via
     // PropertyEnrichmentService.getLatestEnrichment(loanId, tenantId).
+    // Pass the already-resolved propertyId to skip a redundant resolveOrCreate call.
     for (const loan of (resource as Engagement).loans) {
       this.enrichmentService.enrichEngagement(
         engagement.id,
@@ -242,10 +243,11 @@ export class EngagementService {
         engagement.tenantId,
         {
           street: loan.property.address,
-          city: loan.property.city,
+          city: loan.property.city ?? '',
           state: loan.property.state,
           zipCode: loan.property.zipCode,
         },
+        loan.propertyId,
       ).catch(err => {
         logger.warn('Property enrichment failed for engagement loan (non-fatal)', {
           engagementId: engagement.id,
@@ -396,14 +398,61 @@ export class EngagementService {
     }
 
     const newLoan = buildLoan(loanData);
+
+    // Resolve (or lazily create) a canonical PropertyRecord for the new loan's collateral —
+    // same pattern as createEngagement. Non-fatal if it fails: loan is saved without propertyId.
+    let resolvedPropertyId: string | undefined;
+    try {
+      const resolved = await this.propertyRecordService.resolveOrCreate({
+        address: {
+          street: loanData.property.address,
+          city: loanData.property.city,
+          state: loanData.property.state,
+          zip: loanData.property.zipCode,
+        },
+        tenantId,
+        createdBy: updatedBy,
+      });
+      resolvedPropertyId = resolved.propertyId;
+      newLoan.propertyId = resolved.propertyId;
+    } catch (err) {
+      logger.warn('addLoanToEngagement: PropertyRecord resolution failed (non-fatal)', {
+        engagementId,
+        loanId: newLoan.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     const updatedLoans = [...engagement.loans, newLoan];
     const updatedType = updatedLoans.length > 1 ? EngagementType.PORTFOLIO : EngagementType.SINGLE;
 
-    return this.updateEngagement(engagementId, tenantId, {
+    const updatedEngagement = await this.updateEngagement(engagementId, tenantId, {
       loans: updatedLoans,
       ...(updatedType !== engagement.engagementType && { engagementType: updatedType }),
       updatedBy,
     });
+
+    // Fire-and-forget property enrichment for the new loan (non-fatal).
+    this.enrichmentService.enrichEngagement(
+      engagementId,
+      newLoan.id,
+      tenantId,
+      {
+        street: loanData.property.address,
+        city: loanData.property.city ?? '',
+        state: loanData.property.state,
+        zipCode: loanData.property.zipCode,
+      },
+      resolvedPropertyId,
+    ).catch(err => {
+      logger.warn('Property enrichment failed for added loan (non-fatal)', {
+        engagementId,
+        loanId: newLoan.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+
+    return updatedEngagement;
   }
 
   /** Update the scalar fields of an existing loan (not products, not status). */
@@ -438,6 +487,67 @@ export class EngagementService {
 
     const updatedLoans = [...engagement.loans];
     updatedLoans[loanIndex] = updatedLoan;
+
+    // Re-enrich when any address field changes. Both resolveOrCreate and enrichEngagement
+    // are non-fatal so a provider outage cannot block a loan edit.
+    const newProp = updates.property;
+    const oldProp = existing.property;
+    const addressChanged =
+      newProp !== undefined && (
+        (newProp.address !== undefined && newProp.address !== oldProp.address) ||
+        (newProp.city    !== undefined && newProp.city    !== oldProp.city)    ||
+        (newProp.state   !== undefined && newProp.state   !== oldProp.state)   ||
+        (newProp.zipCode !== undefined && newProp.zipCode !== oldProp.zipCode)
+      );
+
+    if (addressChanged && newProp) {
+      // Re-resolve (or create) the canonical PropertyRecord for the new address.
+      let resolvedPropertyId: string | undefined;
+      try {
+        const resolved = await this.propertyRecordService.resolveOrCreate({
+          address: {
+            street: newProp.address ?? oldProp.address,
+            city:   newProp.city    ?? oldProp.city,
+            state:  newProp.state   ?? oldProp.state,
+            zip:    newProp.zipCode ?? oldProp.zipCode,
+          },
+          tenantId,
+          createdBy: updatedBy,
+        });
+        resolvedPropertyId = resolved.propertyId;
+        updatedLoans[loanIndex] = { ...updatedLoan, propertyId: resolved.propertyId };
+      } catch (err) {
+        logger.warn('updateLoan: PropertyRecord re-resolution failed (non-fatal)', {
+          engagementId,
+          loanId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      const updatedEngagement = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+
+      // Fire-and-forget enrichment with the new address (non-fatal).
+      this.enrichmentService.enrichEngagement(
+        engagementId,
+        loanId,
+        tenantId,
+        {
+          street:  newProp.address  ?? oldProp.address,
+          city:    newProp.city     ?? oldProp.city    ?? '',
+          state:   newProp.state    ?? oldProp.state,
+          zipCode: newProp.zipCode  ?? oldProp.zipCode,
+        },
+        resolvedPropertyId,
+      ).catch(err => {
+        logger.warn('Property enrichment failed for updated loan address (non-fatal)', {
+          engagementId,
+          loanId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      return updatedEngagement;
+    }
 
     return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
   }

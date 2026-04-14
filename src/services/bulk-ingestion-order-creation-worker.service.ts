@@ -4,6 +4,7 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { PropertyRecordService } from './property-record.service.js';
+import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { EngagementService } from './engagement.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
@@ -26,6 +27,7 @@ export class BulkIngestionOrderCreationWorkerService {
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: ServiceBusEventPublisher;
   private readonly propertyRecordService: PropertyRecordService;
+  private readonly enrichmentService: PropertyEnrichmentService;
   private readonly engagementService: EngagementService;
   private isStarted = false;
   public isRunning = false;
@@ -34,7 +36,10 @@ export class BulkIngestionOrderCreationWorkerService {
     this.dbService = dbService ?? new CosmosDbService();
     this.publisher = new ServiceBusEventPublisher();
     this.propertyRecordService = new PropertyRecordService(this.dbService);
-    this.engagementService = new EngagementService(this.dbService, this.propertyRecordService);
+    // Shared enrichment service: used both by EngagementService (loan-level records)
+    // and directly here (order-level records keyed by orderId).
+    this.enrichmentService = new PropertyEnrichmentService(this.dbService, this.propertyRecordService);
+    this.engagementService = new EngagementService(this.dbService, this.propertyRecordService, this.enrichmentService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -243,6 +248,25 @@ export class BulkIngestionOrderCreationWorkerService {
         }
 
         createdOrderCount++;
+
+        // Fire-and-forget order-level enrichment so getLatestEnrichment(orderId)
+        // works for bulk-ingested orders — PropertyRecord is already populated
+        // by loan-level enrichment, so this is usually a cache hit (status=cached).
+        this.enrichmentService.enrichOrder(
+          createResult.data.id,
+          job.tenantId,
+          { street: parsed.address, city: parsed.city, state: parsed.state, zipCode: parsed.zipCode },
+          {
+            engagementId: engagement.id,
+            ...(engagementLoan?.propertyId ? { propertyId: engagementLoan.propertyId } : {}),
+          },
+        ).catch(err => {
+          this.logger.warn('Bulk order creation: per-order enrichment failed (non-fatal)', {
+            jobId: job.id,
+            orderId: createResult.data!.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
 
         canonicalRecord.canonicalData = {
           ...(canonicalRecord.canonicalData ?? {}),

@@ -84,6 +84,7 @@ jobs:
     outputs:
       infrastructure: ${{ steps.override.outputs.infrastructure }}
       code: ${{ steps.override.outputs.code }}
+      identities: ${{ steps.override.outputs.identities }}
     steps:
     - uses: actions/checkout@v5
     - uses: dorny/paths-filter@v4
@@ -99,6 +100,8 @@ jobs:
             - 'pnpm-lock.yaml'
             - 'Dockerfile'
             - 'tsconfig*.json'
+          identities:
+            - 'scripts/user-identities.json'
     # workflow_dispatch has no diff context so dorny/paths-filter returns
     # false for all outputs. Force both to true so manual dispatches always
     # run the full pipeline.
@@ -113,9 +116,11 @@ jobs:
 
           echo "code=true" >> $GITHUB_OUTPUT
           echo "infrastructure=$DISPATCH_DEPLOY" >> $GITHUB_OUTPUT
+          echo "identities=true" >> $GITHUB_OUTPUT
         else
           echo "code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
           echo "infrastructure=${{ steps.filter.outputs.infrastructure }}" >> $GITHUB_OUTPUT
+          echo "identities=${{ steps.filter.outputs.identities }}" >> $GITHUB_OUTPUT
         fi
 
   build-and-test:
@@ -295,6 +300,29 @@ jobs:
       AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AXIOM_WEBHOOK_SECRET: ${{ secrets.AXIOM_WEBHOOK_SECRET }}
+      AXIOM_CLIENT_ID: ${{ secrets.AXIOM_CLIENT_ID }}
+      AXIOM_SUB_CLIENT_ID: ${{ secrets.AXIOM_SUB_CLIENT_ID }}
+
+  # Runs after infrastructure so App Roles and extension properties are guaranteed
+  # to exist before we try to stamp user attributes and assign roles.
+  # Also triggers on any commit that touches scripts/user-identities.json so
+  # adding or changing a user is fully automated — just commit the JSON.
+  set-user-identities:
+    name: Set User Identities
+    needs: [determine-environment, deploy-infrastructure, detect-changes]
+    if: |
+      always() &&
+      needs.determine-environment.result == 'success' &&
+      needs.deploy-infrastructure.result != 'failure' &&
+      (needs.deploy-infrastructure.result == 'success' || needs.detect-changes.outputs.identities == 'true')
+    uses: ./.github/workflows/set-user-identities.yml
+    with:
+      environment: ${{ needs.determine-environment.outputs.environment }}
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
 
   deploy-container-app:
     name: Deploy Container to Container App
@@ -308,6 +336,9 @@ jobs:
     environment: ${{ needs.determine-environment.outputs.environment }}
     
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
     - name: Azure login
       uses: azure/login@v2
       with:
@@ -528,6 +559,7 @@ jobs:
         done
         
     - name: Verify deployment
+      id: verify
       run: |
         echo " Verifying container deployment..."
         
@@ -537,32 +569,38 @@ jobs:
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
           --query 'properties.configuration.ingress.fqdn' -o tsv)
         
+        echo "app-url=$APP_URL" >> $GITHUB_OUTPUT
         echo " Application URL: https://$APP_URL"
         
         # Wait for deployment to stabilize
         echo " Waiting for deployment to stabilize (30s)..."
         sleep 30
         
-        # Test health endpoint
+        # Test health endpoint with retry
         max_attempts=10
         attempt=1
+        health_passed=false
         
         while [ $attempt -le $max_attempts ]; do
           echo "Attempt $attempt/$max_attempts: Testing https://$APP_URL/health"
           
           if curl -f -s "https://$APP_URL/health" > /dev/null; then
             echo " Health check passed!"
-            echo " Deployment verified successfully"
+            health_passed=true
             break
           elif [ $attempt -eq $max_attempts ]; then
             echo " Health check failed after $max_attempts attempts"
             echo "Container may still be starting up - check logs"
+            exit 1
           else
             echo " Not ready, waiting 10s..."
             sleep 10
-            ((attempt++))
+            attempt=$((attempt + 1))
           fi
         done
+
+    - name: Run post-deploy auth smoke tests
+      run: bash scripts/smoke-test-auth.sh "https://${{ steps.verify.outputs.app-url }}"
 
   production-promotion:
     name: Production Promotion
