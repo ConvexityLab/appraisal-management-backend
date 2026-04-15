@@ -92,7 +92,7 @@ resource entraExtensionSetup 'Microsoft.Resources/deploymentScripts@2023-08-01' 
         Import-Module $mod
       }
 
-      Connect-MgGraph -Identity -TenantId $env:TENANT_ID -NoWelcome
+      Connect-MgGraph -Identity -NoWelcome
 
       $appClientId = $env:APP_CLIENT_ID
       $spObjectId  = $env:SERVICE_PRINCIPAL_OBJECT_ID
