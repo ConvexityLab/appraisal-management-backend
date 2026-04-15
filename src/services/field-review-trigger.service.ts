@@ -134,10 +134,16 @@ export class FieldReviewTriggerService {
     const existing = await this.getRule(ruleId, tenantId);
     if (!existing) throw new Error(`Trigger rule not found: ${ruleId}`);
 
+    const now = new Date();
+    const existingUpdatedAt = new Date(existing.updatedAt);
+    const updatedAt = now <= existingUpdatedAt
+      ? new Date(existingUpdatedAt.getTime() + 1).toISOString()
+      : now.toISOString();
+
     const updated: ReviewTriggerRule = {
       ...existing,
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     };
 
     const container = (this.dbService as any).ordersContainer;
