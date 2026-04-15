@@ -4,6 +4,8 @@ param environment string = 'production'
 param cosmosAccountName string = 'appraisal-cosmos-${environment}-${uniqueString(resourceGroup().id)}'
 param databaseName string = 'appraisal-management'
 param containerAppPrincipalIds array = []
+@description('Additional public IP addresses to allow through the Cosmos DB firewall.')
+param allowedIpAddresses array = []
 
 var tags = {
   Environment: environment
@@ -12,6 +14,19 @@ var tags = {
   CostCenter: 'IT'
   Owner: 'Platform Team'
 }
+
+var allowedCosmosIpRules = [for ip in allowedIpAddresses: {
+  ipAddressOrRange: ip
+}]
+
+var cosmosIpRules = concat(
+  [
+    {
+      ipAddressOrRange: '0.0.0.0'
+    }
+  ],
+  allowedCosmosIpRules
+)
 
 // Container configurations optimized for appraisal management workload
 var containers = [
@@ -981,10 +996,8 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
       { name: 'EnableServerless' }
     ]
     publicNetworkAccess: 'Enabled'
-    ipRules: [
-      // Allow all Azure services (includes Container Apps)
-      { ipAddressOrRange: '0.0.0.0' }
-    ]
+    // Allow all Azure services (includes Container Apps) plus approved public clients.
+    ipRules: cosmosIpRules
     isVirtualNetworkFilterEnabled: false
     enableAnalyticalStorage: true
     analyticalStorageConfiguration: {

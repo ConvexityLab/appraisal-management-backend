@@ -1,10 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSendToGroup = vi.fn().mockResolvedValue(undefined);
+const mockPropertyEnrichOrder = vi.fn();
+const mockGetLatestPropertyEnrichment = vi.fn();
 
 vi.mock('../../src/services/web-pubsub.service.js', () => ({
   WebPubSubService: vi.fn().mockImplementation(() => ({
     sendToGroup: mockSendToGroup,
+  })),
+}));
+
+vi.mock('../../src/services/property-enrichment.service.js', () => ({
+  PropertyEnrichmentService: vi.fn().mockImplementation(() => ({
+    enrichOrder: mockPropertyEnrichOrder,
+    getLatestEnrichment: mockGetLatestPropertyEnrichment,
   })),
 }));
 
@@ -21,6 +30,71 @@ describe('AxiomService platform parity', () => {
     delete process.env.AXIOM_PIPELINE_ID_DOC_EXTRACT;
     delete process.env.AXIOM_PIPELINE_ID_CRITERIA_EVAL;
     delete process.env.AXIOM_PIPELINE_ID_RISK_EVAL;
+    mockPropertyEnrichOrder.mockResolvedValue({
+      enrichmentId: 'enrich-order-123',
+      propertyId: 'prop-123',
+      status: 'enriched',
+    });
+    mockGetLatestPropertyEnrichment.mockResolvedValue(null);
+  });
+
+  it('delegates property enrichment to PropertyEnrichmentService using normalized address parts', async () => {
+    const dbStub = {
+      queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      upsertItem: vi.fn().mockResolvedValue({ success: true }),
+    };
+
+    const service = new AxiomService(dbStub as any);
+
+    const result = await service.enrichProperty(
+      {
+        propertyAddress: '2055 Peachtree Rd, Atlanta, GA 30309',
+        propertyCity: 'Atlanta',
+        propertyState: 'GA',
+        propertyZip: '30309',
+      },
+      'order-123',
+      'tenant-123',
+      'client-123',
+    );
+
+    expect(mockPropertyEnrichOrder).toHaveBeenCalledWith(
+      'order-123',
+      'tenant-123',
+      {
+        street: '2055 Peachtree Rd',
+        city: 'Atlanta',
+        state: 'GA',
+        zipCode: '30309',
+      },
+    );
+    expect(result).toEqual({ enrichmentId: 'enrich-order-123', status: 'queued' });
+  });
+
+  it('reads property enrichment records from PropertyEnrichmentService', async () => {
+    const dbStub = {
+      queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      upsertItem: vi.fn().mockResolvedValue({ success: true }),
+    };
+
+    mockGetLatestPropertyEnrichment.mockResolvedValueOnce({
+      id: 'enrich-order-123',
+      type: 'property-enrichment',
+      orderId: 'order-123',
+      tenantId: 'tenant-123',
+      status: 'enriched',
+    });
+
+    const service = new AxiomService(dbStub as any);
+
+    const result = await service.getPropertyEnrichment('order-123', 'tenant-123');
+
+    expect(mockGetLatestPropertyEnrichment).toHaveBeenCalledWith('order-123', 'tenant-123');
+    expect(result).toMatchObject({
+      id: 'enrich-order-123',
+      orderId: 'order-123',
+      status: 'enriched',
+    });
   });
 
   it.each([

@@ -56,6 +56,29 @@ function hasTenantAndClient(order: OrderSummary | undefined): boolean {
   return Boolean(tenantId) && Boolean(clientId);
 }
 
+function parseClientAllowlist(): Set<string> {
+  const raw = process.env['AXIOM_LIVE_PREFLIGHT_CLIENT_ID_ALLOWLIST'];
+  if (!raw || !raw.trim()) {
+    return new Set<string>();
+  }
+
+  const items = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return new Set(items);
+}
+
+function isAllowedClient(order: OrderSummary | undefined, allowlist: Set<string>): boolean {
+  if (allowlist.size === 0) {
+    return true;
+  }
+
+  const clientId = typeof order?.clientId === 'string' ? order.clientId.trim() : '';
+  return clientId.length > 0 && allowlist.has(clientId);
+}
+
 async function getJsonWith429Retry<T>(
   url: string,
   headers: Record<string, string>,
@@ -106,6 +129,7 @@ async function main(): Promise<void> {
 
   const pageLimit = Number(process.env['AXIOM_LIVE_PREFLIGHT_ORDER_LIMIT'] ?? '50');
   const maxScan = Number(process.env['AXIOM_LIVE_PREFLIGHT_MAX_SCAN'] ?? '200');
+  const allowedClients = parseClientAllowlist();
 
   if (!Number.isFinite(pageLimit) || pageLimit <= 0) {
     throw new Error(`AXIOM_LIVE_PREFLIGHT_ORDER_LIMIT must be a positive number. Received: ${process.env['AXIOM_LIVE_PREFLIGHT_ORDER_LIMIT']}`);
@@ -114,7 +138,11 @@ async function main(): Promise<void> {
     throw new Error(`AXIOM_LIVE_PREFLIGHT_MAX_SCAN must be a positive number. Received: ${process.env['AXIOM_LIVE_PREFLIGHT_MAX_SCAN']}`);
   }
 
-  logConfig(context, { pageLimit, maxScan });
+  logConfig(context, {
+    pageLimit,
+    maxScan,
+    allowedClients: allowedClients.size > 0 ? Array.from(allowedClients).join(',') : undefined,
+  });
 
   logSection('Step 1: Scan /api/documents for candidate pairs');
 
@@ -156,9 +184,22 @@ async function main(): Promise<void> {
         context.authHeader,
       );
 
-      if (orderRes.status === 200) {
-        selectedOrder = extractOrder(orderRes.data);
+      if (orderRes.status !== 200) {
+        selectedOrder = undefined;
+        selectedOrderId = undefined;
+        selectedDocument = undefined;
+        continue;
       }
+
+      const resolvedOrder = extractOrder(orderRes.data);
+      if (!isAllowedClient(resolvedOrder, allowedClients)) {
+        selectedOrder = undefined;
+        selectedOrderId = undefined;
+        selectedDocument = undefined;
+        continue;
+      }
+
+      selectedOrder = resolvedOrder;
       break;
     }
 
@@ -186,6 +227,10 @@ async function main(): Promise<void> {
       }
 
       for (const order of orders) {
+        if (!isAllowedClient(order, allowedClients)) {
+          continue;
+        }
+
         const orderId = requiredOrderId(order);
         if (!orderId) {
           continue;

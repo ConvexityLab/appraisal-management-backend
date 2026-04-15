@@ -131,6 +131,9 @@ param azureServicePrincipalObjectId string = ''
 @description('Object ID of the CI/CD service principal (GitHub Actions SP). Granted Key Vault Secrets Officer so it can write the SFTP password to Key Vault after provisioning local users.')
 param ciServicePrincipalId string = ''
 
+@description('Additional public IP addresses to allow through the Cosmos DB firewall.')
+param cosmosAllowedIpAddresses array = []
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -178,6 +181,7 @@ module cosmosDb 'modules/cosmos-production.bicep' = {
     cosmosAccountName: '${namingPrefix}-cosmos'
     databaseName: 'appraisal-management'
     containerAppPrincipalIds: [] // Will grant access later via separate role assignments
+    allowedIpAddresses: cosmosAllowedIpAddresses
   }
 }
 
@@ -279,6 +283,17 @@ module cosmosCompletionReportsContainer 'modules/cosmos-completion-reports-conta
 // Cosmos DB Property Records + Comparable Sales Containers (Phase R1)
 module cosmosPropertyRecordsContainer 'modules/cosmos-property-records-container.bicep' = {
   name: 'cosmos-property-records-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Property Enrichments Container
+// Stores per-order provider enrichment payloads for traceability/debugging.
+module cosmosPropertyEnrichmentsContainer 'modules/cosmos-property-enrichments-container.bicep' = {
+  name: 'cosmos-property-enrichments-container-deployment'
   scope: resourceGroup
   params: {
     cosmosAccountName: cosmosDb.outputs.cosmosAccountName

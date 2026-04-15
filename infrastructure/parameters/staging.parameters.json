@@ -53,6 +53,12 @@
     },
     "ciServicePrincipalId": {
       "value": "88f0212b-840d-4ef8-872e-401f545c87bc"
+    },
+    "cosmosAllowedIpAddresses": {
+      "value": [
+        "69.140.197.104",
+        "72.66.11.53"
+      ]
     }
   }
 }

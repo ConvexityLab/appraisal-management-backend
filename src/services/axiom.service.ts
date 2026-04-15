@@ -21,6 +21,8 @@ import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { WebPubSubService } from './web-pubsub.service';
+import { PropertyEnrichmentService } from './property-enrichment.service.js';
+import { PropertyRecordService } from './property-record.service.js';
 import { EventPriority, EventCategory } from '../types/events.js';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
 import type { CompileResponse, CompiledProgramNode } from '../types/axiom.types.js';
@@ -202,6 +204,7 @@ export class AxiomService {
   private readonly logger = new Logger('AxiomService');
   private client: AxiosInstance;
   private dbService: CosmosDbService;
+  private propertyEnrichmentService?: PropertyEnrichmentService;
   private webPubSubService: WebPubSubService | null = null;
   private containerName = 'aiInsights';
   private enabled: boolean;
@@ -537,6 +540,95 @@ export class AxiomService {
     status?: number;
   } | null {
     return this.lastPipelineSubmissionError;
+  }
+
+  private getPropertyEnrichmentService(): PropertyEnrichmentService {
+    if (!this.propertyEnrichmentService) {
+      this.propertyEnrichmentService = new PropertyEnrichmentService(
+        this.dbService,
+        new PropertyRecordService(this.dbService),
+      );
+    }
+
+    return this.propertyEnrichmentService;
+  }
+
+  private getPropertyInfoString(
+    propertyInfo: Record<string, unknown>,
+    keys: string[],
+  ): string | undefined {
+    for (const key of keys) {
+      const value = propertyInfo[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseCombinedAddress(raw: string): {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+  } {
+    const normalized = raw.trim();
+    const commaSeparatedMatch = normalized.match(/^(.+?),\s*([^,]+),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (commaSeparatedMatch) {
+      const street = commaSeparatedMatch[1]?.trim();
+      const city = commaSeparatedMatch[2]?.trim();
+      const state = commaSeparatedMatch[3]?.trim().toUpperCase();
+      const zipCode = commaSeparatedMatch[4]?.trim();
+
+      return {
+        ...(street ? { street } : {}),
+        ...(city ? { city } : {}),
+        ...(state ? { state } : {}),
+        ...(zipCode ? { zipCode } : {}),
+      };
+    }
+
+    return { street: normalized };
+  }
+
+  private normalizePropertyEnrichmentAddress(propertyInfo: Record<string, unknown>): {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+  } {
+    const rawAddress = this.getPropertyInfoString(propertyInfo, ['propertyAddress', 'address', 'streetAddress']);
+    const parsedAddress = rawAddress ? this.parseCombinedAddress(rawAddress) : {};
+
+    let street = parsedAddress.street;
+    const city = this.getPropertyInfoString(propertyInfo, ['propertyCity', 'city']) ?? parsedAddress.city;
+    const state = this.getPropertyInfoString(propertyInfo, ['propertyState', 'state']) ?? parsedAddress.state;
+    const zipCode = this.getPropertyInfoString(propertyInfo, ['propertyZip', 'zipCode', 'zip']) ?? parsedAddress.zipCode;
+
+    if (street && city && state && zipCode) {
+      const escapedCity = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedState = state.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedZip = zipCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      street = street
+        .replace(new RegExp(`,\\s*${escapedCity},\\s*${escapedState}\\s+${escapedZip}$`, 'i'), '')
+        .replace(new RegExp(`\\s*,\\s*${escapedCity}$`, 'i'), '')
+        .trim();
+    }
+
+    if (!street || !city || !state || !zipCode) {
+      throw new Error(
+        'Property enrichment requires address components street, city, state, and zipCode. ' +
+        `Received propertyInfo=${JSON.stringify(propertyInfo)}`,
+      );
+    }
+
+    return {
+      street,
+      city,
+      state,
+      zipCode,
+    };
   }
 
   /**
@@ -3573,59 +3665,24 @@ export class AxiomService {
     tenantId: string,
     clientId: string,
   ): Promise<{ enrichmentId: string; status: 'queued' }> {
-    const enrichmentId = `enrich-${orderId}-${Date.now()}`;
+    const address = this.normalizePropertyEnrichmentAddress(propertyInfo);
+    const enrichment = await this.getPropertyEnrichmentService().enrichOrder(orderId, tenantId, address);
 
-    const pendingRecord = {
-      id: enrichmentId,
-      type: 'property-enrichment',
+    this.logger.info('Completed property enrichment via PropertyEnrichmentService', {
       orderId,
       tenantId,
       clientId,
-      status: 'queued',
-      propertyInfo,
-      timestamp: new Date().toISOString(),
-    };
-    await this.storeEvaluationRecord(pendingRecord);
+      enrichmentId: enrichment.enrichmentId,
+      propertyId: enrichment.propertyId,
+      status: enrichment.status,
+    });
 
-    if (!this.enabled) {
-      this.logger.debug('[MOCK] Axiom not configured — queued mock enrichment', { enrichmentId });
-      return { enrichmentId, status: 'queued' };
-    }
-
-    const callbackUrl = process.env['API_BASE_URL']
-      ? `${process.env['API_BASE_URL']}/api/axiom/webhook`
-      : undefined;
-
-    try {
-      await this.client.post('/api/pipelines', {
-        ...this.buildPipelineParam('DOC_EXTRACT'),
-        trigger: { propertyInfo, subClientId: this.getAxiomSubClientId(), clientId: this.getAxiomClientId() },
-        correlationId: enrichmentId,
-        correlationType: 'ORDER',
-        ...(callbackUrl ? { webhookUrl: callbackUrl } : {}),
-      });
-    } catch (error) {
-      this.logger.error('Failed to submit Axiom property enrichment pipeline', {
-        enrichmentId, orderId, error: (error as Error).message,
-      });
-      throw error;
-    }
-
-    return { enrichmentId, status: 'queued' };
+    return { enrichmentId: enrichment.enrichmentId, status: 'queued' };
   }
 
   /** Retrieve the most recent property enrichment record for an order. */
   async getPropertyEnrichment(orderId: string, tenantId: string): Promise<any | null> {
-    if (!tenantId) {
-      throw new Error(`getPropertyEnrichment: tenantId is required. orderId=${orderId}`);
-    }
-    const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND c.type = 'property-enrichment' ORDER BY c.timestamp DESC OFFSET 0 LIMIT 1`;
-    const response = await this.dbService.queryItems<any>(this.containerName, query, [
-      { name: '@orderId', value: orderId },
-      { name: '@tenantId', value: tenantId },
-    ]);
-    if (!response.success || !response.data || response.data.length === 0) return null;
-    return response.data[0];
+    return this.getPropertyEnrichmentService().getLatestEnrichment(orderId, tenantId);
   }
 
   // ── P2-D: Complexity scoring ─────────────────────────────────────────────────
