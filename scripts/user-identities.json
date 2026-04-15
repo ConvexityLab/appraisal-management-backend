@@ -1,0 +1,63 @@
+{
+  "_comment": "Per-environment mapping of Entra user principal names → platform identity claims. Consumed by .github/workflows/set-user-identities.yml. UPNs are resolved to object IDs at run time via 'az ad user show'. Commit changes here to update user identities on next workflow run.",
+  "dev": [
+    {
+      "upn": "L1Admin@l1-analytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    },
+    {
+      "upn": "hiro@loneanalytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    },
+    {
+      "upn": "wyano@loneanalytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    }
+  ],
+  "staging": [
+    {
+      "upn": "L1Admin@l1-analytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    },
+    {
+      "upn": "hiro@loneanalytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    },
+    {
+      "upn": "wyano@loneanalytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    }
+  ],
+  "prod": [
+    {
+      "upn": "L1Admin@l1-analytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    },
+    {
+      "upn": "hiro@loneanalytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    },
+    {
+      "upn": "wyano@loneanalytics.com",
+      "role": "Admin",
+      "clientId": "vision",
+      "subClientId": "platform"
+    }
+  ]
+}

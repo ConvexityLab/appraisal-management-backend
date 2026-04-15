@@ -69,6 +69,7 @@ func.log
 !tsconfig.json
 !infrastructure/parameters/*.json
 !seed-data/**/*.json
+!scripts/user-identities.json
 
 # Local development
 .env.local
