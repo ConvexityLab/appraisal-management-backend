@@ -189,7 +189,7 @@ resource entraExtensionSetup 'Microsoft.Resources/deploymentScripts@2023-08-01' 
         $newPolicy = New-MgPolicyClaimMappingPolicy `
           -Definition @($policyDef) `
           -DisplayName $policyName `
-          -IsOrganizationDefault $false
+          -IsOrganizationDefault:$false
         $policyId = $newPolicy.Id
         Write-Host "Created ClaimsMappingPolicy: $policyName ($policyId)"
       }
