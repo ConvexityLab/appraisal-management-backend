@@ -7,7 +7,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, dev ]
     paths-ignore:
       - '.github/workflows/**'
       - '*.md'
@@ -70,6 +70,9 @@ jobs:
         elif [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
           echo "environment=staging" >> $GITHUB_OUTPUT
           echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+          echo "environment=dev" >> $GITHUB_OUTPUT
+          echo "deploy-infrastructure=true" >> $GITHUB_OUTPUT
         else
           echo "environment=dev" >> $GITHUB_OUTPUT
           echo "deploy-infrastructure=false" >> $GITHUB_OUTPUT
@@ -113,6 +116,10 @@ jobs:
 
           echo "code=true" >> $GITHUB_OUTPUT
           echo "infrastructure=$DISPATCH_DEPLOY" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/dev" ]]; then
+          # dev branch push: always run both code and infrastructure
+          echo "code=true" >> $GITHUB_OUTPUT
+          echo "infrastructure=true" >> $GITHUB_OUTPUT
         else
           echo "code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
           echo "infrastructure=${{ steps.filter.outputs.infrastructure }}" >> $GITHUB_OUTPUT
