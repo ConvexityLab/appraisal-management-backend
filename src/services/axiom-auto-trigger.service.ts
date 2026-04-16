@@ -212,6 +212,12 @@ export class AxiomAutoTriggerService {
       return;
     }
 
+    const config = await this.tenantConfigService.getConfig(clientId);
+    if (!config.axiomAutoTrigger) {
+      this.logger.info('AxiomAutoTrigger: axiomAutoTrigger disabled for client — skipping', { clientId, orderId });
+      return;
+    }
+
     // Build fields from order data
     const fields = this.buildOrderFields(order);
 

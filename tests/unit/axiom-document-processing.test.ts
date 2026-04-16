@@ -103,7 +103,8 @@ describe('AxiomDocumentProcessingService', () => {
 
     await (service as any).onDocumentUploaded(makeEvent());
 
-    expect(db.getItem).not.toHaveBeenCalled();
+    expect(db.getItem).toHaveBeenCalled();
+    expect(db.findOrderById).toHaveBeenCalled();
     expect(mockSubmitDocumentForSchemaExtraction).not.toHaveBeenCalled();
   });
 
