@@ -30,23 +30,43 @@ export class TenantAutomationConfigService {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /**
-   * Returns the automation config for the given client.
-   * When no document exists the caller receives DEFAULT_CLIENT_AUTOMATION_CONFIG
-   * so that features degrade gracefully without silent magic defaults in business
-   * logic (callers always get an explicit, typed object).
+   * Returns the automation config for the given client, with optional
+   * sub-client override cascade:
+   *   1. clientId + subClientId (sub-client-specific config)
+   *   2. clientId + subClientId="platform" (client-wide defaults)
+   *   3. DEFAULT_CLIENT_AUTOMATION_CONFIG (hardcoded fallback)
    */
-  async getConfig(clientId: string): Promise<ClientAutomationConfig> {
+  async getConfig(clientId: string, subClientId?: string): Promise<ClientAutomationConfig> {
     if (!clientId) {
       throw new Error('clientId is required');
     }
 
-    this.logger.info('Loading automation config', { clientId });
+    // Try sub-client-specific config first
+    if (subClientId && subClientId !== 'platform') {
+      this.logger.info('Loading sub-client automation config', { clientId, subClientId });
+      const subResult = await this.db.queryItems<ClientAutomationConfig>(
+        CONTAINER,
+        'SELECT * FROM c WHERE c.clientId = @clientId AND c.subClientId = @subClientId AND c.entityType = @entityType',
+        [
+          { name: '@clientId', value: clientId },
+          { name: '@subClientId', value: subClientId },
+          { name: '@entityType', value: 'client-config' },
+        ],
+      );
+      if (subResult.success && subResult.data && subResult.data.length > 0) {
+        return subResult.data[0]!;
+      }
+      this.logger.info('No sub-client config — falling back to client-level', { clientId, subClientId });
+    }
 
+    // Fall back to client-level (platform) config
+    this.logger.info('Loading client automation config', { clientId });
     const result = await this.db.queryItems<ClientAutomationConfig>(
       CONTAINER,
-      'SELECT * FROM c WHERE c.clientId = @clientId AND c.entityType = @entityType',
+      'SELECT * FROM c WHERE c.clientId = @clientId AND (c.subClientId = @platform OR NOT IS_DEFINED(c.subClientId)) AND c.entityType = @entityType',
       [
         { name: '@clientId', value: clientId },
+        { name: '@platform', value: 'platform' },
         { name: '@entityType', value: 'client-config' },
       ],
     );
@@ -64,7 +84,7 @@ export class TenantAutomationConfigService {
       };
     }
 
-    return result.data[0]!
+    return result.data[0]!;
   }
 
   /**

@@ -12,6 +12,7 @@ export interface ClientAutomationConfig {
   /** Cosmos document id — same as clientId for easy lookup. */
   id: string;
   clientId: string;
+  subClientId?: string;
 
   // ── Auto-assignment behaviour ─────────────────────────────────────────────
 

@@ -420,16 +420,6 @@ export class AxiomService {
   }
 
   /**
-   * Returns the platform sub-client ID that identifies this tenant's Axiom sub-partition.
-   * Must be configured via AXIOM_SUB_CLIENT_ID — no silent fallback.
-   */
-  private getAxiomSubClientId(): string {
-    const id = process.env['AXIOM_SUB_CLIENT_ID'];
-    if (!id) throw new Error('AXIOM_SUB_CLIENT_ID env var is required for Axiom pipeline submissions — configure it in environment settings');
-    return id;
-  }
-
-  /**
    * Called by the webhook handler when Axiom delivers pipeline.completed or
    * pipeline.failed via HTTP POST (not via Cosmos event store). The SSE proxy
    * checks this registry on every poll so it can terminate immediately.
