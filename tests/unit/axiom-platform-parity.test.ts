@@ -120,6 +120,7 @@ describe('AxiomService platform parity', () => {
       [{ documentName: 'Appraisal Report.pdf', documentReference: 'https://blob.example/report.pdf?sas=1' }],
       'tenant-123',
       'client-123',
+      'sub-client-123',
       undefined,   // programId
       undefined,   // programVersion
       'ORDER',
@@ -129,7 +130,7 @@ describe('AxiomService platform parity', () => {
     expect(post).toHaveBeenCalledWith('/api/pipelines', {
       pipelineId,
       input: {
-        subClientId: 'tenant-123',
+        subClientId: 'sub-client-123',
         clientId: 'client-123',
         fileSetId: 'fs-order-123',
         files: [{
@@ -255,12 +256,13 @@ describe('AxiomService platform parity', () => {
       'order-123',
       'https://blob.example/original.pdf?sas=1',
       'https://blob.example/revised.pdf?sas=1',
+      'sub-client-123',
     );
 
     expect(post).toHaveBeenNthCalledWith(1, '/api/pipelines', expect.objectContaining({
       pipelineId: 'document-extraction',
       input: expect.objectContaining({
-        subClientId: 'tenant-123',
+        subClientId: 'sub-client-123',
         clientId: 'client-123',
         correlationId: 'order-123:comparison:original',
       }),
@@ -268,7 +270,7 @@ describe('AxiomService platform parity', () => {
     expect(post).toHaveBeenNthCalledWith(2, '/api/pipelines', expect.objectContaining({
       pipelineId: 'document-extraction',
       input: expect.objectContaining({
-        subClientId: 'tenant-123',
+        subClientId: 'sub-client-123',
         clientId: 'client-123',
         correlationId: 'order-123:comparison:revised',
       }),

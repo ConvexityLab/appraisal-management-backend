@@ -122,12 +122,15 @@ export class AxiomDocumentProcessingService {
       return;
     }
 
-    // Resolve clientId from the associated order (required by Axiom for schema lookup).
+    // Resolve clientId and subClientId from the associated order (required by Axiom for schema lookup).
     let clientId: string | undefined;
+    let orderSubClientId: string | undefined;
     if (orderId) {
       const orderResult = await this.dbService.findOrderById(orderId);
       if (orderResult.success && orderResult.data) {
-        clientId = (orderResult.data as unknown as { clientId?: string }).clientId;
+        const orderData = orderResult.data as unknown as { clientId?: string; subClientId?: string };
+        clientId = orderData.clientId;
+        orderSubClientId = orderData.subClientId;
       }
     }
     if (!clientId) {
@@ -185,6 +188,7 @@ export class AxiomDocumentProcessingService {
       `Set axiomProgramVersion (e.g. '1.0.0') in the tenant-automation-configs record for this tenant.`,
     );
 
+    const subClientId = orderSubClientId ?? config.axiomSubClientId ?? '';
     const submitResult = await this.axiomService.submitDocumentForSchemaExtraction({
       documentId,
       ...(orderId && { orderId }),
@@ -193,6 +197,7 @@ export class AxiomDocumentProcessingService {
       documentType: resolvedDocumentType,
       tenantId,
       clientId,
+      subClientId,
       programId,
       programVersion,
     });

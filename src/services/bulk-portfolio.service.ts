@@ -519,6 +519,7 @@ export class BulkPortfolioService {
     jobId: string,
     tenantId: string,
     clientId: string,
+    subClientId: string,
     reviewProgramId?: string,
   ): Promise<{ pipelineJobId: string; batchId: string }> {
     const job = await this.getJob(jobId, tenantId);
@@ -559,6 +560,7 @@ export class BulkPortfolioService {
       loanSubmissions,
       tenantId,
       clientId,
+      subClientId,
       reviewProgramId ?? job.reviewProgramId,
     );
 

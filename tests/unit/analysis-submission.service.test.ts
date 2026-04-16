@@ -39,6 +39,7 @@ describe('AnalysisSubmissionService DOCUMENT_ANALYZE parity', () => {
           id: 'order-123',
           tenantId: 'tenant-123',
           clientId: 'client-123',
+          subClientId: 'sub-client-123',
           productType: 'FULL_APPRAISAL',
           propertyAddress: {
             streetAddress: '123 Main St',
@@ -109,6 +110,7 @@ describe('AnalysisSubmissionService DOCUMENT_ANALYZE parity', () => {
       }],
       'tenant-123',
       'client-123',
+      'sub-client-123',  // subClientId
       undefined,       // programId
       undefined,       // programVersion
       'ORDER',

@@ -510,6 +510,7 @@ export interface AxiomBulkEvaluationRequestedEvent extends BaseEvent {
     jobId: string;
     tenantId: string;
     clientId: string;
+    subClientId?: string;
     reviewProgramId?: string;
     priority: EventPriority;
   };

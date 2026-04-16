@@ -79,6 +79,7 @@ export interface BulkIngestionJob {
   type: 'bulk-ingestion-job';
   tenantId: string;
   clientId: string;
+  subClientId?: string;
   jobName?: string;
   analysisType: BulkAnalysisType;
   ingestionMode: BulkIngestionMode;

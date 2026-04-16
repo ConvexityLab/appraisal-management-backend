@@ -171,6 +171,7 @@ export class BulkIngestionExtractionWorkerService {
         documentType: 'APPRAISAL_REPORT',
         tenantId: job.tenantId,
         clientId: job.clientId,
+        subClientId: job.subClientId ?? '',
         programId,
         programVersion,
       });

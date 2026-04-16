@@ -1607,12 +1607,15 @@ export class OrderController {
         documentReference: d.blobUrl,
       }));
 
+      const subClientId: string = orderData.subClientId ?? '';
+
       const axiomResult = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
         documents,
         tenantId,
         clientId,
+        subClientId,
         undefined, // programId
         undefined, // programVersion
         'ORDER',

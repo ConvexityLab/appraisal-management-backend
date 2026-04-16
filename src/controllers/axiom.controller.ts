@@ -706,12 +706,19 @@ export class AxiomController {
         documentReference: notification.documentUrl,
       }];
 
+      let subClientId: string = (order as any).subClientId ?? '';
+      if (!subClientId) {
+        const tenantConfig = await this.tenantAutomationConfigService.getConfig(order.clientId);
+        subClientId = tenantConfig.axiomSubClientId ?? '';
+      }
+
       const pipelineResult = await this.axiomService.submitOrderEvaluation(
         notification.orderId,
         fields,
         documents,
         order.tenantId,
         order.clientId,
+        subClientId,
         undefined, // programId
         undefined, // programVersion
         'ORDER',
@@ -1497,11 +1504,25 @@ export class AxiomController {
         return;
       }
 
+      // Resolve subClientId from order → tenantConfig fallback
+      const orderResult = await this.dbService.findOrderById(orderId);
+      const order = orderResult.success ? orderResult.data ?? null : null;
+      let subClientId = '';
+      if (order) {
+        const clientId = (order as any).clientId as string | undefined;
+        subClientId = (order as any).subClientId ?? '';
+        if (!subClientId && clientId) {
+          const tenantConfig = await this.tenantAutomationConfigService.getConfig(clientId);
+          subClientId = tenantConfig.axiomSubClientId ?? '';
+        }
+      }
+
       // Initiate document comparison
       const result = await this.axiomService.compareDocuments(
         orderId,
         originalDocumentUrl,
-        revisedDocumentUrl
+        revisedDocumentUrl,
+        subClientId,
       );
 
       if (!result.success) {

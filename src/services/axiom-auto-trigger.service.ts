@@ -39,6 +39,7 @@ interface OrderSnapshot {
   id: string;
   tenantId?: string;
   clientId?: string;
+  subClientId?: string;
   orderNumber?: string;
   axiomStatus?: string;
   axiomPipelineJobId?: string;
@@ -292,12 +293,14 @@ export class AxiomAutoTriggerService {
     // Stamp submit-failed on the order and publish an event before re-throwing.
     let result: { pipelineJobId: string; evaluationId: string } | null;
     try {
+      const subClientId = order.subClientId ?? config.axiomSubClientId ?? '';
       result = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
         primaryDocs,
         resolvedTenantId,
         clientId,
+        subClientId,
       );
     } catch (submitErr) {
       this.logger.error('AxiomAutoTrigger: submitOrderEvaluation threw an exception', {

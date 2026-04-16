@@ -915,6 +915,7 @@ export class AxiomService {
   async submitPipeline(
     tenantId: string,
     clientId: string,
+    subClientId: string,
     fileSetId: string,
     pipelineMode: 'FULL_PIPELINE' | 'CLASSIFICATION_ONLY' | 'EXTRACTION_ONLY' | 'CRITERIA_ONLY',
     metadata?: Record<string, any>
@@ -939,7 +940,7 @@ export class AxiomService {
       const payload = {
         pipeline: pipelineBody,
         input: {
-          subClientId: this.getAxiomSubClientId(),
+          subClientId,
           clientId,
           fileSetId,
           ...metadata,
@@ -1386,7 +1387,8 @@ export class AxiomService {
   async compareDocuments(
     orderId: string,
     originalDocumentUrl: string,
-    revisedDocumentUrl: string
+    revisedDocumentUrl: string,
+    subClientId: string,
   ): Promise<{
     success: boolean;
     comparisonId?: string;
@@ -1433,6 +1435,7 @@ export class AxiomService {
         orderId,
         tenantId,
         clientId,
+        subClientId,
         originalDocumentUrl,
         'original',
       );
@@ -1440,6 +1443,7 @@ export class AxiomService {
         orderId,
         tenantId,
         clientId,
+        subClientId,
         revisedDocumentUrl,
         'revised',
       );
@@ -1672,6 +1676,7 @@ export class AxiomService {
     documents: Array<{ documentName: string; documentReference: string }> | undefined,
     tenantId: string,
     clientId: string,
+    subClientId: string,
     programId?: string,
     programVersion?: string,
     correlationType: 'ORDER' | 'TAPE_LOAN' = 'ORDER',
@@ -1766,7 +1771,7 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         pipelineId,
         input: {
-          subClientId: this.getAxiomSubClientId(),
+          subClientId,
           clientId,
           fileSetId,
           files: axiomFiles,
@@ -1939,6 +1944,7 @@ export class AxiomService {
     }>,
     tenantId: string,
     clientId: string,
+    subClientId: string,
     programId?: string,
   ): Promise<{ pipelineJobId: string; batchId: string } | null> {
     if (!this.enabled) {
@@ -1997,7 +2003,7 @@ export class AxiomService {
           const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
             pipelineId: process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation',
             input: {
-              subClientId: this.getAxiomSubClientId(),
+              subClientId,
               clientId,
               fileSetId: `fs-${jobId}-${loan.loanNumber}`,
               files: [{
@@ -2081,6 +2087,7 @@ export class AxiomService {
     documents: Array<{ documentName: string; documentReference: string }>,
     tenantId: string,
     clientId: string,
+    subClientId: string,
     programId?: string,
   ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
     if (!this.enabled) {
@@ -2100,7 +2107,7 @@ export class AxiomService {
       const response = await this.client.post<{ jobId: string }>('/api/pipelines', {
         ...this.buildPipelineParam('DOC_EXTRACT'),
         input: {
-          subClientId: this.getAxiomSubClientId(),
+          subClientId,
           clientId,
           correlationId: `${jobId}:${loanNumber}`,
           correlationType: 'ORDER',
@@ -2163,6 +2170,7 @@ export class AxiomService {
     documentType: string;
     tenantId: string;
     clientId: string;
+    subClientId: string;
     programId: string;
     programVersion: string;
   }): Promise<{ pipelineJobId: string } | null> {
@@ -2193,7 +2201,7 @@ export class AxiomService {
         pipelineId,
         input: {
           clientId:       params.clientId,
-          subClientId:    params.tenantId,
+          subClientId:    params.subClientId,
           programId:      params.programId,
           programVersion: params.programVersion,
           fileSetId:      params.orderId ?? params.documentId,
@@ -3446,6 +3454,7 @@ export class AxiomService {
     orderId: string,
     tenantId: string,
     clientId: string,
+    subClientId: string,
     documentUrl: string,
     label: 'original' | 'revised',
   ): Promise<Record<string, unknown>> {
@@ -3457,7 +3466,7 @@ export class AxiomService {
     const submission = await this.client.post<{ jobId: string }>('/api/pipelines', {
       pipelineId,
       input: {
-        subClientId: this.getAxiomSubClientId(),
+        subClientId,
         clientId,
         fileSetId: `cmp-${orderId}-${label}-${Date.now().toString(36)}`,
         files: [{

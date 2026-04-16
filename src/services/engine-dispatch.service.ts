@@ -65,6 +65,7 @@ class AxiomEngineAdapter implements EngineAdapter {
     const response = await this.axiomService.submitPipeline(
       run.tenantId,
       run.schemaKey.clientId,
+      run.schemaKey.subClientId,
       run.documentId ?? run.id,
       'EXTRACTION_ONLY',
       {
@@ -99,6 +100,7 @@ class AxiomEngineAdapter implements EngineAdapter {
     const response = await this.axiomService.submitPipeline(
       run.tenantId,
       run.programKey.clientId,
+      run.programKey.subClientId,
       run.snapshotId,
       'CRITERIA_ONLY',
       {
@@ -139,6 +141,7 @@ class AxiomEngineAdapter implements EngineAdapter {
     const response = await this.axiomService.submitPipeline(
       run.tenantId,
       run.programKey.clientId,
+      run.programKey.subClientId,
       `${run.snapshotId}:${run.stepKey}`,
       'CRITERIA_ONLY',
       {

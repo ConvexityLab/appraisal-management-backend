@@ -300,12 +300,14 @@ export class AnalysisSubmissionService {
     ];
 
     const clientId = (order as any).clientInformation?.clientId || order.clientId;
+    const subClientId = (order as any).subClientId ?? '';
     const pipelineResult = await this.axiomService.submitOrderEvaluation(
       request.orderId,
       fields,
       documents,
       order.tenantId,
       clientId,
+      subClientId,
       request.programId,
       request.programVersion,
       'ORDER',
