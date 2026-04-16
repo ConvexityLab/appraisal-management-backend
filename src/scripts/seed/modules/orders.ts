@@ -10,14 +10,14 @@ import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js
 import { upsert, cleanContainer, daysAgo, daysFromNow, hoursAgo } from '../seed-types.js';
 import {
   ORDER_IDS, ORDER_NUMBERS,
-  CLIENT_IDS, PRODUCT_IDS, VENDOR_IDS, APPRAISER_IDS, PROPERTY_IDS,
+  CLIENT_IDS, SUB_CLIENT_SLUGS, PRODUCT_IDS, VENDOR_IDS, APPRAISER_IDS, PROPERTY_IDS,
   REPORT_IDS, ENGAGEMENT_IDS,
   INTERNAL_STAFF_IDS, STAFF_IDS, QC_REVIEW_IDS,
 } from '../seed-ids.js';
 
 const CONTAINER = 'orders';
 
-function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
+function buildOrders(tenantId: string, clientId: string, now: string): Record<string, unknown>[] {
   return [
     // 1 — COMPLETED, full 1004
     {
@@ -25,7 +25,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_001],
       status: 'COMPLETED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON], clientRecordId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
       vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group',
       appraiserId: APPRAISER_IDS.MICHAEL_THOMPSON, appraiserName: 'Michael Thompson',
       propertyId: PROPERTY_IDS.MOCKINGBIRD_LANE,
@@ -71,7 +71,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.QC_REVIEW_002],
       status: 'QC_REVIEW', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.NATIONAL_AMC, clientName: 'National AMC Services',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.NATIONAL_AMC], clientRecordId: CLIENT_IDS.NATIONAL_AMC, clientName: 'National AMC Services',
       vendorId: VENDOR_IDS.ROCKY_MOUNTAIN, vendorName: 'Rocky Mountain Valuations',
       appraiserId: APPRAISER_IDS.PATRICIA_NGUYEN, appraiserName: 'Patricia Nguyen',
       propertyId: PROPERTY_IDS.SWISS_AVE,
@@ -112,7 +112,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.IN_PROGRESS_003],
       status: 'IN_PROGRESS', priority: 'RUSH', isRush: true,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.PACIFIC_COAST, clientName: 'Pacific Coast Mortgage',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.PACIFIC_COAST], clientRecordId: CLIENT_IDS.PACIFIC_COAST, clientName: 'Pacific Coast Mortgage',
       vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC',
       appraiserId: APPRAISER_IDS.KEVIN_OKAFOR, appraiserName: 'Kevin Okafor',
       propertyId: PROPERTY_IDS.LAMAR_ST,
@@ -146,7 +146,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.PENDING_004],
       status: 'PENDING_ASSIGNMENT', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.CONDO_1073, productName: 'Condo Appraisal (1073)', productType: 'CONDO',
-      clientId: CLIENT_IDS.CLEARPATH, clientName: 'ClearPath Valuation Group',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH], clientRecordId: CLIENT_IDS.CLEARPATH, clientName: 'ClearPath Valuation Group',
       propertyId: PROPERTY_IDS.GREENVILLE_AVE,
       propertyAddress: { street: '4100 Greenville Ave #18B', city: 'Dallas', state: 'TX', zip: '75206', county: 'Dallas' },
       loanNumber: 'CP-2026-99401', borrowerName: 'Rebecca Torres',
@@ -172,7 +172,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.NEW_005],
       status: 'NEW', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DESKTOP_REVIEW, productName: 'Desktop Appraisal', productType: 'DESKTOP',
-      clientId: CLIENT_IDS.SUNCOAST, clientName: 'Suncoast Mortgage Brokers',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.SUNCOAST], clientRecordId: CLIENT_IDS.SUNCOAST, clientName: 'Suncoast Mortgage Brokers',
       propertyAddress: { street: '900 Belt Line Rd', city: 'Richardson', state: 'TX', zip: '75080', county: 'Dallas' },
       loanNumber: 'SCB-2026-10501', borrowerName: 'James Franklin',
       orderedDate: hoursAgo(4),
@@ -196,7 +196,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.FIX_FLIP_006],
       status: 'IN_PROGRESS', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON], clientRecordId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
       vendorId: VENDOR_IDS.METROPLEX, vendorName: 'Metroplex Appraisal Services',
       appraiserId: APPRAISER_IDS.PATRICIA_NGUYEN, appraiserName: 'Patricia Nguyen',
       propertyId: PROPERTY_IDS.ABRAMS_RD,
@@ -227,7 +227,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ASSIGNED_007],
       status: 'ASSIGNED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DRIVE_BY_2055, productName: 'Drive-By Appraisal (2055)', productType: 'DRIVE_BY',
-      clientId: CLIENT_IDS.NATIONAL_AMC, clientName: 'National AMC Services',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.NATIONAL_AMC], clientRecordId: CLIENT_IDS.NATIONAL_AMC, clientName: 'National AMC Services',
       vendorId: VENDOR_IDS.NVN, vendorName: 'National Valuation Network',
       propertyAddress: { street: '6700 Forest Ln', city: 'Dallas', state: 'TX', zip: '75230', county: 'Dallas' },
       loanNumber: 'NAMC-2026-70701', borrowerName: 'Angela Brown',
@@ -253,7 +253,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ACCEPTED_008],
       status: 'ACCEPTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.FIRST_TECH_CU, clientName: 'First Tech Federal Credit Union',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_TECH_CU], clientRecordId: CLIENT_IDS.FIRST_TECH_CU, clientName: 'First Tech Federal Credit Union',
       vendorId: VENDOR_IDS.PREMIER, vendorName: 'Premier Appraisal Group',
       appraiserId: APPRAISER_IDS.MICHAEL_THOMPSON, appraiserName: 'Michael Thompson',
       propertyId: PROPERTY_IDS.BOULDER_MAIN_ST,
@@ -285,7 +285,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.SUBMITTED_009],
       status: 'SUBMITTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.MULTI_FAMILY_1025, productName: 'Multi-Family (1025)', productType: 'MULTI_FAMILY',
-      clientId: CLIENT_IDS.CLEARPATH, clientName: 'ClearPath Valuation Group',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH], clientRecordId: CLIENT_IDS.CLEARPATH, clientName: 'ClearPath Valuation Group',
       vendorId: VENDOR_IDS.ROCKY_MOUNTAIN, vendorName: 'Rocky Mountain Valuations',
       appraiserId: APPRAISER_IDS.PATRICIA_NGUYEN, appraiserName: 'Patricia Nguyen',
       propertyAddress: { street: '1500 Commerce St', city: 'Fort Worth', state: 'TX', zip: '76102', county: 'Tarrant' },
@@ -327,7 +327,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.REVISION_010],
       status: 'REVISION_REQUESTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.PACIFIC_COAST, clientName: 'Pacific Coast Mortgage',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.PACIFIC_COAST], clientRecordId: CLIENT_IDS.PACIFIC_COAST, clientName: 'Pacific Coast Mortgage',
       vendorId: VENDOR_IDS.TX_PROPERTY, vendorName: 'Texas Property Experts LLC',
       appraiserId: APPRAISER_IDS.KEVIN_OKAFOR, appraiserName: 'Kevin Okafor',
       propertyAddress: { street: '2350 McKinney Ave', city: 'Dallas', state: 'TX', zip: '75201', county: 'Dallas' },
@@ -369,7 +369,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.CANCELLED_011],
       status: 'CANCELLED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
-      clientId: CLIENT_IDS.SUNCOAST, clientName: 'Suncoast Mortgage Brokers',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.SUNCOAST], clientRecordId: CLIENT_IDS.SUNCOAST, clientName: 'Suncoast Mortgage Brokers',
       propertyAddress: { street: '4400 Lemmon Ave', city: 'Dallas', state: 'TX', zip: '75219', county: 'Dallas' },
       loanNumber: 'SCB-2026-11101', borrowerName: 'Thomas & Lisa Park',
       orderedDate: daysAgo(21), cancelledDate: daysAgo(19),
@@ -383,7 +383,7 @@ function buildOrders(tenantId: string, now: string): Record<string, unknown>[] {
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_DRIVEBY_012],
       status: 'COMPLETED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DRIVE_BY_2055, productName: 'Drive-By Appraisal (2055)', productType: 'DRIVE_BY',
-      clientId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON], clientRecordId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
       vendorId: VENDOR_IDS.METROPLEX, vendorName: 'Metroplex Appraisal Services',
       appraiserId: APPRAISER_IDS.MICHAEL_THOMPSON, appraiserName: 'Michael Thompson',
       propertyAddress: { street: '1045 W Davis St', city: 'Dallas', state: 'TX', zip: '75208', county: 'Dallas' },
@@ -432,7 +432,7 @@ export const module: SeedModule = {
       result.cleaned = await cleanContainer(ctx, CONTAINER);
     }
 
-    for (const order of buildOrders(ctx.tenantId, ctx.now)) {
+    for (const order of buildOrders(ctx.tenantId, ctx.clientId, ctx.now)) {
       await upsert(ctx, CONTAINER, order, result);
     }
 

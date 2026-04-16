@@ -96,6 +96,7 @@ export { ProductType as EngagementProductType } from './product-catalog.js';
  */
 export interface EngagementClient {
   clientId: string;
+  subClientId?: string;
   clientName: string;
   loanOfficer?: string | undefined;
   loanOfficerEmail?: string | undefined;

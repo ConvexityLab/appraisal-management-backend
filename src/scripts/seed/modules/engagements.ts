@@ -11,6 +11,7 @@ import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js
 import { upsert, cleanContainer, daysAgo, daysFromNow } from '../seed-types.js';
 import {
   CLIENT_IDS,
+  SUB_CLIENT_SLUGS,
   ORDER_IDS,
   APPRAISER_IDS,
   ENGAGEMENT_IDS,
@@ -18,7 +19,7 @@ import {
 
 const CONTAINER = 'engagements';
 
-function buildEngagements(tenantId: string): Record<string, unknown>[] {
+function buildEngagements(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     // ── ENG-001: SINGLE Full Appraisal — IN_PROGRESS ──────────────────────
     {
@@ -27,6 +28,9 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON],
+      clientRecordId: CLIENT_IDS.FIRST_HORIZON,
       client: {
         clientId: CLIENT_IDS.FIRST_HORIZON,
         clientName: 'First Horizon Bank',
@@ -87,6 +91,9 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.PACIFIC_COAST],
+      clientRecordId: CLIENT_IDS.PACIFIC_COAST,
       client: {
         clientId: CLIENT_IDS.PACIFIC_COAST,
         clientName: 'Pacific Coast Lending',
@@ -147,6 +154,9 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
       tenantId,
       engagementType: 'PORTFOLIO',
       loansStoredExternally: false,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.NATIONAL_AMC],
+      clientRecordId: CLIENT_IDS.NATIONAL_AMC,
       client: {
         clientId: CLIENT_IDS.NATIONAL_AMC,
         clientName: 'National AMC',
@@ -239,6 +249,9 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON],
+      clientRecordId: CLIENT_IDS.FIRST_HORIZON,
       client: {
         clientId: CLIENT_IDS.FIRST_HORIZON,
         clientName: 'First Horizon Bank',
@@ -299,6 +312,9 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH],
+      clientRecordId: CLIENT_IDS.CLEARPATH,
       client: {
         clientId: CLIENT_IDS.CLEARPATH,
         clientName: 'ClearPath AMC',
@@ -364,7 +380,7 @@ export const module: SeedModule = {
       result.cleaned = await cleanContainer(ctx, CONTAINER);
     }
 
-    for (const eng of buildEngagements(ctx.tenantId)) {
+    for (const eng of buildEngagements(ctx.tenantId, ctx.clientId)) {
       await upsert(ctx, CONTAINER, eng, result);
     }
 

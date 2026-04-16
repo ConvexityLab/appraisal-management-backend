@@ -7,16 +7,16 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo } from '../seed-types.js';
-import { QC_CHECKLIST_IDS, CLIENT_IDS } from '../seed-ids.js';
+import { QC_CHECKLIST_IDS, CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
 
 const CONTAINER = 'criteria';
 
-function buildChecklists(tenantId: string): Record<string, unknown>[] {
+function buildChecklists(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     {
       id: QC_CHECKLIST_IDS.UAD_STANDARD,
       tenantId,
-      clientId: CLIENT_IDS.FIRST_HORIZON,
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON], clientRecordId: CLIENT_IDS.FIRST_HORIZON,
       type: 'qc-checklist',
       name: 'UAD Standard Residential QC Checklist (2026)',
       version: '2026.1',
@@ -77,7 +77,7 @@ export const module: SeedModule = {
       result.cleaned = await cleanContainer(ctx, CONTAINER, '/clientId');
     }
 
-    for (const checklist of buildChecklists(ctx.tenantId)) {
+    for (const checklist of buildChecklists(ctx.tenantId, ctx.clientId)) {
       await upsert(ctx, CONTAINER, checklist, result);
     }
 

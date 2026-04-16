@@ -36,6 +36,7 @@ export interface BulkIngestionItemInput {
 
 export interface BulkIngestionSubmitRequest {
   clientId: string;
+  subClientId?: string;
   jobName?: string;
   analysisType: BulkAnalysisType;
   ingestionMode: BulkIngestionMode;

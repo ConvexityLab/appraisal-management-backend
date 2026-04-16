@@ -96,6 +96,7 @@ export interface PropertyDetails {
 
 export interface ClientInformation {
   clientId: string;
+  subClientId?: string;
   clientName: string;
   /** Internal display name — may differ from clientName (used on external-facing docs) */
   clientDisplayName?: string;

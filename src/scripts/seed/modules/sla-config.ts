@@ -2,7 +2,7 @@
  * Seed Module: SLA Configuration
  *
  * Seeds default SLA rules per product type.
- * Container: sla-configurations (partition /tenantId)
+ * Container: sla-configurations (partition /clientId)
  */
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
@@ -11,10 +11,10 @@ import { SLA_CONFIG_IDS, PRODUCT_IDS } from '../seed-ids.js';
 
 const CONTAINER = 'sla-configurations';
 
-function buildSlaConfigs(tenantId: string): Record<string, unknown>[] {
+function buildSlaConfigs(clientId: string): Record<string, unknown>[] {
   return [
     {
-      id: SLA_CONFIG_IDS.FULL_APPRAISAL, tenantId, type: 'sla-configuration',
+      id: SLA_CONFIG_IDS.FULL_APPRAISAL, clientId, subClientId: 'platform', type: 'sla-configuration',
       name: 'Full Appraisal (1004) SLA',
       productIds: [PRODUCT_IDS.FULL_1004, PRODUCT_IDS.CONDO_1073, PRODUCT_IDS.MULTI_FAMILY_1025],
       status: 'ACTIVE',
@@ -35,7 +35,7 @@ function buildSlaConfigs(tenantId: string): Record<string, unknown>[] {
       createdAt: daysAgo(365), updatedAt: daysAgo(30),
     },
     {
-      id: SLA_CONFIG_IDS.DRIVE_BY, tenantId, type: 'sla-configuration',
+      id: SLA_CONFIG_IDS.DRIVE_BY, clientId, subClientId: 'platform', type: 'sla-configuration',
       name: 'Drive-By (2055) SLA',
       productIds: [PRODUCT_IDS.DRIVE_BY_2055],
       status: 'ACTIVE',
@@ -56,7 +56,7 @@ function buildSlaConfigs(tenantId: string): Record<string, unknown>[] {
       createdAt: daysAgo(365), updatedAt: daysAgo(30),
     },
     {
-      id: SLA_CONFIG_IDS.DESKTOP, tenantId, type: 'sla-configuration',
+      id: SLA_CONFIG_IDS.DESKTOP, clientId, subClientId: 'platform', type: 'sla-configuration',
       name: 'Desktop Review SLA',
       productIds: [PRODUCT_IDS.DESKTOP_REVIEW, PRODUCT_IDS.FIELD_REVIEW_2000],
       status: 'ACTIVE',
@@ -87,10 +87,10 @@ export const module: SeedModule = {
     const result: SeedModuleResult = { created: 0, failed: 0, skipped: 0, cleaned: 0 };
 
     if (ctx.clean) {
-      result.cleaned = await cleanContainer(ctx, CONTAINER);
+      result.cleaned = await cleanContainer(ctx, CONTAINER, '/clientId');
     }
 
-    for (const cfg of buildSlaConfigs(ctx.tenantId)) {
+    for (const cfg of buildSlaConfigs(ctx.clientId)) {
       await upsert(ctx, CONTAINER, cfg, result);
     }
 
