@@ -631,6 +631,7 @@ export class OrderController {
           data: {
             orderId,
             tenantId: req.user!.tenantId,
+            clientId: current.data.clientId,
             previousStatus: currentStatus,
             newStatus,
             changedBy: req.user!.id,
@@ -2044,6 +2045,7 @@ export class OrderController {
           orderId,
           orderNumber: order.orderNumber ?? '',
           tenantId,
+          clientId: order.clientId ?? '',
           vendorId: bid.vendorId,
           vendorName: bid.vendorName,
           bidId,
@@ -2121,6 +2123,7 @@ export class OrderController {
           orderId,
           orderNumber: order?.orderNumber ?? '',
           tenantId,
+          clientId: order?.clientId ?? '',
           vendorId: bid.vendorId,
           vendorName: (bid as any).vendorName ?? bid.vendorId,
           bidId,

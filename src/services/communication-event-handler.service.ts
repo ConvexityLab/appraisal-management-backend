@@ -286,8 +286,8 @@ export class CommunicationEventHandler {
   private async onVendorAssignmentExhausted(
     event: VendorAssignmentExhaustedEvent,
   ): Promise<void> {
-    const { orderId, orderNumber, tenantId, attemptsCount } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, attemptsCount } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
 
     if (recipients.length === 0) {
       this.logger.warn('vendor.assignment.exhausted: no escalation recipients configured', {
@@ -312,8 +312,8 @@ export class CommunicationEventHandler {
   private async onReviewAssignmentExhausted(
     event: ReviewAssignmentExhaustedEvent,
   ): Promise<void> {
-    const { orderId, orderNumber, tenantId, attemptsCount } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, attemptsCount } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
 
     if (recipients.length === 0) {
       this.logger.warn('review.assignment.exhausted: no escalation recipients configured', {
@@ -393,10 +393,10 @@ export class CommunicationEventHandler {
   }
 
   private async onReviewSLAWarning(event: ReviewSLAWarningEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, reviewerId, percentElapsed, remainingMinutes } =
+    const { orderId, orderNumber, tenantId, clientId, reviewerId, percentElapsed, remainingMinutes } =
       event.data;
 
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const reviewerEmail = await this.resolveReviewerEmail(reviewerId, tenantId);
 
     const to = Array.from(new Set([...recipients, ...(reviewerEmail ? [reviewerEmail] : [])]));
@@ -419,9 +419,9 @@ export class CommunicationEventHandler {
   }
 
   private async onReviewSLABreached(event: ReviewSLABreachedEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, reviewerId, minutesOverdue } = event.data;
+    const { orderId, orderNumber, tenantId, clientId, reviewerId, minutesOverdue } = event.data;
 
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const recipients = await this.resolveEscalationRecipients(clientId);
     if (recipients.length === 0) {
       this.logger.warn('review.sla.breached: no escalation recipients — skipping', { orderId });
       return;
@@ -495,9 +495,9 @@ export class CommunicationEventHandler {
   }
 
   private async onEngagementLetterDeclined(event: EngagementLetterDeclinedEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, vendorId, letterId, reason } = event.data;
+    const { orderId, orderNumber, tenantId, clientId, vendorId, letterId, reason } = event.data;
 
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
     const to = Array.from(
       new Set([...recipients, ...(coordinatorEmail ? [coordinatorEmail] : [])]),
@@ -529,8 +529,8 @@ export class CommunicationEventHandler {
   // ── Email resolution helpers ───────────────────────────────────────────────
 
   private async onOrderOverdue(event: OrderOverdueEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, dueDate, hoursOverdue, currentStatus } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, dueDate, hoursOverdue, currentStatus } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
     const to = Array.from(
       new Set([...recipients, ...(coordinatorEmail ? [coordinatorEmail] : [])]),
@@ -554,8 +554,8 @@ export class CommunicationEventHandler {
   }
 
   private async onSupervisionTimedOut(event: SupervisionTimedOutEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, supervisorId, requestedAt, slaHours } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, supervisorId, requestedAt, slaHours } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const supervisorEmail = await this.resolveReviewerEmail(supervisorId, tenantId);
     const to = Array.from(
       new Set([...recipients, ...(supervisorEmail ? [supervisorEmail] : [])]),
@@ -579,8 +579,8 @@ export class CommunicationEventHandler {
   }
 
   private async onAxiomEvaluationTimedOut(event: AxiomEvaluationTimedOutEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, submittedAt, timeoutMinutes } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, submittedAt, timeoutMinutes } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
     if (recipients.length === 0) {
       this.logger.warn('axiom.evaluation.timeout: no escalation recipients — skipping', { orderId });
       return;
@@ -686,9 +686,9 @@ export class CommunicationEventHandler {
     }
   }
 
-  private async resolveEscalationRecipients(tenantId: string): Promise<string[]> {
+  private async resolveEscalationRecipients(clientId: string): Promise<string[]> {
     try {
-      const config = await this.tenantConfigService.getConfig(tenantId);
+      const config = await this.tenantConfigService.getConfig(clientId);
       return config.escalationRecipients ?? [];
     } catch {
       return [];

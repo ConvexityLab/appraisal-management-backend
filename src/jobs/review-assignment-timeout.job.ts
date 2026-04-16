@@ -205,6 +205,7 @@ export class ReviewAssignmentTimeoutJob {
           orderId: item.orderId,
           orderNumber: item.orderNumber ?? '',
           tenantId: item.tenantId ?? '',
+          clientId: item.clientId ?? '',
           qcReviewId: item.id,
           reviewerId: item.assignedAnalystId,
           attemptNumber,

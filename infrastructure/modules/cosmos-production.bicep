@@ -967,6 +967,29 @@ var containers = [
       ]
     }
   }
+  // Client automation configuration — per-client feature flags and pipeline settings.
+  // Replaces tenant-automation-configs; partition key /clientId reflects the business domain
+  // (clientId = logical client identifier, e.g. "vision"), distinct from Azure AD tenantId.
+  {
+    name: 'client-configs'
+    partitionKey: '/clientId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/clientId', order: 'ascending' }
+          { path: '/entityType', order: 'ascending' }
+        ]
+      ]
+    }
+  }
 ]
 
 // Cosmos DB Account with enterprise settings

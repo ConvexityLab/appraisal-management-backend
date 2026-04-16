@@ -108,6 +108,7 @@ export class DocumentService {
           documentId: document.id,
           ...(document.orderId && { orderId: document.orderId }),
           tenantId: document.tenantId,
+          ...(document.clientId && { clientId: document.clientId }),
           ...(document.category && { category: document.category }),
           ...(document.documentType && { documentType: document.documentType }),
           blobName: document.blobName,

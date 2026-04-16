@@ -173,7 +173,7 @@ export class SupervisionTimeoutWatcherJob {
         return;
       }
 
-      const tenantConfig = await this.tenantConfigService.getConfig(order.tenantId);
+      const tenantConfig = await this.tenantConfigService.getConfig(order.clientId);
       const slaHours = tenantConfig.supervisorTimeoutHours;
       const requestedAt = new Date(requestedAtRaw);
       const elapsed = Date.now() - requestedAt.getTime();
@@ -216,6 +216,7 @@ export class SupervisionTimeoutWatcherJob {
           orderId: order.id,
           orderNumber: order.orderNumber,
           tenantId: order.tenantId,
+          clientId: order.clientId,
           supervisorId: order.supervisorId,
           requestedAt,
           slaHours,

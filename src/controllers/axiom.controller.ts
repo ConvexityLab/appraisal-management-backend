@@ -150,7 +150,7 @@ export class AxiomController {
       throw new Error(`Order '${document.orderId}' is missing clientId required for schema/program keys`);
     }
 
-    const tenantConfig = await this.tenantAutomationConfigService.getConfig(document.tenantId);
+    const tenantConfig = await this.tenantAutomationConfigService.getConfig(clientId);
     const subClientId = tenantConfig.axiomSubClientId;
     if (!subClientId) {
       throw new Error(
@@ -1420,6 +1420,7 @@ export class AxiomController {
             orderId: correlationId,
             orderNumber: (orderForEvent?.data as any)?.orderNumber ?? correlationId,
             tenantId: resolvedTenantId,
+            clientId: (orderForEvent?.data as any)?.clientId ?? '',
             evaluationId: `eval-${correlationId}`,
             pipelineJobId: pipelineJobId ?? '',
             overallRiskScore: typeof updateData.axiomRiskScore === 'number' ? updateData.axiomRiskScore : 0,

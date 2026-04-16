@@ -66,14 +66,14 @@ async function ensureContainerExists(client: CosmosClient, dbName: string, conta
   }
 }
 
-async function upsertTenantAutomationConfig(client: CosmosClient, dbName: string, config: SeedConfig): Promise<void> {
-  const container = client.database(dbName).container('tenant-automation-configs');
+async function upsertClientAutomationConfig(client: CosmosClient, dbName: string, config: SeedConfig): Promise<void> {
+  const container = client.database(dbName).container('client-configs');
   const now = new Date().toISOString();
 
   const document = {
-    id: `automation-config-${config.tenantId}`,
-    tenantId: config.tenantId,
-    entityType: 'tenant-automation-config',
+    id: `client-config-${config.clientId}`,
+    clientId: config.clientId,
+    entityType: 'client-config',
 
     autoAssignmentEnabled: true,
     bidLoopEnabled: true,
@@ -167,11 +167,11 @@ async function upsertCriteriaRows(client: CosmosClient, dbName: string, config: 
 async function verifyCoverage(client: CosmosClient, dbName: string, config: SeedConfig): Promise<void> {
   const db = client.database(dbName);
 
-  const tenantConfigRows = await db.container('tenant-automation-configs').items.query<any>({
-    query: `SELECT TOP 1 c.id, c.tenantId, c.axiomSubClientId, c.axiomProgramId, c.axiomProgramVersion, c.axiomDocumentSchemaVersion
+  const tenantConfigRows = await db.container('client-configs').items.query<any>({
+    query: `SELECT TOP 1 c.id, c.clientId, c.axiomSubClientId, c.axiomProgramId, c.axiomProgramVersion, c.axiomDocumentSchemaVersion
             FROM c
-            WHERE c.tenantId=@tenantId AND c.entityType='tenant-automation-config'`,
-    parameters: [{ name: '@tenantId', value: config.tenantId }],
+            WHERE c.clientId=@clientId AND c.entityType='client-config'`,
+    parameters: [{ name: '@clientId', value: config.clientId }],
   }).fetchAll();
 
   const reviewProgramRows = await db.container('review-programs').items.query<any>({
@@ -197,7 +197,7 @@ async function verifyCoverage(client: CosmosClient, dbName: string, config: Seed
   }).fetchAll();
 
   console.log('\n=== Coordinated Axiom Object Coverage ===');
-  console.log(`tenant-automation-configs rows: ${tenantConfigRows.resources.length}`);
+  console.log(`client-configs rows: ${tenantConfigRows.resources.length}`);
   if (tenantConfigRows.resources[0]) {
     console.log(JSON.stringify(tenantConfigRows.resources[0]));
   }
@@ -213,7 +213,7 @@ async function verifyCoverage(client: CosmosClient, dbName: string, config: Seed
   }
 
   if (tenantConfigRows.resources.length === 0) {
-    throw new Error('Missing tenant automation config row.');
+    throw new Error('Missing client automation config row in client-configs.');
   }
   if (reviewProgramRows.resources.length === 0) {
     throw new Error('Missing review program row for client/subClient.');
@@ -233,7 +233,7 @@ async function main(): Promise<void> {
     aadCredentials: new DefaultAzureCredential(),
   });
 
-  await ensureContainerExists(client, dbName, 'tenant-automation-configs');
+  await ensureContainerExists(client, dbName, 'client-configs');
   await ensureContainerExists(client, dbName, 'review-programs');
   await ensureContainerExists(client, dbName, 'criteria');
 
@@ -244,7 +244,7 @@ async function main(): Promise<void> {
   console.log('Criteria step keys:', config.criteriaStepKeys.join(','));
 
   if (config.mode === 'seed') {
-    await upsertTenantAutomationConfig(client, dbName, config);
+    await upsertClientAutomationConfig(client, dbName, config);
     await upsertReviewProgram(client, dbName, config);
     await upsertCriteriaRows(client, dbName, config);
   }

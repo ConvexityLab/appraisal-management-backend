@@ -302,8 +302,8 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
-    // --- Load tenant automation config ---
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    // --- Load client automation config ---
+    const tenantConfig = await this.tenantConfigService.getConfig(order.clientId);
 
     // --- Respect autoAssignmentEnabled flag ---
     if (!tenantConfig.autoAssignmentEnabled) {
@@ -520,12 +520,12 @@ export class AutoAssignmentOrchestratorService {
    *   status: 'failed'      → pipeline failed; also route to QC so order is not stuck
    */
   private async onAxiomEvaluationCompleted(event: AxiomEvaluationCompletedEvent): Promise<void> {
-    const { orderId, tenantId, overallDecision, status, priority } = event.data;
+    const { orderId, tenantId, clientId, overallDecision, status, priority } = event.data;
 
     this.logger.info('axiom.evaluation.completed received', { orderId, overallDecision, status });
 
-    // Check whether this tenant actually uses Axiom auto-trigger.
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    // Check whether this client actually uses Axiom auto-trigger.
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (!tenantConfig.axiomAutoTrigger) {
       // Another tenant path — not our concern.
       return;
@@ -567,14 +567,14 @@ export class AutoAssignmentOrchestratorService {
    * Routes the order to human QC so it is not stuck indefinitely.
    */
   private async onAxiomEvaluationTimedOut(event: AxiomEvaluationTimedOutEvent): Promise<void> {
-    const { orderId, tenantId, timeoutMinutes } = event.data;
+    const { orderId, tenantId, clientId, timeoutMinutes } = event.data;
 
     this.logger.warn('axiom.evaluation.timeout received — routing to human QC', {
       orderId,
       timeoutMinutes,
     });
 
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (!tenantConfig.axiomAutoTrigger) {
       return;
     }
@@ -609,10 +609,10 @@ export class AutoAssignmentOrchestratorService {
   private async onOrderStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
     if (event.data.newStatus !== 'SUBMITTED') return;
 
-    const { orderId, tenantId, priority } = event.data;
+    const { orderId, tenantId, clientId, priority } = event.data;
 
     // Defer to the AI QC gate when it is enabled — routing happens in onQCAIScored.
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (tenantConfig.aiQcEnabled) {
       this.logger.info(
         'AI QC gate enabled — deferring review routing to qc.ai.scored event',
@@ -652,7 +652,7 @@ export class AutoAssignmentOrchestratorService {
    * needs_supervision → route to human QC analyst AND request supervisory co-sign.
    */
   private async onQCAIScored(event: QCAIScoredEvent): Promise<void> {
-    const { orderId, tenantId, decision, priority, score } = event.data;
+    const { orderId, tenantId, clientId, decision, priority, score } = event.data;
 
     this.logger.info('qc.ai.scored received', { orderId, score, decision });
 
@@ -672,7 +672,7 @@ export class AutoAssignmentOrchestratorService {
 
     // For needs_supervision, also request a supervisory co-sign.
     if (decision === 'needs_supervision') {
-      const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+      const tenantConfig = await this.tenantConfigService.getConfig(clientId);
       if (tenantConfig.defaultSupervisorId) {
         try {
           await this.supervisoryReviewService.requestSupervision({
@@ -790,6 +790,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         vendorId: vendor.vendorId,
         vendorName: vendor.vendorName,
         bidId,
@@ -945,6 +946,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         roundNumber: round,
         vendorIds: vendors.map((v) => v.vendorId),
         expiresAt,
@@ -965,6 +967,7 @@ export class AutoAssignmentOrchestratorService {
           orderId: order.id,
           orderNumber: order.orderNumber,
           tenantId,
+          clientId: order.clientId,
           vendorId: vendor.vendorId,
           vendorName: vendor.vendorName,
           bidId: broadcastBidIds[idx]!,
@@ -1066,6 +1069,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         attemptsCount: vendorsContacted.length,
         vendorsContacted,
         priority: EventPriority.HIGH,
@@ -1157,6 +1161,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         vendorId: vendor.vendorId,
         vendorName: vendor.vendorName,
         staffRole: vendor.staffRole ?? 'appraiser_internal',
@@ -1228,6 +1233,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         qcReviewId,
         priority,
         dueDate,
@@ -1326,6 +1332,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         qcReviewId: state.qcReviewId,
         reviewerId: reviewer.reviewerId,
         reviewerName: reviewer.reviewerName,
@@ -1430,6 +1437,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         qcReviewId,
         attemptsCount: reviewersContacted.length,
         reviewersContacted,

@@ -172,6 +172,7 @@ export class VendorTimeoutCheckerJob {
           orderId: order.id,
           orderNumber: order.orderNumber ?? '',
           tenantId: order.tenantId ?? '',
+          clientId: order.clientId ?? '',
           vendorId: currentVendor.vendorId,
           bidId: state.currentBidId,
           attemptNumber: state.currentAttempt + 1,

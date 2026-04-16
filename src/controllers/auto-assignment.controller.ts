@@ -680,6 +680,7 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
             orderId: order.id,
             orderNumber: order.orderNumber ?? order.id,
             tenantId,
+            clientId: order?.clientId ?? '',
             vendorId: currentVendor?.vendorId ?? 'unknown',
             vendorName: currentVendor?.vendorName ?? 'Unknown',
             bidId: state.currentBidId ?? '',

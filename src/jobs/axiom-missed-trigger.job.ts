@@ -154,7 +154,7 @@ export class AxiomMissedTriggerJob {
       // haven't opted in to auto-trigger.
       let config: { axiomAutoTrigger: boolean };
       try {
-        config = await this.tenantConfigService.getConfig(order.tenantId);
+        config = await this.tenantConfigService.getConfig(order.clientId);
       } catch (err) {
         this.logger.warn('AxiomMissedTriggerJob: failed to fetch tenant config — skipping', {
           orderId: order.id,

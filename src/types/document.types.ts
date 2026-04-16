@@ -6,6 +6,7 @@
 export interface DocumentMetadata {
   id: string;
   tenantId: string;
+  clientId?: string;
   orderId?: string;  // Optional — entity-scoped docs (vendor, appraiser) may not have an order
   name: string;
   blobUrl: string;

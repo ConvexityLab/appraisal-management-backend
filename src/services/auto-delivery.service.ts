@@ -146,19 +146,19 @@ export class AutoDeliveryService {
     trigger: string,
     priority: EventPriority,
   ): Promise<void> {
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    const order = await this.loadOrder(orderId, tenantId);
+    if (!order) {
+      this.logger.error('AutoDeliveryService: order not found', { orderId });
+      return;
+    }
+
+    const tenantConfig = await this.tenantConfigService.getConfig(order.clientId);
     if (!tenantConfig.autoDeliveryEnabled) {
-      this.logger.info('Auto-delivery disabled by tenant config — skipping', {
+      this.logger.info('Auto-delivery disabled by client config — skipping', {
         orderId,
         tenantId,
         trigger,
       });
-      return;
-    }
-
-    const order = await this.loadOrder(orderId, tenantId);
-    if (!order) {
-      this.logger.error('AutoDeliveryService: order not found', { orderId });
       return;
     }
 

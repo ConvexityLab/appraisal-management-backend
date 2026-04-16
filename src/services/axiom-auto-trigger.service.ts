@@ -191,12 +191,7 @@ export class AxiomAutoTriggerService {
 
     const { orderId, tenantId } = event.data;
 
-    const config = await this.tenantConfigService.getConfig(tenantId);
-    if (!config.axiomAutoTrigger) {
-      return; // tenant hasn't enabled auto-trigger
-    }
-
-    // Load the order to build fields
+    // Load the order to build fields and resolve clientId
     const orderResult = await this.dbService.findOrderById(orderId);
     if (!orderResult.success || !orderResult.data) {
       this.logger.warn('AxiomAutoTrigger: order not found', { orderId });
@@ -365,6 +360,7 @@ export class AxiomAutoTriggerService {
         orderId,
         orderNumber: order.orderNumber ?? orderId,
         tenantId: resolvedTenantId,
+        clientId,
         evaluationId,
         pipelineJobId,
         priority: EventPriority.NORMAL,

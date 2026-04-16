@@ -107,13 +107,6 @@ export class AxiomDocumentProcessingService {
       return;
     }
 
-    // Check per-tenant auto-trigger flag.
-    const config = await this.tenantConfigService.getConfig(tenantId);
-    if (!config.axiomAutoTrigger) {
-      this.logger.debug('AxiomDocumentProcessing: axiomAutoTrigger disabled for tenant', { tenantId, documentId });
-      return;
-    }
-
     // Idempotency: skip if extraction has already been initiated for this document.
     const docResult = await this.dbService.getItem<DocumentMetadata>('documents', documentId);
     if (!docResult.success || !docResult.data) {
@@ -142,6 +135,13 @@ export class AxiomDocumentProcessingService {
         'AxiomDocumentProcessing: cannot determine clientId — no orderId on document or order not found. Skipping.',
         { documentId, orderId },
       );
+      return;
+    }
+
+    // Check per-client auto-trigger flag.
+    const config = await this.tenantConfigService.getConfig(clientId);
+    if (!config.axiomAutoTrigger) {
+      this.logger.debug('AxiomDocumentProcessing: axiomAutoTrigger disabled for client', { clientId, documentId });
       return;
     }
 

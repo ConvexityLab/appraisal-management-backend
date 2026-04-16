@@ -61,6 +61,7 @@ export interface OrderStatusChangedEvent extends BaseEvent {
     orderId: string;
     /** Required so subscribers can perform tenant-scoped DB lookups without a cross-partition query. */
     tenantId: string;
+    clientId: string;
     previousStatus: string;
     newStatus: string;
     changedBy: string;
@@ -119,6 +120,7 @@ export interface EngagementStatusChangedEvent extends BaseEvent {
   data: {
     engagementId: string;
     tenantId: string;
+    clientId: string;
     previousStatus: string;
     newStatus: string;
     /** Human-readable reason for the transition. */
@@ -179,6 +181,7 @@ export interface QCAIScoredEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     score: number;
     /** auto_pass → skip human QC; needs_review → route to analyst; needs_supervision → route + flag supervisor. */
     decision: 'auto_pass' | 'needs_review' | 'needs_supervision';
@@ -263,6 +266,7 @@ export interface VendorBidSentEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     bidId: string;
@@ -283,6 +287,7 @@ export interface VendorStaffAssignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     staffRole: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
@@ -299,6 +304,7 @@ export interface VendorBidAcceptedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     bidId: string;
@@ -315,6 +321,7 @@ export interface VendorBidTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     bidId: string;
     attemptNumber: number;
@@ -331,6 +338,7 @@ export interface VendorBidDeclinedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     bidId: string;
@@ -349,6 +357,7 @@ export interface VendorAssignmentExhaustedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     attemptsCount: number;
     vendorsContacted: string[];
     priority: EventPriority;
@@ -364,6 +373,7 @@ export interface ReviewAssignmentRequestedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     priority: EventPriority;
     dueDate: Date;
@@ -378,6 +388,7 @@ export interface ReviewAssignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     reviewerName: string;
@@ -396,6 +407,7 @@ export interface ReviewAssignmentTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     attemptNumber: number;
@@ -412,6 +424,7 @@ export interface ReviewAssignmentExhaustedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     attemptsCount: number;
     reviewersContacted: string[];
@@ -429,6 +442,7 @@ export interface EngagementLetterSentEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     letterId: string;
     signingToken: string;
@@ -445,6 +459,7 @@ export interface EngagementLetterSignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     letterId: string;
     signedAt: Date;
@@ -461,6 +476,7 @@ export interface EngagementLetterDeclinedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     letterId: string;
     declinedAt: Date;
@@ -479,6 +495,7 @@ export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     evaluationId: string;
     pipelineJobId: string;
     priority: EventPriority;
@@ -641,6 +658,7 @@ export interface AxiomEvaluationCompletedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     evaluationId: string;
     pipelineJobId: string;
     overallRiskScore: number;
@@ -660,6 +678,7 @@ export interface ReviewSLAWarningEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     /** Percentage of SLA that has elapsed (0-100). */
@@ -678,6 +697,7 @@ export interface ReviewSLABreachedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     targetDate: Date;
@@ -696,6 +716,7 @@ export interface VendorBidRoundStartedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     roundNumber: number;
     vendorIds: string[];
     expiresAt: Date;
@@ -714,6 +735,7 @@ export interface OrderOverdueEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     /** ISO string of the original due date. */
     dueDate: string;
     /** How many hours past due. */
@@ -734,6 +756,7 @@ export interface AxiomEvaluationTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     /** When the evaluation was originally submitted to Axiom. */
     submittedAt: Date;
     /** Configured timeout window in minutes. */
@@ -763,6 +786,7 @@ export interface SupervisionTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     supervisorId: string;
     /** When supervision was first requested. */
     requestedAt: Date;
@@ -780,6 +804,7 @@ export interface VendorBidRoundExhaustedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     roundNumber: number;
     vendorIds: string[];
     priority: EventPriority;
@@ -798,6 +823,7 @@ export interface SupervisionRequiredEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     /** The staff member assigned to co-sign. */
     supervisorId: string;
     /** Why supervision was triggered (e.g. 'high_value', 'policy', 'ai_flag'). */
@@ -818,6 +844,7 @@ export interface SupervisionCosignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     supervisorId: string;
     supervisorName: string;
     cosignedAt: Date;
@@ -835,6 +862,7 @@ export interface PaymentInitiatedEvent extends BaseEvent {
     paymentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     amountCents: number;
     currency: string;
     paymentMethod: string;
@@ -850,6 +878,7 @@ export interface PaymentCompletedEvent extends BaseEvent {
     paymentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     amountCents: number;
     providerTransactionId: string;
     priority: EventPriority;
@@ -863,6 +892,7 @@ export interface PaymentFailedEvent extends BaseEvent {
     paymentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     amountCents: number;
     failureReason: string;
     priority: EventPriority;
@@ -878,6 +908,7 @@ export interface SubmissionUploadedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     documentCount: number;
     priority: EventPriority;
@@ -891,6 +922,7 @@ export interface SubmissionApprovedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     approvedBy: string;
     priority: EventPriority;
   };
@@ -903,6 +935,7 @@ export interface SubmissionRejectedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     rejectedBy: string;
     reason: string;
     priority: EventPriority;
@@ -916,6 +949,7 @@ export interface SubmissionRevisionRequestedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     requestedBy: string;
     revisionNotes: string;
     priority: EventPriority;
@@ -931,6 +965,7 @@ export interface EscalationCreatedEvent extends BaseEvent {
     escalationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     reason: string;
     escalatedBy: string;
     assignedTo?: string;
@@ -945,6 +980,7 @@ export interface EscalationResolvedEvent extends BaseEvent {
     escalationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     resolvedBy: string;
     resolution: string;
     priority: EventPriority;
@@ -960,6 +996,7 @@ export interface RovCreatedEvent extends BaseEvent {
     rovId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     requestorType: string;
     challengeReason: string;
     originalValue: number;
@@ -975,6 +1012,7 @@ export interface RovAssignedEvent extends BaseEvent {
     rovId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     assignedTo: string;
     priority: EventPriority;
   };
@@ -987,6 +1025,7 @@ export interface RovDecisionIssuedEvent extends BaseEvent {
     rovId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     decision: 'upheld' | 'value_changed' | 'withdrawn';
     updatedValue?: number;
     decidedBy: string;
@@ -1003,6 +1042,7 @@ export interface DeliveryReceiptConfirmedEvent extends BaseEvent {
     packageId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     confirmedBy: string;
     channel: 'portal' | 'email' | 'api';
     priority: EventPriority;
@@ -1016,6 +1056,7 @@ export interface DeliveryReceiptOpenedEvent extends BaseEvent {
     packageId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     openedBy: string;
     priority: EventPriority;
   };
@@ -1030,6 +1071,7 @@ export interface ConsentGivenEvent extends BaseEvent {
     consentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     borrowerEmail: string;
     disclosureVersion: string;
     method: 'portal' | 'email_link' | 'esign';
@@ -1044,6 +1086,7 @@ export interface ConsentDeniedEvent extends BaseEvent {
     consentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     borrowerEmail: string;
     priority: EventPriority;
   };
@@ -1056,6 +1099,7 @@ export interface ConsentWithdrawnEvent extends BaseEvent {
     consentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     borrowerEmail: string;
     withdrawnAt: string;
     priority: EventPriority;
@@ -1071,6 +1115,7 @@ export interface NegotiationCounterOfferSubmittedEvent extends BaseEvent {
     negotiationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     originalFee: number;
     counterFee: number;
     submittedBy: string;  // vendor ID
@@ -1085,6 +1130,7 @@ export interface NegotiationAcceptedEvent extends BaseEvent {
     negotiationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     agreedFee: number;
     acceptedBy: string;
     priority: EventPriority;
@@ -1098,6 +1144,7 @@ export interface NegotiationRejectedEvent extends BaseEvent {
     negotiationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     rejectedBy: string;
     reason?: string;
     priority: EventPriority;
@@ -1246,6 +1293,7 @@ export interface DocumentUploadedEvent extends BaseEvent {
     documentId: string;
     orderId?: string;
     tenantId: string;
+    clientId?: string;
     category?: string;
     documentType?: string;
     blobName: string;
