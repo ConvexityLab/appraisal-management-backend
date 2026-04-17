@@ -927,7 +927,7 @@ export class AxiomController {
       if (tenantId) {
         const runResult = await this.dbService.queryItems<Record<string, unknown>>(
           'aiInsights',
-          `SELECT TOP 1 c.engineRunRef FROM c WHERE c.type = 'run-ledger-entry' AND c.tenantId = @tenantId AND c.loanPropertyContextId = @orderId AND c.engineRunRef != 'pending' AND (c.status = 'running' OR c.status = 'queued') ORDER BY c.createdAt DESC`,
+          `SELECT TOP 1 c.engineRunRef FROM c WHERE c.tenantId = @tenantId AND c.type = 'run-ledger-entry' AND c.loanPropertyContextId = @orderId AND c.engineRunRef != 'pending' AND (c.status = 'running' OR c.status = 'queued') ORDER BY c.createdAt DESC`,
           [{ name: '@tenantId', value: tenantId }, { name: '@orderId', value: orderId }],
         );
         if (runResult.success && runResult.data?.[0]) {
@@ -1428,7 +1428,7 @@ export class AxiomController {
             if (tenantId) {
               const matchingRuns = await this.dbService.queryItems<{ id: string }>(
                 'aiInsights',
-                `SELECT TOP 10 c.id FROM c WHERE c.type = 'run-ledger-entry' AND c.engineRunRef = @jobId AND c.tenantId = @tenantId`,
+                `SELECT TOP 10 c.id FROM c WHERE c.tenantId = @tenantId AND c.type = 'run-ledger-entry' AND c.engineRunRef = @jobId`,
                 [{ name: '@jobId', value: pipelineJobId }, { name: '@tenantId', value: tenantId }],
               );
               if (matchingRuns.success && matchingRuns.data) {

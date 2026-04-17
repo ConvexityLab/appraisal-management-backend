@@ -341,7 +341,10 @@ export class AnalysisSubmissionService {
           version: config.axiomDocumentSchemaVersion ?? '1.0.0',
         },
         runReason: 'DOCUMENT_ANALYZE submission',
-        ...(config.axiomPipelineIdComplete ? { pipelineId: config.axiomPipelineIdComplete } : {}),
+        ...(request.evaluationMode === 'EXTRACTION' && config.axiomPipelineIdExtraction ? { pipelineId: config.axiomPipelineIdExtraction }
+          : request.evaluationMode === 'CRITERIA_EVALUATION' && config.axiomPipelineIdCriteria ? { pipelineId: config.axiomPipelineIdCriteria }
+          : config.axiomPipelineIdComplete ? { pipelineId: config.axiomPipelineIdComplete }
+          : {}),
         ...(request.orderId ? { loanPropertyContextId: request.orderId } : {}),
       });
       await this.runLedgerService.setRunStatus(run.id, actor.tenantId, 'running', {

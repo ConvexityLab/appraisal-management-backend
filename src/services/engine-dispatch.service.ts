@@ -81,6 +81,11 @@ class AxiomEngineAdapter implements EngineAdapter {
       throw new Error('STORAGE_CONTAINER_DOCUMENTS is required for Axiom extraction dispatch');
     }
 
+    const storageAccountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    if (!storageAccountName) {
+      throw new Error('AZURE_STORAGE_ACCOUNT_NAME is required for Axiom extraction dispatch');
+    }
+
     const blobUrl = await this.blobService.generateReadSasUrl(blobContainerName, doc.data.blobName);
 
     const response = await this.axiomService.submitPipeline(
@@ -95,7 +100,7 @@ class AxiomEngineAdapter implements EngineAdapter {
         fileName: doc.data.name,
         schemaKey: run.schemaKey,
         correlationId: run.correlationId,
-        storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME || (() => { throw new Error('AZURE_STORAGE_ACCOUNT_NAME is required for Axiom extraction dispatch'); })(),
+        storageAccountName,
         containerNames: {
           pageDocuments: 'pages',
           blobPages: 'page-images',
@@ -110,7 +115,10 @@ class AxiomEngineAdapter implements EngineAdapter {
     }
 
     return {
-      status: response.status === 'submitted' ? 'running' : 'queued',
+      status: response.status === 'submitted' || response.status === 'processing' ? 'running'
+        : response.status === 'completed' ? 'completed'
+        : response.status === 'failed' ? 'failed'
+        : 'queued',
       engineRunRef: response.jobId,
       engineVersion: process.env.AXIOM_API_VERSION ?? 'axiom-current',
       engineRequestRef: `axiom:req:${run.id}`,
@@ -146,7 +154,10 @@ class AxiomEngineAdapter implements EngineAdapter {
     }
 
     return {
-      status: response.status === 'submitted' ? 'running' : 'queued',
+      status: response.status === 'submitted' || response.status === 'processing' ? 'running'
+        : response.status === 'completed' ? 'completed'
+        : response.status === 'failed' ? 'failed'
+        : 'queued',
       engineRunRef: response.jobId,
       engineVersion: process.env.AXIOM_API_VERSION ?? 'axiom-current',
       engineRequestRef: `axiom:req:${run.id}`,
@@ -192,7 +203,10 @@ class AxiomEngineAdapter implements EngineAdapter {
     }
 
     return {
-      status: response.status === 'submitted' ? 'running' : 'queued',
+      status: response.status === 'submitted' || response.status === 'processing' ? 'running'
+        : response.status === 'completed' ? 'completed'
+        : response.status === 'failed' ? 'failed'
+        : 'queued',
       engineRunRef: response.jobId,
       engineVersion: process.env.AXIOM_API_VERSION ?? 'axiom-current',
       engineRequestRef: `axiom:req:${run.id}`,
