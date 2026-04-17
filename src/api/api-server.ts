@@ -4203,6 +4203,15 @@ export class AppraisalManagementAPIServer {
       // Run service health check on startup
       await this.performStartupHealthCheck();
       
+      // Validate critical Axiom configuration
+      const axiomWarnings: string[] = [];
+      if (!process.env.AXIOM_API_BASE_URL) axiomWarnings.push('AXIOM_API_BASE_URL not set — Axiom integration will use mock mode');
+      if (!process.env.API_BASE_URL) axiomWarnings.push('API_BASE_URL not set — Axiom webhooks will fail');
+      if (!process.env.AXIOM_WEBHOOK_SECRET) axiomWarnings.push('AXIOM_WEBHOOK_SECRET not set — submitOrderEvaluation will throw');
+      if (!process.env.STORAGE_CONTAINER_DOCUMENTS) axiomWarnings.push('STORAGE_CONTAINER_DOCUMENTS not set — document extraction dispatch will fail');
+      if (!process.env.AZURE_STORAGE_ACCOUNT_NAME) axiomWarnings.push('AZURE_STORAGE_ACCOUNT_NAME not set — Axiom extraction trigger input will be incomplete');
+      for (const w of axiomWarnings) this.logger.warn(`[Axiom Config] ${w}`);
+
       // Initialize database connection
       await this.initializeDatabase();
       // Start background jobs

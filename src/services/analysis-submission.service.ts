@@ -448,8 +448,8 @@ export class AnalysisSubmissionService {
     const criteriaStepKeys =
       Array.isArray(request.criteriaStepKeys) && request.criteriaStepKeys.length > 0
         ? request.criteriaStepKeys
-        : (process.env.RUN_DEFAULT_CRITERIA_STEPS
-            ? process.env.RUN_DEFAULT_CRITERIA_STEPS.split(',').map((value) => value.trim()).filter(Boolean)
+        : (Array.isArray(config.axiomDefaultCriteriaStepKeys) && config.axiomDefaultCriteriaStepKeys.length > 0
+            ? config.axiomDefaultCriteriaStepKeys
             : ['overall-criteria']);
 
     const updatedCriteriaRun = await this.runLedgerService.setRunStatus(run.id, actor.tenantId, dispatchResult.status, {

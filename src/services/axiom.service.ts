@@ -200,6 +200,12 @@ interface LoomPipelineDefinition {
 export class AxiomService {
   private static readonly DEFAULT_AXIOM_API_RESOURCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
   private static readonly PLACEHOLDER_API_KEYS = new Set(['live-fire-testing-key']);
+  static readonly DEFAULT_PIPELINE_IDS: Record<string, string> = {
+    EXTRACTION_ONLY: 'adaptive-document-processing',
+    CRITERIA_ONLY: 'smart-criteria-evaluation',
+    FULL_PIPELINE: 'complete-document-criteria-evaluation',
+    CLASSIFICATION_ONLY: 'adaptive-document-processing',
+  };
 
   private readonly logger = new Logger('AxiomService');
   private client: AxiosInstance;
@@ -915,21 +921,9 @@ export class AxiomService {
       return { jobId: `mock-job-${Date.now()}`, status: 'submitted' };
     }
 
-    let pipelineId: string;
-    if (pipelineIdOverride) {
-      pipelineId = pipelineIdOverride;
-    } else {
-      switch (pipelineMode) {
-        case 'EXTRACTION_ONLY':
-          pipelineId = 'adaptive-document-processing';
-          break;
-        case 'CRITERIA_ONLY':
-          pipelineId = 'smart-criteria-evaluation';
-          break;
-        case 'FULL_PIPELINE':
-        default:
-          pipelineId = 'complete-document-criteria-evaluation';
-      }
+    const pipelineId = pipelineIdOverride ?? AxiomService.DEFAULT_PIPELINE_IDS[pipelineMode];
+    if (!pipelineId) {
+      throw new Error(`No pipeline ID resolved for mode '${pipelineMode}'. Set axiomPipelineId* on the client config or pass pipelineIdOverride.`);
     }
 
     try {
@@ -1745,12 +1739,11 @@ export class AxiomService {
       ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
       : ['appraisal-report'];
 
-    const pipelineId = pipelineIdOverride
-      ?? (evaluationMode === 'EXTRACTION'
-        ? 'adaptive-document-processing'
-        : evaluationMode === 'CRITERIA_EVALUATION'
-          ? 'smart-criteria-evaluation'
-          : 'complete-document-criteria-evaluation');
+    const modeToKey: Record<string, string> = { EXTRACTION: 'EXTRACTION_ONLY', CRITERIA_EVALUATION: 'CRITERIA_ONLY', COMPLETE_EVALUATION: 'FULL_PIPELINE' };
+    const pipelineId = pipelineIdOverride ?? AxiomService.DEFAULT_PIPELINE_IDS[modeToKey[evaluationMode] ?? 'FULL_PIPELINE'];
+    if (!pipelineId) {
+      throw new Error(`No pipeline ID resolved for evaluationMode '${evaluationMode}'. Set axiomPipelineId* on the client config.`);
+    }
 
     try {
       // Axiom uses `correlationId` as the Cosmos document ID for its execution record
@@ -3584,7 +3577,7 @@ export class AxiomService {
     documentUrl: string,
     label: 'original' | 'revised',
   ): Promise<Record<string, unknown>> {
-    const pipelineId = process.env['AXIOM_PIPELINE_ID_DOC_EXTRACT'] ?? 'adaptive-document-processing';
+    const pipelineId = AxiomService.DEFAULT_PIPELINE_IDS['EXTRACTION_ONLY']!;
     const requiredDocumentTypes = process.env['AXIOM_REQUIRED_DOCUMENT_TYPES']
       ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
       : ['appraisal-report'];
