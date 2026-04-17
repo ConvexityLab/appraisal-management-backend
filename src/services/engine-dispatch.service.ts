@@ -27,9 +27,9 @@ export class EngineDispatchService {
   private readonly logger = new Logger('EngineDispatchService');
   private readonly adapters: Record<EngineTarget, EngineAdapter>;
 
-  constructor(axiomService: AxiomService, dbService?: CosmosDbService) {
+  constructor(axiomService: AxiomService, dbService: CosmosDbService) {
     this.adapters = {
-      AXIOM: new AxiomEngineAdapter(axiomService, dbService ?? new CosmosDbService(), new BlobStorageService()),
+      AXIOM: new AxiomEngineAdapter(axiomService, dbService, new BlobStorageService()),
       MOP_PRIO: new MopPrioEngineAdapter(),
     };
   }
@@ -95,7 +95,7 @@ class AxiomEngineAdapter implements EngineAdapter {
         fileName: doc.data.name,
         schemaKey: run.schemaKey,
         correlationId: run.correlationId,
-        storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME ?? '',
+        storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME || (() => { throw new Error('AZURE_STORAGE_ACCOUNT_NAME is required for Axiom extraction dispatch'); })(),
         containerNames: {
           pageDocuments: 'pages',
           blobPages: 'page-images',

@@ -934,7 +934,9 @@ export class AxiomController {
           pipelineJobId = runResult.data[0]['engineRunRef'] as string;
         }
       }
-    } catch { /* fall through to order check */ }
+    } catch (err) {
+      this.logger.warn('SSE stream: failed to query run-ledger for pipelineJobId — falling back to order document', { orderId, error: (err as Error).message });
+    }
 
     // Fall back to order document's axiomPipelineJobId (with retry for auto-trigger)
     if (!pipelineJobId) {
@@ -1426,7 +1428,7 @@ export class AxiomController {
             if (tenantId) {
               const matchingRuns = await this.dbService.queryItems<{ id: string }>(
                 'aiInsights',
-                `SELECT c.id FROM c WHERE c.type = 'run-ledger-entry' AND c.engineRunRef = @jobId AND c.tenantId = @tenantId`,
+                `SELECT TOP 10 c.id FROM c WHERE c.type = 'run-ledger-entry' AND c.engineRunRef = @jobId AND c.tenantId = @tenantId`,
                 [{ name: '@jobId', value: pipelineJobId }, { name: '@tenantId', value: tenantId }],
               );
               if (matchingRuns.success && matchingRuns.data) {

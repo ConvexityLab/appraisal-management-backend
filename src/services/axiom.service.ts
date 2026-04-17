@@ -3351,7 +3351,7 @@ export class AxiomService {
 
     // Source 1: Evaluation records (excludes run-ledger-entry docs to avoid duplicates)
     try {
-      const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND (NOT IS_DEFINED(c.type) OR c.type != 'run-ledger-entry') ORDER BY c.timestamp DESC`;
+      const query = `SELECT TOP 50 * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND (NOT IS_DEFINED(c.type) OR c.type != 'run-ledger-entry') ORDER BY c.timestamp DESC`;
       const params = [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }];
       const response = await this.dbService.queryItems<AxiomEvaluationResult>(
         this.containerName,
@@ -3377,7 +3377,7 @@ export class AxiomService {
 
     // Source 2: Run Ledger records (same container, different doc type)
     try {
-      const runQuerySimple = `SELECT * FROM c WHERE c.type = 'run-ledger-entry' AND c.tenantId = @tenantId AND c.loanPropertyContextId = @orderId ORDER BY c.createdAt DESC`;
+      const runQuerySimple = `SELECT TOP 50 * FROM c WHERE c.type = 'run-ledger-entry' AND c.tenantId = @tenantId AND c.loanPropertyContextId = @orderId ORDER BY c.createdAt DESC`;
       const runParams = [{ name: '@tenantId', value: tenantId }, { name: '@orderId', value: orderId }];
       const runResponse = await this.dbService.queryItems<Record<string, unknown>>(
         this.containerName,

@@ -7,6 +7,7 @@ import { CanonicalSnapshotService } from './canonical-snapshot.service.js';
 import { EngineDispatchService } from './engine-dispatch.service.js';
 import { CriteriaStepInputService } from './criteria-step-input.service.js';
 import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
+import { Logger } from '../utils/logger.js';
 import type { RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { AxiomEvaluationResult } from './axiom.service.js';
 import type {
@@ -27,6 +28,7 @@ export class AnalysisSubmissionService {
   private readonly stepInputService: CriteriaStepInputService;
   private readonly blobService: BlobStorageService;
   private readonly configService: TenantAutomationConfigService;
+  private readonly logger = new Logger('AnalysisSubmissionService');
 
   constructor(private readonly dbService: CosmosDbService, axiomService?: AxiomService) {
     this.axiomService = axiomService ?? new AxiomService(dbService);
@@ -349,7 +351,11 @@ export class AnalysisSubmissionService {
         engineResponseRef: `axiom:job:${pipelineResult.pipelineJobId}`,
       });
     } catch (ledgerErr) {
-      // Non-fatal — the aiInsights record is the primary tracking mechanism
+      this.logger.error('Failed to create run-ledger record for DOCUMENT_ANALYZE submission — submission succeeded but run will not appear in run ledger', {
+        orderId: request.orderId,
+        documentId: request.documentId,
+        error: (ledgerErr as Error).message,
+      });
     }
 
     return {

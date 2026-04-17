@@ -893,6 +893,8 @@ export class AppraisalManagementAPIServer {
     // Axiom Admin — queue stats, pipeline management, stuck job draining (admin role required)
     this.app.use('/api/axiom/admin',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('admin_panel', 'write'),
       createAxiomAdminRouter(sharedAxiomService)
     );
 
