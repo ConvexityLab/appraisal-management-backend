@@ -225,6 +225,18 @@ class AxiomEngineAdapter implements EngineAdapter {
     if (pipelineStatus) {
       if (pipelineStatus.status === 'completed') {
         const results = await this.axiomService.fetchPipelineResults(run.engineRunRef);
+
+        // Store results in aiInsights so the AI Analysis tab can display them
+        // (mirrors what the webhook handler does — needed for local dev where webhooks can't reach localhost)
+        const orderId = run.loanPropertyContextId ?? run.documentId ?? run.id;
+        try {
+          await this.axiomService.fetchAndStorePipelineResults(orderId, run.engineRunRef);
+        } catch (storeErr) {
+          this.logger.warn('refreshStatus: pipeline completed but failed to store results', {
+            runId: run.id, engineRunRef: run.engineRunRef, error: (storeErr as Error).message,
+          });
+        }
+
         return {
           status: 'completed',
           engineRunRef: run.engineRunRef,
