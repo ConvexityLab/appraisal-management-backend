@@ -118,7 +118,11 @@ export class AzureEntraAuthMiddleware {
     const decoded = jwt.decode(token, { complete: true });
     
     if (!decoded || typeof decoded === 'string') {
-      logger.error('Invalid token format - could not decode');
+      logger.error('Invalid token format - could not decode', {
+        tokenLength: token.length,
+        tokenPrefix: token.substring(0, 30),
+        tokenParts: token.split('.').length,
+      });
       throw new Error('Invalid token format');
     }
 

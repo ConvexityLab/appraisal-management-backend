@@ -168,6 +168,7 @@ export interface AuthorizationContext {
 
 export interface AuthorizationAuditLog {
   id: string;
+  orderId: string;
   tenantId: string;
   userId: string;
   userEmail: string;

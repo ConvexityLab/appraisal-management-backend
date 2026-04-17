@@ -45,6 +45,7 @@ export class RunLedgerService {
       documentId: input.documentId,
       schemaKey: input.schemaKey,
       runReason: input.runReason,
+      ...(input.pipelineId ? { pipelineId: input.pipelineId } : {}),
       ...(input.engagementId ? { engagementId: input.engagementId } : {}),
       ...(input.loanPropertyContextId ? { loanPropertyContextId: input.loanPropertyContextId } : {}),
     };
@@ -80,6 +81,7 @@ export class RunLedgerService {
       snapshotId: input.snapshotId,
       programKey: input.programKey,
       runMode: input.runMode,
+      ...(input.pipelineId ? { pipelineId: input.pipelineId } : {}),
       ...(input.rerunReason ? { rerunReason: input.rerunReason } : {}),
       ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
       ...(input.engagementId ? { engagementId: input.engagementId } : {}),

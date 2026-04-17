@@ -98,8 +98,8 @@ describe('AxiomService platform parity', () => {
   });
 
   it.each([
-    ['EXTRACTION', 'document-extraction'],
-    ['CRITERIA_EVALUATION', 'criteria-evaluation'],
+    ['EXTRACTION', 'adaptive-document-processing'],
+    ['CRITERIA_EVALUATION', 'smart-criteria-evaluation'],
     ['COMPLETE_EVALUATION', 'complete-document-criteria-evaluation'],
   ] as const)('uses %s pipeline id for submitOrderEvaluation', async (evaluationMode, pipelineId) => {
     const dbStub = {
@@ -260,7 +260,7 @@ describe('AxiomService platform parity', () => {
     );
 
     expect(post).toHaveBeenNthCalledWith(1, '/api/pipelines', expect.objectContaining({
-      pipelineId: 'document-extraction',
+      pipelineId: 'adaptive-document-processing',
       input: expect.objectContaining({
         subClientId: 'sub-client-123',
         clientId: 'client-123',
@@ -268,7 +268,7 @@ describe('AxiomService platform parity', () => {
       }),
     }));
     expect(post).toHaveBeenNthCalledWith(2, '/api/pipelines', expect.objectContaining({
-      pipelineId: 'document-extraction',
+      pipelineId: 'adaptive-document-processing',
       input: expect.objectContaining({
         subClientId: 'sub-client-123',
         clientId: 'client-123',

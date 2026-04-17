@@ -209,6 +209,24 @@ export interface ClientAutomationConfig {
   axiomSubClientId?: string;
 
   /**
+   * Registered Axiom pipeline ID for extraction-only submissions.
+   * Default: 'adaptive-document-processing'
+   */
+  axiomPipelineIdExtraction?: string;
+
+  /**
+   * Registered Axiom pipeline ID for criteria-only evaluation.
+   * Default: 'smart-criteria-evaluation'
+   */
+  axiomPipelineIdCriteria?: string;
+
+  /**
+   * Registered Axiom pipeline ID for complete (extraction + criteria) evaluation.
+   * Default: 'complete-document-criteria-evaluation'
+   */
+  axiomPipelineIdComplete?: string;
+
+  /**
    * Document schema version used for extraction run schemaKey.version.
    * If omitted, orchestrators may use axiomProgramVersion from client config.
    */

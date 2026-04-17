@@ -908,27 +908,33 @@ export class AxiomService {
     subClientId: string,
     fileSetId: string,
     pipelineMode: 'FULL_PIPELINE' | 'CLASSIFICATION_ONLY' | 'EXTRACTION_ONLY' | 'CRITERIA_ONLY',
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    pipelineIdOverride?: string,
   ): Promise<{ jobId: string; status: string } | null> {
     if (!this.enabled) {
       return { jobId: `mock-job-${Date.now()}`, status: 'submitted' };
     }
 
-    let pipelineBody;
-    switch (pipelineMode) {
-      case 'FULL_PIPELINE':
-        pipelineBody = AxiomService.PIPELINE_RISK_EVAL;
-        break;
-      case 'EXTRACTION_ONLY':
-        pipelineBody = AxiomService.PIPELINE_DOC_EXTRACT;
-        break;
-      default:
-        pipelineBody = AxiomService.PIPELINE_RISK_EVAL;
+    let pipelineId: string;
+    if (pipelineIdOverride) {
+      pipelineId = pipelineIdOverride;
+    } else {
+      switch (pipelineMode) {
+        case 'EXTRACTION_ONLY':
+          pipelineId = 'adaptive-document-processing';
+          break;
+        case 'CRITERIA_ONLY':
+          pipelineId = 'smart-criteria-evaluation';
+          break;
+        case 'FULL_PIPELINE':
+        default:
+          pipelineId = 'complete-document-criteria-evaluation';
+      }
     }
 
     try {
       const payload = {
-        pipeline: pipelineBody,
+        pipelineId,
         input: {
           subClientId,
           clientId,
@@ -1672,6 +1678,7 @@ export class AxiomService {
     correlationType: 'ORDER' | 'TAPE_LOAN' = 'ORDER',
     evaluationMode: 'EXTRACTION' | 'CRITERIA_EVALUATION' | 'COMPLETE_EVALUATION' = 'COMPLETE_EVALUATION',
     forceResubmit = false,
+    pipelineIdOverride?: string,
   ): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
     this.lastPipelineSubmissionError = null;
 
@@ -1738,12 +1745,12 @@ export class AxiomService {
       ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
       : ['appraisal-report'];
 
-    const pipelineId =
-      evaluationMode === 'EXTRACTION'
-        ? process.env['AXIOM_PIPELINE_ID_DOC_EXTRACT'] ?? 'document-extraction'
+    const pipelineId = pipelineIdOverride
+      ?? (evaluationMode === 'EXTRACTION'
+        ? 'adaptive-document-processing'
         : evaluationMode === 'CRITERIA_EVALUATION'
-          ? process.env['AXIOM_PIPELINE_ID_CRITERIA_EVAL'] ?? 'criteria-evaluation'
-          : process.env['AXIOM_PIPELINE_ID_RISK_EVAL'] ?? 'complete-document-criteria-evaluation';
+          ? 'smart-criteria-evaluation'
+          : 'complete-document-criteria-evaluation');
 
     try {
       // Axiom uses `correlationId` as the Cosmos document ID for its execution record
@@ -2296,6 +2303,86 @@ export class AxiomService {
       }
     }
     return null;
+  }
+
+  async getPipelineStatus(pipelineJobId: string): Promise<{ status: string; error?: string; progress?: Record<string, unknown> } | null> {
+    if (!this.enabled) return null;
+    try {
+      const response = await this.client.get<Record<string, unknown>>(`/api/pipelines/${pipelineJobId}`);
+      const data = response.data;
+      return {
+        status: (data['status'] as string) ?? 'unknown',
+        ...(data['error'] ? { error: data['error'] as string } : {}),
+        ...(data['progress'] ? { progress: data['progress'] as Record<string, unknown> } : {}),
+      };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      if (axiosError.response?.status === 404) return null;
+      this.logger.error('Failed to get pipeline status from Axiom', {
+        pipelineJobId,
+        status: axiosError.response?.status,
+        error: axiosError.message,
+      });
+      return null;
+    }
+  }
+
+  // ── Admin API proxies ────────────────────────────────────────────────────────
+
+  async getQueueStats(): Promise<Record<string, unknown> | null> {
+    if (!this.enabled) return null;
+    try {
+      const res = await this.client.get('/api/admin/queue/stats');
+      return res.data as Record<string, unknown>;
+    } catch (error) {
+      this.logger.error('Failed to get Axiom queue stats', { error: (error as Error).message });
+      return null;
+    }
+  }
+
+  async getActiveJobs(limit = 20): Promise<unknown[]> {
+    if (!this.enabled) return [];
+    try {
+      const res = await this.client.get(`/api/admin/queue/active?limit=${limit}`);
+      return (res.data as { jobs: unknown[] }).jobs ?? [];
+    } catch (error) {
+      this.logger.error('Failed to get Axiom active jobs', { error: (error as Error).message });
+      return [];
+    }
+  }
+
+  async getRecentPipelines(limit = 20): Promise<unknown[]> {
+    if (!this.enabled) return [];
+    try {
+      const res = await this.client.get(`/api/pipelines?limit=${limit}`);
+      const data = res.data as { executions?: unknown[] };
+      return data.executions ?? [];
+    } catch (error) {
+      this.logger.error('Failed to get Axiom recent pipelines', { error: (error as Error).message });
+      return [];
+    }
+  }
+
+  async failStuckJobs(maxAgeMs = 300_000): Promise<Record<string, unknown> | null> {
+    if (!this.enabled) return null;
+    try {
+      const res = await this.client.post('/api/admin/queue/fail-stuck', { maxAgeMs });
+      return res.data as Record<string, unknown>;
+    } catch (error) {
+      this.logger.error('Failed to fail stuck Axiom jobs', { error: (error as Error).message });
+      return null;
+    }
+  }
+
+  async cleanFailedJobs(minAgeMs = 1): Promise<Record<string, unknown> | null> {
+    if (!this.enabled) return null;
+    try {
+      const res = await this.client.post('/api/admin/queue/clean-failed', { minAgeMs });
+      return res.data as Record<string, unknown>;
+    } catch (error) {
+      this.logger.error('Failed to clean failed Axiom jobs', { error: (error as Error).message });
+      return null;
+    }
   }
 
   /**
@@ -3259,8 +3346,12 @@ export class AxiomService {
         `orderId=${orderId} — ensure req.user.tenantId is populated by the auth middleware.`,
       );
     }
+
+    const results: AxiomEvaluationResult[] = [];
+
+    // Source 1: Evaluation records (excludes run-ledger-entry docs to avoid duplicates)
     try {
-      const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.timestamp DESC`;
+      const query = `SELECT * FROM c WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND (NOT IS_DEFINED(c.type) OR c.type != 'run-ledger-entry') ORDER BY c.timestamp DESC`;
       const params = [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }];
       const response = await this.dbService.queryItems<AxiomEvaluationResult>(
         this.containerName,
@@ -3269,23 +3360,68 @@ export class AxiomService {
       );
 
       if (response.success && response.data) {
-        return response.data.map(evaluation => {
+        for (const evaluation of response.data) {
           const meta = (evaluation as any)._metadata ?? {};
-          return {
+          results.push({
             ...evaluation,
             criteria: this.enrichCriteriaRefs(evaluation.criteria, meta),
-          };
-        });
+          });
+        }
       }
-
-      return [];
     } catch (error) {
-      this.logger.error('Failed to retrieve evaluations for order', {
+      this.logger.error('Failed to retrieve aiInsights evaluations', {
         orderId,
         error: error instanceof Error ? error.message : String(error)
       });
-      return [];
     }
+
+    // Source 2: Run Ledger records (same container, different doc type)
+    try {
+      const runQuerySimple = `SELECT * FROM c WHERE c.type = 'run-ledger-entry' AND c.tenantId = @tenantId AND c.loanPropertyContextId = @orderId ORDER BY c.createdAt DESC`;
+      const runParams = [{ name: '@tenantId', value: tenantId }, { name: '@orderId', value: orderId }];
+      const runResponse = await this.dbService.queryItems<Record<string, unknown>>(
+        this.containerName,
+        runQuerySimple,
+        runParams
+      );
+
+      if (runResponse.success && runResponse.data) {
+        for (const run of runResponse.data) {
+          const status = run['status'] as string;
+          const mapped: AxiomEvaluationResult = {
+            orderId,
+            evaluationId: run['id'] as string,
+            pipelineJobId: (run['engineRunRef'] as string) || undefined,
+            tenantId,
+            clientId: (run['schemaKey'] as any)?.clientId ?? (run['programKey'] as any)?.clientId,
+            programId: (run['programKey'] as any)?.programId,
+            programVersion: (run['programKey'] as any)?.version,
+            documentType: (run['schemaKey'] as any)?.documentType ?? 'appraisal',
+            status: status === 'queued' ? 'pending'
+              : status === 'running' ? 'processing'
+              : status === 'completed' ? 'completed'
+              : status === 'failed' ? 'failed'
+              : 'pending',
+            criteria: [],
+            overallRiskScore: 0,
+            timestamp: run['createdAt'] as string,
+            processingTime: 0,
+            ...(status === 'failed' ? { error: { code: 'PIPELINE_FAILED', message: (run['statusDetails'] as any)?.error ?? 'Pipeline execution failed' } } : {}),
+            _source: 'run-ledger',
+            _runType: run['runType'],
+            _pipelineId: run['pipelineId'],
+          } as unknown as AxiomEvaluationResult;
+          results.push(mapped);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Failed to retrieve run-ledger evaluations', {
+        orderId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+
+    return results;
   }
 
   /**
@@ -3448,7 +3584,7 @@ export class AxiomService {
     documentUrl: string,
     label: 'original' | 'revised',
   ): Promise<Record<string, unknown>> {
-    const pipelineId = process.env['AXIOM_PIPELINE_ID_DOC_EXTRACT'] ?? 'document-extraction';
+    const pipelineId = process.env['AXIOM_PIPELINE_ID_DOC_EXTRACT'] ?? 'adaptive-document-processing';
     const requiredDocumentTypes = process.env['AXIOM_REQUIRED_DOCUMENT_TYPES']
       ? process.env['AXIOM_REQUIRED_DOCUMENT_TYPES'].split(',').map((t: string) => t.trim())
       : ['appraisal-report'];

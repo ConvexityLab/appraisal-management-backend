@@ -359,11 +359,11 @@ export class AuthorizationMiddleware {
       const dbService = this.authzService['dbService']; // Access private property
       const resource = await dbService.getDocument<any>(containerName, resourceId, tenantId);
 
-      if (!resource || !resource.accessControl) {
+      if (!resource) {
         return null;
       }
 
-      return resource.accessControl as Partial<AccessControl>;
+      return (resource.accessControl ?? {}) as Partial<AccessControl>;
     } catch (error) {
       this.logger.error('Failed to load resource access control', {
         resourceType,

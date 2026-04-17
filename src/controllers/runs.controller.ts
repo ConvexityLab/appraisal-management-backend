@@ -32,7 +32,7 @@ function getSnapshotService(dbService: CosmosDbService): CanonicalSnapshotServic
 
 function getDispatchService(dbService: CosmosDbService): EngineDispatchService {
   if (!dispatchService) {
-    dispatchService = new EngineDispatchService(new AxiomService(dbService));
+    dispatchService = new EngineDispatchService(new AxiomService(dbService), dbService);
   }
   return dispatchService;
 }

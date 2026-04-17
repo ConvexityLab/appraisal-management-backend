@@ -330,7 +330,8 @@ export class AuthorizationService {
     try {
       const auditLog: AuthorizationAuditLog = {
         id: this.generateRequestId(),
-        tenantId: 'system', // Will be replaced with actual tenant ID from context
+        orderId: context.resource.id ?? 'system',
+        tenantId: 'system',
         userId: context.user.id,
         userEmail: context.user.email,
         userRole: context.user.role,
@@ -345,7 +346,7 @@ export class AuthorizationService {
       };
 
       // Store audit log in Cosmos DB
-      await this.dbService.upsertDocument('audit_logs', auditLog);
+      await this.dbService.upsertDocument('audit-trail', auditLog);
     } catch (error) {
       // Don't fail authorization if audit logging fails
       this.logger.error('Failed to log authorization decision', { context, decision, error });

@@ -301,6 +301,12 @@ export class AxiomAutoTriggerService {
         resolvedTenantId,
         clientId,
         subClientId,
+        config.axiomProgramId,
+        config.axiomProgramVersion,
+        'ORDER',
+        'COMPLETE_EVALUATION',
+        false,
+        config.axiomPipelineIdComplete,
       );
     } catch (submitErr) {
       this.logger.error('AxiomAutoTrigger: submitOrderEvaluation threw an exception', {

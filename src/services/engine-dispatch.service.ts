@@ -1,6 +1,8 @@
 import axios, { AxiosError } from 'axios';
 import { Logger } from '../utils/logger.js';
 import { AxiomService } from './axiom.service.js';
+import { CosmosDbService } from './cosmos-db.service.js';
+import { BlobStorageService } from './blob-storage.service.js';
 import type {
   CriteriaStepEvidenceRef,
   EngineDispatchResult,
@@ -25,9 +27,9 @@ export class EngineDispatchService {
   private readonly logger = new Logger('EngineDispatchService');
   private readonly adapters: Record<EngineTarget, EngineAdapter>;
 
-  constructor(axiomService: AxiomService) {
+  constructor(axiomService: AxiomService, dbService?: CosmosDbService) {
     this.adapters = {
-      AXIOM: new AxiomEngineAdapter(axiomService),
+      AXIOM: new AxiomEngineAdapter(axiomService, dbService ?? new CosmosDbService(), new BlobStorageService()),
       MOP_PRIO: new MopPrioEngineAdapter(),
     };
   }
@@ -55,24 +57,52 @@ export class EngineDispatchService {
 class AxiomEngineAdapter implements EngineAdapter {
   private readonly logger = new Logger('AxiomEngineAdapter');
 
-  constructor(private readonly axiomService: AxiomService) {}
+  constructor(
+    private readonly axiomService: AxiomService,
+    private readonly dbService: CosmosDbService,
+    private readonly blobService: BlobStorageService,
+  ) {}
 
   async dispatchExtraction(run: RunLedgerRecord): Promise<EngineDispatchResult> {
     if (!run.schemaKey?.clientId) {
       throw new Error(`Extraction run '${run.id}' missing schemaKey.clientId required for Axiom dispatch`);
     }
+    if (!run.documentId) {
+      throw new Error(`Extraction run '${run.id}' missing documentId`);
+    }
+
+    const doc = await this.dbService.getItem<{ id: string; blobName: string; name: string }>('documents', run.documentId);
+    if (!doc?.success || !doc.data?.blobName) {
+      throw new Error(`Document '${run.documentId}' not found or missing blobName`);
+    }
+
+    const blobContainerName = process.env.STORAGE_CONTAINER_DOCUMENTS;
+    if (!blobContainerName) {
+      throw new Error('STORAGE_CONTAINER_DOCUMENTS is required for Axiom extraction dispatch');
+    }
+
+    const blobUrl = await this.blobService.generateReadSasUrl(blobContainerName, doc.data.blobName);
 
     const response = await this.axiomService.submitPipeline(
       run.tenantId,
       run.schemaKey.clientId,
       run.schemaKey.subClientId,
-      run.documentId ?? run.id,
+      run.documentId,
       'EXTRACTION_ONLY',
       {
         documentId: run.documentId,
+        blobUrl,
+        fileName: doc.data.name,
         schemaKey: run.schemaKey,
         correlationId: run.correlationId,
+        storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME ?? '',
+        containerNames: {
+          pageDocuments: 'pages',
+          blobPages: 'page-images',
+          fileSets: 'file-sets',
+        },
       },
+      run.pipelineId,
     );
 
     if (!response?.jobId) {
@@ -108,6 +138,7 @@ class AxiomEngineAdapter implements EngineAdapter {
         programKey: run.programKey,
         correlationId: run.correlationId,
       },
+      run.pipelineId,
     );
 
     if (!response?.jobId) {
@@ -153,6 +184,7 @@ class AxiomEngineAdapter implements EngineAdapter {
         stepEvidenceRefs: options.evidenceRefs,
         correlationId: run.correlationId,
       },
+      run.pipelineId,
     );
 
     if (!response?.jobId) {
@@ -174,26 +206,50 @@ class AxiomEngineAdapter implements EngineAdapter {
       throw new Error(`Run '${run.id}' has no engineRunRef to refresh`);
     }
 
-    const results = await this.axiomService.fetchPipelineResults(run.engineRunRef);
-    if (results) {
+    // First, check Axiom's pipeline status API directly
+    const pipelineStatus = await this.axiomService.getPipelineStatus(run.engineRunRef);
+    if (pipelineStatus) {
+      if (pipelineStatus.status === 'completed') {
+        const results = await this.axiomService.fetchPipelineResults(run.engineRunRef);
+        return {
+          status: 'completed',
+          engineRunRef: run.engineRunRef,
+          engineVersion: run.engineVersion,
+          engineRequestRef: run.engineRequestRef,
+          engineResponseRef: run.engineResponseRef,
+          statusDetails: { providerStatus: 'completed', resultKeys: results ? Object.keys(results).slice(0, 12) : [] },
+        };
+      }
+
+      if (pipelineStatus.status === 'failed') {
+        return {
+          status: 'failed',
+          engineRunRef: run.engineRunRef,
+          engineVersion: run.engineVersion,
+          engineRequestRef: run.engineRequestRef,
+          engineResponseRef: run.engineResponseRef,
+          statusDetails: { providerStatus: 'failed', error: pipelineStatus.error, progress: pipelineStatus.progress },
+        };
+      }
+
       return {
-        status: 'completed',
+        status: pipelineStatus.status === 'pending' ? 'queued' : 'running',
         engineRunRef: run.engineRunRef,
         engineVersion: run.engineVersion,
         engineRequestRef: run.engineRequestRef,
         engineResponseRef: run.engineResponseRef,
-        statusDetails: { providerStatus: 'completed', resultKeys: Object.keys(results).slice(0, 12) },
+        statusDetails: { providerStatus: pipelineStatus.status, progress: pipelineStatus.progress },
       };
     }
 
-    this.logger.info('Axiom run still in progress or result unavailable', { runId: run.id, engineRunRef: run.engineRunRef });
+    this.logger.info('Axiom pipeline status unavailable', { runId: run.id, engineRunRef: run.engineRunRef });
     return {
       status: 'running',
       engineRunRef: run.engineRunRef,
       engineVersion: run.engineVersion,
       engineRequestRef: run.engineRequestRef,
       engineResponseRef: run.engineResponseRef,
-      statusDetails: { providerStatus: 'running' },
+      statusDetails: { providerStatus: 'unknown' },
     };
   }
 }

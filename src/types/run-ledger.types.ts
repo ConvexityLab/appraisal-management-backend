@@ -50,6 +50,7 @@ export interface RunLedgerRecord {
   runReason?: string;
   engagementId?: string;
   loanPropertyContextId?: string;
+  pipelineId?: string;
   canonicalSnapshotId?: string;
   criteriaStepKeys?: string[];
   criteriaStepRunIds?: string[];
@@ -115,6 +116,7 @@ export interface CreateExtractionRunInput {
   documentId: string;
   schemaKey: SchemaKey;
   runReason: string;
+  pipelineId?: string;
   engineTarget?: EngineTarget;
   enginePolicyRef?: string;
   engagementId?: string;
@@ -129,6 +131,7 @@ export interface CreateCriteriaRunInput {
   snapshotId: string;
   programKey: ProgramKey;
   runMode: 'FULL' | 'STEP_ONLY';
+  pipelineId?: string;
   engineTarget?: EngineTarget;
   enginePolicyRef?: string;
   rerunReason?: string;

@@ -102,6 +102,9 @@ async function upsertClientAutomationConfig(client: CosmosClient, dbName: string
     axiomSubClientId: config.subClientId,
     axiomDocumentSchemaVersion: config.documentSchemaVersion,
     axiomDefaultCriteriaStepKeys: config.criteriaStepKeys,
+    axiomPipelineIdExtraction: 'adaptive-document-processing',
+    axiomPipelineIdCriteria: 'smart-criteria-evaluation',
+    axiomPipelineIdComplete: 'complete-document-criteria-evaluation',
 
     updatedAt: now,
     updatedBy: config.initiatedBy,

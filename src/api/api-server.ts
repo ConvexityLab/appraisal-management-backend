@@ -112,6 +112,7 @@ import { createUnifiedCommunicationRouter } from '../controllers/unified-communi
 import { createAxiomRouter, createAxiomWebhookRouter } from '../controllers/axiom.controller';
 import { createRunsRouter } from '../controllers/runs.controller.js';
 import { createAnalysisSubmissionRouter } from '../controllers/analysis-submission.controller.js';
+import { createAxiomAdminRouter } from '../controllers/axiom-admin.controller.js';
 import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
@@ -460,7 +461,7 @@ export class AppraisalManagementAPIServer {
       origin: corsOrigin,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id', 'x-bypass-auth', 'x-user-id', 'x-user-name'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Correlation-ID', 'x-tenant-id', 'x-bypass-auth', 'x-user-id', 'x-user-name', 'idempotency-key', 'x-idempotency-key'],
     }));
 
     // Correlation ID - must be early in middleware chain
@@ -887,6 +888,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/analysis',
       this.unifiedAuth.authenticate(),
       createAnalysisSubmissionRouter(this.dbService, sharedAxiomService)
+    );
+
+    // Axiom Admin — queue stats, pipeline management, stuck job draining (admin role required)
+    this.app.use('/api/axiom/admin',
+      this.unifiedAuth.authenticate(),
+      createAxiomAdminRouter(sharedAxiomService)
     );
 
     // Axiom Criteria Programs — GET compiled criteria (cache-first) / POST force-recompile

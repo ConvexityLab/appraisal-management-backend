@@ -6,6 +6,7 @@ import { RunLedgerService } from './run-ledger.service.js';
 import { CanonicalSnapshotService } from './canonical-snapshot.service.js';
 import { EngineDispatchService } from './engine-dispatch.service.js';
 import { CriteriaStepInputService } from './criteria-step-input.service.js';
+import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
 import type { RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { AxiomEvaluationResult } from './axiom.service.js';
 import type {
@@ -25,14 +26,16 @@ export class AnalysisSubmissionService {
   private readonly dispatchService: EngineDispatchService;
   private readonly stepInputService: CriteriaStepInputService;
   private readonly blobService: BlobStorageService;
+  private readonly configService: TenantAutomationConfigService;
 
   constructor(private readonly dbService: CosmosDbService, axiomService?: AxiomService) {
     this.axiomService = axiomService ?? new AxiomService(dbService);
     this.runLedgerService = new RunLedgerService(dbService);
     this.snapshotService = new CanonicalSnapshotService(dbService);
-    this.dispatchService = new EngineDispatchService(this.axiomService);
+    this.dispatchService = new EngineDispatchService(this.axiomService, dbService);
     this.stepInputService = new CriteriaStepInputService(dbService);
     this.blobService = new BlobStorageService();
+    this.configService = new TenantAutomationConfigService(dbService);
   }
 
   async submit(
@@ -320,6 +323,35 @@ export class AnalysisSubmissionService {
       throw new Error(lastError?.message ?? 'Failed to submit document to Axiom pipeline');
     }
 
+    // Create a run-ledger record so the unified monitoring UI can track this submission
+    try {
+      const config = await this.configService.getConfig(clientId, subClientId);
+      const run = await this.runLedgerService.createExtractionRun({
+        tenantId: actor.tenantId,
+        initiatedBy: actor.initiatedBy,
+        correlationId: actor.correlationId,
+        idempotencyKey: `${actor.idempotencyKey}-ledger`,
+        documentId: request.documentId,
+        schemaKey: {
+          clientId,
+          subClientId,
+          documentType: request.documentType ?? 'appraisal-report',
+          version: config.axiomDocumentSchemaVersion ?? '1.0.0',
+        },
+        runReason: 'DOCUMENT_ANALYZE submission',
+        ...(config.axiomPipelineIdComplete ? { pipelineId: config.axiomPipelineIdComplete } : {}),
+        ...(request.orderId ? { loanPropertyContextId: request.orderId } : {}),
+      });
+      await this.runLedgerService.setRunStatus(run.id, actor.tenantId, 'running', {
+        engineRunRef: pipelineResult.pipelineJobId,
+        engineVersion: 'axiom-current',
+        engineRequestRef: `axiom:req:${run.id}`,
+        engineResponseRef: `axiom:job:${pipelineResult.pipelineJobId}`,
+      });
+    } catch (ledgerErr) {
+      // Non-fatal — the aiInsights record is the primary tracking mechanism
+    }
+
     return {
       submissionId: pipelineResult.evaluationId,
       analysisType: 'DOCUMENT_ANALYZE',
@@ -334,6 +366,10 @@ export class AnalysisSubmissionService {
     request: ExtractionSubmissionRequest,
     actor: AnalysisSubmissionActorContext,
   ): Promise<AnalysisSubmissionResponse> {
+    const clientId = request.schemaKey.clientId;
+    const subClientId = request.schemaKey.subClientId;
+    const config = await this.configService.getConfig(clientId, subClientId);
+
     const run = await this.runLedgerService.createExtractionRun({
       tenantId: actor.tenantId,
       initiatedBy: actor.initiatedBy,
@@ -342,6 +378,7 @@ export class AnalysisSubmissionService {
       documentId: request.documentId,
       schemaKey: request.schemaKey,
       runReason: request.runReason,
+      ...(config.axiomPipelineIdExtraction ? { pipelineId: config.axiomPipelineIdExtraction } : {}),
       ...(request.engineTarget ? { engineTarget: request.engineTarget } : {}),
       ...(request.enginePolicyRef ? { enginePolicyRef: request.enginePolicyRef } : {}),
       ...(request.engagementId ? { engagementId: request.engagementId } : {}),
@@ -380,6 +417,10 @@ export class AnalysisSubmissionService {
       throw new Error(`Snapshot '${request.snapshotId}' not found for tenant '${actor.tenantId}'`);
     }
 
+    const clientId = request.programKey.clientId;
+    const subClientId = request.programKey.subClientId;
+    const config = await this.configService.getConfig(clientId, subClientId);
+
     const run = await this.runLedgerService.createCriteriaRun({
       tenantId: actor.tenantId,
       initiatedBy: actor.initiatedBy,
@@ -388,6 +429,7 @@ export class AnalysisSubmissionService {
       snapshotId: request.snapshotId,
       programKey: request.programKey,
       runMode: request.runMode,
+      ...(config.axiomPipelineIdCriteria ? { pipelineId: config.axiomPipelineIdCriteria } : {}),
       ...(request.engineTarget ? { engineTarget: request.engineTarget } : {}),
       ...(request.enginePolicyRef ? { enginePolicyRef: request.enginePolicyRef } : {}),
       ...(request.rerunReason ? { rerunReason: request.rerunReason } : {}),

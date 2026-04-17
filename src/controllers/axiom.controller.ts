@@ -329,7 +329,7 @@ export class AxiomController {
     this.tenantAutomationConfigService = new TenantAutomationConfigService(dbService);
     this.runLedgerService = new RunLedgerService(dbService);
     this.snapshotService = new CanonicalSnapshotService(dbService);
-    this.engineDispatchService = new EngineDispatchService(this.axiomService);
+    this.engineDispatchService = new EngineDispatchService(this.axiomService, dbService);
     this.criteriaStepInputService = new CriteriaStepInputService(dbService);
     this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
   }
@@ -916,22 +916,41 @@ export class AxiomController {
       return;
     }
 
-    // Wait up to 30 s for axiomPipelineJobId to appear (auto-trigger fires within
-    // a second or two of order creation; we give it 6 × 5 s to handle slow starts).
+    // Resolve pipelineJobId from two sources:
+    // 1. Order document's axiomPipelineJobId (legacy auto-trigger path)
+    // 2. Run-ledger records' engineRunRef (unified submission path)
     let pipelineJobId: string | undefined;
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const orderResult = await this.dbService.findOrderById(orderId);
-      if (!orderResult.success || !orderResult.data) {
-        res.status(404).json({
-          success: false,
-          error: { code: 'NOT_FOUND', message: `Order ${orderId} not found` },
-        });
-        return;
+
+    // Check run-ledger first (most recent running/queued run for this order)
+    try {
+      const tenantId = (req as unknown as import('../middleware/unified-auth.middleware.js').UnifiedAuthRequest).user?.tenantId;
+      if (tenantId) {
+        const runResult = await this.dbService.queryItems<Record<string, unknown>>(
+          'aiInsights',
+          `SELECT TOP 1 c.engineRunRef FROM c WHERE c.type = 'run-ledger-entry' AND c.tenantId = @tenantId AND c.loanPropertyContextId = @orderId AND c.engineRunRef != 'pending' AND (c.status = 'running' OR c.status = 'queued') ORDER BY c.createdAt DESC`,
+          [{ name: '@tenantId', value: tenantId }, { name: '@orderId', value: orderId }],
+        );
+        if (runResult.success && runResult.data?.[0]) {
+          pipelineJobId = runResult.data[0]['engineRunRef'] as string;
+        }
       }
-      pipelineJobId = (orderResult.data as unknown as Record<string, unknown>)['axiomPipelineJobId'] as string | undefined;
-      if (pipelineJobId) break;
-      // Not stamped yet — wait and retry
-      await new Promise<void>((r) => setTimeout(r, 5_000));
+    } catch { /* fall through to order check */ }
+
+    // Fall back to order document's axiomPipelineJobId (with retry for auto-trigger)
+    if (!pipelineJobId) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const orderResult = await this.dbService.findOrderById(orderId);
+        if (!orderResult.success || !orderResult.data) {
+          res.status(404).json({
+            success: false,
+            error: { code: 'NOT_FOUND', message: `Order ${orderId} not found` },
+          });
+          return;
+        }
+        pipelineJobId = (orderResult.data as unknown as Record<string, unknown>)['axiomPipelineJobId'] as string | undefined;
+        if (pipelineJobId) break;
+        await new Promise<void>((r) => setTimeout(r, 5_000));
+      }
     }
 
     if (!pipelineJobId) {
@@ -939,7 +958,7 @@ export class AxiomController {
         success: false,
         error: {
           code: 'AXIOM_NOT_TRIGGERED',
-          message: `No Axiom pipeline job found for order ${orderId} after waiting 30 s. The auto-trigger may not have fired yet.`,
+          message: `No Axiom pipeline job found for order ${orderId}. Submit a document for analysis first.`,
         },
       });
       return;
@@ -1397,6 +1416,30 @@ export class AxiomController {
         // (e.g. server restarted between submit and completion).
         if (status === 'completed' && pipelineJobId) {
           await this.axiomService.fetchAndStorePipelineResults(correlationId, pipelineJobId);
+        }
+
+        // Update any run-ledger records that reference this pipeline job
+        if (pipelineJobId) {
+          const runStatus: RunStatus = status === 'completed' ? 'completed' : 'failed';
+          try {
+            const tenantId = (await this.dbService.findOrderById(correlationId))?.data?.tenantId;
+            if (tenantId) {
+              const matchingRuns = await this.dbService.queryItems<{ id: string }>(
+                'aiInsights',
+                `SELECT c.id FROM c WHERE c.type = 'run-ledger-entry' AND c.engineRunRef = @jobId AND c.tenantId = @tenantId`,
+                [{ name: '@jobId', value: pipelineJobId }, { name: '@tenantId', value: tenantId }],
+              );
+              if (matchingRuns.success && matchingRuns.data) {
+                for (const run of matchingRuns.data) {
+                  await this.runLedgerService.setRunStatus(run.id, tenantId, runStatus, {
+                    ...(status === 'failed' ? { statusDetails: { error: result?.['error'] ?? 'Pipeline failed' } } : {}),
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            this.logger.warn('Axiom webhook: failed to update run-ledger records', { pipelineJobId, error: (err as Error).message });
+          }
         }
 
         // Signal the SSE proxy so it can terminate any open stream for this job.
