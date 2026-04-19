@@ -952,6 +952,41 @@ var containers = [
       ]
     }
   }
+  // Raw property enrichment records — audit trail for every Bridge/provider call.
+  // Used by PropertyEnrichmentService to persist results and support cache-hit tracking.
+  // Queries filter by orderId or engagementId within tenant, ordered by createdAt.
+  {
+    name: 'property-enrichments'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+        { path: '/dataResult/*' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/orderId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/propertyId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/engagementId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
 ]
 
 // Cosmos DB Account with enterprise settings
