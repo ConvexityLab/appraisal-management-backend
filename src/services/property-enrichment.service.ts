@@ -275,7 +275,7 @@ export class PropertyEnrichmentService {
       }
     }
 
-    // ── Step 5: Persist the enrichment record for audit ────────────────────
+    // ── Step 7: Persist the enrichment record for audit ────────────────────
     const enrichmentRecord: PropertyEnrichmentRecord = {
       id: `enrich-${orderId}-${Date.now()}`,
       type: 'property-enrichment',
