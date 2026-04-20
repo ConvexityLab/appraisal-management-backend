@@ -334,7 +334,7 @@ export function createEngagementRouter(dbService: CosmosDbService) {
     },
   );
 
-  // ── DELETE /:id  (soft-delete) ─────────────────────────────────────────────
+  // ── DELETE /:id ────────────────────────────────────────────────────────────
   router.delete(
     '/:id',
     param('id').isString().notEmpty(),
@@ -348,7 +348,7 @@ export function createEngagementRouter(dbService: CosmosDbService) {
         const tenantId = resolveTenantId(req);
         const deletedBy = resolveUserId(req);
         await service.deleteEngagement(req.params['id'] as string, tenantId, deletedBy);
-        return res.json({ success: true, message: 'Engagement cancelled' });
+        return res.json({ success: true, message: 'Engagement deleted' });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         if (msg.includes('not found')) {

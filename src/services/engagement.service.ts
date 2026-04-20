@@ -17,6 +17,8 @@ import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
+import { PropertyDataCacheService } from './property-data-cache.service.js';
+import { ComparableSelectionService, COMP_SELECTION_PRODUCT_TYPES } from './comparable-selection.service.js';
 import { Logger } from '../utils/logger.js';
 import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
@@ -124,6 +126,7 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
 export class EngagementService {
   private _container: Container | null = null;
   private readonly enrichmentService: PropertyEnrichmentService;
+  private readonly comparableSelectionService: ComparableSelectionService;
 
   constructor(
     private readonly dbService: CosmosDbService,
@@ -133,9 +136,14 @@ export class EngagementService {
      * When omitted, a default instance is constructed using the same dbService.
      */
     enrichmentService?: PropertyEnrichmentService,
+    comparableSelectionService?: ComparableSelectionService,
   ) {
     this.enrichmentService = enrichmentService ??
       new PropertyEnrichmentService(dbService, propertyRecordService);
+    this.comparableSelectionService = comparableSelectionService ??
+      new ComparableSelectionService(
+        dbService, propertyRecordService, new PropertyDataCacheService(dbService),
+      );
   }
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
@@ -235,8 +243,9 @@ export class EngagementService {
     // Fire-and-forget property enrichment for each loan (non-fatal).
     // The enrichment record is keyed by loanId so it can be retrieved via
     // PropertyEnrichmentService.getLatestEnrichment(loanId, tenantId).
+    // After enrichment, trigger comparable selection for qualifying product types.
     for (const loan of (resource as Engagement).loans) {
-      this.enrichmentService.enrichEngagement(
+      this.enrichAndSelectComps(
         engagement.id,
         loan.id,
         engagement.tenantId,
@@ -246,6 +255,7 @@ export class EngagementService {
           state: loan.property.state,
           zipCode: loan.property.zipCode,
         },
+        loan.products,
       ).catch(err => {
         logger.warn('Property enrichment failed for engagement loan (non-fatal)', {
           engagementId: engagement.id,
@@ -256,6 +266,57 @@ export class EngagementService {
     }
 
     return resource as Engagement;
+  }
+
+  // ── Enrichment + Comp Selection (private) ──────────────────────────────────
+
+  /**
+   * Enrich a loan's property and then trigger comparable selection for any
+   * qualifying products on that loan. Non-fatal: comp-selection errors are
+   * logged but do not reject the enrichment promise.
+   */
+  private async enrichAndSelectComps(
+    engagementId: string,
+    loanId: string,
+    tenantId: string,
+    address: { street: string; city: string; state: string; zipCode: string },
+    products: EngagementProduct[],
+  ): Promise<void> {
+    const result = await this.enrichmentService.enrichEngagement(
+      engagementId, loanId, tenantId, address,
+    );
+
+    this.triggerCompSelectionForProducts(
+      engagementId, loanId, tenantId, result.propertyId, products,
+    );
+  }
+
+  /**
+   * Fire-and-forget comp selection for each product whose productType is in
+   * COMP_SELECTION_PRODUCT_TYPES. Errors are logged, never thrown.
+   */
+  private triggerCompSelectionForProducts(
+    engagementId: string,
+    loanId: string,
+    tenantId: string,
+    propertyId: string,
+    products: Pick<EngagementProduct, 'id' | 'productType'>[],
+  ): void {
+    for (const product of products) {
+      if (!COMP_SELECTION_PRODUCT_TYPES.has(product.productType)) continue;
+
+      this.comparableSelectionService.selectForOrder(
+        product.id, tenantId, product.productType, propertyId,
+      ).catch(err => {
+        logger.warn('Comparable selection failed for engagement product (non-fatal)', {
+          engagementId,
+          loanId,
+          productId: product.id,
+          productType: product.productType,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
   }
 
   // ── Read ───────────────────────────────────────────────────────────────────
@@ -525,7 +586,17 @@ export class EngagementService {
     const updatedLoans = [...engagement.loans];
     updatedLoans[loanIndex] = { ...loan, products: [...loan.products, newProduct] };
 
-    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+    const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+
+    // Fire-and-forget comp selection for the new product if qualifying.
+    // The loan should already have a propertyId from initial engagement creation.
+    if (loan.propertyId && COMP_SELECTION_PRODUCT_TYPES.has(newProduct.productType)) {
+      this.triggerCompSelectionForProducts(
+        engagementId, loanId, tenantId, loan.propertyId, [newProduct],
+      );
+    }
+
+    return result;
   }
 
   // ── Link VendorOrder to EngagementProduct ──────────────────────────────────
@@ -669,12 +740,13 @@ export class EngagementService {
     };
   }
 
-  // ── Soft delete ────────────────────────────────────────────────────────────
+  // ── Hard delete ────────────────────────────────────────────────────────────
 
   async deleteEngagement(id: string, tenantId: string, deletedBy: string): Promise<void> {
-    // Soft-delete: set status to CANCELLED rather than hard-deleting
-    await this.changeStatus(id, tenantId, EngagementStatus.CANCELLED, deletedBy);
-    logger.info('Engagement soft-deleted (set to CANCELLED)', { id, deletedBy });
+    await this.getEngagement(id, tenantId); // verify exists + tenant ownership
+    const container = this.dbService.getEngagementsContainer();
+    await container.item(id, tenantId).delete();
+    logger.info('Engagement hard-deleted', { id, deletedBy });
   }
 
   // ── Sub-resource queries (FK reads) ───────────────────────────────────────

@@ -15,7 +15,9 @@ export class OrderEventService {
   private vendorTopicName: string = 'vendor-events';
   private qcTopicName: string = 'quality-control-events';
 
-  constructor(private readonly enrichmentService?: PropertyEnrichmentService) {
+  constructor(
+    private readonly enrichmentService?: PropertyEnrichmentService,
+  ) {
     this.logger = new Logger();
     this.connectionString = process.env.AZURE_SERVICEBUS_CONNECTION_STRING || '';
 
