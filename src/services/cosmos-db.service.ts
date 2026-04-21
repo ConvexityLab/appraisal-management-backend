@@ -66,6 +66,8 @@ export class CosmosDbService {
   private comparableSalesContainer: Container | null = null;
   // ── Property Data Cache (third-party provider cache: ATTOM, Bridge, etc.) ─
   private propertyDataCacheContainer: Container | null = null;
+  // ── ATTOM Data (geohash-partitioned comparable search) ─────────────────
+  private attomDataContainer: Container | null = null;
 
   private readonly databaseId = 'appraisal-management';
   private readonly containers = {
@@ -115,6 +117,7 @@ export class CosmosDbService {
     comparableSales: 'comparable-sales',                   // PropertyComparableSale (partition: /zipCode)
     // ── Property Data Cache ───────────────────────────────────────────────
     propertyDataCache: 'property-data-cache',              // Third-party property data cache (ATTOM, Bridge, etc.) (partition: /attomId)
+    attomData: 'attom-data',                               // ATTOM property records for comp search (partition: /geohash5)
   };
 
   constructor(
@@ -236,6 +239,8 @@ export class CosmosDbService {
       this.comparableSalesContainer = this.database.container(this.containers.comparableSales);
       // ── Property Data Cache ──────────────────────────────────────────────────
       this.propertyDataCacheContainer = this.database.container(this.containers.propertyDataCache);
+      // ── ATTOM Data (geohash-partitioned comparable search) ─────────────────
+      this.attomDataContainer = this.database.container(this.containers.attomData);
 
       this.isConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {

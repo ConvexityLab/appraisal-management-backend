@@ -289,6 +289,18 @@ module cosmosPropertyDataCacheContainer 'modules/cosmos-property-data-cache-cont
   }
 }
 
+// Cosmos DB ATTOM Data Container (geohash-partitioned)
+// Stores ATTOM property records partitioned by geohash-5 for efficient spatial comp search.
+// Pre-populated via ATTOM CSV ingestion; queried by radius + attribute filters.
+module cosmosAttomDataContainer 'modules/cosmos-attom-data-container.bicep' = {
+  name: 'cosmos-attom-data-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
