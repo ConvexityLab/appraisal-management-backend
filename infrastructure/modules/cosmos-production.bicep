@@ -589,7 +589,7 @@ var containers = [
   // which is the primary access pattern for all downstream ATTOM lookups.
   // Large raw provider payloads are excluded from the index to reduce RU cost on writes.
   {
-    name: 'attomData'
+    name: 'attom-data'
     partitionKey: '/attomId'
     indexingPolicy: {
       indexingMode: 'consistent'
