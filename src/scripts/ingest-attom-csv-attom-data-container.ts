@@ -34,7 +34,6 @@
  *   ATTOM_CSV_BLOBS              Comma-separated blob names to ingest
  *                                (default: Duval_FL_2025_2026.csv,LA_2025_2026.csv)
  *   ATTOM_CSV_BATCH_SIZE         Records per Cosmos batch (default: 100)
- *   ATTOM_CSV_BATCH_DELAY_MS     Delay in ms between batches to avoid 429s (default: 0)
  *   ATTOM_CSV_DRY_RUN            Set to "true" to parse without writing to Cosmos
  */
 
@@ -72,7 +71,6 @@ function loadConfig() {
   const blobsRaw = process.env.ATTOM_CSV_BLOBS ?? 'Duval_FL_2025_2026.csv,LA_2025_2026.csv';
   const blobs = blobsRaw.split(',').map((b) => b.trim()).filter(Boolean);
   const batchSize = parseInt(process.env.ATTOM_CSV_BATCH_SIZE ?? '100', 10);
-  const batchDelayMs = parseInt(process.env.ATTOM_CSV_BATCH_DELAY_MS ?? '0', 10);
   const dryRun = process.env.ATTOM_CSV_DRY_RUN === 'true';
 
   if (isNaN(batchSize) || batchSize < 1) {
@@ -80,13 +78,8 @@ function loadConfig() {
       `ingest-attom-csv-attom-data-container: ATTOM_CSV_BATCH_SIZE must be a positive integer, got "${process.env.ATTOM_CSV_BATCH_SIZE}"`,
     );
   }
-  if (isNaN(batchDelayMs) || batchDelayMs < 0) {
-    throw new Error(
-      `ingest-attom-csv-attom-data-container: ATTOM_CSV_BATCH_DELAY_MS must be a non-negative integer, got "${process.env.ATTOM_CSV_BATCH_DELAY_MS}"`,
-    );
-  }
 
-  return { storageAccount, cosmosEndpoint, blobContainer, cosmosContainer, blobs, batchSize, batchDelayMs, dryRun };
+  return { storageAccount, cosmosEndpoint, blobContainer, cosmosContainer, blobs, batchSize, dryRun };
 }
 
 // ─── RFC 4180 CSV tokenizer ───────────────────────────────────────────────────
@@ -231,21 +224,37 @@ function mapRowToAttomDataDoc(
 
 // ─── Blob streaming + ingestion logic ─────────────────────────────────────────
 
+// Write with bounded concurrency to avoid hot-partition 429s.
+// Unlike property-data-cache (partitioned by /attomId — every write hits a different partition),
+// attom-data is partitioned by /geohash5 — nearby properties share the same partition.
+// Firing 100 concurrent writes to the same geohash5 cell triggers rate limiting.
+// A sliding window of UPSERT_CONCURRENCY concurrent writes keeps throughput high
+// without overwhelming any single partition.
+const UPSERT_CONCURRENCY = 10;
+
 async function upsertBatch(
   cosmosService: CosmosDbService,
   cosmosContainer: string,
   batch: AttomDataDocument[],
 ): Promise<{ succeeded: number; failed: number }> {
-  const results = await Promise.allSettled(
-    batch.map((doc) => cosmosService.upsertItem(cosmosContainer, doc)),
-  );
-  const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-  const failed = results.filter((r) => r.status === 'rejected').length;
-  return { succeeded, failed };
-}
+  let succeeded = 0;
+  let failed = 0;
+  let index = 0;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  async function worker(): Promise<void> {
+    while (index < batch.length) {
+      const doc = batch[index++];
+      const result = await cosmosService.upsertItem(cosmosContainer, doc);
+      if (result.success) {
+        succeeded++;
+      } else {
+        failed++;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: UPSERT_CONCURRENCY }, worker));
+  return { succeeded, failed };
 }
 
 async function ingestBlob(
@@ -255,7 +264,6 @@ async function ingestBlob(
   cosmosService: CosmosDbService,
   cosmosContainer: string,
   batchSize: number,
-  batchDelayMs: number,
   dryRun: boolean,
 ): Promise<void> {
   console.log(`\n[${blobName}] Starting ingestion into Cosmos container "${cosmosContainer}"...`);
@@ -319,7 +327,6 @@ async function ingestBlob(
       if (!dryRun) {
         const result = await upsertBatch(cosmosService, cosmosContainer, batch);
         totalFailed += result.failed;
-        if (batchDelayMs > 0) await sleep(batchDelayMs);
       }
       totalProcessed += batch.length;
       batch = [];
@@ -362,8 +369,8 @@ async function main(): Promise<void> {
   console.log(`Cosmos endpoint  : ${config.cosmosEndpoint}`);
   console.log(`Cosmos container : ${config.cosmosContainer}`);
   console.log(`Batch size       : ${config.batchSize}`);
-  console.log(`Batch delay (ms) : ${config.batchDelayMs}`);
-  console.log(`Geohash precision: ${GEOHASH_PRECISION}`);
+  console.log(`Concurrency      : ${UPSERT_CONCURRENCY}`);
+  console.log(`Geohash precision: ${GEOHASH_PRECISION}`);  
   console.log(`Dry run          : ${config.dryRun}`);
   console.log('');
 
@@ -385,7 +392,6 @@ async function main(): Promise<void> {
       cosmosService,
       config.cosmosContainer,
       config.batchSize,
-      config.batchDelayMs,
       config.dryRun,
     );
   }
@@ -403,7 +409,5 @@ main().catch((err) => {
 });
 
 // npx tsx --env-file .env src/scripts/ingest-attom-csv-attom-data-container.ts
-// ATTOM_CSV_BATCH_SIZE=25 ATTOM_CSV_BATCH_DELAY_MS=500 npx tsx --env-file .env src/scripts/ingest-attom-csv-attom-data-container.ts
-// in Powershell:
-// $env:ATTOM_CSV_BATCH_SIZE=25; $env:ATTOM_CSV_BATCH_DELAY_MS=500; npx tsx --env-file .env src/scripts/ingest-attom-csv-attom-data-container.ts
-// $env:ATTOM_CSV_BATCH_SIZE=100; $env:ATTOM_CSV_BATCH_DELAY_MS=100; npx tsx --env-file .env src/scripts/ingest-attom-csv-attom-data-container.ts
+// In PowerShell:
+// $env:ATTOM_CSV_BATCH_SIZE=100; npx tsx --env-file .env src/scripts/ingest-attom-csv-attom-data-container.ts
