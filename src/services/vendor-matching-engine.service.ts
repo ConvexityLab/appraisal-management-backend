@@ -222,7 +222,7 @@ export class VendorMatchingEngine {
   private async scoreVendor(
     vendor: any,
     request: VendorMatchRequest,
-    propertyCoords: GeoCoordinates
+    propertyCoords: GeoCoordinates | null
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
@@ -356,10 +356,19 @@ export class VendorMatchingEngine {
    */
   private async calculateProximityScore(
     vendor: any,
-    propertyCoords: GeoCoordinates,
+    propertyCoords: GeoCoordinates | null,
     propertyState?: string
   ): Promise<{ score: number; distance: number | null }> {
     try {
+      if (!propertyCoords) {
+        // No geocoding available — use state matching only
+        const vendorStates: string[] = (vendor.serviceAreas ?? []).map((sa: any) => sa.state);
+        if (propertyState && vendorStates.includes(propertyState)) {
+          return { score: 70, distance: null }; // Same state, decent score
+        }
+        return { score: 40, distance: null }; // No state match, lower score
+      }
+
       // Get vendor location
       const vendorCoords = vendor.location || vendor.businessLocation;
       if (!vendorCoords?.latitude || !vendorCoords?.longitude) {
@@ -528,7 +537,7 @@ export class VendorMatchingEngine {
       WHERE c.tenantId = @tenantId
       AND c.entityType = 'vendor'
       AND c.isActive = true
-      AND (NOT IS_DEFINED(c.serviceAreas) OR ARRAY_CONTAINS(c.serviceAreas, @state))
+      AND (NOT IS_DEFINED(c.serviceAreas) OR EXISTS(SELECT VALUE sa FROM sa IN c.serviceAreas WHERE sa.state = @state))
     `;
 
     // Extract state from address (simplified)
@@ -589,16 +598,25 @@ export class VendorMatchingEngine {
   /**
    * Geocode an address to coordinates
    */
-  private async geocodeAddress(address: string): Promise<GeoCoordinates> {
-    // TODO: Integrate with Google Maps Geocoding API or Azure Maps
-    // For now, return mock coordinates
-    // In production, this should call the geocoding service
-    this.logger.warn('Using mock geocoding - integrate with Google Maps or Azure Maps');
-    
-    return {
-      latitude: 37.7749,  // Default to San Francisco
-      longitude: -122.4194
+  private async geocodeAddress(address: string): Promise<GeoCoordinates | null> {
+    // State centroid coordinates for distance-based scoring when no geocoding API is configured.
+    // Vendors within the same state get a proximity boost; cross-state vendors score lower.
+    const STATE_CENTROIDS: Record<string, GeoCoordinates> = {
+      TX: { latitude: 31.9686, longitude: -99.9018 }, AL: { latitude: 32.3182, longitude: -86.9023 },
+      AZ: { latitude: 34.0489, longitude: -111.0937 }, CA: { latitude: 36.7783, longitude: -119.4179 },
+      CO: { latitude: 39.5501, longitude: -105.7821 }, FL: { latitude: 27.6648, longitude: -81.5158 },
+      GA: { latitude: 32.1656, longitude: -82.9001 }, IL: { latitude: 40.6331, longitude: -89.3985 },
+      NC: { latitude: 35.7596, longitude: -79.0193 }, NY: { latitude: 40.7128, longitude: -74.0060 },
+      OH: { latitude: 40.4173, longitude: -82.9071 }, PA: { latitude: 41.2033, longitude: -77.1945 },
+      SC: { latitude: 33.8361, longitude: -81.1637 }, TN: { latitude: 35.5175, longitude: -86.5804 },
+      VA: { latitude: 37.4316, longitude: -78.6569 }, WA: { latitude: 47.7511, longitude: -120.7401 },
     };
+    const state = this.extractStateFromAddress(address);
+    if (state && STATE_CENTROIDS[state]) {
+      return STATE_CENTROIDS[state]!;
+    }
+    this.logger.warn('Cannot geocode address — no state match for proximity scoring', { address });
+    return null;
   }
 
   /**

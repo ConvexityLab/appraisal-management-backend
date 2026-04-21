@@ -196,6 +196,7 @@ export class BulkIngestionOrderCreationWorkerService {
           orderNumber,
           tenantId: job.tenantId,
           clientId: job.clientId,
+          subClientId: job.subClientId ?? '',
           engagementId: engagement.id,
           engagementLoanId: engagementLoan?.id,
           engagementProductId,
@@ -248,6 +249,31 @@ export class BulkIngestionOrderCreationWorkerService {
         }
 
         createdOrderCount++;
+
+        // Publish engagement.order.created so auto-assignment orchestrator can rank vendors and send bids
+        this.publisher.publish({
+          id: uuidv4(),
+          type: 'engagement.order.created',
+          timestamp: new Date(),
+          source: 'bulk-ingestion-order-creation-worker',
+          version: '1.0',
+          category: EventCategory.ORDER,
+          data: {
+            engagementId: engagement.id,
+            orderId: createResult.data.id,
+            orderNumber,
+            tenantId: job.tenantId,
+            clientId: job.clientId,
+            propertyAddress: `${parsed.address} ${parsed.city} ${parsed.state} ${parsed.zipCode}`,
+            propertyState: parsed.state,
+            productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType],
+            priority: EventPriority.NORMAL,
+          },
+        } as any).catch(err => {
+          this.logger.warn('Bulk order creation: failed to publish engagement.order.created (auto-assignment may not trigger)', {
+            jobId: job.id, orderId: createResult.data!.id, error: (err as Error).message,
+          });
+        });
 
         // Fire-and-forget order-level enrichment so getLatestEnrichment(orderId)
         // works for bulk-ingested orders — PropertyRecord is already populated
