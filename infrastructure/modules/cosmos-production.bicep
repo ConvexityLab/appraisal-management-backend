@@ -584,32 +584,7 @@ var containers = [
       ]
     }
   }
-  // Raw ATTOM API response data — one document per ATTOM property record.
-  // Partition key /attomId enables point-reads by ATTOM integer ID (stored as string),
-  // which is the primary access pattern for all downstream ATTOM lookups.
-  // Large raw provider payloads are excluded from the index to reduce RU cost on writes.
-  {
-    name: 'attom-data'
-    partitionKey: '/attomId'
-    indexingPolicy: {
-      indexingMode: 'consistent'
-      automatic: true
-      includedPaths: [
-        { path: '/*' }
-      ]
-      excludedPaths: [
-        { path: '/"_etag"/?' }
-        { path: '/rawResponse/*' }
-      ]
-      compositeIndexes: [
-        // State + fetch-time: supports batch re-fetch jobs ordered by age
-        [
-          { path: '/address/state', order: 'ascending' }
-          { path: '/fetchedAt', order: 'descending' }
-        ]
-      ]
-    }
-  }
+  // attom-data container is managed by the dedicated cosmos-attom-data-container.bicep module.
   // PDF form template catalog — platform-wide, independent of individual orders
   {
     name: 'document-templates'

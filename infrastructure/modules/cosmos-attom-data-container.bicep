@@ -34,7 +34,7 @@ resource attomDataContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
     resource: {
       id: 'attom-data'
       partitionKey: {
-        paths: ['/geohash5']
+        paths: ['/attomId']
         kind: 'Hash'
       }
       indexingPolicy: {
