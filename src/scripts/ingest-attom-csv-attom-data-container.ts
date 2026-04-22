@@ -224,13 +224,40 @@ function mapRowToAttomDataDoc(
 
 // ─── Blob streaming + ingestion logic ─────────────────────────────────────────
 
-// Write with bounded concurrency to avoid hot-partition 429s.
-// Unlike property-data-cache (partitioned by /attomId — every write hits a different partition),
-// attom-data is partitioned by /geohash5 — nearby properties share the same partition.
-// Firing 100 concurrent writes to the same geohash5 cell triggers rate limiting.
-// A sliding window of UPSERT_CONCURRENCY concurrent writes keeps throughput high
-// without overwhelming any single partition.
-const UPSERT_CONCURRENCY = 10;
+// Write with bounded concurrency + retry to handle hot-partition 429s.
+// attom-data is partitioned by /geohash5 — dense urban areas pack thousands of
+// properties into the same cell, so even moderate concurrency triggers 429s.
+//
+// The underlying Cosmos SDK already retries 429s up to 9 times internally with
+// server-advised backoff (~30s max). These retries are our *outer* safety net
+// for cases where the partition stays saturated longer than the SDK's window.
+// Jitter is added to prevent all workers waking simultaneously and re-saturating
+// the same partition (thundering herd).
+const UPSERT_CONCURRENCY = 5;
+const MAX_RETRIES = 6; // base delays: 1s → 2s → 4s → 8s → 16s → 32s (plus jitter)
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function upsertWithRetry(
+  cosmosService: CosmosDbService,
+  cosmosContainer: string,
+  doc: AttomDataDocument,
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const result = await cosmosService.upsertItem(cosmosContainer, doc);
+    if (result.success) return true;
+    if (attempt < MAX_RETRIES) {
+      // Exponential backoff with full jitter: random delay in [0, 2^attempt * 1000]ms
+      // Full jitter prevents workers from synchronizing and re-saturating the partition.
+      const baseMs = Math.pow(2, attempt) * 1000;
+      const delayMs = Math.random() * baseMs;
+      await sleep(delayMs);
+    }
+  }
+  return false;
+}
 
 async function upsertBatch(
   cosmosService: CosmosDbService,
@@ -243,9 +270,9 @@ async function upsertBatch(
 
   async function worker(): Promise<void> {
     while (index < batch.length) {
-      const doc = batch[index++];
-      const result = await cosmosService.upsertItem(cosmosContainer, doc);
-      if (result.success) {
+      const doc = batch[index++]!;
+      const ok = await upsertWithRetry(cosmosService, cosmosContainer, doc);
+      if (ok) {
         succeeded++;
       } else {
         failed++;
@@ -369,7 +396,7 @@ async function main(): Promise<void> {
   console.log(`Cosmos endpoint  : ${config.cosmosEndpoint}`);
   console.log(`Cosmos container : ${config.cosmosContainer}`);
   console.log(`Batch size       : ${config.batchSize}`);
-  console.log(`Concurrency      : ${UPSERT_CONCURRENCY}`);
+  console.log(`Concurrency      : ${UPSERT_CONCURRENCY} (max retries: ${MAX_RETRIES})`);
   console.log(`Geohash precision: ${GEOHASH_PRECISION}`);  
   console.log(`Dry run          : ${config.dryRun}`);
   console.log('');
