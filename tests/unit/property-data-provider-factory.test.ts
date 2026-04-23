@@ -88,7 +88,7 @@ describe('createPropertyDataProvider', () => {
   it('returns LocalAttom alone when only COSMOS_ENDPOINT is set', () => {
     process.env.COSMOS_ENDPOINT = 'https://example.documents.azure.com';
 
-    const provider = createPropertyDataProvider() as { __kind?: string };
+    const provider = createPropertyDataProvider({} as never) as { __kind?: string };
 
     expect(provider).not.toBeInstanceOf(ChainedPropertyDataProvider);
     expect(provider.__kind).toBe('local-attom');
@@ -97,7 +97,7 @@ describe('createPropertyDataProvider', () => {
   it('also accepts AZURE_COSMOS_ENDPOINT as the Cosmos enable flag', () => {
     process.env.AZURE_COSMOS_ENDPOINT = 'https://example.documents.azure.com';
 
-    const provider = createPropertyDataProvider() as { __kind?: string };
+    const provider = createPropertyDataProvider({} as never) as { __kind?: string };
 
     expect(provider.__kind).toBe('local-attom');
   });
@@ -125,7 +125,7 @@ describe('createPropertyDataProvider', () => {
     process.env.BRIDGE_SERVER_TOKEN = 'bridge-token';
     process.env.ATTOM_API_KEY = 'attom-key';
 
-    const provider = createPropertyDataProvider();
+    const provider = createPropertyDataProvider({} as never);
 
     expect(provider).toBeInstanceOf(ChainedPropertyDataProvider);
     // Use the private `providers` field via cast — it's the public contract
@@ -140,7 +140,7 @@ describe('createPropertyDataProvider', () => {
     process.env.COSMOS_ENDPOINT = 'https://example.documents.azure.com';
     process.env.BRIDGE_SERVER_TOKEN = 'bridge-token';
 
-    const provider = createPropertyDataProvider();
+    const provider = createPropertyDataProvider({} as never);
 
     expect(provider).toBeInstanceOf(ChainedPropertyDataProvider);
     const inner = (provider as unknown as {
