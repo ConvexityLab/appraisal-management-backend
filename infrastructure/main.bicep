@@ -301,6 +301,18 @@ module cosmosAttomDataContainer 'modules/cosmos-attom-data-container.bicep' = {
   }
 }
 
+// Cosmos DB Order-Comparables Container
+// Persisted output of the comp-collection pipeline (and later, ranking) per order.
+// Partitioned by /orderId; one container holds all stage docs, discriminated by /stage.
+module cosmosOrderComparablesContainer 'modules/cosmos-order-comparables-container.bicep' = {
+  name: 'cosmos-order-comparables-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

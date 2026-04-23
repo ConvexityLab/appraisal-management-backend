@@ -1,56 +1,87 @@
 /**
  * Property Data Provider Factory
  *
- * Selects the appropriate PropertyDataProvider implementation based on
+ * Selects and composes PropertyDataProvider implementations based on
  * available environment configuration.
  *
- * Resolution order:
- *   1. BRIDGE_SERVER_TOKEN + ATTOM_API_KEY → ChainedPropertyDataProvider
- *        (Bridge as primary MLS source, ATTOM as public-records fallback)
- *   2. BRIDGE_SERVER_TOKEN only            → BridgePropertyDataProvider
- *   3. ATTOM_API_KEY only                  → AttomPropertyDataProvider
- *   4. Neither                             → NullPropertyDataProvider (logs warning)
+ * Resolution order (highest priority first):
+ *   1. LocalAttomPropertyDataProvider — when COSMOS_ENDPOINT (or
+ *      AZURE_COSMOS_ENDPOINT) is set, queries the bulk-imported `attom-data`
+ *      Cosmos container before any live API call.
+ *   2. BridgePropertyDataProvider     — when BRIDGE_SERVER_TOKEN is set.
+ *   3. AttomPropertyDataProvider      — when ATTOM_API_KEY is set.
+ *
+ * Active providers are wrapped in a ChainedPropertyDataProvider when more
+ * than one is enabled (first non-null result wins). When none are enabled
+ * the factory returns a NullPropertyDataProvider that logs a warning on
+ * every lookup.
  *
  * Usage:
- *   const provider = createPropertyDataProvider();
+ *   const provider = createPropertyDataProvider(initializedCosmosDbService);
  *   const result = await provider.lookupByAddress({ street, city, state, zipCode });
+ *
+ * Note: `cosmos` is required when COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT is set.
+ * Pass the already-initialized CosmosDbService instance — do not let the factory
+ * create its own, as the new instance would never have initialize() called on it.
  */
 
 import type { PropertyDataProvider } from '../../types/property-data.types.js';
+import { LocalAttomPropertyDataProvider } from './local-attom.provider.js';
 import { BridgePropertyDataProvider } from './bridge.provider.js';
 import { AttomPropertyDataProvider } from './attom.provider.js';
 import { ChainedPropertyDataProvider } from './chained.provider.js';
 import { NullPropertyDataProvider } from './null.provider.js';
+import { CosmosDbService } from '../cosmos-db.service.js';
 import { Logger } from '../../utils/logger.js';
 
 const logger = new Logger('PropertyDataProviderFactory');
 
-export function createPropertyDataProvider(): PropertyDataProvider {
+export function createPropertyDataProvider(cosmos?: CosmosDbService): PropertyDataProvider {
+  const hasCosmos = Boolean(
+    process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT,
+  );
   const hasBridge = Boolean(process.env.BRIDGE_SERVER_TOKEN);
   const hasAttom = Boolean(process.env.ATTOM_API_KEY);
 
-  if (hasBridge && hasAttom) {
-    logger.info('Property data provider: Chained (Bridge Interactive → ATTOM Data Solutions)');
-    return new ChainedPropertyDataProvider([
-      new BridgePropertyDataProvider(),
-      new AttomPropertyDataProvider(),
-    ]);
-  }
+  // Build the ordered chain of enabled providers. Order is intentional:
+  // Cosmos first to avoid live API calls when the bulk-imported cache
+  // already has the subject.
+  const chain: PropertyDataProvider[] = [];
+  const chainNames: string[] = [];
 
+  if (hasCosmos) {
+    if (!cosmos) {
+      throw new Error(
+        'createPropertyDataProvider: a CosmosDbService instance must be provided when ' +
+          'COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT is set',
+      );
+    }
+    chain.push(new LocalAttomPropertyDataProvider(cosmos));
+    chainNames.push('LocalAttom (Cosmos)');
+  }
   if (hasBridge) {
-    logger.info('Property data provider: Bridge Interactive (live data)');
-    return new BridgePropertyDataProvider();
+    chain.push(new BridgePropertyDataProvider());
+    chainNames.push('Bridge Interactive');
   }
-
   if (hasAttom) {
-    logger.info('Property data provider: ATTOM Data Solutions (live data)');
-    return new AttomPropertyDataProvider();
+    chain.push(new AttomPropertyDataProvider());
+    chainNames.push('ATTOM Data Solutions');
   }
 
-  logger.warn(
-    'Property data provider: None configured (NullPropertyDataProvider). ' +
-    'Set BRIDGE_SERVER_TOKEN, ATTOM_API_KEY, or both to enable live subject property enrichment.',
-  );
-  return new NullPropertyDataProvider();
+  if (chain.length === 0) {
+    logger.warn(
+      'Property data provider: None configured (NullPropertyDataProvider). ' +
+        'Set COSMOS_ENDPOINT, BRIDGE_SERVER_TOKEN, or ATTOM_API_KEY to enable subject property enrichment.',
+    );
+    return new NullPropertyDataProvider();
+  }
+
+  if (chain.length === 1) {
+    logger.info(`Property data provider: ${chainNames[0]}`);
+    return chain[0]!;
+  }
+
+  logger.info(`Property data provider chain: ${chainNames.join(' → ')}`);
+  return new ChainedPropertyDataProvider(chain);
 }
 
