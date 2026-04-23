@@ -102,7 +102,7 @@ export class PropertyEnrichmentService {
     provider?: PropertyDataProvider,
   ) {
     this.logger = new Logger('PropertyEnrichmentService');
-    this.provider = provider ?? createPropertyDataProvider();
+    this.provider = provider ?? createPropertyDataProvider(cosmosService);
   }
 
   /**
@@ -250,6 +250,7 @@ export class PropertyEnrichmentService {
         }
         versionChanges.dataSource = 'PUBLIC_RECORDS_API';
         versionChanges.lastVerifiedAt = dataResult.fetchedAt;
+        versionChanges.lastVerifiedSource = dataResult.source;
 
         await this.propertyRecordService.createVersion(
           resolution.propertyId,
@@ -260,6 +261,7 @@ export class PropertyEnrichmentService {
             : 'Public-records refresh at order creation',
           'PUBLIC_RECORDS_API',
           'SYSTEM:property-enrichment',
+          dataResult.source,
         );
       }
 
@@ -533,6 +535,7 @@ export class PropertyEnrichmentService {
       `Tax assessment appended for year ${taxYear}`,
       'PUBLIC_RECORDS_API',
       'SYSTEM:property-enrichment',
+      dataResult.source,
     );
   }
 }

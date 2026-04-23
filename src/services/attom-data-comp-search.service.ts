@@ -5,21 +5,51 @@
  * to find comparable properties within a radius of a subject property.
  *
  * Query strategy:
- *   1. Compute the subject's geohash-5 + 8 neighboring cells (9 total)
- *   2. Issue a single query targeting those 9 partitions via IN clause
- *   3. Apply ST_DISTANCE for precise radius filtering
- *   4. Apply optional attribute filters (property type, bedrooms, sqft, sale date)
- *   5. Return results sorted by sale recency with computed distances
+ *   1. Compute the subject's geohash-5 cell, optionally expanding to its
+ *      8 neighbors per the caller's `expansion` strategy.
+ *   2. Issue a query targeting those partitions via IN clause.
+ *   3. Apply ST_DISTANCE for precise radius filtering.
+ *   4. Apply optional attribute filters (property type, bedrooms, sqft, sale date).
+ *   5. Return results sorted by sale recency with computed distances.
+ *
+ * Expansion strategies (see {@link GeohashExpansion}):
+ *   - NONE     1 partition queried.
+ *   - ADAPTIVE 1 partition queried first; if results < `adaptiveMinResults`,
+ *              the 8 neighbor partitions are queried in a second call and
+ *              results are merged (deduped by attomId), re-sorted, and capped.
+ *   - ALWAYS_9 9 partitions queried in a single call (default; preserves
+ *              historical behavior).
  */
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
-import { getSearchGeohashes } from '../utils/geohash.util.js';
+import {
+  encodeGeohash,
+  getGeohashNeighbors,
+  getSearchGeohashes,
+  type GeohashExpansion,
+} from '../utils/geohash.util.js';
 import type { AttomDataDocument, CompSearchParams, CompSearchResult } from '../types/attom-data.types.js';
 
 const CONTAINER = 'attom-data';
 const GEOHASH_PRECISION = 5;
 const DEFAULT_MAX_RESULTS = 50;
+const DEFAULT_EXPANSION: GeohashExpansion = 'ALWAYS_9';
+
+/** Internal query filter inputs that are stable across cell-expansion retries. */
+interface QueryFilters {
+  longitude: number;
+  latitude: number;
+  radiusMeters: number;
+  propertyType: string | undefined;
+  minBedrooms: number | undefined;
+  maxBedrooms: number | undefined;
+  minSqft: number | undefined;
+  maxSqft: number | undefined;
+  minSaleDate: string | undefined;
+  maxSaleDate: string | undefined;
+  maxResults: number;
+}
 
 export class AttomDataCompSearchService {
   private readonly logger: Logger;
@@ -31,9 +61,9 @@ export class AttomDataCompSearchService {
   /**
    * Search for comparable properties within a radius of a subject property.
    *
-   * The query targets at most 9 geohash partitions (center + 8 neighbors),
-   * then applies ST_DISTANCE for precise circle filtering within those partitions.
-   * Results are ordered by most recent sale date first.
+   * The query targets between 1 and 9 geohash partitions (controlled by
+   * `params.expansion`), then applies ST_DISTANCE for precise circle filtering
+   * within those partitions. Results are ordered by most recent sale date first.
    */
   async searchComps(params: CompSearchParams): Promise<CompSearchResult[]> {
     const {
@@ -48,49 +78,108 @@ export class AttomDataCompSearchService {
       minSaleDate,
       maxSaleDate,
       maxResults = DEFAULT_MAX_RESULTS,
+      expansion = DEFAULT_EXPANSION,
+      adaptiveMinResults,
     } = params;
 
-    const geohashes = getSearchGeohashes(latitude, longitude, GEOHASH_PRECISION);
+    const filters: QueryFilters = {
+      longitude,
+      latitude,
+      radiusMeters,
+      propertyType,
+      minBedrooms,
+      maxBedrooms,
+      minSqft,
+      maxSqft,
+      minSaleDate,
+      maxSaleDate,
+      maxResults,
+    };
 
-    // Build dynamic WHERE clauses and parameters
+    if (expansion === 'NONE') {
+      const cells = [encodeGeohash(latitude, longitude, GEOHASH_PRECISION)];
+      return this.runQuery(cells, filters, { expansion, expansionTriggered: false });
+    }
+
+    if (expansion === 'ALWAYS_9') {
+      const cells = getSearchGeohashes(latitude, longitude, GEOHASH_PRECISION);
+      return this.runQuery(cells, filters, { expansion, expansionTriggered: false });
+    }
+
+    // ADAPTIVE: query the center cell first; expand to neighbors only on under-fill.
+    const center = encodeGeohash(latitude, longitude, GEOHASH_PRECISION);
+    const threshold = adaptiveMinResults ?? maxResults;
+    const centerResults = await this.runQuery([center], filters, {
+      expansion,
+      expansionTriggered: false,
+    });
+
+    if (centerResults.length >= threshold) {
+      return centerResults;
+    }
+
+    const neighbors = getGeohashNeighbors(latitude, longitude, GEOHASH_PRECISION);
+    const neighborResults = await this.runQuery(neighbors, filters, {
+      expansion,
+      expansionTriggered: true,
+    });
+
+    return mergeAndCap(centerResults, neighborResults, maxResults);
+  }
+
+  /**
+   * Issue a single Cosmos query against the supplied geohash partitions.
+   * Caller decides which/how many cells to scan; this method only builds the
+   * SQL, parameter list, and emits the audit log line.
+   */
+  private async runQuery(
+    cells: string[],
+    filters: QueryFilters,
+    audit: { expansion: GeohashExpansion; expansionTriggered: boolean },
+  ): Promise<CompSearchResult[]> {
+    if (cells.length === 0) {
+      throw new Error('runQuery requires at least one geohash cell');
+    }
+
+    const cellPlaceholders = cells.map((_, i) => `@gh${i}`).join(', ');
     const whereClauses: string[] = [
-      'c.geohash5 IN (@gh0, @gh1, @gh2, @gh3, @gh4, @gh5, @gh6, @gh7, @gh8)',
+      `c.geohash5 IN (${cellPlaceholders})`,
       'ST_DISTANCE(c.location, {"type":"Point","coordinates":[@lon,@lat]}) <= @radius',
     ];
     const parameters: { name: string; value: unknown }[] = [
-      ...geohashes.map((gh, i) => ({ name: `@gh${i}`, value: gh })),
-      { name: '@lon', value: longitude },
-      { name: '@lat', value: latitude },
-      { name: '@radius', value: radiusMeters },
+      ...cells.map((gh, i) => ({ name: `@gh${i}`, value: gh })),
+      { name: '@lon', value: filters.longitude },
+      { name: '@lat', value: filters.latitude },
+      { name: '@radius', value: filters.radiusMeters },
     ];
 
-    if (propertyType) {
+    if (filters.propertyType) {
       whereClauses.push('c.propertyDetail.attomPropertyType = @propType');
-      parameters.push({ name: '@propType', value: propertyType });
+      parameters.push({ name: '@propType', value: filters.propertyType });
     }
-    if (minBedrooms != null) {
+    if (filters.minBedrooms != null) {
       whereClauses.push('c.propertyDetail.bedroomsTotal >= @minBed');
-      parameters.push({ name: '@minBed', value: minBedrooms });
+      parameters.push({ name: '@minBed', value: filters.minBedrooms });
     }
-    if (maxBedrooms != null) {
+    if (filters.maxBedrooms != null) {
       whereClauses.push('c.propertyDetail.bedroomsTotal <= @maxBed');
-      parameters.push({ name: '@maxBed', value: maxBedrooms });
+      parameters.push({ name: '@maxBed', value: filters.maxBedrooms });
     }
-    if (minSqft != null) {
+    if (filters.minSqft != null) {
       whereClauses.push('c.propertyDetail.livingAreaSqft >= @minSqft');
-      parameters.push({ name: '@minSqft', value: minSqft });
+      parameters.push({ name: '@minSqft', value: filters.minSqft });
     }
-    if (maxSqft != null) {
+    if (filters.maxSqft != null) {
       whereClauses.push('c.propertyDetail.livingAreaSqft <= @maxSqft');
-      parameters.push({ name: '@maxSqft', value: maxSqft });
+      parameters.push({ name: '@maxSqft', value: filters.maxSqft });
     }
-    if (minSaleDate) {
+    if (filters.minSaleDate) {
       whereClauses.push('c.salesHistory.lastSaleDate >= @minSaleDate');
-      parameters.push({ name: '@minSaleDate', value: minSaleDate });
+      parameters.push({ name: '@minSaleDate', value: filters.minSaleDate });
     }
-    if (maxSaleDate) {
+    if (filters.maxSaleDate) {
       whereClauses.push('c.salesHistory.lastSaleDate <= @maxSaleDate');
-      parameters.push({ name: '@maxSaleDate', value: maxSaleDate });
+      parameters.push({ name: '@maxSaleDate', value: filters.maxSaleDate });
     }
 
     const query = `
@@ -100,13 +189,16 @@ export class AttomDataCompSearchService {
       ORDER BY c.salesHistory.lastSaleDate DESC
       OFFSET 0 LIMIT @maxResults
     `;
-    parameters.push({ name: '@maxResults', value: maxResults });
+    parameters.push({ name: '@maxResults', value: filters.maxResults });
 
     this.logger.info('Executing comp search', {
-      latitude,
-      longitude,
-      radiusMeters,
-      geohashCount: geohashes.length,
+      latitude: filters.latitude,
+      longitude: filters.longitude,
+      radiusMeters: filters.radiusMeters,
+      expansion: audit.expansion,
+      expansionTriggered: audit.expansionTriggered,
+      cellsQueried: cells,
+      cellCount: cells.length,
       filterCount: whereClauses.length,
     });
 
@@ -118,15 +210,21 @@ export class AttomDataCompSearchService {
 
     if (!result.success || !result.data) {
       this.logger.error('Comp search query failed', {
-        latitude,
-        longitude,
-        radiusMeters,
+        latitude: filters.latitude,
+        longitude: filters.longitude,
+        radiusMeters: filters.radiusMeters,
+        expansion: audit.expansion,
+        cellsQueried: cells,
         error: result.error,
       });
       return [];
     }
 
-    this.logger.info('Comp search returned results', { count: result.data.length });
+    this.logger.info('Comp search returned results', {
+      count: result.data.length,
+      expansion: audit.expansion,
+      expansionTriggered: audit.expansionTriggered,
+    });
 
     return result.data.map((r) => ({
       document: r.c,
@@ -144,4 +242,35 @@ export class AttomDataCompSearchService {
     const result = await this.cosmos.getItem<AttomDataDocument>(CONTAINER, attomId, geohash5);
     return result.success && result.data ? result.data : null;
   }
+}
+
+/**
+ * Merge the center-cell and neighbor-cell results into a single list, deduped
+ * by `document.attomId`, re-sorted by `lastSaleDate DESC` (matching the SQL
+ * ORDER BY), and capped to `maxResults`.
+ *
+ * Center results take precedence on duplicate keys — they came from the
+ * partition that's geographically closest to the subject.
+ */
+function mergeAndCap(
+  centerResults: CompSearchResult[],
+  neighborResults: CompSearchResult[],
+  maxResults: number,
+): CompSearchResult[] {
+  const seen = new Set<string>();
+  const merged: CompSearchResult[] = [];
+  for (const r of [...centerResults, ...neighborResults]) {
+    const key = r.document.attomId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(r);
+  }
+  merged.sort((a, b) => {
+    // ISO date strings sort lexicographically. Missing/empty sorts last.
+    const ad = a.document.salesHistory?.lastSaleDate ?? '';
+    const bd = b.document.salesHistory?.lastSaleDate ?? '';
+    if (ad === bd) return 0;
+    return ad < bd ? 1 : -1;
+  });
+  return merged.slice(0, maxResults);
 }
