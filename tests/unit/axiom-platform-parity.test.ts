@@ -218,10 +218,17 @@ describe('AxiomService platform parity', () => {
         }],
       }],
     });
-    expect(updateOrder).toHaveBeenCalledWith('order-123', {
-      axiomRiskScore: 22,
-      axiomDecision: 'ACCEPT',
-    });
+    expect(updateOrder).toHaveBeenCalledWith(
+      'order-123',
+      expect.objectContaining({
+        axiomRiskScore: 22,
+        axiomDecision: 'ACCEPT',
+        axiomStatus: 'completed',
+        axiomEvaluationId: 'eval-order-123-job-123',
+        axiomPipelineJobId: 'job-123',
+        axiomLastUpdatedAt: expect.any(String),
+      }),
+    );
   });
 
   it('compares documents via the unified pipeline flow and stores a local comparison record', async () => {
