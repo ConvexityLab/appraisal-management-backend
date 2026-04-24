@@ -227,7 +227,7 @@ export class AxiomTimeoutWatcherJob {
         timestamp: new Date(),
         source: 'axiom-timeout-watcher-job',
         version: '1.0',
-        category: EventCategory.QC,
+        category: EventCategory.AXIOM,
         data: {
           orderId: order.id,
           orderNumber: order.orderNumber,

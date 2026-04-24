@@ -1,0 +1,75 @@
+import { DefaultAzureCredential } from '@azure/identity';
+import { SecretClient } from '@azure/keyvault-secrets';
+import { CosmosDbService } from '../cosmos-db.service.js';
+import { Logger } from '../../utils/logger.js';
+import type { VendorConnection, VendorType } from '../../types/vendor-integration.types.js';
+
+export class VendorConnectionService {
+  private readonly logger = new Logger('VendorConnectionService');
+  private readonly db: CosmosDbService;
+  private secretClient: SecretClient | null = null;
+
+  constructor(db?: CosmosDbService) {
+    this.db = db ?? new CosmosDbService();
+  }
+
+  async getActiveConnectionByInboundIdentifier(
+    inboundIdentifier: string,
+    vendorType: VendorType,
+  ): Promise<VendorConnection> {
+    const response = await this.db.queryItems<VendorConnection>(
+      'vendor-connections',
+      'SELECT * FROM c WHERE c.inboundIdentifier = @inboundIdentifier AND c.vendorType = @vendorType AND c.active = true',
+      [
+        { name: '@inboundIdentifier', value: inboundIdentifier },
+        { name: '@vendorType', value: vendorType },
+      ],
+    );
+
+    if (!response.success || !response.data || response.data.length === 0) {
+      throw new Error(
+        `Active vendor connection not found for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}`,
+      );
+    }
+
+    if (response.data.length > 1) {
+      throw new Error(
+        `Multiple active vendor connections found for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}. ` +
+        'This must be unique.',
+      );
+    }
+
+    const [connection] = response.data;
+    if (!connection) {
+      throw new Error(
+        `Active vendor connection not found for vendorType=${vendorType} inboundIdentifier=${inboundIdentifier}`,
+      );
+    }
+
+    return connection;
+  }
+
+  async resolveSecret(secretName: string): Promise<string> {
+    const client = this.getSecretClient();
+    const secret = await client.getSecret(secretName);
+    if (!secret.value || !secret.value.trim()) {
+      throw new Error(`Key Vault secret ${secretName} is empty. Populate it before enabling this vendor integration.`);
+    }
+    return secret.value;
+  }
+
+  private getSecretClient(): SecretClient {
+    if (this.secretClient) return this.secretClient;
+
+    const keyVaultUrl = process.env.KEY_VAULT_URL;
+    if (!keyVaultUrl || !keyVaultUrl.trim()) {
+      throw new Error(
+        'KEY_VAULT_URL is required for vendor integrations. Vendor credentials must be stored in Key Vault and accessed via Managed Identity.',
+      );
+    }
+
+    this.logger.info('Initializing Key Vault client for vendor integrations', { keyVaultUrl });
+    this.secretClient = new SecretClient(keyVaultUrl, new DefaultAzureCredential());
+    return this.secretClient;
+  }
+}

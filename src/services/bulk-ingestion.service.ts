@@ -125,6 +125,7 @@ export class BulkIngestionService {
   ): Promise<BulkIngestionJob> {
     const now = new Date().toISOString();
     const jobId = `bulk-ingest-${uuidv4()}`;
+    const engagementGranularity = request.engagementGranularity ?? 'PER_BATCH';
 
     const items: BulkIngestionItem[] = request.items.map((input, index) => {
       const rowIndex = input.rowIndex ?? index + 1;
@@ -149,6 +150,7 @@ export class BulkIngestionService {
       ...(request.jobName !== undefined ? { jobName: request.jobName } : {}),
       analysisType: request.analysisType,
       ingestionMode: request.ingestionMode,
+      engagementGranularity,
       status: 'PENDING',
       adapterKey: request.adapterKey,
       dataFileName: request.dataFileName,
@@ -183,6 +185,7 @@ export class BulkIngestionService {
         tenantId,
         clientId: request.clientId,
         ingestionMode: request.ingestionMode,
+        engagementGranularity,
         adapterKey: request.adapterKey,
         dataFileName: request.dataFileName,
         ...(request.dataFileBlobName !== undefined ? { dataFileBlobName: request.dataFileBlobName } : {}),
@@ -211,6 +214,7 @@ export class BulkIngestionService {
       requestedAt: now,
       details: {
         ingestionMode: request.ingestionMode,
+        engagementGranularity,
         adapterKey: request.adapterKey,
         totalItems: items.length,
       },
@@ -221,6 +225,7 @@ export class BulkIngestionService {
       tenantId,
       clientId: request.clientId,
       itemCount: items.length,
+      engagementGranularity,
       dataFileName: request.dataFileName,
       documentCount: request.documentFileNames.length,
     });

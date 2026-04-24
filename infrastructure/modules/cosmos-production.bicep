@@ -45,6 +45,72 @@ var containers = [
     }
   }
   {
+    name: 'vendor-connections'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/vendorType', order: 'ascending' }
+          { path: '/inboundIdentifier', order: 'ascending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/active', order: 'ascending' }
+          { path: '/updatedAt', order: 'descending' }
+        ]
+      ]
+    }
+    uniqueKeys: [
+      {
+        paths: [
+          '/tenantId'
+          '/vendorType'
+          '/inboundIdentifier'
+        ]
+      }
+    ]
+  }
+  {
+    name: 'vendor-event-outbox'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+          { path: '/availableAt', order: 'ascending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/vendorType', order: 'ascending' }
+          { path: '/occurredAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/ourOrderId', order: 'ascending' }
+          { path: '/occurredAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  {
     name: 'vendor-onboarding'
     partitionKey: '/id'
     indexingPolicy: {
@@ -1069,7 +1135,7 @@ resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
       defaultTtl: -1
       indexingPolicy: container.indexingPolicy
       uniqueKeyPolicy: {
-        uniqueKeys: []
+        uniqueKeys: container.?uniqueKeys ?? []
       }
     }
     // No throughput option for serverless
@@ -1121,4 +1187,6 @@ output appSettings object = {
   COSMOS_CONTAINER_QC_REVIEWS: 'qc-reviews'
   COSMOS_CONTAINER_CLIENTS: 'clients'
   COSMOS_CONTAINER_PRODUCTS: 'products'
+  COSMOS_CONTAINER_VENDOR_CONNECTIONS: 'vendor-connections'
+  COSMOS_CONTAINER_VENDOR_EVENT_OUTBOX: 'vendor-event-outbox'
 }

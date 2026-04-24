@@ -147,6 +147,7 @@ function makeCanonicalRecord(item: any) {
 }
 
 function makeDbStub(job: ReturnType<typeof makeJob>) {
+  const adapterConfigs = (job as any).__adapterConfigs ?? [];
   const canonicalRecords = job.items.map(makeCanonicalRecord);
   let queryCallCount = 0;
 
@@ -158,6 +159,9 @@ function makeDbStub(job: ReturnType<typeof makeJob>) {
       const typeParam = params?.find((p: any) => p.name === '@type');
       if (typeParam?.value === 'bulk-ingestion-job') {
         return { success: true, data: [job] };
+      }
+      if (typeParam?.value === 'bulk-ingestion-adapter-config') {
+        return { success: true, data: adapterConfigs };
       }
       return { success: true, data: canonicalRecords };
     }),
@@ -214,6 +218,161 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await (worker as any).onOrderingRequested(event);
 
     await vi.waitFor(() => expect(capturedEnrichOrder).toHaveBeenCalledTimes(3));
+  });
+
+  it('creates one engagement per item when engagementGranularity is PER_LOAN', async () => {
+    const job = makeJob(2, { engagementGranularity: 'PER_LOAN' });
+    const db = makeDbStub(job);
+    const worker = new BulkIngestionOrderCreationWorkerService(db);
+    capturedCreateEngagement.mockReset();
+    capturedCreateEngagement
+      .mockResolvedValueOnce({
+        id: 'eng-loan-1',
+        tenantId: TENANT,
+        loans: [
+          {
+            id: 'loan-loan-1',
+            loanNumber: 'LN-000',
+            propertyId: 'prop-loan-1',
+            products: [{ id: 'prod-loan-1' }],
+            property: { address: '120 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        id: 'eng-loan-2',
+        tenantId: TENANT,
+        loans: [
+          {
+            id: 'loan-loan-2',
+            loanNumber: 'LN-001',
+            propertyId: 'prop-loan-2',
+            products: [{ id: 'prod-loan-2' }],
+            property: { address: '121 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+          },
+        ],
+      });
+
+    await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
+
+    expect(capturedCreateEngagement).toHaveBeenCalledTimes(2);
+    expect(db.createOrder.mock.calls[0]?.[0]).toMatchObject({
+      engagementId: 'eng-loan-1',
+      engagementLoanId: 'loan-loan-1',
+      engagementProductId: 'prod-loan-1',
+    });
+    expect(db.createOrder.mock.calls[1]?.[0]).toMatchObject({
+      engagementId: 'eng-loan-2',
+      engagementLoanId: 'loan-loan-2',
+      engagementProductId: 'prod-loan-2',
+    });
+  });
+
+  it('creates one shared engagement for multi-item jobs by default', async () => {
+    const job = makeJob(2);
+    const db = makeDbStub(job);
+    const worker = new BulkIngestionOrderCreationWorkerService(db);
+    capturedCreateEngagement.mockReset();
+    capturedCreateEngagement.mockResolvedValue({
+      id: 'eng-batch-1',
+      tenantId: TENANT,
+      loans: [
+        {
+          id: 'loan-batch-1',
+          loanNumber: 'LN-000',
+          propertyId: 'prop-batch-1',
+          products: [{ id: 'prod-batch-1' }],
+          property: { address: '120 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+        },
+        {
+          id: 'loan-batch-2',
+          loanNumber: 'LN-001',
+          propertyId: 'prop-batch-2',
+          products: [{ id: 'prod-batch-2' }],
+          property: { address: '121 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+        },
+      ],
+    });
+
+    await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
+
+    expect(capturedCreateEngagement).toHaveBeenCalledTimes(1);
+    expect(db.createOrder.mock.calls[0]?.[0]?.engagementId).toBe('eng-batch-1');
+    expect(db.createOrder.mock.calls[1]?.[0]?.engagementId).toBe('eng-batch-1');
+  });
+
+  it('uses configured engagement field mapping when standard borrower fields are absent', async () => {
+    const job = makeJob(1, {
+      items: [
+        {
+          id: `${JOB_ID}:0`,
+          jobId: JOB_ID,
+          tenantId: TENANT,
+          clientId: CLIENT,
+          rowIndex: 0,
+          correlationKey: `${JOB_ID}::LN-000`,
+          status: 'COMPLETED',
+          source: {
+            rowIndex: 0,
+            loanNumber: 'LN-000',
+            externalId: 'EXT-000',
+            propertyAddress: '120 Main St, Denver, CO 80203',
+            rawColumns: {
+              customerfullname: 'Grace Hopper',
+              customeremail: 'grace@example.com',
+              customerphone: '555-7777',
+              balanceamount: '789000',
+            },
+          },
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      __adapterConfigs: [
+        {
+          id: 'cfg-bridge-standard',
+          type: 'bulk-ingestion-adapter-config',
+          tenantId: TENANT,
+          adapterKey: ADAPTER,
+          engagementFieldMapping: {
+            borrowerName: 'Customer Full Name',
+            email: 'Customer Email',
+            phone: 'Customer Phone',
+            loanAmount: 'Balance Amount',
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const db = makeDbStub(job);
+    const worker = new BulkIngestionOrderCreationWorkerService(db);
+
+    await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
+
+    expect(capturedCreateEngagement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loans: [
+          expect.objectContaining({
+            borrowerName: 'Grace Hopper',
+            borrowerEmail: 'grace@example.com',
+          }),
+        ],
+      }),
+    );
+    expect(db.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        borrowerInfo: expect.objectContaining({
+          name: 'Grace Hopper',
+          email: 'grace@example.com',
+          phone: '555-7777',
+        }),
+        loanInformation: expect.objectContaining({
+          loanAmount: 789000,
+        }),
+      }),
+    );
   });
 
   it('passes orderId, tenantId, parsed address, and engagementId to enrichOrder', async () => {

@@ -51,6 +51,27 @@ function resolveTenantId(req: UnifiedAuthRequest): string {
 const validateSubmit = [
   body('clientId').isString().notEmpty().withMessage('clientId is required'),
   body('fileName').optional().isString(),
+  body('engagementId').optional().isString().notEmpty().withMessage('engagementId must be a non-empty string'),
+  body('engagementGranularity')
+    .optional()
+    .isIn(['PER_BATCH', 'PER_LOAN'])
+    .withMessage('engagementGranularity must be PER_BATCH or PER_LOAN'),
+  body('engagementGranularity').custom((value, { req }) => {
+    if (value == null) {
+      return true;
+    }
+
+    const processingMode = req.body.processingMode ?? 'ORDER_CREATION';
+    if (processingMode !== 'ORDER_CREATION') {
+      throw new Error('engagementGranularity is only supported for ORDER_CREATION submissions');
+    }
+
+    if (req.body.engagementId && value === 'PER_LOAN') {
+      throw new Error('engagementGranularity PER_LOAN cannot be used when engagementId is provided');
+    }
+
+    return true;
+  }),
   body('processingMode')
     .optional()
     .isIn(['TAPE_EVALUATION', 'ORDER_CREATION', 'DOCUMENT_EXTRACTION'])

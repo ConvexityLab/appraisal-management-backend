@@ -1,19 +1,27 @@
 /**
  * Vendor Bid Timeout Checker Job
  *
- * Runs on a fixed interval and scans for orders where the current
- * vendor bid has expired without an acceptance or decline.
+ * Runs on a fixed interval and does two sweeps over open vendor bids:
  *
- * When a timeout is detected it publishes `vendor.bid.timeout` to the
- * Service Bus topic.  The AutoAssignmentOrchestratorService subscribes
- * to that event and advances to the next vendor in the ranked list
- * (or escalates to a human if the list is exhausted).
+ *   (1) Expired-bid sweep — publishes `vendor.bid.timeout` for any bid whose
+ *       window has passed without an accept/decline. The orchestrator then
+ *       advances to the next vendor or escalates to a human.
  *
- * This job does NOT mutate any order documents — state transitions are
- * the orchestrator's responsibility.
+ *   (2) V-02 Expiring-soon sweep — publishes `vendor.bid.expiring` for any
+ *       bid whose expiry is within BID_EXPIRY_REMINDER_HOURS and that has
+ *       not yet had a reminder dispatched. CommunicationEventHandler sends
+ *       the reminder email. Idempotency is enforced by stamping
+ *       `autoVendorAssignment.expiringReminderSentAt` on the order BEFORE
+ *       the event is published; on each new bid the orchestrator resets
+ *       this flag to null.
+ *
+ * State transitions (status changes) remain the orchestrator's responsibility.
+ * The operational de-dup marker (expiringReminderSentAt) is owned here because
+ * it is specific to this job's reminder sweep.
  *
  * Interval: 5 minutes
  * Timeout window: controlled by order.autoVendorAssignment.currentBidExpiresAt
+ * Reminder threshold: BID_EXPIRY_REMINDER_HOURS env var (default 1h)
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -32,6 +40,13 @@ export class VendorTimeoutCheckerJob {
   private intervalId?: NodeJS.Timeout;
 
   private readonly CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  /**
+   * V-02: Dispatch a reminder email this many hours before a bid expires.
+   * Env-overridable to support per-environment tuning.
+   */
+  private readonly REMINDER_THRESHOLD_MS: number =
+    parseFloat(process.env.BID_EXPIRY_REMINDER_HOURS ?? '1') * 60 * 60 * 1000;
 
   constructor(dbService?: CosmosDbService) {
     this.cosmosService = dbService ?? new CosmosDbService();
@@ -55,15 +70,25 @@ export class VendorTimeoutCheckerJob {
     this.isRunning = true;
 
     // Run immediately on start, then on the interval.
-    this.checkTimeouts().catch((err) =>
+    this.runSweep().catch((err) =>
       this.logger.error('Error in initial vendor timeout check', { error: err }),
     );
 
     this.intervalId = setInterval(() => {
-      this.checkTimeouts().catch((err) =>
+      this.runSweep().catch((err) =>
         this.logger.error('Error in vendor timeout check', { error: err }),
       );
     }, this.CHECK_INTERVAL_MS);
+  }
+
+  /** Run both sweeps sequentially; one failing must not block the other. */
+  private async runSweep(): Promise<void> {
+    await this.checkTimeouts().catch((err) =>
+      this.logger.error('checkTimeouts sweep failed', { error: err }),
+    );
+    await this.checkExpiringSoon().catch((err) =>
+      this.logger.error('checkExpiringSoon sweep failed', { error: err }),
+    );
   }
 
   stop(): void {
@@ -122,6 +147,117 @@ export class VendorTimeoutCheckerJob {
       }
       this.logger.error('Error scanning for expired vendor bids', { error });
     }
+  }
+
+  // ── V-02 Expiring-soon sweep ──────────────────────────────────────────────
+
+  /**
+   * Scan for bids whose expiry is within REMINDER_THRESHOLD_MS and that have
+   * not yet had a reminder dispatched. Publish `vendor.bid.expiring` for each
+   * and stamp `expiringReminderSentAt` on the order so we do not double-send.
+   */
+  async checkExpiringSoon(): Promise<void> {
+    if (this.firewallBlocked) return;
+
+    try {
+      const now = new Date();
+      const reminderWindowEnd = new Date(now.getTime() + this.REMINDER_THRESHOLD_MS);
+
+      const orders = await this.cosmosService.queryDocuments<any>(
+        'orders',
+        `SELECT c.id, c.orderNumber, c.tenantId, c.clientId, c.priority, c.autoVendorAssignment
+         FROM c
+         WHERE c.autoVendorAssignment.status = 'PENDING_BID'
+           AND IS_STRING(c.autoVendorAssignment.currentBidExpiresAt)
+           AND c.autoVendorAssignment.currentBidExpiresAt > @now
+           AND c.autoVendorAssignment.currentBidExpiresAt <= @threshold
+           AND (NOT IS_DEFINED(c.autoVendorAssignment.expiringReminderSentAt)
+                OR c.autoVendorAssignment.expiringReminderSentAt = null)`,
+        [
+          { name: '@now', value: now.toISOString() },
+          { name: '@threshold', value: reminderWindowEnd.toISOString() },
+        ],
+      );
+
+      if (orders.length === 0) return;
+
+      this.logger.info(`V-02: found ${orders.length} bid(s) expiring within reminder window`, {
+        reminderWindowHours: this.REMINDER_THRESHOLD_MS / (60 * 60 * 1000),
+      });
+
+      for (const order of orders) {
+        await this.dispatchExpiringReminder(order, now);
+      }
+    } catch (error) {
+      if (this.isCosmosFirewallError(error)) {
+        this.firewallBlocked = true;
+        return;
+      }
+      this.logger.error('Error scanning for expiring vendor bids', { error });
+    }
+  }
+
+  private async dispatchExpiringReminder(order: any, now: Date): Promise<void> {
+    const state = order.autoVendorAssignment as AutoVendorAssignmentState;
+    if (!state?.currentBidId || !state.currentBidExpiresAt) return;
+
+    const currentVendor = state.rankedVendors[state.currentAttempt];
+    if (!currentVendor) {
+      this.logger.warn('expiring-reminder: order has no current vendor entry — skipping', {
+        orderId: order.id,
+        currentAttempt: state.currentAttempt,
+      });
+      return;
+    }
+
+    // Stamp the de-dup marker FIRST. If the publish fails we still prefer a
+    // missed reminder over a double-send — ops will see the error and replay.
+    const updatedState: AutoVendorAssignmentState = {
+      ...state,
+      expiringReminderSentAt: now.toISOString(),
+    };
+    await this.cosmosService.updateItem(
+      'orders',
+      order.id,
+      { ...order, autoVendorAssignment: updatedState, updatedAt: now.toISOString() },
+      order.tenantId,
+    );
+
+    const expiresAt = new Date(state.currentBidExpiresAt);
+    const minutesRemaining = Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / 60_000));
+    const priority =
+      order.priority === 'RUSH' || order.priority === 'EMERGENCY'
+        ? EventPriority.HIGH
+        : EventPriority.NORMAL;
+
+    await this.publisher.publish({
+      id: uuidv4(),
+      type: 'vendor.bid.expiring',
+      timestamp: new Date(),
+      source: 'vendor-timeout-checker-job',
+      version: '1.0',
+      category: EventCategory.VENDOR,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber ?? '',
+        tenantId: order.tenantId ?? '',
+        clientId: order.clientId ?? '',
+        vendorId: currentVendor.vendorId,
+        vendorName: currentVendor.vendorName,
+        bidId: state.currentBidId,
+        expiresAt: state.currentBidExpiresAt,
+        minutesRemaining,
+        attemptNumber: state.currentAttempt + 1,
+        priority,
+      },
+    } as any);
+
+    this.logger.info('V-02: published vendor.bid.expiring', {
+      orderId: order.id,
+      vendorId: currentVendor.vendorId,
+      bidId: state.currentBidId,
+      minutesRemaining,
+    });
   }
 
   // ── Per-order handling ────────────────────────────────────────────────────

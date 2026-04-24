@@ -7,6 +7,9 @@ import { CanonicalSnapshotService } from './canonical-snapshot.service.js';
 import { EngineDispatchService } from './engine-dispatch.service.js';
 import { CriteriaStepInputService } from './criteria-step-input.service.js';
 import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import type { RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { AxiomEvaluationResult } from './axiom.service.js';
@@ -28,6 +31,7 @@ export class AnalysisSubmissionService {
   private readonly stepInputService: CriteriaStepInputService;
   private readonly blobService: BlobStorageService;
   private readonly configService: TenantAutomationConfigService;
+  private readonly publisher: ServiceBusEventPublisher;
   private readonly logger = new Logger('AnalysisSubmissionService');
 
   constructor(private readonly dbService: CosmosDbService, axiomService?: AxiomService) {
@@ -38,6 +42,30 @@ export class AnalysisSubmissionService {
     this.stepInputService = new CriteriaStepInputService(dbService);
     this.blobService = new BlobStorageService();
     this.configService = new TenantAutomationConfigService(dbService);
+    this.publisher = new ServiceBusEventPublisher();
+  }
+
+  /**
+   * Publish an event to Service Bus. Best-effort — never throws.
+   */
+  private async publishEvent(
+    type: string,
+    category: EventCategory,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.publisher.publish({
+        id: uuidv4(),
+        type,
+        timestamp: new Date(),
+        source: 'analysis-submission-service',
+        version: '1.0',
+        category,
+        data: { priority: EventPriority.NORMAL, ...data },
+      } as any);
+    } catch (err) {
+      this.logger.warn(`Failed to publish ${type}`, { error: (err as Error).message });
+    }
   }
 
   async submit(
@@ -408,6 +436,19 @@ export class AnalysisSubmissionService {
       canonicalSnapshotId: snapshot.id,
     });
 
+    // Publish axiom.evaluation.submitted event so the engagement stream shows the extraction run
+    await this.publishEvent('axiom.evaluation.submitted', EventCategory.AXIOM, {
+      orderId: request.loanPropertyContextId,
+      engagementId: request.engagementId,
+      tenantId: actor.tenantId,
+      clientId,
+      evaluationId: linkedRun.id,
+      pipelineJobId: dispatchResult.engineRunRef,
+      pipelineName: run.pipelineId ?? 'adaptive-document-processing',
+      runType: 'extraction',
+      documentId: request.documentId,
+    });
+
     return {
       submissionId: linkedRun.id,
       analysisType: 'EXTRACTION',
@@ -509,6 +550,21 @@ export class AnalysisSubmissionService {
 
     const finalCriteriaRun = await this.runLedgerService.updateRun(updatedCriteriaRun.id, actor.tenantId, {
       criteriaStepRunIds: stepRuns.map((item) => item.id),
+    });
+
+    // Publish axiom.evaluation.submitted event for criteria evaluation
+    await this.publishEvent('axiom.evaluation.submitted', EventCategory.AXIOM, {
+      orderId: request.loanPropertyContextId,
+      engagementId: request.engagementId,
+      tenantId: actor.tenantId,
+      clientId,
+      evaluationId: finalCriteriaRun.id,
+      pipelineJobId: dispatchResult.engineRunRef,
+      pipelineName: run.pipelineId ?? 'criteria-evaluation',
+      runType: 'criteria',
+      snapshotId: request.snapshotId,
+      programKey: request.programKey,
+      stepCount: stepRuns.length,
     });
 
     return {

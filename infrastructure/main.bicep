@@ -280,6 +280,18 @@ module cosmosCompletionReportsContainer 'modules/cosmos-completion-reports-conta
   }
 }
 
+// Cosmos DB AI Assistant Containers (Phase 8 post-review)
+// Adds: ai-audit-events, ai-conversations, ai-feature-flags, ai-telemetry-events
+// Backs the frontend AI Assistant subsystem under l1-valuation-platform-ui.
+module cosmosAiAssistantContainers 'modules/cosmos-ai-assistant-containers.bicep' = {
+  name: 'cosmos-ai-assistant-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Property Records + Comparable Sales Containers (Phase R1)
 module cosmosPropertyRecordsContainer 'modules/cosmos-property-records-container.bicep' = {
   name: 'cosmos-property-records-container-deployment'

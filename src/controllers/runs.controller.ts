@@ -8,6 +8,23 @@ import { EngineDispatchService } from '../services/engine-dispatch.service.js';
 import { CriteriaStepInputService } from '../services/criteria-step-input.service.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { AnalysisSubmissionService } from '../services/analysis-submission.service.js';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
+
+let eventPublisher: ServiceBusEventPublisher | null = null;
+function getPublisher(): ServiceBusEventPublisher {
+  if (!eventPublisher) eventPublisher = new ServiceBusEventPublisher();
+  return eventPublisher;
+}
+
+async function publishSafely(event: any): Promise<void> {
+  try {
+    await getPublisher().publish(event);
+  } catch {
+    // Best-effort — never throws
+  }
+}
 
 const router = express.Router();
 let service: RunLedgerService | null = null;
@@ -468,6 +485,51 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
         engineResponseRef: refreshed.engineResponseRef,
         ...(refreshed.statusDetails ? { statusDetails: refreshed.statusDetails } : {}),
       });
+
+      // Publish status-change events when terminal state detected via refresh
+      // (local-dev workaround for webhooks that can't reach localhost)
+      if (run.status !== refreshed.status) {
+        const orderId = run.loanPropertyContextId ?? run.documentId ?? run.id;
+        if (refreshed.status === 'completed') {
+          await publishSafely({
+            id: uuidv4(),
+            type: 'axiom.evaluation.completed',
+            timestamp: new Date(),
+            source: 'runs-controller-refresh',
+            version: '1.0',
+            category: EventCategory.AXIOM,
+            data: {
+              orderId,
+              engagementId: run.engagementId,
+              tenantId,
+              evaluationId: run.id,
+              pipelineJobId: run.engineRunRef,
+              pipelineName: run.pipelineId,
+              runType: run.runType,
+              status: 'passed',
+              priority: EventPriority.NORMAL,
+            },
+          });
+        } else if (refreshed.status === 'failed') {
+          await publishSafely({
+            id: uuidv4(),
+            type: 'axiom.evaluation.timeout',
+            timestamp: new Date(),
+            source: 'runs-controller-refresh',
+            version: '1.0',
+            category: EventCategory.QC,
+            data: {
+              orderId,
+              engagementId: run.engagementId,
+              tenantId,
+              evaluationId: run.id,
+              pipelineJobId: run.engineRunRef,
+              error: (refreshed.statusDetails as any)?.error,
+              priority: EventPriority.HIGH,
+            },
+          });
+        }
+      }
 
       res.status(200).json({ success: true, data: hydratedRun });
     } catch (error) {

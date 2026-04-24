@@ -16,6 +16,7 @@
  */
 
 import axios, { AxiosHeaders, AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { CircuitBreaker, CircuitBreakerOpenError, isServerError } from '../utils/circuit-breaker.js';
 import { EventSource } from 'eventsource';
 import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
@@ -23,7 +24,9 @@ import { CosmosDbService } from './cosmos-db.service';
 import { WebPubSubService } from './web-pubsub.service';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { PropertyRecordService } from './property-record.service.js';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { EventPriority, EventCategory } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
 import type { CompileResponse, CompiledProgramNode } from '../types/axiom.types.js';
 
@@ -209,9 +212,18 @@ export class AxiomService {
 
   private readonly logger = new Logger('AxiomService');
   private client: AxiosInstance;
+  // A-05: Circuit breaker — opens after 5 consecutive 5xx responses from Axiom
+  // and blocks outbound calls for 60s before allowing one probe. Prevents a
+  // degraded Axiom from dragging every order through a slow failure path.
+  private readonly axiomBreaker = new CircuitBreaker({
+    name: 'axiom-api',
+    failureThreshold: parseInt(process.env.AXIOM_CB_FAILURE_THRESHOLD ?? '5', 10),
+    openMs: parseInt(process.env.AXIOM_CB_OPEN_MS ?? '60000', 10),
+  });
   private dbService: CosmosDbService;
   private propertyEnrichmentService?: PropertyEnrichmentService;
   private webPubSubService: WebPubSubService | null = null;
+  private publisher: ServiceBusEventPublisher = new ServiceBusEventPublisher();
   private containerName = 'aiInsights';
   private enabled: boolean;
   private mockDelayMs: number;
@@ -396,6 +408,31 @@ export class AxiomService {
       headers: axiomHeaders,
     });
     this.client.interceptors.request.use(async (config) => this.attachAxiomAuthorization(config));
+
+    // A-05: Gate every request through the circuit breaker. When OPEN we throw
+    // a CircuitBreakerOpenError before the network call — callers detect this
+    // and route the order to the manual-review queue instead of stalling.
+    this.client.interceptors.request.use((config) => {
+      const state = this.axiomBreaker.getState();
+      if (state === 'OPEN') {
+        throw new CircuitBreakerOpenError('axiom-api', 0);
+      }
+      return config;
+    });
+    this.client.interceptors.response.use(
+      (response) => {
+        this.axiomBreaker.recordSuccess();
+        return response;
+      },
+      (error) => {
+        if (isServerError(error)) {
+          this.axiomBreaker.recordFailure(
+            `HTTP ${(error as AxiosError).response?.status} from ${(error as AxiosError).config?.url}`,
+          );
+        }
+        throw error;
+      },
+    );
 
     // Initialize Cosmos DB service for storing results
     this.dbService = dbService || new CosmosDbService();
@@ -665,6 +702,75 @@ export class AxiomService {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  /**
+   * Phase 8.3 — Extract top-level identity fields from Axiom consolidated results
+   * for denormalization onto the order record.  Keeps the full 50+ field set in
+   * the canonical snapshot; this summary is the queryable subset.
+   *
+   * Each field carries { value, confidence, sourcePage, sourceCoordinates } so
+   * the UI can show source refs and click through to the PDF.
+   */
+  private buildExtractedSummary(rawResults: Record<string, unknown>): Record<string, unknown> | null {
+    const inner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
+    const consolidate = Array.isArray(inner['consolidate']) ? (inner['consolidate'] as any[])[0] : null;
+    const data = consolidate?.consolidatedData;
+    if (!data || typeof data !== 'object') return null;
+
+    // Fields we consider identity / top-level for the order.
+    const FIELDS = [
+      'propertyAddress',
+      'propertyRightsAppraised',
+      'propertyType',
+      'siteSize',
+      'gla',
+      'grossLivingArea',
+      'yearBuilt',
+      'totalBedrooms',
+      'totalBathrooms',
+      'salePrice',
+      'contractPrice',
+      'appraisedValue',
+      'finalValue',
+      'effectiveDate',
+      'appraiserName',
+      'appraiserLicense',
+    ];
+
+    const summary: Record<string, unknown> = {};
+    for (const field of FIELDS) {
+      const val = (data as Record<string, unknown>)[field];
+      if (val == null) continue;
+      // Nested extraction objects (e.g., propertyAddress.street) — flatten one level
+      if (typeof val === 'object' && !Array.isArray(val) && !('extractedValue' in val) && !('value' in val)) {
+        const flat: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+          flat[k] = this.unwrapExtractedField(v);
+        }
+        summary[field] = flat;
+      } else {
+        summary[field] = this.unwrapExtractedField(val);
+      }
+    }
+
+    return Object.keys(summary).length > 0 ? summary : null;
+  }
+
+  /**
+   * Unwrap an Axiom extraction field to { value, confidence, sourcePage, sourceCoordinates }.
+   */
+  private unwrapExtractedField(raw: unknown): unknown {
+    if (raw == null || typeof raw !== 'object') return raw;
+    const obj = raw as Record<string, unknown>;
+    if (!('extractedValue' in obj) && !('value' in obj)) return raw;
+    return {
+      value: obj.extractedValue ?? obj.value,
+      confidence: obj.confidence,
+      sourcePage: obj.sourcePage,
+      sourceCoordinates: obj.coordinates,
+      sourceFile: obj.sourceFile,
+    };
   }
 
   /**
@@ -2394,41 +2500,86 @@ export class AxiomService {
     evaluationId: string,
     pipelineJobId: string,
   ): Omit<AxiomEvaluationResult, 'documentType'> & { pipelineJobId: string } {
-    // Axiom may nest the domain output under a `results` key
-    const inner = (raw['results'] as Record<string, unknown> | undefined) ?? raw;
+    // A-12: Defensive against null/undefined input — Axiom has returned empty
+    // payloads in rare timeout paths. Treat as no-criteria instead of throwing.
+    const rawObj: Record<string, unknown> = raw && typeof raw === 'object' ? raw : {};
+
+    // Axiom may nest the domain output under `results`, `output`, or deliver
+    // it flat at the top level — accept all three.
+    const inner =
+      (rawObj['results'] as Record<string, unknown> | undefined) ??
+      (rawObj['output'] as Record<string, unknown> | undefined) ??
+      rawObj;
+
     const rawCriteria: unknown[] = Array.isArray(inner['criteria'])
       ? inner['criteria']
-      : Array.isArray(raw['criteria'])
-      ? raw['criteria'] as unknown[]
+      : Array.isArray(rawObj['criteria'])
+      ? (rawObj['criteria'] as unknown[])
+      : Array.isArray(inner['evaluations'])
+      ? (inner['evaluations'] as unknown[])
       : [];
 
-    const criteria: CriterionEvaluation[] = (rawCriteria as any[]).map(
-      (c: any): CriterionEvaluation => ({
-        criterionId: c.criterionId ?? c.id ?? '',
-        criterionName: c.criterionName ?? c.name ?? c.title ?? c.criterionId ?? '',
-        description: c.description ?? '',
-        evaluation: (c.evaluation ?? c.status ?? 'warning') as EvaluationStatus,
-        confidence: typeof c.confidence === 'number' ? c.confidence : 0,
-        reasoning: c.reasoning ?? '',
-        remediation: c.remediation,
-        supportingData: c.supportingData ?? c.dataUsed,
-        documentReferences: Array.isArray(c.documentReferences)
-          ? (c.documentReferences as any[]).map(
-              (r: any): DocumentReference => ({
-                page: r.page ?? 0,
-                section: r.section ?? '',
-                quote: r.quote ?? r.text ?? '',
-                confidence: r.confidence,
-                coordinates: r.coordinates,
-                documentId: r.documentId,
-                documentName: r.documentName,
-                blobUrl: r.blobUrl,
-                sourceFieldPaths: r.sourceFieldPaths,
-              }),
-            )
-          : [],
-      }),
-    );
+    // Normalise Axiom's varying evaluation status casing into our canonical set
+    // ('pass' | 'fail' | 'warning' | 'info'). Handles Axiom-side variants like
+    // 'Passed', 'FAIL', 'success', 'skipped', etc.
+    const normalizeEvaluation = (v: unknown): EvaluationStatus => {
+      const s = String(v ?? '').toLowerCase().trim();
+      if (s === 'pass' || s === 'passed' || s === 'ok' || s === 'success') return 'pass';
+      if (s === 'fail' || s === 'failed' || s === 'error') return 'fail';
+      if (s === 'warn' || s === 'warning') return 'warning';
+      if (s === 'info' || s === 'informational') return 'info';
+      // 'skip' / 'skipped' / 'n/a' have no dedicated canonical value — treat as
+      // info so they surface on the dashboard without blocking anything.
+      if (s === 'skip' || s === 'skipped' || s === 'n/a' || s === 'not_applicable') return 'info';
+      return 'warning';
+    };
+
+    // Clamp confidence into [0, 1]; Axiom sometimes returns 0-100.
+    const normalizeConfidence = (v: unknown): number => {
+      if (typeof v !== 'number' || Number.isNaN(v)) return 0;
+      if (v > 1 && v <= 100) return v / 100;
+      if (v < 0) return 0;
+      if (v > 1) return 1;
+      return v;
+    };
+
+    const criteria: CriterionEvaluation[] = (rawCriteria as unknown[])
+      .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+      .map(
+        (c): CriterionEvaluation => {
+          const obj = c as any;
+          return {
+            criterionId: obj.criterionId ?? obj.id ?? '',
+            criterionName: obj.criterionName ?? obj.name ?? obj.title ?? obj.criterionId ?? '',
+            description: obj.description ?? '',
+            evaluation: normalizeEvaluation(obj.evaluation ?? obj.status ?? obj.result),
+            confidence: normalizeConfidence(obj.confidence),
+            reasoning: obj.reasoning ?? obj.explanation ?? '',
+            remediation: obj.remediation ?? obj.fix,
+            supportingData: obj.supportingData ?? obj.dataUsed ?? obj.evidence,
+            documentReferences: Array.isArray(obj.documentReferences)
+              ? (obj.documentReferences as unknown[])
+                  .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+                  .map(
+                    (r): DocumentReference => {
+                      const ref = r as any;
+                      return {
+                        page: typeof ref.page === 'number' ? ref.page : 0,
+                        section: ref.section ?? '',
+                        quote: ref.quote ?? ref.text ?? ref.excerpt ?? '',
+                        confidence: ref.confidence,
+                        coordinates: ref.coordinates ?? ref.bbox,
+                        documentId: ref.documentId,
+                        documentName: ref.documentName,
+                        blobUrl: ref.blobUrl,
+                        sourceFieldPaths: ref.sourceFieldPaths,
+                      };
+                    },
+                  )
+              : [],
+          };
+        },
+      );
 
     const overallRiskScore =
       typeof inner['overallRiskScore'] === 'number' ? inner['overallRiskScore'] :
@@ -2443,7 +2594,18 @@ export class AxiomService {
     const processingTime = typeof execMeta?.['duration'] === 'number'
       ? (execMeta['duration'] as number)
       : undefined;
-    const extractedData = (inner['extractedData'] as AxiomEvaluationResult['extractedData']) ?? undefined;
+    // Try multiple locations for extracted data:
+    // 1. inner.extractedData (criteria pipeline or webhook-stored)
+    // 2. consolidate[0].consolidatedData (extraction pipeline)
+    const consolidateStage = Array.isArray(inner['consolidate']) ? (inner['consolidate'] as any[])[0] : undefined;
+    const extractedData = (inner['extractedData'] as AxiomEvaluationResult['extractedData'])
+      ?? (consolidateStage?.consolidatedData as AxiomEvaluationResult['extractedData'])
+      ?? undefined;
+
+    // Raw stage outputs for UI visibility
+    const axiomExtractionResult = Array.isArray(inner['extract-data']) ? inner['extract-data'] : undefined;
+    const axiomCriteriaResult = Array.isArray(inner['aggregateResults'])
+      ? (inner['aggregateResults'] as unknown[])[0] : undefined;
 
     return {
       orderId,
@@ -2453,11 +2615,12 @@ export class AxiomService {
       criteria,
       overallRiskScore,
       timestamp: new Date().toISOString(),
-      // Conditionally include optional fields so exactOptionalPropertyTypes is satisfied
       ...(processingTime !== undefined ? { processingTime } : {}),
       ...(extractedData !== undefined ? { extractedData } : {}),
       ...(programId ? { programId } : {}),
       ...(programVersion ? { programVersion } : {}),
+      ...(axiomExtractionResult !== undefined ? { axiomExtractionResult } : {}),
+      ...(axiomCriteriaResult !== undefined ? { axiomCriteriaResult } : {}),
     };
   }
 
@@ -2532,14 +2695,149 @@ export class AxiomService {
       const axiomDecision = (rawDecision === 'ACCEPT' || rawDecision === 'CONDITIONAL' || rawDecision === 'REJECT')
         ? (rawDecision as 'ACCEPT' | 'CONDITIONAL' | 'REJECT')
         : undefined;
+
+      // ── Phase 8.3: Denormalize top-level extracted fields onto the order ─────
+      // Pulls key identity fields from the consolidated extraction with source refs.
+      const extractedSummary = this.buildExtractedSummary(rawResults);
+
+      // ── Phase 8.7: Write extracted data back to the source document ─────
+      // This makes the data available to the canonical snapshot layer, report
+      // generation, and any other consumer that reads documents.extractedData.
+      const consolidateStage = (() => {
+        const inner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
+        return Array.isArray(inner['consolidate']) ? (inner['consolidate'] as any[])[0] : null;
+      })();
+      if (consolidateStage?.consolidatedData && meta.documentId) {
+        try {
+          const docResp = await this.dbService.getItem<any>('documents', meta.documentId as string);
+          if (docResp?.data) {
+            const updatedDoc = {
+              ...docResp.data,
+              extractedData: consolidateStage.consolidatedData,
+              extractedDataSource: 'axiom',
+              extractedDataAt: new Date().toISOString(),
+              extractedDataPipelineJobId: pipelineJobId,
+            };
+            await this.dbService.updateItem('documents', meta.documentId as string, updatedDoc);
+            this.logger.info('Wrote extracted data back to document', {
+              documentId: meta.documentId, fieldCount: Object.keys(consolidateStage.consolidatedData).length,
+            });
+
+            // A-13: Refresh the canonical snapshot (created at submit time) so
+            // its normalizedData reflects post-Axiom consolidated extraction
+            // rather than the pre-Axiom document state. Best-effort; a failure
+            // here must not block the evaluation storage flow.
+            try {
+              const runId = (meta as any).runId as string | undefined;
+              const tenantId = (meta as any).tenantId as string | undefined;
+              if (runId && tenantId) {
+                const runResp = await this.dbService.getItem<any>('aiInsights', runId, tenantId);
+                const run = runResp?.data;
+                if (run && run.type === 'run-ledger-record' && run.runType === 'extraction') {
+                  const { CanonicalSnapshotService } = await import('./canonical-snapshot.service.js');
+                  const snapshotService = new CanonicalSnapshotService(this.dbService);
+                  await snapshotService.refreshFromExtractionRun(run);
+                }
+              }
+            } catch (refreshErr) {
+              this.logger.warn('A-13: canonical snapshot refresh failed — non-fatal', {
+                documentId: meta.documentId,
+                error: refreshErr instanceof Error ? refreshErr.message : String(refreshErr),
+              });
+            }
+          }
+        } catch (err) {
+          this.logger.warn('Failed to write extracted data back to document', {
+            documentId: meta.documentId, error: (err as Error).message,
+          });
+        }
+      }
+
       await this.dbService.updateOrder(orderId, {
         axiomRiskScore: mapped.overallRiskScore,
+        axiomStatus: 'completed',
+        axiomEvaluationId: evalId,
+        axiomPipelineJobId: pipelineJobId,
+        axiomLastUpdatedAt: new Date().toISOString(),
         ...(axiomDecision ? { axiomDecision } : {}),
-      }).catch((err: Error) =>
+        ...(extractedSummary ? { axiomExtractedSummary: extractedSummary } : {}),
+      } as any).catch((err: Error) =>
         this.logger.warn('fetchAndStorePipelineResults: could not stamp score/decision on order', {
           orderId, error: err.message,
         }),
       );
+
+      // ── Phase 8.2a: Publish qc.issue.detected for each failed/warning criterion ─────
+      for (const criterion of mapped.criteria) {
+        if (criterion.evaluation === 'fail' || criterion.evaluation === 'warning') {
+          try {
+            await this.publisher.publish({
+              id: uuidv4(),
+              type: 'qc.issue.detected',
+              timestamp: new Date(),
+              source: 'axiom-service',
+              version: '1.0',
+              category: EventCategory.QC,
+              data: {
+                orderId,
+                tenantId: (enriched as any).tenantId,
+                criterionId: criterion.criterionId,
+                issueSummary: criterion.criterionName,
+                issueType: 'criterion-fail',
+                severity: criterion.evaluation === 'fail' ? 'CRITICAL' : 'MAJOR',
+                confidence: criterion.confidence,
+                reasoning: criterion.reasoning,
+                remediation: criterion.remediation,
+                documentReferences: criterion.documentReferences,
+                evaluationId: evalId,
+                pipelineJobId,
+                priority: criterion.evaluation === 'fail' ? EventPriority.HIGH : EventPriority.NORMAL,
+              },
+            } as any);
+          } catch (err) {
+            this.logger.warn('Failed to publish qc.issue.detected', {
+              orderId, criterionId: criterion.criterionId, error: (err as Error).message,
+            });
+          }
+        }
+      }
+
+      // ── Publish axiom.evaluation.completed so the audit trail and dashboard see it ─────
+      try {
+        const passCount = mapped.criteria.filter(c => c.evaluation === 'pass').length;
+        const failCount = mapped.criteria.filter(c => c.evaluation === 'fail').length;
+        const warnCount = mapped.criteria.filter(c => c.evaluation === 'warning').length;
+        const fieldsExtracted = extractedSummary ? Object.keys(extractedSummary).length : 0;
+        await this.publisher.publish({
+          id: uuidv4(),
+          type: 'axiom.evaluation.completed',
+          timestamp: new Date(),
+          source: 'axiom-service',
+          version: '1.0',
+          category: EventCategory.AXIOM,
+          data: {
+            orderId,
+            tenantId: (enriched as any).tenantId,
+            evaluationId: evalId,
+            pipelineJobId,
+            pipelineName: (pending.pipelineId as string) ?? 'adaptive-document-processing',
+            status: failCount > 0 ? 'failed' : 'passed',
+            score: mapped.overallRiskScore,
+            criteriaCount: mapped.criteria.length,
+            passCount,
+            failCount,
+            warnCount,
+            fieldsExtracted,
+            decision: axiomDecision,
+            priority: EventPriority.NORMAL,
+          },
+        } as any);
+      } catch (err) {
+        this.logger.warn('Failed to publish axiom.evaluation.completed', {
+          orderId, evalId, error: (err as Error).message,
+        });
+      }
+
       await this.broadcastAxiomStatus(orderId, evalId, 'completed', mapped.overallRiskScore);
     } else {
       // Axiom results not available (pipeline completed-partial, still running, or transient error).
@@ -3346,9 +3644,9 @@ export class AxiomService {
 
     const results: AxiomEvaluationResult[] = [];
 
-    // Source 1: Evaluation records (excludes run-ledger-entry docs to avoid duplicates)
+    // Source 1: Evaluation records (excludes run-ledger-entry and qc-issue docs to avoid duplicates)
     try {
-      const query = `SELECT TOP 50 * FROM c WHERE c.tenantId = @tenantId AND c.orderId = @orderId AND (NOT IS_DEFINED(c.type) OR c.type != 'run-ledger-entry') ORDER BY c.timestamp DESC`;
+      const query = `SELECT TOP 50 * FROM c WHERE c.tenantId = @tenantId AND c.orderId = @orderId AND (NOT IS_DEFINED(c.type) OR (c.type != 'run-ledger-entry' AND c.type != 'qc-issue')) ORDER BY c.timestamp DESC`;
       const params = [{ name: '@orderId', value: orderId }, { name: '@tenantId', value: tenantId }];
       const response = await this.dbService.queryItems<AxiomEvaluationResult>(
         this.containerName,

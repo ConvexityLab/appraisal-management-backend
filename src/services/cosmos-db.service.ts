@@ -1367,6 +1367,52 @@ export class CosmosDbService {
     }
   }
 
+  /**
+   * Full-text vendor search (A5 — backend-side).
+   *
+   * Uses Cosmos `CONTAINS(field, q, true)` for case-insensitive
+   * substring matching across business name, primary contact, email,
+   * and phone.  Runs inside Cosmos so the frontend doesn't have to
+   * pull every vendor just to filter.  The `q` parameter is
+   * parameterised to avoid injection; callers should still trim and
+   * length-cap input at the controller.
+   */
+  async searchVendors(q: string, limit: number = 50): Promise<ApiResponse<Vendor[]>> {
+    try {
+      if (!this.vendorsContainer) {
+        throw new Error('Vendors container not initialized');
+      }
+      const safeLimit = Math.min(Math.max(limit, 1), 200);
+      const querySpec = {
+        query: `SELECT TOP ${safeLimit} * FROM c
+          WHERE (NOT IS_DEFINED(c.type) OR c.type != 'appraiser')
+          AND (
+            CONTAINS(c.businessName, @q, true)
+            OR CONTAINS(c.name, @q, true)
+            OR CONTAINS(c.primaryContactName, @q, true)
+            OR CONTAINS(c.email, @q, true)
+            OR CONTAINS(c.phone, @q, true)
+          )
+          ORDER BY c.onboardingDate DESC`,
+        parameters: [{ name: '@q', value: q }],
+      };
+
+      const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();
+
+      return {
+        success: true,
+        data: resources,
+      };
+    } catch (error) {
+      this.logger.error('Failed to search vendors', { error, q });
+      return {
+        success: false,
+        data: [],
+        error: createApiError('SEARCH_VENDORS_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
   async updateVendor(id: string, updates: Partial<Vendor>): Promise<ApiResponse<Vendor>> {
     try {
       if (!this.vendorsContainer) {

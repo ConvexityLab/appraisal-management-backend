@@ -723,6 +723,49 @@ Analyze the provided appraisal report and return findings in JSON format with sp
     };
   }
 
+  /**
+   * Phase 8 / A4 — Streaming variant of generateCompletion.
+   *
+   * Returns an async iterable of content chunks as they arrive.  Only
+   * `azure-openai` supports real token-level streaming today (via the
+   * SDK's `streamChatCompletions`).  Other providers fall back to
+   * one-chunk emission so the caller's SSE wire protocol stays
+   * uniform.
+   */
+  async *generateCompletionStream(request: AIRequest): AsyncGenerator<string, void, unknown> {
+    const provider = await this.selectProvider(request.provider, 'text-generation');
+
+    if (provider === 'azure-openai') {
+      const config = this.providers.get('azure-openai')!;
+      const deploymentId: string = request.model ?? config.models.text[0] ?? 'gpt-4o-mini';
+      const client = this.getAzureOpenAIClient();
+      // The Azure SDK's streamChatCompletions yields ChatCompletions
+      // objects whose `choices[0].delta.content` holds the new tokens.
+      const events = await (client as unknown as {
+        streamChatCompletions: (
+          dep: string,
+          msgs: unknown,
+          opts: Record<string, unknown>,
+        ) => AsyncIterable<{ choices?: Array<{ delta?: { content?: string } }> }>;
+      }).streamChatCompletions(deploymentId, request.messages as any, {
+        temperature: request.temperature ?? 0.7,
+        maxTokens: request.maxTokens ?? 2000,
+        topP: 0.95,
+      });
+      for await (const event of events) {
+        const chunk = event?.choices?.[0]?.delta?.content;
+        if (typeof chunk === 'string' && chunk.length > 0) {
+          yield chunk;
+        }
+      }
+      return;
+    }
+
+    // Fallback: non-streaming providers emit the full response as one chunk.
+    const full = await this.generateCompletion(request);
+    if (full?.content) yield full.content;
+  }
+
   private async generateWithGemini(request: AIRequest): Promise<AIResponse> {
     const config = this.providers.get('google-gemini')!;
     const model = request.model || config.models.text[0];

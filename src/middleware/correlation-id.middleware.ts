@@ -15,6 +15,13 @@ declare global {
   var asyncLocalStorage: AsyncLocalStorage<Map<string, string>> | undefined;
 }
 
+// O-02: Initialise the ALS at module load so it's available for every request.
+// Services (e.g. ServiceBusEventPublisher) read correlationId from this store
+// when the caller did not set it explicitly on the event.
+if (!global.asyncLocalStorage) {
+  global.asyncLocalStorage = new AsyncLocalStorage<Map<string, string>>();
+}
+
 export interface CorrelationRequest extends Request {
   correlationId?: string;
 }

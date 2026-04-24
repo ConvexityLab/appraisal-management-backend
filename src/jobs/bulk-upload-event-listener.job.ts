@@ -25,6 +25,7 @@
 
 import { QueueClient, QueueReceiveMessageResponse } from '@azure/storage-queue';
 import { DefaultAzureCredential } from '@azure/identity';
+import ExcelJS from 'exceljs';
 import { Logger } from '../utils/logger.js';
 import { BlobStorageService } from '../services/blob-storage.service.js';
 import { BulkIngestionService } from '../services/bulk-ingestion.service.js';
@@ -280,9 +281,11 @@ export class BulkUploadEventListenerJob {
       (name) => name !== parsed.blobName && !this.isDataFile(name),
     );
 
-    // Download and parse the CSV data file
-    const rawCsv = await this.downloadBlobAsText(BULK_UPLOAD_CONTAINER, parsed.blobName);
-    const items = this.parseCsvItems(rawCsv, documentBlobNames);
+    // Download data file and parse based on extension
+    const dataBuffer = await this.blobStorage.downloadBlobAsBuffer(BULK_UPLOAD_CONTAINER, parsed.blobName);
+    const items = parsed.fileName.toLowerCase().endsWith('.xlsx')
+      ? await this.parseXlsxItems(dataBuffer, documentBlobNames)
+      : this.parseCsvItems(dataBuffer.toString('utf8'), documentBlobNames);
 
     if (items.length === 0) {
       throw new Error(
@@ -383,24 +386,7 @@ export class BulkUploadEventListenerJob {
   }
 
   // ── Blob download ───────────────────────────────────────────────────────────
-
-  private async downloadBlobAsText(containerName: string, blobName: string): Promise<string> {
-    const containerClient = (this.blobStorage as any).client
-      ?.getContainerClient(containerName);
-
-    if (!containerClient) {
-      throw new Error('BlobStorageService client not initialised');
-    }
-
-    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-    const download = await blockBlobClient.download(0);
-
-    const chunks: Buffer[] = [];
-    for await (const chunk of download.readableStreamBody as AsyncIterable<Buffer>) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks).toString('utf8');
-  }
+  // (Removed private downloadBlobAsText — replaced by this.blobStorage.downloadBlobAsBuffer())
 
   // ── CSV parsing ─────────────────────────────────────────────────────────────
 
@@ -457,10 +443,108 @@ export class BulkUploadEventListenerJob {
 
       const item: BulkIngestionItemInput = {
         rowIndex,
+        rawColumns: { ...row },
         ...(row['loannumber'] ? { loanNumber: row['loannumber'] } : {}),
         ...(row['propertyaddress'] ? { propertyAddress: row['propertyaddress'] } : {}),
         ...(resolvedDocFile ? { documentFileName: resolvedDocFile } : {}),
         ...(row['externalid'] ? { externalId: row['externalid'] } : {}),
+        // Structured address fields
+        ...(row['city'] ? { city: row['city'] } : {}),
+        ...(row['state'] ? { state: row['state'] } : {}),
+        ...(row['zipcode'] ?? row['zip'] ? { zipCode: row['zipcode'] ?? row['zip'] } : {}),
+        ...(row['county'] ? { county: row['county'] } : {}),
+        ...(row['propertytype'] ? { propertyType: row['propertytype'] } : {}),
+        // Borrower fields
+        ...(row['borrowername'] ? { borrowerName: row['borrowername'] } : {}),
+        ...(row['borroweremail'] ? { borrowerEmail: row['borroweremail'] } : {}),
+        ...(row['borrowerphone'] ? { borrowerPhone: row['borrowerphone'] } : {}),
+        // Loan fields
+        ...(row['loanamount'] ? { loanAmount: parseFloat(row['loanamount']!) } : {}),
+        ...(row['loantype'] ? { loanType: row['loantype'] } : {}),
+        ...(row['loanpurpose'] ?? row['purpose'] ? { loanPurpose: row['loanpurpose'] ?? row['purpose'] } : {}),
+        ...(row['occupancytype'] ?? row['occupancy'] ? { occupancyType: row['occupancytype'] ?? row['occupancy'] } : {}),
+        ...(row['documenturl'] ? { documentUrl: row['documenturl'] } : {}),
+      };
+
+      items.push(item);
+    }
+
+    return items;
+  }
+
+  // ── XLSX parsing ────────────────────────────────────────────────────────────
+
+  /**
+   * Parses an XLSX buffer into BulkIngestionItemInput[] using ExcelJS.
+   * Uses the same header normalization and field mapping as parseCsvItems.
+   */
+  private async parseXlsxItems(
+    buffer: Buffer,
+    availableDocumentBlobNames: string[],
+  ): Promise<BulkIngestionItemInput[]> {
+    const workbook = new ExcelJS.Workbook();
+    const workbookBuffer = buffer as unknown as Parameters<typeof workbook.xlsx.load>[0];
+    await workbook.xlsx.load(workbookBuffer);
+
+    const sheet = workbook.worksheets[0];
+    if (!sheet) {
+      throw new Error('XLSX file contains no worksheets');
+    }
+
+    const rows = sheet.getSheetValues() as (string | number | null)[][];
+    // getSheetValues() returns 1-indexed array with null at index 0
+    const dataRows = rows.filter(Boolean) as (string | number | null)[][];
+    if (dataRows.length < 2) {
+      return [];
+    }
+
+    const headerRow = dataRows[0]!;
+    const headers = headerRow
+      .slice(1) // ExcelJS row values are 1-indexed (index 0 is undefined)
+      .map((h) => this.normalizeHeader(String(h ?? '')));
+
+    const docBlobBasenames = new Map(
+      availableDocumentBlobNames.map((b) => [
+        (b.split('/').pop() ?? b).toLowerCase(),
+        b.split('/').pop() ?? b,
+      ]),
+    );
+
+    const items: BulkIngestionItemInput[] = [];
+
+    for (let rowIdx = 1; rowIdx < dataRows.length; rowIdx++) {
+      const rowValues = dataRows[rowIdx]!.slice(1);
+      const row: Record<string, string> = {};
+      for (let ci = 0; ci < headers.length; ci++) {
+        const key = headers[ci];
+        if (key) row[key] = String(rowValues[ci] ?? '').trim();
+      }
+
+      const rawDocFile = row['documentfilename'] ?? row['documentfile'] ?? '';
+      const resolvedDocFile = rawDocFile
+        ? (docBlobBasenames.get(rawDocFile.toLowerCase()) ?? rawDocFile)
+        : undefined;
+
+      const item: BulkIngestionItemInput = {
+        rowIndex: rowIdx,
+        rawColumns: { ...row },
+        ...(row['loannumber'] ? { loanNumber: row['loannumber'] } : {}),
+        ...(row['propertyaddress'] ? { propertyAddress: row['propertyaddress'] } : {}),
+        ...(resolvedDocFile ? { documentFileName: resolvedDocFile } : {}),
+        ...(row['externalid'] ? { externalId: row['externalid'] } : {}),
+        ...(row['city'] ? { city: row['city'] } : {}),
+        ...(row['state'] ? { state: row['state'] } : {}),
+        ...(row['zipcode'] ?? row['zip'] ? { zipCode: row['zipcode'] ?? row['zip'] } : {}),
+        ...(row['county'] ? { county: row['county'] } : {}),
+        ...(row['propertytype'] ? { propertyType: row['propertytype'] } : {}),
+        ...(row['borrowername'] ? { borrowerName: row['borrowername'] } : {}),
+        ...(row['borroweremail'] ? { borrowerEmail: row['borroweremail'] } : {}),
+        ...(row['borrowerphone'] ? { borrowerPhone: row['borrowerphone'] } : {}),
+        ...(row['loanamount'] ? { loanAmount: parseFloat(row['loanamount']!) } : {}),
+        ...(row['loantype'] ? { loanType: row['loantype'] } : {}),
+        ...(row['loanpurpose'] ?? row['purpose'] ? { loanPurpose: row['loanpurpose'] ?? row['purpose'] } : {}),
+        ...(row['occupancytype'] ?? row['occupancy'] ? { occupancyType: row['occupancytype'] ?? row['occupancy'] } : {}),
+        ...(row['documenturl'] ? { documentUrl: row['documenturl'] } : {}),
       };
 
       items.push(item);

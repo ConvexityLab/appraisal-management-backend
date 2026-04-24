@@ -80,6 +80,67 @@ export class CanonicalSnapshotService {
     return snapshot;
   }
 
+  /**
+   * A-13: Refresh a canonical snapshot after Axiom has completed and written
+   * consolidated data back to `documents.extractedData`. Rebuilds `normalizedData`
+   * from the current document + latest enrichment so downstream reports read
+   * post-Axiom data, not the submit-time extraction snapshot.
+   *
+   * Idempotent: locating the snapshot first; silently no-op if it was deleted.
+   */
+  async refreshFromExtractionRun(extractionRun: RunLedgerRecord): Promise<CanonicalSnapshotRecord | null> {
+    if (extractionRun.runType !== 'extraction') {
+      this.logger.warn('refreshFromExtractionRun: non-extraction run — skipping', {
+        runId: extractionRun.id,
+        runType: extractionRun.runType,
+      });
+      return null;
+    }
+    if (!extractionRun.canonicalSnapshotId) {
+      this.logger.info('refreshFromExtractionRun: no snapshot linked to run — nothing to refresh', {
+        runId: extractionRun.id,
+      });
+      return null;
+    }
+
+    const existing = await this.getSnapshotById(extractionRun.canonicalSnapshotId, extractionRun.tenantId);
+    if (!existing) {
+      this.logger.warn('refreshFromExtractionRun: snapshot not found — skipping', {
+        runId: extractionRun.id,
+        snapshotId: extractionRun.canonicalSnapshotId,
+      });
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const sourceArtifacts = await this.loadSourceArtifacts(extractionRun);
+    const normalizedData = this.buildNormalizedData(extractionRun, sourceArtifacts);
+
+    const refreshed: CanonicalSnapshotRecord = {
+      ...existing,
+      status: 'ready',
+      ...(normalizedData ? { normalizedData } : {}),
+      refreshedAt: now,
+    } as CanonicalSnapshotRecord;
+
+    const saveResult = await this.dbService.upsertItem<CanonicalSnapshotRecord>(this.runContainerName, refreshed);
+    if (!saveResult.success) {
+      this.logger.error('refreshFromExtractionRun: upsert failed — non-fatal', {
+        snapshotId: existing.id,
+        error: saveResult.error?.message,
+      });
+      return null;
+    }
+
+    this.logger.info('Canonical snapshot refreshed post-Axiom', {
+      snapshotId: existing.id,
+      runId: extractionRun.id,
+      hasExtraction: Boolean(sourceArtifacts.extractionData),
+      hasEnrichment: Boolean(sourceArtifacts.enrichment),
+    });
+    return refreshed;
+  }
+
   async getSnapshotById(snapshotId: string, tenantId: string): Promise<CanonicalSnapshotRecord | null> {
     const query = `
       SELECT TOP 1 * FROM c

@@ -4,6 +4,9 @@ import { DatabaseService } from './database.service.js';
 import { VendorManagementService } from './vendor-management.service.js';
 import { NotificationService } from './notification.service.js';
 import { AuditService } from './audit.service.js';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 
 // Simple event emitter implementation
@@ -41,6 +44,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   private vendorService: VendorManagementService;
   private notificationService: NotificationService;
   private auditService: AuditService;
+  private publisher: ServiceBusEventPublisher;
   private logger: Logger;
   // private workflowAgent: WorkflowAgent;
   // private routingAgent: RoutingAgent;
@@ -57,11 +61,29 @@ export class OrderManagementService extends SimpleEventEmitter {
     this.vendorService = vendorService;
     this.notificationService = notificationService;
     this.auditService = auditService;
+    this.publisher = new ServiceBusEventPublisher();
     this.logger = logger;
+  }
 
-    // Initialize Perligo agents
-    // this.workflowAgent = new WorkflowAgent({ /* config */ });
-    // this.routingAgent = new RoutingAgent({ /* config */ });
+  /** Best-effort event publishing — never throws */
+  private async publishToBus(
+    type: string,
+    category: EventCategory,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.publisher.publish({
+        id: uuidv4(),
+        type,
+        timestamp: new Date(),
+        source: 'order-management-service',
+        version: '1.0',
+        category,
+        data: { priority: EventPriority.NORMAL, ...data },
+      } as any);
+    } catch (err) {
+      this.logger.warn(`Failed to publish ${type} to Service Bus`, { error: (err as Error).message });
+    }
   }
 
   /**
@@ -95,8 +117,21 @@ export class OrderManagementService extends SimpleEventEmitter {
         details: { orderNumber: order.orderNumber, clientId: order.clientId }
       });
 
-      // Emit event for order created
+      // Emit event for order created (legacy in-memory emitter)
       this.emit('orderCreated', order);
+
+      // Publish to Service Bus so downstream services (audit sink, assignment, etc.) see it
+      await this.publishToBus('order.created', EventCategory.ORDER, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        tenantId: order.tenantId,
+        clientId: order.clientId,
+        productType: order.productType,
+        propertyAddress: order.propertyAddress
+          ? `${(order.propertyAddress as any).streetAddress ?? ''}, ${(order.propertyAddress as any).city ?? ''} ${(order.propertyAddress as any).state ?? ''}`.trim()
+          : undefined,
+        createdBy: order.createdBy,
+      });
 
       // Trigger workflow automation with Perligo
       await this.triggerOrderWorkflow(order);
@@ -241,8 +276,20 @@ export class OrderManagementService extends SimpleEventEmitter {
         details: { changes: updateData }
       });
 
-      // Emit event for order updated
+      // Emit event for order updated (legacy in-memory emitter)
       this.emit('orderUpdated', { previous: existingOrder, current: updatedOrder });
+
+      // Publish order.status.changed to Service Bus when status actually changed
+      if (existingOrder.status !== updatedOrder.status) {
+        await this.publishToBus('order.status.changed', EventCategory.ORDER, {
+          orderId: updatedOrder.id,
+          orderNumber: updatedOrder.orderNumber,
+          tenantId: updatedOrder.tenantId,
+          oldStatus: existingOrder.status,
+          newStatus: updatedOrder.status,
+          updatedBy: userId,
+        });
+      }
 
       // Handle status-specific logic
       await this.handleStatusChange(existingOrder, updatedOrder);

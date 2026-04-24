@@ -128,7 +128,16 @@ export class VendorController {
    */
   private async getVendors(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const result = await this.dbService.findAllVendors();
+      // Phase 8 / A5: optional full-text search via ?q=X.  When the
+      // query param is present and non-trivial, route through the
+      // Cosmos CONTAINS-based searchVendors path; otherwise keep the
+      // original findAllVendors behaviour so existing callers are
+      // unaffected.
+      const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const result =
+        rawQ.length > 0
+          ? await this.dbService.searchVendors(rawQ.slice(0, 100))
+          : await this.dbService.findAllVendors();
 
       if (result.success && result.data) {
         const vendorProfiles = result.data.map(v => this.transformVendorToProfile(v));

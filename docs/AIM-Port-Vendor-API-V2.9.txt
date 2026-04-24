@@ -1,0 +1,2932 @@
+AIM-Port Technology Vendor API 
+Version 2.9 
+
+Email: support@aim-port.com 
+      Phone: 888-538-2130 
+
+Atlas GPS LLC / AIM-Port 
+80 SW 8th St 
+Suite 2185 
+Miami, FL 33130 
+
+                                                                                                                                2026 © Atlas GPS LLC 
+
+ 
+ 
+      
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 2 
+
+Disclaimer 
+
+The information contained in this document is for informational purposes only. Atlas GPS LLC makes no 
+warranties, express, implied or statutory, including the implied warranties of merchantability, and 
+fitness for a particular purpose as to the information in this document or any of the services or systems 
+described in the document.  
+
+Due to ever-changing market conditions, this information should not be interpreted to be a 
+commitment on the part of Atlas GPS LLC with respect to the technical specifications reports, or to the 
+services or systems described, and Atlas GPS LLC cannot guarantee the accuracy of any information 
+presented after the publication date. This document may be revised from time to time without notice. 
+
+Complying with all applicable copyright laws is the responsibility of the user. Without limiting the rights 
+under copyright, no part of this document may be reproduced, stored in or introduced into a retrieval 
+system, or transmitted in any form or by any means (electronic, mechanical, photocopying, recording, or 
+otherwise), or for any purpose, without the express written permission of Atlas GPS LLC. 
+
+Atlas GPS LLC may have patents, patent applications, trademarks, copyrights, or other intellectual 
+property rights covering subject matter in this document. Except as expressly provided in any written 
+license agreement from Atlas GPS LLC, the furnishing of this document does not give you any license to 
+these patents, trademarks, copyrights, or other intellectual property (including trade secrets). 
+
+The names of actual companies and products mentioned herein may be the trademarks of their 
+respective owners. 
+
+Introduction 
+
+The purpose of this document is to provide the technical details for integrating your platform with the 
+AIM-Port platform to receive orders, and to send and receive updates, message and/or documents. 
+
+This API is available through secure ports established for the purpose of enabling communication 
+between mortgage originators and valuation vendors over the internet. Each vendor will have their own 
+account/credentials to access the API. 
+
+This API is established to be a two-way talking mechanism between the AIM-Port platform 
+(client/lender) and a vendor’s system. Client/Lender systems have the ability to send new orders, files, 
+and messages. The vendor has the ability to send order updates, files, messages and update the status. 
+In this way, all communications to and from the client system can be made through the API, alleviating 
+the need to use the AIM-Port web portal for individual updates, messages, and/or file upload. 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 3 
+
+Technical Overview 
+
+API communications are in the form of JSON made over HTTPS POST. The POST body will contain the 
+JSON for the appropriate action. The structure of the JSON will vary by operation and will be described 
+in this document.  
+
+Atlas GPS LLC provides a testing/staging URL for development and testing purposes, and a production 
+URL for live orders. These URLs will vary by client, and will be provided with other access credentials. 
+
+Note: Testing credentials will vary from live credentials to ensure test orders aren’t sent to production 
+and vice versa. Testing/sign-off will be required before being provided with production credentials. The 
+vendor will need to provide Atlas GPS LLC with their endpoint URL, where all updates from the AIM-Port 
+system to the vendor will be sent. 
+
+Access to the API is restricted to port 443. TLS 1.2+ required. All calls are synchronous. 
+
+Updates from the AIM-Port system to the vendor system will be made by posting to the vendor’s 
+endpoint URL. The post will continue to be made every 15 minutes until proper acknowledgement is 
+received, for a maximum of 2 hours (subject to change). 
+
+Please Note – Every lender that utilizes our system has their own endpoint URL, so it would be best to 
+setup the integration such that the URL you will post to will be set on a lender-by-lender basis. 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 4 
+
+Table of Contents 
+Disclaimer ..................................................................................................................................................... 2 
+
+Introduction .................................................................................................................................................. 2 
+
+Technical Overview ...................................................................................................................................... 3 
+
+Table of Contents ......................................................................................................................................... 4 
+
+New Order to Vendor ................................................................................................................................... 6 
+
+Retrieve order details................................................................................................................................... 8 
+
+Sending/Receiving a Message – Bi-Directional ........................................................................................... 8 
+
+Send Files – Client to Vendor ....................................................................................................................... 9 
+
+Update Loan Number – Client to Vendor .................................................................................................. 10 
+
+Update FHA Case Number – Client to Vendor ........................................................................................... 10 
+
+Revision Request – Client to Vendor ......................................................................................................... 11 
+
+Get Client Product List ................................................................................................................................ 12 
+
+Order Assigned to Vendor – Vendor (AMC) to Client ............................................................................... 13 
+
+Order Accepted by Vendor – Vendor (AMC) to Client .............................................................................. 13 
+
+Order Hold – Bi-Directional ........................................................................................................................ 14 
+
+Order Resume – Bi-Directional .................................................................................................................. 15 
+
+Order Cancelled – Bi-Directional ............................................................................................................... 15 
+
+Order Scheduled – Vendor to Client .......................................................................................................... 16 
+
+Order Inspection – Vendor to Client .......................................................................................................... 17 
+
+Order Due Date Change – Vendor to Client .............................................................................................. 17 
+
+Order Fee Change – Vendor to Client ........................................................................................................ 18 
+
+Order Paid – Vendor to Client .................................................................................................................... 18 
+
+Order Documents Upload (Order Remains in Progress) – Vendor to Client ............................................ 19 
+
+Order Report Upload – Vendor to Client ................................................................................................... 20 
+
+Order Updates – Vendor to Client (Deprecated)....................................................................................... 21 
+
+Data Validation ........................................................................................................................................... 22 
+
+Data Mapping ............................................................................................................................................. 28 
+
+Property Types ........................................................................................................................................ 28 
+
+Loan Types .............................................................................................................................................. 28 
+
+Occupancy Types .................................................................................................................................... 28 
+
+Intended Uses ......................................................................................................................................... 29 
+
+Property Rights (Commercial) ................................................................................................................. 29 
+
+Intended Users (Commercial) ................................................................................................................. 29 
+
+Loan Purpose (Commercial) .................................................................................................................... 29 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+P a g e  | 5 
+
+Property Access Types ............................................................................................................................ 29 
+
+Order Types ............................................................................................................................................. 30 
+
+Payment Methods ................................................................................................................................... 30 
+
+File Categories ......................................................................................................................................... 30 
+
+Report Types ........................................................................................................................................... 31 
+
+Revision History .......................................................................................................................................... 31 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+P a g e  | 6 
+
+New Order to Vendor 
+
+The following JSON format is what will be seen for all new orders. 
+
+Example New Order JSON 
+
+{ 
+    "OrderRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] " 
+        }, 
+        "order": { 
+            “order_id”: “[AIM-Ports unique order number for this client’s order]”, 
+            “order_type”: “[The type of order **(see enumerations)]”, 
+            "address": "[The primary address (house number and street name) for the Property] ", 
+            "address2": "[Apartment or unit number for the property] ", 
+            "city": "[The city associated with the property]", 
+            "state": "[The state (2 character state abbreviation) associated with the property] ", 
+            "zip_code": "[The 5 digit zip code associated with the property]", 
+            "county": "[The county associated with the property] ", 
+            "loan_number": "[The loan number for the loan transaction]", 
+            "case_number": "[Unique number for specific loan type (FHA etc.)] ", 
+            "purchase_price": "[The price being paid for the property]",  
+            “disclosed_fee”: "[The disclosed fee for the property]",  
+            “loan_amount”: "[The total loan amount for the sale]", 
+            “anticipated_value”: "[The anticipated value of the property]", 
+            "seller_concessions": "[The total seller concessions amount for the transaction] ", 
+            "property_type": "[The type of property **(see enumerations)] ", 
+            "loan_type": "[The type of loan **(see enumerations) (residential orders only)] ", 
+            "occupancy": "[The occupancy type **(see enumerations) (residential orders only)] ", 
+            "intended_use": "[The intended use **(see enumerations) (residential orders only)] ", 
+            “property_rights”: "[The property rights value of the property] **(see enumerations)",  
+            "property_owner": "[The property owner (commercial orders only)]", 
+            "loan_purpose": "[The loan purpose **(see enumerations) (commercial orders only)]", 
+            "intended_users": "[The intended users of the report **(see enumerations) (commercial orders only)]", 
+            "borrower": { 
+                "name": "[The name of the borrower]", 
+                "address": "[The current address of the borrower] ", 
+                "city": "[The current city of the borrower]", 
+                "state": "[The current state of the borrower] ", 
+                "zip_code": "[The current zip code of the borrower]", 
+                "email": "[The borrower’s email address]", 
+                "phone": "[The borrower’s best contact phone number] " 
+            }, 
+            "coborrower": { 
+                "name": "[The name of the borrower]", 
+                "email": "[The borrower’s email address]", 
+                "phone": "[The borrower’s best contact phone number] " 
+            }, 
+            "property_access": { 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+P a g e  | 7 
+
+                "type": "[Contact type for property access **(see enumerations)]", 
+                "name": "[The name of the property access person] ", 
+                "home_phone": "[Home phone of the property access person] ", 
+                "cell_phone": "[Cell phone of the property access person] ", 
+                "work_phone": "[Work phone of the property access person] ", 
+                "email": "[Email of the property access person] ", 
+                "other_description": "[If type is other, description of contact person (i.e. son, friend, maintenance man  
+
+                         etc.] " 
+
+            }, 
+            "notification_emails": { 
+                "emailaddress1@email.com”, 
+                "emailaddress2@email.com” 
+            }, 
+            "reports": [ 
+                { 
+                    "id": [The report type id. Each client will be provided with a spreadsheet with the name  
+
+and ID of each of their respective report types.]  
+
+                } 
+            ], 
+            "payment_method": "[Payment method for the appraisal report **(see enumerations)] ", 
+            "due_date": "[The date the report is due (i.e. 04/22/2025 05:00 PM)] ", 
+            "settlement_date": "[The loan settlement date (i.e. 05/15/2025)]", 
+            "itp_date": "[The loan intent to proceed date (i.e. 05/15/2025)]", 
+            "investor": "[The name of secondary investor, if known when placing order]", 
+            "special_instructions": "[Any special notes about the order being placed] ", 
+            “rush": "[true/false] ", 
+            "client_name ": "[Name of the client placing the order] ", 
+            "client_address ": "[Address of the client placing the order] ", 
+            "client_address2 ": "[Address2 of the client placing the order] ", 
+            "client_city ": "[City of the client placing the order] ", 
+            "client_state ": "[State of the client placing the order] ", 
+            "client_zip ": "[Zip Code of the client placing the order] ", 
+            “branch_name”: “[Name of branch]”, 
+        }, 
+        "files": [ 
+            { 
+                "content": "[Base64 encoded file content] ", 
+                "filename": "[Name of the file, including extension]", 
+                "category": "[The category/type of file (see enumerations)] ", 
+                "description": "[If file category is ‘other’, a description of the file may be provided] " 
+            } 
+        ] 
+    } 
+} 
+
+Notes 
+• 
+• 
+• 
+
+Fields with red descriptions are always required.  
+Case Number is required for FHA loans.  
+Point of contact – Name, one phone number or email is required for property access person if the product 
+being ordered requires an interior inspection. 
+
+•  Multiple Files may be sent, just place another array item in the files section. 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 8 
+
+Example Response 
+
+{ 
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [If success is true, your unique order number/reference number should be provided] , 
+    "message": "[If success is false, an error message should be provided] ", 
+    "fee": [If success is true, a fee for the product(s) requested should be provided]  
+} 
+
+Retrieve order details 
+
+For your convenience, we have a method to retrieve order details at whatever frequency you may 
+choose to do so. You may choose to check an order’s details periodically for changes, or in case of error 
+on your side.  
+
+Note: Utilizing this method is not required. It is expected that order changes should be communicated to 
+you from the lender via order update API event, or via a message. 
+
+Example Retrieve Order JSON 
+
+{ 
+    "GetOrderRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "order_id": “[The AIM-Port order ID to retrieve details for]” 
+        } 
+    } 
+} 
+
+Example Response 
+
+Successful response will be in the same form as the new order JSON post. 
+
+Failed response: 
+{ 
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": “false", 
+    "message": “[Error message]” 
+} 
+
+Sending/Receiving a Message – Bi-Directional 
+
+The following JSON format is what will be seen when client sends a new message to the vendor, or what 
+the client should expect if the vendor sends a message.  
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 9 
+
+The order ID should be the AIM-Port order ID generated when the order was created. 
+
+Example Send Message JSON 
+
+{ 
+    "MessageRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "order_id": “[The order ID to attach the message to]“ 
+        }, 
+        "message": { 
+            "subject": "[The subject of the message]", 
+            "content": "[The content of the message] " 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Send Files – Client to Vendor 
+
+The following JSON format is what the client will send to the vendor when uploading new files.  
+
+Note: All order files available to the vendor will be sent with each order update action. We suggest using 
+the file ID to determine if the file has already been received, or is a new file. 
+
+Example Order Update JSON 
+
+{ 
+    " NewFilesRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        “order": { 
+            “new_files”: { 
+                { 
+                    "file_id": "[Unique file ID]", 
+                    "content": "[Base64 encoded file content] ", 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+                    "filename": "[Name of the file, including extension] , 
+                    "category": "[The category/type of file (see enumerations)] ", 
+                    "description": "[If file category is ‘other’, a description of the file may be provided] " 
+
+P a g e  | 10 
+
+}… 
+
+            } 
+        } 
+    } 
+} 
+
+Example Response 
+
+{ 
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Update Loan Number – Client to Vendor 
+
+The following JSON format is what the client will send to the vendor when there’s an update to the loan 
+number.  
+
+Example Order Update JSON 
+
+{ 
+    "LoanNumUpdateRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        “order": { 
+            “loan_number”: "[The loan number for the loan transaction]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{ 
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Update FHA Case Number – Client to Vendor 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+The following JSON format is what the client will send to the vendor when there’s an update to the loan 
+number.  
+
+P a g e  | 11 
+
+Example Order Update JSON 
+
+{ 
+    "FHANumUpdateRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "case_number": "[The loan number for the loan transaction]"       
+        } 
+    } 
+} 
+
+Example Response 
+
+{ 
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Revision Request – Client to Vendor 
+
+The following JSON format is what will be seen when client sends a new revision request to the vendor.  
+
+The order ID should be the AIM-Port order ID generated when the order was created. 
+
+Example Send Message JSON 
+
+{ 
+    "RevisionRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "order_id": “[The order ID to attach the message to]“ 
+        }, 
+        "message": { 
+            "subject": "[The subject of the message]", 
+            "content": "[The content of the message] " 
+        } 
+    } 
+} 
+
+Example Response 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 12 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Get Client Product List 
+
+AIM-Port does offer an event to get a client’s product list (we are happy to provide this in an Excel 
+spreadsheet as well). The following JSON is what the vendor will send to the client to get the current list 
+of their active products.  
+
+Example Client Product List JSON 
+
+{ 
+    "ProductListRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "501102", 
+    "success": "true", 
+    "products": [ 
+        { 
+            "product_id": 49079, 
+            "product_name": "1004 Single-family Appraisal", 
+            "form_type": "1004/70", 
+            "order_type": "residential" 
+        }, 
+        { 
+            "product_id": 49032, 
+            "product_name": "Single-family Investment (1004 and 1007)", 
+            "form_type": "1004/70", 
+            "order_type": "residential" 
+        }, 
+        { 
+            "product_id": 49146, 
+            "product_name": "Condo Appraisal (1073)", 
+            "form_type": "1073/465", 
+            "order_type": "residential" 
+        }, 
+
+        { 
+            "product_id": 49098, 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+         
+P a g e  | 13 
+
+            "product_name": "Multi-family Appraisal (1025)", 
+            "form_type": "1025/72", 
+            "order_type": "residential" 
+        }, 
+        { 
+            "product_id": 48899, 
+            "product_name": "Appraisal Update/Recertification (1004D)", 
+            "form_type": "1004D/442", 
+            "order_type": "residential" 
+        }, 
+        { 
+            "product_id": 48900, 
+            "product_name": "Appraisal Update/Inspection of Repairs (1004D)", 
+            "form_type": "1004D/442", 
+            "order_type": "residential" 
+        } 
+    ] 
+} 
+
+Order Assigned to Vendor – Vendor (AMC) to Client 
+
+The following JSON is what the vendor will send to the client when they have assigned their order to a 
+vendor asking them to complete the assignment. Note – this action is for assigning – there is a different 
+event to use when a vendor has accepted the assignment. 
+
+Example Assigned to Vendor JSON 
+
+{ 
+    "OrderAssignedRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Accepted by Vendor – Vendor (AMC) to Client 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+The following JSON is what the vendor will send to the client when they have an assigned vendor that 
+has accepted the terms to complete the assignment. Note – the accepting vendor’s information is not 
+passed on to loan producing staff, but may be used for data tracking purposes and scrubbing against 
+client or investor “Do Not Use” lists. 
+
+P a g e  | 14 
+
+Example Accepted by Vendor JSON 
+
+{ 
+    "OrderAcceptedRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "vendor_first_name": "[The first name of the vendor]", 
+            "vendor_last_name": "[The last name of the vendor]", 
+            "vendor_license_number": "[The license number of the vendor]", 
+            "vendor_license_expiration": "[The expiration of the vendor (mm/yyyy)]", 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Hold – Bi-Directional 
+
+The following JSON is what the vendor will send to the client when they place the order on hold in their 
+system.  
+
+Example Order Update JSON 
+
+{ 
+    "OrderHoldRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "hold_message ": "[Optional message]" 
+        } 
+    } 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 15 
+
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Resume – Bi-Directional 
+
+The following JSON is what the vendor will send to the client when they remove the order from hold in 
+their system.  
+
+Example Order Update JSON 
+
+{ 
+    "OrderResumeRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "resume_message ": "[Optional message]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Cancelled – Bi-Directional 
+
+The following JSON is what the vendor will send to the client when they mark an order as cancelled in 
+their system.  
+
+Example Order Update JSON 
+
+{ 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 16 
+
+    "OrderCancelledRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "cancellation_message ": "[Required cancellation message]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Scheduled – Vendor to Client 
+
+The following JSON is what the vendor will send to the client when they have a scheduled inspection 
+date entered in their system. 
+
+Example Order Update JSON 
+
+{ 
+    "OrderScheduledRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "inspection_date ": "[The scheduled date (i.e. 04/22/2025 05:00 PM)]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 17 
+
+Order Inspection – Vendor to Client 
+
+The following JSON is what the vendor will send to the client when they are able to confirm the 
+inspection has taken place. 
+
+Example Order Update JSON 
+
+{ 
+    "OrderInspectedRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "inspection_date ": "[The date the inspection was completed (i.e. 04/22/2025 05:00 PM)]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Due Date Change – Vendor to Client 
+
+The following JSON is what the vendor will send to the client when they update the client due date in 
+their system.  
+
+Example Order Update JSON 
+
+{ 
+    "OrderDueDateRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "due_date ": "[The client due date (i.e. 04/22/2025 05:00 PM)]" 
+        } 
+    } 
+} 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 18 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Fee Change – Vendor to Client 
+
+The following JSON is what the vendor will send to the client when they update the order fee in their 
+system.  
+
+Example Order Update JSON 
+
+{ 
+    "OrderFeeChangeRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "fee ": "[The client fee (i.e. 500.00)]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Paid – Vendor to Client 
+
+The following JSON is what the vendor will send to the client when they have received a borrower 
+payment system.  
+
+Example Order Update JSON 
+
+{ 
+    "OrderPaidRequest": { 
+        "login": { 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 19 
+
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "order": { 
+            "paid_amount ": "[The amount received (i.e. 500.00)]" 
+        } 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Documents Upload (Order Remains in Progress) – Vendor to 
+Client 
+
+The following JSON is what the vendor will send to the client when if they need to deliver documents to 
+the client without indicating that the report is complete. 
+
+Example Order Update JSON 
+
+{ 
+    "DocsNoCompletionRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "files": [ 
+            { 
+                "file_id": "[Unique File ID] ", 
+                "content": "[Base64 encoded file content] ", 
+                "filename": "[Name of the file, including extension] ", 
+                "category": "[The category/type of file (see mapping)] ", 
+
+“category_label”: "[The category name/label of the file category] ", 
+
+                "description": "[If file category is ‘other’, a description of the file may be provided]" 
+            } 
+        ] 
+    } 
+} 
+
+Example Response 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 20 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Order Report Upload – Vendor to Client 
+
+The following JSON is what the vendor will send to the client when they are ready to deliver the report 
+and supporting documents to the client. Note – when files are provided, AIM-Port will infer that the 
+vendor is providing a completed product for the Client to receive and review. 
+
+Note: For UAD 2.6 – you only need to send the UAD/XML with embedded PDF if the order product is for 
+a UAD/XML form. You do not need to send the PDF separately. For UAD 3.6 – you only need to send the 
+Zip file – you do not need to send the inner contents (XML, PDF, etc.) separately. 
+
+Example Order Update JSON 
+
+{ 
+    "OrderFilesRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The vendor order ID to attach the update to]" 
+        }, 
+        "files": [ 
+            { 
+                "file_id": "[Unique File ID] ", 
+                "content": "[Base64 encoded file content] ", 
+                "filename": "[Name of the file, including extension] ", 
+                "category": "[The category/type of file (see mapping)] ", 
+
+“category_label”: "[The category name/label of the file category] ", 
+
+                "description": "[If file category is ‘other’, a description of the file may be provided]" 
+            } 
+        ] 
+    } 
+} 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Order Updates – Vendor to Client (Deprecated) 
+
+The following JSON is what the vendor will send to the client when their status changes, files to be 
+uploaded, or inspection dates are set, due date changes, or fee changes. Note – when files are provided, 
+our system will infer that you have provided a completed product for the Client to receive and review.  
+
+P a g e  | 21 
+
+Example Order Update JSON 
+
+{ 
+    "OrderUpdateRequest": { 
+        "login": { 
+            "client_id": "[Provided by AIM-Port to be used to send data through the API] ", 
+            "api_key": "[Provided by AIM-Port to be used to send data through the API]", 
+            "order_id": "[The client order ID / tracking number of the request]", 
+            "aimport_order_id": "[The AIM-Port order ID of the request]" 
+        }, 
+        "order": { 
+            "aimport_order_id": "[The AIM-Port order ID of the request]", 
+            "tracking_num ": "[The client order ID of the request]", 
+            "loan_number ": "[The client loan number]", 
+            "inspection_date": "[The inspection date (i.e. 04/22/2025 05:00 PM)]", 
+            "fee": "[The total fee of the order (all products included – i.e. 500.00)] ", 
+            "due_date": "[The due date of the orders (i.e. 04/22/2025 05:00 PM)] ", 
+            "reports": [ 
+                  { 
+                      "report_type": "[AIM-Port Product ID] ", 
+                      "name": "[AIM-Port Product Name] ", 
+                 } 
+             ], 
+            "payment_method": "[The order payment method name]", 
+            "balance_due": "[The order balance due (if any)]", 
+            "property_type ": "[The property type name from the order details]”, 
+            "loan_type": "[The loan type name from the order details]”, 
+            "intended_use ": "[The intended use name from the order details]”, 
+            "occupancy_type ": "[The occupancy type name from the order details]” 
+        }, 
+        "files": [ 
+            { 
+                "file_id": "[Unique File ID] ", 
+                "content": "[Base64 encoded file content] ", 
+                "filename": "[Name of the file, including extension] ", 
+                "category": "[The category/type of file (see mapping)] ", 
+
+“category_label”: "[The category name/label of the file category] ", 
+
+                "description": "[If file category is ‘other’, a description of the file may be provided]" 
+            } 
+        ] 
+    } 
+} 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+Note: The vendor system may send all fields in ‘order’ to the client’s endpoint on each POST, or only 
+fields that have changed. The client system will assume if a field is not present, that data has not 
+changed. 
+
+P a g e  | 22 
+
+Example Response 
+
+{         
+    "client_id": "[The same client ID sent with the request] ", 
+    "success": "[true/false] ", 
+    "order_id": [The order id of the request],  
+    "message": "[If success is false, an error message should be provided] " 
+} 
+
+Data Validation 
+
+New Order JSON – Client to Vendor 
+
+JSON Path 
+
+Data Type  Max 
+
+Required 
+
+/OrderRequest/login/client_id 
+/OrderRequest/login/api_key 
+/OrderRequest/order/address 
+/OrderRequest/order/address2 
+/OrderRequest/order/city 
+/OrderRequest/order/state 
+/OrderRequest/order/zip 
+/OrderRequest/order/county 
+/OrderRequest/order/loan_number 
+/OrderRequest/order/case_number 
+/OrderRequest/order/purchase_price 
+/OrderRequest/order/seller_concessions 
+/OrderRequest/order/disclosed_fee 
+/OrderRequest/order/loan_amount 
+/OrderRequest/order/anticipated_value 
+/OrderRequest/order/property_type 
+/OrderRequest/order/loan_type 
+/OrderRequest/order/occupancy 
+/OrderRequest/order/intended_use 
+/OrderRequest/order/property_rights 
+/OrderRequest/order/loan_purpose 
+/OrderRequest/order/intended_users 
+/OrderRequest/order/property_owner 
+/OrderRequest/order/borrower/name 
+/OrderRequest/order/borrower/address 
+
+string 
+
+string 
+
+string 
+
+string 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+string 
+
+string 
+
+decimal 
+string 
+string 
+string 
+string 
+enumeration 
+enumeration 
+enumeration 
+enumeration 
+enumeration 
+enumeration 
+enumeration 
+string 
+string 
+string 
+
+Length 
+15 
+
+36 
+
+250 
+
+250 
+
+50 
+
+2 
+
+5 
+
+50 
+
+15 
+
+15 
+
+15 
+15 
+10 
+15 
+15 
+
+150 
+80 
+250 
+
+Yes 
+
+Yes 
+
+Yes 
+
+No 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Cond 
+
+Cond 
+
+No 
+No 
+No 
+No 
+No 
+Yes 
+Yes 
+No 
+Yes 
+No 
+No 
+No 
+No 
+Yes 
+No 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+/OrderRequest/order/borrower/city 
+/OrderRequest/order/borrower/state 
+/OrderRequest/order/borrower/zip_code 
+/OrderRequest/order/borrower/email 
+/OrderRequest/order/borrower/phone 
+/OrderRequest/order/coborrower/name 
+/OrderRequest/order/coborrower/email 
+/OrderRequest/order/coborrower/phone 
+/OrderRequest/order/property_access/type 
+/OrderRequest/order/property_access/name 
+/OrderRequest/order/property_access/home_phone 
+/OrderRequest/order/property_access/cell_phone 
+/OrderRequest/order/property_access/work_phone 
+/OrderRequest/order/property_access/email 
+/OrderRequest/order/property_access/other_description 
+/OrderRequest/order/notification_emails/[0] 
+/OrderRequest/order/reports/[0]/report_type 
+/OrderRequest/order/payment_method 
+/OrderRequest/order/due_date 
+/OrderRequest/order/settlement_date 
+/OrderRequest/order/investor 
+/OrderRequest/order/special_instructions 
+/OrderRequest/order/rush 
+/OrderRequest/order/client_name 
+/OrderRequest/order/client_address 
+/OrderRequest/order/client_address2 
+/OrderRequest/order/client_city 
+/OrderRequest/order/client_state 
+/OrderRequest/order/client_zip 
+/OrderRequest/order/branch_name 
+/OrderRequest/files/[0]/file_id 
+/OrderRequest/files/[0]/content 
+
+/OrderRequest/files/[0]/filename 
+/OrderRequest/files/[0]/category 
+/OrderRequest/files/[0]/description 
+
+Send/Receive Message JSON – Both Directions 
+
+JSON Path 
+/MessageRequest/login/client_id 
+
+P a g e  | 23 
+
+string 
+string 
+integer 
+string 
+string 
+string 
+string 
+string 
+enumeration 
+string 
+string 
+string 
+string 
+string 
+string 
+string 
+enumeration 
+enumeration 
+string 
+string 
+string 
+string 
+string 
+String 
+String 
+String 
+String 
+String 
+String 
+String 
+string 
+base64 
+encoded file 
+contents 
+
+string 
+enumeration 
+string 
+
+50 
+2 
+5 
+150 
+25 
+80 
+150 
+25 
+
+80 
+25 
+25 
+25 
+150 
+50 
+150 
+
+15 
+25 
+150 
+1000 
+5 
+250 
+255 
+255 
+150 
+2 
+5 
+100 
+50 
+50MB 
+Max 
+File, 
+100MB 
+Max 
+Post 
+500 
+
+255 
+
+No 
+No 
+No 
+Cond 
+Cond 
+No 
+No 
+No 
+Yes 
+Yes 
+Cond 
+Cond 
+Cond 
+Cond 
+Cond 
+No 
+Yes 
+Yes 
+Yes 
+No 
+No 
+No 
+No 
+Yes 
+No 
+No 
+No 
+No 
+No 
+No 
+Yes 
+Yes 
+
+Yes 
+Yes 
+Cond 
+
+Data Type  Max Length  Required 
+string 
+
+Yes 
+
+15 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+/MessageRequest/login/api_key 
+
+/MessageRequest/login/order_id 
+
+/MessageRequest/message/subject 
+
+/MessageRequest/message/content 
+
+Send Files JSON – Client to Vendor 
+
+P a g e  | 24 
+
+string 
+
+integer 
+
+string 
+
+text 
+
+36 
+
+10 
+
+255 
+
+N/A 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+JSON Path 
+
+Data Type  Max 
+
+Required 
+
+/NewFilesRequest/login/client_id 
+
+/NewFilesRequest/login/api_key 
+
+/NewFilesRequest/login/order_id 
+
+/NewFilesRequest/order/new_files/[0]/file_id 
+
+/NewFilesRequest/order/new_files /[0]/content 
+
+/NewFilesRequest/order/new_files /[0]/filename 
+
+/NewFilesRequest/order/new_files /[0]/category 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+50 
+
+base64 
+encoded file 
+contents 
+string 
+
+enumeration 
+
+50MB Max 
+File, 100MB 
+Max Post 
+500 
+
+/NewFilesRequest/order/new_files /[0]/description 
+
+string 
+
+255 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Cond 
+
+Yes 
+
+Yes 
+
+Cond 
+
+Update Loan Number JSON – Client to Vendor 
+
+JSON Path 
+
+/LoanNumUpdateRequest/login/client_id 
+
+/LoanNumUpdateRequest/login/api_key 
+
+/LoanNumUpdateRequest/login/order_id 
+
+/LoanNumUpdateRequest/order/loan_number 
+
+Update FHA Case Number JSON – Client to Vendor 
+
+JSON Path 
+
+/FHANumUpdateRequest/login/client_id 
+
+/FHANumUpdateRequest/login/api_key 
+
+/FHANumUpdateRequest/login/order_id 
+
+/FHANumUpdateRequest/order/case_number 
+
+Order Assigned to Vendor JSON – Vendor to Client 
+
+JSON Path 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+15 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+15 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Data Type  Max 
+
+Required 
+
+Length 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 25 
+
+/OrderAssignedRequest/login/client_id 
+
+/OrderAssignedRequest/login/api_key 
+
+/OrderAssignedRequest/login/order_id 
+
+string 
+
+string 
+
+integer 
+
+15 
+
+36 
+
+10 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Order Accepted by Vendor JSON – Vendor to Client 
+
+JSON Path 
+
+Data Type  Max 
+
+Required 
+
+/OrderAcceptedRequest/login/client_id 
+
+/OrderAcceptedRequest/login/api_key 
+
+/OrderAcceptedRequest/login/order_id 
+
+/OrderAcceptedRequest/order/vendor_first_name 
+
+/OrderAcceptedRequest/order/vendor_last_name 
+
+/OrderAcceptedRequest/order/vendor_license_number 
+
+/OrderAcceptedRequest/order/vendor_license_expiration 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+string 
+
+string 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+50 
+
+80 
+
+30 
+
+15 
+
+Yes 
+
+Yes 
+
+Yes 
+
+No 
+
+No 
+
+No 
+
+No 
+
+Order Hold JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderHoleRequest/login/client_id 
+
+/OrderHoldRequest/login/api_key 
+
+/OrderHoldRequest/login/order_id 
+
+/OrderHoldRequest/order/hold_message 
+
+Order Resume JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderResumeRequest/login/client_id 
+
+/OrderResumeRequest/login/api_key 
+
+/OrderResumeRequest/login/order_id 
+
+/OrderResumeRequest/order/resume_message 
+
+Order Cancelled JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderCancelledRequest/login/client_id 
+
+/OrderCancelledRequest/login/api_key 
+
+/OrderCancelledRequest/login/order_id 
+
+/OrderCancelledRequest/order/cancellation_message 
+
+Order Scheduled JSON – Vendor to Client 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+text 
+
+Length 
+15 
+
+36 
+
+10 
+
+N/A 
+
+Yes 
+
+Yes 
+
+Yes 
+
+No 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+text 
+
+Length 
+15 
+
+36 
+
+10 
+
+N/A 
+
+Yes 
+
+Yes 
+
+Yes 
+
+No 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+text 
+
+Length 
+15 
+
+36 
+
+10 
+
+N/A 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+JSON Path 
+
+/OrderScheduledRequest/login/client_id 
+
+/OrderScheduledRequest/login/api_key 
+
+/OrderScheduledRequest/login/order_id 
+
+/OrderScheduledRequest/order/inspection_date 
+
+Order Scheduled JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderInspectedRequest/login/client_id 
+
+/OrderInspectedRequest/login/api_key 
+
+/OrderInspectedRequest/login/order_id 
+
+/OrderInspectedRequest/order/inspection_date 
+
+Order Due Date Change JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderDueDateRequest/login/client_id 
+
+/OrderDueDateRequest/login/api_key 
+
+/OrderDueDateRequest/login/order_id 
+
+/OrderDueDateRequest/order/due_date 
+
+Order Fee Change JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderFeeRequest/login/client_id 
+
+/OrderFeeRequest/login/api_key 
+
+/OrderFeeRequest/login/order_id 
+
+/OrderFeeRequest/order/fee 
+
+Order Paid Change JSON – Vendor to Client 
+
+JSON Path 
+
+/OrderPaidRequest/login/client_id 
+
+/OrderPaidRequest/login/api_key 
+
+/OrderPaidRequest/login/order_id 
+
+/OrderPaidRequest/order/paid_amount 
+
+P a g e  | 26 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+15 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+15 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+15 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+10 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Data Type  Max 
+
+Required 
+
+string 
+
+string 
+
+integer 
+
+string 
+
+Length 
+15 
+
+36 
+
+10 
+
+10 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Update File Upload JSON – Vendor to Client 
+
+JSON Path 
+
+Data Type  Max 
+
+Required 
+
+P a g e  | 27 
+
+/OrderFilesRequest/login/client_id 
+
+/OrderFilesRequest/login/api_key 
+
+/OrderFilesRequest/login/order_id 
+
+/OrderFilesRequest/files/[0]/file_id 
+
+/OrderFilesRequest/files/[0]/content 
+
+/OrderFilesRequest/files/[0]/filename 
+
+/OrderFilesRequest/files/file[0]/category 
+
+/OrderFilesRequest/files/[0]/description 
+
+string 
+
+string 
+
+string 
+
+string 
+
+Length 
+15 
+
+36 
+
+25 
+
+50 
+
+base64 
+encoded file 
+contents 
+string 
+
+enumeration 
+
+50MB Max 
+File, 100MB 
+Max Post 
+500 
+
+string 
+
+255 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Cond 
+
+Yes 
+
+Yes 
+
+Cond 
+
+Update Order JSON – Vendor to Client (DEPRECATED) 
+
+JSON Path 
+
+Data Type  Max 
+
+Required 
+
+/OrderUpdateRequest/login/client_id 
+
+/OrderUpdateRequest/login/api_key 
+
+/OrderUpdateRequest/login/order_id 
+
+/OrderUpdateRequest/login/aimport_order_id 
+
+/OrderUpdateRequest/order/aimport_order_id 
+
+/OrderUpdateRequest/order/tracking_num 
+
+/OrderUpdateRequest/order/loan_number 
+
+/OrderUpdateRequest/order/inspection_date 
+
+/OrderUpdateRequest/order/fee 
+
+/OrderUpdateRequest/order/due_date 
+
+string 
+
+string 
+
+string 
+
+integer 
+
+integer 
+
+string 
+
+string 
+
+string 
+
+decimal 
+
+string 
+
+Length 
+15 
+
+36 
+
+25 
+
+10 
+
+10 
+
+25 
+
+16 
+
+25 
+
+10, 2 
+
+25 
+
+/OrderUpdateRequest/order/reports/[0]/report_type 
+
+enumeration 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Cond 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+Yes 
+
+No 
+
+No 
+
+No 
+
+No 
+
+No 
+
+No 
+
+No 
+
+string 
+
+250 
+
+enumeration 
+
+decimal 
+
+string 
+
+10, 2 
+
+25 
+
+enumeration 
+
+enumeration 
+
+enumeration 
+
+enumeration 
+
+string 
+
+50 
+
+base64 
+encoded file 
+contents 
+string 
+
+50MB Max 
+File, 100MB 
+Max Post 
+500 
+
+Yes 
+
+Cond 
+
+Yes 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+/OrderUpdateRequest/order/reports/[0]/name 
+
+/OrderUpdateRequest/order/payment_method 
+
+/OrderUpdateRequest/order/balance_due 
+
+/OrderUpdateRequest/order/date_ordered 
+
+/OrderUpdateRequest/order/property_type 
+
+/OrderUpdateRequest/order/loan_type 
+
+/OrderUpdateRequest/order/intended_use 
+
+/OrderUpdateRequest/order/occupancy_type 
+
+/OrderUpdateRequest/files/[0]/file_id 
+
+/OrderUpdateRequest/files/[0]/content 
+
+/OrderUpdateRequest/files/[0]/filename 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+/OrderUpdateRequest/files/file[0]/category 
+
+/OrderUpdateRequest/files/[0]/description 
+
+enumeration 
+
+string 
+
+255 
+
+Yes 
+
+Cond 
+
+P a g e  | 28 
+
+Data Mapping 
+
+Property Types 
+
+JSON Value 
+sfr 
+condo 
+
+coop 
+
+manufactured 
+
+mobile 
+prefab 
+multi2 
+
+multi3 
+
+multi4 
+
+farm 
+pud 
+other 
+
+Loan Types 
+
+JSON Value 
+conventional 
+fha 
+usda 
+jumbo 
+superjumbo 
+reverse 
+heloc 
+other 
+
+Occupancy Types 
+
+JSON Value 
+owner 
+tenant 
+secondhome 
+vacant 
+
+Description 
+Single Family Residence 
+
+Condominium 
+
+Cooperative 
+
+Manufactured Home 
+
+Mobile Home 
+
+Prefabricated Home 
+
+2 Unit Property 
+
+3 Unit Property 
+
+4 Unit Property 
+
+Farm 
+PUD 
+Other 
+
+Description 
+Conventional  
+Federal Housing Administration (FHA) 
+
+United States Dept of Agriculture (USDA) 
+
+Jumbo 
+
+Super Jumbo 
+Reverse Mortgage 
+
+Home Equity (HELOC) 
+
+Other 
+
+Description 
+Owner Occupied 
+Tenant Occupied 
+
+Owner’s Second Home 
+
+Vacant 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 29 
+
+Intended Uses 
+
+JSON Value 
+purchase 
+refi 
+constructionperm 
+reo 
+homeequity 
+other 
+
+Description 
+Purchase Transaction 
+Mortgage Refinance 
+
+Construction/Perm Loan 
+
+Real Estate Owned 
+
+Home Equity (HELOC) 
+
+Other 
+
+Property Rights (Commercial) 
+
+JSON Value 
+Fee Simple 
+Leased Fee 
+Sandwich Lease 
+Leasehold Interest 
+Co-op Ownership 
+
+Description 
+Fee Simple 
+Leased Fee 
+
+Sandwich Lease 
+
+Leasehold Interest 
+
+Co-op Ownership 
+
+Intended Users (Commercial) 
+
+JSON Value 
+Client 
+US SBA 
+Other 
+
+Description 
+Client 
+US SBA 
+
+Other 
+
+Loan Purpose (Commercial) 
+
+Description 
+Purchase Transaction 
+Mortgage Refinance/Renewal 
+
+JSON Value 
+Purchase 
+Refinance/Renewal 
+Construction 
+Potential Administrative Action 
+Non-Purchase Money Loan 
+New Valuation for Existing Loan  New Valuation for Existing Loan 
+
+Potential Administrative Action 
+
+Non-Purchase Money Loan 
+
+Construction 
+
+Property Access Types 
+
+JSON Value 
+borrower 
+coborrower 
+
+Description 
+Borrower 
+Co-Borrower 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+builder 
+listingagent 
+sellingagent 
+familymember 
+neighbor 
+tenant 
+other 
+
+Order Types 
+
+JSON Value 
+residential 
+commercial 
+
+Payment Methods 
+
+JSON Value 
+bill 
+clientlink 
+borrowerlink 
+
+File Categories 
+
+JSON Value 
+uadxml 
+
+uad2zip 
+
+appraisal 
+
+cert 
+condo 
+
+coop 
+
+eadpdf 
+
+fnmpdf 
+
+frepdf 
+
+legaldesc 
+
+leasesrentrolls 
+
+plansspecs 
+
+Builder 
+Listing Agent 
+Selling Agent 
+Family Member 
+Neighbor 
+Tenant 
+Other 
+
+Description 
+Residential Appraisal 
+Commercial Appraisal 
+
+Description 
+Bill/Invoice the Client 
+Send payment link to the client 
+
+Send payment link to borrower’s email address 
+
+Description 
+Appraisal UAD/XML 
+
+UAD 3.6 Zip File 
+
+Appraisal PDF 
+
+AMC Compliance Certificate 
+
+Condo Questionnaire 
+
+Coop Docs 
+
+FHA EAD SSR 
+
+Fannie Mae UCDP SSR 
+
+Freddie Mac UCDP SSR 
+
+Legal Description 
+
+Copies of Leases/Rent Rolls 
+
+Plans / Specs 
+
+propertyfinancials 
+
+Property Financial Statements 
+
+rebuttal 
+
+salescontract 
+salescontractrev 
+
+salescontractadd 
+
+Rebuttal Docs 
+
+Sales Contract 
+
+Revised Sales Contract 
+
+Sales Contract Addendum 
+
+P a g e  | 30 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+P a g e  | 31 
+
+vendor_invoice 
+
+Vendor Invoice 
+
+other 
+
+Other (Provide Description) 
+
+Report Types 
+
+Every client will have a customized report type list, which will be provided to the client in a separate 
+Excel Spreadsheet. 
+
+Revision History 
+
+Version 
+1.0 
+2.0 
+2.1 
+2.2 
+2.3 
+2.4 
+2.5 
+2.6 
+
+2.7 
+2.8 
+2.9 
+
+Description 
+Initial API Release 
+API XML to JSON update 
+Adding Intent to Proceed Date 
+Adding Fields to Add Order Call 
+Changing format of responses, adding update loan number 
+Adding notification_emails on inbound order 
+Updates to reflect Atlas GPS LLC as company 
+Adding new events for vendor to send for order assigned, accepted, 
+hold, resume, paid. Deprecated order update event. 
+Updates to reflect hold, resume, and cancelled events as bi-directional 
+Adding revision request event  
+Added the ability to send documents w/o indicating order is completed 
+
+Date 
+01/30/17 
+02/04/19 
+02/04/20 
+01/10/22 
+04/10/23 
+05/25/25 
+7/24/25 
+12/30/25 
+
+01/12/26 
+03/10/26 
+04/06/26 
+
+   Copyright 2026 © Atlas GPS, LLC 
+
+ 
+ 
+ 
+ 
+ 
+

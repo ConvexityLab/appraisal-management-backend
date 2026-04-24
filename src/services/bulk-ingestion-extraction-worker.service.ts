@@ -49,6 +49,22 @@ export class BulkIngestionExtractionWorkerService {
       return;
     }
 
+    // P2-AX-01: Refuse to process bulk extraction in production without a real Axiom endpoint.
+    // In dev/test (NODE_ENV !== 'production') mock mode is tolerated but logged loudly.
+    if (!process.env.AXIOM_API_BASE_URL && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'BulkIngestionExtractionWorkerService cannot start in production without AXIOM_API_BASE_URL. ' +
+        'Set AXIOM_API_BASE_URL (and optionally AXIOM_API_KEY) to enable real Axiom extraction.',
+      );
+    }
+
+    if (!process.env.AXIOM_API_BASE_URL) {
+      this.logger.warn(
+        'AXIOM_API_BASE_URL is not configured — bulk extraction will use Axiom mock mode. ' +
+        'This is only acceptable for local development. Set AXIOM_API_BASE_URL before deploying.',
+      );
+    }
+
     await this.subscriber.subscribe<BulkIngestionOrdersCreatedEvent>(
       'bulk.ingestion.orders.created',
       this.makeHandler('bulk.ingestion.orders.created', this.onBulkIngestionOrdersCreated.bind(this)),

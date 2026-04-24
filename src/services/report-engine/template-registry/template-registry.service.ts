@@ -6,7 +6,8 @@
  *
  * Templates are cached in-process after first load; the cache is invalidated after
  * CACHE_TTL_MS milliseconds. This is intentionally simple: for multi-replica
- * deployments a Redis-backed cache should be added in Phase 8f.
+ * deployments either rely on the short TTL or switch to a shared cache
+ * mechanism compatible with our Azure Service Bus-based infrastructure.
  */
 
 import { CosmosDbService } from '../../cosmos-db.service';

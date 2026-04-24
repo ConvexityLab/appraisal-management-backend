@@ -31,6 +31,12 @@ const MANAGED_SUBSCRIPTIONS = [
   'axiom-auto-trigger-service',
   'vendor-performance-updater-service',
   'ucdp-ead-auto-submit-service',
+  'bulk-ingestion-processor-service',
+  'bulk-ingestion-canonical-worker-service',
+  'bulk-ingestion-extraction-worker-service',
+  'bulk-ingestion-order-creation-worker-service',
+  'bulk-ingestion-criteria-worker-service',
+  'bulk-ingestion-finalizer-service',
 ];
 
 export interface DLQMessageSummary {

@@ -31,7 +31,11 @@ export function createAiParsingRouter(): Router {
       }
 
       const result = await aiService.parseIntent(requestBody);
-      return res.json(result);
+      // Phase 8 / A7: stamp schemaVersion so the frontend can assert
+      // stability.  Bumping this value is a coordinated contract change
+      // — the frontend's Zod schemas refuse any version it doesn't
+      // recognise and surface an AiContractError naming the drift.
+      return res.json({ ...result, schemaVersion: 'v1' });
       
     } catch (error) {
       logger.error('Failed to parse intent via AI', { error });

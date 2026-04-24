@@ -272,7 +272,7 @@ export class VendorMatchingEngine {
 
     // Calculate individual scores
     const performanceScore = this.calculatePerformanceScore(performance);
-    const availabilityScore = this.calculateAvailabilityScore(effectiveAvailability);
+    const availabilityScore = this.calculateAvailabilityScore(effectiveAvailability, request.dueDate);
     const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState);
     const experienceScore = this.calculateExperienceScore(
       vendor,
@@ -331,12 +331,27 @@ export class VendorMatchingEngine {
   }
 
   /**
-   * Calculate availability score (0-100)
+   * Calculate availability score (0-100).
+   * V-09: When the order's dueDate falls inside any of the vendor's blackout
+   * ranges, the score is forced to 0 — the vendor is ineligible for that date.
    */
   private calculateAvailabilityScore(
-    availability: VendorAvailability | null
+    availability: VendorAvailability | null,
+    dueDate?: Date,
   ): number {
     if (!availability || !availability.isAcceptingOrders) return 0;
+
+    // V-09: blackout date enforcement
+    if (dueDate && Array.isArray(availability.blackoutDates)) {
+      const due = new Date(dueDate).getTime();
+      const blocked = availability.blackoutDates.some((range) => {
+        if (!range?.startDate || !range?.endDate) return false;
+        const start = new Date(range.startDate).getTime();
+        const end = new Date(range.endDate).getTime();
+        return due >= start && due <= end;
+      });
+      if (blocked) return 0;
+    }
 
     const { currentLoad, maxCapacity, availableSlots } = availability;
 

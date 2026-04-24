@@ -13,6 +13,11 @@ import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import {
+  loadVendorAndOrderContext,
+  publishVendorBidSent,
+  publishVendorBidAccepted,
+} from '../services/vendor-notification-bridge.service.js';
+import {
   VendorMatchRequest,
   VendorMatchCriteria,
   VendorMatchResult
@@ -772,23 +777,35 @@ async function updateOrderBroadcastStatus(
   }
 }
 
+// V-01: Vendor notifications are delivered by CommunicationEventHandler, which
+// subscribes to `vendor.bid.sent` / `vendor.bid.accepted` on the Service Bus
+// topic and dispatches email via ACS. These helpers publish those events so
+// the direct HTTP controller path and the event-driven orchestrator path share
+// a single notification pipeline. Event construction lives in the bridge
+// service so it is unit-testable without a live Service Bus.
 async function notifyVendorOfAssignment(vendorId: string, orderId: string): Promise<void> {
-  // TODO: Implement vendor notification (email, SMS, push notification)
-  logger.info('Vendor notification sent (assignment)', { vendorId, orderId });
+  const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
+  if (!ctx) return;
+  await publishVendorBidSent(publisher, ctx, orderId, 4, 'auto-assignment.controller');
+  logger.info('Published vendor.bid.sent for direct assignment', { vendorId, orderId });
 }
 
 async function notifyVendorOfBroadcast(
   vendorId: string,
   orderId: string,
-  expirationHours: number
+  expirationHours: number,
 ): Promise<void> {
-  // TODO: Implement vendor notification (email, SMS, push notification)
-  logger.info('Vendor notification sent (broadcast)', { vendorId, orderId, expirationHours });
+  const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
+  if (!ctx) return;
+  await publishVendorBidSent(publisher, ctx, orderId, expirationHours, 'auto-assignment.controller');
+  logger.info('Published vendor.bid.sent for broadcast', { vendorId, orderId, expirationHours });
 }
 
 async function notifyVendorOfAcceptance(vendorId: string, orderId: string): Promise<void> {
-  // TODO: Implement vendor notification (email, SMS, push notification)
-  logger.info('Vendor notification sent (acceptance)', { vendorId, orderId });
+  const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
+  if (!ctx) return;
+  await publishVendorBidAccepted(publisher, ctx, orderId, 'auto-assignment.controller');
+  logger.info('Published vendor.bid.accepted', { vendorId, orderId });
 }
 
 async function rejectOtherBids(orderId: string, acceptedBidId: string): Promise<void> {

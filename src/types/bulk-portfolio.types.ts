@@ -26,6 +26,7 @@ import type {
 } from './review-tape.types.js';
 export type { TapeProcessingMode } from './review-tape.types.js';
 import { BULK_ANALYSIS_TYPE_TO_PRODUCT_TYPE } from './product-catalog.js';
+import type { ProductType } from './product-catalog.js';
 
 // ─── Analysis Type ───────────────────────────────────────────────────────────
 
@@ -37,20 +38,22 @@ export type BulkAnalysisType =
   | 'DVR'
   | 'ROV';
 
+export type BulkEngagementGranularity = 'PER_BATCH' | 'PER_LOAN';
+
 /**
- * Maps BulkAnalysisType → canonical ProductType string.
+ * Maps BulkAnalysisType → canonical ProductType.
  *
  * Derived from PRODUCT_CATALOG — do NOT edit this table directly.
  * To change a mapping: update the `bulkAnalysisType` field on the relevant
  * ProductDefinition in src/types/product-catalog.ts.
  */
-export const ANALYSIS_TYPE_TO_PRODUCT_TYPE: Record<BulkAnalysisType, string> =
+export const ANALYSIS_TYPE_TO_PRODUCT_TYPE: Record<BulkAnalysisType, ProductType> =
   Object.fromEntries(
     Object.entries(BULK_ANALYSIS_TYPE_TO_PRODUCT_TYPE)
       .filter(([key]) => ([
         'AVM', 'FRAUD', 'ANALYSIS_1033', 'QUICK_REVIEW', 'DVR', 'ROV',
       ] as string[]).includes(key)),
-  ) as Record<BulkAnalysisType, string>;
+  ) as Record<BulkAnalysisType, ProductType>;
 
 /** Display labels for the UI */
 export const BULK_ANALYSIS_LABELS: Record<BulkAnalysisType, string> = {
@@ -200,6 +203,13 @@ export interface BulkPortfolioItem {
   orderId?: string;
   orderNumber?: string;
   errorMessage?: string;
+
+  // ── Document fetch status (Scenario A — set by service during order creation) ─
+  /**
+   * Status of the automated document fetch when a `documentUrl` was provided.
+   * Set by the order-creation service after it attempts to pull the PDF from the URL.
+   */
+  documentFetchStatus?: 'FETCHING' | 'STORED' | 'FAILED';
 }
 
 // ─── Job ──────────────────────────────────────────────────────────────────────
@@ -220,6 +230,7 @@ export interface BulkPortfolioJob {
   clientId: string;
   jobName?: string;
   fileName: string;
+  engagementGranularity?: BulkEngagementGranularity;
   status: BulkJobStatus;
   submittedAt: string;    // ISO timestamp
   submittedBy: string;    // user id
@@ -259,6 +270,10 @@ export interface BulkSubmitRequest {
   clientId: string;
   jobName?: string;
   fileName: string;
+  /** Optional FK to an existing engagement selected in the bulk wizard. */
+  engagementId?: string;
+  /** Controls whether new engagements are created once per batch or once per valid row. */
+  engagementGranularity?: BulkEngagementGranularity;
   /**
    * Defaults to 'ORDER_CREATION' when absent.  Must be 'TAPE_EVALUATION' for
    * risk tape submissions.  When 'TAPE_EVALUATION', reviewProgramId is

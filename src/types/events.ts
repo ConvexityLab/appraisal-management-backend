@@ -3,6 +3,12 @@
  * Defines all event schemas for the appraisal management platform
  */
 
+import type {
+  VendorEventPayload,
+  VendorEventType,
+  VendorType,
+} from './vendor-integration.types.js';
+
 // Base event interface that all events must implement
 export interface BaseEvent {
   id: string;
@@ -37,6 +43,7 @@ export enum EventCategory {
   CONSENT = 'consent',
   NEGOTIATION = 'negotiation',
   DOCUMENT = 'document',
+  AXIOM = 'axiom',
 }
 
 // Order-related events
@@ -219,6 +226,22 @@ export interface VendorAvailabilityChangedEvent extends BaseEvent {
   };
 }
 
+export interface VendorIntegrationEvent extends BaseEvent {
+  type: VendorEventType;
+  category: EventCategory.VENDOR;
+  data: {
+    connectionId: string;
+    tenantId: string;
+    lenderId: string;
+    vendorType: VendorType;
+    vendorOrderId: string;
+    ourOrderId: string | null;
+    occurredAt: string;
+    payload: VendorEventPayload;
+    priority: EventPriority;
+  };
+}
+
 // System events
 export interface SystemAlertEvent extends BaseEvent {
   type: 'system.alert';
@@ -326,6 +349,35 @@ export interface VendorBidTimedOutEvent extends BaseEvent {
     bidId: string;
     attemptNumber: number;
     totalAttempts: number;
+    priority: EventPriority;
+  };
+}
+
+/**
+ * V-02: Fired once per bid as the bid's expiry approaches, so the vendor can
+ * be reminded to accept or decline before the window closes. Emitted by
+ * `VendorTimeoutCheckerJob` when `currentBidExpiresAt - now` enters the
+ * configured reminder window and no reminder has been dispatched yet.
+ *
+ * Idempotency: the job stamps `autoVendorAssignment.expiringReminderSentAt`
+ * before publishing, so this event fires at most once per bid.
+ */
+export interface VendorBidExpiringEvent extends BaseEvent {
+  type: 'vendor.bid.expiring';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    clientId: string;
+    vendorId: string;
+    vendorName?: string;
+    bidId: string;
+    /** Full ISO timestamp when the bid expires. */
+    expiresAt: string;
+    /** Minutes between now and expiresAt at the moment the reminder was dispatched. */
+    minutesRemaining: number;
+    attemptNumber: number;
     priority: EventPriority;
   };
 }
@@ -490,7 +542,7 @@ export interface EngagementLetterDeclinedEvent extends BaseEvent {
 /** Fired immediately after an order is submitted to the Axiom pipeline. */
 export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
   type: 'axiom.evaluation.submitted';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     orderId: string;
     orderNumber: string;
@@ -505,7 +557,7 @@ export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
 /** Fired when a completed tape-evaluation job should be submitted to Axiom in the background. */
 export interface AxiomBulkEvaluationRequestedEvent extends BaseEvent {
   type: 'axiom.bulk-evaluation.requested';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     jobId: string;
     tenantId: string;
@@ -524,7 +576,8 @@ export interface BulkIngestionRequestedEvent extends BaseEvent {
     jobId: string;
     tenantId: string;
     clientId: string;
-    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE';
+    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE' | 'TAPE_CONVERSION';
+    engagementGranularity: 'PER_BATCH' | 'PER_LOAN';
     adapterKey: string;
     dataFileName: string;
     dataFileBlobName?: string;
@@ -548,7 +601,7 @@ export interface BulkIngestionProcessedEvent extends BaseEvent {
     jobId: string;
     tenantId: string;
     clientId: string;
-    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE';
+    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE' | 'TAPE_CONVERSION';
     status: 'COMPLETED' | 'PARTIAL' | 'FAILED';
     adapterKey: string;
     totalItems: number;
@@ -645,6 +698,8 @@ export interface BulkIngestionCriteriaCompletedEvent extends BaseEvent {
     rowIndex: number;
     status: 'completed' | 'failed';
     criteriaStatus: 'completed' | 'skipped' | 'failed';
+    /** PASSED/FAILED/REVIEW set by real criteria evaluation; absent when skipped. */
+    criteriaDecision?: 'PASSED' | 'FAILED' | 'REVIEW';
     completedAt: string;
     reason?: string;
     priority: EventPriority;
@@ -654,7 +709,7 @@ export interface BulkIngestionCriteriaCompletedEvent extends BaseEvent {
 /** Fired when Axiom completes the evaluation (published from the webhook handler). */
 export interface AxiomEvaluationCompletedEvent extends BaseEvent {
   type: 'axiom.evaluation.completed';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     orderId: string;
     orderNumber: string;
@@ -752,7 +807,7 @@ export interface OrderOverdueEvent extends BaseEvent {
  */
 export interface AxiomEvaluationTimedOutEvent extends BaseEvent {
   type: 'axiom.evaluation.timeout';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     orderId: string;
     orderNumber: string;
@@ -1166,6 +1221,7 @@ export type AppEvent =
   | QCAIScoredEvent
   | VendorPerformanceUpdatedEvent
   | VendorAvailabilityChangedEvent
+  | VendorIntegrationEvent
   | SystemAlertEvent
   | AxiomExecutionCompletedEvent
   // Auto-assignment workflow events
@@ -1174,6 +1230,7 @@ export type AppEvent =
   | VendorStaffAssignedEvent
   | VendorBidAcceptedEvent
   | VendorBidTimedOutEvent
+  | VendorBidExpiringEvent
   | VendorBidDeclinedEvent
   | VendorAssignmentExhaustedEvent
   | ReviewAssignmentRequestedEvent

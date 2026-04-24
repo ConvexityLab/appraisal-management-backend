@@ -98,6 +98,8 @@ class AxiomEngineAdapter implements EngineAdapter {
         documentId: run.documentId,
         blobUrl,
         fileName: doc.data.name,
+        // FileSetInitializerActor expects a files array with { fileName, url, downloadMethod }
+        files: [{ fileName: doc.data.name, url: blobUrl, downloadMethod: 'fetch' as const }],
         schemaKey: run.schemaKey,
         correlationId: run.correlationId,
         storageAccountName,

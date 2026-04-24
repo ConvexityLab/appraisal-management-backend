@@ -3,6 +3,10 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import {
+  BulkIngestionAdapterConfigService,
+  type BulkIngestionResolvedEngagementFields,
+} from './bulk-ingestion-adapter-config.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { EngagementService } from './engagement.service.js';
@@ -17,15 +21,24 @@ import type {
   EventHandler,
 } from '../types/events.js';
 import type {
+  BulkIngestionAdapterConfig,
   BulkIngestionCanonicalRecord,
+  BulkIngestionItem,
   BulkIngestionJob,
 } from '../types/bulk-ingestion.types.js';
+
+type EngagementContext = {
+  engagement: Awaited<ReturnType<EngagementService['createEngagement']>>;
+  loan: Awaited<ReturnType<EngagementService['createEngagement']>>['loans'][number] | undefined;
+  productId?: string;
+};
 
 export class BulkIngestionOrderCreationWorkerService {
   private readonly logger = new Logger('BulkIngestionOrderCreationWorkerService');
   private readonly dbService: CosmosDbService;
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: ServiceBusEventPublisher;
+  private readonly adapterConfigService: BulkIngestionAdapterConfigService;
   private readonly propertyRecordService: PropertyRecordService;
   private readonly enrichmentService: PropertyEnrichmentService;
   private readonly engagementService: EngagementService;
@@ -35,6 +48,7 @@ export class BulkIngestionOrderCreationWorkerService {
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
     this.publisher = new ServiceBusEventPublisher();
+    this.adapterConfigService = new BulkIngestionAdapterConfigService(this.dbService);
     this.propertyRecordService = new PropertyRecordService(this.dbService);
     // Shared enrichment service: used both by EngagementService (loan-level records)
     // and directly here (order-level records keyed by orderId).
@@ -122,6 +136,8 @@ export class BulkIngestionOrderCreationWorkerService {
     const sortedItems = [...job.items]
       .filter((item) => recordsByItemId.has(item.id))
       .sort((left, right) => left.rowIndex - right.rowIndex);
+    const engagementGranularity = job.engagementGranularity ?? 'PER_BATCH';
+    const adapterConfig = await this.adapterConfigService.getConfig(job.tenantId, job.adapterKey);
 
     if (sortedItems.length === 0) {
       await this.publishOrdersCreatedEvent({
@@ -136,61 +152,43 @@ export class BulkIngestionOrderCreationWorkerService {
       return;
     }
 
-    const engagement = await this.engagementService.createEngagement({
-      tenantId: job.tenantId,
-      createdBy: job.submittedBy,
-      client: {
-        clientId: job.clientId,
-        clientName: job.clientId,
-      },
-      loans: sortedItems.map((item) => {
-        const parsed = this.parseAddress(item.source.propertyAddress);
-        return {
-          loanNumber: item.source.loanNumber ?? `bulk-${job.id}-${item.rowIndex}`,
-          borrowerName: 'Unknown Borrower',
-          property: {
-            address: parsed.address,
-            city: parsed.city,
-            state: parsed.state,
-            zipCode: parsed.zipCode,
-          },
-          products: [{ productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType] }],
-        };
-      }),
-    } as any);
-
-    const engagementLoans = [...engagement.loans].sort((left, right) => {
-      const leftLoan = left.loanNumber ?? '';
-      const rightLoan = right.loanNumber ?? '';
-      return leftLoan.localeCompare(rightLoan);
-    });
-
-    const sortedItemsByLoanNumber = [...sortedItems].sort((left, right) => {
-      const leftLoan = left.source.loanNumber ?? `bulk-${job.id}-${left.rowIndex}`;
-      const rightLoan = right.source.loanNumber ?? `bulk-${job.id}-${right.rowIndex}`;
-      return leftLoan.localeCompare(rightLoan);
-    });
+    const engagementContextsByItemId =
+      engagementGranularity === 'PER_BATCH'
+        ? await this.createBatchEngagementContexts(job, sortedItems, adapterConfig)
+        : new Map<string, EngagementContext>();
 
     const canonicalRecordsByRecordId = new Map(canonicalRecords.map((record) => [record.id, record]));
     const itemsById = new Map(job.items.map((item) => [item.id, item]));
     let createdOrderCount = 0;
     let failedOrderCount = 0;
 
-    for (let index = 0; index < sortedItemsByLoanNumber.length; index++) {
-      const item = sortedItemsByLoanNumber[index]!;
+    for (const item of sortedItems) {
       const canonicalRecord = recordsByItemId.get(item.id);
       if (!canonicalRecord) {
         continue;
       }
 
-      const engagementLoan = engagementLoans[index];
-      const engagementProductId = engagementLoan?.products?.[0]?.id;
       const correlationId = `bulk-ingestion::${job.id}::${item.id}`;
 
       try {
-        const parsed = this.parseAddress(item.source.propertyAddress);
+        const resolvedEngagementFields = this.resolveEngagementFields(job, item, adapterConfig);
+        const engagementContext = engagementGranularity === 'PER_LOAN'
+          ? await this.createPerLoanEngagementContext(job, item, adapterConfig)
+          : engagementContextsByItemId.get(item.id);
+        const engagement = engagementContext?.engagement;
+        const engagementLoan = engagementContext?.loan;
+        const engagementProductId = engagementContext?.productId;
+
+        if (!engagement) {
+          throw new Error(
+            `No engagement context resolved for job='${job.id}', item='${item.id}', engagementGranularity='${engagementGranularity}'`,
+          );
+        }
+
+        const parsed = this.resolveAddress(item.source);
         const orderNumber = this.generateOrderNumber(job.id, item.rowIndex);
-        const dueDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+        const dueDateDays = parseInt(process.env['BULK_INGESTION_DEFAULT_DUE_DATE_DAYS'] ?? '5', 10);
+        const dueDate = new Date(Date.now() + dueDateDays * 24 * 60 * 60 * 1000).toISOString();
 
         const createResult = await this.dbService.createOrder({
           orderNumber,
@@ -208,19 +206,19 @@ export class BulkIngestionOrderCreationWorkerService {
             city: parsed.city,
             state: parsed.state,
             zipCode: parsed.zipCode,
-            county: '',
+            county: item.source.county ?? '',
           },
           borrowerInfo: {
-            name: 'Unknown Borrower',
-            email: '',
-            phone: '',
+            name: resolvedEngagementFields.borrowerName,
+            email: resolvedEngagementFields.email ?? '',
+            phone: resolvedEngagementFields.phone ?? '',
           },
           loanInformation: {
             loanNumber: item.source.loanNumber ?? `bulk-${job.id}-${item.rowIndex}`,
-            loanAmount: 0,
-            loanType: 'conventional',
-            occupancyType: 'owner_occupied',
-            purpose: 'purchase',
+            loanAmount: resolvedEngagementFields.loanAmount ?? 0,
+            loanType: item.source.loanType ?? 'conventional',
+            occupancyType: item.source.occupancyType ?? 'owner_occupied',
+            purpose: item.source.loanPurpose ?? 'purchase',
           },
           productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType],
           serviceLevel: 'standard',
@@ -249,6 +247,24 @@ export class BulkIngestionOrderCreationWorkerService {
         }
 
         createdOrderCount++;
+
+        // Publish order.created so downstream services (auto-assignment, notifications) can react
+        await this.publisher.publish({
+          id: uuidv4(),
+          type: 'order.created',
+          timestamp: new Date(),
+          source: 'bulk-ingestion-order-creation-worker',
+          version: '1.0',
+          category: EventCategory.ORDER,
+          data: {
+            orderId: createResult.data.id,
+            clientId: job.clientId,
+            propertyAddress: item.source.propertyAddress ?? '',
+            appraisalType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType],
+            priority: EventPriority.NORMAL,
+            dueDate: new Date(dueDate),
+          },
+        });
 
         // Publish engagement.order.created so auto-assignment orchestrator can rank vendors and send bids
         this.publisher.publish({
@@ -371,11 +387,14 @@ export class BulkIngestionOrderCreationWorkerService {
         : createdOrderCount > 0
           ? 'PARTIAL'
           : 'FAILED';
+    const batchEngagementId = engagementGranularity === 'PER_BATCH'
+      ? engagementContextsByItemId.values().next().value?.engagement.id
+      : undefined;
 
     await this.publishOrdersCreatedEvent({
       job: updatedJob,
       adapterKey,
-      engagementId: engagement.id,
+      ...(batchEngagementId ? { engagementId: batchEngagementId } : {}),
       totalCandidateItems: sortedItems.length,
       createdOrderCount,
       failedOrderCount,
@@ -386,12 +405,135 @@ export class BulkIngestionOrderCreationWorkerService {
     this.logger.info('Bulk ingestion order creation complete', {
       jobId: job.id,
       tenantId: job.tenantId,
+      engagementGranularity,
       totalCandidateItems: sortedItems.length,
       createdOrderCount,
       failedOrderCount,
-      engagementId: engagement.id,
+      engagementId: batchEngagementId,
       status,
     });
+  }
+
+  private async createBatchEngagementContexts(
+    job: BulkIngestionJob,
+    items: BulkIngestionItem[],
+    adapterConfig: BulkIngestionAdapterConfig | null,
+  ): Promise<Map<string, EngagementContext>> {
+    const engagement = await this.engagementService.createEngagement({
+      tenantId: job.tenantId,
+      createdBy: job.submittedBy,
+      client: {
+        clientId: job.clientId,
+        clientName: job.clientId,
+      },
+      loans: items.map((item) => this.buildEngagementLoanInput(job, item, adapterConfig)),
+    } as any);
+
+    const engagementLoans = [...engagement.loans].sort((left, right) => {
+      const leftLoan = left.loanNumber ?? '';
+      const rightLoan = right.loanNumber ?? '';
+      return leftLoan.localeCompare(rightLoan);
+    });
+
+    const sortedItemsByLoanNumber = [...items].sort((left, right) => {
+      const leftLoan = left.source.loanNumber ?? `bulk-${job.id}-${left.rowIndex}`;
+      const rightLoan = right.source.loanNumber ?? `bulk-${job.id}-${right.rowIndex}`;
+      return leftLoan.localeCompare(rightLoan);
+    });
+
+    const contexts = new Map<string, EngagementContext>();
+    for (let index = 0; index < sortedItemsByLoanNumber.length; index++) {
+      const item = sortedItemsByLoanNumber[index];
+      if (!item) {
+        continue;
+      }
+
+      const loan = engagementLoans[index];
+      contexts.set(item.id, {
+        engagement,
+        loan,
+        ...(loan?.products?.[0]?.id ? { productId: loan.products[0].id } : {}),
+      });
+    }
+
+    return contexts;
+  }
+
+  private async createPerLoanEngagementContext(
+    job: BulkIngestionJob,
+    item: BulkIngestionItem,
+    adapterConfig: BulkIngestionAdapterConfig | null,
+  ): Promise<EngagementContext> {
+    const engagement = await this.engagementService.createEngagement({
+      tenantId: job.tenantId,
+      createdBy: job.submittedBy,
+      client: {
+        clientId: job.clientId,
+        clientName: job.clientId,
+      },
+      loans: [this.buildEngagementLoanInput(job, item, adapterConfig)],
+    } as any);
+
+    const loan = engagement.loans[0];
+    return {
+      engagement,
+      loan,
+      ...(loan?.products?.[0]?.id ? { productId: loan.products[0].id } : {}),
+    };
+  }
+
+  private buildEngagementLoanInput(
+    job: BulkIngestionJob,
+    item: BulkIngestionItem,
+    adapterConfig: BulkIngestionAdapterConfig | null,
+  ): {
+    loanNumber: string;
+    borrowerName: string;
+    borrowerEmail?: string;
+    loanType?: string;
+    property: {
+      address: string;
+      city: string;
+      state: string;
+      zipCode: string;
+    };
+    products: Array<{ productType: string }>;
+  } {
+    const parsed = this.resolveAddress(item.source);
+    const resolvedEngagementFields = this.resolveEngagementFields(job, item, adapterConfig);
+    return {
+      loanNumber: item.source.loanNumber ?? `bulk-${job.id}-${item.rowIndex}`,
+      borrowerName: resolvedEngagementFields.borrowerName,
+      ...(resolvedEngagementFields.email ? { borrowerEmail: resolvedEngagementFields.email } : {}),
+      ...(item.source.loanType ? { loanType: item.source.loanType } : {}),
+      property: {
+        address: parsed.address,
+        city: parsed.city,
+        state: parsed.state,
+        zipCode: parsed.zipCode,
+      },
+      products: [{ productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType] }],
+    };
+  }
+
+  private resolveEngagementFields(
+    job: BulkIngestionJob,
+    item: BulkIngestionItem,
+    adapterConfig: BulkIngestionAdapterConfig | null,
+  ): BulkIngestionResolvedEngagementFields & { borrowerName: string } {
+    const resolved = this.adapterConfigService.resolveEngagementFields(item.source, adapterConfig, {
+      jobId: job.id,
+      itemId: item.id,
+      rowIndex: item.rowIndex,
+    });
+
+    return {
+      ...resolved,
+      borrowerName:
+        resolved.borrowerName ??
+        item.source.borrowerName ??
+        `Borrower-${item.source.loanNumber ?? item.rowIndex}`,
+    };
   }
 
   private async publishOrdersCreatedEvent(params: {
@@ -463,33 +605,49 @@ export class BulkIngestionOrderCreationWorkerService {
     return `BI-${jobId.slice(-6).toUpperCase()}-${rowIndex}-${randomSuffix}`;
   }
 
-  private parseAddress(address?: string): {
-    address: string;
-    city: string;
-    state: string;
-    zipCode: string;
-  } {
-    const raw = (address ?? '').trim();
+  /**
+   * Resolves a structured address from a BulkIngestionItemInput source.
+   * Priority: explicit city/state/zipCode fields > comma-split of propertyAddress.
+   * This avoids the brittle comma-split when structured fields are available.
+   */
+  private resolveAddress(source: {
+    propertyAddress?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+  }): { address: string; city: string; state: string; zipCode: string } {
+    // If all structured fields are present, use them directly
+    if (source.city && source.state && source.zipCode) {
+      return {
+        address: source.propertyAddress ?? 'Unknown Address',
+        city: source.city,
+        state: source.state.toUpperCase(),
+        zipCode: source.zipCode,
+      };
+    }
+
+    // Fall back to comma-split of propertyAddress (legacy behaviour)
+    const raw = (source.propertyAddress ?? '').trim();
     if (!raw) {
       return {
         address: 'Unknown Address',
-        city: 'Unknown City',
-        state: 'NA',
-        zipCode: '00000',
+        city: source.city ?? 'Unknown City',
+        state: source.state?.toUpperCase() ?? 'NA',
+        zipCode: source.zipCode ?? '00000',
       };
     }
 
     const parts = raw.split(',').map((part) => part.trim()).filter(Boolean);
     const street = parts[0] ?? raw;
-    const city = parts[1] ?? 'Unknown City';
+    const city = source.city ?? parts[1] ?? 'Unknown City';
     const stateZip = parts[2] ?? '';
     const stateZipMatch = stateZip.match(/^([A-Za-z]{2})\s*(\d{5})?/);
 
     return {
       address: street,
       city,
-      state: stateZipMatch?.[1]?.toUpperCase() ?? 'NA',
-      zipCode: stateZipMatch?.[2] ?? '00000',
+      state: source.state?.toUpperCase() ?? stateZipMatch?.[1]?.toUpperCase() ?? 'NA',
+      zipCode: source.zipCode ?? stateZipMatch?.[2] ?? '00000',
     };
   }
 }

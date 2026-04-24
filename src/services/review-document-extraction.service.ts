@@ -15,7 +15,7 @@
  *
  * NOTE: The Axiom /documents/extract endpoint is currently stubbed.
  * The exact request/response contract will be finalised with the Axiom team.
- * Mock mode is active when AXIOM_API_BASE_URL is not configured.
+ * No mock fallback is allowed here: AXIOM_API_BASE_URL must be configured.
  */
 
 import { Logger } from '../utils/logger.js';
@@ -29,7 +29,19 @@ import type {
 export class ReviewDocumentExtractionService {
   private readonly logger = new Logger('ReviewDocumentExtractionService');
 
-  constructor(private readonly axiomService: AxiomService) {}
+  constructor(private readonly axiomService: AxiomService) {
+    const baseUrl = process.env.AXIOM_API_BASE_URL?.trim();
+    if (!baseUrl) {
+      throw new Error(
+        'ReviewDocumentExtractionService requires AXIOM_API_BASE_URL. ' +
+        'Document extraction mock fallback is disabled; configure AXIOM_API_BASE_URL before startup.',
+      );
+    }
+
+    this.logger.info('ReviewDocumentExtractionService configured for real Axiom extraction', {
+      baseUrl,
+    });
+  }
 
   // ─── Submission ───────────────────────────────────────────────────────────
 

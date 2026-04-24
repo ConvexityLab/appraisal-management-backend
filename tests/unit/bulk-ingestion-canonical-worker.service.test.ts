@@ -98,11 +98,22 @@ describe('BulkIngestionCanonicalWorkerService', () => {
   }
 
   function makeDbStub(job: any) {
+    const tenantAdapterDefinitions: any[] = [];
     return {
-      queryItems: vi.fn().mockResolvedValue({ success: true, data: [job] }),
+      queryItems: vi.fn().mockImplementation(async (_container: string, _query: string, parameters?: any[]) => {
+        const type = parameters?.find((entry: any) => entry.name === '@type')?.value;
+        if (type === 'bulk-ingestion-job') {
+          return { success: true, data: [job] };
+        }
+        if (type === 'bulk-adapter-definition') {
+          return { success: true, data: tenantAdapterDefinitions };
+        }
+        return { success: true, data: [] };
+      }),
       upsertItem: vi.fn().mockImplementation((_container: string, doc: any) =>
         Promise.resolve({ success: true, data: doc }),
       ),
+      __tenantAdapterDefinitions: tenantAdapterDefinitions,
     };
   }
 
@@ -266,5 +277,165 @@ describe('BulkIngestionCanonicalWorkerService', () => {
     expect(summary.persistedCount).toBe(0);
     expect(summary.failedCount).toBe(1);
     expect(summary.failures[0].code).toBe('STATEBRIDGE_ID_REQUIRED');
+  });
+
+  it('persists canonical records for tape-conversion adapter without documents', async () => {
+    const adapterKey = 'tape-conversion-v1';
+    const job = makeJob({
+      adapterKey,
+      ingestionMode: 'TAPE_CONVERSION',
+      dataFileBlobName: undefined,
+      documentFileNames: [],
+      documentBlobMap: {},
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::LN-TAPE-001`,
+          status: 'COMPLETED',
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-TAPE-001',
+            propertyAddress: '789 Pine Rd',
+            city: 'Phoenix',
+            state: 'AZ',
+            zipCode: '85004',
+          },
+          matchedDocumentFileNames: [],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const db = makeDbStub(job);
+    const service = new BulkIngestionCanonicalWorkerService(db as any);
+
+    await (service as any).onBulkIngestionProcessed(
+      makeProcessedEvent({ adapterKey, ingestionMode: 'TAPE_CONVERSION' }),
+    );
+
+    expect(db.upsertItem).toHaveBeenCalledTimes(2);
+    const canonicalRecord = db.upsertItem.mock.calls[0][1];
+    const summary = db.upsertItem.mock.calls[1][1];
+
+    expect(canonicalRecord.adapterKey).toBe(adapterKey);
+    expect(canonicalRecord.canonicalData.sourceAdapter).toBe('tape-conversion-v1');
+    expect(canonicalRecord.documentBlobName).toBeUndefined();
+    expect(summary.persistedCount).toBe(1);
+    expect(summary.failedCount).toBe(0);
+  });
+
+  it('loads tenant-defined adapter definitions from persistence', async () => {
+    const adapterKey = 'custom-appraisal-v1';
+    const job = makeJob({
+      adapterKey,
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::LN-CUSTOM-001`,
+          status: 'COMPLETED',
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-CUSTOM-001',
+            propertyAddress: '123 Main St',
+            documentFileName: 'doc1.pdf',
+          },
+          matchedDocumentFileNames: ['doc1.pdf'],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const db = makeDbStub(job);
+    db.__tenantAdapterDefinitions.push({
+      id: `bulk-adapter-definition:${tenantId}:${adapterKey}`,
+      type: 'bulk-adapter-definition',
+      tenantId,
+      adapterKey,
+      name: 'Custom Appraisal',
+      matchMode: 'EXACT',
+      sourceAdapter: adapterKey,
+      documentRequirement: {
+        required: true,
+        code: 'CUSTOM_DOCUMENT_REQUIRED',
+        messageTemplate: "custom-appraisal-v1 requires mapped document blob for item '{itemId}'",
+      },
+      requiredFields: [
+        {
+          source: 'item.source.propertyAddress',
+          code: 'CUSTOM_ADDRESS_REQUIRED',
+          messageTemplate: "custom-appraisal-v1 requires propertyAddress (item '{itemId}')",
+        },
+      ],
+      canonicalFieldMappings: [
+        { targetField: 'correlationKey', source: 'item.correlationKey' },
+        { targetField: 'loanNumber', source: 'item.source.loanNumber' },
+        { targetField: 'propertyAddress', source: 'item.source.propertyAddress' },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const service = new BulkIngestionCanonicalWorkerService(db as any);
+
+    await (service as any).onBulkIngestionProcessed(makeProcessedEvent({ adapterKey }));
+
+    expect(db.upsertItem).toHaveBeenCalledTimes(2);
+    const canonicalRecord = db.upsertItem.mock.calls[0][1];
+    expect(canonicalRecord.adapterKey).toBe(adapterKey);
+    expect(canonicalRecord.canonicalData.sourceAdapter).toBe(adapterKey);
+    expect(canonicalRecord.canonicalData.propertyAddress).toBe('123 Main St');
+  });
+
+  it('persists canonical records for fnma-1004-v1 built-in adapter', async () => {
+    const adapterKey = 'fnma-1004-v1';
+    const job = makeJob({
+      adapterKey,
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::LN-1004-001`,
+          status: 'COMPLETED',
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-1004-001',
+            propertyAddress: '456 Oak Ave',
+            city: 'Dallas',
+            state: 'TX',
+            zipCode: '75201',
+            propertyType: 'SFR',
+            loanAmount: 450000,
+            loanPurpose: 'Purchase',
+            occupancyType: 'Primary',
+            documentFileName: 'doc1.pdf',
+          },
+          matchedDocumentFileNames: ['doc1.pdf'],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const db = makeDbStub(job);
+    const service = new BulkIngestionCanonicalWorkerService(db as any);
+
+    await (service as any).onBulkIngestionProcessed(makeProcessedEvent({ adapterKey }));
+
+    const canonicalRecord = db.upsertItem.mock.calls[0][1];
+    expect(canonicalRecord.canonicalData.sourceAdapter).toBe('fnma-1004-v1');
+    expect(canonicalRecord.canonicalData.appraisalForm).toBe('FNMA_1004');
+    expect(canonicalRecord.canonicalData.loanAmount).toBe(450000);
   });
 });

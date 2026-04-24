@@ -367,4 +367,80 @@ describe('CommunicationEventHandler', () => {
       ),
     ).resolves.toBeUndefined();
   });
+
+  // ── V-02: vendor.bid.expiring ──────────────────────────────────────────────
+
+  it('vendor.bid.expiring sends reminder email to vendor with minutesRemaining in body', async () => {
+    const expiresAt = new Date(Date.now() + 20 * 60_000).toISOString();
+    await (handler as any).onVendorBidExpiring(
+      baseEvent('vendor.bid.expiring', {
+        orderId: 'order-1', orderNumber: 'ORD-001', tenantId: TENANT,
+        clientId: 'client-1', vendorId: 'vendor-1', vendorName: 'Acme',
+        bidId: 'bid-1', expiresAt, minutesRemaining: 20,
+        attemptNumber: 1, priority: EventPriority.NORMAL,
+      }),
+    );
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    const [args] = mockSendEmail.mock.calls;
+    expect(args[0].to).toContain('vendor@appraisal.test');
+    expect(args[0].subject).toMatch(/Reminder.*Expires Soon/i);
+    expect(args[0].html).toMatch(/20 minute/);
+  });
+
+  it('vendor.bid.expiring skips send when vendor email cannot be resolved', async () => {
+    db.getItem.mockResolvedValue({ success: false, data: null });
+    const handler2 = new CommunicationEventHandler(db as any);
+
+    await (handler2 as any).onVendorBidExpiring(
+      baseEvent('vendor.bid.expiring', {
+        orderId: 'order-1', orderNumber: 'ORD-001', tenantId: TENANT,
+        clientId: 'client-1', vendorId: 'vendor-ghost', vendorName: 'Unknown',
+        bidId: 'bid-1', expiresAt: new Date().toISOString(), minutesRemaining: 15,
+        attemptNumber: 1, priority: EventPriority.NORMAL,
+      }),
+    );
+
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  // ── V-03: vendor.assignment.exhausted ────────────────────────────────────
+
+  it('vendor.assignment.exhausted emails escalation recipients for the client', async () => {
+    await (handler as any).onVendorAssignmentExhausted(
+      baseEvent('vendor.assignment.exhausted', {
+        orderId: 'order-1', orderNumber: 'ORD-001', tenantId: TENANT,
+        clientId: 'client-1', attemptsCount: 5,
+        vendorsContacted: ['vendor-1', 'vendor-2'],
+        priority: EventPriority.HIGH, requiresHumanIntervention: true,
+      }),
+    );
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    const [args] = mockSendEmail.mock.calls;
+    const recipients: string[] = Array.isArray(args[0].to) ? args[0].to : [args[0].to];
+    expect(recipients).toContain('ops@unit.test');
+    expect(args[0].subject).toMatch(/Vendor Assignment Exhausted/i);
+    expect(args[0].html).toMatch(/5/); // attemptsCount
+    expect(args[0].html).toMatch(/Manual vendor assignment is required/i);
+  });
+
+  it('vendor.assignment.exhausted skips send when no escalation recipients configured', async () => {
+    const { TenantAutomationConfigService } = await import(
+      '../../src/services/tenant-automation-config.service.js'
+    );
+    const tcsMock = (TenantAutomationConfigService as any).mock.results.at(-1).value;
+    tcsMock.getConfig.mockResolvedValue({ escalationRecipients: [] });
+
+    await (handler as any).onVendorAssignmentExhausted(
+      baseEvent('vendor.assignment.exhausted', {
+        orderId: 'order-1', orderNumber: 'ORD-001', tenantId: TENANT,
+        clientId: 'client-1', attemptsCount: 5,
+        vendorsContacted: ['vendor-1'], priority: EventPriority.HIGH,
+        requiresHumanIntervention: true,
+      }),
+    );
+
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
 });

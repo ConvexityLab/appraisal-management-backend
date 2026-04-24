@@ -278,7 +278,7 @@ export class AxiomBulkSubmissionService {
       timestamp: new Date(),
       source: 'axiom-bulk-submission-replayer',
       version: '1.0',
-      category: EventCategory.QC,
+      category: EventCategory.AXIOM,
       data: {
         jobId: dlq.jobId,
         tenantId: dlq.tenantId,

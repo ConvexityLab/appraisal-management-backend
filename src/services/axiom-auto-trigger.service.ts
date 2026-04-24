@@ -238,6 +238,25 @@ export class AxiomAutoTriggerService {
         { orderId, productType: order.productType },
       );
       await this.dbService.updateOrder(orderId, { axiomStatus: 'skipped-unknown-product-type' as any }).catch(() => undefined);
+      // Only publish the skipped event on the FIRST detection to avoid spam from retry passes.
+      if (order.axiomStatus !== 'skipped-unknown-product-type') {
+        await this.publisher.publish({
+          id: uuidv4(),
+          type: 'axiom.evaluation.skipped',
+          timestamp: new Date(),
+          source: 'axiom-auto-trigger-service',
+          version: '1.0',
+          category: EventCategory.AXIOM,
+          data: {
+            orderId,
+            orderNumber: order.orderNumber ?? orderId,
+            tenantId: resolvedTenantId,
+            reason: 'unknown-product-type',
+            productType: order.productType,
+            priority: EventPriority.NORMAL,
+          },
+        } as any).catch((err: Error) => this.logger.warn('AxiomAutoTrigger: failed to publish axiom.evaluation.skipped', { error: err.message }));
+      }
       return;
     }
 
@@ -283,7 +302,7 @@ export class AxiomAutoTriggerService {
         timestamp: new Date(),
         source: 'axiom-auto-trigger-service',
         version: '1.0',
-        category: EventCategory.QC,
+        category: EventCategory.AXIOM,
         data: { orderId, orderNumber: order.orderNumber ?? orderId, tenantId: resolvedTenantId, reason: 'no-documents', priority: EventPriority.NORMAL },
       } as any).catch((err: Error) => this.logger.warn('AxiomAutoTrigger: failed to publish axiom.evaluation.skipped', { error: err.message }));
       return;
@@ -324,7 +343,7 @@ export class AxiomAutoTriggerService {
           timestamp: new Date(),
           source: 'axiom-auto-trigger-service',
           version: '1.0',
-          category: EventCategory.QC,
+          category: EventCategory.AXIOM,
           data: { orderId, orderNumber: order.orderNumber ?? orderId, tenantId: resolvedTenantId, reason: 'submit-exception', priority: EventPriority.NORMAL },
         } as any).catch(() => undefined);
       }
@@ -342,7 +361,7 @@ export class AxiomAutoTriggerService {
           timestamp: new Date(),
           source: 'axiom-auto-trigger-service',
           version: '1.0',
-          category: EventCategory.QC,
+          category: EventCategory.AXIOM,
           data: { orderId, orderNumber: order.orderNumber ?? orderId, tenantId: resolvedTenantId, reason: 'submit-null', priority: EventPriority.NORMAL },
         } as any).catch(() => undefined);
       }
@@ -370,7 +389,7 @@ export class AxiomAutoTriggerService {
       timestamp: new Date(),
       source: 'axiom-auto-trigger-service',
       version: '1.0',
-      category: EventCategory.QC,
+      category: EventCategory.AXIOM,
       data: {
         orderId,
         orderNumber: order.orderNumber ?? orderId,

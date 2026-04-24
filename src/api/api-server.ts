@@ -45,6 +45,7 @@ import avmRouter from '../controllers/avm.controller';
 import fraudDetectionRouter from '../controllers/fraud-detection.controller';
 import { createBulkPortfolioRouter } from '../controllers/bulk-portfolio.controller.js';
 import { createBulkIngestionRouter } from '../controllers/bulk-ingestion.controller.js';
+import { createBulkAdapterDefinitionsRouter } from '../controllers/bulk-adapter-definitions.controller.js';
 import { createReviewProgramsRouter } from '../controllers/review-programs.controller.js';
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
@@ -77,6 +78,7 @@ import dlqMonitorRouter from '../controllers/dead-letter-queue-monitor.controlle
 
 // Import Correlation ID middleware
 import { correlationIdMiddleware, requestLoggingMiddleware } from '../middleware/correlation-id.middleware.js';
+import { requestTimeoutMiddleware } from '../middleware/request-timeout.middleware.js';
 
 // Import Authorization controllers
 import { createUserProfileRouter } from '../controllers/user-profile.controller';
@@ -152,6 +154,7 @@ import { createPortalRouter } from '../controllers/portal.controller.js';
 
 // Import Simple Communication Controller (Phase 4.1)
 import { createCommunicationRouter } from '../controllers/communication.controller';
+import { createVendorIntegrationRouter } from '../controllers/vendor-integration.controller.js';
 
 // Import Vendor Timeout Job (Phase 4.2)
 import { QuickBooksTokenRefreshJob } from '../jobs/quickbooks-token-refresh.job.js';
@@ -196,6 +199,7 @@ import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.j
 import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion-extraction-worker.service.js';
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
+import { VendorOutboxWorkerService } from '../services/vendor-integrations/VendorOutboxWorkerService.js';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
@@ -206,7 +210,16 @@ import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
 // Import Audit Event Sink + Engagement Audit Controller
 import { AuditEventSinkService } from '../services/audit-event-sink.service.js';
+import { QCIssueRecorderService } from '../services/qc-issue-recorder.service.js';
+import { QCLifecycleHandler } from '../services/qc-lifecycle-handler.service.js';
+import { VendorIntegrationEventConsumerService } from '../services/vendor-integration-event-consumer.service.js';
 import { createEngagementAuditRouter } from '../controllers/engagement-audit.controller.js';
+import { createOperationsMetricsRouter } from '../controllers/operations-metrics.controller.js';
+import { createAdminEventsRouter } from '../controllers/admin-events.controller.js';
+import { createQCOverrideRouter } from '../controllers/qc-override.controller.js';
+import { createAutomationMetricsRouter } from '../controllers/automation-metrics.controller.js';
+import { createQCIssuesOrderScopedRouter, createQCIssuesRouter } from '../controllers/qc-issues.controller.js';
+import { createVendorOutboxMonitorRouter } from '../controllers/vendor-outbox-monitor.controller.js';
 
 // Import Review Assignment Timeout Job
 import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
@@ -276,7 +289,12 @@ import {
   createFieldReviewTriggerRouter,
   createArchivingRetentionRouter,
 } from '../controllers/phase1.controller.js';
+import { createAiExecuteRouter } from '../controllers/ai-execute.controller.js';
 import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
+import { createAiAuditRouter } from '../controllers/ai-audit.controller.js';
+import { createAiConversationRouter } from '../controllers/ai-conversation.controller.js';
+import { createAiFlagsRouter } from '../controllers/ai-flags.controller.js';
+import { createAiTelemetryRouter } from '../controllers/ai-telemetry.controller.js';
 
 import { 
   authenticateJWT, 
@@ -319,6 +337,7 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionExtractionWorkerService?: BulkIngestionExtractionWorkerService;
   private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
+  private vendorOutboxWorkerService?: VendorOutboxWorkerService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
@@ -327,6 +346,9 @@ export class AppraisalManagementAPIServer {
   private reviewSLAWatcherJob?: ReviewSLAWatcherJob;
   private rovSLAWatcherJob?: ROVSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
+  private qcIssueRecorderService?: QCIssueRecorderService;
+  private qcLifecycleHandler?: QCLifecycleHandler;
+  private vendorIntegrationEventConsumerService?: VendorIntegrationEventConsumerService;
   private axiomTimeoutWatcherJob?: AxiomTimeoutWatcherJob;
   private supervisionTimeoutWatcherJob?: SupervisionTimeoutWatcherJob;
   private orderController!: OrderController;
@@ -467,6 +489,8 @@ export class AppraisalManagementAPIServer {
     // Correlation ID - must be early in middleware chain
     this.app.use(correlationIdMiddleware);
     this.app.use(requestLoggingMiddleware);
+    // B-05: Request timeout — aborts hung requests after REQUEST_TIMEOUT_MS (30s default)
+    this.app.use(requestTimeoutMiddleware);
 
     // ── Rate limiting ────────────────────────────────────────────────────────
     // Rule 1 — Document uploads: tighter per-IP limit (30 req/window).
@@ -663,6 +687,11 @@ export class AppraisalManagementAPIServer {
       // QuickBooks Integration
       const quickBooksController = new QuickBooksController();
       this.app.use('/api/v1/quickbooks', quickBooksController.getRouter());
+
+      // External vendor integrations (AIM-Port, future webhook/direct-call partners)
+      // Intentionally unauthenticated at the app layer — authentication is performed
+      // inside the vendor integration framework using vendor-specific credentials.
+      this.app.use('/api/v1/integrations', createVendorIntegrationRouter());
 
       this.app.use('/api/portal',
         this.unifiedAuth.authenticate(),
@@ -1005,7 +1034,33 @@ export class AppraisalManagementAPIServer {
     // AI Agentic Workflow / Structured Parsing
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
+      createAiExecuteRouter({ dbService: this.dbService }),
+    );
+    this.app.use('/api/ai',
+      this.unifiedAuth.authenticate(),
       createAiParsingRouter()
+    );
+
+    // AI Assistant — subsystem endpoints backing the frontend under
+    // l1-valuation-platform-ui (phases 0–8 of
+    // AI-ASSISTANT-PRODUCTION-READINESS-PLAN.md).  Each mounts its own
+    // sub-router; tenant + user identity come from UnifiedAuth and are
+    // never trusted from the request body.
+    this.app.use('/api/ai/audit',
+      this.unifiedAuth.authenticate(),
+      createAiAuditRouter(this.dbService)
+    );
+    this.app.use('/api/ai/conversations',
+      this.unifiedAuth.authenticate(),
+      createAiConversationRouter(this.dbService)
+    );
+    this.app.use('/api/settings/flags',
+      this.unifiedAuth.authenticate(),
+      createAiFlagsRouter(this.dbService)
+    );
+    this.app.use('/api/telemetry/ai',
+      this.unifiedAuth.authenticate(),
+      createAiTelemetryRouter(this.dbService)
     );
 
     // Post-Delivery Tasks — 1004D tracking, archiving, follow-ups (Phase 1.10)
@@ -1033,6 +1088,45 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/engagements',
       this.unifiedAuth.authenticate(),
       createEngagementAuditRouter(this.dbService, this.authzMiddleware)
+    );
+
+    // Operations metrics — cross-engagement analytics for the ops dashboard
+    this.app.use('/api/ops-metrics',
+      this.unifiedAuth.authenticate(),
+      createOperationsMetricsRouter(this.dbService, this.authzMiddleware)
+    );
+
+    // E-11: Admin event replay — POST /api/admin/events/:eventId/replay
+    this.app.use('/api/admin',
+      this.unifiedAuth.authenticate(),
+      createAdminEventsRouter(this.dbService, this.authzMiddleware)
+    );
+
+    // Automation Metrics — operational dashboard across all engagements
+    this.app.use('/api/automation/metrics',
+      this.unifiedAuth.authenticate(),
+      createAutomationMetricsRouter(this.dbService)
+    );
+
+    // QC Issues — auto-generated from Axiom criterion failures, resolvable by analysts
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      createQCIssuesOrderScopedRouter(this.dbService)
+    );
+    this.app.use('/api/qc-issues',
+      this.unifiedAuth.authenticate(),
+      createQCIssuesRouter(this.dbService)
+    );
+
+    // Q-08: Checklist item override (analyst can override AI verdict with reason)
+    this.app.use('/api/qc-reviews',
+      this.unifiedAuth.authenticate(),
+      createQCOverrideRouter(this.dbService, this.authzMiddleware)
+    );
+
+    this.app.use('/api/vendor-integrations/outbox',
+      this.unifiedAuth.authenticate(),
+      createVendorOutboxMonitorRouter(this.dbService)
     );
 
     // Engagements — aggregate root for lender-side valuation requests
@@ -1080,27 +1174,32 @@ export class AppraisalManagementAPIServer {
   private setupRoutes(): void {
     // Health check - comprehensive status
     this.app.get('/health', this.getHealthCheck.bind(this));
-    
-    // Readiness check - is service ready to accept traffic?
-    this.app.get('/ready', async (req: express.Request, res: express.Response) => {
+
+    // O-07: Readiness check — process is up AND critical deps reachable.
+    // Kubernetes/App Service should use this to decide whether to route traffic.
+    const readinessHandler = async (_req: express.Request, res: express.Response) => {
       try {
-        // Check database connectivity
         await this.dbService.initialize();
         res.status(200).json({ ready: true, timestamp: new Date().toISOString() });
       } catch (error) {
         this.logger.error('Readiness check failed', { error });
-        res.status(503).json({ 
-          ready: false, 
+        res.status(503).json({
+          ready: false,
           error: error instanceof Error ? error.message : 'Service not ready',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         });
       }
-    });
-    
-    // Liveness check - is service alive?
-    this.app.get('/live', (req: express.Request, res: express.Response) => {
+    };
+    this.app.get('/ready', readinessHandler);
+    this.app.get('/health/ready', readinessHandler);
+
+    // O-07: Liveness check — process is alive (no dep probing).
+    // Kubernetes/App Service should use this to decide whether to restart the pod.
+    const livenessHandler = (_req: express.Request, res: express.Response) => {
       res.status(200).json({ alive: true, timestamp: new Date().toISOString() });
-    });
+    };
+    this.app.get('/live', livenessHandler);
+    this.app.get('/health/live', livenessHandler);
     
     // Status endpoint
     this.app.get('/api/status', (_req, res) => {
@@ -1223,6 +1322,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/bulk-ingestion',
       this.unifiedAuth.authenticate(),
       createBulkIngestionRouter(this.dbService)
+    );
+
+    // Bulk Adapter Definitions — tenant-scoped adapter registry overrides and custom definitions
+    this.app.use('/api/bulk-adapter-definitions',
+      this.unifiedAuth.authenticate(),
+      createBulkAdapterDefinitionsRouter(this.dbService)
     );
 
     // Review Programs — versioned criteria programs used by tape evaluation
@@ -1513,6 +1618,18 @@ export class AppraisalManagementAPIServer {
       this.authorize('ai', 'generate'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletion
+    );
+
+    // A4 — SSE streaming variant.  Same auth + scope as the
+    // non-streaming endpoint.  Clients POST here and consume
+    // `data: {"delta":"..."}` frames; terminal frame is
+    // `data: {"done": true}`.
+    this.app.post('/api/ai/completion/stream',
+      this.unifiedAuth.authenticate(),
+      ...this.loadUserProfileIfAvailable(),
+      this.authorize('ai', 'generate'),
+      this.aiServicesController.validateCompletion(),
+      this.aiServicesController.generateCompletionStream
     );
 
     this.app.get('/api/ai/health',
@@ -3014,6 +3131,61 @@ export class AppraisalManagementAPIServer {
             },
           },
         },
+        '/api/bulk-ingestion/validate-document-urls': {
+          post: {
+            summary: 'Pre-flight check document URLs',
+            description: 'Issues an HTTP HEAD request to each provided URL and returns accessibility status. Use in the bulk-import wizard to surface broken document links before job submission (max 200 URLs per call).',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['urls'],
+                    properties: {
+                      urls: {
+                        type: 'array',
+                        items: { type: 'string', format: 'uri' },
+                        minItems: 1,
+                        maxItems: 200,
+                        description: 'List of document URLs to validate',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              '200': {
+                description: 'Validation results (one entry per URL regardless of reachability)',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        results: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              url: { type: 'string' },
+                              accessible: { type: 'boolean' },
+                              status: { type: 'integer', description: 'HTTP status code if a response was received' },
+                              error: { type: 'string', description: 'Error message if the request failed at network level' },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '400': { description: 'Invalid request body' },
+            },
+          },
+        },
         '/api/bulk-ingestion/{jobId}/failures/export': {
           get: {
             summary: 'Export bulk ingestion failures report',
@@ -3188,6 +3360,339 @@ export class AppraisalManagementAPIServer {
               '400': { description: 'Invalid request parameters' },
               '404': { description: 'Bulk ingestion job not found' },
               '500': { description: 'Failed to list bulk ingestion failures' },
+            },
+          },
+        },
+        '/api/bulk-adapter-definitions': {
+          get: {
+            summary: 'List bulk adapter definitions',
+            description: 'Returns tenant-scoped bulk adapter definitions with built-in adapters included by default.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'includeBuiltIns',
+                in: 'query',
+                required: false,
+                schema: { type: 'boolean', default: true },
+                description: 'When false, returns only tenant-persisted adapter definitions.',
+              },
+            ],
+            responses: {
+              '200': {
+                description: 'Adapter definitions retrieved successfully',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        success: { type: 'boolean', example: true },
+                        data: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'string' },
+                              type: { type: 'string', example: 'bulk-adapter-definition' },
+                              tenantId: { type: 'string' },
+                              adapterKey: { type: 'string' },
+                              name: { type: 'string' },
+                              description: { type: 'string', nullable: true },
+                              matchMode: { type: 'string', enum: ['EXACT', 'PREFIX'] },
+                              sourceAdapter: { type: 'string' },
+                              documentRequirement: {
+                                type: 'object',
+                                nullable: true,
+                                properties: {
+                                  required: { type: 'boolean' },
+                                  code: { type: 'string' },
+                                  messageTemplate: { type: 'string' },
+                                },
+                              },
+                              requiredFields: {
+                                type: 'array',
+                                nullable: true,
+                                items: {
+                                  type: 'object',
+                                  properties: {
+                                    source: { type: 'string' },
+                                    code: { type: 'string' },
+                                    messageTemplate: { type: 'string' },
+                                    trim: { type: 'boolean' },
+                                  },
+                                },
+                              },
+                              requiredAnyOf: {
+                                type: 'array',
+                                nullable: true,
+                                items: {
+                                  type: 'object',
+                                  properties: {
+                                    sources: { type: 'array', items: { type: 'string' } },
+                                    code: { type: 'string' },
+                                    messageTemplate: { type: 'string' },
+                                    trim: { type: 'boolean' },
+                                  },
+                                },
+                              },
+                              canonicalFieldMappings: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  properties: {
+                                    targetField: { type: 'string' },
+                                    source: { type: 'string' },
+                                    trim: { type: 'boolean' },
+                                  },
+                                },
+                              },
+                              staticCanonicalData: { type: 'object', additionalProperties: true, nullable: true },
+                              notes: { type: 'array', items: { type: 'string' }, nullable: true },
+                              isBuiltIn: { type: 'boolean' },
+                              createdAt: { type: 'string', format: 'date-time' },
+                              updatedAt: { type: 'string', format: 'date-time' },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              '400': { description: 'Invalid query parameters' },
+              '500': { description: 'Failed to list bulk adapter definitions' },
+            },
+          },
+          post: {
+            summary: 'Create bulk adapter definition',
+            description: 'Creates a tenant-scoped adapter definition used by canonicalization to validate and map incoming rows.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['adapterKey', 'name', 'matchMode', 'sourceAdapter', 'canonicalFieldMappings'],
+                    properties: {
+                      adapterKey: { type: 'string', example: 'custom-appraisal-v1' },
+                      name: { type: 'string', example: 'Custom Appraisal v1' },
+                      description: { type: 'string' },
+                      matchMode: { type: 'string', enum: ['EXACT', 'PREFIX'] },
+                      sourceAdapter: { type: 'string', example: 'custom-appraisal-v1' },
+                      documentRequirement: {
+                        type: 'object',
+                        properties: {
+                          required: { type: 'boolean' },
+                          code: { type: 'string' },
+                          messageTemplate: { type: 'string' },
+                        },
+                      },
+                      requiredFields: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            source: { type: 'string' },
+                            code: { type: 'string' },
+                            messageTemplate: { type: 'string' },
+                            trim: { type: 'boolean' },
+                          },
+                        },
+                      },
+                      requiredAnyOf: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            sources: { type: 'array', items: { type: 'string' } },
+                            code: { type: 'string' },
+                            messageTemplate: { type: 'string' },
+                            trim: { type: 'boolean' },
+                          },
+                        },
+                      },
+                      canonicalFieldMappings: {
+                        type: 'array',
+                        minItems: 1,
+                        items: {
+                          type: 'object',
+                          required: ['targetField', 'source'],
+                          properties: {
+                            targetField: { type: 'string', example: 'loanNumber' },
+                            source: { type: 'string', example: 'item.source.loanNumber' },
+                            trim: { type: 'boolean' },
+                          },
+                        },
+                      },
+                      staticCanonicalData: { type: 'object', additionalProperties: true },
+                      notes: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              '201': { description: 'Adapter definition created successfully' },
+              '400': { description: 'Invalid request body' },
+              '409': { description: 'Adapter definition already exists for tenant' },
+              '500': { description: 'Failed to create bulk adapter definition' },
+            },
+          },
+        },
+        '/api/bulk-adapter-definitions/{adapterKey}': {
+          get: {
+            summary: 'Get bulk adapter definition',
+            description: 'Returns one tenant-scoped or built-in adapter definition by adapter key.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'adapterKey',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Adapter key to retrieve.',
+              },
+            ],
+            responses: {
+              '200': { description: 'Adapter definition retrieved successfully' },
+              '400': { description: 'Invalid request parameters' },
+              '404': { description: 'Adapter definition not found' },
+              '500': { description: 'Failed to load bulk adapter definition' },
+            },
+          },
+          put: {
+            summary: 'Update bulk adapter definition',
+            description: 'Replaces the tenant-scoped adapter definition for the supplied adapter key.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'adapterKey',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Adapter key to update.',
+              },
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['name', 'matchMode', 'sourceAdapter', 'canonicalFieldMappings'],
+                    properties: {
+                      name: { type: 'string' },
+                      description: { type: 'string' },
+                      matchMode: { type: 'string', enum: ['EXACT', 'PREFIX'] },
+                      sourceAdapter: { type: 'string' },
+                      documentRequirement: { type: 'object', additionalProperties: true },
+                      requiredFields: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                      requiredAnyOf: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                      canonicalFieldMappings: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: true } },
+                      staticCanonicalData: { type: 'object', additionalProperties: true },
+                      notes: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              '200': { description: 'Adapter definition updated successfully' },
+              '400': { description: 'Invalid request body or parameters' },
+              '404': { description: 'Adapter definition not found' },
+              '500': { description: 'Failed to update bulk adapter definition' },
+            },
+          },
+          delete: {
+            summary: 'Delete bulk adapter definition',
+            description: 'Deletes a tenant-scoped adapter definition. Built-in adapters cannot be deleted because they are shipped in code.',
+            security: [{ bearerAuth: [] }],
+            tags: ['Bulk Ingestion'],
+            parameters: [
+              {
+                name: 'adapterKey',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Adapter key to delete.',
+              },
+            ],
+            responses: {
+              '200': { description: 'Adapter definition deleted successfully' },
+              '400': { description: 'Invalid request parameters' },
+              '404': { description: 'Adapter definition not found' },
+              '500': { description: 'Failed to delete bulk adapter definition' },
+            },
+          },
+        },
+        '/api/ai/execute': {
+          post: {
+            summary: 'Execute a structured AI intent',
+            description: 'Accepts a validated AI parse result and dispatches executable intents through a typed backend handler map.',
+            security: [{ bearerAuth: [] }],
+            tags: ['AI Services'],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['intent', 'confidence', 'actionPayload', 'presentationSchema'],
+                    properties: {
+                      intent: {
+                        type: 'string',
+                        enum: ['CREATE_ORDER', 'CREATE_ENGAGEMENT', 'ASSIGN_VENDOR', 'TRIGGER_AUTO_ASSIGNMENT'],
+                      },
+                      confidence: { type: 'number', minimum: 0, maximum: 1, example: 0.93 },
+                      actionPayload: {
+                        type: 'object',
+                        additionalProperties: true,
+                        description: 'Structured payload produced by AI parsing and consumed by the intent-specific handler.',
+                      },
+                      presentationSchema: {
+                        type: 'object',
+                        required: ['title', 'summary', 'fields', 'actionButtonText'],
+                        properties: {
+                          title: { type: 'string' },
+                          summary: { type: 'string' },
+                          fields: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              required: ['label', 'value', 'status'],
+                              properties: {
+                                label: { type: 'string' },
+                                value: {
+                                  oneOf: [{ type: 'string' }, { type: 'number' }],
+                                },
+                                status: {
+                                  type: 'string',
+                                  enum: ['added', 'changed', 'removed', 'unchanged'],
+                                },
+                                warning: { type: 'string' },
+                              },
+                            },
+                          },
+                          actionButtonText: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              '200': {
+                description: 'AI intent executed successfully',
+              },
+              '400': { description: 'Invalid AI execute payload' },
+              '401': { description: 'Missing tenant or user authentication context' },
+              '501': { description: 'Intent is valid but no backend handler is implemented yet' },
+              '500': { description: 'Failed to execute AI intent' },
             },
           },
         },
@@ -4200,9 +4705,15 @@ export class AppraisalManagementAPIServer {
 
   public async start(): Promise<void> {
     try {
+      // E-01 / E-02: Pre-flight Service Bus check. In production the publisher
+      // constructor throws if mock bus is enabled or the namespace is unset;
+      // verifyConnectivity() then exercises the sender so AAD/RBAC failures
+      // surface at boot rather than on the first publish attempt.
+      await this.verifyServiceBusStartup();
+
       // Run service health check on startup
       await this.performStartupHealthCheck();
-      
+
       // Validate critical Axiom configuration
       const axiomWarnings: string[] = [];
       if (!process.env.AXIOM_API_BASE_URL) axiomWarnings.push('AXIOM_API_BASE_URL not set — Axiom integration will use mock mode');
@@ -4338,6 +4849,33 @@ export class AppraisalManagementAPIServer {
     } catch (err) {
       this.logger.warn('CommunicationEventHandler could not be created', {
         error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Q-01 / Q-03 / Q-04: QC lifecycle auto-transitions
+    try {
+      this.qcLifecycleHandler = new QCLifecycleHandler(this.dbService);
+      this.qcLifecycleHandler.start().catch(err => {
+        this.logger.warn('QCLifecycleHandler failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('QCLifecycleHandler could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    try {
+      this.vendorIntegrationEventConsumerService = new VendorIntegrationEventConsumerService(this.dbService);
+      this.vendorIntegrationEventConsumerService.start().catch(err => {
+        this.logger.warn('VendorIntegrationEventConsumerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('VendorIntegrationEventConsumerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -4483,7 +5021,7 @@ export class AppraisalManagementAPIServer {
 
     // Start Bulk Ingestion Criteria Worker Service (subscribes to bulk.ingestion.extraction.completed)
     try {
-      this.bulkIngestionCriteriaWorkerService = new BulkIngestionCriteriaWorkerService();
+      this.bulkIngestionCriteriaWorkerService = new BulkIngestionCriteriaWorkerService(this.dbService);
       this.bulkIngestionCriteriaWorkerService.start().catch(err => {
         this.logger.warn('BulkIngestionCriteriaWorkerService failed to start', {
           error: err instanceof Error ? err.message : String(err)
@@ -4492,6 +5030,20 @@ export class AppraisalManagementAPIServer {
     } catch (err) {
       this.logger.warn('BulkIngestionCriteriaWorkerService could not be created', {
         error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Start Vendor Outbox Worker Service (publishes normalized vendor events from durable outbox)
+    try {
+      this.vendorOutboxWorkerService = new VendorOutboxWorkerService(this.dbService);
+      this.vendorOutboxWorkerService.start().catch(err => {
+        this.logger.warn('VendorOutboxWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('VendorOutboxWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -4576,6 +5128,21 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start QC Issue Recorder — listens for qc.issue.detected and writes qc-issue records
+    // with source document references so QC analysts can click through to the PDF source.
+    try {
+      this.qcIssueRecorderService = new QCIssueRecorderService(this.dbService);
+      this.qcIssueRecorderService.start().catch(err => {
+        this.logger.warn('QCIssueRecorderService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('QCIssueRecorderService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start UCDP/EAD Auto-Submit Service (auto-submits delivered orders to GSE portals for eligible loan types)
     try {
       this.ucdpEadAutoSubmitService = new UcdpEadAutoSubmitService(this.dbService);
@@ -4643,6 +5210,9 @@ export class AppraisalManagementAPIServer {
     if (this.communicationEventHandler) {
       this.communicationEventHandler.stop().catch(() => {});
     }
+    if (this.vendorIntegrationEventConsumerService) {
+      this.vendorIntegrationEventConsumerService.stop().catch(() => {});
+    }
     if (this.axiomAutoTriggerService) {
       this.axiomAutoTriggerService.stop().catch(() => {});
     }
@@ -4669,6 +5239,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.bulkIngestionCriteriaWorkerService) {
       this.bulkIngestionCriteriaWorkerService.stop().catch(() => {});
+    }
+    if (this.vendorOutboxWorkerService) {
+      this.vendorOutboxWorkerService.stop().catch(() => {});
     }
     if (this.bulkIngestionFinalizerService) {
       this.bulkIngestionFinalizerService.stop().catch(() => {});
@@ -4709,6 +5282,22 @@ export class AppraisalManagementAPIServer {
   /**
    * Perform health check on startup to identify configuration issues
    */
+  /**
+   * E-01 / E-02: Verify Service Bus is correctly configured before the server
+   * accepts traffic. Constructing the publisher enforces the production
+   * fail-fast (no mock bus in prod); verifyConnectivity() exercises the sender
+   * so auth/namespace misconfigurations surface at boot.
+   */
+  private async verifyServiceBusStartup(): Promise<void> {
+    const { ServiceBusEventPublisher } = await import('../services/service-bus-publisher.js');
+    const publisher = new ServiceBusEventPublisher();
+    try {
+      await publisher.verifyConnectivity();
+    } finally {
+      await publisher.close().catch(() => undefined);
+    }
+  }
+
   private async performStartupHealthCheck(): Promise<void> {
     try {
       const { ServiceHealthCheckService } = await import('../services/service-health-check.service.js');

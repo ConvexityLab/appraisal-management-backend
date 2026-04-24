@@ -63,12 +63,42 @@ export class DocumentController {
     return name;
   })();
 
-  // Multer configuration for file uploads
+  // D-02: Per-MIME file size limits enforced BEFORE the payload is fully
+  // buffered. The global `fileSize` is the hard ceiling (largest PDF we accept);
+  // the fileFilter rejects over-budget uploads for smaller types (e.g. images)
+  // with a clear 413-shaped error instead of silently trimming.
+  private static readonly MAX_UPLOAD_BYTES: Record<string, number> = {
+    'application/pdf': 100 * 1024 * 1024,          // 100MB
+    'image/jpeg': 10 * 1024 * 1024,                //  10MB
+    'image/png': 10 * 1024 * 1024,
+    'image/heic': 10 * 1024 * 1024,
+    'image/webp': 10 * 1024 * 1024,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 25 * 1024 * 1024, // 25MB .docx
+    'application/msword': 25 * 1024 * 1024,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 25 * 1024 * 1024,
+    'application/vnd.ms-excel': 25 * 1024 * 1024,
+    'text/csv': 25 * 1024 * 1024,
+  };
+  private static readonly DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
+  private static readonly HARD_CEILING_BYTES = 100 * 1024 * 1024;
+
   private upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-      fileSize: 50 * 1024 * 1024 // 50MB limit
-    }
+      fileSize: DocumentController.HARD_CEILING_BYTES,
+    },
+    fileFilter: (req, file, cb) => {
+      const max =
+        DocumentController.MAX_UPLOAD_BYTES[file.mimetype] ??
+        DocumentController.DEFAULT_MAX_BYTES;
+      // `req.headers['content-length']` is a cheap early-reject signal.
+      const declared = parseInt((req.headers['content-length'] as string) ?? '0', 10);
+      if (declared && declared > max) {
+        cb(new Error(`File too large: ${file.mimetype} limit is ${Math.round(max / 1024 / 1024)}MB`));
+        return;
+      }
+      cb(null, true);
+    },
   });
 
   constructor(private dbService: CosmosDbService, private authzMiddleware?: AuthorizationMiddleware) {

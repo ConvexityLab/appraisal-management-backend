@@ -68,8 +68,11 @@ const MAX_VENDOR_ATTEMPTS = 5;
 /** Maximum reviewers to contact before escalating to a human. */
 const MAX_REVIEWER_ATTEMPTS = 5;
 
-/** Hours before a vendor bid expires and the timeout checker fires. */
-const BID_EXPIRY_HOURS = 4;
+/**
+ * V-05: Hours before a vendor bid expires. Env-overridable so Ops can tune
+ * without a deploy (e.g. shorter window for rush orders, longer for standard).
+ */
+const BID_EXPIRY_HOURS = Math.max(1, parseFloat(process.env.BID_EXPIRY_HOURS ?? '4'));
 
 /** Hours before a reviewer assignment expires and the timeout job fires. */
 const REVIEW_EXPIRY_HOURS = 8;
@@ -99,6 +102,13 @@ export interface AutoVendorAssignmentState {
   currentBidId: string | null;
   currentBidExpiresAt: string | null; // ISO date
   initiatedAt: string; // ISO date
+  /**
+   * V-02: ISO timestamp at which VendorTimeoutCheckerJob dispatched the
+   * "bid expiring soon" reminder for the CURRENT bid. The job clears this
+   * on every new bid (see orchestrator bid-send paths) so each attempt gets
+   * at most one reminder.
+   */
+  expiringReminderSentAt?: string | null;
   // Broadcast-mode extension fields (undefined in sequential mode)
   broadcastMode?: boolean;
   broadcastBidIds?: string[];
@@ -766,6 +776,7 @@ export class AutoAssignmentOrchestratorService {
       ...state,
       currentBidId: bidId,
       currentBidExpiresAt: expiresAt.toISOString(),
+      expiringReminderSentAt: null, // V-02: reset so this new bid is eligible for a reminder
     };
 
     await this.dbService.updateItem(
@@ -923,6 +934,7 @@ export class AutoAssignmentOrchestratorService {
     const updatedState: AutoVendorAssignmentState = {
       ...state,
       currentBidExpiresAt: expiresAt.toISOString(),
+      expiringReminderSentAt: null, // V-02: reset so this new round is eligible for a reminder
       broadcastBidIds,
       broadcastRound: round,
     };

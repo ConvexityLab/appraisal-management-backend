@@ -99,6 +99,84 @@ describe('BulkIngestionController retry routes', () => {
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
+  it('forwards explicit engagement granularity on JSON submit', async () => {
+    mockSubmit.mockResolvedValue({
+      id: 'job-1',
+      totalItems: 1,
+      engagementGranularity: 'PER_LOAN',
+    });
+    const app = buildApp();
+
+    const res = await request(app)
+      .post('/api/bulk-ingestion/submit')
+      .set('x-tenant-id', 'tenant-123')
+      .send({
+        clientId: 'client-1',
+        adapterKey: 'bridge-standard',
+        analysisType: 'AVM',
+        ingestionMode: 'SHARED_STORAGE',
+        engagementGranularity: 'PER_LOAN',
+        dataFileName: 'tape.csv',
+        documentFileNames: [],
+        items: [{ rowIndex: 1, loanNumber: 'LN-1' }],
+        sharedStorage: {
+          storageAccountName: 'acct',
+          containerName: 'bulk-upload',
+          dataFileBlobName: 'tenant/client/adapter/AVM/tape.csv',
+          documentBlobNames: [],
+        },
+      });
+
+    expect(res.status).toBe(202);
+    expect(mockSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engagementGranularity: 'PER_LOAN',
+      }),
+      'tenant-123',
+      'unknown',
+    );
+  });
+
+  it('accepts TAPE_CONVERSION submit without files or sharedStorage', async () => {
+    mockSubmit.mockResolvedValue({
+      id: 'job-tape-1',
+      totalItems: 1,
+      ingestionMode: 'TAPE_CONVERSION',
+    });
+    const app = buildApp();
+
+    const res = await request(app)
+      .post('/api/bulk-ingestion/submit')
+      .set('x-tenant-id', 'tenant-123')
+      .send({
+        clientId: 'client-1',
+        adapterKey: 'tape-conversion-v1',
+        analysisType: 'FRAUD',
+        ingestionMode: 'TAPE_CONVERSION',
+        items: [
+          {
+            rowIndex: 1,
+            loanNumber: 'LN-100',
+            propertyAddress: '123 Main St',
+            city: 'Austin',
+            state: 'TX',
+            zipCode: '78701',
+          },
+        ],
+      });
+
+    expect(res.status).toBe(202);
+    expect(mockSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ingestionMode: 'TAPE_CONVERSION',
+        dataFileName: expect.stringMatching(/^tape-conversion-.*\.json$/),
+        documentFileNames: [],
+      }),
+      'tenant-123',
+      'unknown',
+    );
+  });
+
   it('returns 202 and forwards tenant/user context for item retry', async () => {
     mockRetryItem.mockResolvedValue({ id: 'job-1', status: 'PENDING', failedItems: 0 });
     const app = buildApp();

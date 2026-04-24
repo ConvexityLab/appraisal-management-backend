@@ -1467,7 +1467,7 @@ export class AxiomController {
           timestamp: new Date(),
           source: 'axiom-controller',
           version: '1.0',
-          category: EventCategory.QC,
+          category: EventCategory.AXIOM,
           data: {
             orderId: correlationId,
             orderNumber: (orderForEvent?.data as any)?.orderNumber ?? correlationId,
@@ -1713,9 +1713,14 @@ export class AxiomController {
 
       const result = await this.axiomService.runAgent(prompt, context, maxIterations);
 
+      // Phase 8 / A7: stamp schemaVersion so the frontend's Zod
+      // validators can assert contract stability.  A bump here is a
+      // coordinated change; the frontend rejects unknown versions
+      // loudly via AiContractError.
       res.status(200).json({
         success: true,
-        data: result
+        data: result,
+        schemaVersion: 'v1'
       });
     } catch (error) {
       this.logger.error('Error running Axiom agent', { error: error instanceof Error ? error.message : String(error) });

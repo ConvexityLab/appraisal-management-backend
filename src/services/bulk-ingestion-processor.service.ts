@@ -122,8 +122,37 @@ export class BulkIngestionProcessorService {
           throw new Error(`Job '${jobId}' is SHARED_STORAGE but event.sharedStorage is missing`);
         }
 
-        workingJob = await this.copySharedStorageArtifacts(workingJob, sharedStorage);
-      } else {
+        const skipBlobCopy = process.env.BULK_INGESTION_SKIP_BLOB_COPY === 'true';
+        if (skipBlobCopy) {
+          // Dev/test mode: skip actual blob copy, synthesize blob names from shared-storage config
+          // so downstream pipeline stages have valid references without real Azure Storage access.
+          const dataFileName = sharedStorage.dataFileBlobName.split('/').pop();
+          if (!dataFileName) {
+            throw new Error(
+              `Job '${jobId}' sharedStorage.dataFileBlobName must include a file name. Received '${sharedStorage.dataFileBlobName}'.`,
+            );
+          }
+
+          this.logger.warn('BULK_INGESTION_SKIP_BLOB_COPY=true: skipping blob copy (dev/test mode only)', {
+            jobId,
+            tenantId,
+            sourceAccount: sharedStorage.storageAccountName,
+          });
+          workingJob = {
+            ...workingJob,
+            dataFileBlobName: `bulk-ingestion/${tenantId}/${jobId}/copied/data/${dataFileName}`,
+            dataFileName,
+            documentBlobMap: Object.fromEntries(
+              sharedStorage.documentBlobNames.map((name) => [
+                name,
+                `bulk-ingestion/${tenantId}/${jobId}/copied/document/${name.split('/').pop()}`,
+              ]),
+            ),
+          };
+        } else {
+          workingJob = await this.copySharedStorageArtifacts(workingJob, sharedStorage);
+        }
+      } else if (ingestionMode === 'MULTIPART') {
         if (!workingJob.dataFileBlobName) {
           throw new Error(`Job '${jobId}' in MULTIPART mode is missing dataFileBlobName`);
         }
@@ -304,7 +333,7 @@ export class BulkIngestionProcessorService {
       updatedItems.push({
         ...item,
         status: 'COMPLETED',
-          matchedDocumentFileNames: matchedDocumentNames,
+        matchedDocumentFileNames: matchedDocumentNames,
         canonicalRecord: {
           loanNumber: item.source.loanNumber,
           externalId: item.source.externalId,
@@ -312,6 +341,16 @@ export class BulkIngestionProcessorService {
           adapterKey: job.adapterKey,
           dataFileBlobName: job.dataFileBlobName,
           ...(matchedDocumentBlob ? { documentBlobName: matchedDocumentBlob } : {}),
+          // Include all source loan/property fields so criteria rules can evaluate them
+          ...(item.source.loanAmount !== undefined ? { loanAmount: item.source.loanAmount } : {}),
+          ...(item.source.propertyType !== undefined ? { propertyType: item.source.propertyType } : {}),
+          ...(item.source.city !== undefined ? { city: item.source.city } : {}),
+          ...(item.source.state !== undefined ? { state: item.source.state } : {}),
+          ...(item.source.zipCode !== undefined ? { zipCode: item.source.zipCode } : {}),
+          ...(item.source.borrowerName !== undefined ? { borrowerName: item.source.borrowerName } : {}),
+          ...(item.source.loanType !== undefined ? { loanType: item.source.loanType } : {}),
+          ...(item.source.loanPurpose !== undefined ? { loanPurpose: item.source.loanPurpose } : {}),
+          ...(item.source.occupancyType !== undefined ? { occupancyType: item.source.occupancyType } : {}),
         },
         updatedAt: now,
       });

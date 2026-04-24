@@ -35,3 +35,5 @@ export { PostDeliveryService } from './post-delivery.service.js';
 // Phase R1 — Property Aggregate Root services
 export { PropertyRecordService, normalizeStreetForMatch, PROPERTY_RECORDS_CONTAINER } from './property-record.service.js';
 export { ComparableSaleService, haversineDistanceMiles, COMPARABLE_SALES_CONTAINER } from './comparable-sale.service.js';
+export { BulkIngestionAdapterConfigService } from './bulk-ingestion-adapter-config.service.js';
+export { BulkAdapterDefinitionService } from './bulk-adapter-definition.service.js';

@@ -246,6 +246,13 @@ var containerApps = [
         value: storageAccountName
       }
       {
+        // Enables the per-item criteria stage after extraction completes.
+        // Keep enabled in deployed environments so bulk-ingestion jobs emit
+        // criteria decisions and the finalizer can advance jobs to completion.
+        name: 'BULK_INGESTION_ENABLE_CRITERIA_STAGE'
+        value: 'true'
+      }
+      {
         // Deploy-time Axiom API base URL. When set, loadAppConfig() at startup sees the env
         // var is already populated and skips the App Config lookup for this key.
         // Empty string falls through to the App Config lookup path.

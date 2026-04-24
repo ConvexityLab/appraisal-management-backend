@@ -202,6 +202,14 @@ export interface Engagement {
   specialInstructions?: string;
   engagementInstructions?: string;
 
+  // ── Automation control ────────────────────────────────────────────────────
+  /** When true, all automated actions on this engagement and its child orders are paused.
+   *  Every automated step waits for human approval until resumed. */
+  automationPaused?: boolean;
+  automationPausedAt?: string;
+  automationPausedBy?: string;
+  automationPauseReason?: string;
+
   // ── Audit ─────────────────────────────────────────────────────────────────
   createdAt: string;
   createdBy: string;

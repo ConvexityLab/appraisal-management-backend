@@ -140,6 +140,7 @@ describe('BulkIngestionProcessorService', () => {
   });
 
   it('copies shared storage artifacts and completes the job', async () => {
+    process.env.BULK_INGESTION_SKIP_BLOB_COPY = 'false';
     const db = makeDbStub({
       ingestionMode: 'SHARED_STORAGE',
       dataFileBlobName: undefined,
@@ -179,6 +180,8 @@ describe('BulkIngestionProcessorService', () => {
         },
       }),
     );
+
+    process.env.BULK_INGESTION_SKIP_BLOB_COPY = 'true';
 
     expect(blobService.uploadBlob).toHaveBeenCalledTimes(2);
     const persistedJob = db.upsertItem.mock.calls[0][1];
@@ -255,6 +258,65 @@ describe('BulkIngestionProcessorService', () => {
           'bulk-ingestion/tenant-001/a/document/doc1.pdf',
           'bulk-ingestion/tenant-001/b/document/doc1.pdf',
         ]),
+      }),
+    );
+  });
+
+  it('completes TAPE_CONVERSION jobs without requiring staged blobs', async () => {
+    const db = makeDbStub({
+      ingestionMode: 'TAPE_CONVERSION',
+      adapterKey: 'tape-conversion-v1',
+      dataFileBlobName: undefined,
+      dataFileName: 'tape-conversion-job.json',
+      documentFileNames: [],
+      documentBlobMap: {},
+      items: [
+        {
+          ...makeBaseJob().items[0],
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-TAPE-001',
+            propertyAddress: '456 Oak Ave',
+            city: 'Denver',
+            state: 'CO',
+            zipCode: '80202',
+            borrowerName: 'Jane Doe',
+            loanAmount: 410000,
+          },
+          matchedDocumentFileNames: [],
+        },
+      ],
+    });
+    const blobService = { uploadBlob: vi.fn() } as any;
+    const service = new BulkIngestionProcessorService(db as any, blobService);
+
+    await (service as any).onBulkIngestionRequested(
+      makeEvent({
+        ingestionMode: 'TAPE_CONVERSION',
+        adapterKey: 'tape-conversion-v1',
+        documentFileNames: [],
+      }),
+    );
+
+    const persistedJob = db.upsertItem.mock.calls[0][1];
+    expect(persistedJob.status).toBe('COMPLETED');
+    expect(persistedJob.items[0].status).toBe('COMPLETED');
+    expect(persistedJob.items[0].canonicalRecord).toEqual(
+      expect.objectContaining({
+        loanNumber: 'LN-TAPE-001',
+        propertyAddress: '456 Oak Ave',
+        adapterKey: 'tape-conversion-v1',
+      }),
+    );
+    expect(blobService.uploadBlob).not.toHaveBeenCalled();
+    expect(db.createItem).not.toHaveBeenCalled();
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'bulk.ingestion.processed',
+        data: expect.objectContaining({
+          ingestionMode: 'TAPE_CONVERSION',
+          status: 'COMPLETED',
+        }),
       }),
     );
   });

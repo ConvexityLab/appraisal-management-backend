@@ -75,6 +75,8 @@ export interface CanonicalSnapshotRecord {
     providerData?: Record<string, unknown>;
     provenance?: Record<string, unknown>;
   };
+  /** A-13: Set when `refreshFromExtractionRun` re-materialises normalizedData post-Axiom. */
+  refreshedAt?: string;
 }
 
 export interface CriteriaStepEvidenceRef {

@@ -675,5 +675,80 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
     },
   );
 
+  // ── Automation control ────────────────────────────────────────────────────
+  // POST /:id/automation/pause  — pause all automation on engagement + child orders
+  // POST /:id/automation/resume — resume automation
+
+  router.post('/:id/automation/pause', ...update, async (req: UnifiedAuthRequest, res: Response) => {
+    try {
+      const tenantId = resolveTenantId(req);
+      const userId = resolveUserId(req);
+      const userName = (req as any).user?.displayName ?? (req as any).user?.email ?? userId;
+      const reason = (req.body?.reason as string) ?? 'No reason provided';
+      const engagementId = req.params['id'] as string;
+
+      const engagement = await service.getEngagement(engagementId, tenantId);
+      if (!engagement) {
+        return res.status(404).json({ success: false, error: 'Engagement not found' });
+      }
+
+      const now = new Date().toISOString();
+      const patched = {
+        ...engagement,
+        automationPaused: true,
+        automationPausedAt: now,
+        automationPausedBy: userName,
+        automationPauseReason: reason,
+        updatedAt: now,
+        updatedBy: userId,
+      };
+
+      const container = dbService.getContainer('engagements');
+      await container.item(engagementId, tenantId).replace(patched);
+
+      logger.info('Engagement automation paused', { engagementId, userId, reason });
+      return res.json({ success: true, data: patched });
+    } catch (error) {
+      logger.error('pauseAutomation failed', { error });
+      return res.status(500).json({ success: false, error: 'Failed to pause automation' });
+    }
+  });
+
+  router.post('/:id/automation/resume', ...update, async (req: UnifiedAuthRequest, res: Response) => {
+    try {
+      const tenantId = resolveTenantId(req);
+      const userId = resolveUserId(req);
+      const userName = (req as any).user?.displayName ?? (req as any).user?.email ?? userId;
+      const engagementId = req.params['id'] as string;
+
+      const engagement = await service.getEngagement(engagementId, tenantId);
+      if (!engagement) {
+        return res.status(404).json({ success: false, error: 'Engagement not found' });
+      }
+
+      const now = new Date().toISOString();
+      const patched = {
+        ...engagement,
+        automationPaused: false,
+        automationPausedAt: undefined,
+        automationPausedBy: undefined,
+        automationPauseReason: undefined,
+        automationResumedAt: now,
+        automationResumedBy: userName,
+        updatedAt: now,
+        updatedBy: userId,
+      };
+
+      const container = dbService.getContainer('engagements');
+      await container.item(engagementId, tenantId).replace(patched);
+
+      logger.info('Engagement automation resumed', { engagementId, userId });
+      return res.json({ success: true, data: patched });
+    } catch (error) {
+      logger.error('resumeAutomation failed', { error });
+      return res.status(500).json({ success: false, error: 'Failed to resume automation' });
+    }
+  });
+
   return router;
 }
