@@ -298,6 +298,7 @@ export class VendorMatchingEngine {
     return {
       vendorId: vendor.id,
       matchScore,
+      recentOrders: performance?.ordersLast30Days ?? performance?.totalOrdersCompleted ?? 0,
       scoreBreakdown: {
         performance: performanceScore,
         availability: availabilityScore,

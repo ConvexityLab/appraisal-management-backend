@@ -41,6 +41,13 @@ vi.mock('../../src/services/vendor-matching-engine.service.js', () => ({
   })),
 }));
 
+const mockAnalyzeVendorBid = vi.fn();
+vi.mock('../../src/services/axiom.service.js', () => ({
+  AxiomService: vi.fn().mockImplementation(() => ({
+    analyzeVendorBid: mockAnalyzeVendorBid,
+  })),
+}));
+
 vi.mock('../../src/services/qc-review-queue.service.js', () => ({
   QCReviewQueueService: vi.fn().mockImplementation(() => ({
     addToQueue: vi.fn(),
@@ -212,6 +219,10 @@ describe('AutoAssignmentOrchestratorService — Broadcast Mode', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAnalyzeVendorBid.mockReset();
+    delete process.env.BULK_INGESTION_AI_BID_SCORING;
+    delete process.env.BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD;
+    delete process.env.API_BASE_URL;
     db = createMockDbService();
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();

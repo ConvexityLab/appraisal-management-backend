@@ -220,6 +220,7 @@ import { createQCOverrideRouter } from '../controllers/qc-override.controller.js
 import { createAutomationMetricsRouter } from '../controllers/automation-metrics.controller.js';
 import { createQCIssuesOrderScopedRouter, createQCIssuesRouter } from '../controllers/qc-issues.controller.js';
 import { createVendorOutboxMonitorRouter } from '../controllers/vendor-outbox-monitor.controller.js';
+import { createVendorBidAnalysisRouter } from '../controllers/vendor-bid-analysis.controller.js';
 
 // Import Review Assignment Timeout Job
 import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
@@ -1035,6 +1036,10 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
       createAiExecuteRouter({ dbService: this.dbService }),
+    );
+    this.app.use('/api/agent',
+      this.unifiedAuth.authenticate(),
+      createVendorBidAnalysisRouter(this.dbService),
     );
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),

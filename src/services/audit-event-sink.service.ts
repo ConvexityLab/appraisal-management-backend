@@ -21,7 +21,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
+import { WebPubSubService } from './web-pubsub.service.js';
 import type { BaseEvent, EventHandler, AppEvent } from '../types/events.js';
+import { EventCategory, EventPriority } from '../types/events.js';
 
 // ── Audit document shape ──────────────────────────────────────────────────────
 
@@ -165,12 +167,14 @@ export class AuditEventSinkService {
   private readonly logger = new Logger('AuditEventSinkService');
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly dbService: CosmosDbService;
+  private readonly pubsub: WebPubSubService;
   private isStarted = false;
   /** Set to true after the first Cosmos write failure so we don't spam logs. */
   private firewallBlocked = false;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
+    this.pubsub = new WebPubSubService();
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -217,6 +221,30 @@ export class AuditEventSinkService {
       const doc = await this.buildAuditDoc(event);
       await this.dbService.createItem<AuditEventDoc>('engagement-audit-events', doc);
       this.logger.debug('Audit event persisted', { eventType: event.type, engagementId: doc.engagementId });
+
+      // Broadcast to engagement-specific group so connected clients see it instantly
+      // Best-effort — never throws, never blocks audit persistence
+      try {
+        const groupName = `engagement-${doc.engagementId}`;
+        await this.pubsub.sendToGroup(groupName, {
+          id: doc.id,
+          title: 'Engagement event',
+          message: doc.description,
+          priority: doc.severity === 'error' ? EventPriority.HIGH
+            : doc.severity === 'warning' ? EventPriority.NORMAL
+            : EventPriority.LOW,
+          category: EventCategory.SYSTEM,
+          targets: [],
+          data: {
+            auditEvent: doc, // full enriched audit doc
+          },
+        });
+      } catch (pubErr) {
+        // Non-fatal — pub-sub broadcast failure should not affect audit persistence
+        this.logger.debug('WebPubSub broadcast failed (non-fatal)', {
+          error: pubErr instanceof Error ? pubErr.message : String(pubErr),
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Treat infrastructure errors as firewall-blocked to avoid log spam.

@@ -428,6 +428,87 @@ export function createEngagementAuditRouter(dbService: CosmosDbService, authzMid
     }
   });
 
+  // ── GET /:id/events/stream ────────────────────────────────────────────────
+  // Server-Sent Events stream of new audit events for an engagement.
+  // The client opens this connection and receives events as they're written
+  // to engagement-audit-events. Polls Cosmos every 2s for new events.
+
+  router.get('/:id/events/stream', async (req: Request, res: Response) => {
+    const engagementId = req.params['id'] as string;
+    const tenantId = (req as any).user?.tenantId;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Tenant context required' });
+    }
+
+    // SSE setup
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    res.write(`: connected\n\n`);
+    const flush = () => { if (typeof (res as any).flush === 'function') (res as any).flush(); };
+    flush();
+
+    let lastTimestamp = new Date().toISOString();
+    let closed = false;
+    const seenIds = new Set<string>();
+
+    const heartbeat = setInterval(() => {
+      if (closed) return;
+      try {
+        res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+        flush();
+      } catch { /* connection dropped */ }
+    }, 15_000);
+
+    const poll = async () => {
+      if (closed) return;
+      try {
+        const container = dbService.getContainer('engagement-audit-events');
+        const iter = container.items.query({
+          query:
+            'SELECT * FROM c WHERE c.engagementId = @id AND c.tenantId = @tenantId AND c.timestamp > @since ORDER BY c.timestamp ASC',
+          parameters: [
+            { name: '@id', value: engagementId },
+            { name: '@tenantId', value: tenantId },
+            { name: '@since', value: lastTimestamp },
+          ],
+        }, { partitionKey: engagementId });
+
+        const { resources } = await iter.fetchAll();
+        for (const event of resources as Array<{ id: string; timestamp: string }>) {
+          if (seenIds.has(event.id)) continue;
+          seenIds.add(event.id);
+          if (event.timestamp > lastTimestamp) lastTimestamp = event.timestamp;
+          if (closed) return;
+          res.write(`event: engagement.event\n`);
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+        }
+        flush();
+      } catch (err) {
+        logger.warn('SSE poll failed', { engagementId, error: (err as Error).message });
+      }
+    };
+
+    const pollTimer = setInterval(poll, 2_000);
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(pollTimer);
+      clearInterval(heartbeat);
+      try { res.end(); } catch { /* noop */ }
+    };
+
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+
+    return; // SSE stays open
+  });
+
   // ── POST /:id/intervene ───────────────────────────────────────────────────
   // Human-in-the-loop intervention: dispatches an action on an audit event.
   // Writes a `human.intervention` audit event and dispatches to the relevant service.
@@ -753,6 +834,26 @@ async function dispatchIntervention(
         return ok(`QC overridden to FAIL for order ${orderId}.`);
       }
 
+      case 'qc.verdict_override': {
+        // Per-item AI verdict override (from VerdictOverrideDialog)
+        // The audit event already captured: itemId, itemLabel, originalAiVerdict, newVerdict, reasonCategory
+        // We emit a structured event so downstream listeners can update QC item state and AI feedback metrics
+        if (!orderId) return fail('orderId required for verdict override');
+        const { itemId, itemLabel, originalAiVerdict, newVerdict, reasonCategory } = ctx.eventData as Record<string, unknown>;
+        if (!itemId || !newVerdict) return fail('itemId and newVerdict required in eventData');
+        await publishInterventionEvent('qc.verdict.overridden', EventCategory.QC, {
+          orderId, tenantId,
+          itemId, itemLabel,
+          originalAiVerdict, newVerdict,
+          reasonCategory,
+          reason: reason ?? '',
+          triggeredBy: ctx.userName,
+        });
+        return ok(
+          `Verdict override recorded for "${itemLabel ?? itemId}" — AI: ${originalAiVerdict ?? 'unknown'} → Reviewer: ${newVerdict}. Permanent audit trail entry created.`,
+        );
+      }
+
       case 'qc.dismiss_issue': {
         return ok('QC issue dismissed. The finding has been marked as not applicable in the audit trail.');
       }
@@ -891,6 +992,110 @@ async function dispatchIntervention(
 
       case 'order.edit': {
         return ok(`Navigate to the order detail page to edit order ${orderId}.`);
+      }
+
+      // ── Re-route automation path (course change) ──────────────────────────
+
+      case 'order.change_product_type': {
+        if (!orderId) return fail('orderId required to change product type');
+        const newProductType = ctx.eventData.newProductType as string | undefined;
+        if (!newProductType) return fail('newProductType required in event data — pass via reason field or include in payload');
+        const order = await dbService.getItem<any>('orders', orderId);
+        if (!order?.data) return fail(`Order ${orderId} not found`);
+        const oldProductType = order.data.productType;
+        await dbService.updateOrder(orderId, {
+          productType: newProductType,
+          productTypeChangedBy: userId,
+          productTypeChangedAt: new Date().toISOString(),
+          productTypeChangeReason: reason ?? 'Changed via intervention',
+          productTypeChangeFrom: oldProductType,
+          // Reset vendor assignment since the new product may need a different vendor
+          ...(order.data.assignedVendorId ? {
+            assignedVendorId: null,
+            assignedVendorName: null,
+            status: 'PENDING_ASSIGNMENT',
+            autoVendorAssignment: { status: 'IDLE', reason: `Product type changed from ${oldProductType} → ${newProductType}` },
+          } : {}),
+        } as any);
+        await publishInterventionEvent('order.status.changed', EventCategory.ORDER, {
+          orderId, tenantId,
+          productTypeChanged: true,
+          oldProductType, newProductType,
+          reason: `Product type changed: ${reason ?? ''}`,
+          triggeredBy: ctx.userName,
+        });
+        return ok(`Product type for order ${orderId} changed: ${oldProductType} → ${newProductType}. Vendor assignment reset.`);
+      }
+
+      case 'order.change_priority': {
+        if (!orderId) return fail('orderId required to change priority');
+        const newPriority = ctx.eventData.newPriority as string | undefined;
+        if (!newPriority) return fail('newPriority required (e.g., RUSH, HIGH, NORMAL, LOW)');
+        const order = await dbService.getItem<any>('orders', orderId);
+        if (!order?.data) return fail(`Order ${orderId} not found`);
+        const oldPriority = order.data.priority;
+
+        // If upgrading to RUSH, also tighten the due date
+        const updates: Record<string, unknown> = {
+          priority: newPriority,
+          priorityChangedBy: userId,
+          priorityChangedAt: new Date().toISOString(),
+          priorityChangeReason: reason ?? 'Changed via intervention',
+          priorityChangeFrom: oldPriority,
+        };
+        let dueDateAdjusted = false;
+        if (newPriority === 'RUSH' && order.data.dueDate) {
+          const currentDue = new Date(order.data.dueDate);
+          // RUSH cuts deadline in half (capped at 24h from now)
+          const now = new Date();
+          const halfRemaining = (currentDue.getTime() - now.getTime()) / 2;
+          const earliest = now.getTime() + 24 * 60 * 60 * 1000;
+          const newDue = new Date(Math.max(earliest, now.getTime() + halfRemaining));
+          updates['dueDate'] = newDue.toISOString();
+          dueDateAdjusted = true;
+        }
+        await dbService.updateOrder(orderId, updates as any);
+
+        await publishInterventionEvent('order.status.changed', EventCategory.ORDER, {
+          orderId, tenantId,
+          priorityChanged: true,
+          oldPriority, newPriority,
+          ...(dueDateAdjusted ? { dueDateAdjusted: true, newDueDate: updates['dueDate'] } : {}),
+          reason: `Priority changed: ${reason ?? ''}`,
+          triggeredBy: ctx.userName,
+        });
+        return ok(
+          `Priority for order ${orderId} changed: ${oldPriority} → ${newPriority}.${
+            dueDateAdjusted ? ` Due date tightened to ${updates['dueDate']}.` : ''
+          }`,
+        );
+      }
+
+      case 'order.change_due_date': {
+        if (!orderId) return fail('orderId required to change due date');
+        const newDueDate = (ctx.eventData.newDueDate as string | undefined)
+          ?? (ctx.eventData.dueDate as string | undefined);
+        if (!newDueDate) return fail('newDueDate required (ISO 8601)');
+        const parsed = new Date(newDueDate);
+        if (isNaN(parsed.getTime())) return fail(`Invalid newDueDate: ${newDueDate}`);
+        const order = await dbService.getItem<any>('orders', orderId);
+        if (!order?.data) return fail(`Order ${orderId} not found`);
+        const oldDueDate = order.data.dueDate;
+        await dbService.updateOrder(orderId, {
+          dueDate: parsed.toISOString(),
+          dueDateChangedBy: userId,
+          dueDateChangedAt: new Date().toISOString(),
+          dueDateChangeReason: reason ?? 'Changed via intervention',
+          dueDateChangeFrom: oldDueDate,
+        } as any);
+        await publishInterventionEvent('order.status.changed', EventCategory.ORDER, {
+          orderId, tenantId,
+          dueDateChanged: true,
+          oldDueDate, newDueDate: parsed.toISOString(),
+          reason: `Due date changed: ${reason ?? ''}`,
+          triggeredBy: ctx.userName,
+        });
+        return ok(`Due date for order ${orderId} changed: ${oldDueDate ?? '(unset)'} → ${parsed.toISOString()}.`);
       }
 
       // ── Engagement lifecycle interventions ──────────────────────────────

@@ -182,8 +182,8 @@
 | ID | Status | Repo | Task | Notes |
 |---|---|---|---|---|
 | P4-AX-05 | ✅ | AX | Add `appraisal_vendor_bid_analysis` to the `AgentAnalysisActor` analysis type enum. Inputs: `vendorCandidates[]` (id, name, score, recentOrders, avgTurnaround, avgFee), `orderDetails` (productType, propertyAddress, priority, dueDate). Output: ranked recommendation with rationale per candidate and overall recommendation. | **Done April 24, 2026** — added `appraisal_vendor_bid_analysis` to the actor analysis type set, taught the prompt builder to rank vendor candidates from `vendorCandidates` + `orderDetails`, and surfaced `rankedCandidates` / `overallRecommendation` in the actor output/state. |
-| P4-AX-06 | ✅ | AX | Add `POST /api/agent/analyze/vendor-bid` route that accepts the above input and returns the analysis synchronously (≤30s timeout). | File: `src/api/routes/agent.ts` |
-| P4-AX-07 | ⬜ | BE | In `AutoAssignmentOrchestratorService.onOrderCreated()`: when `BULK_INGESTION_AI_BID_SCORING=true`, call Axiom `analyzeVendorBid` before sending bid to `rankedVendors[0]`. Use AI recommendation as override when confidence ≥ threshold; fall back to rules-based rank. | File: `src/services/auto-assignment-orchestrator.service.ts` |
+| P4-AX-06 | ✅ | AX | Add `POST /api/agent/analyze/vendor-bid` route that accepts the above input and returns the analysis synchronously (≤30s timeout). | **Done April 24, 2026** — added request validation plus the synchronous `POST /api/agent/analyze/vendor-bid` route in `src/api/routes/agent.ts`, executed via `AgentAnalysisActor`, and capped timeout at 30s. |
+| P4-AX-07 | ✅ | BE | In `AutoAssignmentOrchestratorService.onOrderCreated()`: when `BULK_INGESTION_AI_BID_SCORING=true`, call Axiom `analyzeVendorBid` before sending bid to `rankedVendors[0]`. Use AI recommendation as override when confidence ≥ threshold; fall back to rules-based rank. | **Done April 24, 2026** — added Axiom-backed vendor-bid scoring to `AutoAssignmentOrchestratorService`, required explicit confidence-threshold config, persisted the analysis snapshot onto the order, and only reordered the ranked list when AI confidence met the configured threshold. |
 
 ### 4.4 — Autonomous Bidding UI (P4-UI-08 → P4-UI-10)
 
@@ -191,7 +191,7 @@
 |---|---|---|---|---|
 | P4-UI-08 | ⬜ | UI | Enable `tools.negotiation` flag. Implement "Bid Recommendation" card in the RFB award step: shows Axiom recommendation (recommended vendor + rationale), confidence chip, "Accept Recommendation" button. | Files: `src/app/(control-panel)/orders/[id]/rfb/page.tsx`, `src/configs/aiAssistantFlags.ts` |
 | P4-UI-09 | ⬜ | UI | Add "Auto-award on first acceptable bid" toggle per order in the RFB page. Configures `autoAwardThreshold: { maxFeeMultiplier, minVendorScore }` on the RFB record. Backend honors this in bid-acceptance logic. | File: `src/app/(control-panel)/orders/[id]/rfb/page.tsx` |
-| P4-UI-10 | ⬜ | UI | Add AI "Why this vendor?" explainability panel (collapsible) to vendor acceptance queue per assigned order. Calls `GET /api/agent/analyze/vendor-bid/:orderId` to retrieve cached trajectory. | File: `src/app/(control-panel)/vendor-engagement/acceptance/page.tsx` |
+| P4-UI-10 | ✅ | UI | Add AI "Why this vendor?" explainability panel (collapsible) to vendor acceptance queue per assigned order. Calls `GET /api/agent/analyze/vendor-bid/:orderId` to retrieve cached trajectory. | **Done April 24, 2026** — added the vendor acceptance queue explainability panel in `src/app/(control-panel)/vendor-engagement/acceptance/page.tsx`, backed by the cached-analysis query hook and richer rank-trajectory / dispatch-reason metadata from the backend. |
 
 ### 4.5 — Proactive AI Monitoring (P4-BE-11 → P4-UI-12)
 
@@ -231,7 +231,7 @@
 
 | ID | Status | Repo | Task | Notes |
 |---|---|---|---|---|
-| P5-UI-06 | ⬜ | UI | Add "Retry" action button (shown when `retryable: true`) to failure items in `bulk-ingestion-ops/page.tsx`. Calls `POST /api/bulk-ingestion/:jobId/items/:itemId/retry`. | File: `src/app/(control-panel)/bulk-ingestion-ops/page.tsx` |
+| P5-UI-06 | ✅ | UI | Add "Retry" action button (shown when `retryable: true`) to failure items in `bulk-ingestion-ops/page.tsx`. Calls `POST /api/bulk-ingestion/:jobId/items/:itemId/retry`. | **Done April 24, 2026** — bulk ingestion ops now exposes per-item retry actions in `src/app/(control-panel)/bulk-ingestion-ops/page.tsx`, wired through `useRetryBulkIngestionItemMutation` to `POST /api/bulk-ingestion/:jobId/items/:itemId/retry`. |
 
 ### 5.5 — Broadcast Multi-round Exhaustion Test (P5-BE-07)
 
@@ -294,9 +294,9 @@ These are enhancements beyond gap-fixing. Prioritise after Phase 5 is complete.
 
 | Phase | Total Tasks | Done | In Progress | Blocked |
 |---|---|---|---|---|
-| Phase 1 — Make It Work | 11 | 10 | 0 | 1 (P1-BE-02 requires DLQ audit) |
-| Phase 2 — Document Correlation | 10 | 0 | 2 | 0 |
-| Phase 3 — Engagement Model | 10 | 0 | 0 | 0 |
-| Phase 4 — AI Autonomous Bidding | 12 | 0 | 0 | 0 |
-| Phase 5 — Operational Excellence | 10 | 0 | 0 | 0 |
-| **Total** | **53** | **10** | **2** | **1** |
+| Phase 1 — Make It Work | 11 | 11 | 0 | 0 |
+| Phase 2 — Document Correlation | 10 | 10 | 0 | 0 |
+| Phase 3 — Engagement Model | 10 | 10 | 0 | 0 |
+| Phase 4 — AI Autonomous Bidding | 12 | 8 | 0 | 0 |
+| Phase 5 — Operational Excellence | 10 | 1 | 0 | 0 |
+| **Total** | **53** | **40** | **0** | **0** |

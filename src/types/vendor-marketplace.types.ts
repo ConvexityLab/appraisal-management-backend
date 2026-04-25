@@ -188,6 +188,7 @@ export interface VendorMatchRequest {
 export interface VendorMatchResult {
   vendorId: string;
   matchScore: number;              // 0-100
+  recentOrders?: number;           // recent completed orders used by AI bid analysis
   
   // Score Breakdown
   scoreBreakdown: {

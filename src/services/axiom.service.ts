@@ -179,6 +179,37 @@ export interface ExtractionRecord {
   error?: string;
 }
 
+export interface AxiomVendorBidCandidate {
+  id: string;
+  name: string;
+  score: number;
+  recentOrders: number;
+  avgTurnaround: number;
+  avgFee: number;
+}
+
+export interface AxiomVendorBidOrderDetails {
+  productType: string;
+  propertyAddress: string;
+  priority: string;
+  dueDate: string;
+}
+
+export interface AxiomVendorBidAnalysisResult {
+  analysisId?: string;
+  analysisType: 'appraisal_vendor_bid_analysis';
+  entityId: string;
+  recommendation?: string;
+  confidence?: number;
+  rationale?: string;
+  rankedCandidates?: Array<Record<string, unknown>>;
+  overallRecommendation?: string;
+  artifacts?: Record<string, unknown>;
+  completedAt?: string;
+  iterations?: number;
+  source?: string;
+}
+
 /** Inline Loom stage definition — matches the Axiom POST /api/pipelines stages array schema. */
 interface LoomStage {
   name: string;
@@ -3835,6 +3866,75 @@ export class AxiomService {
       return response.data;
     } catch (error) {
       this.logger.error('Failed to run agent', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+
+  /**
+   * Synchronous vendor-bid analysis proxy.
+   * Calls Axiom's `POST /api/agent/analyze/vendor-bid` route and returns the
+   * ranked recommendation payload used by the appraisal auto-assignment flow.
+   */
+  public async analyzeVendorBid(params: {
+    entityId: string;
+    entityType: string;
+    subClientId: string;
+    sentinelApiBase: string;
+    vendorCandidates: AxiomVendorBidCandidate[];
+    orderDetails: AxiomVendorBidOrderDetails;
+    maxIterations?: number;
+    timeoutMs?: number;
+  }): Promise<AxiomVendorBidAnalysisResult> {
+    if (!this.enabled) {
+      const rankedCandidates = [...params.vendorCandidates]
+        .sort((left, right) => right.score - left.score)
+        .map((candidate, index) => ({
+          vendorId: candidate.id,
+          vendorName: candidate.name,
+          rank: index + 1,
+          score: candidate.score,
+          rationale: `Mock ranking prefers stronger score (${candidate.score}), turnaround (${candidate.avgTurnaround}h), and fee ($${candidate.avgFee}).`,
+        }));
+
+      const topCandidate = rankedCandidates[0] as { vendorId?: string; vendorName?: string } | undefined;
+
+      return {
+        analysisId: `vendor-bid-analysis-${uuidv4()}`,
+        analysisType: 'appraisal_vendor_bid_analysis',
+        entityId: params.entityId,
+        confidence: 0.78,
+        rationale: topCandidate
+          ? `Mock vendor-bid analysis recommends ${topCandidate.vendorName ?? topCandidate.vendorId} using the current rules-based ranking.`
+          : 'Mock vendor-bid analysis found no vendor candidates to recommend.',
+        rankedCandidates,
+        overallRecommendation: topCandidate
+          ? `Select ${topCandidate.vendorName ?? topCandidate.vendorId} based on the strongest combined score.`
+          : 'No vendor recommendation available.',
+        completedAt: new Date().toISOString(),
+        iterations: 1,
+        source: 'mock',
+        ...(topCandidate?.vendorId ? { recommendation: topCandidate.vendorId } : {}),
+      };
+    }
+
+    try {
+      const response = await this.client.post<AxiomVendorBidAnalysisResult>('/api/agent/analyze/vendor-bid', {
+        entityId: params.entityId,
+        entityType: params.entityType,
+        subClientId: params.subClientId,
+        sentinelApiBase: params.sentinelApiBase,
+        vendorCandidates: params.vendorCandidates,
+        orderDetails: params.orderDetails,
+        ...(params.maxIterations !== undefined ? { maxIterations: params.maxIterations } : {}),
+        ...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to analyze vendor bid', {
+        error: error instanceof Error ? error.message : String(error),
+        entityId: params.entityId,
+      });
       throw error;
     }
   }
