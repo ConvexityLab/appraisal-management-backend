@@ -366,8 +366,7 @@ describe('PropertyRecordService.createVersion', () => {
     expect(updated.building.yearBuilt).toBe(1965);
   });
 
-  it('records previous values in versionHistory entry', async () => {
-    const record = makeRecord({ building: { gla: 1800, bedrooms: 3, bathrooms: 2, yearBuilt: 1965 } });
+  it('records previous values in versionHistory entry', async () => {    const record = makeRecord({ building: { gla: 1800, bedrooms: 3, bathrooms: 2, yearBuilt: 1965 } });
     const cosmos = makeMockCosmosService([record]);
     const svc = new PropertyRecordService(cosmos as any);
 
@@ -383,6 +382,43 @@ describe('PropertyRecordService.createVersion', () => {
     const lastEntry = updated.versionHistory[updated.versionHistory.length - 1]!;
     // Previous gla was 1800 — captured before the update
     expect(lastEntry.previousValues['building.gla']).toBe(1800);
+  });
+
+  it('persists optional sourceProvider on the version entry when supplied', async () => {
+    const record = makeRecord();
+    const cosmos = makeMockCosmosService([record]);
+    const svc = new PropertyRecordService(cosmos as any);
+
+    const updated = await svc.createVersion(
+      'prop-test-001',
+      'tenant-a',
+      { building: { gla: 2000, bedrooms: 4, bathrooms: 2, yearBuilt: 1965 } },
+      'Public-records refresh',
+      'PUBLIC_RECORDS_API',
+      'SYSTEM:property-enrichment',
+      'ATTOM Data Solutions (Cosmos cache)',
+    );
+
+    const lastEntry = updated.versionHistory[updated.versionHistory.length - 1]!;
+    expect(lastEntry.sourceProvider).toBe('ATTOM Data Solutions (Cosmos cache)');
+  });
+
+  it('omits sourceProvider when not supplied', async () => {
+    const record = makeRecord();
+    const cosmos = makeMockCosmosService([record]);
+    const svc = new PropertyRecordService(cosmos as any);
+
+    const updated = await svc.createVersion(
+      'prop-test-001',
+      'tenant-a',
+      { building: { gla: 2000, bedrooms: 4, bathrooms: 2, yearBuilt: 1965 } },
+      'Manual permit close',
+      'PERMIT_CLOSE',
+      'alice',
+    );
+
+    const lastEntry = updated.versionHistory[updated.versionHistory.length - 1]!;
+    expect(lastEntry.sourceProvider).toBeUndefined();
   });
 
   it('throws when the record does not exist', async () => {

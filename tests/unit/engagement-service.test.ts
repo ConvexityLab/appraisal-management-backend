@@ -23,7 +23,11 @@ import type { PropertyRecordService } from '../../src/services/property-record.s
 import {
   EngagementStatus,
   EngagementClientOrderStatus,
+<<<<<<< HEAD
   EngagementProductType,
+=======
+  ProductType,
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   EngagementType,
   EngagementLoanStatus,
 } from '../../src/types/engagement.types.js';
@@ -43,7 +47,11 @@ function makeLoan(overrides: Partial<EngagementLoan> = {}): EngagementLoan {
       state:   'CO',
       zipCode: '80203',
     },
+<<<<<<< HEAD
     status:   EngagementLoanStatus.PENDING,
+=======
+    status:       EngagementLoanStatus.PENDING,
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
     clientOrders: [],
     ...overrides,
   };
@@ -112,7 +120,11 @@ function makeCreateRequest(loanOverride: Record<string, unknown> = {}) {
         loanNumber:   'LN-001',
         borrowerName: 'Borrower',
         property: { address: '1 Main', state: 'CO', zipCode: '80203' },
+<<<<<<< HEAD
         clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+=======
+        clientOrders: [{ productType: ProductType.FULL_APPRAISAL }],
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
         ...loanOverride,
       },
     ],
@@ -154,7 +166,11 @@ describe('generateEngagementNumber', () => {
       });
 
       const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
+<<<<<<< HEAD
       await svc.createEngagement(makeCreateRequest({ clientOrders: [{ productType: EngagementProductType.DRIVE_BY }] }));
+=======
+      await svc.createEngagement(makeCreateRequest({ clientOrders: [{ productType: ProductType.DRIVE_BY }] }));
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       numbers.push(capturedDoc!.engagementNumber);
     }
 
@@ -185,7 +201,11 @@ describe('createEngagement', () => {
     expect(capturedDoc!.loans[0]!.property.address).toBe('1 Main');
     expect(capturedDoc!.loans[0]!.status).toBe(EngagementLoanStatus.PENDING);
     expect(capturedDoc!.loans[0]!.clientOrders).toHaveLength(1);
+<<<<<<< HEAD
     expect(capturedDoc!.loans[0]!.clientOrders[0]!.productType).toBe(EngagementProductType.FULL_APPRAISAL);
+=======
+    expect(capturedDoc!.loans[0]!.clientOrders[0]!.productType).toBe(ProductType.FULL_APPRAISAL);
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   });
 
   it('sets engagementType=SINGLE when 1 loan', async () => {
@@ -213,8 +233,13 @@ describe('createEngagement', () => {
     await svc.createEngagement({
       ...makeCreateRequest(),
       loans: [
+<<<<<<< HEAD
         { loanNumber: 'LN-001', borrowerName: 'A', property: { address: '1 Main', state: 'CO', zipCode: '80203' }, clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }] },
         { loanNumber: 'LN-002', borrowerName: 'B', property: { address: '2 Main', state: 'CO', zipCode: '80204' }, clientOrders: [{ productType: EngagementProductType.DRIVE_BY }] },
+=======
+        { loanNumber: 'LN-001', borrowerName: 'A', property: { address: '1 Main', state: 'CO', zipCode: '80203' }, clientOrders: [{ productType: ProductType.FULL_APPRAISAL }] },
+        { loanNumber: 'LN-002', borrowerName: 'B', property: { address: '2 Main', state: 'CO', zipCode: '80204' }, clientOrders: [{ productType: ProductType.DRIVE_BY }] },
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       ],
     });
     expect(capturedDoc!.engagementType).toBe(EngagementType.PORTFOLIO);
@@ -329,7 +354,11 @@ describe('addLoanToEngagement', () => {
       loanNumber:   'LN-NEW',
       borrowerName: 'New Borrower',
       property: { address: '99 Oak St', state: 'TX', zipCode: '75001' },
+<<<<<<< HEAD
       clientOrders: [{ productType: EngagementProductType.AVM }],
+=======
+      clientOrders: [{ productType: ProductType.AVM }],
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
     }, 'user-001');
 
     expect(result.loans).toHaveLength(2);
@@ -352,7 +381,11 @@ describe('addLoanToEngagement', () => {
         loanNumber:   'LN-OVERFLOW',
         borrowerName: 'Overflow',
         property: { address: '1 Main', state: 'CO', zipCode: '80203' },
+<<<<<<< HEAD
         clientOrders:  [{ productType: EngagementProductType.FULL_APPRAISAL }],
+=======
+        clientOrders: [{ productType: ProductType.FULL_APPRAISAL }],
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       }, 'user-001'),
     ).rejects.toThrow(/not yet supported/);
   });
@@ -395,7 +428,11 @@ describe('updateLoan', () => {
 
 describe('removeLoan', () => {
   it('removes a loan that has no linked vendor orders', async () => {
+<<<<<<< HEAD
     const loan1 = makeLoan({ id: 'loan-001', clientOrders: [{ id: 'p1', productType: EngagementProductType.AVM, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] }] });
+=======
+    const loan1 = makeLoan({ id: 'loan-001', clientOrders: [{ id: 'p1', productType: ProductType.AVM, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] }] });
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
     const loan2 = makeLoan({ id: 'loan-002', loanNumber: 'LN-002' });
     const doc = makeEngagement({ loans: [loan1, loan2] });
     const container = makeMockContainer(doc);
@@ -413,7 +450,11 @@ describe('removeLoan', () => {
     const loanWithOrders = makeLoan({
       id: 'loan-001',
       clientOrders: [
+<<<<<<< HEAD
         { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-123'] },
+=======
+        { id: 'p1', productType: ProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-123'] },
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       ],
     });
     const doc = makeEngagement({ loans: [loanWithOrders] });
@@ -485,13 +526,21 @@ describe('changeLoanStatus', () => {
 // ---------------------------------------------------------------------------
 
 describe('addVendorOrderToClientOrder', () => {
+<<<<<<< HEAD
   it('adds vendorOrderId to the matching product within the correct loan', async () => {
+=======
+  it('adds vendorOrderId to the matching client order within the correct loan', async () => {
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
     const engagement = makeEngagement({
       loans: [
         makeLoan({
           id: 'loan-001',
           clientOrders: [
+<<<<<<< HEAD
             { id: 'prod-001', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+=======
+            { id: 'prod-001', productType: ProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
           ],
         }),
       ],
@@ -517,7 +566,11 @@ describe('addVendorOrderToClientOrder', () => {
         makeLoan({
           id: 'loan-001',
           clientOrders: [
+<<<<<<< HEAD
             { id: 'prod-001', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-xyz'] },
+=======
+            { id: 'prod-001', productType: ProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-xyz'] },
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
           ],
         }),
       ],
@@ -547,7 +600,11 @@ describe('addVendorOrderToClientOrder', () => {
     ).rejects.toThrow(/EngagementLoan not found/);
   });
 
+<<<<<<< HEAD
   it('throws a clear error when productId does not exist within the loan', async () => {
+=======
+  it('throws a clear error when clientOrderId does not exist within the loan', async () => {
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
     const engagement = makeEngagement({ loans: [makeLoan({ id: 'loan-001', clientOrders: [] })] });
     const container = makeMockContainer(engagement);
     container.item = vi.fn().mockReturnValue({
@@ -598,7 +655,11 @@ describe('createEngagement â€” enrichment wiring', () => {
         loanNumber:   'LN-A',
         borrowerName: 'Borrower',
         property:     { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+<<<<<<< HEAD
         clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+=======
+        clientOrders: [{ productType: ProductType.FULL_APPRAISAL }],
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       }],
     });
 
@@ -628,8 +689,13 @@ describe('createEngagement â€” enrichment wiring', () => {
       createdBy: 'user-001',
       client:    { clientId: 'c-001', clientName: 'Lender' },
       loans: [
+<<<<<<< HEAD
         { loanNumber: 'LN-A', borrowerName: 'A', property: { address: '1 A St', city: 'Denver', state: 'CO', zipCode: '80201' }, clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }] },
         { loanNumber: 'LN-B', borrowerName: 'B', property: { address: '2 B Ave', city: 'Boulder', state: 'CO', zipCode: '80302' }, clientOrders: [{ productType: EngagementProductType.DRIVE_BY }] },
+=======
+        { loanNumber: 'LN-A', borrowerName: 'A', property: { address: '1 A St', city: 'Denver', state: 'CO', zipCode: '80201' }, clientOrders: [{ productType: ProductType.FULL_APPRAISAL }] },
+        { loanNumber: 'LN-B', borrowerName: 'B', property: { address: '2 B Ave', city: 'Boulder', state: 'CO', zipCode: '80302' }, clientOrders: [{ productType: ProductType.DRIVE_BY }] },
+>>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       ],
     });
 

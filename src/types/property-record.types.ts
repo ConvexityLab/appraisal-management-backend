@@ -75,6 +75,15 @@ export interface PropertyVersionEntry {
     | 'REHAB_COMPLETE'
     | 'PUBLIC_RECORDS_API'
     | 'APPRAISER_INSPECTION';
+  /**
+   * Granular provider/source identifier when `source` is a generic bucket.
+   * Free-form string supplied by the caller — for `PUBLIC_RECORDS_API` versions
+   * this is the `PropertyDataResult.source` of the provider that produced the
+   * data, e.g. `'ATTOM Data Solutions (Cosmos cache)'`, `'Bridge Interactive'`,
+   * or `'ATTOM Data Solutions'`. Optional for backward compatibility with
+   * existing version entries.
+   */
+  sourceProvider?: string;
   /** Top-level field paths that changed, e.g. ["building.bedrooms", "zoning"]. */
   changedFields: string[];
   /** Snapshot of the changed values BEFORE this version. Useful for diffs. */
@@ -254,6 +263,16 @@ export interface PropertyRecord {
   dataSourceRecordId?: string;   // their reference ID
   /** ISO timestamp when this record was last verified against source data. */
   lastVerifiedAt?: string;
+  /**
+   * Granular identifier of the provider behind the most recent verified update.
+   * Mirrors the `sourceProvider` on the latest `versionHistory` entry written by
+   * the enrichment pipeline — surfaced as a top-level field so callers can
+   * answer "where did the current data come from?" with a single field read,
+   * without scanning version history.
+   * Free-form string, e.g. `'ATTOM Data Solutions (Cosmos cache)'`,
+   * `'Bridge Interactive'`, or `'ATTOM Data Solutions'`.
+   */
+  lastVerifiedSource?: string;
 
   createdAt: string;
   updatedAt: string;

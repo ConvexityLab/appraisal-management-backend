@@ -301,6 +301,44 @@ module cosmosAttomDataContainer 'modules/cosmos-attom-data-container.bicep' = {
   }
 }
 
+// Cosmos DB Order-Comparables Container
+// Persisted output of the comp-collection pipeline (and later, ranking) per order.
+// Partitioned by /orderId; one container holds all stage docs, discriminated by /stage.
+module cosmosOrderComparablesContainer 'modules/cosmos-order-comparables-container.bicep' = {
+  name: 'cosmos-order-comparables-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Client-Orders Container (ClientOrder / VendorOrder split — Phase 0)
+// Stores ClientOrder documents — what a lender placed on an engagement.
+// Each ClientOrder is fulfilled by one or more VendorOrder rows in `orders`.
+// Partitioned by /tenantId. See src/types/client-order.types.ts.
+module cosmosClientOrdersContainer 'modules/cosmos-client-orders-container.bicep' = {
+  name: 'cosmos-client-orders-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Decomposition-Rules Container (ClientOrder / VendorOrder split — Phase 0)
+// Stores DecompositionRule documents — maps (productType, scope) → VendorOrder
+// templates. Looked up by OrderDecompositionService when a ClientOrder is placed.
+// Partitioned by /tenantId; global defaults use sentinel '__global__'.
+module cosmosDecompositionRulesContainer 'modules/cosmos-decomposition-rules-container.bicep' = {
+  name: 'cosmos-decomposition-rules-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

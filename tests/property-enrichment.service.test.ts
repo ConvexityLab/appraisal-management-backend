@@ -210,6 +210,23 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     expect(firstCallChanges.floodZone).toBe('X');
   });
 
+  it('records lastVerifiedSource on the record and forwards sourceProvider to createVersion', async () => {
+    const provider = makeProvider(makeFullDataResult()); // source: 'Bridge Interactive'
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    const [, , firstCallChanges, , , , firstCallSourceProvider] =
+      propSvc.createVersion.mock.calls[0] as [string, string, any, string, string, string, string | undefined];
+
+    // Top-level lastVerifiedSource is set on the PropertyRecord changes payload
+    expect(firstCallChanges.lastVerifiedSource).toBe('Bridge Interactive');
+    // The 7th argument to createVersion is the per-version sourceProvider audit value
+    expect(firstCallSourceProvider).toBe('Bridge Interactive');
+  });
+
   it('appends tax assessment when year not already present', async () => {
     const provider = makeProvider(makeFullDataResult());
     const propSvc = makePropertyRecordService(false);

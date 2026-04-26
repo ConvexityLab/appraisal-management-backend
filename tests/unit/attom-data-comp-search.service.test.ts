@@ -150,6 +150,176 @@ describe('AttomDataCompSearchService', () => {
     });
   });
 
+  describe('expansion strategies', () => {
+    const baseParams: CompSearchParams = {
+      latitude: 30.3322,
+      longitude: -81.6557,
+      radiusMeters: 1609,
+    };
+
+    const docResult = (attomId: string, lastSaleDate: string) => ({
+      c: {
+        id: attomId,
+        type: 'attom-data',
+        attomId,
+        salesHistory: { lastSaleDate },
+      },
+      dist: 100,
+    });
+
+    it('NONE: queries exactly 1 cell in a single call', async () => {
+      mockQueryItems.mockResolvedValue({ success: true, data: [] });
+
+      await service.searchComps({ ...baseParams, expansion: 'NONE' });
+
+      expect(mockQueryItems).toHaveBeenCalledTimes(1);
+      const [, query, parameters] = mockQueryItems.mock.calls[0];
+      const ghParams = parameters.filter((p: any) => p.name.startsWith('@gh'));
+      expect(ghParams).toHaveLength(1);
+      expect(query).toContain('c.geohash5 IN (@gh0)');
+    });
+
+    it('ALWAYS_9: queries exactly 9 cells in a single call (explicit opt-in)', async () => {
+      mockQueryItems.mockResolvedValue({ success: true, data: [] });
+
+      await service.searchComps({ ...baseParams, expansion: 'ALWAYS_9' });
+
+      expect(mockQueryItems).toHaveBeenCalledTimes(1);
+      const [, , parameters] = mockQueryItems.mock.calls[0];
+      const ghParams = parameters.filter((p: any) => p.name.startsWith('@gh'));
+      expect(ghParams).toHaveLength(9);
+    });
+
+    it('default expansion is ALWAYS_9 (back-compat)', async () => {
+      mockQueryItems.mockResolvedValue({ success: true, data: [] });
+
+      await service.searchComps(baseParams);
+
+      expect(mockQueryItems).toHaveBeenCalledTimes(1);
+      const [, , parameters] = mockQueryItems.mock.calls[0];
+      const ghParams = parameters.filter((p: any) => p.name.startsWith('@gh'));
+      expect(ghParams).toHaveLength(9);
+    });
+
+    it('ADAPTIVE: short-circuits when center cell meets the threshold', async () => {
+      mockQueryItems.mockResolvedValueOnce({
+        success: true,
+        data: [docResult('a', '2025-01-01'), docResult('b', '2024-06-01')],
+      });
+
+      const results = await service.searchComps({
+        ...baseParams,
+        expansion: 'ADAPTIVE',
+        adaptiveMinResults: 2,
+      });
+
+      // Only the center query runs.
+      expect(mockQueryItems).toHaveBeenCalledTimes(1);
+      const [, , parameters] = mockQueryItems.mock.calls[0];
+      const ghParams = parameters.filter((p: any) => p.name.startsWith('@gh'));
+      expect(ghParams).toHaveLength(1);
+      expect(results).toHaveLength(2);
+    });
+
+    it('ADAPTIVE: expands to neighbor cells when center under-fills', async () => {
+      mockQueryItems
+        .mockResolvedValueOnce({ success: true, data: [docResult('a', '2025-01-01')] })
+        .mockResolvedValueOnce({
+          success: true,
+          data: [docResult('b', '2025-06-01'), docResult('c', '2024-01-01')],
+        });
+
+      const results = await service.searchComps({
+        ...baseParams,
+        expansion: 'ADAPTIVE',
+        adaptiveMinResults: 5,
+        maxResults: 10,
+      });
+
+      // Two calls: center (1 cell) then neighbors (8 cells).
+      expect(mockQueryItems).toHaveBeenCalledTimes(2);
+      const centerParams = mockQueryItems.mock.calls[0][2];
+      const neighborParams = mockQueryItems.mock.calls[1][2];
+      expect(centerParams.filter((p: any) => p.name.startsWith('@gh'))).toHaveLength(1);
+      expect(neighborParams.filter((p: any) => p.name.startsWith('@gh'))).toHaveLength(8);
+
+      // Merged + sorted by lastSaleDate DESC.
+      expect(results.map((r) => r.document.attomId)).toEqual(['b', 'a', 'c']);
+    });
+
+    it('ADAPTIVE: dedupes by attomId when neighbor query returns the center doc', async () => {
+      mockQueryItems
+        .mockResolvedValueOnce({ success: true, data: [docResult('a', '2025-01-01')] })
+        .mockResolvedValueOnce({
+          success: true,
+          data: [
+            docResult('a', '1999-01-01'), // duplicate id, stale lastSaleDate — must drop
+            docResult('b', '2024-06-01'),
+          ],
+        });
+
+      const results = await service.searchComps({
+        ...baseParams,
+        expansion: 'ADAPTIVE',
+        adaptiveMinResults: 5,
+        maxResults: 10,
+      });
+
+      expect(mockQueryItems).toHaveBeenCalledTimes(2);
+      expect(results).toHaveLength(2);
+      // Center copy of 'a' wins (its lastSaleDate is preserved in sort).
+      expect(results.map((r) => r.document.attomId)).toEqual(['a', 'b']);
+      const aResult = results.find((r) => r.document.attomId === 'a')!;
+      expect(aResult.document.salesHistory.lastSaleDate).toBe('2025-01-01');
+    });
+
+    it('ADAPTIVE: caps merged results to maxResults', async () => {
+      mockQueryItems
+        .mockResolvedValueOnce({ success: true, data: [docResult('a', '2025-01-01')] })
+        .mockResolvedValueOnce({
+          success: true,
+          data: [
+            docResult('b', '2024-12-01'),
+            docResult('c', '2024-11-01'),
+            docResult('d', '2024-10-01'),
+          ],
+        });
+
+      const results = await service.searchComps({
+        ...baseParams,
+        expansion: 'ADAPTIVE',
+        adaptiveMinResults: 99,
+        maxResults: 2,
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.document.attomId)).toEqual(['a', 'b']);
+    });
+
+    it('ADAPTIVE: defaults adaptiveMinResults to maxResults', async () => {
+      // Center returns 4, maxResults is 5 → should expand because 4 < 5.
+      mockQueryItems
+        .mockResolvedValueOnce({
+          success: true,
+          data: [
+            docResult('a', '2025-01-01'),
+            docResult('b', '2024-12-01'),
+            docResult('c', '2024-11-01'),
+            docResult('d', '2024-10-01'),
+          ],
+        })
+        .mockResolvedValueOnce({ success: true, data: [] });
+
+      await service.searchComps({
+        ...baseParams,
+        expansion: 'ADAPTIVE',
+        maxResults: 5,
+      });
+
+      expect(mockQueryItems).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('getByAttomId', () => {
     it('should call getItem with partition key when geohash5 is provided', async () => {
       mockGetItem.mockResolvedValue({ success: true, data: { id: '123' } });
