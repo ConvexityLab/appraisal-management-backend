@@ -342,7 +342,7 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
     // Engagement linkage
     engagementId,
     engagementLoanId: loanId,
-    engagementProductId: productId,
+    engagementClientOrderId: productId,
     // Statebridge identifiers — preserved verbatim for the results file
     externalOrderId: (fields[IN.OrderID] || "").trim(),
     loanId: loanNumber,

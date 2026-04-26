@@ -86,6 +86,37 @@ p, qc_analyst:.*, ai:.*, generate, allow
 p, appraiser:.*, ai:.*, generate, allow
 
 # ============================================
+# CLIENT ORDER — placed by lender on an engagement
+# (admin policies above are wildcard; these add manager/appraiser/qc_analyst)
+# ============================================
+p, manager:.*, client_order:.*, read, allow
+p, manager:.*, client_order:.*, create, allow
+p, manager:.*, client_order:.*, update, allow
+p, qc_analyst:.*, client_order:.*, read, allow
+p, appraiser:.*, client_order:.*, read, allow
+
+# ============================================
+# VENDOR ORDER — vendor-dispatched fulfillment work for a ClientOrder
+# (admin policies above are wildcard; these add the operational roles)
+# Vendor orders are read by the same audiences as legacy orders.
+# ============================================
+p, manager:.*, vendor_order:.*, read, allow
+p, manager:.*, vendor_order:.*, create, allow
+p, manager:.*, vendor_order:.*, update, allow
+p, qc_analyst:.*, vendor_order:.*, read, allow
+p, appraiser:.*, vendor_order:.*, read, allow
+p, appraiser:.*, vendor_order:.*, update, allow
+
+# Owned/assigned VendorOrder — appraiser sees only their own
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "vendor_order", read, allow
+p, r.sub.role == "appraiser" && r.obj.assignedUserIds && r.obj.assignedUserIds.includes(r.sub.id), r.obj.type == "vendor_order", read, allow
+p, r.sub.role == "appraiser" && r.obj.ownerId == r.sub.id, r.obj.type == "vendor_order", update, allow
+
+# canViewAll flag covers ClientOrders too
+p, r.sub.canViewAllOrders == true, r.obj.type == "client_order", read, allow
+p, r.sub.canViewAllOrders == true, r.obj.type == "vendor_order", read, allow
+
+# ============================================
 # SPECIAL PERMISSIONS
 # ============================================
 # Users with canViewAllOrders flag
