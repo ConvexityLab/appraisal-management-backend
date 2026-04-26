@@ -119,10 +119,10 @@ export class EngagementLifecycleService {
       return;
     }
 
-    // Gather all vendorOrderIds across every loan/product in the engagement.
+    // Gather all vendorOrderIds across every loan/clientOrder in the engagement.
     const allOrderIds: string[] = (engagement.loans ?? []).flatMap(
       (loan: any) =>
-        (loan.products ?? []).flatMap((p: any) => p.vendorOrderIds ?? []),
+        (loan.clientOrders ?? []).flatMap((co: any) => co.vendorOrderIds ?? []),
     );
 
     if (allOrderIds.length === 0) {

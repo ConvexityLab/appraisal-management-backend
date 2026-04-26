@@ -24,7 +24,7 @@
  * ---------
  *   Engagement
  *     └── EngagementLoan (many, embedded)
- *           └── EngagementProduct (many) — productType: ProductType
+ *           └── EngagementClientOrder (many) — productType: ProductType
  *                 └── VendorOrder / AppraisalOrder (many) — productType: ProductType
  *                       └── Document (many) — category: DocumentCategory
  *
@@ -93,7 +93,7 @@ export type DocumentCategory = typeof DocumentCategory[keyof typeof DocumentCate
  * Canonical product type identifiers — SCREAMING_SNAKE strings.
  *
  * These values flow through the full hierarchy:
- *   EngagementProduct.productType → VendorOrder.productType → Document routing
+ *   EngagementClientOrder.productType → VendorOrder.productType → Document routing
  *
  * SCREAMING_SNAKE is used (not snake_case) so values are self-documenting in
  * Cosmos documents and JSON payloads without needing a lookup table.

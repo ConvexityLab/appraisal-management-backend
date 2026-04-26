@@ -7,7 +7,7 @@
  * Hierarchy:
  *   LenderEngagement (1)
  *     └── EngagementLoan (1..1000) — one per property/loan in the portfolio
- *           └── EngagementProduct (1..N) — what was ordered per loan
+ *           └── EngagementClientOrder (1..N) — what the client ordered per loan
  *                 └── vendorOrderIds (0..N) — what we ordered from vendors
  *
  * Lifecycles:
@@ -63,9 +63,9 @@ export enum EngagementLoanStatus {
 }
 
 /**
- * The status of a single product within an engagement loan.
+ * The status of a single client order within an engagement loan.
  */
-export enum EngagementProductStatus {
+export enum EngagementClientOrderStatus {
   PENDING     = 'PENDING',      // Not yet assigned to a vendor
   ASSIGNED    = 'ASSIGNED',     // Vendor order created
   IN_PROGRESS = 'IN_PROGRESS',
@@ -103,21 +103,22 @@ export interface EngagementClient {
 }
 
 /**
- * A single deliverable product ordered for a specific loan.
- * One EngagementLoan may have multiple products (e.g., Full Appraisal + AVM).
+ * A single client order placed by the lender for a specific loan — one
+ * deliverable product the client wants from us. One EngagementLoan may have
+ * multiple client orders (e.g., Full Appraisal + AVM).
  */
-export interface EngagementProduct {
+export interface EngagementClientOrder {
   /** ID scoped within the engagement document */
   id: string;
   productType: ProductType;
-  status: EngagementProductStatus;
-  /** Instructions specific to this product from the lender */
+  status: EngagementClientOrderStatus;
+  /** Instructions specific to this client order from the lender */
   instructions?: string | undefined;
-  /** What we charge the lender for this product */
+  /** What we charge the lender for this client order */
   fee?: number | undefined;
-  /** Lender-facing due date for this product */
+  /** Lender-facing due date for this client order */
   dueDate?: string | undefined; // ISO date
-  /** VendorOrder IDs that contribute to fulfilling this product (0-N) */
+  /** VendorOrder IDs that contribute to fulfilling this client order (0-N) */
   vendorOrderIds: string[];
 }
 
@@ -145,8 +146,8 @@ export interface EngagementLoan {
    */
   property: PropertyDetails;
   status: EngagementLoanStatus;
-  /** Products ordered for this specific loan (1..N) */
-  products: EngagementProduct[];
+  /** Client orders placed for this specific loan (1..N) */
+  clientOrders: EngagementClientOrder[];
 }
 
 /**
@@ -175,7 +176,7 @@ export interface Engagement {
   client: EngagementClient;
 
   // ── Loans ─────────────────────────────────────────────────────────────────
-  /** 1..1000 loans, each with its own property and products. */
+  /** 1..1000 loans, each with its own property and client orders. */
   loans: EngagementLoan[];
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ export interface Engagement {
   closedAt?: string;        // ISO datetime
 
   // ── Financials ────────────────────────────────────────────────────────────
-  /** Sum of all EngagementProduct fees across all loans — what we charge the lender */
+  /** Sum of all EngagementClientOrder fees across all loans — what we charge the lender */
   totalEngagementFee?: number;  /** Links this Engagement to the QuickBooks Bill (Accounts Payable) generated for our vendors */
   quickbooksBillId?: string;
   // ── Instructions ──────────────────────────────────────────────────────────
@@ -213,19 +214,19 @@ export interface Engagement {
 // =============================================================================
 
 /** Shape for each loan entry when creating an engagement. */
-export type CreateEngagementLoanRequest = Omit<EngagementLoan, 'id' | 'status' | 'products'> & {
-  products: Omit<EngagementProduct, 'id' | 'status' | 'vendorOrderIds'>[];
+export type CreateEngagementLoanRequest = Omit<EngagementLoan, 'id' | 'status' | 'clientOrders'> & {
+  clientOrders: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>[];
 };
 
-/** Patch shape for updating scalar fields on an existing loan (not products, not status). */
+/** Patch shape for updating scalar fields on an existing loan (not clientOrders, not status). */
 export type UpdateEngagementLoanRequest = Partial<
-  Omit<EngagementLoan, 'id' | 'status' | 'products'>
+  Omit<EngagementLoan, 'id' | 'status' | 'clientOrders'>
 >;
 
 export interface CreateEngagementRequest {
   tenantId: string;
   client: EngagementClient;
-  /** 1..1000 loans. Must have at least one. Each must have at least one product. */
+  /** 1..1000 loans. Must have at least one. Each must have at least one client order. */
   loans: CreateEngagementLoanRequest[];
   priority?: OrderPriority;
   clientDueDate?: string;

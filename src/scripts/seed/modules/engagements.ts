@@ -55,7 +55,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
             coordinates: { latitude: 32.8312, longitude: -96.8187 },
           },
           status: 'IN_PROGRESS',
-          products: [
+          clientOrders: [
             {
               id: 'seed-prod-eng001-001',
               productType: 'FULL_APPRAISAL',
@@ -115,7 +115,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
             coordinates: { latitude: 32.7942, longitude: -96.7711 },
           },
           status: 'IN_PROGRESS',
-          products: [
+          clientOrders: [
             {
               id: 'seed-prod-eng002-001',
               productType: 'BPO',
@@ -175,7 +175,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
             coordinates: { latitude: 32.7484, longitude: -97.3308 },
           },
           status: 'IN_PROGRESS',
-          products: [
+          clientOrders: [
             {
               id: 'seed-prod-eng003-001',
               productType: 'BPO',
@@ -207,7 +207,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
             coordinates: { latitude: 32.8081, longitude: -96.7743 },
           },
           status: 'PENDING',
-          products: [
+          clientOrders: [
             {
               id: 'seed-prod-eng003-002',
               productType: 'DRIVE_BY',
@@ -267,7 +267,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
             coordinates: { latitude: 32.8312, longitude: -96.7987 },
           },
           status: 'DELIVERED',
-          products: [
+          clientOrders: [
             {
               id: 'seed-prod-eng004-001',
               productType: 'FULL_APPRAISAL',
@@ -326,7 +326,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
             coordinates: { latitude: 40.0150, longitude: -105.2705 },
           },
           status: 'QC',
-          products: [
+          clientOrders: [
             {
               id: 'seed-prod-eng005-001',
               productType: 'HYBRID',
