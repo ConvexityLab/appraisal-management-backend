@@ -292,13 +292,8 @@ export class EngagementService {
   }
 
   /**
-<<<<<<< HEAD
    * Fire-and-forget comp selection for each client order whose productType is
    * in COMP_SELECTION_PRODUCT_TYPES. Errors are logged, never thrown.
-=======
-   * Fire-and-forget comp selection for each client order whose productType is in
-   * COMP_SELECTION_PRODUCT_TYPES. Errors are logged, never thrown.
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
    */
   private triggerCompSelectionForClientOrders(
     engagementId: string,
@@ -307,30 +302,17 @@ export class EngagementService {
     propertyId: string,
     clientOrders: Pick<EngagementClientOrder, 'id' | 'productType'>[],
   ): void {
-<<<<<<< HEAD
     for (const clientOrder of clientOrders) {
       if (!COMP_SELECTION_PRODUCT_TYPES.has(clientOrder.productType)) continue;
 
       this.comparableSelectionService.selectForOrder(
         clientOrder.id, tenantId, clientOrder.productType, propertyId,
-=======
-    for (const co of clientOrders) {
-      if (!COMP_SELECTION_PRODUCT_TYPES.has(co.productType)) continue;
-
-      this.comparableSelectionService.selectForOrder(
-        co.id, tenantId, co.productType, propertyId,
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       ).catch(err => {
         logger.warn('Comparable selection failed for engagement client order (non-fatal)', {
           engagementId,
           loanId,
-<<<<<<< HEAD
           clientOrderId: clientOrder.id,
           productType: clientOrder.productType,
-=======
-          clientOrderId: co.id,
-          productType: co.productType,
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
           error: err instanceof Error ? err.message : String(err),
         });
       });
@@ -485,11 +467,7 @@ export class EngagementService {
     });
   }
 
-<<<<<<< HEAD
   /** Update the scalar fields of an existing loan (not clientOrders, not status). */
-=======
-  /** Update the scalar fields of an existing loan (not client orders, not status). */
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   async updateLoan(
     engagementId: string,
     tenantId: string,
@@ -851,11 +829,7 @@ export class EngagementService {
     try {
       const engagement = await this.getEngagement(engagementId, tenantId);
       orderIds = engagement.loans.flatMap((loan) =>
-<<<<<<< HEAD
         loan.clientOrders.flatMap((clientOrder) => clientOrder.vendorOrderIds ?? []),
-=======
-        loan.clientOrders.flatMap((co) => co.vendorOrderIds ?? []),
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       );
     } catch {
       // If engagement lookup fails, return only engagement-level docs
@@ -902,11 +876,7 @@ export class EngagementService {
     try {
       const engagement = await this.getEngagement(engagementId, tenantId);
       const orderIds = engagement.loans.flatMap((loan) =>
-<<<<<<< HEAD
         loan.clientOrders.flatMap((clientOrder) => clientOrder.vendorOrderIds ?? []),
-=======
-        loan.clientOrders.flatMap((co) => co.vendorOrderIds ?? []),
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
       );
       if (orderIds.length > 0) {
         const paramNames = orderIds.map((_, i) => `@oid${i}`).join(', ');

@@ -7,11 +7,7 @@
  * Hierarchy:
  *   LenderEngagement (1)
  *     └── EngagementLoan (1..1000) — one per property/loan in the portfolio
-<<<<<<< HEAD
  *           └── EngagementClientOrder (1..N) — what the client ordered per loan
-=======
- *           └── EngagementClientOrder (1..N) — what was ordered per loan
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
  *                 └── vendorOrderIds (0..N) — what we ordered from vendors
  *
  * Lifecycles:
@@ -26,6 +22,8 @@ import type { ProductType } from './product-catalog.js';
 // ── Re-exports for consumers who only import from engagement.types ────────────
 export { OrderPriority } from './order-management.js';
 export { ProductType } from './product-catalog.js';
+// Back-compat alias: legacy name retained for tests/seed/legacy callers.
+export { ProductType as EngagementProductType } from './product-catalog.js';
 
 // =============================================================================
 // ENUMS
@@ -96,21 +94,15 @@ export interface EngagementClient {
 }
 
 /**
-<<<<<<< HEAD
  * A single client order placed by the lender for a specific loan — one
  * deliverable product the client wants from us. One EngagementLoan may have
  * multiple client orders (e.g., Full Appraisal + AVM).
-=======
- * A single client order for a specific loan — what the client asked us to deliver.
- * One EngagementLoan may have multiple client orders (e.g., Full Appraisal + AVM).
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
  */
 export interface EngagementClientOrder {
   /** ID scoped within the engagement document */
   id: string;
   productType: ProductType;
   status: EngagementClientOrderStatus;
-<<<<<<< HEAD
   /** Instructions specific to this client order from the lender */
   instructions?: string | undefined;
   /** What we charge the lender for this client order */
@@ -118,15 +110,6 @@ export interface EngagementClientOrder {
   /** Lender-facing due date for this client order */
   dueDate?: string | undefined; // ISO date
   /** VendorOrder IDs that contribute to fulfilling this client order (0-N) */
-=======
-  /** Instructions specific to this order from the lender */
-  instructions?: string | undefined;
-  /** What we charge the lender for this order */
-  fee?: number | undefined;
-  /** Lender-facing due date for this order */
-  dueDate?: string | undefined; // ISO date
-  /** VendorOrder IDs that contribute to fulfilling this order (0-N) */
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   vendorOrderIds: string[];
 }
 
@@ -154,11 +137,7 @@ export interface EngagementLoan {
    */
   property: PropertyDetails;
   status: EngagementLoanStatus;
-<<<<<<< HEAD
   /** Client orders placed for this specific loan (1..N) */
-=======
-  /** Client orders for this specific loan (1..N) */
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   clientOrders: EngagementClientOrder[];
 }
 
@@ -187,11 +166,7 @@ export interface Engagement {
   /** Org-level client. Loan-level fields (loanNumber, borrowerName, etc.) live on each EngagementLoan. */
   client: EngagementClient;
 
-<<<<<<< HEAD
   // ── Loans ─────────────────────────────────────────────────────────────────
-=======
-  // ── Loans ────────���───────────────────────────────────────────��────────────
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   /** 1..1000 loans, each with its own property and client orders. */
   loans: EngagementLoan[];
 
@@ -209,11 +184,7 @@ export interface Engagement {
   /** When the engagement was closed (delivered or cancelled) */
   closedAt?: string;        // ISO datetime
 
-<<<<<<< HEAD
   // ── Financials ────────────────────────────────────────────────────────────
-=======
-  // ── Financials ─────────────────���──────────────────────────────────────────
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
   /** Sum of all EngagementClientOrder fees across all loans — what we charge the lender */
   totalEngagementFee?: number;  /** Links this Engagement to the QuickBooks Bill (Accounts Payable) generated for our vendors */
   quickbooksBillId?: string;
@@ -238,11 +209,7 @@ export type CreateEngagementLoanRequest = Omit<EngagementLoan, 'id' | 'status' |
   clientOrders: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>[];
 };
 
-<<<<<<< HEAD
 /** Patch shape for updating scalar fields on an existing loan (not clientOrders, not status). */
-=======
-/** Patch shape for updating scalar fields on an existing loan (not client orders, not status). */
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
 export type UpdateEngagementLoanRequest = Partial<
   Omit<EngagementLoan, 'id' | 'status' | 'clientOrders'>
 >;

@@ -20,11 +20,7 @@
  *   PUT    /api/engagements/:id/loans/:loanId                                  → update loan fields
  *   PATCH  /api/engagements/:id/loans/:loanId/status                           → change loan status
  *   DELETE /api/engagements/:id/loans/:loanId                                  → remove loan (no linked orders)
-<<<<<<< HEAD
  *   POST   /api/engagements/:id/loans/:loanId/client-orders                         → add client order to loan
-=======
- *   POST   /api/engagements/:id/loans/:loanId/client-orders                              → add client order to loan
->>>>>>> bd30bc98c7ec297b35700df5074ebf2952a397a5
  *   POST   /api/engagements/:id/loans/:loanId/client-orders/:clientOrderId/vendor-orders → link vendor order to client order
  */
 
