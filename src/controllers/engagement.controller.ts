@@ -20,8 +20,8 @@
  *   PUT    /api/engagements/:id/loans/:loanId                                  → update loan fields
  *   PATCH  /api/engagements/:id/loans/:loanId/status                           → change loan status
  *   DELETE /api/engagements/:id/loans/:loanId                                  → remove loan (no linked orders)
- *   POST   /api/engagements/:id/loans/:loanId/products                         → add product to loan
- *   POST   /api/engagements/:id/loans/:loanId/products/:productId/vendor-orders → link vendor order to product
+ *   POST   /api/engagements/:id/loans/:loanId/client-orders                              → add client order to loan
+ *   POST   /api/engagements/:id/loans/:loanId/client-orders/:clientOrderId/vendor-orders → link vendor order to client order
  */
 
 import express, { Response } from 'express';
@@ -34,7 +34,7 @@ import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.j
 import {
   EngagementStatus,
   EngagementLoanStatus,
-  EngagementProductType,
+  ProductType,
 } from '../types/engagement.types.js';
 import type {
   CreateEngagementRequest,
@@ -70,7 +70,7 @@ function resolveUserId(req: UnifiedAuthRequest): string {
 
 // ── Validation chains ──────────────────────────────────────────────────────────
 
-const PRODUCT_TYPES = Object.values(EngagementProductType);
+const PRODUCT_TYPES = Object.values(ProductType);
 const STATUSES = Object.values(EngagementStatus);
 const LOAN_STATUSES = Object.values(EngagementLoanStatus);
 const PRIORITIES = Object.values(OrderPriority);
@@ -86,8 +86,8 @@ const validateCreate = [
   body('loans.*.property.address').isString().notEmpty().withMessage('loans[*].property.address is required'),
   body('loans.*.property.state').isString().isLength({ min: 2, max: 2 }).withMessage('loans[*].property.state must be 2-char abbreviation'),
   body('loans.*.property.zipCode').matches(/^\d{5}(-\d{4})?$/).withMessage('loans[*].property.zipCode must be 5 or 9 digits'),
-  body('loans.*.products').isArray({ min: 1 }).withMessage('Each loan must have at least one product'),
-  body('loans.*.products.*.productType')
+  body('loans.*.clientOrders').isArray({ min: 1 }).withMessage('Each loan must have at least one client order'),
+  body('loans.*.clientOrders.*.productType')
     .isIn(PRODUCT_TYPES)
     .withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
   body('priority').optional().isIn(PRIORITIES).withMessage(`priority must be one of: ${PRIORITIES.join(', ')}`),
@@ -115,7 +115,7 @@ const validateStatusPatch = [
 const validateAddVendorOrder = [
   param('id').isString().notEmpty().withMessage('engagement id is required'),
   param('loanId').isString().notEmpty().withMessage('loanId is required'),
-  param('productId').isString().notEmpty().withMessage('productId is required'),
+  param('clientOrderId').isString().notEmpty().withMessage('clientOrderId is required'),
   body('vendorOrderId').isString().notEmpty().withMessage('vendorOrderId is required'),
 ];
 
@@ -127,8 +127,8 @@ const validateAddLoan = [
   body('property.address').isString().notEmpty().withMessage('property.address is required'),
   body('property.state').isString().isLength({ min: 2, max: 2 }).withMessage('property.state must be 2-char abbreviation'),
   body('property.zipCode').matches(/^\d{5}(-\d{4})?$/).withMessage('property.zipCode must be 5 or 9 digits'),
-  body('products').isArray({ min: 1 }).withMessage('At least one product is required'),
-  body('products.*.productType').isIn(PRODUCT_TYPES).withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
+  body('clientOrders').isArray({ min: 1 }).withMessage('At least one client order is required'),
+  body('clientOrders.*.productType').isIn(PRODUCT_TYPES).withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
 ];
 
 const validateLoanStatusPatch = [
@@ -608,9 +608,9 @@ export function createEngagementRouter(dbService: CosmosDbService) {
     },
   );
 
-  // ── POST /:id/loans/:loanId/products ──────────────────────────────────────
+  // ── POST /:id/loans/:loanId/client-orders ─────────────────────────────────
   router.post(
-    '/:id/loans/:loanId/products',
+    '/:id/loans/:loanId/client-orders',
     param('id').isString().notEmpty(),
     param('loanId').isString().notEmpty(),
     body('productType').isIn(PRODUCT_TYPES).withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
@@ -622,7 +622,7 @@ export function createEngagementRouter(dbService: CosmosDbService) {
       try {
         const tenantId = resolveTenantId(req);
         const updatedBy = resolveUserId(req);
-        const engagement = await service.addProductToLoan(
+        const engagement = await service.addClientOrderToLoan(
           req.params['id'] as string,
           tenantId,
           req.params['loanId'] as string,
@@ -633,15 +633,15 @@ export function createEngagementRouter(dbService: CosmosDbService) {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         if (msg.includes('not found')) return res.status(404).json({ success: false, error: msg });
-        logger.error('addProductToLoan failed', { error });
-        return res.status(500).json({ success: false, error: 'Failed to add product to loan' });
+        logger.error('addClientOrderToLoan failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to add client order to loan' });
       }
     },
   );
 
-  // ── POST /:id/loans/:loanId/products/:productId/vendor-orders ─────────────
+  // ── POST /:id/loans/:loanId/client-orders/:clientOrderId/vendor-orders ────
   router.post(
-    '/:id/loans/:loanId/products/:productId/vendor-orders',
+    '/:id/loans/:loanId/client-orders/:clientOrderId/vendor-orders',
     ...validateAddVendorOrder,
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
@@ -652,11 +652,11 @@ export function createEngagementRouter(dbService: CosmosDbService) {
       try {
         const tenantId = resolveTenantId(req);
         const updatedBy = resolveUserId(req);
-        const engagement = await service.addVendorOrderToProduct(
+        const engagement = await service.addVendorOrderToClientOrder(
           req.params['id'] as string,
           tenantId,
           req.params['loanId'] as string,
-          req.params['productId'] as string,
+          req.params['clientOrderId'] as string,
           req.body.vendorOrderId as string,
           updatedBy,
         );
@@ -666,8 +666,8 @@ export function createEngagementRouter(dbService: CosmosDbService) {
         if (msg.includes('not found')) {
           return res.status(404).json({ success: false, error: msg });
         }
-        logger.error('addVendorOrderToProduct failed', { error });
-        return res.status(500).json({ success: false, error: 'Failed to link vendor order to product' });
+        logger.error('addVendorOrderToClientOrder failed', { error });
+        return res.status(500).json({ success: false, error: 'Failed to link vendor order to client order' });
       }
     },
   );

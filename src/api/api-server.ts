@@ -226,6 +226,8 @@ import { ESignatureController } from '../controllers/esignature.controller.js';
 
 // Import Order Controller (Phase 0.2 — extracted from inline handlers)
 import { OrderController } from '../controllers/order.controller.js';
+import { ClientOrderController } from '../controllers/client-order.controller.js';
+import { VendorOrderController } from '../controllers/vendor-order.controller.js';
 
 // Import Client Controller (G10 — Lender / AMC / Broker management)
 import { ClientController } from '../controllers/client.controller.js';
@@ -1090,6 +1092,23 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/orders',
       this.unifiedAuth.authenticate(),
       this.orderController.router
+    );
+
+    // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
+    // Additive: legacy /api/orders is unchanged. Frontends opt in by
+    // posting to /api/client-orders. See controllers/client-order.controller.ts.
+    const clientOrderController = new ClientOrderController(this.dbService);
+    this.app.use('/api/client-orders',
+      this.unifiedAuth.authenticate(),
+      clientOrderController.router
+    );
+
+    // VendorOrder reads — children of a parent ClientOrder. Read-only:
+    // writes go through ClientOrderController or legacy OrderController.
+    const vendorOrderController = new VendorOrderController(this.dbService);
+    this.app.use('/api/vendor-orders',
+      this.unifiedAuth.authenticate(),
+      vendorOrderController.router
     );
 
     // Client (Lender / AMC / Broker) management — G10

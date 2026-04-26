@@ -72,8 +72,8 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           ...(order.urgency || order.priority ? { urgency: order.urgency || order.priority?.toUpperCase() } : {}),
           ...(order.fee != null ? { budget: order.fee } : {}),
           // Eligibility gates: pulled from order record
-          ...(order.productId ?? order.engagementProductId
-            ? { productId: (order.productId ?? order.engagementProductId) as string }
+          ...(order.productId ?? order.engagementClientOrderId
+            ? { productId: (order.productId ?? order.engagementClientOrderId) as string }
             : {}),
           ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
             ? { requiredCapabilities: order.requiredCapabilities as string[] }

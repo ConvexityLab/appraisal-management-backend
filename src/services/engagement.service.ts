@@ -6,7 +6,7 @@
  * Hierarchy:
  *   LenderEngagement (1)
  *     └── EngagementLoan (1..MAX_EMBEDDED_LOANS) — embedded in document
- *           └── EngagementProduct (1..N per loan)
+ *           └── EngagementClientOrder (1..N per loan)
  *                 └── vendorOrderIds (0..N)
  *
  * Cosmos container: "engagements"
@@ -24,7 +24,7 @@ import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
   Engagement,
   EngagementLoan,
-  EngagementProduct,
+  EngagementClientOrder,
   CreateEngagementRequest,
   CreateEngagementLoanRequest,
   UpdateEngagementRequest,
@@ -35,7 +35,7 @@ import type {
 import {
   EngagementStatus,
   EngagementLoanStatus,
-  EngagementProductStatus,
+  EngagementClientOrderStatus,
   EngagementType,
 } from '../types/engagement.types.js';
 import { OrderPriority } from '../types/order-management.js';
@@ -57,8 +57,8 @@ function generateEngagementId(): string {
   return `eng-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function generateProductId(): string {
-  return `prod-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function generateClientOrderId(): string {
+  return `co-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function generateLoanId(): string {
@@ -88,14 +88,14 @@ function now(): string {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Build a fully-initialized EngagementProduct from the request shape. */
-function buildProduct(
-  p: Omit<EngagementProduct, 'id' | 'status' | 'vendorOrderIds'>,
-): EngagementProduct {
+/** Build a fully-initialized EngagementClientOrder from the request shape. */
+function buildClientOrder(
+  p: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>,
+): EngagementClientOrder {
   return {
-    id: generateProductId(),
+    id: generateClientOrderId(),
     productType: p.productType,
-    status: EngagementProductStatus.PENDING,
+    status: EngagementClientOrderStatus.PENDING,
     ...(p.instructions !== undefined && { instructions: p.instructions }),
     ...(p.fee !== undefined && { fee: p.fee }),
     ...(p.dueDate !== undefined && { dueDate: p.dueDate }),
@@ -117,7 +117,7 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
     ...(l.fhaCase !== undefined && { fhaCase: l.fhaCase }),
     property: l.property,
     status: EngagementLoanStatus.PENDING,
-    products: l.products.map(buildProduct),
+    clientOrders: l.clientOrders.map(buildClientOrder),
   };
 }
 
@@ -176,9 +176,9 @@ export class EngagementService {
       );
     }
     for (const loan of request.loans) {
-      if (!loan.products || loan.products.length === 0) {
+      if (!loan.clientOrders || loan.clientOrders.length === 0) {
         throw new Error(
-          `Each loan must have at least one product. ` +
+          `Each loan must have at least one client order. ` +
           `Loan loanNumber="${loan.loanNumber}" has none.`,
         );
       }
@@ -255,7 +255,7 @@ export class EngagementService {
           state: loan.property.state,
           zipCode: loan.property.zipCode,
         },
-        loan.products,
+        loan.clientOrders,
       ).catch(err => {
         logger.warn('Property enrichment failed for engagement loan (non-fatal)', {
           engagementId: engagement.id,
@@ -272,7 +272,7 @@ export class EngagementService {
 
   /**
    * Enrich a loan's property and then trigger comparable selection for any
-   * qualifying products on that loan. Non-fatal: comp-selection errors are
+   * qualifying client orders on that loan. Non-fatal: comp-selection errors are
    * logged but do not reject the enrichment promise.
    */
   private async enrichAndSelectComps(
@@ -280,39 +280,39 @@ export class EngagementService {
     loanId: string,
     tenantId: string,
     address: { street: string; city: string; state: string; zipCode: string },
-    products: EngagementProduct[],
+    clientOrders: EngagementClientOrder[],
   ): Promise<void> {
     const result = await this.enrichmentService.enrichEngagement(
       engagementId, loanId, tenantId, address,
     );
 
-    this.triggerCompSelectionForProducts(
-      engagementId, loanId, tenantId, result.propertyId, products,
+    this.triggerCompSelectionForClientOrders(
+      engagementId, loanId, tenantId, result.propertyId, clientOrders,
     );
   }
 
   /**
-   * Fire-and-forget comp selection for each product whose productType is in
+   * Fire-and-forget comp selection for each client order whose productType is in
    * COMP_SELECTION_PRODUCT_TYPES. Errors are logged, never thrown.
    */
-  private triggerCompSelectionForProducts(
+  private triggerCompSelectionForClientOrders(
     engagementId: string,
     loanId: string,
     tenantId: string,
     propertyId: string,
-    products: Pick<EngagementProduct, 'id' | 'productType'>[],
+    clientOrders: Pick<EngagementClientOrder, 'id' | 'productType'>[],
   ): void {
-    for (const product of products) {
-      if (!COMP_SELECTION_PRODUCT_TYPES.has(product.productType)) continue;
+    for (const co of clientOrders) {
+      if (!COMP_SELECTION_PRODUCT_TYPES.has(co.productType)) continue;
 
       this.comparableSelectionService.selectForOrder(
-        product.id, tenantId, product.productType, propertyId,
+        co.id, tenantId, co.productType, propertyId,
       ).catch(err => {
-        logger.warn('Comparable selection failed for engagement product (non-fatal)', {
+        logger.warn('Comparable selection failed for engagement client order (non-fatal)', {
           engagementId,
           loanId,
-          productId: product.id,
-          productType: product.productType,
+          clientOrderId: co.id,
+          productType: co.productType,
           error: err instanceof Error ? err.message : String(err),
         });
       });
@@ -452,8 +452,8 @@ export class EngagementService {
         `Current loan count: ${engagement.loans.length}. Contact support.`,
       );
     }
-    if (!loanData.products || loanData.products.length === 0) {
-      throw new Error('Each loan must have at least one product');
+    if (!loanData.clientOrders || loanData.clientOrders.length === 0) {
+      throw new Error('Each loan must have at least one client order');
     }
 
     const newLoan = buildLoan(loanData);
@@ -467,7 +467,7 @@ export class EngagementService {
     });
   }
 
-  /** Update the scalar fields of an existing loan (not products, not status). */
+  /** Update the scalar fields of an existing loan (not client orders, not status). */
   async updateLoan(
     engagementId: string,
     tenantId: string,
@@ -505,7 +505,7 @@ export class EngagementService {
 
   /**
    * Remove a loan from an engagement.
-   * Throws if the loan has any products with linked vendor orders — those must be unlinked first.
+   * Throws if the loan has any client orders with linked vendor orders — those must be unlinked first.
    */
   async removeLoan(
     engagementId: string,
@@ -522,10 +522,10 @@ export class EngagementService {
     }
 
     const loan = engagement.loans[loanIndex] as EngagementLoan;
-    const hasLinkedOrders = loan.products.some((p) => p.vendorOrderIds.length > 0);
+    const hasLinkedOrders = loan.clientOrders.some((co) => co.vendorOrderIds.length > 0);
     if (hasLinkedOrders) {
       throw new Error(
-        `Cannot remove loan loanId=${loanId}: one or more products have linked vendor orders. ` +
+        `Cannot remove loan loanId=${loanId}: one or more client orders have linked vendor orders. ` +
         `Unlink vendor orders before removing the loan.`,
       );
     }
@@ -565,12 +565,12 @@ export class EngagementService {
     return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
   }
 
-  /** Add a new product to an existing loan. */
-  async addProductToLoan(
+  /** Add a new client order to an existing loan. */
+  async addClientOrderToLoan(
     engagementId: string,
     tenantId: string,
     loanId: string,
-    productData: Omit<EngagementProduct, 'id' | 'status' | 'vendorOrderIds'>,
+    clientOrderData: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>,
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
@@ -582,34 +582,34 @@ export class EngagementService {
     }
 
     const loan = engagement.loans[loanIndex] as EngagementLoan;
-    const newProduct = buildProduct(productData);
+    const newClientOrder = buildClientOrder(clientOrderData);
     const updatedLoans = [...engagement.loans];
-    updatedLoans[loanIndex] = { ...loan, products: [...loan.products, newProduct] };
+    updatedLoans[loanIndex] = { ...loan, clientOrders: [...loan.clientOrders, newClientOrder] };
 
     const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
 
-    // Fire-and-forget comp selection for the new product if qualifying.
+    // Fire-and-forget comp selection for the new client order if qualifying.
     // The loan should already have a propertyId from initial engagement creation.
-    if (loan.propertyId && COMP_SELECTION_PRODUCT_TYPES.has(newProduct.productType)) {
-      this.triggerCompSelectionForProducts(
-        engagementId, loanId, tenantId, loan.propertyId, [newProduct],
+    if (loan.propertyId && COMP_SELECTION_PRODUCT_TYPES.has(newClientOrder.productType)) {
+      this.triggerCompSelectionForClientOrders(
+        engagementId, loanId, tenantId, loan.propertyId, [newClientOrder],
       );
     }
 
     return result;
   }
 
-  // ── Link VendorOrder to EngagementProduct ──────────────────────────────────
+  // ── Link VendorOrder to EngagementClientOrder ─────────────────────────────
 
   /**
-   * Link a VendorOrder ID to a specific product inside a specific loan.
+   * Link a VendorOrder ID to a specific client order inside a specific loan.
    * Idempotent — adding the same vendorOrderId twice is a no-op.
    */
-  async addVendorOrderToProduct(
+  async addVendorOrderToClientOrder(
     engagementId: string,
     tenantId: string,
     loanId: string,
-    productId: string,
+    clientOrderId: string,
     vendorOrderId: string,
     updatedBy: string,
   ): Promise<Engagement> {
@@ -622,27 +622,27 @@ export class EngagementService {
     }
 
     const loan = engagement.loans[loanIndex] as EngagementLoan;
-    const product = loan.products.find((p) => p.id === productId);
-    if (!product) {
+    const clientOrder = loan.clientOrders.find((co) => co.id === clientOrderId);
+    if (!clientOrder) {
       throw new Error(
-        `EngagementProduct not found: engagementId=${engagementId} loanId=${loanId} productId=${productId}`,
+        `EngagementClientOrder not found: engagementId=${engagementId} loanId=${loanId} clientOrderId=${clientOrderId}`,
       );
     }
-    if (!product.vendorOrderIds.includes(vendorOrderId)) {
-      product.vendorOrderIds.push(vendorOrderId);
+    if (!clientOrder.vendorOrderIds.includes(vendorOrderId)) {
+      clientOrder.vendorOrderIds.push(vendorOrderId);
     }
 
     const updatedLoans = [...engagement.loans];
     updatedLoans[loanIndex] = loan;
     const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
 
-    // Best-effort FK write-back: stamp engagementId, loanId, productId onto the order document.
+    // Best-effort FK write-back: stamp engagementId, loanId, clientOrderId onto the order document.
     // Non-fatal — the order may not exist yet if it is being created concurrently.
     try {
       await this.dbService.updateOrder(vendorOrderId, {
         engagementId,
         engagementLoanId: loanId,
-        engagementProductId: productId,
+        engagementClientOrderId: clientOrderId,
       });
     } catch (err) {
       logger.warn('FK write-back to order failed (non-fatal)', { vendorOrderId, engagementId, loanId, err });
@@ -829,7 +829,7 @@ export class EngagementService {
     try {
       const engagement = await this.getEngagement(engagementId, tenantId);
       orderIds = engagement.loans.flatMap((loan) =>
-        loan.products.flatMap((product) => product.vendorOrderIds ?? []),
+        loan.clientOrders.flatMap((co) => co.vendorOrderIds ?? []),
       );
     } catch {
       // If engagement lookup fails, return only engagement-level docs
@@ -876,7 +876,7 @@ export class EngagementService {
     try {
       const engagement = await this.getEngagement(engagementId, tenantId);
       const orderIds = engagement.loans.flatMap((loan) =>
-        loan.products.flatMap((product) => product.vendorOrderIds ?? []),
+        loan.clientOrders.flatMap((co) => co.vendorOrderIds ?? []),
       );
       if (orderIds.length > 0) {
         const paramNames = orderIds.map((_, i) => `@oid${i}`).join(', ');

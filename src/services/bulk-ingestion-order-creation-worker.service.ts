@@ -179,7 +179,7 @@ export class BulkIngestionOrderCreationWorkerService {
       }
 
       const engagementLoan = engagementLoans[index];
-      const engagementProductId = engagementLoan?.products?.[0]?.id;
+      const engagementClientOrderId = engagementLoan?.clientOrders?.[0]?.id;
       const correlationId = `bulk-ingestion::${job.id}::${item.id}`;
 
       try {
@@ -193,7 +193,7 @@ export class BulkIngestionOrderCreationWorkerService {
           clientId: job.clientId,
           engagementId: engagement.id,
           engagementLoanId: engagementLoan?.id,
-          engagementProductId,
+          engagementClientOrderId,
           orderType: OrderType.PURCHASE,
           orderStatus: OrderStatus.SUBMITTED,
           priority: Priority.NORMAL,
@@ -250,7 +250,7 @@ export class BulkIngestionOrderCreationWorkerService {
           orderNumber: createResult.data.orderNumber,
           engagementId: engagement.id,
           engagementLoanId: engagementLoan?.id,
-          engagementProductId,
+          engagementClientOrderId,
           orderCreatedAt: new Date().toISOString(),
           orderCreationStatus: 'CREATED',
         };
@@ -261,7 +261,7 @@ export class BulkIngestionOrderCreationWorkerService {
           orderNumber: createResult.data.orderNumber,
           engagementId: engagement.id,
           engagementLoanId: engagementLoan?.id,
-          engagementProductId,
+          engagementClientOrderId,
           orderCreatedAt: new Date().toISOString(),
           orderCreationStatus: 'CREATED',
         };
