@@ -17,8 +17,8 @@ import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
-import { PropertyDataCacheService } from './property-data-cache.service.js';
-import { ComparableSelectionService, COMP_SELECTION_PRODUCT_TYPES } from './comparable-selection.service.js';
+import { ClientOrderService } from './client-order.service.js';
+import type { PropertyDetails as ClientOrderPropertyDetails } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
@@ -126,7 +126,7 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
 export class EngagementService {
   private _container: Container | null = null;
   private readonly enrichmentService: PropertyEnrichmentService;
-  private readonly comparableSelectionService: ComparableSelectionService;
+  private readonly clientOrderService: ClientOrderService;
 
   constructor(
     private readonly dbService: CosmosDbService,
@@ -136,14 +136,18 @@ export class EngagementService {
      * When omitted, a default instance is constructed using the same dbService.
      */
     enrichmentService?: PropertyEnrichmentService,
-    comparableSelectionService?: ComparableSelectionService,
+    /**
+     * Optional: inject a ClientOrderService (used in tests). When omitted, a
+     * default instance is constructed against the same dbService and the
+     * default ServiceBusEventPublisher. Phase 2 (comparable-selection) is
+     * driven from the comp-collection listener — not from this service —
+     * so no ComparableSelectionService dependency is required here.
+     */
+    clientOrderService?: ClientOrderService,
   ) {
     this.enrichmentService = enrichmentService ??
       new PropertyEnrichmentService(dbService, propertyRecordService);
-    this.comparableSelectionService = comparableSelectionService ??
-      new ComparableSelectionService(
-        dbService, propertyRecordService, new PropertyDataCacheService(dbService),
-      );
+    this.clientOrderService = clientOrderService ?? new ClientOrderService(dbService);
   }
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
@@ -240,24 +244,33 @@ export class EngagementService {
       loanCount: loans.length,
     });
 
-    // Fire-and-forget property enrichment for each loan (non-fatal).
-    // The enrichment record is keyed by loanId so it can be retrieved via
-    // PropertyEnrichmentService.getLatestEnrichment(loanId, tenantId).
-    // After enrichment, trigger comparable selection for qualifying product types.
+    // Fire-and-forget per-loan pipeline (non-fatal):
+    //   1. Enrich the loan's property (geocode → lat/lng on PropertyRecord).
+    //   2. For each embedded EngagementClientOrder, persist a standalone
+    //      ClientOrder doc via ClientOrderService.placeClientOrder, which
+    //      also publishes `client-order.created`. The CompCollectionListener
+    //      consumes that event and runs Phase 1 (order-comparables) → Phase 2
+    //      (comparable-analyses).
+    // Step 1 is awaited inside enrichAndPlaceClientOrders before Step 2 so the
+    // PropertyRecord has lat/lng by the time the listener reads it.
     for (const loan of (resource as Engagement).loans) {
-      this.enrichAndSelectComps(
+      this.enrichAndPlaceClientOrders(
         engagement.id,
         loan.id,
         engagement.tenantId,
+        engagement.client.clientId,
+        engagement.createdBy,
         {
           street: loan.property.address,
           city: loan.property.city,
           state: loan.property.state,
           zipCode: loan.property.zipCode,
         },
+        loan.property,
+        loan.propertyId,
         loan.clientOrders,
       ).catch(err => {
-        logger.warn('Property enrichment failed for engagement loan (non-fatal)', {
+        logger.warn('Engagement loan post-create pipeline failed (non-fatal)', {
           engagementId: engagement.id,
           loanId: loan.id,
           error: err instanceof Error ? err.message : String(err),
@@ -268,54 +281,76 @@ export class EngagementService {
     return resource as Engagement;
   }
 
-  // ── Enrichment + Comp Selection (private) ──────────────────────────────────
+  // ── Enrichment + ClientOrder placement (private) ───────────────────────────
 
   /**
-   * Enrich a loan's property and then trigger comparable selection for any
-   * qualifying client orders on that loan. Non-fatal: comp-selection errors are
-   * logged but do not reject the enrichment promise.
+   * Enrich a loan's property, then place a standalone ClientOrder document
+   * for each embedded EngagementClientOrder. Each placement publishes a
+   * `client-order.created` event that drives the comp-collection → comp-
+   * selection chain in CompCollectionListenerJob.
+   *
+   * Failure modes are isolated:
+   *   - If enrichment throws, we still attempt to place each ClientOrder. The
+   *     downstream listener will write a SKIPPED audit doc to
+   *     `order-comparables` with reason NO_COORDINATES.
+   *   - If one placement throws, others on the same loan still run.
+   * All errors are logged; nothing is re-thrown — this method is invoked
+   * fire-and-forget by createEngagement.
    */
-  private async enrichAndSelectComps(
+  private async enrichAndPlaceClientOrders(
     engagementId: string,
     loanId: string,
     tenantId: string,
+    clientId: string,
+    createdBy: string,
     address: { street: string; city: string; state: string; zipCode: string },
+    loanProperty: EngagementLoan['property'],
+    propertyId: string | undefined,
     clientOrders: EngagementClientOrder[],
   ): Promise<void> {
-    const result = await this.enrichmentService.enrichEngagement(
-      engagementId, loanId, tenantId, address,
-    );
+    try {
+      await this.enrichmentService.enrichEngagement(
+        engagementId, loanId, tenantId, address,
+      );
+    } catch (err) {
+      logger.warn('Property enrichment failed; placing client orders without coordinates (non-fatal)', {
+        engagementId,
+        loanId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-    this.triggerCompSelectionForClientOrders(
-      engagementId, loanId, tenantId, result.propertyId, clientOrders,
-    );
-  }
-
-  /**
-   * Fire-and-forget comp selection for each client order whose productType is
-   * in COMP_SELECTION_PRODUCT_TYPES. Errors are logged, never thrown.
-   */
-  private triggerCompSelectionForClientOrders(
-    engagementId: string,
-    loanId: string,
-    tenantId: string,
-    propertyId: string,
-    clientOrders: Pick<EngagementClientOrder, 'id' | 'productType'>[],
-  ): void {
     for (const clientOrder of clientOrders) {
-      if (!COMP_SELECTION_PRODUCT_TYPES.has(clientOrder.productType)) continue;
-
-      this.comparableSelectionService.selectForOrder(
-        clientOrder.id, tenantId, clientOrder.productType, propertyId,
-      ).catch(err => {
-        logger.warn('Comparable selection failed for engagement client order (non-fatal)', {
+      try {
+        await this.clientOrderService.placeClientOrder({
+          tenantId,
+          createdBy,
+          engagementId,
+          engagementLoanId: loanId,
+          clientId,
+          productType: clientOrder.productType,
+          // EngagementLoan.property (order-management.PropertyDetails) and
+          // ClientOrder.propertyDetails (index.PropertyDetails) are different
+          // structural shapes that share the same name. The ClientOrder doc
+          // stores propertyDetails opaquely — the engagement-flow listener
+          // chain reads `propertyId` from the event, not propertyDetails —
+          // so a structural cast is safe here.
+          propertyDetails: loanProperty as unknown as ClientOrderPropertyDetails,
+          clientOrderId: clientOrder.id,
+          ...(propertyId !== undefined && { propertyId }),
+          ...(clientOrder.fee !== undefined && { clientFee: clientOrder.fee }),
+          ...(clientOrder.dueDate !== undefined && { dueDate: new Date(clientOrder.dueDate) }),
+          ...(clientOrder.instructions !== undefined && { instructions: clientOrder.instructions }),
+        });
+      } catch (err) {
+        logger.warn('Failed to place ClientOrder for engagement (non-fatal)', {
           engagementId,
           loanId,
           clientOrderId: clientOrder.id,
           productType: clientOrder.productType,
           error: err instanceof Error ? err.message : String(err),
         });
-      });
+      }
     }
   }
 
@@ -588,13 +623,36 @@ export class EngagementService {
 
     const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
 
-    // Fire-and-forget comp selection for the new client order if qualifying.
-    // The loan should already have a propertyId from initial engagement creation.
-    if (loan.propertyId && COMP_SELECTION_PRODUCT_TYPES.has(newClientOrder.productType)) {
-      this.triggerCompSelectionForClientOrders(
-        engagementId, loanId, tenantId, loan.propertyId, [newClientOrder],
-      );
-    }
+    // Fire-and-forget standalone ClientOrder placement for the new order.
+    // Mirrors the createEngagement path: placeClientOrder writes the
+    // `client-orders` doc and publishes `client-order.created`, which the
+    // CompCollectionListener consumes to drive Phase 1 + Phase 2. The loan
+    // already has a propertyId from initial engagement creation, so we pass
+    // it through; the listener will handle missing coordinates by writing a
+    // SKIPPED audit doc.
+    this.clientOrderService.placeClientOrder({
+      tenantId,
+      createdBy: updatedBy,
+      engagementId,
+      engagementLoanId: loanId,
+      clientId: engagement.client.clientId,
+      productType: newClientOrder.productType,
+      // See enrichAndPlaceClientOrders for why this cast is safe.
+      propertyDetails: loan.property as unknown as ClientOrderPropertyDetails,
+      clientOrderId: newClientOrder.id,
+      ...(loan.propertyId !== undefined && { propertyId: loan.propertyId }),
+      ...(newClientOrder.fee !== undefined && { clientFee: newClientOrder.fee }),
+      ...(newClientOrder.dueDate !== undefined && { dueDate: new Date(newClientOrder.dueDate) }),
+      ...(newClientOrder.instructions !== undefined && { instructions: newClientOrder.instructions }),
+    }).catch((err) => {
+      logger.warn('Failed to place ClientOrder for added engagement client order (non-fatal)', {
+        engagementId,
+        loanId,
+        clientOrderId: newClientOrder.id,
+        productType: newClientOrder.productType,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     return result;
   }

@@ -73,6 +73,14 @@ export type PlaceClientOrderInput = Partial<AppraisalOrder> & {
   instructions?: string;
   /** Optional client-facing fee. Lives on ClientOrder, not VendorOrder. */
   clientFee?: number;
+  /**
+   * Optional caller-supplied id for the ClientOrder document. When present,
+   * the persisted doc and the published `client-order.created` event use this
+   * id verbatim. Used by EngagementService to keep the standalone ClientOrder
+   * doc id aligned with the embedded EngagementClientOrder.id. When absent,
+   * the service generates one (legacy behavior for `POST /api/client-orders`).
+   */
+  clientOrderId?: string;
 };
 
 /**
@@ -186,7 +194,7 @@ export class ClientOrderService {
     }
 
     const now = new Date().toISOString();
-    const clientOrderId = newId();
+    const clientOrderId = input.clientOrderId ?? newId();
     const clientOrderNumber = `CO-${clientOrderId}`;
 
     const clientOrder: ClientOrder = {

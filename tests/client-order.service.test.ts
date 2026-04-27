@@ -299,6 +299,32 @@ describe('ClientOrderService — client-order.created event', () => {
     const result = await svc.placeClientOrder(baseInput({ productType: ProductType.BPO }));
     expect(result.clientOrder.clientOrderStatus).toBe('PLACED');
   });
+
+  it('uses caller-supplied clientOrderId verbatim on the doc and event when provided', async () => {
+    // EngagementService relies on this: the embedded EngagementClientOrder.id
+    // (e.g. "co-1777297813811-0xsmoc") must be the same id used for the
+    // standalone client-orders document and the published event, so consumers
+    // can join the two records without an extra mapping lookup.
+    const result = await svc.placeClientOrder(
+      baseInput({
+        productType: ProductType.BPO,
+        propertyId: 'prop-1',
+        clientOrderId: 'co-engagement-supplied-id',
+      }),
+    );
+
+    expect(result.clientOrder.id).toBe('co-engagement-supplied-id');
+    expect(mock.created[0]!.id).toBe('co-engagement-supplied-id');
+    expect(result.clientOrder.clientOrderNumber).toBe('CO-co-engagement-supplied-id');
+
+    const event = publisher.published[0] as ClientOrderCreatedEvent;
+    expect(event.data.clientOrderId).toBe('co-engagement-supplied-id');
+  });
+
+  it('auto-generates a clientOrderId when none is supplied (legacy /api/client-orders path)', async () => {
+    const result = await svc.placeClientOrder(baseInput({ productType: ProductType.BPO }));
+    expect(result.clientOrder.id).toMatch(/^\d+-[a-z0-9]+$/);
+  });
 });
 
 describe('ClientOrderService.addVendorOrders', () => {

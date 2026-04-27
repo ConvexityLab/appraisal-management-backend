@@ -653,3 +653,203 @@ describe('createEngagement â€” enrichment wiring', () => {
     ).resolves.not.toThrow();
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// 11. createEngagement -> ClientOrderService bridge (Option B pipeline)
+// ---------------------------------------------------------------------------
+
+describe('createEngagement - ClientOrderService bridge', () => {
+  function makeEnrichmentService(propertyId = 'prop-test-001') {
+    return {
+      enrichEngagement: vi.fn().mockResolvedValue({
+        enrichmentId: 'enrich-x',
+        propertyId,
+        status: 'enriched',
+      }),
+    };
+  }
+
+  function makeClientOrderService() {
+    return {
+      placeClientOrder: vi.fn(async (input: any) => ({
+        clientOrder: { id: input.clientOrderId ?? 'co-auto', tenantId: input.tenantId },
+        vendorOrders: [],
+      })),
+    };
+  }
+
+  it('places a standalone ClientOrder per embedded EngagementClientOrder, reusing the embedded id', async () => {
+    const storedEng = makeEngagement({
+      loans: [
+        makeLoan({
+          id: 'loan-a',
+          propertyId: 'prop-test-001',
+          property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+          clientOrders: [
+            { id: 'co-embed-1', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+            { id: 'co-embed-2', productType: EngagementProductType.AVM, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+          ],
+        }),
+      ],
+    });
+    const container = makeMockContainer(storedEng);
+    const enrich = makeEnrichmentService();
+    const cos = makeClientOrderService();
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrich as any,
+      cos as any,
+    );
+
+    await svc.createEngagement({
+      tenantId: 'tenant-001',
+      createdBy: 'user-001',
+      client: { clientId: 'c-001', clientName: 'Lender' },
+      loans: [{
+        loanNumber: 'LN-A',
+        borrowerName: 'B',
+        property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+        clientOrders: [
+          { productType: EngagementProductType.BPO },
+          { productType: EngagementProductType.AVM },
+        ],
+      }],
+    });
+
+    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalledTimes(2));
+
+    // Both calls reuse the embedded ids from the persisted engagement.
+    const calls = cos.placeClientOrder.mock.calls.map((c: any[]) => c[0]);
+    expect(calls[0].clientOrderId).toBe('co-embed-1');
+    expect(calls[1].clientOrderId).toBe('co-embed-2');
+    // Ancestry fields are propagated correctly. The engagementId is the
+    // freshly-generated id assigned by createEngagement; we only assert it
+    // is a non-empty string and identical for sibling client orders.
+    expect(typeof calls[0].engagementId).toBe('string');
+    expect(calls[0].engagementId.length).toBeGreaterThan(0);
+    expect(calls[1].engagementId).toBe(calls[0].engagementId);
+    expect(calls[0].engagementLoanId).toBe('loan-a');
+    expect(calls[0].clientId).toBe('c-001');
+    expect(calls[0].tenantId).toBe('tenant-001');
+    expect(calls[0].propertyId).toBe('prop-test-001');
+    expect(calls[0].productType).toBe(EngagementProductType.BPO);
+  });
+
+  it('awaits enrichment BEFORE invoking placeClientOrder so the listener gets a record with lat/lng', async () => {
+    const storedEng = makeEngagement({
+      loans: [makeLoan({
+        id: 'loan-a',
+        propertyId: 'prop-test-001',
+        clientOrders: [
+          { id: 'co-embed-1', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+        ],
+      })],
+    });
+    const container = makeMockContainer(storedEng);
+    const order: string[] = [];
+    const enrich = {
+      enrichEngagement: vi.fn(async () => {
+        order.push('enrich-start');
+        await new Promise((r) => setTimeout(r, 10));
+        order.push('enrich-end');
+        return { enrichmentId: 'e', propertyId: 'prop-test-001', status: 'enriched' };
+      }),
+    };
+    const cos = {
+      placeClientOrder: vi.fn(async () => {
+        order.push('place');
+        return { clientOrder: { id: 'co-x', tenantId: 't' }, vendorOrders: [] };
+      }),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrich as any,
+      cos as any,
+    );
+
+    await svc.createEngagement(makeCreateRequest());
+    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalled());
+
+    expect(order).toEqual(['enrich-start', 'enrich-end', 'place']);
+  });
+
+  it('still places ClientOrders when enrichment fails (so client-orders is populated; listener will write SKIPPED order-comparables)', async () => {
+    const storedEng = makeEngagement({
+      loans: [makeLoan({
+        id: 'loan-a',
+        propertyId: 'prop-test-001',
+        clientOrders: [
+          { id: 'co-embed-1', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+        ],
+      })],
+    });
+    const container = makeMockContainer(storedEng);
+    const enrich = {
+      enrichEngagement: vi.fn().mockRejectedValue(new Error('attom down')),
+    };
+    const cos = makeClientOrderService();
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrich as any,
+      cos as any,
+    );
+
+    await svc.createEngagement(makeCreateRequest());
+    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalled());
+    expect(cos.placeClientOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('isolates failures: one placeClientOrder rejection does not abort siblings', async () => {
+    const storedEng = makeEngagement({
+      loans: [
+        makeLoan({
+          id: 'loan-a',
+          propertyId: 'prop-test-001',
+          clientOrders: [
+            { id: 'co-1', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+            { id: 'co-2', productType: EngagementProductType.AVM, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+          ],
+        }),
+      ],
+    });
+    const container = makeMockContainer(storedEng);
+    const enrich = makeEnrichmentService();
+    const cos = {
+      placeClientOrder: vi.fn(async (input: any) => {
+        if (input.clientOrderId === 'co-1') throw new Error('cosmos 409');
+        return { clientOrder: { id: input.clientOrderId, tenantId: input.tenantId }, vendorOrders: [] };
+      }),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      enrich as any,
+      cos as any,
+    );
+
+    await svc.createEngagement({
+      tenantId: 'tenant-001',
+      createdBy: 'user-001',
+      client: { clientId: 'c-001', clientName: 'Lender' },
+      loans: [{
+        loanNumber: 'LN-A',
+        borrowerName: 'B',
+        property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+        clientOrders: [
+          { productType: EngagementProductType.BPO },
+          { productType: EngagementProductType.AVM },
+        ],
+      }],
+    });
+
+    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalledTimes(2));
+  });
+});

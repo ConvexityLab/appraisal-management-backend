@@ -21,6 +21,11 @@ import { ServiceBusEventSubscriber } from '../services/service-bus-subscriber.js
 import { OrderCompCollectionService } from '../services/order-comp-collection.service.js';
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { AttomDataCompSearchService } from '../services/attom-data-comp-search.service.js';
+import {
+  ComparableSelectionService,
+  COMP_SELECTION_PRODUCT_TYPES,
+} from '../services/comparable-selection.service.js';
+import { PropertyDataCacheService } from '../services/property-data-cache.service.js';
 import type { ClientOrderCreatedEvent, EventHandler } from '../types/events.js';
 
 const TOPIC_NAME = 'appraisal-events';
@@ -31,6 +36,7 @@ export class CompCollectionListenerJob {
   private readonly logger = new Logger('CompCollectionListenerJob');
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly service: OrderCompCollectionService;
+  private readonly compSelection: ComparableSelectionService;
   private started = false;
 
   constructor(
@@ -39,17 +45,26 @@ export class CompCollectionListenerJob {
     deps?: {
       subscriber?: ServiceBusEventSubscriber;
       service?: OrderCompCollectionService;
+      compSelection?: ComparableSelectionService;
     },
   ) {
     this.subscriber =
       deps?.subscriber ??
       new ServiceBusEventSubscriber(undefined, TOPIC_NAME, SUBSCRIPTION_NAME);
+    const propertyRecords = new PropertyRecordService(dbService);
     this.service =
       deps?.service ??
       new OrderCompCollectionService(
         dbService,
-        new PropertyRecordService(dbService),
+        propertyRecords,
         new AttomDataCompSearchService(dbService),
+      );
+    this.compSelection =
+      deps?.compSelection ??
+      new ComparableSelectionService(
+        dbService,
+        propertyRecords,
+        new PropertyDataCacheService(dbService),
       );
   }
 
@@ -61,19 +76,51 @@ export class CompCollectionListenerJob {
 
     const handler: EventHandler<ClientOrderCreatedEvent> = {
       handle: async (event) => {
+        const { clientOrderId, tenantId, productType, propertyId } = event.data;
         try {
           const result = await this.service.runForOrder(event);
           this.logger.info('Comp-collection run finished', {
-            clientOrderId: event.data.clientOrderId,
-            tenantId: event.data.tenantId,
+            clientOrderId,
+            tenantId,
             result,
           });
+
+          // Phase 2 chain: when Phase 1 (comp-collection) actually wrote a
+          // populated order-comparables doc AND the product type is one we
+          // rank for, run comparable-selection inline. Failures re-throw so
+          // Service Bus retries the whole event (Phase 1 will re-run; the
+          // service already documents at-least-once semantics).
+          if (
+            result.status === 'COLLECTED' &&
+            propertyId &&
+            COMP_SELECTION_PRODUCT_TYPES.has(productType)
+          ) {
+            try {
+              await this.compSelection.selectForOrder(
+                clientOrderId,
+                tenantId,
+                productType,
+                propertyId,
+              );
+              this.logger.info('Comp-selection (Phase 2) finished', {
+                clientOrderId,
+                tenantId,
+              });
+            } catch (selectErr) {
+              this.logger.error('Comp-selection (Phase 2) failed', {
+                clientOrderId,
+                tenantId,
+                error: selectErr instanceof Error ? selectErr.message : String(selectErr),
+              });
+              throw selectErr;
+            }
+          }
         } catch (err) {
           // Re-throw so the subscriber abandons the message and Service Bus
           // can retry / DLQ per its delivery-count config.
           this.logger.error('Comp-collection run failed', {
-            clientOrderId: event.data.clientOrderId,
-            tenantId: event.data.tenantId,
+            clientOrderId,
+            tenantId,
             error: err instanceof Error ? err.message : String(err),
           });
           throw err;
