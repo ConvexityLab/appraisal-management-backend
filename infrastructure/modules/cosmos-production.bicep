@@ -1021,6 +1021,8 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
     ipRules: [
       // Allow all Azure services (includes Container Apps)
       { ipAddressOrRange: '0.0.0.0' }
+      // hiroh dev access
+      { ipAddressOrRange: '72.66.11.53' }
     ]
     isVirtualNetworkFilterEnabled: false
     enableAnalyticalStorage: true
