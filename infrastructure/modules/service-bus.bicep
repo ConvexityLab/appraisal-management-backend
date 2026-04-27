@@ -202,6 +202,18 @@ resource appraisalEventsTopic 'Microsoft.ServiceBus/namespaces/topics@2023-01-01
   }
 }
 
+// Comp Collection Subscription (consumed by CompCollectionListenerJob — runs comp-collection + comp-selection on client-order.created)
+resource compCollectionSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'comp-collection'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Notification Service Subscription (consumed by backend notification pipeline)
 resource notificationServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
   parent: appraisalEventsTopic

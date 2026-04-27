@@ -232,6 +232,13 @@ var containerApps = [
         value: serviceBusNamespace
       }
       {
+        // Basic-tier Service Bus (dev) does not support topics/subscriptions.
+        // Route topic-based eventing through the in-memory event bus so
+        // listeners like CompCollectionListenerJob work in-process.
+        name: 'USE_MOCK_SERVICE_BUS'
+        value: environment == 'dev' ? 'true' : 'false'
+      }
+      {
         name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
         value: axiomPipelineIdSchemaExtract
       }
