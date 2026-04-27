@@ -142,4 +142,15 @@ export interface OrderCompCollectionDoc {
   config: OrderCompCollectionConfig;
   /** ISO timestamp the doc was created. */
   createdAt: string;
+  /**
+   * Set to `true` when collection was intentionally not performed (e.g. the
+   * subject PropertyRecord could not be loaded). The doc is still written so
+   * the SKIPPED state is auditable in the same container.
+   *
+   * When `skipped === true`, `soldCandidates` and `activeCandidates` are
+   * empty arrays and `geohash5CellsQueried` is empty.
+   */
+  skipped?: boolean;
+  /** Why the run was skipped. Required when `skipped === true`. */
+  skipReason?: 'NO_PROPERTY_ID' | 'NO_COORDINATES' | 'PROPERTY_NOT_FOUND';
 }

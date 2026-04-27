@@ -48,6 +48,7 @@ interface QueryFilters {
   maxSqft: number | undefined;
   minSaleDate: string | undefined;
   maxSaleDate: string | undefined;
+  listingStatus: string | undefined;
   maxResults: number;
 }
 
@@ -77,6 +78,7 @@ export class AttomDataCompSearchService {
       maxSqft,
       minSaleDate,
       maxSaleDate,
+      listingStatus,
       maxResults = DEFAULT_MAX_RESULTS,
       expansion = DEFAULT_EXPANSION,
       adaptiveMinResults,
@@ -93,6 +95,7 @@ export class AttomDataCompSearchService {
       maxSqft,
       minSaleDate,
       maxSaleDate,
+      listingStatus,
       maxResults,
     };
 
@@ -180,6 +183,10 @@ export class AttomDataCompSearchService {
     if (filters.maxSaleDate) {
       whereClauses.push('c.salesHistory.lastSaleDate <= @maxSaleDate');
       parameters.push({ name: '@maxSaleDate', value: filters.maxSaleDate });
+    }
+    if (filters.listingStatus) {
+      whereClauses.push('c.mlsData.listingStatus = @listingStatus');
+      parameters.push({ name: '@listingStatus', value: filters.listingStatus });
     }
 
     const query = `

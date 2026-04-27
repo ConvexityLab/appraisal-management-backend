@@ -31,6 +31,9 @@
 
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import type { EventPublisher } from '../types/events.js';
+import { EventCategory, type ClientOrderCreatedEvent } from '../types/events.js';
 import {
   CLIENT_ORDERS_CONTAINER,
   CLIENT_ORDER_DOC_TYPE,
@@ -147,8 +150,22 @@ const REQUIRED_FIELDS: Array<keyof PlaceClientOrderInput> = [
 
 export class ClientOrderService {
   private readonly logger = new Logger('ClientOrderService');
+  private readonly publisher: EventPublisher;
 
-  constructor(private readonly dbService: CosmosDbService) {}
+  /**
+   * @param dbService    Cosmos DB facade.
+   * @param publisher    Optional event publisher (defaults to a fresh
+   *                     `ServiceBusEventPublisher`). Tests inject a mock.
+   *                     Used to fire `client-order.created` after a
+   *                     ClientOrder is persisted so downstream consumers
+   *                     (comp-collection listener, etc.) can react.
+   */
+  constructor(
+    private readonly dbService: CosmosDbService,
+    publisher?: EventPublisher,
+  ) {
+    this.publisher = publisher ?? new ServiceBusEventPublisher();
+  }
 
   /**
    * Create a ClientOrder. If `vendorOrderSpecs` is provided (and non-empty),
@@ -243,7 +260,47 @@ export class ClientOrderService {
       vendorOrderCount: vendorOrders.length,
     });
 
+    // Fire `client-order.created` as a domain event for any interested
+    // consumer (comp-collection listener today; analytics, audit, etc.
+    // tomorrow). Consumers do their own filtering. Publish failures are
+    // logged but DO NOT roll back the order — the order is already
+    // persisted and is the source of truth.
+    await this.publishClientOrderCreated(finalClientOrder);
+
     return { clientOrder: finalClientOrder, vendorOrders };
+  }
+
+  /**
+   * Build and publish a `client-order.created` event. Errors are caught
+   * and logged — never re-thrown — so order placement remains successful
+   * even if the bus is unreachable.
+   */
+  private async publishClientOrderCreated(order: ClientOrder): Promise<void> {
+    const event: ClientOrderCreatedEvent = {
+      id: `cocreated-${order.id}-${Date.now()}`,
+      type: 'client-order.created',
+      category: EventCategory.ORDER,
+      timestamp: new Date(),
+      source: 'ClientOrderService',
+      version: '1.0',
+      data: {
+        clientOrderId: order.id,
+        tenantId: order.tenantId,
+        ...(order.propertyId !== undefined ? { propertyId: order.propertyId } : {}),
+        productType: order.productType,
+        placedAt: order.placedAt,
+      },
+    };
+
+    try {
+      await this.publisher.publish(event);
+    } catch (err) {
+      this.logger.warn('Failed to publish client-order.created — order already persisted', {
+        clientOrderId: order.id,
+        tenantId: order.tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

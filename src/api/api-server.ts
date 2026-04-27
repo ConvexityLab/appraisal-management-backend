@@ -191,6 +191,7 @@ import { BulkIngestionProcessorService } from '../services/bulk-ingestion-proces
 import { BulkIngestionCanonicalWorkerService } from '../services/bulk-ingestion-canonical-worker.service.js';
 import { BulkIngestionOrderCreationWorkerService } from '../services/bulk-ingestion-order-creation-worker.service.js';
 import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.job.js';
+import { CompCollectionListenerJob } from '../jobs/comp-collection-listener.job.js';
 import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion-extraction-worker.service.js';
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
@@ -316,6 +317,7 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionCanonicalWorkerService?: BulkIngestionCanonicalWorkerService;
   private bulkIngestionOrderCreationWorkerService?: BulkIngestionOrderCreationWorkerService;
   private bulkUploadEventListenerJob?: BulkUploadEventListenerJob;
+  private compCollectionListenerJob?: CompCollectionListenerJob;
   private bulkIngestionExtractionWorkerService?: BulkIngestionExtractionWorkerService;
   private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
@@ -4375,6 +4377,24 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Comp Collection Listener Job (subscribes to client-order.created on
+    // the appraisal-events topic; runs OrderCompCollectionService for product
+    // types in COMP_COLLECTION_TRIGGER_PRODUCT_TYPES). In real Azure mode the
+    // `comp-collection` subscription on `appraisal-events` must exist (Bicep);
+    // in mock mode this is routed via the in-memory event bus with no infra.
+    try {
+      this.compCollectionListenerJob = new CompCollectionListenerJob(this.dbService);
+      this.compCollectionListenerJob.start().catch(err => {
+        this.logger.warn('CompCollectionListenerJob failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('CompCollectionListenerJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Bulk Ingestion Processor Service (subscribes to bulk.ingestion.requested)
     try {
       this.bulkIngestionProcessorService = new BulkIngestionProcessorService(this.dbService);
@@ -4624,6 +4644,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.bulkUploadEventListenerJob) {
       this.bulkUploadEventListenerJob.stop();
+    }
+    if (this.compCollectionListenerJob) {
+      this.compCollectionListenerJob.stop().catch(() => {});
     }
     if (this.bulkIngestionOrderCreationWorkerService) {
       this.bulkIngestionOrderCreationWorkerService.stop().catch(() => {});

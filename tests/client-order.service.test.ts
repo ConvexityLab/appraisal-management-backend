@@ -16,6 +16,7 @@ import {
 import { ProductType } from '../src/types/product-catalog';
 import { CLIENT_ORDERS_CONTAINER, type ClientOrder } from '../src/types/client-order.types';
 import type { PropertyDetails } from '../src/types/index';
+import type { AppEvent, ClientOrderCreatedEvent, EventPublisher } from '../src/types/events';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ describe('ClientOrderService.placeClientOrder', () => {
 
   beforeEach(() => {
     mock = makeMockDb();
-    svc = new ClientOrderService(mock.db);
+    svc = new ClientOrderService(mock.db, makeMockPublisher());
   });
 
   describe('input validation', () => {
@@ -216,13 +217,97 @@ describe('ClientOrderService.placeClientOrder', () => {
   });
 });
 
+// ─── client-order.created event publishing ──────────────────────────────────
+
+function makeMockPublisher(): EventPublisher & {
+  published: AppEvent[];
+  publish: ReturnType<typeof vi.fn>;
+} {
+  const published: AppEvent[] = [];
+  const publish = vi.fn(async (event: AppEvent) => {
+    published.push(event);
+  });
+  return {
+    published,
+    publish,
+    publishBatch: vi.fn(async (events: AppEvent[]) => {
+      published.push(...events);
+    }),
+  } as any;
+}
+
+describe('ClientOrderService — client-order.created event', () => {
+  let mock: ReturnType<typeof makeMockDb>;
+  let publisher: ReturnType<typeof makeMockPublisher>;
+  let svc: ClientOrderService;
+
+  beforeEach(() => {
+    mock = makeMockDb();
+    publisher = makeMockPublisher();
+    svc = new ClientOrderService(mock.db, publisher);
+  });
+
+  it('publishes client-order.created for a triggering ProductType (BPO)', async () => {
+    const result = await svc.placeClientOrder(
+      baseInput({ productType: ProductType.BPO, propertyId: 'prop-1' }),
+    );
+
+    expect(publisher.publish).toHaveBeenCalledTimes(1);
+    const event = publisher.published[0] as ClientOrderCreatedEvent;
+    expect(event.type).toBe('client-order.created');
+    expect(event.data.clientOrderId).toBe(result.clientOrder.id);
+    expect(event.data.tenantId).toBe('tenant-a');
+    expect(event.data.propertyId).toBe('prop-1');
+    expect(event.data.productType).toBe(ProductType.BPO);
+    expect(event.data.placedAt).toBe(result.clientOrder.placedAt);
+  });
+
+  it('publishes for every ProductType — domain event is unconditional', async () => {
+    // client-order.created is a domain event, not a "trigger comp collection"
+    // signal. Consumers (e.g. the comp-collection listener) do their own
+    // filtering. The publisher must NOT gate on product type or future
+    // consumers will silently miss events.
+    const productTypes = [
+      ProductType.BPO,
+      ProductType.DESKTOP_APPRAISAL,
+      ProductType.DESKTOP_REVIEW,
+      ProductType.DVR,
+      ProductType.HYBRID,
+      ProductType.EVALUATION,
+      ProductType.FULL_APPRAISAL,
+      ProductType.AVM,
+    ];
+    for (const productType of productTypes) {
+      publisher.publish.mockClear();
+      await svc.placeClientOrder(baseInput({ productType }));
+      expect(publisher.publish).toHaveBeenCalledTimes(1);
+      const event = publisher.publish.mock.calls[0]![0] as ClientOrderCreatedEvent;
+      expect(event.data.productType).toBe(productType);
+    }
+  });
+
+  it('omits propertyId from event data when not supplied', async () => {
+    await svc.placeClientOrder(baseInput({ productType: ProductType.BPO }));
+    const event = publisher.published[0] as ClientOrderCreatedEvent;
+    expect(event.data.propertyId).toBeUndefined();
+  });
+
+  it('does NOT throw when publisher.publish fails — order placement still succeeds', async () => {
+    publisher.publish = vi.fn(async () => {
+      throw new Error('service bus unreachable');
+    });
+    const result = await svc.placeClientOrder(baseInput({ productType: ProductType.BPO }));
+    expect(result.clientOrder.clientOrderStatus).toBe('PLACED');
+  });
+});
+
 describe('ClientOrderService.addVendorOrders', () => {
   let mock: ReturnType<typeof makeMockDb>;
   let svc: ClientOrderService;
 
   beforeEach(() => {
     mock = makeMockDb();
-    svc = new ClientOrderService(mock.db);
+    svc = new ClientOrderService(mock.db, makeMockPublisher());
   });
 
   it('appends VendorOrders to an existing ClientOrder and updates vendorOrderIds', async () => {
@@ -393,7 +478,7 @@ describe('ClientOrderService.addVendorOrders — etag concurrency', () => {
   it('passes the parent etag as IfMatch on the patch (happy path)', async () => {
     const mock = makeEtagAwareMock();
     mock.seedClientOrder(seedCo());
-    const svc = new ClientOrderService(mock.db);
+    const svc = new ClientOrderService(mock.db, makeMockPublisher());
 
     await svc.addVendorOrders('co-1', 'tenant-a', [
       { vendorWorkType: ProductType.BPO_EXTERIOR },
@@ -408,7 +493,7 @@ describe('ClientOrderService.addVendorOrders — etag concurrency', () => {
   it('retries with a fresh etag on 412 and merges into the latest vendorOrderIds', async () => {
     const mock = makeEtagAwareMock();
     mock.seedClientOrder(seedCo({ vendorOrderIds: [] }));
-    const svc = new ClientOrderService(mock.db);
+    const svc = new ClientOrderService(mock.db, makeMockPublisher());
 
     // Simulate another writer adding 'vo-existing' between our read and our
     // first replace attempt. We do this by hooking in BEFORE the replace
@@ -442,7 +527,7 @@ describe('ClientOrderService.addVendorOrders — etag concurrency', () => {
   it('throws ClientOrderConcurrencyError after exhausting retries', async () => {
     const mock = makeEtagAwareMock();
     mock.seedClientOrder(seedCo());
-    const svc = new ClientOrderService(mock.db);
+    const svc = new ClientOrderService(mock.db, makeMockPublisher());
 
     // Force every replace to return 412.
     mock.queueConflicts(100);

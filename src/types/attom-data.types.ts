@@ -74,6 +74,12 @@ export interface CompSearchParams {
   minSaleDate?: string;
   /** Maximum last sale date (ISO string) */
   maxSaleDate?: string;
+  /**
+   * Filter by current MLS listing status (e.g. `'A'` for ACTIVE — exact value
+   * is data-source dependent). Compared against `c.mlsData.listingStatus`.
+   * Caller is responsible for picking a value that matches their ATTOM feed.
+   */
+  listingStatus?: string;
   /** Maximum results to return (default 50) */
   maxResults?: number;
   /**
