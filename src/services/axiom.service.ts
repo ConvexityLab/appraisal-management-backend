@@ -307,7 +307,10 @@ export class AxiomService {
   private static readonly PLACEHOLDER_API_KEYS = new Set(['live-fire-testing-key']);
   static readonly DEFAULT_PIPELINE_IDS: Record<string, string> = {
     EXTRACTION_ONLY: 'adaptive-document-processing',
-    CRITERIA_ONLY: 'smart-criteria-evaluation',
+    // Per docs/CLIENT_INTEGRATION_QUICKSTART.md the canonical criteria-only
+    // pipeline is `criteria-only-evaluation` (also confirmed via T2.1 live-fire).
+    // The legacy `smart-criteria-evaluation` name is no longer published by Axiom.
+    CRITERIA_ONLY: 'criteria-only-evaluation',
     FULL_PIPELINE: 'complete-document-criteria-evaluation',
     CLASSIFICATION_ONLY: 'adaptive-document-processing',
   };
@@ -1938,6 +1941,190 @@ export class AxiomService {
    *
    * Returns { pipelineJobId, evaluationId } on success, null on failure.
    */
+  /**
+   * T2.3 — Criteria-only re-evaluation for an order.
+   *
+   * Submits to Axiom's `criteria-only-evaluation` pipeline (per
+   * docs/CLIENT_INTEGRATION_QUICKSTART.md), reusing data from a prior
+   * extraction (Pattern A) or accepting caller-supplied extractedDocuments
+   * (Pattern B). Used to:
+   *   - Re-run criteria after a reviewer field correction (cascade re-eval)
+   *   - Run criteria against an order whose extraction already completed
+   *   - Evaluate tape data without requiring a prior PDF extraction
+   *
+   * Pattern resolution:
+   *   - opts.extractedDocuments present → Pattern B (createIfMissing: true)
+   *   - otherwise → Pattern A: lookup the order's most recent COMPLETED
+   *     evaluation and reuse its fileSetId
+   *
+   * On success, creates a pending eval record in aiInsights with the SAME
+   * shape submitOrderEvaluation produces, so the existing webhook handler
+   * + fetchAndStorePipelineResults path stores the criterion verdicts back
+   * onto the order without any forking.
+   */
+  async submitCriteriaReevaluation(input: {
+    orderId: string;
+    tenantId: string;
+    clientId: string;
+    subClientId: string;
+    programId: string;
+    programVersion: string;
+    /** Pattern B — caller-supplied extracted document data. */
+    extractedDocuments?: Array<{
+      documentId: string;
+      documentType: string;
+      confidence?: number;
+      extractedData: Record<string, unknown>;
+      consolidatedData?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+    }>;
+    /** Pattern A — explicit fileSetId (falls back to lookup of latest eval). */
+    fileSetId?: string;
+    /** Force a fresh run even if Axiom's 60s idempotency window would dedupe. */
+    forceResubmit?: boolean;
+  }): Promise<{ pipelineJobId: string; evaluationId: string } | null> {
+    this.lastPipelineSubmissionError = null;
+
+    if (!this.enabled) {
+      return this.mockPipelineSubmit(input.orderId, 'ORDER', input.orderId, input.programId);
+    }
+
+    const apiBaseUrl = process.env['API_BASE_URL'];
+    if (!apiBaseUrl) {
+      throw new Error('API_BASE_URL is required for criteria re-evaluation — configure it in environment settings');
+    }
+    const webhookSecret = process.env['AXIOM_WEBHOOK_SECRET'];
+    if (!webhookSecret) {
+      throw new Error('AXIOM_WEBHOOK_SECRET is required for criteria re-evaluation — configure it in environment settings');
+    }
+
+    const pattern = input.extractedDocuments && input.extractedDocuments.length > 0 ? 'B' : 'A';
+
+    // Resolve fileSetId (Pattern A): use explicit override or look up the most
+    // recent completed evaluation for this order.
+    let fileSetId = input.fileSetId;
+    if (pattern === 'A' && !fileSetId) {
+      try {
+        const lookup = await this.dbService.queryItems<{ pipelineJobId: string }>(
+          this.containerName,
+          `SELECT TOP 1 c.pipelineJobId FROM c
+           WHERE c.orderId = @orderId AND c.tenantId = @tenantId AND c.status = 'completed'
+           ORDER BY c._ts DESC`,
+          [{ name: '@orderId', value: input.orderId }, { name: '@tenantId', value: input.tenantId }],
+        );
+        const previousJob = lookup.success && lookup.data && lookup.data[0]?.pipelineJobId;
+        if (previousJob) {
+          // Mirror the fileSetId convention used in submitOrderEvaluation.
+          fileSetId = `fs-${previousJob}`;
+        }
+      } catch (err) {
+        this.logger.warn('submitCriteriaReevaluation: prior fileSet lookup failed — caller must supply fileSetId or extractedDocuments', {
+          orderId: input.orderId, error: (err as Error).message,
+        });
+      }
+    }
+
+    if (pattern === 'A' && !fileSetId) {
+      this.lastPipelineSubmissionError = {
+        code: 'NO_PRIOR_EXTRACTION',
+        message: `Order ${input.orderId} has no completed extraction to evaluate against. Either pass extractedDocuments (Pattern B) or run an extraction first.`,
+      };
+      return null;
+    }
+
+    // For Pattern B without an explicit fileSetId, mint a deterministic-by-time one.
+    if (pattern === 'B' && !fileSetId) {
+      fileSetId = `fs-${input.orderId}-criteria-${Date.now()}`;
+    }
+
+    const submissionCorrelationId = input.forceResubmit
+      ? `${input.orderId}~r${Date.now()}`
+      : `${input.orderId}~criteria`;
+
+    try {
+      const payload: Record<string, unknown> = {
+        pipelineId: AxiomService.DEFAULT_PIPELINE_IDS['CRITERIA_ONLY'],
+        input: {
+          fileSetId,
+          clientId: input.clientId,
+          subClientId: input.subClientId,
+          programId: input.programId,
+          programVersion: input.programVersion,
+          correlationId: submissionCorrelationId,
+          correlationType: 'ORDER',
+          webhookUrl: `${apiBaseUrl}/api/axiom/webhook`,
+          webhookSecret,
+          ...(pattern === 'B' ? { createIfMissing: true, extractedDocuments: input.extractedDocuments } : {}),
+        },
+      };
+
+      const response = await this.client.post<{ jobId: string }>('/api/pipelines', payload);
+      const pipelineJobId = response.data.jobId;
+      const evaluationId = `eval-${input.orderId}-${pipelineJobId}`;
+
+      // Record a pending eval so the existing webhook + result-storage flow stamps
+      // results back onto the order. _metadata seeds the same fields submitOrderEval
+      // populates so T1.3's enrichExtractionResultRefs works on the criteria-only path.
+      const submitMetadata: Record<string, unknown> = {
+        criteriaOnly: true,
+        pattern,
+        programId: input.programId,
+        programVersion: input.programVersion,
+      };
+
+      await this.storeEvaluationRecord({
+        id: evaluationId,
+        orderId: input.orderId,
+        evaluationId,
+        pipelineJobId,
+        correlationType: 'ORDER',
+        tenantId: input.tenantId,
+        clientId: input.clientId,
+        programId: input.programId,
+        programVersion: input.programVersion,
+        documentType: 'appraisal' as DocumentType,
+        status: 'pending',
+        criteria: [],
+        overallRiskScore: 0,
+        timestamp: new Date().toISOString(),
+        _metadata: submitMetadata,
+      });
+
+      this.watchPipelineStream(pipelineJobId, input.orderId, 'ORDER').catch((err) => {
+        this.logger.error('Axiom SSE stream error for criteria re-eval', { orderId: input.orderId, pipelineJobId, error: (err as Error).message });
+      });
+
+      // Stamp axiomPipelineJobId so SSE proxy + result-storage paths route to this run.
+      await this.dbService.updateOrder(input.orderId, { axiomPipelineJobId: pipelineJobId }).catch((err: Error) =>
+        this.logger.warn('submitCriteriaReevaluation: failed to stamp axiomPipelineJobId on order', {
+          orderId: input.orderId, error: err.message,
+        }),
+      );
+
+      this.logger.info('Submitted criteria-only re-evaluation', {
+        orderId: input.orderId, pattern, fileSetId, pipelineJobId, evaluationId,
+      });
+
+      return { pipelineJobId, evaluationId };
+    } catch (error) {
+      const axiomMessage = (error as AxiosError<{ error?: string; message?: string }>)?.response?.data?.message
+        ?? (error as AxiosError<{ error?: string; message?: string }>)?.response?.data?.error
+        ?? (error as Error).message;
+      this.logger.error('Error submitting criteria re-evaluation', {
+        orderId: input.orderId, pattern, error: axiomMessage,
+      });
+      const axStatus = (error as AxiosError)?.response?.status;
+      const axDetails = (error as AxiosError)?.response?.data;
+      this.lastPipelineSubmissionError = {
+        code: 'AXIOM_SUBMISSION_FAILED',
+        message: axiomMessage,
+        ...(axStatus !== undefined ? { status: axStatus } : {}),
+        ...(axDetails !== undefined ? { details: axDetails } : {}),
+      };
+      return null;
+    }
+  }
+
   async submitOrderEvaluation(
     orderId: string,
     fields: Array<{ fieldName: string; fieldType: string; value: unknown }>,

@@ -856,6 +856,125 @@ export class AxiomController {
   };
 
   /**
+   * T2.3 — Submit a criteria-only re-evaluation for an order.
+   * POST /api/axiom/criteria/evaluate
+   *
+   * Body:
+   *   {
+   *     orderId:         string                 (required)
+   *     programId:       string                 (required, e.g. "FNMA-1004")
+   *     programVersion:  string                 (required, e.g. "1.0.0")
+   *     extractedDocuments?: ExtractedDocument[] (Pattern B — caller-supplied)
+   *     fileSetId?:      string                 (Pattern A override; otherwise auto-resolved)
+   *     forceResubmit?:  boolean                (defaults false)
+   *   }
+   *
+   * Behavior:
+   *   - With extractedDocuments → Pattern B (createIfMissing: true, no prior extraction needed)
+   *   - Without extractedDocuments → Pattern A (looks up the order's most recent
+   *     completed extraction's fileSetId)
+   *   - On success returns 202 + { evaluationId, pipelineJobId }
+   *   - Webhook + result-storage flow stamps verdicts onto the order via the
+   *     existing handlers — no new wiring required.
+   */
+  evaluateCriteria = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+    try {
+      const {
+        orderId,
+        programId,
+        programVersion,
+        extractedDocuments,
+        fileSetId,
+        forceResubmit,
+      } = req.body ?? {};
+
+      if (!orderId || typeof orderId !== 'string') {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'orderId is required' } });
+        return;
+      }
+      if (!programId || typeof programId !== 'string') {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'programId is required' } });
+        return;
+      }
+      if (!programVersion || typeof programVersion !== 'string') {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'programVersion is required' } });
+        return;
+      }
+      if (extractedDocuments !== undefined && !Array.isArray(extractedDocuments)) {
+        res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'extractedDocuments must be an array when present' } });
+        return;
+      }
+
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } });
+        return;
+      }
+
+      // Resolve order → clientId/subClientId. Missing order = 404.
+      const order = await this.dbService.getItem<{ clientId: string; subClientId?: string; tenantId: string }>('orders', orderId, tenantId);
+      if (!order?.data) {
+        res.status(404).json({ success: false, error: { code: 'ORDER_NOT_FOUND', message: `Order ${orderId} not found` } });
+        return;
+      }
+
+      let subClientId: string = (order.data as Record<string, unknown>).subClientId as string ?? '';
+      if (!subClientId) {
+        const tenantConfig = await this.tenantAutomationConfigService.getConfig(order.data.clientId);
+        subClientId = tenantConfig.axiomSubClientId ?? '';
+      }
+
+      const result = await this.axiomService.submitCriteriaReevaluation({
+        orderId,
+        tenantId,
+        clientId: order.data.clientId,
+        subClientId,
+        programId,
+        programVersion,
+        ...(extractedDocuments ? { extractedDocuments } : {}),
+        ...(fileSetId ? { fileSetId } : {}),
+        ...(forceResubmit === true ? { forceResubmit: true } : {}),
+      });
+
+      if (!result) {
+        const lastError = this.axiomService.getLastPipelineSubmissionError();
+        const code = lastError?.code ?? 'CRITERIA_REEVAL_FAILED';
+        const status = code === 'NO_PRIOR_EXTRACTION' ? 409 : 502;
+        res.status(status).json({
+          success: false,
+          error: {
+            code,
+            message: lastError?.message ?? 'Failed to submit criteria re-evaluation',
+            ...(lastError?.details ? { details: lastError.details } : {}),
+          },
+        });
+        return;
+      }
+
+      res.status(202).json({
+        success: true,
+        data: {
+          evaluationId: result.evaluationId,
+          pipelineJobId: result.pipelineJobId,
+          orderId,
+          pattern: extractedDocuments && extractedDocuments.length > 0 ? 'B' : 'A',
+          message: 'Criteria re-evaluation submitted',
+        },
+      });
+    } catch (error) {
+      this.logger.error('Error submitting criteria re-evaluation', { error: error instanceof Error ? error.message : String(error) });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to submit criteria re-evaluation',
+          details: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  };
+
+  /**
    * Retrieve ALL evaluation results for an order
    * GET /api/axiom/evaluations/order/:orderId
    * 
@@ -1876,6 +1995,10 @@ export function createAxiomRouter(dbService: CosmosDbService, axiomService?: Axi
 
   // Document analysis (frontend-friendly, looks up blob URL by documentId)
   router.post('/analyze', controller.analyzeDocument);
+  // T2.3 — criteria-only re-evaluation against an existing fileSet (Pattern A)
+  // or caller-supplied extractedDocuments (Pattern B). Closes the gap that left
+  // `axiomDecision` empty after analyze.
+  router.post('/criteria/evaluate', controller.evaluateCriteria);
 
   // Agent proxy
   router.post('/agent/run', controller.runAgent);
