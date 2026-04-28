@@ -208,3 +208,140 @@ describe('CanonicalSnapshotService merge behavior', () => {
     );
   });
 });
+
+// ── refreshFromExtractionRun (P-19 / A-13 — post-Axiom snapshot refresh) ────
+// Closes the gap flagged in the extraction-journey audit: createFromExtractionRun
+// was tested above, but refreshFromExtractionRun (called from
+// axiom.service.ts#fetchAndStorePipelineResults after the extracted-data
+// writeback) had ZERO coverage.
+describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function buildExistingSnapshot(overrides: any = {}) {
+    return {
+      id: 'snap-001',
+      type: 'canonical-snapshot',
+      tenantId: 'tenant-001',
+      orderId: 'order-001',
+      documentId: 'doc-001',
+      extractionRunId: 'ext_run_001',
+      status: 'pending',
+      createdAt: '2026-04-26T00:00:00.000Z',
+      updatedAt: '2026-04-26T00:00:00.000Z',
+      normalizedData: { extraction: { appraisalValue: 500000 } },
+      sourceRefs: [],
+      ...overrides,
+    };
+  }
+
+  it('skips silently and returns null when the run is not an extraction run', async () => {
+    const upsertItem = vi.fn();
+    const queryItems = vi.fn();
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+
+    const evaluationRun = buildExtractionRun({ runType: 'evaluation' as any });
+    const result = await service.refreshFromExtractionRun(evaluationRun);
+
+    expect(result).toBeNull();
+    expect(queryItems).not.toHaveBeenCalled();
+    expect(upsertItem).not.toHaveBeenCalled();
+  });
+
+  it('returns null without writing when the run has no canonicalSnapshotId', async () => {
+    const upsertItem = vi.fn();
+    const queryItems = vi.fn();
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+
+    const result = await service.refreshFromExtractionRun(buildExtractionRun({ canonicalSnapshotId: undefined }));
+
+    expect(result).toBeNull();
+    expect(queryItems).not.toHaveBeenCalled();
+    expect(upsertItem).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the linked snapshot has been deleted (idempotent no-op)', async () => {
+    const queryItems = vi.fn().mockResolvedValue({ success: true, data: [] });
+    const upsertItem = vi.fn();
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+
+    const result = await service.refreshFromExtractionRun(
+      buildExtractionRun({ canonicalSnapshotId: 'snap-missing' }),
+    );
+
+    expect(result).toBeNull();
+    expect(upsertItem).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds normalizedData from the post-Axiom document and stamps refreshedAt + status=ready', async () => {
+    const existing = buildExistingSnapshot();
+    const queryItems = vi.fn().mockImplementation(async (container: string, query: string) => {
+      if (container === 'aiInsights' || query.includes('canonical-snapshot')) {
+        // First query: getSnapshotById
+        return { success: true, data: [existing] };
+      }
+      if (container === 'documents') {
+        // Second query: getDocumentById — return doc with the freshly-written
+        // extractedData (post-Axiom)
+        return {
+          success: true,
+          data: [{
+            id: 'doc-001',
+            tenantId: 'tenant-001',
+            orderId: 'order-001',
+            extractedData: { appraisalValue: 525000, qualityScore: 'A+', updatedField: 'post-axiom' },
+          }],
+        };
+      }
+      if (container === 'property-enrichments') {
+        return { success: true, data: [] };
+      }
+      return { success: true, data: [] };
+    });
+    const upsertItem = vi.fn().mockResolvedValue({ success: true });
+
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+    const before = Date.now();
+    const result = await service.refreshFromExtractionRun(
+      buildExtractionRun({ canonicalSnapshotId: 'snap-001' }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe('snap-001');
+    expect(result!.status).toBe('ready');
+    expect(typeof (result as any).refreshedAt).toBe('string');
+    expect(Date.parse((result as any).refreshedAt)).toBeGreaterThanOrEqual(before);
+    // normalizedData should reflect the POST-Axiom document state, not the
+    // pre-Axiom snapshot we started with
+    expect(result!.normalizedData?.extraction).toMatchObject({
+      appraisalValue: 525000,
+      qualityScore: 'A+',
+      updatedField: 'post-axiom',
+    });
+    expect(upsertItem).toHaveBeenCalledTimes(1);
+    expect(upsertItem.mock.calls[0][1]).toMatchObject({
+      id: 'snap-001',
+      status: 'ready',
+    });
+  });
+
+  it('returns null and logs (no throw) when the upsert fails — caller in axiom.service.ts must not see a hard error', async () => {
+    const existing = buildExistingSnapshot();
+    const queryItems = vi.fn().mockImplementation(async (container: string) => {
+      // getSnapshotById queries the aiInsights container (runContainerName)
+      if (container === 'aiInsights') return { success: true, data: [existing] };
+      if (container === 'documents') return { success: true, data: [{ id: 'doc-001', tenantId: 'tenant-001' }] };
+      return { success: true, data: [] };
+    });
+    const upsertItem = vi.fn().mockResolvedValue({ success: false, error: { message: 'Cosmos throttle' } });
+
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+    const result = await service.refreshFromExtractionRun(
+      buildExtractionRun({ canonicalSnapshotId: 'snap-001' }),
+    );
+
+    expect(result).toBeNull();
+    expect(upsertItem).toHaveBeenCalledTimes(1);
+  });
+});

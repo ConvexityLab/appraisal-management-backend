@@ -83,6 +83,43 @@ export class AuthorizationMiddleware {
           return;
         }
 
+        // ── E2E test-token bypass (dev/test environments only) ───────────
+        // Synthesize a fully-authorized admin profile when the request was
+        // authenticated via a test JWT (req.user.isTestToken). This unblocks
+        // Playwright / live-fire scripts without requiring a Cosmos `users`
+        // record for the synthetic subject. Gated to NODE_ENV !== 'production'
+        // so a stolen test JWT can never escalate against a prod deployment.
+        if (process.env.NODE_ENV !== 'production' && (req.user as any).isTestToken) {
+          this.logger.info('Authorization: synthesizing profile for test-token request', {
+            userId: req.user.id,
+            tenantId,
+          });
+          req.userProfile = {
+            id: req.user.id,
+            email: (req.user as any).email ?? `${req.user.id}@test.local`,
+            name: (req.user as any).name ?? 'E2E Test User',
+            azureAdObjectId: req.user.id,
+            tenantId,
+            role: (req.user as any).role ?? 'admin',
+            accessScope: {
+              teamIds: [],
+              departmentIds: [],
+              managedClientIds: [],
+              managedVendorIds: [],
+              managedUserIds: [],
+              regionIds: [],
+              statesCovered: [],
+              canViewAllOrders: true,
+              canViewAllVendors: true,
+              canOverrideQC: true,
+            },
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as any;
+          return next();
+        }
+
         const userProfile = await this.authzService.getUserProfile(req.user.id, tenantId);
 
         if (!userProfile) {

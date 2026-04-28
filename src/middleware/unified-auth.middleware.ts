@@ -110,9 +110,13 @@ export class UnifiedAuthMiddleware {
           }
           
           const validation = this.testTokenGen!.verifyToken(token);
-          
+
           if (validation.valid && validation.user) {
-            req.user = validation.user;
+            // Stamp the test-token marker on req.user so the downstream
+            // authorization middleware can synthesize a profile in dev/test
+            // environments without requiring a real Cosmos `users` record.
+            // Gated by allowTestTokens (NODE_ENV !== 'production') above.
+            req.user = { ...validation.user, isTestToken: true } as any;
             req.tenantId = validation.user.tenantId; // Set tenantId for profile loading
             return next();
           } else {
