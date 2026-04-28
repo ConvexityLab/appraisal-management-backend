@@ -103,7 +103,7 @@ These unblock work on all 5 capabilities. Do them first.
   - Verification: pull an extracted field from the API response and confirm both new fields are populated. Without this, the PDF chip click in T1.5 dies silently.
   - Multi-document submission case is a future extension (would need a per-Axiom-documentId → our-documentId mapping table). The single-doc path covers analyze flow today.
 
-- [ ] **T1.4** — Frontend: replace generic "evaluation failed" with structured error + retry. (1 SP)
+- [x] **T1.4** — Frontend: replace generic "evaluation failed" with structured error + retry. (1 SP) `(done 2026-04-28 — AxiomInsightsPanel.tsx + EvaluationCard now render an Alert with AlertTitle showing which pipeline stage failed (parsed from evaluation.pipelineExecutionLog.find(s => s.event === 'failed')), the stage-specific error message (falls back to evaluation.error), and a Retry button when an onRetry callback is provided. Only the most recent evaluation gets the retry handler — older failed evals stay frozen as historical context. Props: onRetry?: () => void; isRetrying?: boolean. Per project pattern (vitest.config.mts notes MUI render-tests are deferred to E2E), no unit test added — change is purely additive prop wiring covered by TypeScript. T1.1 will wire onRetry to the analyze mutation.)`
   - Action: in [src/components/axiom/AxiomInsightsPanel.tsx](../../l1-valuation-platform-ui/src/components/axiom/AxiomInsightsPanel.tsx), when `latestEvaluation.status === 'failed'`, render `latestEvaluation.error` (which stage, error message) and a "Retry" button that calls the mutation from T1.1.
   - Verification: simulate a failure; UI shows readable error + button; click retries.
 
