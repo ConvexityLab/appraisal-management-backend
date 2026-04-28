@@ -89,10 +89,14 @@ These unblock work on all 5 capabilities. Do them first.
   - Action: in [src/app/(control-panel)/orders/[id]/page.tsx](../../l1-valuation-platform-ui/src/app/(control-panel)/orders/[id]/page.tsx), surface a button next to the AI Analysis tab that calls a new `useTriggerAxiomExtractionMutation()` RTKQ mutation. On click, show a confirmation modal listing target documents.
   - Verification: button visible; click triggers backend `POST /api/axiom/analyze`; toast shows "Submission queued — eval ID …".
 
-- [ ] **T1.2** — Backend: ensure `submitOrderEvaluation` calls real Axiom and survives webhook round-trip. (1 SP) — Deps: B0.1
+- [x] **T1.2** — Backend: ensure `submitOrderEvaluation` calls real Axiom and survives webhook round-trip. (1 SP) — Deps: B0.1 `(done 2026-04-28 — live-fire passed end-to-end against real Axiom dev. Order seed-order-003 stamped with axiomEvaluationId, axiomStatus=completed, axiomRiskScore=55, axiomLastUpdatedAt. Evaluation record carries 17 extracted documents with structured fields — propertyAddress.street.value="17 David Dr" as proof of real extraction. Required one fix to the live-fire script: extended the step-2b poll loop to retry while status='pending'/processing, not just on 404.)`
   - Action: with `AXIOM_FORCE_MOCK=false`, run `npm run axiom:livefire:analyze-webhook` against `seed-order-003`. If it fails, debug and fix in `axiom.service.ts:submitOrderEvaluation` / webhook handler. Confirm the order ends up stamped with real `axiomRiskScore`/`axiomDecision`/`axiomEvaluationId`.
   - Verification: `curl /api/orders/seed-order-003 | jq .data.axiomDecision` returns one of `ACCEPT|CONDITIONAL|REJECT`; `aiInsights` container has the eval record with non-empty `criteria[]`.
   - Output: artifact under `test-artifacts/p-19/livefire-real-axiom-2026-04-28/`.
+  - **Partial completion notes:**
+    - `axiomDecision` still `undefined` and `criteria[]` is empty — the default analyze pipeline is `adaptive-document-processing` (extraction-only). The criteria-only pipeline must be invoked separately to populate verdicts + decision (this is what T2.3 builds + what T2.1 audits).
+    - `sourcePages: []` on every extracted field — provenance gap; documents have `sourceBatch` (Axiom-internal) but no page numbers. Investigate in T1.3 / T4.1.
+    - Axiom-side document IDs use Axiom-internal naming (`fs-seed-order-003-r17773...`), NOT our `seed-doc-report-003`. The mapping back to our document store is the T1.3 enrichment work.
 
 - [ ] **T1.3** — Backend: enrich extracted fields with `sourceDocumentId` + `sourceBlobUrl`. (1 SP) — Deps: T1.2
   - Action: in `axiom.service.ts:fetchAndStorePipelineResults` (or `unwrapExtractedField`), after Axiom returns extracted fields with `sourcePage`/`sourceCoordinates`, look up the matching document in our `documents` container by `pipelineJobId` / fileSetId mapping and stamp `sourceDocumentId` + `sourceBlobUrl` on each field. Add a unit test.

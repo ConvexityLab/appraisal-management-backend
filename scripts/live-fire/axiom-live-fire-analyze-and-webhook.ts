@@ -153,6 +153,13 @@ async function main(): Promise<void> {
       continue;
     }
 
+    const status = evaluationRes.data?.data?.status;
+    if (status && status !== 'completed' && status !== 'failed') {
+      console.log(`… evaluation status=${status} (attempt ${attempt}/${pollAttempts}) — waiting for completion`);
+      await sleep(pollIntervalMs);
+      continue;
+    }
+
     assertSubstantiveEvaluation(evaluationRes.data?.data);
     verifiedEvaluation = true;
     break;
