@@ -3,6 +3,21 @@
  *
  * Seeds 1 UAD-standard QC checklist with 4 categories and 10 scored questions.
  * Container: criteria (partition /clientId)
+ *
+ * `axiomCriterionIds` map each checklist question to one or more canonical
+ * Axiom criterion IDs from the FNMA-1004 program (URAR-1004-001..033).
+ *
+ * The mapping was derived from a real `criteria-only-evaluation` run against
+ * the Axiom dev URL on 2026-04-28 — see
+ * `test-artifacts/p-20/criterion-id-audit-2026-04-28.md` for the full list of
+ * 33 criterion IDs with their semantic descriptions. Re-run that audit when
+ * Axiom releases a new program version.
+ *
+ * Coverage gap: 14 of the 33 Axiom criteria (legal description, APN, taxes,
+ * borrower name, occupancy, zoning, signature/license fields, AMC name, etc.)
+ * are NOT represented as separate checklist questions today. They still flow
+ * through into the Axiom evaluation results — they're just not pre-filled
+ * onto a specific QC question.
  */
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
@@ -33,7 +48,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               weight: 5,
               type: 'PASS_FAIL',
               requiredForPass: true,
-              axiomCriterionIds: ['property-address-complete', 'property-address-matches-order'],
+              // Axiom: subject property address fully formed with required components.
+              axiomCriterionIds: ['URAR-1004-001'],
             },
             {
               id: 'q-subj-02',
@@ -42,7 +58,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               type: 'SCORED',
               maxScore: 10,
               requiredForPass: false,
-              axiomCriterionIds: ['site-size-reported', 'lot-dimensions-present'],
+              // Axiom: lot/site size reported.
+              axiomCriterionIds: ['URAR-1004-011'],
             },
             {
               id: 'q-subj-03',
@@ -51,7 +68,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               type: 'SCORED',
               maxScore: 10,
               requiredForPass: false,
-              axiomCriterionIds: ['neighborhood-description-consistency'],
+              // Axiom: neighborhood built-up % + property value trend + marketing time.
+              axiomCriterionIds: ['URAR-1004-007', 'URAR-1004-008', 'URAR-1004-009'],
             },
           ],
         },
@@ -65,7 +83,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               weight: 10,
               type: 'PASS_FAIL',
               requiredForPass: true,
-              axiomCriterionIds: ['min-3-comparables', 'comparables-within-1-mile'],
+              // Axiom: ≥3 closed comparable sales + full addresses for distance/proximity check.
+              axiomCriterionIds: ['URAR-1004-020', 'URAR-1004-021'],
             },
             {
               id: 'q-comp-02',
@@ -73,7 +92,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               weight: 10,
               type: 'PASS_FAIL',
               requiredForPass: true,
-              axiomCriterionIds: ['comparables-within-12-months'],
+              // Axiom: closed sale prices and dates for comparables.
+              axiomCriterionIds: ['URAR-1004-022'],
             },
             {
               id: 'q-comp-03',
@@ -82,7 +102,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               type: 'SCORED',
               maxScore: 10,
               requiredForPass: false,
-              axiomCriterionIds: ['gross-adjustment-within-25', 'net-adjustment-within-15'],
+              // Axiom: net adjustments ≤15% + gross adjustments ≤25%.
+              axiomCriterionIds: ['URAR-1004-024', 'URAR-1004-025'],
             },
           ],
         },
@@ -97,7 +118,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               type: 'SCORED',
               maxScore: 10,
               requiredForPass: true,
-              axiomCriterionIds: ['final-value-supported-by-comps', 'reconciliation-reasonable'],
+              // Axiom: reconciled indicated value from sales comp + final market value opinion.
+              axiomCriterionIds: ['URAR-1004-026', 'URAR-1004-027'],
             },
             {
               id: 'q-val-02',
@@ -105,7 +127,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               weight: 5,
               type: 'PASS_FAIL',
               requiredForPass: false,
-              axiomCriterionIds: ['effective-date-reasonable'],
+              // Axiom: effective date of appraisal.
+              axiomCriterionIds: ['URAR-1004-028'],
             },
           ],
         },
@@ -119,7 +142,15 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               weight: 10,
               type: 'PASS_FAIL',
               requiredForPass: true,
-              axiomCriterionIds: ['uad-required-fields-complete', 'property-rights-appraised', 'gla-reported'],
+              // Axiom: legal description + APN + year built + above-grade GLA + room count.
+              // These are the structural URAR identity/measurement fields most often missing.
+              axiomCriterionIds: [
+                'URAR-1004-002',
+                'URAR-1004-003',
+                'URAR-1004-014',
+                'URAR-1004-016',
+                'URAR-1004-017',
+              ],
             },
             {
               id: 'q-uad-02',
@@ -128,7 +159,8 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
               type: 'SCORED',
               maxScore: 10,
               requiredForPass: false,
-              axiomCriterionIds: ['uad-condition-rating-format', 'uad-quality-rating-format'],
+              // Axiom: UAD C1-C6 condition rating + Q1-Q6 quality rating.
+              axiomCriterionIds: ['URAR-1004-018', 'URAR-1004-019'],
             },
           ],
         },
