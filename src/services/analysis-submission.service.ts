@@ -325,10 +325,13 @@ export class AnalysisSubmissionService {
     const sasUrl = await this.blobService.generateReadSasUrl(documentContainerName, document.blobName);
 
     const fields = this.buildOrderFields(order);
+    // T1.3: pass our internal documentId alongside the SAS URL so submitOrderEvaluation
+    // can stamp _metadata for downstream resolvedDocumentId enrichment.
     const documents = [
       {
         documentName: document.name || document.fileName || request.documentId,
         documentReference: sasUrl,
+        documentId: request.documentId,
       },
     ];
 

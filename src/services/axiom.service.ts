@@ -1068,6 +1068,43 @@ export class AxiomService {
    * only to our service layer (stored in _metadata at submission time). Stamping
    * them here means the frontend can navigate directly to the correct PDF page.
    */
+  /**
+   * T1.3 — stamp our documentId + blobUrl on each entry of axiomExtractionResult
+   * so the frontend can resolve PDF chip clicks back to a real document in our
+   * Cosmos store. Axiom returns its own internal compound IDs (e.g.
+   * `fs-seed-order-003-r17...-SEED-...-uniform-residential-appraisal-report`)
+   * which never match our `documents` container.
+   *
+   * Single-document submission case (the only one used today): every entry
+   * traces to `meta.documentId` because that's what we sent. When Axiom splits
+   * one source PDF into multiple logical extraction outputs, the resolution is
+   * still the SAME source document — that's correct.
+   *
+   * Multi-document submission would need a per-Axiom-documentId → our-documentId
+   * map; recorded in code as a future extension when that path lights up.
+   */
+  private enrichExtractionResultRefs(
+    extraction: unknown,
+    meta: Record<string, any>,
+  ): unknown {
+    if (!Array.isArray(extraction)) return extraction;
+    const ourDocId = meta?.documentId as string | undefined;
+    const ourBlobUrl = (meta?.blobUrl ?? meta?.documentUrl) as string | undefined;
+    const ourDocName = (meta?.documentName ?? meta?.fileName) as string | undefined;
+    if (!ourDocId && !ourBlobUrl) return extraction;
+    return extraction.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const r = item as Record<string, unknown>;
+      // Preserve Axiom's original documentId for traceability — only add OUR refs.
+      return {
+        ...r,
+        ...(r.resolvedDocumentId == null && ourDocId ? { resolvedDocumentId: ourDocId } : {}),
+        ...(r.resolvedBlobUrl == null && ourBlobUrl ? { resolvedBlobUrl: ourBlobUrl } : {}),
+        ...(r.resolvedDocumentName == null && ourDocName ? { resolvedDocumentName: ourDocName } : {}),
+      };
+    });
+  }
+
   private enrichCriteriaRefs(
     criteria: CriterionEvaluation[],
     meta: Record<string, any>
@@ -1904,7 +1941,7 @@ export class AxiomService {
   async submitOrderEvaluation(
     orderId: string,
     fields: Array<{ fieldName: string; fieldType: string; value: unknown }>,
-    documents: Array<{ documentName: string; documentReference: string }> | undefined,
+    documents: Array<{ documentName: string; documentReference: string; documentId?: string }> | undefined,
     tenantId: string,
     clientId: string,
     subClientId: string,
@@ -2025,6 +2062,31 @@ export class AxiomService {
       const pipelineJobId = response.data.jobId;
       const evaluationId = `eval-${orderId}-${pipelineJobId}`;
 
+      // T1.3: persist source-document identity in _metadata so the result-storage
+      // path can stamp resolvedDocumentId / resolvedBlobUrl onto every entry of
+      // axiomExtractionResult. Without this, the frontend has no way to map
+      // Axiom's internal documentId back to a blob in our store.
+      const primaryDoc = documents?.[0];
+      const submitMetadata: Record<string, unknown> = {};
+      if (primaryDoc?.documentName) {
+        submitMetadata.documentName = primaryDoc.documentName;
+        submitMetadata.fileName = primaryDoc.documentName;
+      }
+      if (primaryDoc?.documentId) {
+        submitMetadata.documentId = primaryDoc.documentId;
+      }
+      if (primaryDoc?.documentReference) {
+        // documentReference is the SAS URL by convention (analysis-submission service)
+        // but legacy callers may pass a documentId here when no URL is available.
+        const ref = primaryDoc.documentReference;
+        if (/^https?:\/\//i.test(ref)) {
+          submitMetadata.blobUrl = ref;
+          submitMetadata.documentUrl = ref;
+        } else if (!submitMetadata.documentId) {
+          submitMetadata.documentId = ref;
+        }
+      }
+
       await this.storeEvaluationRecord({
         id: evaluationId,
         orderId,
@@ -2039,6 +2101,7 @@ export class AxiomService {
         criteria: [],
         overallRiskScore: 0,
         timestamp: new Date().toISOString(),
+        ...(Object.keys(submitMetadata).length > 0 ? { _metadata: submitMetadata } : {}),
       });
 
       this.watchPipelineStream(pipelineJobId, orderId, 'ORDER').catch((err) => {
@@ -2812,7 +2875,11 @@ export class AxiomService {
         ...(pending.programId ? { programId: pending.programId } : {}),
         criteria: this.enrichCriteriaRefs(mapped.criteria, meta),
         // Raw Axiom pipeline outputs — stored for full UI visibility.
-        ...(axiomExtractionResult !== undefined ? { axiomExtractionResult } : {}),
+        // T1.3: enrich each extraction-result entry with our resolvedDocumentId/
+        // resolvedBlobUrl so frontend chips can fetch the right PDF blob.
+        ...(axiomExtractionResult !== undefined
+          ? { axiomExtractionResult: this.enrichExtractionResultRefs(axiomExtractionResult, meta) }
+          : {}),
         ...(axiomCriteriaResult !== undefined ? { axiomCriteriaResult } : {}),
         // Stage-by-stage execution log — populated from SSE stream events when available.
         ...(stageLog && stageLog.length > 0 ? { pipelineExecutionLog: stageLog } : {}),
