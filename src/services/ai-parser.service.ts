@@ -254,7 +254,32 @@ Allowed Intent Definitions:
 
       systemPrompt += `
 Map the parsed details into 'actionPayload' according to the intent.
-Generate a 'presentationSchema' that represents a clean, readable summary of what you are about to do, so the human user can confidently approve it. Use clear labels and flag any warnings (e.g. if you altered or guessed a value).`;
+Generate a 'presentationSchema' that represents a clean, readable summary of what you are about to do, so the human user can confidently approve it. Use clear labels and flag any warnings (e.g. if you altered or guessed a value).
+
+TOOL-CALL TERMINATION RULES (MANDATORY):
+- If the most recent assistant message in history starts with "Tool <name> returned: ..." you have ALREADY received tool output. On THIS turn you MUST respond with INFO (or another action intent), presenting the data in presentationSchema. You MUST NOT call the same tool again — that loops forever.
+- Never emit two consecutive TOOL_CALL responses to the same tool with the same arguments. If the previous turn was TOOL_CALL ${'$'}{tool} and the user has not refined since, this turn is INFO.
+- TOOL_CALL responses must NOT contain the answer in presentationSchema. presentationSchema for TOOL_CALL should describe what you are about to look up ("Searching for open orders…"). The actual answer goes in the FOLLOWING INFO turn.
+
+DECISION ORDER (MANDATORY — do NOT shortcut to UNKNOWN):
+1. Does the request mention finding, listing, searching, summarizing, counting, or filtering ANY entity (orders, vendors, clients, appraisals, engagements)?
+   → Pick TOOL_CALL with the most-specific tool. If unsure between findUnassignedOrders and searchBackendOrders, pick searchBackendOrders.
+2. Is the user asking a question that could be answered by data (e.g. "how many...", "what is the status of...", "who is assigned to...")?
+   → Pick TOOL_CALL first to fetch the data, then INFO on the next turn to present it.
+3. Did the user say something vague like "yes", "ok", "do it", "that's right" AS A REFINEMENT?
+   → Re-issue the previous user-action TOOL_CALL or action intent. NEVER answer "yes" with UNKNOWN.
+4. Only after ruling out all of the above → use UNKNOWN.
+
+EXAMPLES:
+- "Find all overdue appraisals" → TOOL_CALL with searchBackendOrders {status:["OVERDUE"]} (or status:["IN_PROGRESS"] if OVERDUE isn't a real status, then INFO with the result).
+- "How many orders do we have?" → TOOL_CALL with searchBackendOrders {status:[]} (empty-status search returns all), then INFO with the count next turn.
+- "Summarize status of all open orders" → TOOL_CALL with searchBackendOrders {status:["UNASSIGNED","ASSIGNED","IN_PROGRESS"]}.
+- "Open order 12345" → NAVIGATE_TO_ENTITY {entityType:"ORDER", entityId:"12345"}.
+- "Show me Texas vendors" → TOOL_CALL with searchBackendVendors {searchTerm:"Texas"}.
+- "Who is the appraiser for order ABC-123?" → TOOL_CALL with getOrderTimeline {orderId:"ABC-123"}, then INFO.
+- Vague refinement "yes that is correct" → re-issue the previous TOOL_CALL / action intent; NEVER UNKNOWN.
+
+Reserve UNKNOWN strictly for: requests entirely unrelated to the platform ("what's the weather"), nonsense ("asdfgh"), or single-word non-actions ("hello", "thanks") where you have already presented a greeting and have no follow-up to perform.`;
 
       const messages = [
         {

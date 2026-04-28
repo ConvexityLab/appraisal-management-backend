@@ -3146,6 +3146,16 @@ export class CosmosDbService {
   }
 
   /**
+   * Returns the products container reference.
+   */
+  getProductsContainer(): import('@azure/cosmos').Container {
+    if (!this.productsContainer) {
+      throw new Error('products container not initialized');
+    }
+    return this.productsContainer;
+  }
+
+  /**
    * Returns the rfb-requests container reference.
    */
   getRfbRequestsContainer(): import('@azure/cosmos').Container {

@@ -854,6 +854,54 @@ async function dispatchIntervention(
         );
       }
 
+      case 'qc.field_override': {
+        // Per-field correction (from FieldCorrectionDialog)
+        // The audit event already captured: fieldName, fieldLabel, originalValue, newValue, reasonCategory, sourceReference, cascadeReeval
+        if (!orderId) return fail('orderId required for field correction');
+        const {
+          fieldName, fieldLabel, fieldType,
+          originalValue, originalConfidence,
+          newValue, reasonCategory, reasonDetail,
+          sourceReference, cascadeReeval,
+        } = ctx.eventData as Record<string, unknown>;
+
+        if (!fieldName || newValue === undefined) {
+          return fail('fieldName and newValue required in eventData');
+        }
+
+        await publishInterventionEvent('qc.field.corrected', EventCategory.QC, {
+          orderId, tenantId,
+          fieldName, fieldLabel, fieldType,
+          originalValue, originalConfidence,
+          newValue,
+          reasonCategory, reasonDetail,
+          sourceReference,
+          cascadeReeval: cascadeReeval !== false,
+          reason: reason ?? '',
+          triggeredBy: ctx.userName,
+        });
+
+        // If cascade re-eval requested, publish a follow-up event so downstream
+        // criteria handlers can re-score. The actual re-evaluation is wired in
+        // Phase 9.3; for now this just signals intent.
+        if (cascadeReeval !== false) {
+          await publishInterventionEvent('qc.criterion.reevaluate.requested', EventCategory.QC, {
+            orderId, tenantId,
+            triggeringFieldName: fieldName,
+            triggeringFieldNewValue: newValue,
+            triggeredBy: ctx.userName,
+          });
+        }
+
+        return ok(
+          `Field "${fieldLabel ?? fieldName}" corrected — original: "${String(originalValue ?? '')}" → new: "${String(newValue)}". ${
+            cascadeReeval !== false
+              ? 'Dependent criteria re-evaluation queued.'
+              : 'No cascade re-evaluation requested.'
+          }`,
+        );
+      }
+
       case 'qc.dismiss_issue': {
         return ok('QC issue dismissed. The finding has been marked as not applicable in the audit trail.');
       }
@@ -1124,6 +1172,55 @@ async function dispatchIntervention(
           reopenReason: reason ?? 'Reopened via intervention',
         });
         return ok(`Engagement ${ctx.engagementId} reopened.`);
+      }
+
+      // 4C.1 — Engagement-level lifecycle interventions
+      case 'engagement.hold': {
+        const container = dbService.getContainer('engagements');
+        const { resource } = await container.item(ctx.engagementId, tenantId).read();
+        if (!resource) return fail(`Engagement ${ctx.engagementId} not found`);
+        if (!reason) return fail('A reason is required to put an engagement on hold');
+        await container.item(ctx.engagementId, tenantId).replace({
+          ...resource,
+          status: 'ON_HOLD',
+          previousStatus: resource.status,
+          heldBy: userId,
+          heldAt: new Date().toISOString(),
+          holdReason: reason,
+        });
+        return ok(`Engagement ${ctx.engagementId} put on hold.`);
+      }
+
+      case 'engagement.resume': {
+        const container = dbService.getContainer('engagements');
+        const { resource } = await container.item(ctx.engagementId, tenantId).read();
+        if (!resource) return fail(`Engagement ${ctx.engagementId} not found`);
+        if (resource.status !== 'ON_HOLD') {
+          return fail(`Engagement is not on hold (current status: ${resource.status})`);
+        }
+        await container.item(ctx.engagementId, tenantId).replace({
+          ...resource,
+          status: resource.previousStatus ?? 'IN_PROGRESS',
+          resumedBy: userId,
+          resumedAt: new Date().toISOString(),
+          resumeReason: reason,
+        });
+        return ok(`Engagement ${ctx.engagementId} resumed.`);
+      }
+
+      case 'engagement.cancel': {
+        const container = dbService.getContainer('engagements');
+        const { resource } = await container.item(ctx.engagementId, tenantId).read();
+        if (!resource) return fail(`Engagement ${ctx.engagementId} not found`);
+        if (!reason) return fail('A reason is required to cancel an engagement');
+        await container.item(ctx.engagementId, tenantId).replace({
+          ...resource,
+          status: 'CANCELLED',
+          cancelledBy: userId,
+          cancelledAt: new Date().toISOString(),
+          cancelReason: reason,
+        });
+        return ok(`Engagement ${ctx.engagementId} cancelled.`);
       }
 
       // ── SLA interventions ───────────────────────────────────────────────
