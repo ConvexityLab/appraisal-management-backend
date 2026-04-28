@@ -3,8 +3,34 @@
 **Date created:** 2026-04-28
 **Last updated:** 2026-04-28
 **Owner:** TBD (assign per capability lane)
-**Status:** OPEN
+**Status:** IN PROGRESS — 8 of 49 tasks closed (~10 SP / 90 SP)
 **Goal:** 100% production-ready on the 5 capabilities below — extraction submission, criteria-only submission, bulk upload, review-with-provenance, report builder.
+
+## Progress dashboard (live)
+
+| Block | Tasks closed | Outstanding |
+|---|---|---|
+| **Block 0** prerequisites | 2/5 (B0.1, B0.4) | B0.2 axiom tenant doc, B0.3 auth audience flag, B0.5 idempotency policy |
+| **Cap 1** extraction | 3/7 (T1.2, T1.3, T1.4) | T1.1 submit/retry button, T1.5 full-fidelity Playwright, T1.6 risk follow-up, T1.7 runbook stamp |
+| **Cap 2** criteria-only | 2/7 (T2.1, T2.2) | T2.3 endpoint, T2.4 re-run UI, T2.5 cascade handler, T2.6 full Playwright, T2.7 runbook stamp |
+| **Cap 3** bulk upload | 0/9 | T3.1 architecture decision through T3.9 runbook |
+| **Cap 4** review + provenance | 0/8 | T4.1–T4.8 |
+| **Cap 5** report builder | 0/13 | T5.1–T5.13 |
+
+**Cumulative:** 8 closed · 41 outstanding · ~10 SP delivered of ~90 SP total · ~80 SP remaining.
+
+**Verified live against real Axiom dev as of 2026-04-28:**
+- POST `/api/documents` → result envelope returned in 68s; `axiomEvaluationId` + `axiomStatus=completed` + `axiomRiskScore=55` stamp on `seed-order-003` ✓
+- POST `/api/pipelines` (criteria-only-evaluation) → 33 criteria returned in `URAR-1004-NNN` format in 62s ✓
+- All 17 extraction items now carry `resolvedDocumentId` / `resolvedBlobUrl` after T1.3 ✓
+- `axiomCriterionIds` in seed match real Axiom output: 20/33 (61%) coverage ✓
+
+**Top current blockers:**
+1. `axiomDecision` and `criteria[]` on the order stay empty after analyze — default pipeline is extraction-only. Closure: T2.3 (criteria-only endpoint) + T2.4 (re-run button).
+2. No user-facing surface to trigger an extraction or re-run from the UI. Closure: T1.1.
+3. Cascade re-eval is half-implemented (publisher only). Closure: T2.5 (`CriteriaReevaluationHandler`).
+
+
 
 This is a checklist. Tick each `[ ]` to `[x]` as you complete it; add `(done YYYY-MM-DD — <commit-hash> — <one-line note>)` inline. Discoveries / blockers go in the "Daily log" at the bottom. Friday EOD: roll forward unfinished items into next week's plan.
 
@@ -381,6 +407,9 @@ Append each working session. Format: `YYYY-MM-DD HH:MM — short note`. Carry bl
 
 ### 2026-04-28
 - 02:30 — Plan created. Block 0 not started yet. Auto-auth + Playwright smoke runs already shipped this morning (see [WEEKLY-PLAN-2026-04-27.md Tue 2026-04-28 entry](./WEEKLY-PLAN-2026-04-27.md#tue-2026-04-28)).
+- 03:30 — Keystone batch shipped. **B0.1** (real Axiom dev URL probed end-to-end, 68s round-trip), **B0.4** (axiom.outbound structured logging w/ 10 unit tests), **T1.2** (live-fire passed against real Axiom — order stamped with axiomRiskScore=55, 17-doc extraction returned with real fields), **T2.1** (criterion ID audit — found ZERO matches between seed strings and real URAR-1004-NNN IDs). 6 commits, ~4.5 SP. Real Axiom is reachable + working — earlier "blocked on credentials" is wrong.
+- 10:30 — Second batch shipped. **T1.3** (resolvedDocumentId/resolvedBlobUrl/resolvedDocumentName stamped on every axiomExtractionResult entry; verified live — 17/17 items now carry our doc refs; 8 unit tests). **T2.2** (qc-checklists.ts seed rewritten to URAR-1004-NNN; 20/33 criteria coverage; re-seeded dev; bridge tests still 15/15). **T1.4** (AxiomInsightsPanel renders structured failure UI with stage name + Retry button; only the most recent eval gets retry). 4 commits, ~5 SP.
+- 14:45 — Killed backend process on 3011 to free port for restart. Next batch: T2.3 + T1.1 + T2.4 to close the loop on visible AI verdicts.
 
 ### 2026-04-29
 -
