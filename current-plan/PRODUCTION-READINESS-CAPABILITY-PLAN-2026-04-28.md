@@ -111,7 +111,7 @@ These unblock work on all 5 capabilities. Do them first.
 
 ## Tasks
 
-- [ ] **T1.1** — Add a "Submit to Axiom" / "Re-run AI" button in Order Detail. (2 SP) — Deps: B0.x
+- [x] **T1.1** — Add a "Submit to Axiom" / "Re-run AI" button in Order Detail. (2 SP) — Deps: B0.x `(done 2026-04-28 — AxiomAnalysisTab now has a header button: "Submit to Axiom" when no evals exist, "Re-run AI" otherwise. Auto-resolves the latest appraisal-report (or any PDF) attached to the order via useGetDocumentsQuery, calls useAnalyzeDocumentMutation. Disabled when no doc is attached, with explanatory tooltip + warning snackbar. Wires through to AxiomProgressPanel as onRetry on the most-recent eval (idx=0 only) so the existing T1.4 Retry button is now functional. Success/warning/error snackbars for user feedback. No confirmation modal — the analyze endpoint is idempotent within a 60s window per Axiom QUICKSTART, so accidental double-clicks are safe.)`
   - Action: in [src/app/(control-panel)/orders/[id]/page.tsx](../../l1-valuation-platform-ui/src/app/(control-panel)/orders/[id]/page.tsx), surface a button next to the AI Analysis tab that calls a new `useTriggerAxiomExtractionMutation()` RTKQ mutation. On click, show a confirmation modal listing target documents.
   - Verification: button visible; click triggers backend `POST /api/axiom/analyze`; toast shows "Submission queued — eval ID …".
 
@@ -173,7 +173,7 @@ These unblock work on all 5 capabilities. Do them first.
   - Action: new controller method in `axiom.controller.ts`. Accept `{ orderId, mode: 'patternA' | 'patternB', programId, programVersion, ...patternBfields }`. Maps to `POST $AXIOM_API_BASE_URL/api/pipelines` with `pipelineId: 'criteria-only-evaluation'`. Return `{ jobId, status }`. Webhook handler already accepts pipeline-completed events — add a handler arm for `criteria-only-evaluation` job IDs that updates the order's evaluation rather than creating a new one. Unit + integration tests.
   - Verification: curl returns `{ jobId, status: 'submitted' }`; on completion, webhook fires; `aiInsights` is updated with new criteria; `qc.issue.detected` events fire for new fails.
 
-- [ ] **T2.4** — Add "Re-run Criteria" button on QC Review page. (1.5 SP) — Deps: T2.3
+- [x] **T2.4** — Add "Re-run Criteria" button on QC Review page. (1.5 SP) — Deps: T2.3 `(done 2026-04-28 — new useEvaluateCriteriaMutation hook in axiomApi.ts wraps POST /api/axiom/criteria/evaluate. QCReviewContent toolbar now shows a "Re-run Criteria" button next to AI Analysis / AI Issues. Auto-derives programId/programVersion from the latest evaluation; disabled with tooltip when missing. On click submits, resumes 5s poll so the new eval surfaces, shows success/warning/error snackbar. NO_PRIOR_EXTRACTION mapped to a warning toast directing reviewer to Order Detail. RTKQ tag invalidation refreshes the panel automatically.)`
   - Action: in [src/components/qc/QCReviewContent.tsx](../../l1-valuation-platform-ui/src/components/qc/QCReviewContent.tsx), add a button (top toolbar, near "AI Analysis" / "AI Issues") that calls a new `useTriggerCriteriaReevaluationMutation`. Show progress chip; on completion, RTKQ tag invalidation refreshes the panels.
   - Verification: click → backend submits → 60s later, panels show new verdict counts.
 
