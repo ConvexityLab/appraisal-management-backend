@@ -132,9 +132,10 @@ These unblock work on all 5 capabilities. Do them first.
 
 ## Tasks
 
-- [ ] **T2.1** — Audit `axiomCriterionIds` against real Axiom criterion IDs. (1 SP) — Deps: B0.1, T1.2
+- [x] **T2.1** — Audit `axiomCriterionIds` against real Axiom criterion IDs. (1 SP) — Deps: B0.1, T1.2 `(done 2026-04-28 — submitted criteria-only-evaluation Pattern B with synthetic URAR data, programId=FNMA-1004 v1.0.0. Real Axiom returned 33 criterion IDs in URAR-1004-NNN format. Our seed uses 18 descriptive strings (e.g. "gross-adjustment-within-25"). MATCHES: ZERO. The two name-spaces are completely disjoint — applyAxiomPrefill produces no verdicts today even though the bridge is wired correctly. Full audit at test-artifacts/p-20/criterion-id-audit-2026-04-28.md.)`
   - Action: after T1.2 succeeds, dump the criteria array from the real Axiom evaluation response. Compare each `criterionId` to the `axiomCriterionIds` arrays in [src/scripts/seed/modules/qc-checklists.ts](../src/scripts/seed/modules/qc-checklists.ts). List mismatches.
   - Verification: a spreadsheet (or markdown table in `test-artifacts/p-20/criterion-id-audit-2026-04-28.md`) showing every QC item's expected IDs vs Axiom's actual IDs, with mismatches flagged.
+  - **KEY FINDING:** the seed needs a complete rewrite — every entry must map our QC checklist concepts to one or more of `URAR-1004-001` through `URAR-1004-033`. T2.2 is the closure work; the audit file lists every Axiom criterion with its outcome + reasoning so a human can map them.
 
 - [ ] **T2.2** — Update QC checklist seed to use real Axiom criterion IDs. (1 SP) — Deps: T2.1
   - Action: fix the `axiomCriterionIds` in `qc-checklists.ts` per the audit. Re-seed dev. Re-run [`axiomQcBridge.test.ts`](../../l1-valuation-platform-ui/src/utils/__tests__/axiomQcBridge.test.ts) — should still pass since logic is unchanged.
