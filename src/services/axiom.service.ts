@@ -228,6 +228,77 @@ interface LoomPipelineDefinition {
 }
 
 // ============================================================================
+// Outbound-call logging helper (pure, exported for unit tests)
+// ============================================================================
+
+export interface AxiomLogPayload {
+  method: string | undefined;
+  url: string;
+  status: number | undefined;
+  durationMs: number | undefined;
+  fileSetId: string | undefined;
+  queueJobId: string | undefined;
+  pipelineId: string | undefined;
+  axiomClientId: string | undefined;
+  axiomSubClientId: string | undefined;
+  errorMessage?: string;
+}
+
+/**
+ * Build a structured log payload for an Axiom round-trip. Pulls fileSetId,
+ * queueJobId, and pipelineId out of common URL patterns and the request body
+ * when available — best-effort, never throws. Pure: no I/O, no side effects.
+ */
+export function buildAxiomLogPayload(
+  config: InternalAxiosRequestConfig,
+  status: number | undefined,
+  errorMessage: string | undefined,
+  identity: { axiomClientId: string | undefined; axiomSubClientId: string | undefined },
+): AxiomLogPayload {
+  const startedAt = (config as InternalAxiosRequestConfig & { __startedAt?: number }).__startedAt;
+  const durationMs = startedAt ? Date.now() - startedAt : undefined;
+  const url = config.url ?? '';
+  let fileSetId: string | undefined;
+  let queueJobId: string | undefined;
+  let pipelineId: string | undefined;
+  try {
+    const looksLikeId = (id: string) => /^[A-Za-z0-9._:-]+$/.test(id);
+    const fsetMatch = url.match(/\/api\/documents\/([^/?]+)/);
+    const fsetId = fsetMatch?.[1];
+    if (fsetId && looksLikeId(fsetId)) fileSetId = fsetId;
+    const jobMatch = url.match(/\/api\/pipelines\/([^/?]+)/);
+    const jobId = jobMatch?.[1];
+    if (jobId && looksLikeId(jobId)) queueJobId = jobId;
+    let data: unknown = config.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch { data = undefined; }
+    }
+    if (data && typeof data === 'object') {
+      const d = data as Record<string, unknown>;
+      if (typeof d.pipelineId === 'string') pipelineId = d.pipelineId;
+      const input = d.input as Record<string, unknown> | undefined;
+      if (input && typeof input === 'object' && typeof input.fileSetId === 'string') {
+        fileSetId = input.fileSetId;
+      }
+    }
+  } catch {
+    // best-effort
+  }
+  return {
+    method: config.method?.toUpperCase(),
+    url,
+    status,
+    durationMs,
+    fileSetId,
+    queueJobId,
+    pipelineId,
+    axiomClientId: identity.axiomClientId,
+    axiomSubClientId: identity.axiomSubClientId,
+    ...(errorMessage ? { errorMessage } : {}),
+  };
+}
+
+// ============================================================================
 // Axiom Service
 // ============================================================================
 
@@ -453,6 +524,7 @@ export class AxiomService {
     this.client.interceptors.response.use(
       (response) => {
         this.axiomBreaker.recordSuccess();
+        this.logAxiomCall(response.config, response.status);
         return response;
       },
       (error) => {
@@ -461,9 +533,17 @@ export class AxiomService {
             `HTTP ${(error as AxiosError).response?.status} from ${(error as AxiosError).config?.url}`,
           );
         }
+        const axErr = error as AxiosError;
+        this.logAxiomCall(axErr.config, axErr.response?.status, axErr.message);
         throw error;
       },
     );
+
+    // Capture request start time so the response interceptor can log durationMs.
+    this.client.interceptors.request.use((config) => {
+      (config as InternalAxiosRequestConfig & { __startedAt?: number }).__startedAt = Date.now();
+      return config;
+    });
 
     // Initialize Cosmos DB service for storing results
     this.dbService = dbService || new CosmosDbService();
@@ -481,6 +561,30 @@ export class AxiomService {
    */
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * Structured log line for every Axiom round-trip. Set logger to debug for
+   * verbose body inspection; the default info line carries enough fields to
+   * grep production for slow / failing calls without extra context.
+   */
+  private logAxiomCall(
+    config: InternalAxiosRequestConfig | undefined,
+    status: number | undefined,
+    errorMessage?: string,
+  ): void {
+    if (!config) return;
+    const payload = buildAxiomLogPayload(config, status, errorMessage, {
+      axiomClientId: process.env['AXIOM_CLIENT_ID'],
+      axiomSubClientId: process.env['AXIOM_SUB_CLIENT_ID'],
+    });
+    if (errorMessage || (status !== undefined && status >= 500)) {
+      this.logger.error('axiom.outbound', payload);
+    } else if (status !== undefined && status >= 400) {
+      this.logger.warn('axiom.outbound', payload);
+    } else {
+      this.logger.info('axiom.outbound', payload);
+    }
   }
 
   /**

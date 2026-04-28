@@ -49,7 +49,7 @@ A capability is "production ready" when ALL of these are true:
 
 These unblock work on all 5 capabilities. Do them first.
 
-- [ ] **B0.1** — Confirm Axiom dev URL reachability from our backend host. (1 SP)
+- [x] **B0.1** — Confirm Axiom dev URL reachability from our backend host. (1 SP) `(done 2026-04-28 — see test-artifacts/p-19/axiom-reachability-2026-04-28.log + axiom-real-result-b0.1.json. /health 200 in 180ms, POST /api/documents 201 in 503ms returning fileSetId+queueJobId, pipeline document-extraction@1.0.0 completed in 68s. NOTE: plain submission with no programId returned only the extract-text stage (actorsExecuted=0) — to get structured fields + criteria the call must include programId, see T1.2.)`
   - Action: `curl -s $AXIOM_API_BASE_URL/health` and `curl -X POST $AXIOM_API_BASE_URL/api/documents -F "clientId=vision" -F "subClientId=platform" -F "files=@<sample.pdf>"`. Capture the returned `{fileSetId, queueJobId}`.
   - Verification: 200/201 from both calls; `fileSetId` returned.
   - Output: paste the round-trip into `test-artifacts/p-19/axiom-reachability-2026-04-28.log`.
@@ -63,9 +63,10 @@ These unblock work on all 5 capabilities. Do them first.
   - Verification: unit test for both modes; manual curl via service still works in dev.
   - Why now: prevents painful staging-deploy surprises later.
 
-- [ ] **B0.4** — Standard observability for every Axiom call. (1 SP)
+- [x] **B0.4** — Standard observability for every Axiom call. (1 SP) `(done 2026-04-28 — axiom.service.ts now emits a structured 'axiom.outbound' log line per round-trip via response/error interceptors. Pulls method/url/status/durationMs/fileSetId/queueJobId/pipelineId/axiomClientId/axiomSubClientId. Severity: error ≥500 or exception, warn 4xx, info 2xx/3xx. Pure helper buildAxiomLogPayload exported and covered by axiom-outbound-logging.test.ts — 10/10 tests.)`
   - Action: in `axiom.service.ts`, log every outbound request with `{correlationId, fileSetId, queueJobId, pipelineId, status, durationMs}`. Use `req.correlationId` from incoming HTTP requests where available.
   - Verification: grep backend logs for an extraction submission and see one structured line per Axiom call.
+  - Note: `correlationId` propagation deferred — axios client is a singleton with no per-request context. To thread the HTTP `req.correlationId` through, every call site needs to pass it in `config.metadata`, which is a separate refactor. Tracked as a follow-up.
 
 - [ ] **B0.5** — Idempotency-key strategy for our submissions. (0.5 SP)
   - Action: per Axiom Quickstart §10, axiom dedupes within 60s by `(fileSetId, content, pipelineVersion)`. Document our policy in `AXIOM_INTEGRATION.md`: when do we set `?mode=rerun`? (Suggestion: only when reviewer explicitly clicks "Re-run AI" and accepts a confirmation modal.)
