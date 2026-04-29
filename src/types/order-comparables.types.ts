@@ -20,9 +20,9 @@
  * @see OrderCompCollectionService (planned)
  */
 
-import type { AttomDataDocument } from './attom-data.types.js';
-import type { PropertyRecordType } from './property-record.types.js';
+import type { CanonicalAddress, PropertyRecord, PropertyRecordType } from './property-record.types.js';
 import type { GeohashExpansion } from '../utils/geohash.util.js';
+import type { AttomMappingCompleteness } from '../mappers/attom-to-property-record.mapper.js';
 
 // Re-exported for backward compatibility with existing imports of this type
 // from `order-comparables.types`. The canonical definition now lives in
@@ -90,11 +90,22 @@ export interface CompCollectionSubjectSummary {
 
 /**
  * A single candidate property pulled from `attom-data` during comp collection.
- * Carries the full source document so downstream stages (and audits) can
- * inspect every field that was available at collection time.
+ *
+ * The candidate's physical-asset data is carried as a canonical
+ * {@link PropertyRecord} (mapped from the source ATTOM row by
+ * `attomToPropertyRecord`) so all downstream stages (selection, ranking,
+ * report generation) consume the SAME shape they use for the subject
+ * property. The provenance metadata (`attomId`, `geohash5`,
+ * `dataCompleteness`) lives alongside.
+ *
+ * Note: the embedded PropertyRecord is NOT persisted to the canonical
+ * `property-records` Cosmos container by the comp-collection stage — it's
+ * an in-document snapshot scoped to this collection run. A future
+ * "persist comps as canonical records" feature would write them separately
+ * and store only the resulting `propertyId` here.
  */
 export interface CollectedCompCandidate {
-  /** ATTOM property identifier (also the source doc id). */
+  /** ATTOM property identifier (also the source `attom-data` doc id). */
   attomId: string;
   /** Whether this candidate came from the sold or active query. */
   source: CandidateSource;
@@ -102,8 +113,25 @@ export interface CollectedCompCandidate {
   distanceMiles: number;
   /** Geohash5 partition the candidate was found in. */
   geohash5: string;
-  /** Reference to the full source document. */
-  sourceDocument: AttomDataDocument;
+  /** Canonical property data for the comp, mapped from the ATTOM row. */
+  propertyRecord: PropertyRecord;
+  /**
+   * Most-recent sale price in USD from `salesHistory.lastSaleAmount`.
+   * Null when the source row had no sale record (common for active listings).
+   */
+  lastSalePrice: number | null;
+  /**
+   * ISO date string of the most-recent sale from `salesHistory.lastSaleDate`.
+   * Null when the source row had no sale record.
+   */
+  lastSaleDate: string | null;
+  /**
+   * Per-record completeness summary from the mapper. `missingRequiredFields`
+   * lists `PropertyRecord` paths the source row didn't populate (placeholders
+   * were written). `score` is `1 - missing/totalRequired`. Downstream
+   * selection can use this to filter or rank.
+   */
+  dataCompleteness: AttomMappingCompleteness;
 }
 
 // ─── Persisted comp-collection document ─────────────────────────────────────
@@ -132,6 +160,14 @@ export interface OrderCompCollectionDoc {
   subjectLongitude: number;
   /** Subject's geohash5 cell. */
   subjectGeohash5: string;
+  /**
+   * Snapshot of the subject's canonical address at the time of collection.
+   * Optional because (a) older docs predate this field and (b) the SKIPPED
+   * paths that fail before the subject PropertyRecord is loaded
+   * (`NO_PROPERTY_ID`, `PROPERTY_NOT_FOUND`) cannot populate it.
+   * Present on COLLECTED docs and on `NO_COORDINATES` SKIPPED docs.
+   */
+  subjectAddress?: CanonicalAddress;
   /** Geohash5 cells actually queried (subject + any expansion). */
   geohash5CellsQueried: string[];
   /** Sold comps collected, ordered by sale-date DESC. */

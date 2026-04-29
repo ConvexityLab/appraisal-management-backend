@@ -309,21 +309,21 @@ describe('ClientOrderService — client-order.created event', () => {
       baseInput({
         productType: ProductType.BPO,
         propertyId: 'prop-1',
-        clientOrderId: 'co-engagement-supplied-id',
+        clientOrderId: 'CO-ENGTEST01',
       }),
     );
 
-    expect(result.clientOrder.id).toBe('co-engagement-supplied-id');
-    expect(mock.created[0]!.id).toBe('co-engagement-supplied-id');
-    expect(result.clientOrder.clientOrderNumber).toBe('CO-co-engagement-supplied-id');
+    expect(result.clientOrder.id).toBe('CO-ENGTEST01');
+    expect(mock.created[0]!.id).toBe('CO-ENGTEST01');
+    expect(result.clientOrder.clientOrderNumber).toBe('CO-ENGTEST01');
 
     const event = publisher.published[0] as ClientOrderCreatedEvent;
-    expect(event.data.clientOrderId).toBe('co-engagement-supplied-id');
+    expect(event.data.clientOrderId).toBe('CO-ENGTEST01');
   });
 
   it('auto-generates a clientOrderId when none is supplied (legacy /api/client-orders path)', async () => {
     const result = await svc.placeClientOrder(baseInput({ productType: ProductType.BPO }));
-    expect(result.clientOrder.id).toMatch(/^\d+-[a-z0-9]+$/);
+    expect(result.clientOrder.id).toMatch(/^CO-[A-Z0-9]{8}$/);
   });
 });
 

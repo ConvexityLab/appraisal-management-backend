@@ -17,6 +17,7 @@ import type { Container, SqlQuerySpec } from '@azure/cosmos';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
+import { AddressServiceGeocoder } from './address-service.geocoder.js';
 import { ClientOrderService } from './client-order.service.js';
 import type { PropertyDetails as ClientOrderPropertyDetails } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
@@ -53,33 +54,39 @@ const MAX_EMBEDDED_LOANS = 1000;
 
 // ── ID helpers ────────────────────────────────────────────────────────────────
 
-function generateEngagementId(): string {
-  return `eng-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function generateClientOrderId(): string {
-  return `co-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function generateLoanId(): string {
-  return `loan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 /**
- * Generate a collision-resistant engagement number that survives process restarts.
- *
- * Format: ENG-YYYY-<6-char base-36 timestamp><2-char random>
- *   e.g.  ENG-2026-LK3R9MX2
+ * Generate a collision-resistant, human-readable ID.
  *
  * The base-36 millisecond timestamp gives ~46-bit uniqueness per year.
  * The 2-char random suffix reduces same-millisecond collision probability to ~1/1296.
  * No shared mutable state — safe under concurrent request handling.
+ *
+ * @param prefix  Entity prefix (e.g. 'ENG', 'CO')
+ * @param includeYear  When true, format is PREFIX-YYYY-XXXXXXXX; otherwise PREFIX-XXXXXXXX
  */
-function generateEngagementNumber(): string {
-  const year = new Date().getFullYear();
+function generateHumanReadableId(prefix: string, includeYear: boolean): string {
   const ts = Date.now().toString(36).toUpperCase().slice(-6);
   const rand = Math.random().toString(36).slice(2, 4).toUpperCase();
-  return `ENG-${year}-${ts}${rand}`;
+  if (includeYear) {
+    const year = new Date().getFullYear();
+    return `${prefix}-${year}-${ts}${rand}`;
+  }
+  return `${prefix}-${ts}${rand}`;
+}
+
+/** e.g. ENG-2026-LK3R9MX2 */
+function generateEngagementId(): string {
+  return generateHumanReadableId('ENG', true);
+}
+
+/** e.g. CO-LK3R9MX2 */
+function generateClientOrderId(): string {
+  return generateHumanReadableId('CO', false);
+}
+
+/** e.g. LOAN-2026-LK3R9MX2 */
+function generateLoanId(): string {
+  return generateHumanReadableId('LOAN', true);
 }
 
 function now(): string {
@@ -146,7 +153,12 @@ export class EngagementService {
     clientOrderService?: ClientOrderService,
   ) {
     this.enrichmentService = enrichmentService ??
-      new PropertyEnrichmentService(dbService, propertyRecordService);
+      new PropertyEnrichmentService(
+        dbService,
+        propertyRecordService,
+        undefined,
+        new AddressServiceGeocoder(),
+      );
     this.clientOrderService = clientOrderService ?? new ClientOrderService(dbService);
   }
 
@@ -209,10 +221,11 @@ export class EngagementService {
       propertyId: resolvedPropertyIds[i]!.propertyId,
     }));
     const engagementType = loans.length === 1 ? EngagementType.SINGLE : EngagementType.PORTFOLIO;
+    const engagementId = generateEngagementId();
 
     const engagement: Engagement = {
-      id: generateEngagementId(),
-      engagementNumber: generateEngagementNumber(),
+      id: engagementId,
+      engagementNumber: engagementId,
       tenantId: request.tenantId,
       engagementType,
       loansStoredExternally: false,

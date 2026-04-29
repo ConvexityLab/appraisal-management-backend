@@ -229,6 +229,7 @@ import { ESignatureController } from '../controllers/esignature.controller.js';
 import { OrderController } from '../controllers/order.controller.js';
 import { ClientOrderController } from '../controllers/client-order.controller.js';
 import { VendorOrderController } from '../controllers/vendor-order.controller.js';
+import { OrderComparablesController } from '../controllers/order-comparables.controller.js';
 
 // Import Client Controller (G10 — Lender / AMC / Broker management)
 import { ClientController } from '../controllers/client.controller.js';
@@ -1111,6 +1112,21 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/vendor-orders',
       this.unifiedAuth.authenticate(),
       vendorOrderController.router
+    );
+
+    // Order comparables (read-only) — exposes the `order-comparables`
+    // Cosmos container to the UI's Comp Workspace. Mounted under both
+    // /api/orders/:orderId/comparables (orderId === clientOrderId) and
+    // /api/vendor-orders/:vendorOrderId/comparables (resolves the parent
+    // ClientOrder first). See controllers/order-comparables.controller.ts.
+    const orderComparablesController = new OrderComparablesController(this.dbService);
+    this.app.use('/api/orders/:orderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByClientOrder
+    );
+    this.app.use('/api/vendor-orders/:vendorOrderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByVendorOrder
     );
 
     // Client (Lender / AMC / Broker) management — G10

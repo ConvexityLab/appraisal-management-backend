@@ -23,7 +23,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
     // ── ENG-001: SINGLE Full Appraisal — IN_PROGRESS ──────────────────────
     {
       id: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
-      engagementNumber: 'SEED-ENG-2026-00201',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -83,7 +83,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
     // ── ENG-002: SINGLE BPO — ACCEPTED (awaiting site visit) ──────────────
     {
       id: ENGAGEMENT_IDS.SINGLE_BPO_002,
-      engagementNumber: 'SEED-ENG-2026-00202',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_BPO_002,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -143,7 +143,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
     // ── ENG-003: PORTFOLIO — 2 loans, BPO + Drive-By — IN_PROGRESS ────────
     {
       id: ENGAGEMENT_IDS.PORTFOLIO_BPO_DRIVEBY_003,
-      engagementNumber: 'SEED-ENG-2026-00203',
+      engagementNumber: ENGAGEMENT_IDS.PORTFOLIO_BPO_DRIVEBY_003,
       tenantId,
       engagementType: 'PORTFOLIO',
       loansStoredExternally: false,
@@ -235,7 +235,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
     // ── ENG-004: SINGLE Full Appraisal — DELIVERED (completed) ────────────
     {
       id: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
-      engagementNumber: 'SEED-ENG-2026-00204',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -295,7 +295,7 @@ function buildEngagements(tenantId: string): Record<string, unknown>[] {
     // ── ENG-005: SINGLE Hybrid (inspector + desk appraiser) — QC ──────────
     {
       id: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
-      engagementNumber: 'SEED-ENG-2026-00205',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,

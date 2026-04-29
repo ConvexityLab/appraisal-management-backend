@@ -86,11 +86,37 @@ export interface EnrichmentResult {
   status: EnrichmentStatus;
 }
 
+/**
+ * Minimal geocoding port used by `PropertyEnrichmentService` to populate
+ * `PropertyRecord.address.latitude/longitude` for newly resolved subjects.
+ *
+ * Decoupled from any specific provider so the enrichment service can be
+ * unit-tested without pulling in `AddressService` (which carries a
+ * provider-credentials matrix and an HTTP cache). Production wiring lives
+ * at the composition root — see `AddressServiceGeocoder`.
+ *
+ * Contract:
+ *   - Resolve to `{ latitude, longitude }` when geocoding succeeded.
+ *   - Resolve to `null` when the provider responded but found no result
+ *     (no-match for the address). NOT for transient failures.
+ *   - Reject when the provider call itself failed (network, auth, etc.).
+ *     The caller logs the failure and continues; it is NOT swallowed.
+ */
+export interface Geocoder {
+  geocode(address: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  }): Promise<{ latitude: number; longitude: number } | null>;
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class PropertyEnrichmentService {
   private readonly logger: Logger;
   private readonly provider: PropertyDataProvider;
+  private readonly geocoder: Geocoder;
 
   constructor(
     private readonly cosmosService: CosmosDbService,
@@ -100,9 +126,26 @@ export class PropertyEnrichmentService {
      * provider selection). When omitted, createPropertyDataProvider() is called.
      */
     provider?: PropertyDataProvider,
+    /**
+     * Geocoder used to populate `PropertyRecord.address.latitude/longitude`
+     * when the resolved subject record lacks coordinates. REQUIRED — the
+     * service refuses to start without one. Production composition root
+     * passes `AddressServiceGeocoder`; tests pass a stub.
+     *
+     * No silent fallback: if you don't want geocoding to run, inject a
+     * geocoder that always returns `null` (and own that decision in your
+     * wiring code, not here).
+     */
+    geocoder?: Geocoder,
   ) {
     this.logger = new Logger('PropertyEnrichmentService');
     this.provider = provider ?? createPropertyDataProvider(cosmosService);
+    if (!geocoder) {
+      throw new Error(
+        'PropertyEnrichmentService: geocoder is required. Pass an implementation of `Geocoder` (e.g. `AddressServiceGeocoder`) to the constructor.',
+      );
+    }
+    this.geocoder = geocoder;
   }
 
   /**
@@ -164,6 +207,68 @@ export class PropertyEnrichmentService {
       tenantId,
     );
 
+    // ── Step 2.5: Geocode the address when the record lacks coordinates.
+    // Coordinates are required by downstream comp-collection (it skips with
+    // NO_COORDINATES otherwise). The provider call below returns parcel /
+    // tax / building data but NOT lat/lng, so geocoding is a separate
+    // explicit step here. We re-fetch the record after a successful patch so
+    // the rest of this method sees the updated address.
+    let workingRecord = existingRecord;
+    if (workingRecord.address.latitude == null || workingRecord.address.longitude == null) {
+      let geo: { latitude: number; longitude: number } | null = null;
+      try {
+        geo = await this.geocoder.geocode({
+          street: address.street,
+          city: address.city,
+          state: address.state,
+          zip: address.zipCode,
+        });
+      } catch (err) {
+        // No silent swallow: surface the failure so an operator can see why
+        // the subject ended up without coordinates. Continue without coords —
+        // the order is the source of truth and must still be placed.
+        this.logger.warn('PropertyEnrichmentService: geocoder threw — continuing without coordinates', {
+          orderId,
+          tenantId,
+          propertyId: resolution.propertyId,
+          address: `${address.street}, ${address.city}, ${address.state} ${address.zipCode}`,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      if (geo === null) {
+        this.logger.warn('PropertyEnrichmentService: geocoder returned no result', {
+          orderId,
+          tenantId,
+          propertyId: resolution.propertyId,
+          address: `${address.street}, ${address.city}, ${address.state} ${address.zipCode}`,
+        });
+      } else {
+        const patchedAddress = {
+          ...workingRecord.address,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          isNormalized: true,
+          geocodedAt: new Date().toISOString(),
+        };
+        const patched = await this.propertyRecordService.createVersion(
+          resolution.propertyId,
+          tenantId,
+          { address: patchedAddress },
+          'Geocoded subject coordinates at enrichment time',
+          'PUBLIC_RECORDS_API',
+          'SYSTEM:property-enrichment',
+          'geocoder',
+        );
+        // createVersion returns the updated record; fall back to a synthesised
+        // copy if the implementation returns void in some test stubs.
+        workingRecord = (patched as PropertyRecord) ?? {
+          ...workingRecord,
+          address: patchedAddress,
+        };
+      }
+    }
+
     // ── Step 3: Cache check — skip Bridge if data is still fresh ───────────
     //
     // We only skip the provider call when:
@@ -172,11 +277,11 @@ export class PropertyEnrichmentService {
     //
     // When CACHE_TTL_DAYS=0 the isFreshEnough check always returns false,
     // effectively disabling caching.
-    if (!resolution.isNew && this.isFreshEnough(existingRecord.lastVerifiedAt)) {
+    if (!resolution.isNew && this.isFreshEnough(workingRecord.lastVerifiedAt)) {
       this.logger.info('PropertyEnrichmentService: PropertyRecord is fresh — skipping Bridge call', {
         orderId,
         propertyId: resolution.propertyId,
-        lastVerifiedAt: existingRecord.lastVerifiedAt,
+        lastVerifiedAt: workingRecord.lastVerifiedAt,
         cacheTtlDays: CACHE_TTL_DAYS,
       });
 
@@ -272,7 +377,7 @@ export class PropertyEnrichmentService {
           resolution.propertyId,
           tenantId,
           dataResult,
-          existingRecord,
+          workingRecord,
         );
       }
     }

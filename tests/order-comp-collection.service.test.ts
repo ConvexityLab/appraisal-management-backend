@@ -140,6 +140,8 @@ describe('OrderCompCollectionService.runForOrder', () => {
       expect(doc.soldCandidates).toEqual([]);
       expect(doc.activeCandidates).toEqual([]);
       expect(doc.id).toMatch(/^collection-co-1-.*-skipped$/);
+      // No subject was loaded — address must not be invented.
+      expect(doc.subjectAddress).toBeUndefined();
     });
 
     it('writes a SKIPPED doc with PROPERTY_NOT_FOUND when getById throws', async () => {
@@ -152,6 +154,8 @@ describe('OrderCompCollectionService.runForOrder', () => {
       const [, doc] = m.cosmos.createDocument.mock.calls[0];
       expect(doc.skipReason).toBe('PROPERTY_NOT_FOUND');
       expect(m.compSearch.searchComps).not.toHaveBeenCalled();
+      // Subject load failed — no address available.
+      expect(doc.subjectAddress).toBeUndefined();
     });
 
     it('writes a SKIPPED doc with NO_COORDINATES when lat/lng missing', async () => {
@@ -166,6 +170,13 @@ describe('OrderCompCollectionService.runForOrder', () => {
       const [, doc] = m.cosmos.createDocument.mock.calls[0];
       expect(doc.skipReason).toBe('NO_COORDINATES');
       expect(m.compSearch.searchComps).not.toHaveBeenCalled();
+      // Subject was loaded — its address must be persisted on the audit doc
+      // even though coordinates were missing.
+      expect(doc.subjectAddress).toBeDefined();
+      expect(doc.subjectAddress!.street).toBe('123 MAIN ST');
+      expect(doc.subjectAddress!.city).toBe('DALLAS');
+      expect(doc.subjectAddress!.state).toBe('TX');
+      expect(doc.subjectAddress!.zip).toBe('75225');
     });
   });
 
@@ -224,6 +235,31 @@ describe('OrderCompCollectionService.runForOrder', () => {
       expect(doc.activeCandidates[0]!.attomId).toBe('a-3');
       expect(doc.soldCandidates[0]!.distanceMiles).toBeCloseTo(500 / 1609.344, 3);
       expect(doc.id).toMatch(/^collection-co-1-/);
+
+      // Each candidate carries a canonical PropertyRecord (mapped from ATTOM)
+      // and a per-record completeness summary — not the raw source document.
+      const cand = doc.soldCandidates[0]!;
+      expect(cand.propertyRecord).toBeDefined();
+      expect(cand.propertyRecord.id).toBe('attom-a-1');
+      expect(cand.propertyRecord.tenantId).toBe('tenant-a');
+      expect(cand.propertyRecord.address.latitude).toBe(32.85);
+      expect(cand.propertyRecord.address.longitude).toBe(-96.78);
+      expect(cand.dataCompleteness).toBeDefined();
+      expect(cand.dataCompleteness.score).toBeGreaterThanOrEqual(0);
+      expect(cand.dataCompleteness.score).toBeLessThanOrEqual(1);
+      expect(Array.isArray(cand.dataCompleteness.missingRequiredFields)).toBe(true);
+      // The old shape is gone.
+      expect((cand as any).sourceDocument).toBeUndefined();
+
+      // Subject address is persisted on the doc so downstream consumers
+      // (UI, ranking) can show the subject without a separate fetch.
+      expect(doc.subjectAddress).toBeDefined();
+      expect(doc.subjectAddress!.street).toBe('123 MAIN ST');
+      expect(doc.subjectAddress!.city).toBe('DALLAS');
+      expect(doc.subjectAddress!.state).toBe('TX');
+      expect(doc.subjectAddress!.zip).toBe('75225');
+      expect(doc.subjectAddress!.latitude).toBe(32.85);
+      expect(doc.subjectAddress!.longitude).toBe(-96.78);
     });
 
     it('uses the per-product config for DESKTOP_APPRAISAL (tighter radius/counts)', async () => {

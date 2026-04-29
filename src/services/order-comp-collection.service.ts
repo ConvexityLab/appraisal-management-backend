@@ -29,7 +29,9 @@ import type { CosmosDbService } from './cosmos-db.service.js';
 import type { PropertyRecordService } from './property-record.service.js';
 import type { AttomDataCompSearchService } from './attom-data-comp-search.service.js';
 import { encodeGeohash } from '../utils/geohash.util.js';
+import { attomToPropertyRecord } from '../mappers/attom-to-property-record.mapper.js';
 import type { ClientOrderCreatedEvent } from '../types/events.js';
+import type { CanonicalAddress } from '../types/property-record.types.js';
 import {
   ORDER_COMPARABLES_CONTAINER,
   type CollectedCompCandidate,
@@ -113,7 +115,7 @@ export class OrderCompCollectionService {
     const latitude = subject.address.latitude;
     const longitude = subject.address.longitude;
     if (latitude == null || longitude == null) {
-      return this.writeSkipped(clientOrderId, tenantId, productType, 'NO_COORDINATES');
+      return this.writeSkipped(clientOrderId, tenantId, productType, 'NO_COORDINATES', subject.address);
     }
 
     const config = getCompCollectionConfig(productType);
@@ -131,7 +133,6 @@ export class OrderCompCollectionService {
       maxResults: config.soldCount,
       expansion: config.geohashExpansion,
     });
-
     // ACTIVE listings — listingStatus filter; no sale-window filter (active
     // listings haven't sold). NOTE: the underlying search currently sorts
     // by lastSaleDate DESC, which is suboptimal for active-listing pages
@@ -166,9 +167,10 @@ export class OrderCompCollectionService {
       subjectLatitude: latitude,
       subjectLongitude: longitude,
       subjectGeohash5,
+      subjectAddress: subject.address,
       geohash5CellsQueried: Array.from(cellsQueriedSet),
-      soldCandidates: soldResults.map(toCandidate('SOLD')),
-      activeCandidates: activeResults.map(toCandidate('ACTIVE')),
+      soldCandidates: soldResults.map(toCandidate('SOLD', tenantId)),
+      activeCandidates: activeResults.map(toCandidate('ACTIVE', tenantId)),
       config,
       createdAt: now,
     };
@@ -196,6 +198,7 @@ export class OrderCompCollectionService {
     tenantId: string,
     productType: string,
     reason: NonNullable<OrderCompCollectionDoc['skipReason']>,
+    subjectAddress?: CanonicalAddress,
   ): Promise<OrderCompCollectionRunResult> {
     const now = new Date().toISOString();
     const docId = `collection-${clientOrderId}-${now}-skipped`;
@@ -212,6 +215,7 @@ export class OrderCompCollectionService {
       subjectLatitude: 0,
       subjectLongitude: 0,
       subjectGeohash5: '',
+      ...(subjectAddress ? { subjectAddress } : {}),
       geohash5CellsQueried: [],
       soldCandidates: [],
       activeCandidates: [],
@@ -236,14 +240,20 @@ export class OrderCompCollectionService {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function toCandidate(source: 'SOLD' | 'ACTIVE') {
-  return (r: CompSearchResult): CollectedCompCandidate => ({
-    attomId: r.document.attomId,
-    source,
-    distanceMiles: r.distanceMeters / MILES_TO_METERS,
-    geohash5: r.document.geohash5,
-    sourceDocument: r.document,
-  });
+function toCandidate(source: 'SOLD' | 'ACTIVE', tenantId: string) {
+  return (r: CompSearchResult): CollectedCompCandidate => {
+    const { record, dataCompleteness } = attomToPropertyRecord(r.document, tenantId);
+    return {
+      attomId: r.document.attomId,
+      source,
+      distanceMiles: r.distanceMeters / MILES_TO_METERS,
+      geohash5: r.document.geohash5,
+      propertyRecord: record,
+      lastSalePrice: r.document.salesHistory.lastSaleAmount,
+      lastSaleDate: r.document.salesHistory.lastSaleDate || null,
+      dataCompleteness,
+    };
+  };
 }
 
 /** Returns an ISO date string for "now minus N months" (UTC). */

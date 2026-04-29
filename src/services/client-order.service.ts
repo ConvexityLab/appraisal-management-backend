@@ -195,7 +195,7 @@ export class ClientOrderService {
 
     const now = new Date().toISOString();
     const clientOrderId = input.clientOrderId ?? newId();
-    const clientOrderNumber = `CO-${clientOrderId}`;
+    const clientOrderNumber = clientOrderId;
 
     const clientOrder: ClientOrder = {
       id: clientOrderId,
@@ -472,7 +472,8 @@ export class ClientOrderService {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Mirrors the existing CosmosDbService.generateId() pattern. */
 function newId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  const ts = Date.now().toString(36).toUpperCase().slice(-6);
+  const rand = Math.random().toString(36).slice(2, 4).toUpperCase();
+  return `CO-${ts}${rand}`;
 }

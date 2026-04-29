@@ -299,7 +299,7 @@ export class CosmosDbService {
 
       const orderWithId = {
         ...order,
-        id: this.generateId(),
+        id: this.generateVendorOrderId(),
         type: 'order' as const, // Required: findOrderById and findOrders filter by c.type = 'order'
         createdAt: new Date(),
         updatedAt: new Date()
@@ -1747,6 +1747,12 @@ export class CosmosDbService {
 
   private generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private generateVendorOrderId(): string {
+    const ts = Date.now().toString(36).toUpperCase().slice(-6);
+    const rand = Math.random().toString(36).slice(2, 4).toUpperCase();
+    return `VO-${ts}${rand}`;
   }
 
   private async calculateTopVendorRatings(topVendors: any[]): Promise<any[]> {

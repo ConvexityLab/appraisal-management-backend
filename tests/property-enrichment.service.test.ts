@@ -137,6 +137,17 @@ function makeCosmosService(existingEnrichments: PropertyEnrichmentRecord[] = [])
   };
 }
 
+/**
+ * Default no-op geocoder used by tests that don't exercise the geocoding
+ * branch of enrichOrder. Returns null so the new geocoding step in
+ * PropertyEnrichmentService produces a structured warning and continues
+ * without mutating the address — leaving existing assertions on
+ * createVersion call counts / payloads intact.
+ */
+function makeNoopGeocoder() {
+  return { geocode: vi.fn().mockResolvedValue(null) };
+}
+
 // ─── enrichOrder: happy path ──────────────────────────────────────────────────
 
 describe('PropertyEnrichmentService.enrichOrder', () => {
@@ -145,7 +156,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(result.status).toBe('enriched');
@@ -165,7 +176,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(propSvc.resolveOrCreate).toHaveBeenCalledWith(
@@ -186,7 +197,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false); // existing record → createVersion
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     // createVersion called at least once (building data + possibly tax assessment)
@@ -215,7 +226,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     const [, , firstCallChanges, , , , firstCallSourceProvider] =
@@ -232,7 +243,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     // createVersion should have been called at least twice:
@@ -267,7 +278,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     };
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     const taxCalls = propSvc.createVersion.mock.calls.filter(
@@ -281,7 +292,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(cosmos.createDocument).toHaveBeenCalledWith(
@@ -301,7 +312,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const propSvc = makePropertyRecordService(false);
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(result.status).toBe('provider_miss');
@@ -319,6 +330,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
       makeCosmosService() as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
     await expect(svc.enrichOrder('', TENANT, BASE_ADDRESS)).rejects.toThrow('orderId is required');
   });
@@ -328,6 +340,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
       makeCosmosService() as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
     await expect(svc.enrichOrder(ORDER_ID, '', BASE_ADDRESS)).rejects.toThrow('tenantId is required');
   });
@@ -337,6 +350,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
       makeCosmosService() as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
     await expect(
       svc.enrichOrder(ORDER_ID, TENANT, { street: '', city: 'Dallas', state: 'TX', zipCode: '75206' }),
@@ -356,7 +370,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     };
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(result.status).toBe('cached');
@@ -396,7 +410,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     };
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(result.status).toBe('enriched');
@@ -421,11 +435,128 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     };
     const cosmos = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     const result = await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
     expect(result.status).toBe('enriched');
     expect(provider.lookupByAddress).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── enrichOrder: geocoding step ─────────────────────────────────────────────
+//
+// The geocoding step runs after `resolveOrCreate` / `getById` and only when
+// the resolved PropertyRecord lacks `address.latitude` or `address.longitude`.
+// It exists because downstream comp-collection refuses to run without subject
+// coordinates (NO_COORDINATES skip), and the property-data provider does not
+// supply lat/lng for newly resolved subjects.
+
+describe('PropertyEnrichmentService.enrichOrder — geocoding', () => {
+  it('throws at construction time when no geocoder is provided (no silent fallback)', () => {
+    expect(() => new (PropertyEnrichmentService as any)(
+      makeCosmosService() as any,
+      makePropertyRecordService() as any,
+      makeProvider(null),
+      undefined,
+    )).toThrow(/geocoder is required/);
+  });
+
+  it('calls geocoder and patches address.latitude/longitude when record lacks coordinates', async () => {
+    const provider = makeProvider(null); // status irrelevant; we want to assert the geocoding side-effect
+    const propSvc = makePropertyRecordService(false); // record has no lat/lng
+    const cosmos = makeCosmosService();
+    const geocoder = {
+      geocode: vi.fn().mockResolvedValue({ latitude: 32.8348, longitude: -96.7697 }),
+    };
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, geocoder as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    expect(geocoder.geocode).toHaveBeenCalledOnce();
+    expect(geocoder.geocode).toHaveBeenCalledWith({
+      street: BASE_ADDRESS.street,
+      city: BASE_ADDRESS.city,
+      state: BASE_ADDRESS.state,
+      zip: BASE_ADDRESS.zipCode,
+    });
+
+    // createVersion called for the address patch (provider returned null so no
+    // building/tax versions follow).
+    const addressPatchCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.address?.latitude === 32.8348 && args[2]?.address?.longitude === -96.7697,
+    );
+    expect(addressPatchCall).toBeDefined();
+    expect(addressPatchCall![2].address.isNormalized).toBe(true);
+    expect(typeof addressPatchCall![2].address.geocodedAt).toBe('string');
+    // Patch must preserve the rest of the address.
+    expect(addressPatchCall![2].address.street).toBe('5432 MOCKINGBIRD LN');
+    expect(addressPatchCall![2].address.city).toBe('DALLAS');
+  });
+
+  it('does NOT call geocoder when the record already has coordinates', async () => {
+    const recordWithCoords = makeExistingPropertyRecord({
+      address: {
+        street: '5432 MOCKINGBIRD LN',
+        city: 'DALLAS',
+        state: 'TX',
+        zip: '75206',
+        latitude: 32.8348,
+        longitude: -96.7697,
+      },
+    });
+    const propSvc = {
+      resolveOrCreate: vi.fn().mockResolvedValue({ propertyId: PROPERTY_ID, isNew: false, method: 'ADDRESS_NORM' }),
+      getById: vi.fn().mockResolvedValue(recordWithCoords),
+      createVersion: vi.fn().mockImplementation(async (_id: string, _tid: string, changes: any) => ({
+        ...recordWithCoords,
+        ...changes,
+      })),
+    };
+    const provider = makeProvider(null);
+    const cosmos = makeCosmosService();
+    const geocoder = { geocode: vi.fn().mockResolvedValue({ latitude: 99, longitude: 99 }) };
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, geocoder as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    expect(geocoder.geocode).not.toHaveBeenCalled();
+    // Address must not be patched.
+    const addressPatchCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.address !== undefined,
+    );
+    expect(addressPatchCall).toBeUndefined();
+  });
+
+  it('does not throw when geocoder rejects — order placement must not be blocked', async () => {
+    const provider = makeProvider(null);
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+    const geocoder = { geocode: vi.fn().mockRejectedValue(new Error('geocoder API down')) };
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, geocoder as any);
+    await expect(svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS)).resolves.toBeDefined();
+    expect(geocoder.geocode).toHaveBeenCalledOnce();
+    // No address-patch version was created.
+    const addressPatchCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.address !== undefined,
+    );
+    expect(addressPatchCall).toBeUndefined();
+  });
+
+  it('does not patch when geocoder returns null (no-match)', async () => {
+    const provider = makeProvider(null);
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+    const geocoder = { geocode: vi.fn().mockResolvedValue(null) };
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, geocoder as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
+
+    expect(geocoder.geocode).toHaveBeenCalledOnce();
+    const addressPatchCall = propSvc.createVersion.mock.calls.find(
+      (args: any[]) => args[2]?.address !== undefined,
+    );
+    expect(addressPatchCall).toBeUndefined();
   });
 });
 
@@ -449,6 +580,7 @@ describe('PropertyEnrichmentService.getLatestEnrichment', () => {
       cosmos as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
 
     const result = await svc.getLatestEnrichment(ORDER_ID, TENANT);
@@ -461,6 +593,7 @@ describe('PropertyEnrichmentService.getLatestEnrichment', () => {
       cosmos as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
 
     const result = await svc.getLatestEnrichment(ORDER_ID, TENANT);
@@ -473,6 +606,7 @@ describe('PropertyEnrichmentService.getLatestEnrichment', () => {
       cosmos as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
     await expect(svc.getLatestEnrichment(ORDER_ID, '')).rejects.toThrow('tenantId is required');
   });
@@ -572,7 +706,7 @@ describe('PropertyEnrichmentService.enrichEngagement', () => {
     const propSvc  = makePropertyRecordService(false);
     const cosmos   = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     const enrichOrderSpy = vi.spyOn(svc, 'enrichOrder').mockResolvedValue({
       enrichmentId: 'enrich-loan-001-123',
       propertyId:   'prop-001',
@@ -587,14 +721,14 @@ describe('PropertyEnrichmentService.enrichEngagement', () => {
   });
 
   it('throws when engagementId is missing', async () => {
-    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null), makeNoopGeocoder() as any);
     await expect(
       svc.enrichEngagement('', 'loan-001', TENANT, BASE_ADDRESS),
     ).rejects.toThrow('engagementId is required');
   });
 
   it('throws when loanId is missing', async () => {
-    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null), makeNoopGeocoder() as any);
     await expect(
       svc.enrichEngagement('eng-001', '', TENANT, BASE_ADDRESS),
     ).rejects.toThrow('loanId is required');
@@ -605,7 +739,7 @@ describe('PropertyEnrichmentService.enrichEngagement', () => {
     const propSvc  = makePropertyRecordService(false);
     const cosmos   = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     vi.spyOn(svc, 'enrichOrder').mockResolvedValue({
       enrichmentId: 'enrich-loan-001-123',
       propertyId:   'prop-001',
@@ -621,7 +755,7 @@ describe('PropertyEnrichmentService.enrichEngagement', () => {
     const propSvc  = makePropertyRecordService(false);
     const cosmos   = makeCosmosService();
 
-    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider);
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any);
     await svc.enrichEngagement('eng-abc', 'loan-xyz', TENANT, BASE_ADDRESS);
 
     const [, storedDoc] = (cosmos.createDocument as ReturnType<typeof vi.fn>).mock.calls[0] as [string, any];
@@ -651,6 +785,7 @@ describe('PropertyEnrichmentService.getEnrichmentsByEngagement', () => {
       cosmos as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
 
     const results = await svc.getEnrichmentsByEngagement('eng-001', TENANT);
@@ -668,6 +803,7 @@ describe('PropertyEnrichmentService.getEnrichmentsByEngagement', () => {
       cosmos as any,
       makePropertyRecordService() as any,
       makeProvider(null),
+      makeNoopGeocoder() as any,
     );
 
     const results = await svc.getEnrichmentsByEngagement('eng-002', TENANT);
@@ -675,14 +811,14 @@ describe('PropertyEnrichmentService.getEnrichmentsByEngagement', () => {
   });
 
   it('throws when engagementId is missing', async () => {
-    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null), makeNoopGeocoder() as any);
     await expect(
       svc.getEnrichmentsByEngagement('', TENANT),
     ).rejects.toThrow('engagementId is required');
   });
 
   it('throws when tenantId is missing', async () => {
-    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null));
+    const svc = new PropertyEnrichmentService({} as any, {} as any, makeProvider(null), makeNoopGeocoder() as any);
     await expect(
       svc.getEnrichmentsByEngagement('eng-001', ''),
     ).rejects.toThrow('tenantId is required');
