@@ -244,7 +244,6 @@ function toCandidate(source: 'SOLD' | 'ACTIVE', tenantId: string) {
   return (r: CompSearchResult): CollectedCompCandidate => {
     const { record, dataCompleteness } = attomToPropertyRecord(r.document, tenantId);
     return {
-      attomId: r.document.attomId,
       source,
       distanceMiles: r.distanceMeters / MILES_TO_METERS,
       geohash5: r.document.geohash5,

@@ -117,14 +117,15 @@ function makeApp(db: unknown) {
   return app;
 }
 
-function makeCandidate(attomId: string): CollectedCompCandidate {
+function makeCandidate(vendorRef: string): CollectedCompCandidate {
   return {
-    attomId,
     source: 'SOLD',
     distanceMiles: 0.4,
     geohash5: 'dr5r9',
-    propertyRecord: { id: `prop-${attomId}` } as any,
+    propertyRecord: { id: `prop-${vendorRef}`, dataSourceRecordId: vendorRef } as any,
     dataCompleteness: { score: 1, missingRequiredFields: [] } as any,
+    lastSalePrice: null,
+    lastSaleDate: null,
   };
 }
 
@@ -196,11 +197,9 @@ describe('GET /api/orders/:orderId/comparables', () => {
     expect(res.body.clientOrderId).toBe('co-1');
     expect(res.body.latestCollection.id).toBe(newer.id);
     expect(res.body.latestRanking).toBeNull();
-    expect(res.body.candidates.map((c: CollectedCompCandidate) => c.attomId)).toEqual([
-      's1',
-      's2',
-      'a1',
-    ]);
+    expect(
+      res.body.candidates.map((c: CollectedCompCandidate) => c.propertyRecord.dataSourceRecordId),
+    ).toEqual(['s1', 's2', 'a1']);
   });
 
   it('prefers RANKING candidates over COLLECTION when both exist', async () => {
@@ -224,10 +223,9 @@ describe('GET /api/orders/:orderId/comparables', () => {
     expect(res.status).toBe(200);
     expect(res.body.latestCollection.id).toBe(collection.id);
     expect(res.body.latestRanking.id).toBe(ranking.id);
-    expect(res.body.candidates.map((c: CollectedCompCandidate) => c.attomId)).toEqual([
-      'r1',
-      'r2',
-    ]);
+    expect(
+      res.body.candidates.map((c: CollectedCompCandidate) => c.propertyRecord.dataSourceRecordId),
+    ).toEqual(['r1', 'r2']);
   });
 
   it('does not return docs for other tenants', async () => {
@@ -291,7 +289,9 @@ describe('GET /api/vendor-orders/:vendorOrderId/comparables', () => {
       clientOrderId: 'co-1',
       vendorOrderId: 'vo-1',
     });
-    expect(res.body.candidates.map((c: CollectedCompCandidate) => c.attomId)).toEqual(['s1']);
+    expect(
+      res.body.candidates.map((c: CollectedCompCandidate) => c.propertyRecord.dataSourceRecordId),
+    ).toEqual(['s1']);
   });
 
   it('also accepts legacy "order" discriminator on the vendor-order doc', async () => {

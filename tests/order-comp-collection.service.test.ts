@@ -230,9 +230,9 @@ describe('OrderCompCollectionService.runForOrder', () => {
       expect(doc.soldCandidates).toHaveLength(2);
       expect(doc.activeCandidates).toHaveLength(1);
       expect(doc.soldCandidates[0]!.source).toBe('SOLD');
-      expect(doc.soldCandidates[0]!.attomId).toBe('a-1');
+      expect(doc.soldCandidates[0]!.propertyRecord.dataSourceRecordId).toBe('a-1');
       expect(doc.activeCandidates[0]!.source).toBe('ACTIVE');
-      expect(doc.activeCandidates[0]!.attomId).toBe('a-3');
+      expect(doc.activeCandidates[0]!.propertyRecord.dataSourceRecordId).toBe('a-3');
       expect(doc.soldCandidates[0]!.distanceMiles).toBeCloseTo(500 / 1609.344, 3);
       expect(doc.id).toMatch(/^collection-co-1-/);
 

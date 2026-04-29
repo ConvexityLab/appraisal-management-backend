@@ -95,8 +95,12 @@ export interface CompCollectionSubjectSummary {
  * {@link PropertyRecord} (mapped from the source ATTOM row by
  * `attomToPropertyRecord`) so all downstream stages (selection, ranking,
  * report generation) consume the SAME shape they use for the subject
- * property. The provenance metadata (`attomId`, `geohash5`,
- * `dataCompleteness`) lives alongside.
+ * property.
+ *
+ * Vendor-specific identifiers (e.g. ATTOM's `attomId`) are NOT carried at
+ * this layer. The canonical handle is `propertyRecord.id`; the raw vendor
+ * record id is preserved at `propertyRecord.dataSourceRecordId`. Other
+ * provenance metadata (`geohash5`, `dataCompleteness`) lives alongside.
  *
  * Note: the embedded PropertyRecord is NOT persisted to the canonical
  * `property-records` Cosmos container by the comp-collection stage — it's
@@ -105,8 +109,6 @@ export interface CompCollectionSubjectSummary {
  * and store only the resulting `propertyId` here.
  */
 export interface CollectedCompCandidate {
-  /** ATTOM property identifier (also the source `attom-data` doc id). */
-  attomId: string;
   /** Whether this candidate came from the sold or active query. */
   source: CandidateSource;
   /** Distance from subject in miles, computed by the Cosmos ST_DISTANCE call. */
