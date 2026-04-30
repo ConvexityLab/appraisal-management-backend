@@ -42,6 +42,7 @@ import {
   type CanonicalReconciliation,
   type CanonicalReportDocument,
   type MlsExtension,
+  type PropertyPhoto,
   type VendorMapper,
 } from '../types/canonical-schema.js';
 
@@ -226,6 +227,7 @@ function mapBatchDataToSubject(raw: RawObj): CanonicalSubject {
 
   return {
     ...core,
+    photos: null, // BatchData carries no subject photos
     parcelNumber: strOrNull(ids['apn'] ?? raw['fipsCodePlusApn'] ?? raw['parcelNumber']),
     censusTract: strOrNull(raw['censusTract']),
     mapReference: strOrNull(raw['mapReference']),
@@ -340,6 +342,11 @@ function mapBatchDataToComp(raw: RawObj, index: number): CanonicalComp | null {
     (adjustmentsRaw as Record<string, unknown>)['__salePrice__'] = salePrice;
   }
 
+  // Vendor MLS image URLs — shared by both MlsExtension.photos (legacy) and
+  // CanonicalPropertyCore.photos (canonical). Kept in parallel; consumers will
+  // migrate to `photos` over time.
+  const mlsImageUrls = arr(obj(raw['images'])['imageUrls']).map(u => str(u));
+
   // Build MLS extension if listing data exists
   const mlsData: MlsExtension | null = listing['status'] ? {
     mlsNumber: str(listing['mlsNumber'] ?? ''),
@@ -349,7 +356,7 @@ function mapBatchDataToComp(raw: RawObj, index: number): CanonicalComp | null {
     listingStatus: str(listing['status']),
     listingAgent: strOrNull(listing['listingAgent']),
     sellingAgent: strOrNull(listing['sellingAgent']),
-    photos: arr(obj(raw['images'])['imageUrls']).map(u => str(u)),
+    photos: mlsImageUrls,
     propertyDescription: null,
     hoaFee: null,
     hoaFrequency: null,
@@ -360,8 +367,19 @@ function mapBatchDataToComp(raw: RawObj, index: number): CanonicalComp | null {
     cooling: strOrNull(core.cooling || null),
   } : null;
 
+  // Canonical photos — first MLS image (if any) classified as the comp front
+  // photo, remainder left untyped. Null when no images.
+  const photos: PropertyPhoto[] | null = mlsImageUrls.length > 0
+    ? mlsImageUrls.map((url, i) => ({
+        url,
+        source: 'mls' as const,
+        type: i === 0 ? ('COMP_FRONT' as const) : null,
+      }))
+    : null;
+
   return {
     ...core,
+    photos,
     compId: str(raw['propertyRecordId'] ?? raw['id'] ?? `comp-${index}`),
     salePrice,
     saleDate,

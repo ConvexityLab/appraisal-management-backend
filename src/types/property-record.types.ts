@@ -20,6 +20,8 @@
  * @see PROPERTY_DATA_REFACTOR_PLAN.md — Phase R0.1
  */
 
+import type { PropertyPhoto } from './canonical-schema.js';
+
 // ─── Canonical Address ────────────────────────────────────────────────────────
 
 /**
@@ -236,6 +238,15 @@ export interface PropertyRecord {
     quality?: BuildingQualityRating;
   };
 
+  // ── Photos ────────────────────────────────────────────────────────────────
+  /**
+   * URL-based photos of the property. Sourced from vendor data (e.g. ATTOM
+   * `PHOTOSCOUNT`/`PHOTOKEY`/`PHOTOURLPREFIX`). HTTPS URLs only — never blob
+   * paths. Empty array when the source row reported zero photos.
+   * Flows through to `CanonicalPropertyCore.photos` on downstream comps.
+   */
+  photos?: PropertyPhoto[];
+
   // ── Ownership ─────────────────────────────────────────────────────────────
   currentOwner?: string;
   ownerOccupied?: boolean;
@@ -247,6 +258,22 @@ export interface PropertyRecord {
   // ── Permit History ────────────────────────────────────────────────────────
   /** All known permits on record. Append-only. */
   permits: PermitRecord[];
+
+  // ── Automated Valuation ───────────────────────────────────────────────────
+  /**
+   * Most recent AVM estimate from Bridge Interactive (Zillow Zestimate).
+   * Fetched at enrichment time (subject) or comp-collection time (comparables).
+   * Optional — absent when the Bridge API returned no result or was unreachable.
+   */
+  avm?: {
+    /** Estimated market value in USD. */
+    value: number;
+    /** ISO timestamp of when this estimate was fetched. */
+    fetchedAt: string;
+    source: 'bridge-zestimate';
+    /** Zillow confidence score 0–1, when present in the API response. */
+    confidence?: number;
+  };
 
   // ── Versioning ────────────────────────────────────────────────────────────
   /**

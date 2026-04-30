@@ -28,6 +28,7 @@ import {
   type PropertyVersionEntry,
   type TaxAssessmentRecord,
 } from '../types/property-record.types.js';
+import { extractAttomPhotos } from './attom-photos.js';
 
 /** Per-record completeness summary returned alongside the mapped record. */
 export interface AttomMappingCompleteness {
@@ -140,6 +141,13 @@ export function attomToPropertyRecord(
     pool: Boolean(d.poolPrivate),
   };
 
+  // ── Photos ───────────────────────────────────────────────────────────
+  // ATTOM rows carry photos via three CSV columns: PHOTOSCOUNT (count),
+  // PHOTOKEY (path segment), and PHOTOURLPREFIX (URL prefix). URLs are
+  // constructed as `${prefix}${key}/photo_${i}.jpg` for i = 1..count.
+  // Returns empty array when count is zero/missing/unparseable.
+  const photos = extractAttomPhotos(doc);
+
   // ── Tax assessments ─────────────────────────────────────────────────────
   // Only emit an entry when there's an actual value. ATTOM rows commonly
   // have an empty assessment block — we don't fabricate one.
@@ -183,6 +191,7 @@ export function attomToPropertyRecord(
     ...(d.lotSizeSqft != null ? { lotSizeSqFt: d.lotSizeSqft } : {}),
     ...(d.lotSizeAcres != null ? { lotSizeAcres: d.lotSizeAcres } : {}),
     building,
+    photos,
     taxAssessments,
     permits: [],
     recordVersion: 1,

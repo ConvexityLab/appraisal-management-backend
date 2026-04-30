@@ -376,5 +376,33 @@ describe('LocalAttomPropertyDataProvider', () => {
 
       expect(result?.rawProviderData).toEqual({ attomDataDocument: doc });
     });
+
+    it('builds photos[] from PHOTOSCOUNT/PHOTOKEY/PHOTOURLPREFIX', async () => {
+      const doc = makeDoc({
+        rawData: {
+          PHOTOSCOUNT: '2',
+          PHOTOKEY: 'abc123',
+          PHOTOURLPREFIX: 'https://photos.example.com/',
+        },
+      });
+      const cosmos = makeMockCosmos([doc]);
+      const provider = new LocalAttomPropertyDataProvider(cosmos);
+
+      const result = await provider.lookupByAddress(BASE_LOOKUP);
+
+      expect(result?.photos).toEqual([
+        { url: 'https://photos.example.com/abc123/photo_1.jpg', source: 'vendor', type: null },
+        { url: 'https://photos.example.com/abc123/photo_2.jpg', source: 'vendor', type: null },
+      ]);
+    });
+
+    it('returns photos: [] when PHOTOSCOUNT is "0" or columns are missing', async () => {
+      const cosmos = makeMockCosmos([makeDoc({ rawData: {} })]);
+      const provider = new LocalAttomPropertyDataProvider(cosmos);
+
+      const result = await provider.lookupByAddress(BASE_LOOKUP);
+
+      expect(result?.photos).toEqual([]);
+    });
   });
 });

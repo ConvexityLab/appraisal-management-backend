@@ -44,11 +44,14 @@ interface AnyDoc {
 function makeMockDb(stores: {
   comparables?: AnyDoc[];
   vendorOrders?: AnyDoc[];
+  propertyRecords?: AnyDoc[];
 }) {
   const comparables = new Map<string, AnyDoc>();
   (stores.comparables ?? []).forEach((d) => comparables.set(d.id, d));
   const vendorOrders = new Map<string, AnyDoc>();
   (stores.vendorOrders ?? []).forEach((d) => vendorOrders.set(d.id, d));
+  const propertyRecords = new Map<string, AnyDoc>();
+  (stores.propertyRecords ?? []).forEach((d) => propertyRecords.set(d.id, d));
 
   function compsContainer() {
     return {
@@ -92,6 +95,13 @@ function makeMockDb(stores: {
     getContainer: vi.fn((name: string) => {
       if (name === ORDER_COMPARABLES_CONTAINER) return compsContainer();
       if (name === VENDOR_ORDERS_CONTAINER) return vosContainer();
+      if (name === 'property-records') {
+        return {
+          item: vi.fn((id: string, _pk: string) => ({
+            read: vi.fn(async () => ({ resource: propertyRecords.get(id) ?? undefined })),
+          })),
+        };
+      }
       throw new Error(`Unexpected container request: ${name}`);
     }),
   };
@@ -348,5 +358,80 @@ describe('GET /api/vendor-orders/:vendorOrderId/comparables', () => {
     const res = await request(app).get('/api/vendor-orders/vo-broken/comparables');
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VENDOR_ORDER_MISSING_CLIENT_ORDER_ID');
+  });
+
+  it('passes through subject.photos from the property-records doc', async () => {
+    const collection = makeCollectionDoc({
+      id: 'collection-co-3-2026-04-20T00:00:00Z',
+      orderId: 'co-3',
+      createdAt: '2026-04-20T00:00:00Z',
+    });
+    const photos = [
+      { url: 'https://photos.example.com/k/1.jpg', source: 'vendor', type: null },
+      { url: 'https://photos.example.com/k/2.jpg', source: 'vendor', type: null },
+    ];
+    const { db } = makeMockDb({
+      comparables: [collection],
+      vendorOrders: [
+        {
+          id: 'vo-3',
+          tenantId: 'tenant-a',
+          type: VENDOR_ORDER_DOC_TYPE,
+          clientOrderId: 'co-3',
+          propertyId: 'prop-3',
+        },
+      ],
+      propertyRecords: [
+        {
+          id: 'prop-3',
+          tenantId: 'tenant-a',
+          propertyType: 'SFR',
+          address: { street: '1 Main', city: 'X', state: 'CA', zip: '90001', county: 'LA',
+            latitude: 34, longitude: -118 },
+          building: { gla: 1500, yearBuilt: 1990, bedrooms: 3, bathrooms: 2 },
+          photos,
+        },
+      ],
+    });
+    const app = makeApp(db);
+    const res = await request(app).get('/api/vendor-orders/vo-3/comparables');
+    expect(res.status).toBe(200);
+    expect(res.body.subject).toBeDefined();
+    expect(res.body.subject.photos).toEqual(photos);
+  });
+
+  it('omits subject.photos when the property-records doc has no photos', async () => {
+    const collection = makeCollectionDoc({
+      id: 'collection-co-4-2026-04-20T00:00:00Z',
+      orderId: 'co-4',
+      createdAt: '2026-04-20T00:00:00Z',
+    });
+    const { db } = makeMockDb({
+      comparables: [collection],
+      vendorOrders: [
+        {
+          id: 'vo-4',
+          tenantId: 'tenant-a',
+          type: VENDOR_ORDER_DOC_TYPE,
+          clientOrderId: 'co-4',
+          propertyId: 'prop-4',
+        },
+      ],
+      propertyRecords: [
+        {
+          id: 'prop-4',
+          tenantId: 'tenant-a',
+          propertyType: 'SFR',
+          address: { street: '2 Main', city: 'X', state: 'CA', zip: '90001', county: 'LA',
+            latitude: 34, longitude: -118 },
+          building: { gla: 1500, yearBuilt: 1990, bedrooms: 3, bathrooms: 2 },
+        },
+      ],
+    });
+    const app = makeApp(db);
+    const res = await request(app).get('/api/vendor-orders/vo-4/comparables');
+    expect(res.status).toBe(200);
+    expect(res.body.subject).toBeDefined();
+    expect(res.body.subject).not.toHaveProperty('photos');
   });
 });

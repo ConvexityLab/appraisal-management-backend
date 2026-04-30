@@ -28,6 +28,7 @@ import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
 import type { PropertyRecordService } from './property-record.service.js';
 import type { AttomDataCompSearchService } from './attom-data-comp-search.service.js';
+import { BridgeInteractiveService } from './bridge-interactive.service.js';
 import { encodeGeohash } from '../utils/geohash.util.js';
 import { attomToPropertyRecord } from '../mappers/attom-to-property-record.mapper.js';
 import type { ClientOrderCreatedEvent } from '../types/events.js';
@@ -67,12 +68,20 @@ export type OrderCompCollectionRunResult =
 
 export class OrderCompCollectionService {
   private readonly logger = new Logger('OrderCompCollectionService');
+  private readonly bridge: BridgeInteractiveService;
 
   constructor(
     private readonly cosmos: CosmosDbService,
     private readonly propertyRecords: PropertyRecordService,
     private readonly compSearch: AttomDataCompSearchService,
-  ) {}
+    /**
+     * Optional: inject a BridgeInteractiveService instance (used in tests).
+     * When omitted, a default instance is created automatically.
+     */
+    bridgeService?: BridgeInteractiveService,
+  ) {
+    this.bridge = bridgeService ?? new BridgeInteractiveService();
+  }
 
   /**
    * Process a `client-order.created` event. Returns a result describing
@@ -157,6 +166,15 @@ export class OrderCompCollectionService {
     const now = new Date().toISOString();
     const docId = `collection-${clientOrderId}-${now}`;
 
+    const soldCandidates = soldResults.map(toCandidate('SOLD', tenantId));
+    const activeCandidates = activeResults.map(toCandidate('ACTIVE', tenantId));
+
+    // Enrich all candidates with Zestimate AVM — best-effort, non-fatal.
+    await this.enrichCandidatesWithAvm(
+      [...soldCandidates, ...activeCandidates],
+      clientOrderId,
+    );
+
     const doc: OrderCompCollectionDoc = {
       id: docId,
       stage: 'COLLECTION',
@@ -169,8 +187,8 @@ export class OrderCompCollectionService {
       subjectGeohash5,
       subjectAddress: subject.address,
       geohash5CellsQueried: Array.from(cellsQueriedSet),
-      soldCandidates: soldResults.map(toCandidate('SOLD', tenantId)),
-      activeCandidates: activeResults.map(toCandidate('ACTIVE', tenantId)),
+      soldCandidates,
+      activeCandidates,
       config,
       createdAt: now,
     };
@@ -191,6 +209,53 @@ export class OrderCompCollectionService {
       soldCount: doc.soldCandidates.length,
       activeCount: doc.activeCandidates.length,
     };
+  }
+
+  /**
+   * Batch-fetches Zestimate AVM values for all candidates using
+   * Promise.allSettled — failures on individual candidates are logged and
+   * skipped so a single bad address never aborts the whole collection write.
+   */
+  private async enrichCandidatesWithAvm(
+    candidates: CollectedCompCandidate[],
+    clientOrderId: string,
+  ): Promise<void> {
+    if (candidates.length === 0) return;
+
+    const results = await Promise.allSettled(
+      candidates.map(async (c) => {
+        const { street, city, state, zip } = c.propertyRecord.address;
+        const result = await this.bridge.getZestimateByStructuredAddress({
+          streetAddress: street,
+          city,
+          state,
+          postalCode: zip,
+        });
+
+        // Bridge response shape is untyped — probe known envelope variants.
+        const bundle = result?.bundle?.[0] ?? result?.value?.[0] ?? result;
+        const value: unknown = bundle?.zestimate ?? bundle?.value;
+        if (value != null && typeof value === 'number') {
+          c.propertyRecord.avm = {
+            value,
+            fetchedAt: new Date().toISOString(),
+            source: 'bridge-zestimate',
+          };
+        }
+      }),
+    );
+
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length > 0) {
+      this.logger.warn(
+        'OrderCompCollectionService: some Zestimate calls failed — avm omitted for those candidates',
+        {
+          clientOrderId,
+          failedCount: failed.length,
+          totalCount: candidates.length,
+        },
+      );
+    }
   }
 
   private async writeSkipped(

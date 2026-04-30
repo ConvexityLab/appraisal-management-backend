@@ -9,6 +9,8 @@
  * known address rather than comp searching.
  */
 
+import type { PropertyPhoto } from './canonical-schema.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Lookup params
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -87,6 +89,14 @@ export interface PropertyDataResult {
   core?: PropertyDataCore;
   publicRecord?: PropertyDataPublicRecord;
   flood?: PropertyDataFlood;
+
+  /**
+   * URL-based photos of the subject property, sourced from the upstream
+   * vendor (e.g. ATTOM `PHOTOSCOUNT`/`PHOTOKEY`/`PHOTOURLPREFIX`).
+   * Empty array means the provider responded but reported zero photos;
+   * undefined means the provider did not supply photos.
+   */
+  photos?: PropertyPhoto[];
 
   /** Raw provider response, retained for traceability */
   rawProviderData?: unknown;

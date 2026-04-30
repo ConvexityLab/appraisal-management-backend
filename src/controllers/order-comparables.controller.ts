@@ -48,6 +48,7 @@ import {
   type VendorOrder,
 } from '../types/vendor-order.types.js';
 import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyPhoto } from '../types/canonical-schema.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { Logger } from '../utils/logger.js';
 
@@ -91,6 +92,9 @@ interface SubjectPropertyData {
   };
   propertyType: string;
   lotSizeSqFt?: number;
+  /** Vendor-supplied subject property photos (e.g. ATTOM PHOTOURLPREFIX/PHOTOKEY).
+   *  Omitted entirely when the property record carries no photos — never `[]`. */
+  photos?: PropertyPhoto[];
 }
 
 interface OrderComparablesResponse {
@@ -285,6 +289,7 @@ export class OrderComparablesController {
         },
         propertyType: resource.propertyType,
         ...(resource.lotSizeSqFt !== undefined && { lotSizeSqFt: resource.lotSizeSqFt }),
+        ...(resource.photos && resource.photos.length > 0 && { photos: resource.photos }),
       };
     } catch (err) {
       logger.warn('readSubjectFromPropertyRecord failed — subject omitted from response', {

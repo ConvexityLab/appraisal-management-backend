@@ -98,7 +98,15 @@ function makeMocks() {
     searchComps: vi.fn(),
   } as any;
 
-  return { cosmos, propertyRecords, compSearch, created };
+  // Prevents tests from instantiating a real BridgeInteractiveService that
+  // reads env vars. Returns null so AVM extraction finds no numeric value
+  // and candidates are written without an avm field — existing assertions
+  // are unaffected.
+  const bridge = {
+    getZestimateByStructuredAddress: vi.fn().mockResolvedValue(null),
+  } as any;
+
+  return { cosmos, propertyRecords, compSearch, created, bridge };
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────
@@ -109,7 +117,7 @@ describe('OrderCompCollectionService.runForOrder', () => {
 
   beforeEach(() => {
     m = makeMocks();
-    svc = new OrderCompCollectionService(m.cosmos, m.propertyRecords, m.compSearch);
+    svc = new OrderCompCollectionService(m.cosmos, m.propertyRecords, m.compSearch, m.bridge);
   });
 
   describe('NOT_TRIGGERED — product type outside trigger set', () => {

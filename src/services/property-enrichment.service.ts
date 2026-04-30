@@ -36,6 +36,7 @@ import type {
   PropertyDataResult,
 } from '../types/property-data.types.js';
 import { createPropertyDataProvider } from './property-data-providers/factory.js';
+import { BridgeInteractiveService } from './bridge-interactive.service.js';
 
 // ─── Container name constant ──────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ export class PropertyEnrichmentService {
   private readonly logger: Logger;
   private readonly provider: PropertyDataProvider;
   private readonly geocoder: Geocoder;
+  private readonly bridge: BridgeInteractiveService;
 
   constructor(
     private readonly cosmosService: CosmosDbService,
@@ -137,6 +139,11 @@ export class PropertyEnrichmentService {
      * wiring code, not here).
      */
     geocoder?: Geocoder,
+    /**
+     * Optional: inject a BridgeInteractiveService instance (used in tests).
+     * When omitted, a default instance is created automatically.
+     */
+    bridgeService?: BridgeInteractiveService,
   ) {
     this.logger = new Logger('PropertyEnrichmentService');
     this.provider = provider ?? createPropertyDataProvider(cosmosService);
@@ -146,6 +153,7 @@ export class PropertyEnrichmentService {
       );
     }
     this.geocoder = geocoder;
+    this.bridge = bridgeService ?? new BridgeInteractiveService();
   }
 
   /**
@@ -301,6 +309,9 @@ export class PropertyEnrichmentService {
         cachedRecord,
       );
 
+      // ── Step 8 (cached path): Fetch Zestimate AVM — non-fatal ────────────
+      await this.fetchAndPatchAvm(resolution.propertyId, tenantId, address, orderId);
+
       return {
         enrichmentId: cachedRecord.id,
         propertyId: resolution.propertyId,
@@ -407,11 +418,77 @@ export class PropertyEnrichmentService {
       provider: dataResult?.source ?? 'none',
     });
 
+    // ── Step 8: Fetch Zestimate AVM — non-fatal ──────────────────────────────
+    await this.fetchAndPatchAvm(resolution.propertyId, tenantId, address, orderId);
+
     return {
       enrichmentId: enrichmentRecord.id,
       propertyId: resolution.propertyId,
       status,
     };
+  }
+
+  /**
+   * Fetches a Zestimate from Bridge Interactive and patches `avm` onto the
+   * PropertyRecord via createVersion(). Non-fatal — logs a warning and returns
+   * without throwing if the API call fails or returns no numeric value.
+   */
+  private async fetchAndPatchAvm(
+    propertyId: string,
+    tenantId: string,
+    address: { street: string; city: string; state: string; zipCode: string },
+    orderId: string,
+  ): Promise<void> {
+    try {
+      const result = await this.bridge.getZestimateByStructuredAddress({
+        streetAddress: address.street,
+        city: address.city,
+        state: address.state,
+        postalCode: address.zipCode,
+      });
+
+      // Bridge response shape is untyped — probe known envelope variants.
+      const bundle = result?.bundle?.[0] ?? result?.value?.[0] ?? result;
+      const value: unknown = bundle?.zestimate ?? bundle?.value;
+      if (value == null || typeof value !== 'number') {
+        this.logger.warn('PropertyEnrichmentService: Zestimate returned no numeric value', {
+          orderId,
+          propertyId,
+        });
+        return;
+      }
+
+      await this.propertyRecordService.createVersion(
+        propertyId,
+        tenantId,
+        {
+          avm: {
+            value,
+            fetchedAt: new Date().toISOString(),
+            source: 'bridge-zestimate' as const,
+          },
+        },
+        'AVM value fetched from Bridge Interactive (Zestimate)',
+        'PUBLIC_RECORDS_API',
+        'SYSTEM:property-enrichment',
+        'Bridge Interactive',
+      );
+
+      this.logger.info('PropertyEnrichmentService: AVM patched on PropertyRecord', {
+        orderId,
+        propertyId,
+        avmValue: value,
+      });
+    } catch (err) {
+      this.logger.warn(
+        'PropertyEnrichmentService: Zestimate fetch failed — continuing without AVM',
+        {
+          orderId,
+          propertyId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
   }
 
   /**
@@ -579,6 +656,14 @@ export class PropertyEnrichmentService {
     if (fl?.femaFloodZone != null) changes.floodZone = fl.femaFloodZone;
     if (fl?.femaMapNumber != null) changes.floodMapNumber = fl.femaMapNumber;
     if (fl?.femaMapDate != null) changes.floodMapDate = fl.femaMapDate;
+
+    // Photos: providers that supply them (e.g. local-attom) do so as a
+    // complete array. Only overwrite when the provider returned a non-empty
+    // list — an empty array means "no photos this run" and shouldn't blow
+    // away photos from a previous enrichment.
+    if (dataResult.photos && dataResult.photos.length > 0) {
+      changes.photos = dataResult.photos;
+    }
 
     return changes;
   }

@@ -258,4 +258,70 @@ describe('attomToPropertyRecord', () => {
     const { record } = attomToPropertyRecord(doc, 'tenant-a');
     expect(record.address.street).toBe('123 N MAIN ST');
   });
+
+  describe('photos (PHOTOSCOUNT / PHOTOKEY / PHOTOURLPREFIX)', () => {
+    it('builds N URLs with the documented pattern when PHOTOSCOUNT > 0', () => {
+      const doc = makeAttomDoc({
+        rawData: {
+          PHOTOSCOUNT: '3',
+          PHOTOKEY: 'abc123',
+          PHOTOURLPREFIX: 'https://photos.example.com/',
+        },
+      });
+      const { record } = attomToPropertyRecord(doc, 'tenant-a');
+      expect(record.photos).toEqual([
+        { url: 'https://photos.example.com/abc123/photo_1.jpg', source: 'vendor', type: null },
+        { url: 'https://photos.example.com/abc123/photo_2.jpg', source: 'vendor', type: null },
+        { url: 'https://photos.example.com/abc123/photo_3.jpg', source: 'vendor', type: null },
+      ]);
+    });
+
+    it('returns an empty array when PHOTOSCOUNT is "0"', () => {
+      const doc = makeAttomDoc({
+        rawData: {
+          PHOTOSCOUNT: '0',
+          PHOTOKEY: 'abc123',
+          PHOTOURLPREFIX: 'https://photos.example.com/',
+        },
+      });
+      const { record } = attomToPropertyRecord(doc, 'tenant-a');
+      expect(record.photos).toEqual([]);
+    });
+
+    it('returns an empty array when PHOTOSCOUNT is missing', () => {
+      const doc = makeAttomDoc({ rawData: {} });
+      const { record } = attomToPropertyRecord(doc, 'tenant-a');
+      expect(record.photos).toEqual([]);
+    });
+
+    it('returns an empty array when PHOTOKEY or PHOTOURLPREFIX is missing', () => {
+      const noKey = attomToPropertyRecord(
+        makeAttomDoc({
+          rawData: { PHOTOSCOUNT: '2', PHOTOURLPREFIX: 'https://x/' },
+        }),
+        'tenant-a',
+      ).record;
+      expect(noKey.photos).toEqual([]);
+
+      const noPrefix = attomToPropertyRecord(
+        makeAttomDoc({
+          rawData: { PHOTOSCOUNT: '2', PHOTOKEY: 'abc' },
+        }),
+        'tenant-a',
+      ).record;
+      expect(noPrefix.photos).toEqual([]);
+    });
+
+    it('returns an empty array when PHOTOSCOUNT is unparseable', () => {
+      const doc = makeAttomDoc({
+        rawData: {
+          PHOTOSCOUNT: 'NaN-ish',
+          PHOTOKEY: 'abc',
+          PHOTOURLPREFIX: 'https://x/',
+        },
+      });
+      const { record } = attomToPropertyRecord(doc, 'tenant-a');
+      expect(record.photos).toEqual([]);
+    });
+  });
 });

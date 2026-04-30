@@ -402,6 +402,7 @@ export class AppraisalDraftService {
       attic: '',
       view: (pd.viewType as string) ?? '',
       locationRating: '',
+      photos: null,
       latitude: (pa.coordinates as { latitude?: number })?.latitude ?? null,
       longitude: (pa.coordinates as { longitude?: number })?.longitude ?? null,
     };

@@ -36,6 +36,7 @@ import type {
 import type { AttomDataDocument } from '../../types/attom-data.types.js';
 import { CosmosDbService } from '../cosmos-db.service.js';
 import { normalizeStreetForMatch, zip5 } from '../property-record.service.js';
+import { extractAttomPhotos } from '../../mappers/attom-photos.js';
 import { Logger } from '../../utils/logger.js';
 
 const ATTOM_DATA_CONTAINER = 'attom-data';
@@ -195,6 +196,10 @@ export class LocalAttomPropertyDataProvider implements PropertyDataProvider {
       publicRecord: this.buildPublicRecord(doc),
       // No FEMA flood data is present in the ATTOM CSV → leave `flood`
       // undefined rather than fabricating empty fields.
+      // Photos are derived from the raw PHOTOSCOUNT/PHOTOKEY/PHOTOURLPREFIX
+      // CSV columns via the shared extractor (kept in sync with the
+      // attom-to-property-record mapper used by comp-collection).
+      photos: extractAttomPhotos(doc),
       rawProviderData: { attomDataDocument: doc },
     };
   }
