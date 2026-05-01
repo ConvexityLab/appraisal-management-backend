@@ -67,7 +67,7 @@ export const COMP_COLLECTION_CONFIG_BY_PRODUCT_TYPE: Readonly<
   // tightens the collection radius and counts.
   [ProductType.DESKTOP_APPRAISAL]: {
     radiusMiles: 0.5,
-    soldCount: 50,
+    soldCount: 6,
     activeCount: 50,
     soldSaleWindowMonths: 9,
     geohashExpansion: 'ADAPTIVE',

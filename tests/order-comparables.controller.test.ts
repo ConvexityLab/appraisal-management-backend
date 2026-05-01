@@ -182,6 +182,7 @@ describe('GET /api/orders/:orderId/comparables', () => {
       clientOrderId: 'co-1',
       latestCollection: null,
       latestRanking: null,
+      latestSelection: null,
       candidates: [],
     });
   });
