@@ -108,6 +108,12 @@ interface MinimalSelectedComp {
   selectionFlag: string;
 }
 
+interface CompValueEstimate {
+  estimatedValue: number;
+  lowerBound: number;
+  upperBound: number;
+}
+
 /**
  * Comp-selection result from the `comparable-analyses` container,
  * included in the comparables response so the UI can show which comps
@@ -117,6 +123,8 @@ interface MinimalSelectedComp {
 interface LatestSelection {
   selectedSold: MinimalSelectedComp[];
   selectedActive: MinimalSelectedComp[];
+  /** Value estimate computed from selected sold comps by CompBasedValueEstimator. */
+  valueEstimate?: CompValueEstimate;
 }
 
 interface OrderComparablesResponse {
@@ -281,10 +289,10 @@ export class OrderComparablesController {
     try {
       const analysesContainer = this.dbService.getContainer('comparable-analyses');
       const { resources: selectionDocs } = await analysesContainer.items
-        .query<{ selectedSold?: unknown[]; selectedActive?: unknown[] }>(
+        .query<{ selectedSold?: unknown[]; selectedActive?: unknown[]; valueEstimate?: unknown }>(
           {
             query:
-              'SELECT TOP 1 c.selectedSold, c.selectedActive FROM c ' +
+              'SELECT TOP 1 c.selectedSold, c.selectedActive, c.valueEstimate FROM c ' +
               'WHERE c.reviewId = @orderId AND c.tenantId = @tenantId AND c.type = @type ' +
               'ORDER BY c.createdAt DESC',
             parameters: [
@@ -298,10 +306,11 @@ export class OrderComparablesController {
         .fetchAll();
 
       if (selectionDocs.length > 0) {
-        const doc = selectionDocs[0];
+        const doc = selectionDocs[0]!;
         latestSelection = {
           selectedSold: toMinimalSelectedComps(doc.selectedSold),
           selectedActive: toMinimalSelectedComps(doc.selectedActive),
+          ...(toCompValueEstimate(doc.valueEstimate) ? { valueEstimate: toCompValueEstimate(doc.valueEstimate)! } : {}),
         };
       }
     } catch (err) {
@@ -369,6 +378,29 @@ export class OrderComparablesController {
 }
 
 // ─── module-level helpers ────────────────────────────────────────────────────
+
+/**
+ * Validate and narrow the raw `valueEstimate` object stored in the
+ * `comparable-analyses` document. Returns null when the shape is invalid
+ * so callers never surface corrupt data silently.
+ */
+function toCompValueEstimate(raw: unknown): CompValueEstimate | null {
+  if (
+    raw == null ||
+    typeof raw !== 'object' ||
+    typeof (raw as Record<string, unknown>)['estimatedValue'] !== 'number' ||
+    typeof (raw as Record<string, unknown>)['lowerBound'] !== 'number' ||
+    typeof (raw as Record<string, unknown>)['upperBound'] !== 'number'
+  ) {
+    return null;
+  }
+  const r = raw as Record<string, unknown>;
+  return {
+    estimatedValue: r['estimatedValue'] as number,
+    lowerBound: r['lowerBound'] as number,
+    upperBound: r['upperBound'] as number,
+  };
+}
 
 /**
  * Extract `propertyId` and `selectionFlag` from the raw selection entries
