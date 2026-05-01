@@ -44,9 +44,20 @@ import {
   getCompCollectionConfig,
   shouldTriggerCompCollection,
 } from '../config/comp-collection-config.js';
+import type { CompSelectionStrategyRegistry } from './comp-selection/registry.js';
+import type {
+  CompSelectionInput,
+  CompSelectionResult,
+} from './comp-selection/strategy.js';
+import type {
+  IValueEstimator,
+  SelectedCompWithPropertyRecord,
+  ValueEstimate,
+} from './value-estimate/value-estimator.js';
 
 const GEOHASH_PRECISION = 5;
 const MILES_TO_METERS = 1609.344;
+const COMPARABLE_ANALYSES_CONTAINER = 'comparable-analyses';
 
 /** Result shape emitted by `runForOrder` for traceability / tests. */
 export type OrderCompCollectionRunResult =
@@ -64,11 +75,29 @@ export type OrderCompCollectionRunResult =
       docId: string;
       soldCount: number;
       activeCount: number;
+      /**
+       * Set when a comp-selection strategy was configured for this product
+       * type AND ran successfully. Absent when no strategy is configured
+       * (intentional opt-out) or the strategy was skipped (no candidates).
+       */
+      selection?: { strategyName: string; soldSelected: number; activeSelected: number };
+      /** Set when a value estimate was computed alongside selection. */
+      valueEstimate?: { estimatorName: string; estimatedValue: number };
     };
+
+/**
+ * Optional selection-step dependencies. Both must be present for selection
+ * to run. Either (or both) being undefined is a no-op (selection skipped).
+ */
+export interface CompSelectionDeps {
+  registry: CompSelectionStrategyRegistry;
+  valueEstimator: IValueEstimator;
+}
 
 export class OrderCompCollectionService {
   private readonly logger = new Logger('OrderCompCollectionService');
   private readonly bridge: BridgeInteractiveService;
+  private readonly selectionDeps?: CompSelectionDeps;
 
   constructor(
     private readonly cosmos: CosmosDbService,
@@ -79,8 +108,15 @@ export class OrderCompCollectionService {
      * When omitted, a default instance is created automatically.
      */
     bridgeService?: BridgeInteractiveService,
+    /**
+     * Optional: comp-selection registry + value estimator. When provided,
+     * `runForOrder` invokes the strategy named in the product config
+     * inline after candidate upsert. When omitted, only collection runs.
+     */
+    selectionDeps?: CompSelectionDeps,
   ) {
     this.bridge = bridgeService ?? new BridgeInteractiveService();
+    if (selectionDeps) this.selectionDeps = selectionDeps;
   }
 
   /**
@@ -92,7 +128,7 @@ export class OrderCompCollectionService {
    * processable Service Bus error so the message can be retried / DLQ'd.
    */
   async runForOrder(event: ClientOrderCreatedEvent): Promise<OrderCompCollectionRunResult> {
-    const { clientOrderId, tenantId, propertyId, productType } = event.data;
+    const { clientOrderId, clientOrderNumber, tenantId, propertyId, productType } = event.data;
 
     if (!shouldTriggerCompCollection(productType)) {
       this.logger.info('Skipping comp collection — product type not in trigger set', {
@@ -103,7 +139,7 @@ export class OrderCompCollectionService {
     }
 
     if (!propertyId) {
-      return this.writeSkipped(clientOrderId, tenantId, productType, 'NO_PROPERTY_ID');
+      return this.writeSkipped(clientOrderId, clientOrderNumber, tenantId, productType, 'NO_PROPERTY_ID');
     }
 
     // Load subject. `getById` throws if missing — translate that to a
@@ -118,13 +154,13 @@ export class OrderCompCollectionService {
         tenantId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return this.writeSkipped(clientOrderId, tenantId, productType, 'PROPERTY_NOT_FOUND');
+      return this.writeSkipped(clientOrderId, clientOrderNumber, tenantId, productType, 'PROPERTY_NOT_FOUND');
     }
 
     const latitude = subject.address.latitude;
     const longitude = subject.address.longitude;
     if (latitude == null || longitude == null) {
-      return this.writeSkipped(clientOrderId, tenantId, productType, 'NO_COORDINATES', subject.address);
+      return this.writeSkipped(clientOrderId, clientOrderNumber, tenantId, productType, 'NO_COORDINATES', subject.address);
     }
 
     const config = getCompCollectionConfig(productType);
@@ -179,12 +215,13 @@ export class OrderCompCollectionService {
       id: docId,
       stage: 'COLLECTION',
       orderId: clientOrderId,
+      clientOrderNumber,
       tenantId,
       propertyId,
       productType,
       subjectLatitude: latitude,
       subjectLongitude: longitude,
-      subjectGeohash5,
+      subjectGeohash5: subjectGeohash5,
       subjectAddress: subject.address,
       geohash5CellsQueried: Array.from(cellsQueriedSet),
       soldCandidates,
@@ -203,12 +240,70 @@ export class OrderCompCollectionService {
       activeCount: doc.activeCandidates.length,
     });
 
-    return {
+    const baseResult: OrderCompCollectionRunResult = {
       status: 'COLLECTED',
       docId,
       soldCount: doc.soldCandidates.length,
       activeCount: doc.activeCandidates.length,
     };
+
+    // ── Inline selection step ─────────────────────────────────────────
+    // Runs only when (a) selection deps are wired, (b) the product config
+    // names a strategy, and (c) at least one candidate was collected.
+    // Failures rethrow — the listener's Service Bus retry/DLQ covers it.
+    const strategyName = config.selectionStrategy;
+    if (
+      this.selectionDeps &&
+      strategyName &&
+      strategyName !== 'none' &&
+      (soldCandidates.length > 0 || activeCandidates.length > 0)
+    ) {
+      const selection = await this.runSelection({
+        strategyName,
+        clientOrderId,
+        clientOrderNumber,
+        tenantId,
+        productType,
+        subject,
+        soldCandidates,
+        activeCandidates,
+        numSold: config.numSold ?? config.soldCount,
+        numActive: config.numActive ?? config.activeCount,
+      });
+      const valueEstimate = await this.runValueEstimate(
+        subject,
+        selection,
+        soldCandidates,
+        clientOrderId,
+      );
+      await this.persistSelection({
+        selection,
+        valueEstimate,
+        tenantId,
+        propertyId,
+        productType,
+        clientOrderId,
+        clientOrderNumber,
+      });
+      baseResult.selection = {
+        strategyName: selection.strategyName,
+        soldSelected: selection.selectedSold.length,
+        activeSelected: selection.selectedActive.length,
+      };
+      if (valueEstimate) {
+        baseResult.valueEstimate = {
+          estimatorName: valueEstimate.estimatorName,
+          estimatedValue: valueEstimate.estimatedValue,
+        };
+      }
+    } else if (this.selectionDeps && (!strategyName || strategyName === 'none')) {
+      this.logger.info('Comp-selection skipped — no strategy configured for product type', {
+        clientOrderId,
+        productType,
+      });
+    }
+
+    return baseResult;
   }
 
   /**
@@ -260,6 +355,7 @@ export class OrderCompCollectionService {
 
   private async writeSkipped(
     clientOrderId: string,
+    clientOrderNumber: string,
     tenantId: string,
     productType: string,
     reason: NonNullable<OrderCompCollectionDoc['skipReason']>,
@@ -272,6 +368,7 @@ export class OrderCompCollectionService {
       id: docId,
       stage: 'COLLECTION',
       orderId: clientOrderId,
+      clientOrderNumber,
       tenantId,
       // propertyId is required on the doc; use empty string when absent so
       // the audit record is queryable by orderId. Tests assert this shape.
@@ -300,6 +397,134 @@ export class OrderCompCollectionService {
     });
 
     return { status: 'SKIPPED', reason, docId };
+  }
+
+  // ─── Selection step helpers ───────────────────────────────────────────────
+
+  /**
+   * Resolve the named strategy from the registry and run it. Throws on
+   * missing strategy or strategy failures — caller wraps so Service Bus
+   * retries the whole event.
+   */
+  private async runSelection(args: {
+    strategyName: string;
+    clientOrderId: string;
+    clientOrderNumber: string;
+    tenantId: string;
+    productType: string;
+    subject: import('../types/property-record.types.js').PropertyRecord;
+    soldCandidates: CollectedCompCandidate[];
+    activeCandidates: CollectedCompCandidate[];
+    numSold: number;
+    numActive: number;
+  }): Promise<CompSelectionResult> {
+    const strategy = this.selectionDeps!.registry.resolve(args.strategyName);
+    const input: CompSelectionInput = {
+      orderId: args.clientOrderId,
+      clientOrderNumber: args.clientOrderNumber,
+      tenantId: args.tenantId,
+      subject: args.subject,
+      candidates: [...args.soldCandidates, ...args.activeCandidates],
+      requested: { sold: args.numSold, active: args.numActive },
+      productType: args.productType,
+      correlationId: args.clientOrderId,
+    };
+    const result = await strategy.select(input);
+    this.logger.info('Comp-selection strategy completed', {
+      clientOrderId: args.clientOrderId,
+      strategyName: result.strategyName,
+      soldSelected: result.selectedSold.length,
+      activeSelected: result.selectedActive.length,
+      shortfall: result.shortfall,
+    });
+    return result;
+  }
+
+  /**
+   * Compute a value estimate from selected sold comps. Returns undefined
+   * (with WARN log) when the estimator throws on data-quality grounds —
+   * selection is still useful even when an estimate isn't computable.
+   * Other exceptions rethrow.
+   */
+  private async runValueEstimate(
+    subject: import('../types/property-record.types.js').PropertyRecord,
+    selection: CompSelectionResult,
+    soldCandidates: CollectedCompCandidate[],
+    clientOrderId: string,
+  ): Promise<ValueEstimate | undefined> {
+    if (selection.selectedSold.length === 0) {
+      this.logger.warn('Skipping value estimate — no sold comps were selected', {
+        clientOrderId,
+      });
+      return undefined;
+    }
+    const byPropertyId = new Map(
+      soldCandidates.map((c) => [c.propertyRecord.id, c.propertyRecord]),
+    );
+    const tuples: SelectedCompWithPropertyRecord[] = [];
+    for (const sel of selection.selectedSold) {
+      const record = byPropertyId.get(sel.propertyId);
+      if (!record) {
+        // Strategy returned an id we didn't pass in — treat as a contract
+        // violation. Selection guard should have caught it; surface anyway.
+        throw new Error(
+          `OrderCompCollectionService: selected sold propertyId "${sel.propertyId}" not found in collected candidates`,
+        );
+      }
+      tuples.push({ selected: sel, propertyRecord: record });
+    }
+    try {
+      return await this.selectionDeps!.valueEstimator.compute(subject, tuples);
+    } catch (err) {
+      this.logger.warn('Value estimator failed — persisting selection without estimate', {
+        clientOrderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
+  /**
+   * Persist the selection + value estimate into the `comparable-analyses`
+   * container. Partition key is `/reviewId` on this container; we set
+   * `reviewId = orderId` to match existing convention.
+   */
+  private async persistSelection(args: {
+    selection: CompSelectionResult;
+    valueEstimate: ValueEstimate | undefined;
+    tenantId: string;
+    propertyId: string;
+    productType: string;
+    clientOrderId: string;
+    clientOrderNumber: string;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const doc = {
+      id: `comp-selection-${args.clientOrderId}-${now}`,
+      type: 'comp-selection' as const,
+      // Partition key on comparable-analyses is /reviewId; mirror orderId
+      // into it to keep all per-order analysis docs in one partition.
+      reviewId: args.clientOrderId,
+      orderId: args.clientOrderId,
+      clientOrderNumber: args.clientOrderNumber,
+      tenantId: args.tenantId,
+      propertyId: args.propertyId,
+      productType: args.productType,
+      strategyName: args.selection.strategyName,
+      ...(args.selection.promptVersion ? { promptVersion: args.selection.promptVersion } : {}),
+      selectedSold: args.selection.selectedSold,
+      selectedActive: args.selection.selectedActive,
+      ...(args.selection.shortfall ? { shortfall: args.selection.shortfall } : {}),
+      ...(args.selection.diagnostics ? { diagnostics: args.selection.diagnostics } : {}),
+      ...(args.valueEstimate ? { valueEstimate: args.valueEstimate } : {}),
+      createdAt: now,
+    };
+    await this.cosmos.createDocument(COMPARABLE_ANALYSES_CONTAINER, doc);
+    this.logger.info('Wrote comp-selection analysis doc', {
+      clientOrderId: args.clientOrderId,
+      docId: doc.id,
+      strategyName: doc.strategyName,
+    });
   }
 }
 

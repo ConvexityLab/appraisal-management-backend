@@ -109,6 +109,13 @@ export interface ClientOrderCreatedEvent extends BaseEvent {
   category: EventCategory.ORDER;
   data: {
     clientOrderId: string;
+    /**
+     * Human-readable client order number (currently aliased to `clientOrderId`
+     * but designed to diverge — e.g. tenant-scoped sequential `CO-2026-0001`).
+     * Carried alongside `clientOrderId` so downstream consumers (comp-selection,
+     * analytics) can persist a display handle without an extra Cosmos read.
+     */
+    clientOrderNumber: string;
     tenantId: string;
     /** Optional canonical PropertyRecord id; absent when caller didn't supply one. */
     propertyId?: string;

@@ -293,6 +293,7 @@ export class ClientOrderService {
       version: '1.0',
       data: {
         clientOrderId: order.id,
+        clientOrderNumber: order.clientOrderNumber,
         tenantId: order.tenantId,
         ...(order.propertyId !== undefined ? { propertyId: order.propertyId } : {}),
         productType: order.productType,

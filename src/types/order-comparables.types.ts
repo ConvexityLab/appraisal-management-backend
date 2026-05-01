@@ -68,6 +68,17 @@ export interface OrderCompCollectionConfig {
   soldSaleWindowMonths: number;
   /** Geohash5 cell expansion strategy. */
   geohashExpansion: GeohashExpansion;
+  /**
+   * Name of the comp-selection strategy to invoke after collection. Resolved
+   * via `CompSelectionStrategyRegistry`. When undefined or `'none'`, the
+   * selection step is skipped (collection only). No silent default — leave
+   * unset to opt out per product type.
+   */
+  selectionStrategy?: string;
+  /** Number of sold comps the selection strategy should aim to pick. Defaults to soldCount. */
+  numSold?: number;
+  /** Number of active listings the selection strategy should aim to pick. Defaults to activeCount. */
+  numActive?: number;
 }
 
 // ─── Subject summary needed for comp collection ─────────────────────────────
@@ -150,8 +161,15 @@ export interface OrderCompCollectionDoc {
   id: string;
   /** Discriminator inside the container. */
   stage: 'COLLECTION';
-  /** Partition key. */
+  /** Partition key. Holds `ClientOrder.id` (canonical key), NOT the human-readable number. */
   orderId: string;
+  /**
+   * Human-readable client order number copied from the triggering event.
+   * Currently aliased to `orderId`; designed to diverge later. Persisted
+   * here as a display handle so consumers don't need a join back to
+   * `client-orders`.
+   */
+  clientOrderNumber: string;
   tenantId: string;
   /** FK to the subject PropertyRecord. */
   propertyId: string;

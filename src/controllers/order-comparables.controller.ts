@@ -97,6 +97,28 @@ interface SubjectPropertyData {
   photos?: PropertyPhoto[];
 }
 
+/**
+ * Minimal selected-comp entry — only the fields the UI needs from the
+ * `comparable-analyses` comp-selection document. Mirrors the backend
+ * `SelectedComp` interface (strategy.ts) without pulling it in as a
+ * dependency.
+ */
+interface MinimalSelectedComp {
+  propertyId: string;
+  selectionFlag: string;
+}
+
+/**
+ * Comp-selection result from the `comparable-analyses` container,
+ * included in the comparables response so the UI can show which comps
+ * the backend strategy chose (and their flags) without a second request.
+ * Null when no selection document exists for the order yet.
+ */
+interface LatestSelection {
+  selectedSold: MinimalSelectedComp[];
+  selectedActive: MinimalSelectedComp[];
+}
+
 interface OrderComparablesResponse {
   clientOrderId: string;
   vendorOrderId?: string;
@@ -105,6 +127,11 @@ interface OrderComparablesResponse {
   candidates: CollectedCompCandidate[];
   /** Subject property from `property-records` — present only on the vendor-order route. */
   subject?: SubjectPropertyData;
+  /**
+   * Latest comp-selection result from the `comparable-analyses` container.
+   * Null when the backend strategy has not yet run for this order.
+   */
+  latestSelection: LatestSelection | null;
 }
 
 export class OrderComparablesController {
@@ -245,11 +272,51 @@ export class OrderComparablesController {
             ]
           : [];
 
+    // Load the latest comp-selection result from the `comparable-analyses`
+    // container. Partition key on that container is `/reviewId`; the
+    // selection pipeline sets reviewId = orderId (clientOrderId). Reading
+    // within the partition avoids a cross-partition fan-out.
+    // Failures are non-fatal — candidates still render without flags.
+    let latestSelection: LatestSelection | null = null;
+    try {
+      const analysesContainer = this.dbService.getContainer('comparable-analyses');
+      const { resources: selectionDocs } = await analysesContainer.items
+        .query<{ selectedSold?: unknown[]; selectedActive?: unknown[] }>(
+          {
+            query:
+              'SELECT TOP 1 c.selectedSold, c.selectedActive FROM c ' +
+              'WHERE c.reviewId = @orderId AND c.tenantId = @tenantId AND c.type = @type ' +
+              'ORDER BY c.createdAt DESC',
+            parameters: [
+              { name: '@orderId', value: clientOrderId },
+              { name: '@tenantId', value: tenantId },
+              { name: '@type', value: 'comp-selection' },
+            ],
+          },
+          { partitionKey: clientOrderId },
+        )
+        .fetchAll();
+
+      if (selectionDocs.length > 0) {
+        const doc = selectionDocs[0];
+        latestSelection = {
+          selectedSold: toMinimalSelectedComps(doc.selectedSold),
+          selectedActive: toMinimalSelectedComps(doc.selectedActive),
+        };
+      }
+    } catch (err) {
+      logger.warn('loadComparables: could not read comparable-analyses selection doc — latestSelection omitted', {
+        clientOrderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     return {
       clientOrderId,
       latestCollection,
       latestRanking,
       candidates,
+      latestSelection,
     };
   }
 
@@ -299,4 +366,30 @@ export class OrderComparablesController {
       return null;
     }
   }
+}
+
+// ─── module-level helpers ────────────────────────────────────────────────────
+
+/**
+ * Extract `propertyId` and `selectionFlag` from the raw selection entries
+ * stored in the `comparable-analyses` document. Entries that are missing
+ * either field are silently skipped — they cannot be matched to candidates.
+ */
+function toMinimalSelectedComps(raw: unknown[] | undefined): MinimalSelectedComp[] {
+  if (!Array.isArray(raw)) return [];
+  const result: MinimalSelectedComp[] = [];
+  for (const entry of raw) {
+    if (
+      entry != null &&
+      typeof entry === 'object' &&
+      typeof (entry as Record<string, unknown>)['propertyId'] === 'string' &&
+      typeof (entry as Record<string, unknown>)['selectionFlag'] === 'string'
+    ) {
+      result.push({
+        propertyId: (entry as Record<string, unknown>)['propertyId'] as string,
+        selectionFlag: (entry as Record<string, unknown>)['selectionFlag'] as string,
+      });
+    }
+  }
+  return result;
 }

@@ -192,6 +192,15 @@ import { BulkIngestionCanonicalWorkerService } from '../services/bulk-ingestion-
 import { BulkIngestionOrderCreationWorkerService } from '../services/bulk-ingestion-order-creation-worker.service.js';
 import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.job.js';
 import { CompCollectionListenerJob } from '../jobs/comp-collection-listener.job.js';
+import { OrderCompCollectionService } from '../services/order-comp-collection.service.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
+import { AttomDataCompSearchService } from '../services/attom-data-comp-search.service.js';
+import { CompSelectionStrategyRegistry } from '../services/comp-selection/registry.js';
+import { CompSelectionPromptLoader } from '../services/comp-selection/prompt-loader.js';
+import { TieredAiCompSelectionStrategy } from '../services/comp-selection/strategies/tiered-ai.strategy.js';
+import { WeightedCompSelectionStrategy } from '../services/comp-selection/strategies/weighted.strategy.js';
+import { CompBasedValueEstimator } from '../services/value-estimate/comp-based.estimator.js';
+import { UniversalAIService } from '../services/universal-ai.service.js';
 import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion-extraction-worker.service.js';
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
@@ -4398,8 +4407,34 @@ export class AppraisalManagementAPIServer {
     // types in COMP_COLLECTION_TRIGGER_PRODUCT_TYPES). In real Azure mode the
     // `comp-collection` subscription on `appraisal-events` must exist (Bicep);
     // in mock mode this is routed via the in-memory event bus with no infra.
+    //
+    // Comp-selection wiring: build the strategy registry + value estimator
+    // here and inject into OrderCompCollectionService so the inline
+    // selection step runs after candidate upsert when a product config
+    // names a strategy. Strategies must be constructed at bootstrap so
+    // missing prompt templates fail loudly at startup, not on first order.
     try {
-      this.compCollectionListenerJob = new CompCollectionListenerJob(this.dbService);
+      const compSelectionRegistry = new CompSelectionStrategyRegistry();
+      const promptLoader = new CompSelectionPromptLoader('v1');
+      compSelectionRegistry.register(
+        new TieredAiCompSelectionStrategy(new UniversalAIService(), promptLoader),
+      );
+      compSelectionRegistry.register(new WeightedCompSelectionStrategy());
+      const valueEstimator = new CompBasedValueEstimator();
+
+      const propertyRecordsForCollection = new PropertyRecordService(this.dbService);
+      const compSearchForCollection = new AttomDataCompSearchService(this.dbService);
+      const orderCompCollectionService = new OrderCompCollectionService(
+        this.dbService,
+        propertyRecordsForCollection,
+        compSearchForCollection,
+        undefined,
+        { registry: compSelectionRegistry, valueEstimator },
+      );
+
+      this.compCollectionListenerJob = new CompCollectionListenerJob(this.dbService, {
+        service: orderCompCollectionService,
+      });
       this.compCollectionListenerJob.start().catch(err => {
         this.logger.warn('CompCollectionListenerJob failed to start', {
           error: err instanceof Error ? err.message : String(err)

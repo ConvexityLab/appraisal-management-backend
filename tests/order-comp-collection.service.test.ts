@@ -29,6 +29,7 @@ function makeEvent(overrides: Partial<ClientOrderCreatedEvent['data']> = {}): Cl
     version: '1.0',
     data: {
       clientOrderId: 'co-1',
+      clientOrderNumber: 'CO-2026-0001',
       tenantId: 'tenant-a',
       propertyId: 'prop-1',
       productType: ProductType.BPO,

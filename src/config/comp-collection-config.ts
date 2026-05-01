@@ -36,13 +36,20 @@ export const COMP_COLLECTION_TRIGGER_PRODUCT_TYPES: ReadonlySet<string> = new Se
 /**
  * Default config used when a triggering ProductType doesn't have an explicit
  * override. Conservative urban-friendly defaults.
+ *
+ * `selectionStrategy: 'tiered-ai'` means: whenever collection runs, the
+ * tiered-AI strategy is invoked inline on the resulting candidate pool.
+ * Per-product overrides below can opt out by setting `selectionStrategy: 'none'`.
  */
 export const DEFAULT_COMP_COLLECTION_CONFIG: OrderCompCollectionConfig = {
   radiusMiles: 1,
-  soldCount: 10,
-  activeCount: 5,
+  soldCount: 50,
+  activeCount: 50,
   soldSaleWindowMonths: 12,
   geohashExpansion: 'ADAPTIVE',
+  selectionStrategy: 'weighted', //'tiered-ai',
+  numSold: 3,
+  numActive: 3,
 };
 
 /**
@@ -55,19 +62,28 @@ export const COMP_COLLECTION_CONFIG_BY_PRODUCT_TYPE: Readonly<
 > = {
   // Tighter radius for desktop products — they typically operate in
   // denser data environments and reviewers expect closer comps.
+  // Both DESKTOP_APPRAISAL and DESKTOP_REVIEW inherit `selectionStrategy:
+  // 'tiered-ai'` from DEFAULT_COMP_COLLECTION_CONFIG; this override only
+  // tightens the collection radius and counts.
   [ProductType.DESKTOP_APPRAISAL]: {
     radiusMiles: 0.5,
-    soldCount: 6,
-    activeCount: 3,
+    soldCount: 50,
+    activeCount: 50,
     soldSaleWindowMonths: 9,
     geohashExpansion: 'ADAPTIVE',
+    selectionStrategy: 'tiered-ai',
+    numSold: 3,
+    numActive: 3,
   },
   [ProductType.DESKTOP_REVIEW]: {
     radiusMiles: 0.5,
-    soldCount: 6,
-    activeCount: 3,
+    soldCount: 50,
+    activeCount: 50,
     soldSaleWindowMonths: 9,
     geohashExpansion: 'ADAPTIVE',
+    selectionStrategy: 'tiered-ai',
+    numSold: 3,
+    numActive: 3,
   },
 };
 
