@@ -42,6 +42,12 @@ export interface QCIssueRecord {
   }>;
   evaluationId?: string;
   pipelineJobId?: string;
+  /** Axiom program / MOP program that produced the failing criterion (when known). */
+  programId?: string;
+  /** Version of the program that produced the failing criterion (when known). */
+  programVersion?: string;
+  /** Run-ledger run id that triggered the criteria evaluation (when known). */
+  sourceRunId?: string;
   createdBy: 'axiom' | string;
   createdAt: string;
   updatedAt: string;
@@ -125,6 +131,9 @@ export class QCIssueRecorderService {
       ...(Array.isArray(data.documentReferences) ? { documentReferences: data.documentReferences } : {}),
       ...(typeof data.evaluationId === 'string' ? { evaluationId: data.evaluationId } : {}),
       ...(typeof data.pipelineJobId === 'string' ? { pipelineJobId: data.pipelineJobId } : {}),
+      ...(typeof data.programId === 'string' ? { programId: data.programId } : {}),
+      ...(typeof data.programVersion === 'string' ? { programVersion: data.programVersion } : {}),
+      ...(typeof data.sourceRunId === 'string' ? { sourceRunId: data.sourceRunId } : {}),
     };
 
     try {

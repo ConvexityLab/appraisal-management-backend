@@ -163,16 +163,45 @@ export interface QCCompletedEvent extends BaseEvent {
   };
 }
 
+/**
+ * Published by AxiomService#fetchAndStorePipelineResults for each criterion that
+ * fails or warns. Consumed by QCIssueRecorderService (persists qc-issue records),
+ * audit-event-sink.service (writes engagement audit row), and
+ * core-notification.service (fires the critical-issue notification rule).
+ *
+ * Shape mirrors what the publisher actually sends so downstream consumers can
+ * type-check their reads instead of casting through `any`.
+ */
 export interface QCIssueDetectedEvent extends BaseEvent {
   type: 'qc.issue.detected';
   category: EventCategory.QC;
   data: {
     orderId: string;
-    qcId: string;
-    issueType: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    description: string;
-    requiresAction: boolean;
+    tenantId: string;
+    criterionId: string;
+    issueSummary: string;
+    issueType: 'criterion-fail' | 'criterion-warning' | 'manual';
+    severity: 'CRITICAL' | 'MAJOR' | 'MINOR';
+    confidence?: number;
+    reasoning?: string;
+    remediation?: string;
+    documentReferences?: Array<{
+      documentId?: string;
+      documentName?: string;
+      page?: number;
+      section?: string;
+      quote?: string;
+      coordinates?: { x: number; y: number; width: number; height: number };
+      blobUrl?: string;
+    }>;
+    evaluationId?: string;
+    pipelineJobId?: string;
+    /** Axiom / MOP program id that produced the failing criterion (when known). */
+    programId?: string;
+    /** Version of the program that produced the failing criterion (when known). */
+    programVersion?: string;
+    /** Run-ledger run id that triggered the criteria evaluation (when known). */
+    sourceRunId?: string;
     priority: EventPriority;
   };
 }
@@ -1012,6 +1041,98 @@ export interface SubmissionRevisionRequestedEvent extends BaseEvent {
   };
 }
 
+export interface ReviewProgramSubmittedEvent extends BaseEvent {
+  type: 'review-program.submitted';
+  category: EventCategory.SUBMISSION;
+  data: {
+    reviewProgramId: string;
+    reviewProgramName: string;
+    orderId?: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId: string;
+    subClientId: string;
+    snapshotId?: string;
+    initiatedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramPrepareStartedEvent extends BaseEvent {
+  type: 'review-program.prepare.started';
+  category: EventCategory.SUBMISSION;
+  data: {
+    orderId: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId?: string;
+    subClientId?: string;
+    reviewProgramIds: string[];
+    initiatedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramPrepareCompletedEvent extends BaseEvent {
+  type: 'review-program.prepare.completed';
+  category: EventCategory.SUBMISSION;
+  data: {
+    orderId: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId?: string;
+    subClientId?: string;
+    reviewProgramIds: string[];
+    preparedContextId: string;
+    preparedContextVersion: string;
+    readyProgramCount: number;
+    blockedProgramCount: number;
+    warningCount: number;
+    recommendedActionCount: number;
+    initiatedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramPrepareFailedEvent extends BaseEvent {
+  type: 'review-program.prepare.failed';
+  category: EventCategory.SUBMISSION;
+  data: {
+    orderId: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId?: string;
+    subClientId?: string;
+    reviewProgramIds: string[];
+    initiatedBy: string;
+    error: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramDispatchCompletedEvent extends BaseEvent {
+  type: 'review-program.dispatch.completed';
+  category: EventCategory.SUBMISSION;
+  data: {
+    reviewProgramId: string;
+    reviewProgramName: string;
+    orderId?: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId: string;
+    subClientId: string;
+    snapshotId?: string;
+    initiatedBy: string;
+    overallStatus: 'all_submitted' | 'partial' | 'none_submitted';
+    submittedLegs: number;
+    failedLegs: number;
+    skippedLegs: number;
+    axiomLegs: Array<{ programId: string; programVersion: string; status: 'submitted' | 'failed' | 'skipped'; runId?: string; error?: string }>;
+    mopLegs: Array<{ programId: string; programVersion: string; status: 'submitted' | 'failed' | 'skipped'; runId?: string; error?: string }>;
+    priority: EventPriority;
+  };
+}
+
 // ── Escalation Events ─────────────────────────────────────────────────────
 
 export interface EscalationCreatedEvent extends BaseEvent {
@@ -1271,6 +1392,11 @@ export type AppEvent =
   | SubmissionApprovedEvent
   | SubmissionRejectedEvent
   | SubmissionRevisionRequestedEvent
+  | ReviewProgramSubmittedEvent
+  | ReviewProgramPrepareStartedEvent
+  | ReviewProgramPrepareCompletedEvent
+  | ReviewProgramPrepareFailedEvent
+  | ReviewProgramDispatchCompletedEvent
   // Escalation events
   | EscalationCreatedEvent
   | EscalationResolvedEvent

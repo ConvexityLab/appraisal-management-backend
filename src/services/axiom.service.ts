@@ -26,6 +26,9 @@ import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { EventPriority, EventCategory } from '../types/events.js';
+import type { QCIssueDetectedEvent } from '../types/events.js';
+import { computeVerdictCounts } from '../utils/verdict-counts.js';
+import { buildQCIssueLinkage } from '../utils/qc-issue-linkage.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
 import type { CompileResponse, CompiledProgramNode } from '../types/axiom.types.js';
@@ -303,7 +306,6 @@ export function buildAxiomLogPayload(
 // ============================================================================
 
 export class AxiomService {
-  private static readonly DEFAULT_AXIOM_API_RESOURCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
   private static readonly PLACEHOLDER_API_KEYS = new Set(['live-fire-testing-key']);
   static readonly DEFAULT_PIPELINE_IDS: Record<string, string> = {
     EXTRACTION_ONLY: 'adaptive-document-processing',
@@ -475,7 +477,16 @@ export class AxiomService {
     const baseURL = process.env.AXIOM_API_BASE_URL;
     const forceMock = String(process.env.AXIOM_FORCE_MOCK || '').toLowerCase() === 'true';
     const rawApiKey = process.env.AXIOM_API_KEY?.trim();
-    const useDefaultCredential = this.shouldUseDefaultCredential(rawApiKey);
+
+    // AXIOM_AUTH_REQUIRED controls auth mode explicitly:
+    //   false → skip all auth (Axiom dev env accepts unauthenticated calls — default for development)
+    //   true  → require DefaultAzureCredential (throws if AXIOM_AUTH_AUDIENCE is not set)
+    //   unset → legacy heuristic: use DefaultAzureCredential only when explicitly opted-in
+    const authRequiredRaw = process.env['AXIOM_AUTH_REQUIRED']?.toLowerCase();
+    const skipAuth = authRequiredRaw === 'false';
+    const forceDefaultCredential = authRequiredRaw === 'true';
+    const useDefaultCredential =
+      !skipAuth && (forceDefaultCredential || this.shouldUseDefaultCredential(rawApiKey));
 
     // Live mode requires only a base URL — API key is optional (server may be open in dev).
     this.enabled = !!baseURL && !forceMock;
@@ -484,7 +495,7 @@ export class AxiomService {
     if (useDefaultCredential) {
       this.axiomTokenScope = this.resolveAxiomTokenScope();
       this.axiomCredential = new DefaultAzureCredential();
-    } else if (rawApiKey) {
+    } else if (rawApiKey && !skipAuth) {
       this.axiomStaticBearerToken = rawApiKey;
     }
 
@@ -577,9 +588,12 @@ export class AxiomService {
     errorMessage?: string,
   ): void {
     if (!config) return;
+    // axiomClientId/axiomSubClientId are per-request values sourced from the
+    // order/engagement — not from env vars. The log payload accepts undefined
+    // here; callers that need per-request identity logging pass it separately.
     const payload = buildAxiomLogPayload(config, status, errorMessage, {
-      axiomClientId: process.env['AXIOM_CLIENT_ID'],
-      axiomSubClientId: process.env['AXIOM_SUB_CLIENT_ID'],
+      axiomClientId: undefined,
+      axiomSubClientId: undefined,
     });
     if (errorMessage || (status !== undefined && status >= 500)) {
       this.logger.error('axiom.outbound', payload);
@@ -588,16 +602,6 @@ export class AxiomService {
     } else {
       this.logger.info('axiom.outbound', payload);
     }
-  }
-
-  /**
-   * Returns the platform client ID that identifies this tenant's Axiom partition.
-   * Must be configured via AXIOM_CLIENT_ID — no silent fallback.
-   */
-  private getAxiomClientId(): string {
-    const id = process.env['AXIOM_CLIENT_ID'];
-    if (!id) throw new Error('AXIOM_CLIENT_ID env var is required for Axiom pipeline submissions — configure it in environment settings');
-    return id;
   }
 
   /**
@@ -644,17 +648,26 @@ export class AxiomService {
   }
 
   private resolveAxiomTokenScope(): string {
+    // Highest priority: a fully-qualified scope string (resource URI + scope suffix).
     const explicitScope = process.env['AXIOM_API_TOKEN_SCOPE']?.trim();
     if (explicitScope) {
       return explicitScope;
     }
 
-    const explicitResource = process.env['AXIOM_API_RESOURCE']?.trim();
-    if (explicitResource) {
-      return explicitResource.endsWith('/.default') ? explicitResource : `${explicitResource}/.default`;
+    // AXIOM_API_RESOURCE is the legacy alias; AXIOM_AUTH_AUDIENCE is the canonical name.
+    // Both accept the bare resource URI (e.g. api://<guid>) and get /.default appended.
+    const resource = (process.env['AXIOM_AUTH_AUDIENCE'] ?? process.env['AXIOM_API_RESOURCE'])?.trim();
+    if (resource) {
+      return resource.endsWith('/.default') ? resource : `${resource}/.default`;
     }
 
-    return `${AxiomService.DEFAULT_AXIOM_API_RESOURCE}/.default`;
+    // No fallback — a hardcoded GUID here would silently break when the Axiom
+    // app registration changes or a different environment is targeted.
+    throw new Error(
+      'Axiom auth audience is not configured. Set AXIOM_AUTH_AUDIENCE to the Axiom app registration URI ' +
+      '(e.g. api://<axiom-app-registration-guid>). ' +
+      'Alternatively set AXIOM_API_TOKEN_SCOPE (full scope) or AXIOM_API_RESOURCE (resource URI).',
+    );
   }
 
   private async getAxiomAuthorizationHeader(): Promise<string | undefined> {
@@ -1633,10 +1646,43 @@ export class AxiomService {
         evaluation.overallRiskScore,
       );
 
-      // TODO: Trigger follow-up actions based on risk score
-      // - Auto-route high-risk orders (>70) to senior QC analysts
-      // - Auto-approve low-risk orders (<30) with minimal review
-      // - Update QC checklist with pre-filled criteria
+      // T1.6: Publish axiom.risk.threshold.crossed when overallRiskScore meets or exceeds
+      // the configurable threshold.  Downstream consumers (notification, auto-escalation)
+      // subscribe to this event independently — decoupled from the main eval path.
+      if (payload.status === 'completed' && typeof evaluation.overallRiskScore === 'number') {
+        const riskThreshold = parseInt(process.env['AXIOM_RISK_THRESHOLD'] ?? '70', 10);
+        if (evaluation.overallRiskScore >= riskThreshold) {
+          try {
+            await this.publisher.publish({
+              id: uuidv4(),
+              type: 'axiom.risk.threshold.crossed',
+              timestamp: new Date(),
+              source: 'axiom-service',
+              version: '1.0',
+              category: EventCategory.AXIOM,
+              data: {
+                orderId: payload.orderId,
+                tenantId: (evaluation as any).tenantId,
+                evaluationId: payload.evaluationId,
+                overallRiskScore: evaluation.overallRiskScore,
+                riskThreshold,
+                timestamp: new Date().toISOString(),
+              },
+            } as any);
+            this.logger.info('axiom.risk.threshold.crossed published', {
+              orderId: payload.orderId,
+              overallRiskScore: evaluation.overallRiskScore,
+              riskThreshold,
+            });
+          } catch (publishErr) {
+            this.logger.warn('Failed to publish axiom.risk.threshold.crossed', {
+              orderId: payload.orderId,
+              overallRiskScore: evaluation.overallRiskScore,
+              error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+            });
+          }
+        }
+      }
 
     } catch (error) {
       this.logger.error('Failed to handle Axiom webhook', {
@@ -3157,10 +3203,18 @@ export class AxiomService {
       );
 
       // ── Phase 8.2a: Publish qc.issue.detected for each failed/warning criterion ─────
+      const issueLinkage = buildQCIssueLinkage({
+        mapped: {
+          ...(mapped.programId ? { programId: mapped.programId } : {}),
+          ...(mapped.programVersion ? { programVersion: mapped.programVersion } : {}),
+        },
+        meta: { runId: (meta as { runId?: unknown }).runId },
+      });
+      const tenantIdForIssue = (enriched as { tenantId?: string }).tenantId ?? '';
       for (const criterion of mapped.criteria) {
         if (criterion.evaluation === 'fail' || criterion.evaluation === 'warning') {
           try {
-            await this.publisher.publish({
+            const issueEvent: QCIssueDetectedEvent = {
               id: uuidv4(),
               type: 'qc.issue.detected',
               timestamp: new Date(),
@@ -3169,20 +3223,22 @@ export class AxiomService {
               category: EventCategory.QC,
               data: {
                 orderId,
-                tenantId: (enriched as any).tenantId,
+                tenantId: tenantIdForIssue,
                 criterionId: criterion.criterionId,
                 issueSummary: criterion.criterionName,
-                issueType: 'criterion-fail',
+                issueType: criterion.evaluation === 'fail' ? 'criterion-fail' : 'criterion-warning',
                 severity: criterion.evaluation === 'fail' ? 'CRITICAL' : 'MAJOR',
-                confidence: criterion.confidence,
-                reasoning: criterion.reasoning,
-                remediation: criterion.remediation,
-                documentReferences: criterion.documentReferences,
-                evaluationId: evalId,
-                pipelineJobId,
+                ...(criterion.confidence !== undefined ? { confidence: criterion.confidence } : {}),
+                ...(criterion.reasoning !== undefined ? { reasoning: criterion.reasoning } : {}),
+                ...(criterion.remediation !== undefined ? { remediation: criterion.remediation } : {}),
+                ...(criterion.documentReferences !== undefined ? { documentReferences: criterion.documentReferences } : {}),
+                ...(evalId ? { evaluationId: evalId } : {}),
+                ...(pipelineJobId ? { pipelineJobId } : {}),
+                ...issueLinkage,
                 priority: criterion.evaluation === 'fail' ? EventPriority.HIGH : EventPriority.NORMAL,
               },
-            } as any);
+            };
+            await this.publisher.publish(issueEvent);
           } catch (err) {
             this.logger.warn('Failed to publish qc.issue.detected', {
               orderId, criterionId: criterion.criterionId, error: (err as Error).message,
@@ -3191,11 +3247,36 @@ export class AxiomService {
         }
       }
 
+      // ── Stamp verdict counts on the criteria run-ledger record ─────────────
+      // Lets the UI render per-run pass/warn/fail chips without re-fetching the
+      // full Axiom evaluation. Best-effort — failures don't block the publish.
+      const verdictCounts = computeVerdictCounts(mapped.criteria);
+      const runIdForLedger = (meta as { runId?: string }).runId;
+      const tenantIdForLedger = (enriched as { tenantId?: string }).tenantId;
+      if (runIdForLedger && tenantIdForLedger && verdictCounts.totalCount > 0) {
+        try {
+          const { RunLedgerService } = await import('./run-ledger.service.js');
+          const runLedger = new RunLedgerService(this.dbService);
+          const existingRun = await runLedger.getRunById(runIdForLedger, tenantIdForLedger);
+          if (existingRun) {
+            await runLedger.updateRun(runIdForLedger, tenantIdForLedger, {
+              statusDetails: {
+                ...(existingRun.statusDetails ?? {}),
+                verdictCounts,
+              },
+            });
+          }
+        } catch (ledgerErr) {
+          this.logger.warn('Failed to stamp verdict counts on run-ledger (non-fatal)', {
+            runId: runIdForLedger,
+            error: ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr),
+          });
+        }
+      }
+
       // ── Publish axiom.evaluation.completed so the audit trail and dashboard see it ─────
       try {
-        const passCount = mapped.criteria.filter(c => c.evaluation === 'pass').length;
-        const failCount = mapped.criteria.filter(c => c.evaluation === 'fail').length;
-        const warnCount = mapped.criteria.filter(c => c.evaluation === 'warning').length;
+        const { passCount, failCount, warnCount } = verdictCounts;
         const fieldsExtracted = extractedSummary ? Object.keys(extractedSummary).length : 0;
         await this.publisher.publish({
           id: uuidv4(),
@@ -3533,9 +3614,9 @@ export class AxiomService {
   private compileCache = new Map<string, { response: CompileResponse; expiresAt: number }>();
 
   private compileCacheKey(
-    clientId: string, tenantId: string, programId: string, programVersion: string,
+    clientId: string, subClientId: string, programId: string, programVersion: string,
   ): string {
-    return `${clientId}:${tenantId}:${programId}:${programVersion}`;
+    return `${clientId}:${subClientId}:${programId}:${programVersion}`;
   }
 
   private compileCacheTtlMs(): number {
@@ -3545,8 +3626,8 @@ export class AxiomService {
   /**
    * GET compiled criteria for a program (cache-first).
    *
-   * Real mode  : GET {AXIOM_API_BASE_URL}/api/programs/{programId}/{version}/compiled
-   *              with clientId + tenantId as query params.
+    * Real mode  : GET {AXIOM_API_BASE_URL}/api/criteria/clients/{clientId}
+    *              /sub-clients/{subClientId}/programs/{programId}/{version}/compiled
    * Mock mode  : returns a fixed mock CompileResponse.
    *
    * Cache is bypassed when force=true or on a cache miss.
@@ -3556,12 +3637,12 @@ export class AxiomService {
    */
   async getCompiledCriteria(
     clientId: string,
-    tenantId: string,
+    subClientId: string,
     programId: string,
     programVersion: string,
     force = false,
   ): Promise<CompileResponse> {
-    const key = this.compileCacheKey(clientId, tenantId, programId, programVersion);
+    const key = this.compileCacheKey(clientId, subClientId, programId, programVersion);
 
     // Cache hit
     if (!force) {
@@ -3581,8 +3662,9 @@ export class AxiomService {
     // Real Axiom API
     try {
       const { data } = await this.client.get<CompileResponse>(
-        `/api/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compiled`,
-        { params: { clientId, tenantId } },
+        `/api/criteria/clients/${encodeURIComponent(clientId)}` +
+        `/sub-clients/${encodeURIComponent(subClientId)}` +
+        `/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compiled`,
       );
       const response: CompileResponse = { ...data, cached: true };
       this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
@@ -3603,15 +3685,16 @@ export class AxiomService {
   /**
    * POST force-recompile a program (always fresh, never cached).
    *
-   * Real mode  : POST {AXIOM_API_BASE_URL}/api/programs/{programId}/{version}/compile
-   *              Body: { clientId, tenantId, userId? }
+   * Real mode  : POST {AXIOM_API_BASE_URL}/api/criteria/clients/{clientId}
+   *              /sub-clients/{subClientId}/programs/{programId}/{version}/compile
+   *              Body: { userId? }
    * Mock mode  : returns a fresh mock CompileResponse.
    *
    * @throws Error with `statusCode: 404` when Axiom returns 404.
    */
   async compileCriteria(
     clientId: string,
-    tenantId: string,
+    subClientId: string,
     programId: string,
     programVersion: string,
     userId?: string,
@@ -3620,7 +3703,7 @@ export class AxiomService {
     if (!this.enabled) {
       const mock = this.buildMockCompileResponse(programId, programVersion);
       // Populate cache so a subsequent GET picks up the fresh result
-      const key = this.compileCacheKey(clientId, tenantId, programId, programVersion);
+      const key = this.compileCacheKey(clientId, subClientId, programId, programVersion);
       this.compileCache.set(key, { response: mock, expiresAt: Date.now() + this.compileCacheTtlMs() });
       return mock;
     }
@@ -3628,12 +3711,14 @@ export class AxiomService {
     // Real Axiom API
     try {
       const { data } = await this.client.post<CompileResponse>(
-        `/api/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compile`,
-        { clientId, tenantId, ...(userId ? { userId } : {}) },
+        `/api/criteria/clients/${encodeURIComponent(clientId)}` +
+        `/sub-clients/${encodeURIComponent(subClientId)}` +
+        `/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compile`,
+        { ...(userId ? { userId } : {}) },
       );
       const response: CompileResponse = { ...data, cached: false };
       // Warm the cache with the fresh result
-      const key = this.compileCacheKey(clientId, tenantId, programId, programVersion);
+      const key = this.compileCacheKey(clientId, subClientId, programId, programVersion);
       this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
       return response;
     } catch (err) {

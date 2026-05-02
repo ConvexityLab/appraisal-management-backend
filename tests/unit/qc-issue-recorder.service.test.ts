@@ -204,6 +204,50 @@ describe('QCIssueRecorderService', () => {
     expect(record.id).toContain('pjob-500');
   });
 
+  it('threads programId / programVersion / sourceRunId from the event into the persisted record', async () => {
+    await deliver({
+      type: 'qc.issue.detected',
+      data: {
+        orderId: 'order-700',
+        tenantId: 'tenant-001',
+        criterionId: 'CRIT-LINKED',
+        issueType: 'criterion-fail',
+        severity: 'CRITICAL',
+        evaluationId: 'eval-700',
+        pipelineJobId: 'pjob-700',
+        programId: 'urar-1004',
+        programVersion: '2.0',
+        sourceRunId: 'run-700',
+      },
+    });
+
+    const record = mockUpsert.mock.calls[0][0];
+    expect(record).toMatchObject({
+      programId: 'urar-1004',
+      programVersion: '2.0',
+      sourceRunId: 'run-700',
+    });
+  });
+
+  it('omits programId / programVersion / sourceRunId from the record when the event does not carry them', async () => {
+    await deliver({
+      type: 'qc.issue.detected',
+      data: {
+        orderId: 'order-701',
+        tenantId: 'tenant-001',
+        criterionId: 'CRIT-UNLINKED',
+        issueType: 'criterion-fail',
+        severity: 'CRITICAL',
+        evaluationId: 'eval-701',
+      },
+    });
+
+    const record = mockUpsert.mock.calls[0][0];
+    expect(record).not.toHaveProperty('programId');
+    expect(record).not.toHaveProperty('programVersion');
+    expect(record).not.toHaveProperty('sourceRunId');
+  });
+
   it('stop() unsubscribes and is idempotent when not started', async () => {
     await service.stop(); // never started — should be a no-op
     expect(mockUnsubscribe).not.toHaveBeenCalled();

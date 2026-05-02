@@ -19,6 +19,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
+import { recordEventPublishFailure } from '../utils/event-publish-failure-counter.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { WebPubSubService } from './web-pubsub.service.js';
@@ -96,6 +97,11 @@ const EVENT_META: Record<string, EventMeta> = {
   'axiom.evaluation.failed':       { describe: d => `Axiom evaluation submission failed${d.reason ? `: ${d.reason}` : ''}${d.error ? ` — ${d.error}` : ''}`, severity: 'error', icon: 'error' },
   'human.intervention':            { describe: d => `${d.userName ?? 'User'} executed "${d.action}"${d.reason ? `: ${d.reason}` : ''}`, severity: 'info', icon: 'person' },
   'submission.revision.requested': { describe: d => `Revision requested on order ${d.orderId}${d.revisionNotes ? `: ${String(d.revisionNotes).slice(0, 80)}` : ''}`, severity: 'warning', icon: 'edit_note' },
+  'review-program.prepare.started': { describe: d => `Preparing ${Array.isArray(d.reviewProgramIds) ? d.reviewProgramIds.length : 0} review program(s)${d.orderId ? ` for order ${d.orderId}` : ''}`, severity: 'info', icon: 'playlist_play' },
+  'review-program.prepare.completed': { describe: d => `Prepared ${Array.isArray(d.reviewProgramIds) ? d.reviewProgramIds.length : 0} review program(s)${d.readyProgramCount != null ? ` — ${d.readyProgramCount} ready` : ''}${d.blockedProgramCount ? `, ${d.blockedProgramCount} blocked` : ''}`, severity: d => d.blockedProgramCount > 0 ? 'warning' : 'success', icon: 'playlist_add_check_circle' },
+  'review-program.prepare.failed': { describe: d => `Review program preparation failed${d.orderId ? ` for order ${d.orderId}` : ''}${d.error ? ` — ${d.error}` : ''}`, severity: 'error', icon: 'playlist_remove' },
+  'review-program.submitted':      { describe: d => `Review program ${d.reviewProgramName ?? d.reviewProgramId ?? 'unknown'} submitted${d.orderNumber ? ` for order ${d.orderNumber}` : d.orderId ? ` for order ${d.orderId}` : ''}`, severity: 'info', icon: 'playlist_add_check_circle' },
+  'review-program.dispatch.completed': { describe: d => `Review program ${d.reviewProgramName ?? d.reviewProgramId ?? 'unknown'} dispatch ${String(d.overallStatus ?? 'completed').replace(/_/g, ' ')}${d.submittedLegs != null ? ` — ${d.submittedLegs} submitted` : ''}${d.failedLegs ? `, ${d.failedLegs} failed` : ''}${d.skippedLegs ? `, ${d.skippedLegs} skipped` : ''}`, severity: d => d.overallStatus === 'all_submitted' ? 'success' : d.overallStatus === 'partial' ? 'warning' : 'error', icon: 'rule_folder' },
   'order.overdue':                  { describe: d => `Order ${d.orderNumber ?? d.orderId} is ${d.hoursOverdue ?? 0} hours overdue${d.propertyAddress ? ` — ${d.propertyAddress}` : ''}`, severity: 'error', icon: 'alarm_off' },
   'document.uploaded':             { describe: d => `Document uploaded: ${d.documentName ?? d.fileName ?? d.documentId ?? 'unknown'}${d.documentType ? ` (${d.documentType})` : ''}`, severity: 'info', icon: 'upload_file' },
   'system.alert':                  { describe: d => `System alert: ${d.message ?? d.alertType ?? 'unknown'}`, severity: 'warning', icon: 'notifications_active' },
@@ -159,6 +165,11 @@ const ALL_EVENT_TYPES: string[] = [
   'document.uploaded',
   'human.intervention',
   'submission.revision.requested',
+  'review-program.prepare.started',
+  'review-program.prepare.completed',
+  'review-program.prepare.failed',
+  'review-program.submitted',
+  'review-program.dispatch.completed',
 ];
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -240,9 +251,18 @@ export class AuditEventSinkService {
           },
         });
       } catch (pubErr) {
-        // Non-fatal — pub-sub broadcast failure should not affect audit persistence
-        this.logger.debug('WebPubSub broadcast failed (non-fatal)', {
+        // Non-fatal — pub-sub broadcast failure should not affect audit persistence.
+        // Record on the failure counter so an outage shows up as a queryable
+        // signal instead of being lost in debug logs.
+        this.logger.warn('WebPubSub broadcast failed (non-fatal)', {
+          eventType: event.type,
           error: pubErr instanceof Error ? pubErr.message : String(pubErr),
+        });
+        recordEventPublishFailure({
+          eventType: event.type,
+          error: pubErr,
+          source: 'audit-event-sink-service',
+          context: { engagementId: doc.engagementId },
         });
       }
     } catch (err) {

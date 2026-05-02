@@ -11,8 +11,11 @@ import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
+import { recordEventPublishFailure } from '../utils/event-publish-failure-counter.js';
 import type { RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { AxiomEvaluationResult } from './axiom.service.js';
+import type { DocumentMetadata } from '../types/document.types.js';
+import type { IntakeSourceIdentity } from '../types/intake-source.types.js';
 import type {
   AnalysisSubmissionActorContext,
   AnalysisSubmissionRequest,
@@ -22,6 +25,7 @@ import type {
   DocumentAnalyzeSubmissionRequest,
   ExtractionSubmissionRequest,
 } from '../types/analysis-submission.types.js';
+import { buildManualDraftSourceIdentity, extendIntakeSourceIdentity } from '../types/intake-source.types.js';
 
 export class AnalysisSubmissionService {
   private readonly axiomService: AxiomService;
@@ -47,6 +51,10 @@ export class AnalysisSubmissionService {
 
   /**
    * Publish an event to Service Bus. Best-effort — never throws.
+   *
+   * Failures are logged AND recorded on the EventPublishFailureCounter so that
+   * a Service Bus outage shows up as a queryable signal for ops, not silent
+   * data loss for downstream audit / event consumers.
    */
   private async publishEvent(
     type: string,
@@ -65,6 +73,15 @@ export class AnalysisSubmissionService {
       } as any);
     } catch (err) {
       this.logger.warn(`Failed to publish ${type}`, { error: (err as Error).message });
+      recordEventPublishFailure({
+        eventType: type,
+        error: err,
+        source: 'analysis-submission-service',
+        context: {
+          ...(typeof data['correlationId'] === 'string' ? { correlationId: data['correlationId'] } : {}),
+          ...(typeof data['orderId'] === 'string' ? { orderId: data['orderId'] } : {}),
+        },
+      });
     }
   }
 
@@ -337,6 +354,13 @@ export class AnalysisSubmissionService {
 
     const clientId = (order as any).clientInformation?.clientId || order.clientId;
     const subClientId = (order as any).subClientId ?? '';
+    const sourceIdentity = await this.resolveSubmissionSourceIdentity({
+      tenantId: actor.tenantId,
+      documentId: request.documentId,
+      orderId: request.orderId,
+      engagementId: typeof (order as any).engagementId === 'string' ? (order as any).engagementId : undefined,
+      loanPropertyContextId: request.orderId,
+    });
     const pipelineResult = await this.axiomService.submitOrderEvaluation(
       request.orderId,
       fields,
@@ -377,6 +401,7 @@ export class AnalysisSubmissionService {
           : config.axiomPipelineIdComplete ? { pipelineId: config.axiomPipelineIdComplete }
           : {}),
         ...(request.orderId ? { loanPropertyContextId: request.orderId } : {}),
+        ...(sourceIdentity ? { sourceIdentity } : {}),
       });
       await this.runLedgerService.setRunStatus(run.id, actor.tenantId, 'running', {
         engineRunRef: pipelineResult.pipelineJobId,
@@ -409,6 +434,13 @@ export class AnalysisSubmissionService {
     const clientId = request.schemaKey.clientId;
     const subClientId = request.schemaKey.subClientId;
     const config = await this.configService.getConfig(clientId, subClientId);
+    const sourceIdentity = await this.resolveSubmissionSourceIdentity({
+      tenantId: actor.tenantId,
+      documentId: request.documentId,
+      ...(request.loanPropertyContextId ? { orderId: request.loanPropertyContextId } : {}),
+      ...(request.engagementId ? { engagementId: request.engagementId } : {}),
+      ...(request.loanPropertyContextId ? { loanPropertyContextId: request.loanPropertyContextId } : {}),
+    });
 
     const run = await this.runLedgerService.createExtractionRun({
       tenantId: actor.tenantId,
@@ -423,6 +455,7 @@ export class AnalysisSubmissionService {
       ...(request.enginePolicyRef ? { enginePolicyRef: request.enginePolicyRef } : {}),
       ...(request.engagementId ? { engagementId: request.engagementId } : {}),
       ...(request.loanPropertyContextId ? { loanPropertyContextId: request.loanPropertyContextId } : {}),
+      ...(sourceIdentity ? { sourceIdentity } : {}),
     });
 
     const dispatchResult = await this.dispatchService.dispatchExtraction(run);
@@ -465,23 +498,40 @@ export class AnalysisSubmissionService {
     request: CriteriaSubmissionRequest,
     actor: AnalysisSubmissionActorContext,
   ): Promise<AnalysisSubmissionResponse> {
-    const snapshot = await this.snapshotService.getSnapshotById(request.snapshotId, actor.tenantId);
-    if (!snapshot) {
+    const snapshot = request.snapshotId
+      ? await this.snapshotService.getSnapshotById(request.snapshotId, actor.tenantId)
+      : null;
+    if (request.snapshotId && !snapshot) {
       throw new Error(`Snapshot '${request.snapshotId}' not found for tenant '${actor.tenantId}'`);
+    }
+    if (!snapshot && !(request.preparedContextId && request.preparedPayloadRef)) {
+      throw new Error('Criteria submission requires a snapshot unless it is a prepared-context dispatch.');
     }
 
     const clientId = request.programKey.clientId;
     const subClientId = request.programKey.subClientId;
     const config = await this.configService.getConfig(clientId, subClientId);
+    const sourceIdentity = snapshot?.sourceIdentity
+      ? extendIntakeSourceIdentity(snapshot.sourceIdentity, {
+          ...(request.loanPropertyContextId ? { orderId: request.loanPropertyContextId } : {}),
+          ...(request.engagementId ? { engagementId: request.engagementId } : {}),
+          ...(request.loanPropertyContextId ? { loanPropertyContextId: request.loanPropertyContextId } : {}),
+        })
+      : await this.resolveSubmissionSourceIdentity({
+          tenantId: actor.tenantId,
+          ...(request.loanPropertyContextId ? { orderId: request.loanPropertyContextId } : {}),
+          ...(request.engagementId ? { engagementId: request.engagementId } : {}),
+          ...(request.loanPropertyContextId ? { loanPropertyContextId: request.loanPropertyContextId } : {}),
+        });
 
     const run = await this.runLedgerService.createCriteriaRun({
       tenantId: actor.tenantId,
       initiatedBy: actor.initiatedBy,
       correlationId: actor.correlationId,
       idempotencyKey: actor.idempotencyKey,
-      snapshotId: request.snapshotId,
       programKey: request.programKey,
       runMode: request.runMode,
+      ...(request.snapshotId ? { snapshotId: request.snapshotId } : {}),
       ...(config.axiomPipelineIdCriteria ? { pipelineId: config.axiomPipelineIdCriteria } : {}),
       ...(request.engineTarget ? { engineTarget: request.engineTarget } : {}),
       ...(request.enginePolicyRef ? { enginePolicyRef: request.enginePolicyRef } : {}),
@@ -489,66 +539,89 @@ export class AnalysisSubmissionService {
       ...(request.parentRunId ? { parentRunId: request.parentRunId } : {}),
       ...(request.engagementId ? { engagementId: request.engagementId } : {}),
       ...(request.loanPropertyContextId ? { loanPropertyContextId: request.loanPropertyContextId } : {}),
+      ...(request.preparedContextId ? { preparedContextId: request.preparedContextId } : {}),
+      ...(request.preparedContextVersion ? { preparedContextVersion: request.preparedContextVersion } : {}),
+      ...(request.preparedDispatchId ? { preparedDispatchId: request.preparedDispatchId } : {}),
+      ...(request.preparedPayloadRef ? { preparedPayloadRef: request.preparedPayloadRef } : {}),
+      ...(request.preparedPayloadContractType ? { preparedPayloadContractType: request.preparedPayloadContractType } : {}),
+      ...(request.preparedPayloadContractVersion ? { preparedPayloadContractVersion: request.preparedPayloadContractVersion } : {}),
+      ...(sourceIdentity ? { sourceIdentity } : {}),
     });
 
     const dispatchResult = await this.dispatchService.dispatchCriteria(run);
-    const criteriaStepKeys =
-      Array.isArray(request.criteriaStepKeys) && request.criteriaStepKeys.length > 0
-        ? request.criteriaStepKeys
-        : (Array.isArray(config.axiomDefaultCriteriaStepKeys) && config.axiomDefaultCriteriaStepKeys.length > 0
-            ? config.axiomDefaultCriteriaStepKeys
-            : ['overall-criteria']);
+    const criteriaStepKeys = snapshot
+      ? (
+          Array.isArray(request.criteriaStepKeys) && request.criteriaStepKeys.length > 0
+            ? request.criteriaStepKeys
+            : (Array.isArray(config.axiomDefaultCriteriaStepKeys) && config.axiomDefaultCriteriaStepKeys.length > 0
+                ? config.axiomDefaultCriteriaStepKeys
+                : ['overall-criteria'])
+        )
+      : [];
 
     const updatedCriteriaRun = await this.runLedgerService.setRunStatus(run.id, actor.tenantId, dispatchResult.status, {
       engineRunRef: dispatchResult.engineRunRef,
       engineVersion: dispatchResult.engineVersion,
       engineRequestRef: dispatchResult.engineRequestRef,
       engineResponseRef: dispatchResult.engineResponseRef,
-      canonicalSnapshotId: snapshot.id,
+      ...(snapshot ? { canonicalSnapshotId: snapshot.id } : {}),
       criteriaStepKeys,
-      ...(dispatchResult.statusDetails ? { statusDetails: dispatchResult.statusDetails } : {}),
+      ...((dispatchResult.statusDetails || request.preparedContextId)
+        ? {
+            statusDetails: {
+              ...(dispatchResult.statusDetails ?? {}),
+              ...(request.preparedContextId ? { preparedContextId: request.preparedContextId } : {}),
+              ...(request.preparedDispatchId ? { preparedDispatchId: request.preparedDispatchId } : {}),
+              ...(request.preparedPayloadRef ? { preparedPayloadRef: request.preparedPayloadRef } : {}),
+              ...(request.preparedPayloadContractType ? { preparedPayloadContractType: request.preparedPayloadContractType } : {}),
+              ...(request.preparedPayloadContractVersion ? { preparedPayloadContractVersion: request.preparedPayloadContractVersion } : {}),
+            },
+          }
+        : {}),
     });
 
     const stepRuns: RunLedgerRecord[] = [];
-    for (const stepKey of criteriaStepKeys) {
-      const stepRun = await this.runLedgerService.createCriteriaStepRun({
-        tenantId: actor.tenantId,
-        initiatedBy: actor.initiatedBy,
-        correlationId: `${actor.correlationId}:${stepKey}`,
-        idempotencyKey: `${actor.idempotencyKey}:${stepKey}`,
-        parentCriteriaRunId: updatedCriteriaRun.id,
-        stepKey,
-        ...(request.engineTarget ? { engineTarget: request.engineTarget } : {}),
-        ...(request.enginePolicyRef ? { enginePolicyRef: request.enginePolicyRef } : {}),
-      });
+    if (snapshot) {
+      for (const stepKey of criteriaStepKeys) {
+        const stepRun = await this.runLedgerService.createCriteriaStepRun({
+          tenantId: actor.tenantId,
+          initiatedBy: actor.initiatedBy,
+          correlationId: `${actor.correlationId}:${stepKey}`,
+          idempotencyKey: `${actor.idempotencyKey}:${stepKey}`,
+          parentCriteriaRunId: updatedCriteriaRun.id,
+          stepKey,
+          ...(request.engineTarget ? { engineTarget: request.engineTarget } : {}),
+          ...(request.enginePolicyRef ? { enginePolicyRef: request.enginePolicyRef } : {}),
+        });
 
-      const stepInputSlice = await this.stepInputService.createStepInputSlice({
-        tenantId: actor.tenantId,
-        initiatedBy: actor.initiatedBy,
-        criteriaRun: updatedCriteriaRun,
-        stepRun,
-        snapshot,
-      });
+        const stepInputSlice = await this.stepInputService.createStepInputSlice({
+          tenantId: actor.tenantId,
+          initiatedBy: actor.initiatedBy,
+          criteriaRun: updatedCriteriaRun,
+          stepRun,
+          snapshot,
+        });
 
-      const stepDispatchResult = await this.dispatchService.dispatchCriteriaStep(stepRun, {
-        inputSliceRef: stepInputSlice.payloadRef,
-        inputSlice: stepInputSlice.payload,
-        evidenceRefs: stepInputSlice.evidenceRefs,
-      });
+        const stepDispatchResult = await this.dispatchService.dispatchCriteriaStep(stepRun, {
+          inputSliceRef: stepInputSlice.payloadRef,
+          inputSlice: stepInputSlice.payload,
+          evidenceRefs: stepInputSlice.evidenceRefs,
+        });
 
-      const hydratedStepRun = await this.runLedgerService.setRunStatus(stepRun.id, actor.tenantId, stepDispatchResult.status, {
-        engineRunRef: stepDispatchResult.engineRunRef,
-        engineVersion: stepDispatchResult.engineVersion,
-        engineRequestRef: stepDispatchResult.engineRequestRef,
-        engineResponseRef: stepDispatchResult.engineResponseRef,
-        statusDetails: {
-          ...(stepDispatchResult.statusDetails ?? {}),
-          stepInputSliceId: stepInputSlice.id,
-          stepInputPayloadRef: stepInputSlice.payloadRef,
-          stepEvidenceRefs: stepInputSlice.evidenceRefs,
-        },
-      });
-      stepRuns.push(hydratedStepRun);
+        const hydratedStepRun = await this.runLedgerService.setRunStatus(stepRun.id, actor.tenantId, stepDispatchResult.status, {
+          engineRunRef: stepDispatchResult.engineRunRef,
+          engineVersion: stepDispatchResult.engineVersion,
+          engineRequestRef: stepDispatchResult.engineRequestRef,
+          engineResponseRef: stepDispatchResult.engineResponseRef,
+          statusDetails: {
+            ...(stepDispatchResult.statusDetails ?? {}),
+            stepInputSliceId: stepInputSlice.id,
+            stepInputPayloadRef: stepInputSlice.payloadRef,
+            stepEvidenceRefs: stepInputSlice.evidenceRefs,
+          },
+        });
+        stepRuns.push(hydratedStepRun);
+      }
     }
 
     const finalCriteriaRun = await this.runLedgerService.updateRun(updatedCriteriaRun.id, actor.tenantId, {
@@ -565,7 +638,7 @@ export class AnalysisSubmissionService {
       pipelineJobId: dispatchResult.engineRunRef,
       pipelineName: run.pipelineId ?? 'criteria-evaluation',
       runType: 'criteria',
-      snapshotId: request.snapshotId,
+      ...(request.snapshotId ? { snapshotId: request.snapshotId } : {}),
       programKey: request.programKey,
       stepCount: stepRuns.length,
     });
@@ -604,5 +677,73 @@ export class AnalysisSubmissionService {
       if (typeof field.value === 'number') return field.value !== 0;
       return field.value !== null && field.value !== undefined;
     });
+  }
+
+  private async resolveSubmissionSourceIdentity(params: {
+    tenantId: string;
+    documentId?: string;
+    orderId?: string;
+    engagementId?: string;
+    loanPropertyContextId?: string;
+  }): Promise<IntakeSourceIdentity | undefined> {
+    const document = params.documentId
+      ? await this.loadDocumentById(params.documentId, params.tenantId)
+      : null;
+
+    if (document?.sourceIdentity) {
+      return extendIntakeSourceIdentity(document.sourceIdentity, {
+        ...(params.orderId ?? document.orderId ? { orderId: params.orderId ?? document.orderId } : {}),
+        ...(params.engagementId ? { engagementId: params.engagementId } : {}),
+        ...(params.loanPropertyContextId ? { loanPropertyContextId: params.loanPropertyContextId } : {}),
+        documentId: document.id,
+      });
+    }
+
+    if (document?.entityType === 'order-intake-draft' && document.entityId) {
+      return buildManualDraftSourceIdentity({
+        intakeDraftId: document.entityId,
+        ...(params.orderId ?? document.orderId ? { orderId: params.orderId ?? document.orderId } : {}),
+        ...(params.engagementId ? { engagementId: params.engagementId } : {}),
+        ...(params.loanPropertyContextId ? { loanPropertyContextId: params.loanPropertyContextId } : {}),
+        documentId: document.id,
+      });
+    }
+
+    const resolvedOrderId = params.orderId ?? document?.orderId;
+    if (!resolvedOrderId) {
+      return undefined;
+    }
+
+    const orderResult = await this.dbService.findOrderById(resolvedOrderId);
+    if (!orderResult.success || !orderResult.data) {
+      return undefined;
+    }
+
+    return extendIntakeSourceIdentity(
+      ((orderResult.data as any).metadata?.sourceIdentity ?? undefined) as IntakeSourceIdentity | undefined,
+      {
+        orderId: resolvedOrderId,
+        ...(params.engagementId ? { engagementId: params.engagementId } : {}),
+        ...(params.loanPropertyContextId ? { loanPropertyContextId: params.loanPropertyContextId } : {}),
+        ...(document?.id ? { documentId: document.id } : {}),
+      },
+    );
+  }
+
+  private async loadDocumentById(documentId: string, tenantId: string): Promise<DocumentMetadata | null> {
+    const result = await this.dbService.queryItems<DocumentMetadata>(
+      'documents',
+      'SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
+      [
+        { name: '@id', value: documentId },
+        { name: '@tenantId', value: tenantId },
+      ],
+    );
+
+    if (!result.success || !result.data || result.data.length === 0) {
+      return null;
+    }
+
+    return result.data[0] ?? null;
   }
 }

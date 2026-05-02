@@ -23,6 +23,14 @@ export interface CompiledDataRequirement {
   required: boolean;
   concept?: string;
   description?: string;
+  /**
+   * Explicit semantic category of this data requirement. When present, the
+   * review-requirement resolver prefers this over keyword-based path matching
+   * to decide whether a missing requirement is comp-related, adjustment-
+   * related, or standard. Older compiled programs that do not carry a
+   * category fall back to keyword detection for backward compatibility.
+   */
+  category?: 'comp' | 'adjustment' | 'standard';
 }
 
 export interface CompiledDocumentRequirement {
