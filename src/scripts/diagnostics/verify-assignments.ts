@@ -1,10 +1,10 @@
 /**
  * Quick verification: query the orders container for appraiser_assignment records
- * Run with: npx tsx src/scripts/verify-assignments.ts
+ * Run with: npx tsx src/scripts/diagnostics/verify-assignments.ts
  */
 import 'dotenv/config';
-import { CosmosDbService } from '../services/cosmos-db.service.js';
-import { Logger } from '../utils/logger.js';
+import { CosmosDbService } from '../../services/cosmos-db.service.js';
+import { Logger } from '../../utils/logger.js';
 
 const logger = new Logger('VerifyAssignments');
 const cosmosDb = new CosmosDbService();

@@ -5,11 +5,11 @@
  * verified / updated against the real Fannie Mae Form 1004.
  *
  * Usage:
- *   npx ts-node --project tsconfig.json src/scripts/inspect-pdf-fields.ts \
+ *   npx ts-node --project tsconfig.json src/scripts/diagnostics/inspect-pdf-fields.ts \
  *     docs/samples/Form1004_Fillable.pdf
  *
  * Output is written to stdout (pipe to a file if needed):
- *   npx ts-node src/scripts/inspect-pdf-fields.ts docs/samples/Form1004_Fillable.pdf \
+ *   npx ts-node src/scripts/diagnostics/inspect-pdf-fields.ts docs/samples/Form1004_Fillable.pdf \
  *     > tsc-1004-fields.txt
  *
  * If the PDF is owner-password-protected (locked against editing) but still has
