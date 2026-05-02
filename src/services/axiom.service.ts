@@ -29,6 +29,7 @@ import { EventPriority, EventCategory } from '../types/events.js';
 import type { QCIssueDetectedEvent } from '../types/events.js';
 import { computeVerdictCounts } from '../utils/verdict-counts.js';
 import { buildQCIssueLinkage } from '../utils/qc-issue-linkage.js';
+import { enrichCriteriaWithCategories } from '../utils/data-requirement-category.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
 import type { CompileResponse, CompiledProgramNode } from '../types/axiom.types.js';
@@ -3666,7 +3667,11 @@ export class AxiomService {
         `/sub-clients/${encodeURIComponent(subClientId)}` +
         `/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compiled`,
       );
-      const response: CompileResponse = { ...data, cached: true };
+      const response: CompileResponse = {
+        ...data,
+        criteria: enrichCriteriaWithCategories(data.criteria ?? []),
+        cached: true,
+      };
       this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
       return response;
     } catch (err) {
@@ -3716,7 +3721,11 @@ export class AxiomService {
         `/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compile`,
         { ...(userId ? { userId } : {}) },
       );
-      const response: CompileResponse = { ...data, cached: false };
+      const response: CompileResponse = {
+        ...data,
+        criteria: enrichCriteriaWithCategories(data.criteria ?? []),
+        cached: false,
+      };
       // Warm the cache with the fresh result
       const key = this.compileCacheKey(clientId, subClientId, programId, programVersion);
       this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
