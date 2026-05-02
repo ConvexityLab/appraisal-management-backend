@@ -2,17 +2,11 @@
  * Single source of truth for the keyword-based comp / adjustment / standard
  * categorization of a data requirement path.
  *
- * Used by:
- *   - ReviewRequirementResolutionService when an upstream-supplied category
- *     is absent (legacy compiled programs).
- *   - AxiomService at compiled-criteria ingestion time, to pre-fill
- *     `category` on every dataRequirement that doesn't already have one,
- *     so all downstream consumers (resolver, dispatch payloads, audit
- *     records) see explicit categories instead of having to recompute the
- *     keyword heuristic on every read.
- *
- * Keep this list in sync with whatever the resolver expects. Adding a new
- * comp / adjustment keyword here automatically benefits both paths.
+ * The compiled-criteria wire contract (CompiledCriteriaResponse) is
+ * engine-agnostic and does not carry per-data-path semantic categorization,
+ * so the review-requirement resolver computes this classification from the
+ * path itself at lookup time. Adding a new comp / adjustment keyword here
+ * automatically benefits the resolver.
  */
 
 export const COMP_PATH_KEYWORDS = [
@@ -32,15 +26,6 @@ export const ADJUSTMENT_PATH_KEYWORDS = [
 ] as const;
 
 export type DataRequirementCategory = 'comp' | 'adjustment' | 'standard';
-
-interface DataRequirementLike {
-  path?: string;
-  category?: DataRequirementCategory;
-}
-
-interface CriterionLike {
-  dataRequirements?: DataRequirementLike[];
-}
 
 function normalizePath(value: string): string {
   return value
@@ -88,32 +73,4 @@ export function deriveDataRequirementCategory(path: string | undefined | null): 
     }
   }
   return 'standard';
-}
-
-/**
- * Walk every dataRequirement of every criterion and stamp `category` when
- * absent. Existing explicit categories are preserved (the upstream contract
- * is authoritative; we only fill in gaps).
- *
- * Returns a NEW array — does not mutate the input criteria.
- */
-export function enrichCriteriaWithCategories<T extends CriterionLike>(criteria: ReadonlyArray<T>): T[] {
-  return criteria.map((criterion) => {
-    const requirements = criterion.dataRequirements;
-    if (!requirements || requirements.length === 0) {
-      return criterion;
-    }
-    return {
-      ...criterion,
-      dataRequirements: requirements.map((requirement) => {
-        if (requirement.category) {
-          return requirement;
-        }
-        return {
-          ...requirement,
-          category: deriveDataRequirementCategory(requirement.path ?? null),
-        };
-      }),
-    };
-  });
 }

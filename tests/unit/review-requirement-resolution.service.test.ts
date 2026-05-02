@@ -78,36 +78,28 @@ describe('ReviewRequirementResolutionService', () => {
 
   it('resolves Axiom and MOP program requirements into criterion readiness details', async () => {
     const getCompiledCriteria = vi.fn().mockResolvedValue({
+      programId: 'axiom-qc',
+      programVersion: '1.0',
+      clientId: 'client-1',
+      subClientId: 'sub-1',
       criteria: [
         {
           id: 'node-1',
-          nodeId: 'node-1',
-          tier: 'canonical',
-          owner: 'platform',
-          version: '1.0',
-          canonNodeId: 'canon-1',
-          canonPath: 'property.address',
-          taxonomyCategory: 'property',
-          concept: 'PROPERTY_ADDRESS_COMPLETE',
-          title: 'Property address complete',
+          code: 'PROPERTY_ADDRESS_COMPLETE',
+          category: 'property',
+          statement: 'Property address complete',
           description: 'Address must be present',
-          evaluation: { mode: 'manual' },
+          severity: 'high',
           dataRequirements: [{ path: 'propertyAddress', required: true }],
-          documentRequirements: [{ documentType: 'appraisal', required: true }],
-          priority: 'high',
-          required: true,
-          programId: 'axiom-qc',
-          compiledAt: '2026-04-29T00:00:00.000Z',
+          documentRequirements: [{ oneOf: ['appraisal'] }],
+          evaluation: { type: 'presence-check', parameters: {} },
         },
       ],
-      cached: false,
       metadata: {
-        programId: 'axiom-qc',
-        programVersion: '1.0',
-        fullProgramId: 'axiom-qc:1.0',
-        criteriaCount: 1,
-        categories: ['property'],
         compiledAt: '2026-04-29T00:00:00.000Z',
+        cached: false,
+        sourceCanonicals: [{ name: 'axiom-qc', version: '1.0' }],
+        criteriaCount: 1,
       },
     });
     const getCompiledMopCriteria = vi.fn().mockResolvedValue({
@@ -247,6 +239,97 @@ describe('ReviewRequirementResolutionService', () => {
     ]);
   });
 
+  describe('documentRequirements (AND-of-OR semantics)', () => {
+    function buildResponseWithDocReqs(documentRequirements: Array<{ oneOf: string[] }>) {
+      return {
+        programId: 'axiom-qc',
+        programVersion: '1.0',
+        clientId: 'client-1',
+        subClientId: 'sub-1',
+        criteria: [
+          {
+            id: 'c1',
+            code: 'CHECK',
+            category: 'cat',
+            statement: 'Stmt',
+            description: 'Desc',
+            severity: 'high' as const,
+            dataRequirements: [],
+            documentRequirements,
+            evaluation: { type: 'presence-check', parameters: {} },
+          },
+        ],
+        metadata: {
+          compiledAt: '2026-04-29T00:00:00.000Z',
+          cached: false,
+          sourceCanonicals: [],
+          criteriaCount: 1,
+        },
+      };
+    }
+
+    function programWithoutMop(): ReviewProgram {
+      return { ...buildProgram(), rulesetRefs: [] } as ReviewProgram;
+    }
+
+    async function resolveOnce(documentRequirements: Array<{ oneOf: string[] }>, contextDocs: Array<{ id: string; documentType: string; name?: string }>) {
+      const getCompiledCriteria = vi.fn().mockResolvedValue(buildResponseWithDocReqs(documentRequirements));
+      const service = new ReviewRequirementResolutionService({} as any, {
+        axiomCriteriaService: { getCompiledCriteria },
+        mopCriteriaService: { getCompiledCriteria: vi.fn() },
+      });
+      const result = await service.resolveProgramRequirements(
+        programWithoutMop(),
+        buildContext({ documents: contextDocs as any }),
+        { tenantId: 'tenant-1', initiatedBy: 'user-1', correlationId: 'corr-1', idempotencyKey: 'idem-1' },
+      );
+      return result[0];
+    }
+
+    it('OR group satisfied when ANY ONE acceptable type is present', async () => {
+      const r = await resolveOnce(
+        [{ oneOf: ['form-1004', 'form-1073', 'form-1025'] }],
+        [{ id: 'd1', documentType: 'form-1073' }],
+      );
+      expect(r?.missingDocumentTypes).toEqual([]);
+      expect(r?.resolvedDocumentTypes).toContain('form-1073');
+    });
+
+    it('OR group blocked when NONE of the acceptable types are present', async () => {
+      const r = await resolveOnce(
+        [{ oneOf: ['form-1004', 'form-1073'] }],
+        [{ id: 'd1', documentType: 'avm-report' }],
+      );
+      expect(r?.missingDocumentTypes?.sort()).toEqual(['form-1004', 'form-1073']);
+      expect(r?.resolvedDocumentTypes).toEqual([]);
+    });
+
+    it('AND across groups: satisfied only when EVERY group has at least one match', async () => {
+      const r = await resolveOnce(
+        [{ oneOf: ['form-1004'] }, { oneOf: ['title-report'] }],
+        [{ id: 'd1', documentType: 'form-1004' }, { id: 'd2', documentType: 'title-report' }],
+      );
+      expect(r?.missingDocumentTypes).toEqual([]);
+      expect(r?.resolvedDocumentTypes?.sort()).toEqual(['form-1004', 'title-report']);
+    });
+
+    it('AND across groups: blocked when ONE group is unsatisfied (compound case)', async () => {
+      // Compound: (1004 OR 1073) AND avm-report — has 1004 but missing avm
+      const r = await resolveOnce(
+        [{ oneOf: ['form-1004', 'form-1073'] }, { oneOf: ['avm-report'] }],
+        [{ id: 'd1', documentType: 'form-1004' }],
+      );
+      expect(r?.missingDocumentTypes).toEqual(['avm-report']);
+      expect(r?.resolvedDocumentTypes).toEqual(['form-1004']);
+    });
+
+    it('empty documentRequirements applies no document gating', async () => {
+      const r = await resolveOnce([], []);
+      expect(r?.missingDocumentTypes).toEqual([]);
+      expect(r?.resolvedDocumentTypes).toEqual([]);
+    });
+  });
+
   it('resolves provider data paths when provider data is the best available source', async () => {
     const getCompiledMopCriteria = vi.fn().mockResolvedValue({
       criteria: {
@@ -353,120 +436,38 @@ describe('ReviewRequirementResolutionService', () => {
     ]);
   });
 
-  it('uses the explicit dataRequirement category to classify comp / adjustment paths instead of keyword guessing', async () => {
-    // Three criteria:
-    //   1. Path "comparables.something" but category 'standard' → must NOT be classified as comp
-    //      (keyword matching alone would misclassify this).
-    //   2. Path with no comp-ish keyword but category 'comp' → must be classified as comp.
-    //   3. Path with no adjustment keyword but category 'adjustment' → must be classified as adjustment.
-    const service = new ReviewRequirementResolutionService({} as any, {
-      axiomCriteriaService: {
-        getCompiledCriteria: vi.fn().mockResolvedValue({
-          criteria: [
-            {
-              id: 'node-misnamed',
-              nodeId: 'node-misnamed',
-              concept: 'STANDARD_FIELD_WITH_COMP_LIKE_NAME',
-              title: 'Path looks comp-y but is standard',
-              dataRequirements: [
-                { path: 'comparables.placeholderField', required: true, category: 'standard' },
-              ],
-              documentRequirements: [],
-            },
-            {
-              id: 'node-comp-explicit',
-              nodeId: 'node-comp-explicit',
-              concept: 'EXPLICIT_COMP_REQUIREMENT',
-              title: 'Explicit comp via category',
-              dataRequirements: [
-                { path: 'subjectProperty.unrelatedKey', required: true, category: 'comp' },
-              ],
-              documentRequirements: [],
-            },
-            {
-              id: 'node-adj-explicit',
-              nodeId: 'node-adj-explicit',
-              concept: 'EXPLICIT_ADJUSTMENT_REQUIREMENT',
-              title: 'Explicit adjustment via category',
-              dataRequirements: [
-                { path: 'subjectProperty.unrelatedAdjustmentKey', required: true, category: 'adjustment' },
-              ],
-              documentRequirements: [],
-            },
-          ],
-          cached: false,
-          metadata: {
-            programId: 'axiom-qc',
-            programVersion: '1.0',
-            fullProgramId: 'axiom-qc:1.0',
-            criteriaCount: 3,
-            categories: ['property'],
-            compiledAt: '2026-04-29T00:00:00.000Z',
-          },
-        }),
-      },
-      mopCriteriaService: { getCompiledCriteria: vi.fn() },
-    });
-
-    const result = await service.resolveProgramRequirements(
-      { ...buildProgram(), rulesetRefs: [] } as ReviewProgram,
-      buildContext({
-        order: { id: 'order-1' } as any,
-        documents: [],
-        latestSnapshot: undefined,
-        runSummary: { totalRuns: 0, extractionRuns: 0, criteriaRuns: 0 },
-      }),
-      {
-        tenantId: 'tenant-1',
-        initiatedBy: 'user-1',
-        correlationId: 'corr-1',
-        idempotencyKey: 'idem-1',
-      },
-    );
-
-    const byCriterion = new Map(result.map((r) => [r.criterionId, r]));
-
-    // 1. Path looked comp-y but explicit category 'standard' must NOT trigger
-    //    requires_comp_selection — should fall through to other resolution
-    //    states (here: requires_manual_resolution since there's no snapshot
-    //    or document to back the path).
-    expect(byCriterion.get('STANDARD_FIELD_WITH_COMP_LIKE_NAME')?.readiness).not.toBe('requires_comp_selection');
-    expect(byCriterion.get('STANDARD_FIELD_WITH_COMP_LIKE_NAME')?.recommendedAction).not.toBe('select_comps');
-
-    // 2. Explicit category 'comp' must trigger requires_comp_selection even
-    //    though the path itself contains no comp keyword.
-    expect(byCriterion.get('EXPLICIT_COMP_REQUIREMENT')).toMatchObject({
-      readiness: 'requires_comp_selection',
-      recommendedAction: 'select_comps',
-    });
-
-    // 3. Explicit category 'adjustment' must drive comp/adjustment guidance
-    //    (also routes through buildCompRequirementBlock).
-    expect(byCriterion.get('EXPLICIT_ADJUSTMENT_REQUIREMENT')?.readiness).toBe('requires_comp_selection');
-  });
+  // The explicit per-data-requirement category feature was removed when the
+  // CompiledCriteriaResponse wire contract was adopted (engine-agnostic shape
+  // does not carry comp/adjustment classification). Comp/adjustment routing
+  // is now driven by keyword detection on the path itself; that fallback is
+  // covered in tests/unit/data-requirement-category.test.ts.
 
   it('threads competingMatches into resolvedDataBindings when multiple sources have the same path', async () => {
     const service = new ReviewRequirementResolutionService({} as any, {
       axiomCriteriaService: {
         getCompiledCriteria: vi.fn().mockResolvedValue({
+          programId: 'axiom-qc',
+          programVersion: '1.0',
+          clientId: 'client-1',
+          subClientId: 'sub-1',
           criteria: [
             {
               id: 'node-amb',
-              nodeId: 'node-amb',
-              concept: 'PROPERTY_ADDRESS_AMBIGUOUS',
-              title: 'Property address sourcing is ambiguous',
+              code: 'PROPERTY_ADDRESS_AMBIGUOUS',
+              category: 'property',
+              statement: 'Property address sourcing is ambiguous',
+              description: '',
+              severity: 'high',
               dataRequirements: [{ path: 'propertyAddress', required: true }],
               documentRequirements: [],
+              evaluation: { type: 'presence-check', parameters: {} },
             },
           ],
-          cached: false,
           metadata: {
-            programId: 'axiom-qc',
-            programVersion: '1.0',
-            fullProgramId: 'axiom-qc:1.0',
-            criteriaCount: 1,
-            categories: ['property'],
             compiledAt: '2026-04-29T00:00:00.000Z',
+            cached: false,
+            sourceCanonicals: [{ name: 'axiom-qc', version: '1.0' }],
+            criteriaCount: 1,
           },
         }),
       },
@@ -525,24 +526,28 @@ describe('ReviewRequirementResolutionService', () => {
     const service = new ReviewRequirementResolutionService({} as any, {
       axiomCriteriaService: {
         getCompiledCriteria: vi.fn().mockResolvedValue({
+          programId: 'axiom-qc',
+          programVersion: '1.0',
+          clientId: 'client-1',
+          subClientId: 'sub-1',
           criteria: [
             {
               id: 'node-5',
-              nodeId: 'node-5',
-              concept: 'BORROWER_NAME_PRESENT',
-              title: 'Borrower name present',
+              code: 'BORROWER_NAME_PRESENT',
+              category: 'borrower',
+              statement: 'Borrower name present',
+              description: '',
+              severity: 'high',
               dataRequirements: [{ path: 'borrowerName', required: true }],
               documentRequirements: [],
+              evaluation: { type: 'presence-check', parameters: {} },
             },
           ],
-          cached: false,
           metadata: {
-            programId: 'axiom-qc',
-            programVersion: '1.0',
-            fullProgramId: 'axiom-qc:1.0',
-            criteriaCount: 1,
-            categories: ['borrower'],
             compiledAt: '2026-04-29T00:00:00.000Z',
+            cached: false,
+            sourceCanonicals: [{ name: 'axiom-qc', version: '1.0' }],
+            criteriaCount: 1,
           },
         }),
       },

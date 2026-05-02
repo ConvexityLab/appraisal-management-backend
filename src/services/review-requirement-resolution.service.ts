@@ -3,7 +3,7 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { MopCriteriaService } from './mop-criteria.service.js';
 import { ReviewSourcePriorityService } from './review-source-priority.service.js';
 import type { AnalysisSubmissionActorContext } from '../types/analysis-submission.types.js';
-import type { CompiledProgramNode } from '../types/axiom.types.js';
+import type { CompiledCriterion } from '../types/axiom.types.js';
 import type { MopCriteriaCompileResult } from '../types/mop-criteria.types.js';
 import type { CriterionResolution } from '../types/review-preparation.types.js';
 import type { ReviewContext, ReviewReadinessState, ReviewRecommendedAction } from '../types/review-context.types.js';
@@ -105,7 +105,7 @@ export class ReviewRequirementResolutionService {
   }
 
   private resolveCompiledCriterion(
-    criterion: CompiledProgramNode,
+    criterion: CompiledCriterion,
     context: ReviewContext,
     engineProgramId: string,
     engineProgramVersion: string,
@@ -125,50 +125,52 @@ export class ReviewRequirementResolutionService {
       .map((requirement) => requirement.path)
       .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
       .filter((path) => this.sourcePriorityService.resolveRequirementPath(context, path) === null);
-    const requiredDocumentTypes = (criterion.documentRequirements ?? [])
-      .filter((requirement) => requirement.required)
-      .map((requirement) => requirement.documentType)
-      .filter((documentType): documentType is string => typeof documentType === 'string' && documentType.trim().length > 0);
-    const missingDocumentTypes = requiredDocumentTypes.filter((documentType) => !this.hasDocumentType(context, documentType));
-    const resolvedDocumentTypes = requiredDocumentTypes.filter((documentType) => !missingDocumentTypes.includes(documentType));
+
+    // documentRequirements: AND-of-OR groups. Each group is satisfied iff at least
+    // one of its acceptable types is present on the order. The criterion is
+    // doc-blocked iff any group has zero satisfying documents.
+    const docGroups = criterion.documentRequirements ?? [];
+    const requiredDocumentTypes: string[] = [];          // flattened union of all acceptable types — surfaced for UI/audit
+    const missingDocumentTypes: string[] = [];           // groups that are unsatisfied get every type listed here
+    const resolvedDocumentTypes: string[] = [];          // groups that are satisfied — the types we actually matched
+    for (const group of docGroups) {
+      const types = (group.oneOf ?? []).filter(
+        (t): t is string => typeof t === 'string' && t.trim().length > 0,
+      );
+      if (types.length === 0) {
+        continue;
+      }
+      requiredDocumentTypes.push(...types);
+      const present = types.filter((t) => this.hasDocumentType(context, t));
+      if (present.length > 0) {
+        resolvedDocumentTypes.push(...present);
+      } else {
+        missingDocumentTypes.push(...types);
+      }
+    }
+
     const warnings = optionalMissingDataPaths.length > 0
       ? [`Optional data not currently present: ${optionalMissingDataPaths.join(', ')}`]
       : [];
 
-    // Schema-driven category lookup: when the compiled criterion explicitly
-    // categorizes a data requirement as 'comp' / 'adjustment' / 'standard',
-    // honor that classification instead of guessing from path keywords.
-    const pathCategoryMap = this.buildPathCategoryMap(criterion);
-
     return this.buildResolution({
-      criterionId: criterion.concept || criterion.nodeId || criterion.id,
-      criterionTitle: criterion.title || criterion.concept || 'Unnamed Axiom criterion',
+      criterionId: criterion.code || criterion.id,
+      criterionTitle: criterion.statement || criterion.code || 'Unnamed Axiom criterion',
       engine: 'AXIOM',
       engineProgramId,
       engineProgramVersion,
       resolvedDataBindings: resolvedRequiredBindings,
       requiredDataPaths,
       missingDataPaths,
-      resolvedDocumentTypes,
-      requiredDocumentTypes,
-      missingDocumentTypes,
+      resolvedDocumentTypes: [...new Set(resolvedDocumentTypes)],
+      requiredDocumentTypes: [...new Set(requiredDocumentTypes)],
+      missingDocumentTypes: [...new Set(missingDocumentTypes)],
       warnings,
       context,
-      pathCategoryMap,
+      // pathCategoryMap intentionally omitted: the engine-agnostic compiled
+      // contract does not carry per-data-path comp/adjustment classification.
+      // Resolver helpers fall back to keyword detection at lookup time.
     });
-  }
-
-  private buildPathCategoryMap(
-    criterion: CompiledProgramNode,
-  ): Map<string, 'comp' | 'adjustment' | 'standard'> {
-    const map = new Map<string, 'comp' | 'adjustment' | 'standard'>();
-    for (const requirement of criterion.dataRequirements ?? []) {
-      if (!requirement?.category || typeof requirement.path !== 'string' || requirement.path.trim().length === 0) {
-        continue;
-      }
-      map.set(this.normalizePath(requirement.path), requirement.category);
-    }
-    return map;
   }
 
   private resolveMopCriteria(

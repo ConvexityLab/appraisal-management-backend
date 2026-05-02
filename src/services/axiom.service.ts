@@ -29,10 +29,9 @@ import { EventPriority, EventCategory } from '../types/events.js';
 import type { QCIssueDetectedEvent } from '../types/events.js';
 import { computeVerdictCounts } from '../utils/verdict-counts.js';
 import { buildQCIssueLinkage } from '../utils/qc-issue-linkage.js';
-import { enrichCriteriaWithCategories } from '../utils/data-requirement-category.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
-import type { CompileResponse, CompiledProgramNode } from '../types/axiom.types.js';
+import type { CompiledCriteriaResponse, CompiledCriterion } from '../types/axiom.types.js';
 
 // ============================================================================
 // Type Definitions
@@ -3612,7 +3611,7 @@ export class AxiomService {
    * Key: `${clientId}:${tenantId}:${programId}:${programVersion}`
    * Entries expire after AXIOM_COMPILE_CACHE_TTL_MS (default 1 hour).
    */
-  private compileCache = new Map<string, { response: CompileResponse; expiresAt: number }>();
+  private compileCache = new Map<string, { response: CompiledCriteriaResponse; expiresAt: number }>();
 
   private compileCacheKey(
     clientId: string, subClientId: string, programId: string, programVersion: string,
@@ -3642,7 +3641,7 @@ export class AxiomService {
     programId: string,
     programVersion: string,
     force = false,
-  ): Promise<CompileResponse> {
+  ): Promise<CompiledCriteriaResponse> {
     const key = this.compileCacheKey(clientId, subClientId, programId, programVersion);
 
     // Cache hit
@@ -3662,18 +3661,13 @@ export class AxiomService {
 
     // Real Axiom API
     try {
-      const { data } = await this.client.get<CompileResponse>(
+      const { data } = await this.client.get<CompiledCriteriaResponse>(
         `/api/criteria/clients/${encodeURIComponent(clientId)}` +
         `/sub-clients/${encodeURIComponent(subClientId)}` +
         `/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compiled`,
       );
-      const response: CompileResponse = {
-        ...data,
-        criteria: enrichCriteriaWithCategories(data.criteria ?? []),
-        cached: true,
-      };
-      this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
-      return response;
+      this.compileCache.set(key, { response: data, expiresAt: Date.now() + this.compileCacheTtlMs() });
+      return data;
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 404) {
         const notFound = new Error(
@@ -3703,7 +3697,7 @@ export class AxiomService {
     programId: string,
     programVersion: string,
     userId?: string,
-  ): Promise<CompileResponse> {
+  ): Promise<CompiledCriteriaResponse> {
     // Mock mode
     if (!this.enabled) {
       const mock = this.buildMockCompileResponse(programId, programVersion);
@@ -3715,21 +3709,16 @@ export class AxiomService {
 
     // Real Axiom API
     try {
-      const { data } = await this.client.post<CompileResponse>(
+      const { data } = await this.client.post<CompiledCriteriaResponse>(
         `/api/criteria/clients/${encodeURIComponent(clientId)}` +
         `/sub-clients/${encodeURIComponent(subClientId)}` +
         `/programs/${encodeURIComponent(programId)}/${encodeURIComponent(programVersion)}/compile`,
         { ...(userId ? { userId } : {}) },
       );
-      const response: CompileResponse = {
-        ...data,
-        criteria: enrichCriteriaWithCategories(data.criteria ?? []),
-        cached: false,
-      };
       // Warm the cache with the fresh result
       const key = this.compileCacheKey(clientId, subClientId, programId, programVersion);
-      this.compileCache.set(key, { response, expiresAt: Date.now() + this.compileCacheTtlMs() });
-      return response;
+      this.compileCache.set(key, { response: data, expiresAt: Date.now() + this.compileCacheTtlMs() });
+      return data;
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 404) {
         const notFound = new Error(
@@ -4229,64 +4218,49 @@ export class AxiomService {
   }
 
   /**
-   * Build a mock CompileResponse for development / when Axiom is not configured.
-   * Uses the known 1033 criterion codes confirmed from Axiom's criteria-definitions.
+   * Build a mock CompiledCriteriaResponse for development / when Axiom is not configured.
+   * Uses representative 1033 criterion codes — for UI shape testing only.
    */
-  private buildMockCompileResponse(programId: string, programVersion: string): CompileResponse {
-    const fullProgramId = `${programId}-v${programVersion}`;
+  private buildMockCompileResponse(programId: string, programVersion: string): CompiledCriteriaResponse {
     const now = new Date().toISOString();
 
-    const defs: Array<{ concept: string; title: string; description: string; category: string; priority: string }> = [
-      { concept: 'PROPERTY_ADDRESS_COMPLETE',           title: 'Property Address Complete',           description: 'Subject property address is complete and present',                                              category: 'propertyIdentification',   priority: 'critical'  },
-      { concept: 'PARCEL_ID_MATCHES_TITLE',             title: 'Legal Description / Parcel ID',       description: 'Parcel ID / legal description matches title documentation',                                    category: 'propertyIdentification',   priority: 'critical'  },
-      { concept: 'NO_UNACCEPTABLE_APPRAISAL_PRACTICES', title: 'USPAP Standards Compliance',          description: 'Report complies with USPAP Standards Rules 1 & 2',                                            category: 'uspap',                    priority: 'critical'  },
-      { concept: 'PROPERTY_CONDITION_DOCUMENTED',       title: 'Property Condition Documented',       description: 'Condition rating (C1–C6) is present and supported by photos',                                 category: 'subjectPropertyDescription', priority: 'critical'},
-      { concept: 'MARKET_TRENDS_IDENTIFIED',            title: 'Market Trends Identified',            description: 'Market conditions identified and consistent with third-party data',                           category: 'neighborhoodAnalysis',     priority: 'required' },
-      { concept: 'PROPERTY_HIGHEST_BEST_USE',           title: 'Highest & Best Use',                  description: 'Highest and best use analysis is present and supportable',                                    category: 'siteAnalysis',             priority: 'required' },
-      { concept: 'REQUIRED_PHOTOS_INCLUDED',            title: 'Required Photos Included',            description: 'Front, rear, street, and all comparable photos are present and labeled',                     category: 'requiredExhibits',         priority: 'required' },
-      { concept: 'THREE_CLOSED_COMPS_USED',             title: 'Three Closed Comparables Used',       description: 'At least three closed arm\'s-length comparable sales used in the sales comparison approach',  category: 'comparableSalesAnalysis',  priority: 'critical'  },
-      { concept: 'COMPS_ARE_SUITABLE_SUBSTITUTES',      title: 'Comparable Selection Quality',        description: 'Comparables are suitable substitutes — similar style, size, age, condition, and location',    category: 'comparableSalesAnalysis',  priority: 'critical'  },
-      { concept: 'ADJUSTMENTS_ARE_REASONABLE',          title: 'Adjustment Reasonableness',           description: 'All adjustments are reasonable and supported by market data',                                  category: 'comparableSalesAnalysis',  priority: 'critical'  },
-      { concept: 'VALUE_SUPPORTED_BY_COMPS',            title: 'Value Supported by Comparables',      description: 'Final value opinion is supported by the adjusted comparable sales',                           category: 'comparableSalesAnalysis',  priority: 'critical'  },
+    const defs: Array<{ code: string; statement: string; description: string; category: string; severity: 'critical' | 'high' | 'medium' | 'low' }> = [
+      { code: 'PROPERTY_ADDRESS_COMPLETE',           statement: 'Property Address Complete',     description: 'Subject property address is complete and present',                                                category: 'propertyIdentification',     severity: 'critical' },
+      { code: 'PARCEL_ID_MATCHES_TITLE',             statement: 'Legal Description / Parcel ID', description: 'Parcel ID / legal description matches title documentation',                                       category: 'propertyIdentification',     severity: 'critical' },
+      { code: 'NO_UNACCEPTABLE_APPRAISAL_PRACTICES', statement: 'USPAP Standards Compliance',    description: 'Report complies with USPAP Standards Rules 1 & 2',                                                category: 'uspap',                      severity: 'critical' },
+      { code: 'PROPERTY_CONDITION_DOCUMENTED',       statement: 'Property Condition Documented', description: 'Condition rating (C1–C6) is present and supported by photos',                                     category: 'subjectPropertyDescription', severity: 'critical' },
+      { code: 'MARKET_TRENDS_IDENTIFIED',            statement: 'Market Trends Identified',      description: 'Market conditions identified and consistent with third-party data',                               category: 'neighborhoodAnalysis',       severity: 'high'     },
+      { code: 'PROPERTY_HIGHEST_BEST_USE',           statement: 'Highest & Best Use',            description: 'Highest and best use analysis is present and supportable',                                        category: 'siteAnalysis',               severity: 'high'     },
+      { code: 'REQUIRED_PHOTOS_INCLUDED',            statement: 'Required Photos Included',      description: 'Front, rear, street, and all comparable photos are present and labeled',                          category: 'requiredExhibits',           severity: 'high'     },
+      { code: 'THREE_CLOSED_COMPS_USED',             statement: 'Three Closed Comparables Used', description: "At least three closed arm's-length comparable sales used in the sales comparison approach",      category: 'comparableSalesAnalysis',    severity: 'critical' },
+      { code: 'COMPS_ARE_SUITABLE_SUBSTITUTES',      statement: 'Comparable Selection Quality',  description: 'Comparables are suitable substitutes — similar style, size, age, condition, and location',       category: 'comparableSalesAnalysis',    severity: 'critical' },
+      { code: 'ADJUSTMENTS_ARE_REASONABLE',          statement: 'Adjustment Reasonableness',     description: 'All adjustments are reasonable and supported by market data',                                     category: 'comparableSalesAnalysis',    severity: 'critical' },
+      { code: 'VALUE_SUPPORTED_BY_COMPS',            statement: 'Value Supported by Comparables',description: 'Final value opinion is supported by the adjusted comparable sales',                              category: 'comparableSalesAnalysis',    severity: 'critical' },
     ];
 
-    const criteria: CompiledProgramNode[] = defs.map((d, i) => {
-      const seq = String(i + 1).padStart(3, '0');
-      const nodeId = `program:${fullProgramId}:${d.category}.${d.concept}:${seq}`;
-      return {
-        id: nodeId,
-        nodeId,
-        tier: 'program',
-        owner: fullProgramId,
-        version: programVersion,
-        canonNodeId: `canon:axiom:${d.category}.${d.concept}`,
-        canonPath: `${d.category}.${d.concept}`,
-        taxonomyCategory: d.category,
-        concept: d.concept,
-        title: d.title,
-        description: d.description,
-        evaluation: { mode: 'ai-assisted' },
-        dataRequirements: [],
-        documentRequirements: [],
-        priority: d.priority,
-        required: d.priority === 'critical',
-        programId: fullProgramId,
-        compiledAt: now,
-      };
-    });
-
-    const categories = [...new Set(defs.map((d) => d.category))];
+    const criteria: CompiledCriterion[] = defs.map((d, i) => ({
+      id: `mock-${programId}-${String(i + 1).padStart(3, '0')}`,
+      code: d.code,
+      category: d.category,
+      statement: d.statement,
+      description: d.description,
+      severity: d.severity,
+      dataRequirements: [],
+      documentRequirements: [],
+      evaluation: { type: 'ai-assisted', parameters: {} },
+    }));
 
     return {
+      programId,
+      programVersion,
+      clientId: 'mock',
+      subClientId: 'mock',
       criteria,
-      cached: false,
       metadata: {
-        programId,
-        programVersion,
-        fullProgramId,
-        criteriaCount: criteria.length,
-        categories,
         compiledAt: now,
+        cached: false,
+        sourceCanonicals: [{ name: programId, version: programVersion }],
+        criteriaCount: criteria.length,
       },
     };
   }
