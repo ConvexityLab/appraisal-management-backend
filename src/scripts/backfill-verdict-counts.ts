@@ -120,7 +120,10 @@ async function main(): Promise<void> {
   }
 
   const cosmos = buildCosmosClient(cosmosEndpoint);
-  const databaseName = process.env.COSMOS_DATABASE ?? 'appraisal-platform';
+  const databaseName =
+    process.env.COSMOS_DATABASE_NAME
+    ?? process.env.AZURE_COSMOS_DATABASE_NAME
+    ?? 'appraisal-management';
   const container = cosmos.database(databaseName).container('aiInsights');
 
   console.log(`Mode: ${apply ? 'APPLY (writing)' : 'dry-run'}`);
