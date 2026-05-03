@@ -6,6 +6,13 @@ import type { DocumentMetadata } from '../types/document.types.js';
 import type { PropertyDataResult } from '../types/property-data.types.js';
 import { extendIntakeSourceIdentity } from '../types/intake-source.types.js';
 import { mapAxiomExtractionToCanonical } from '../mappers/axiom-extraction.mapper.js';
+import { mapLoanFromTape, computeLoanRatios } from '../mappers/loan-tape.mapper.js';
+import { mapTransactionHistoryFromTape } from '../mappers/transaction-history.mapper.js';
+import { mapAvmCrossCheckFromTape } from '../mappers/avm.mapper.js';
+import { computeCompStatistics } from '../mappers/comp-statistics.mapper.js';
+import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
+import type { CanonicalReportDocument } from '../types/canonical-schema.js';
+import type { RiskTapeItem } from '../types/review-tape.types.js';
 
 interface PropertyEnrichmentRecord {
   id: string;
@@ -272,13 +279,76 @@ export class CanonicalSnapshotService {
         : {}),
     };
 
-    // Project the raw extraction onto AMP canonical-schema shape (UAD 3.6 /
+    // Project all known sources onto the AMP canonical-schema shape (UAD 3.6 /
     // URAR / MISMO 3.4 aligned). This is the source-of-truth shape for
     // review-program data; the resolver prefers `canonical` over `extraction`
-    // when both have a path. See src/mappers/axiom-extraction.mapper.ts.
-    const canonical = artifacts.extractionData
-      ? (mapAxiomExtractionToCanonical(artifacts.extractionData) as Record<string, unknown>)
-      : {};
+    // when both have a path. See src/mappers/.
+    //
+    // Mappers invoked:
+    //   axiom-extraction → subject, comps, appraiserInfo, reconciliation
+    //   loan-tape        → loan, ratios
+    //   transaction-history → transactionHistory
+    //   avm              → avmCrossCheck
+    //   comp-statistics  → compStatistics (derived from canonical.comps)
+    //   risk-flags       → riskFlags
+    //
+    // Sources we don't have a feed for in this code path (e.g. real loan tape
+    // for single-order dispatch, AVM provider data, title report) emit
+    // null-filled or omitted branches per their respective mapper rules.
+    // Single-order callers may attach a partial RiskTapeItem via the run-ledger
+    // record's metadata once that path is plumbed; the snapshot tolerates its
+    // absence.
+    const canonical: Record<string, unknown> = {};
+    if (artifacts.extractionData) {
+      Object.assign(canonical, mapAxiomExtractionToCanonical(artifacts.extractionData));
+    }
+
+    // Loan / ratios. Today the source is either a RiskTapeItem on the
+    // run-ledger metadata (bulk-portfolio path) or null (single-order path
+    // until loan data is plumbed). The mapper produces all-null branches when
+    // there's no source — avoid emitting empty branches in that case.
+    const tape: Partial<RiskTapeItem> | null =
+      (extractionRun.statusDetails?.['riskTapeItem'] as Partial<RiskTapeItem> | undefined)
+      ?? null;
+    if (tape) {
+      const loan = mapLoanFromTape(tape);
+      if (loan) (canonical as Partial<CanonicalReportDocument>).loan = loan;
+      const subjectFromCanonical = (canonical as Partial<CanonicalReportDocument>).subject;
+      const appraisedValue =
+        (canonical as Partial<CanonicalReportDocument>).reconciliation?.finalOpinionOfValue
+        ?? (canonical as Partial<CanonicalReportDocument>).valuation?.estimatedValue
+        ?? null;
+      const ratios = computeLoanRatios(loan, appraisedValue, tape);
+      if (ratios) (canonical as Partial<CanonicalReportDocument>).ratios = ratios;
+
+      const txHistory = mapTransactionHistoryFromTape({
+        tape,
+        appraisedValue,
+        effectiveDate:
+          (canonical as Partial<CanonicalReportDocument>).reconciliation?.effectiveDate ?? null,
+      });
+      if (txHistory) (canonical as Partial<CanonicalReportDocument>).transactionHistory = txHistory;
+
+      const avmCrossCheck = mapAvmCrossCheckFromTape({
+        tape,
+        appraisedValue,
+        avmProviderData: null,  // hook up when AVM provider data is plumbed
+      });
+      if (avmCrossCheck) (canonical as Partial<CanonicalReportDocument>).avmCrossCheck = avmCrossCheck;
+
+      const riskFlags = mapRiskFlagsFromTape({ tape });
+      if (riskFlags) (canonical as Partial<CanonicalReportDocument>).riskFlags = riskFlags;
+
+      void subjectFromCanonical; // reserved for future cross-source enrichment
+    }
+
+    // Comp statistics — pure derivation from canonical.comps, no external
+    // source needed. Always run when there are comps.
+    const compsForStats = (canonical as Partial<CanonicalReportDocument>).comps;
+    if (Array.isArray(compsForStats) && compsForStats.length > 0) {
+      const compStats = computeCompStatistics(compsForStats);
+      if (compStats) (canonical as Partial<CanonicalReportDocument>).compStatistics = compStats;
+    }
 
     return {
       subjectProperty,

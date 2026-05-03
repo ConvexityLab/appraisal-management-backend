@@ -205,7 +205,17 @@ export type ReviewFlagOperator = 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ' | 'NOT_NULL'
 export type ReviewConditionOperator = 'AND' | 'OR';
 
 export interface ReviewFlagRule {
-  field: keyof RiskTapeItem;
+  /**
+   * Dotted path into the canonical-schema view (UAD 3.6 / MISMO 3.4 aligned).
+   *   e.g. 'ratios.loanToValueRatioPercent', 'compStatistics.nonMlsCompPercent',
+   *        'transactionHistory.appreciation24mPercent', 'riskFlags.chainOfTitleRedFlags'.
+   *
+   * Tape-evaluation projects its input RiskTapeItem onto canonical via the
+   * per-source mappers in src/mappers/ before walking these paths. The
+   * legacy flat-RiskTapeItem keys (`ltv`, `cltv`, `dscr`, `avmGapPct`, etc.)
+   * are no longer accepted; use canonical paths.
+   */
+  field: string;
   op: ReviewFlagOperator;
   /** If present, resolve value from thresholds[thresholdKey] */
   thresholdKey?: keyof ReviewThresholds;
@@ -263,7 +273,12 @@ export interface ReviewProgramManualFlagDef {
   id: string;
   label: string;
   description: string;
-  field: keyof RiskTapeItem;
+  /**
+   * Dotted path into the canonical-schema view — typically a
+   * riskFlags.* boolean field (e.g. 'riskFlags.chainOfTitleRedFlags').
+   * See ReviewFlagRule.field for path conventions.
+   */
+  field: string;
   severity: ReviewFlagSeverity;
   weight: number;
 }
@@ -290,6 +305,16 @@ export type ReviewDecision = 'Accept' | 'Conditional' | 'Reject';
  *
  * programType identifies WHAT is being reviewed.  The evaluation engine is
  * identical for all types — only the flag definitions and thresholds differ.
+ *
+ * A ReviewProgram is a metadata container that declares WHICH rule sets and
+ * criteria sets comprise it.  Execution is delegated to the appropriate engine:
+ *
+ *   rulesetRefs    → deterministic rules compiled and dispatched to MOP_PRIO
+ *   aiCriteriaRefs → stochastic/AI criteria compiled and dispatched to Axiom
+ *
+ * The legacy inline fields (thresholds / autoFlags / manualFlags / decisionRules)
+ * remain optional for backward compatibility — programs that embed rules
+ * directly continue to work.  New programs should use the ref arrays instead.
  */
 export interface ReviewProgram {
   id: string;
@@ -300,11 +325,42 @@ export interface ReviewProgram {
   status: ReviewProgramStatus;
   /** null = platform default (all clients); set to restrict to one client */
   clientId: string | null;
+  /** Tenant scope; undefined/absent = platform-wide canonical */
+  tenantId?: string;
   createdAt: string;
-  thresholds: ReviewThresholds;
-  autoFlags: ReviewProgramAutoFlagDef[];
-  manualFlags: ReviewProgramManualFlagDef[];
-  decisionRules: ReviewDecisionRules;
+
+  // ── Engine references (preferred for new programs) ────────────────────────
+
+  /**
+   * References to deterministic rule sets (MOP_PRIO engine).
+   * Each entry resolves to a compiled MopCriteriaDefinition via
+   * MopCriteriaService.getCompiledCriteria(programId, programVersion).
+   * Evaluated in order; results are unioned.
+   */
+  rulesetRefs?: Array<{
+    programId: string;
+    programVersion: string;
+  }>;
+
+  /**
+   * References to stochastic/AI criteria sets (Axiom engine).
+   * Each entry resolves to compiled Axiom criteria via
+   * AxiomService.getCompiledCriteria(programId, programVersion).
+   * Evaluated concurrently; results are unioned.
+   */
+  aiCriteriaRefs?: Array<{
+    programId: string;
+    programVersion: string;
+  }>;
+
+  // ── Inline rule fields (legacy / backward-compatible) ─────────────────────
+  // Programs that embed rules directly continue to work.
+  // For new programs, use rulesetRefs + aiCriteriaRefs instead.
+
+  thresholds?: ReviewThresholds;
+  autoFlags?: ReviewProgramAutoFlagDef[];
+  manualFlags?: ReviewProgramManualFlagDef[];
+  decisionRules?: ReviewDecisionRules;
 }
 
 // ─── Evaluation Result ────────────────────────────────────────────────────────

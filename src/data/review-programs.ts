@@ -23,17 +23,33 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
   clientId: null,
   createdAt: '2026-02-23T00:00:00.000Z',
 
-  // ── Thresholds ─────────────────────────────────────────────────────────────
+  // ── Engine references ──────────────────────────────────────────────────────
+  // Deterministic rules compiled and dispatched to MOP_PRIO.
+  rulesetRefs: [
+    { programId: 'vision-appraisal', programVersion: '1.0' },
+  ],
+
+  // Stochastic/AI criteria dispatched to the Axiom engine.
+  // programId must match a registered Axiom criteria program
+  // (seed file: axiom/seed-data/criteria/appraisal-qc-platform-delta.json).
+  aiCriteriaRefs: [
+    { programId: 'appraisal-qc', programVersion: '1.0.0' },
+  ],
+
+  // ── Inline thresholds / flags (legacy) ────────────────────────────────────
+  // All percentage thresholds are expressed as PERCENTAGES (e.g. 80 means 80%)
+  // to match the canonical-schema convention (LoanToValueRatioPercent: 80,
+  // averageNetAdjustmentPercent: 15, etc.). DSCR is a unitless ratio.
   thresholds: {
-    ltv: 0.80,
-    cltv: 0.90,
+    ltv: 80,
+    cltv: 90,
     dscrMinimum: 1.0,
-    appreciation24mPct: 0.25,
-    appreciation36mPct: 0.35,
-    netAdjustmentPct: 0.15,
-    grossAdjustmentPct: 0.25,
-    nonMlsPct: 0.20,
-    avmGapPct: 0.10,
+    appreciation24mPct: 25,
+    appreciation36mPct: 35,
+    netAdjustmentPct: 15,
+    grossAdjustmentPct: 25,
+    nonMlsPct: 20,
+    avmGapPct: 10,
   },
 
   // ── Auto-flags (rule-based; fired by evaluation engine) ────────────────────
@@ -47,8 +63,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'OR',
         rules: [
-          { field: 'avgNetAdjPct', op: 'GT', thresholdKey: 'netAdjustmentPct' },
-          { field: 'avgGrossAdjPct', op: 'GT', thresholdKey: 'grossAdjustmentPct' },
+          { field: 'compStatistics.averageNetAdjustmentPercent', op: 'GT', thresholdKey: 'netAdjustmentPct' },
+          { field: 'compStatistics.averageGrossAdjustmentPercent', op: 'GT', thresholdKey: 'grossAdjustmentPct' },
         ],
       },
     },
@@ -61,8 +77,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'priorSale24mPrice', op: 'GT', value: 0 },
-          { field: 'appreciation24m', op: 'GT', thresholdKey: 'appreciation24mPct' },
+          { field: 'transactionHistory.priorSalePrice24m', op: 'GT', value: 0 },
+          { field: 'transactionHistory.appreciation24mPercent', op: 'GT', thresholdKey: 'appreciation24mPct' },
         ],
       },
     },
@@ -75,8 +91,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'priorSale36mPrice', op: 'GT', value: 0 },
-          { field: 'appreciation36m', op: 'GT', thresholdKey: 'appreciation36mPct' },
+          { field: 'transactionHistory.priorSalePrice36m', op: 'GT', value: 0 },
+          { field: 'transactionHistory.appreciation36mPercent', op: 'GT', thresholdKey: 'appreciation36mPct' },
         ],
       },
     },
@@ -89,8 +105,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'dscr', op: 'NOT_NULL' },
-          { field: 'dscr', op: 'LT', thresholdKey: 'dscrMinimum' },
+          { field: 'ratios.debtServiceCoverageRatio', op: 'NOT_NULL' },
+          { field: 'ratios.debtServiceCoverageRatio', op: 'LT', thresholdKey: 'dscrMinimum' },
         ],
       },
     },
@@ -103,8 +119,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'numComps', op: 'GT', value: 0 },
-          { field: 'nonMlsPct', op: 'GT', thresholdKey: 'nonMlsPct' },
+          { field: 'compStatistics.selectedCompCount', op: 'GT', value: 0 },
+          { field: 'compStatistics.nonMlsCompPercent', op: 'GT', thresholdKey: 'nonMlsPct' },
         ],
       },
     },
@@ -117,8 +133,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'avmValue', op: 'GT', value: 0 },
-          { field: 'avmGapPct', op: 'GT', thresholdKey: 'avmGapPct' },
+          { field: 'avmCrossCheck.avmValue', op: 'GT', value: 0 },
+          { field: 'avmCrossCheck.avmGapPercent', op: 'GT', thresholdKey: 'avmGapPct' },
         ],
       },
     },
@@ -131,8 +147,8 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'ltv', op: 'NOT_NULL' },
-          { field: 'ltv', op: 'GT', thresholdKey: 'ltv' },
+          { field: 'ratios.loanToValueRatioPercent', op: 'NOT_NULL' },
+          { field: 'ratios.loanToValueRatioPercent', op: 'GT', thresholdKey: 'ltv' },
         ],
       },
     },
@@ -145,20 +161,20 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       condition: {
         operator: 'AND',
         rules: [
-          { field: 'cltv', op: 'NOT_NULL' },
-          { field: 'cltv', op: 'GT', thresholdKey: 'cltv' },
+          { field: 'ratios.combinedLoanToValueRatioPercent', op: 'NOT_NULL' },
+          { field: 'ratios.combinedLoanToValueRatioPercent', op: 'GT', thresholdKey: 'cltv' },
         ],
       },
     },
   ],
 
-  // ── Manual flags (fired from explicit boolean tape fields) ─────────────────
+  // ── Manual flags (fired from canonical riskFlags branch) ───────────────────
   manualFlags: [
     {
       id: 'CHAIN_OF_TITLE',
       label: 'Chain of Title Red Flags',
       description: 'Appraiser noted chain of title concerns in the report',
-      field: 'chainOfTitleRedFlags',
+      field: 'riskFlags.chainOfTitleRedFlags',
       severity: 'CRITICAL',
       weight: 40,
     },
@@ -166,7 +182,7 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       id: 'HIGH_RISK_GEOGRAPHY',
       label: 'High-Risk Geography',
       description: 'Property is in a flagged geographic risk area',
-      field: 'highRiskGeographyFlag',
+      field: 'riskFlags.highRiskGeography',
       severity: 'MEDIUM',
       weight: 10,
     },
@@ -174,7 +190,7 @@ export const VISION_APPRAISAL_V1_PROGRAM: ReviewProgram = {
       id: 'APPRAISER_GEO_COMPETENCY',
       label: 'Appraiser Geographic Competency',
       description: 'Appraiser may lack competency for subject geography',
-      field: 'appraiserGeoCompetency',
+      field: 'riskFlags.appraiserGeoCompetency',
       severity: 'MEDIUM',
       weight: 10,
     },

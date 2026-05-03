@@ -690,36 +690,41 @@ describe('TapeEvaluationService', () => {
   // field value and threshold for UI consumption (guards the AND-rule display fix)
 
   describe('fired flag display values', () => {
-    it('HIGH_LTV: thresholdValue is the ltv threshold (0.80), not null', () => {
-      // ltv = 170k / 200k = 0.85 → fires
+    // After the canonical-shape migration, thresholds + ratios use MISMO
+    // PERCENTAGE form (80, not 0.80). Display values surface the canonical
+    // value walked from the canonical-view, which is in percentage form.
+
+    it('HIGH_LTV: thresholdValue is the ltv threshold (80), not null', () => {
+      // canonical ratios.loanToValueRatioPercent = 170k / 200k * 100 = 85 → fires (> 80)
       const results = service.evaluate([makeItem({ loanAmount: 170_000, appraisedValue: 200_000 })], program);
       const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_LTV');
       expect(flag.isFired).toBe(true);
-      expect(flag.thresholdValue).toBeCloseTo(0.80, 5);
+      expect(flag.thresholdValue).toBeCloseTo(80, 5);
     });
 
-    it('HIGH_LTV: actualValue is the computed ltv, not a raw balance', () => {
+    it('HIGH_LTV: actualValue is the canonical loanToValueRatioPercent, not a raw balance', () => {
       const results = service.evaluate([makeItem({ loanAmount: 170_000, appraisedValue: 200_000 })], program);
       const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'HIGH_LTV');
-      // actualValue must be the ltv (0.85), not loanAmount (170000) or null
+      // Percentage form: 85, not 0.85, not 170000.
       expect(typeof flag.actualValue).toBe('number');
-      expect((flag.actualValue as number)).toBeCloseTo(0.85, 5);
+      expect((flag.actualValue as number)).toBeCloseTo(85, 5);
     });
 
-    it('AVM_GAP: actualValue is avmGapPct (< 1), not avmValue (a large dollar amount)', () => {
-      // avmGapPct = |200k - 175k| / 175k ≈ 0.143
+    it('AVM_GAP: actualValue is canonical avmGapPercent (percentage), not avmValue (dollars)', () => {
+      // canonical avmCrossCheck.avmGapPercent = (200k - 175k) / 175k * 100 ≈ 14.286
       const results = service.evaluate([makeItem({ appraisedValue: 200_000, avmValue: 175_000 })], program);
       const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'AVM_GAP');
       expect(flag.isFired).toBe(true);
-      // actualValue must be a ratio (< 1), not a raw dollar value
       expect(typeof flag.actualValue).toBe('number');
-      expect((flag.actualValue as number)).toBeLessThan(1);
+      // Sanity: a percentage like ~14.3 is way smaller than a raw dollar amount.
+      expect((flag.actualValue as number)).toBeLessThan(100);
+      expect((flag.actualValue as number)).toBeCloseTo(14.286, 2);
     });
 
-    it('AVM_GAP: thresholdValue is the avmGapPct threshold (0.10), not 0', () => {
+    it('AVM_GAP: thresholdValue is the avmGapPct threshold (10), not 0', () => {
       const results = service.evaluate([makeItem({ appraisedValue: 200_000, avmValue: 175_000 })], program);
       const flag = findFlag(assertDefined(results[0]).autoFlagResults, 'AVM_GAP');
-      expect(flag.thresholdValue).toBeCloseTo(0.10, 5);
+      expect(flag.thresholdValue).toBeCloseTo(10, 5);
     });
   });
 });
