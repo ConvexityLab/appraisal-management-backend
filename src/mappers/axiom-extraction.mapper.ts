@@ -159,6 +159,33 @@ function parseFreeTextAddress(text: string): CanonicalAddress | null {
 
 // ─── Subject mapping ──────────────────────────────────────────────────────────
 
+/**
+ * Project Axiom's flat neighborhood-* fields onto the nested
+ * CanonicalSubject.neighborhood (CanonicalNeighborhood).
+ *
+ * Axiom emits:    neighborhoodLocation, neighborhoodGrowth, neighborhoodPropertyValues,
+ *                 neighborhoodDemandSupply, neighborhoodMarketingTime
+ * AMP canonical:  subject.neighborhood.{locationType, growth, propertyValues,
+ *                                       demandSupply, marketingTime}
+ *
+ * Returns undefined if no neighborhood fields are present so the caller can
+ * skip emitting an empty subject.neighborhood block.
+ */
+function mapNeighborhood(extraction: Record<string, unknown>): Record<string, unknown> | undefined {
+    const out: Record<string, unknown> = {};
+    const location = asString(extraction['neighborhoodLocation']);
+    if (location) out['locationType'] = location;
+    const growth = asString(extraction['neighborhoodGrowth']);
+    if (growth) out['growth'] = growth;
+    const propertyValues = asString(extraction['neighborhoodPropertyValues']);
+    if (propertyValues) out['propertyValues'] = propertyValues;
+    const demandSupply = asString(extraction['neighborhoodDemandSupply']);
+    if (demandSupply) out['demandSupply'] = demandSupply;
+    const marketingTime = asString(extraction['neighborhoodMarketingTime']);
+    if (marketingTime) out['marketingTime'] = marketingTime;
+    return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function mapSubject(extraction: Record<string, unknown>): Partial<CanonicalSubject> {
     const out: Partial<CanonicalSubject> = {};
 
@@ -226,6 +253,24 @@ function mapSubject(extraction: Record<string, unknown>): Partial<CanonicalSubje
 
     const annualTaxes = asNumber(extraction['realEstateTaxes']);
     if (annualTaxes != null) out.annualTaxes = annualTaxes;
+
+    // Highest & best use — Axiom returns a flag (boolean-ish) indicating
+    // whether the appraiser concluded "present use" is the highest and best
+    // use. Map to the legacy `highestAndBestUse` enum on CanonicalSubject:
+    // truthy → 'Present', falsy-but-defined → 'Other'.
+    const hbuRaw = unwrap(extraction['highestBestUseIsPresent']);
+    if (hbuRaw != null) {
+        const truthy = hbuRaw === true
+            || (typeof hbuRaw === 'string' && /^(true|yes|y|present)$/i.test(hbuRaw.trim()))
+            || (typeof hbuRaw === 'number' && hbuRaw !== 0);
+        out.highestAndBestUse = truthy ? 'Present' : 'Other';
+    }
+
+    // Neighborhood — flat fields → nested CanonicalNeighborhood.
+    const neighborhood = mapNeighborhood(extraction);
+    if (neighborhood) {
+        out.neighborhood = neighborhood as unknown as NonNullable<CanonicalSubject['neighborhood']>;
+    }
 
     return out;
 }
