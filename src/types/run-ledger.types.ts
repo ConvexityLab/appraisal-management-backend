@@ -1,3 +1,5 @@
+import type { IntakeSourceIdentity } from './intake-source.types.js';
+
 export type EngineTarget = 'AXIOM' | 'MOP_PRIO';
 
 export type EngineSelectionMode = 'EXPLICIT' | 'POLICY';
@@ -50,8 +52,15 @@ export interface RunLedgerRecord {
   runReason?: string;
   engagementId?: string;
   loanPropertyContextId?: string;
+  sourceIdentity?: IntakeSourceIdentity;
   pipelineId?: string;
   canonicalSnapshotId?: string;
+  preparedContextId?: string;
+  preparedContextVersion?: string;
+  preparedDispatchId?: string;
+  preparedPayloadRef?: string;
+  preparedPayloadContractType?: 'axiom-review-dispatch' | 'mop-prio-review-dispatch';
+  preparedPayloadContractVersion?: string;
   criteriaStepKeys?: string[];
   criteriaStepRunIds?: string[];
   statusDetails?: Record<string, unknown>;
@@ -66,12 +75,21 @@ export interface CanonicalSnapshotRecord {
   status: 'ready' | 'processing' | 'failed';
   engagementId?: string;
   loanPropertyContextId?: string;
+  sourceIdentity?: IntakeSourceIdentity;
   sourceRefs: Array<{ sourceType: string; sourceId: string; sourceRunId?: string }>;
   normalizedDataRef: string;
   createdByRunIds: string[];
   normalizedData?: {
     subjectProperty?: Record<string, unknown>;
     extraction?: Record<string, unknown>;
+    /**
+     * AMP canonical-schema (UAD 3.6 / URAR / MISMO 3.4 aligned) projection of
+     * the extraction data. The single source of truth for review-program data
+     * shape; preferred over `extraction` by the resolver. Built by the
+     * AxiomExtractionMapper at snapshot time. Optional for backward-compat
+     * with snapshots produced before the mapper was introduced.
+     */
+    canonical?: Record<string, unknown>;
     providerData?: Record<string, unknown>;
     provenance?: Record<string, unknown>;
   };
@@ -123,6 +141,7 @@ export interface CreateExtractionRunInput {
   enginePolicyRef?: string;
   engagementId?: string;
   loanPropertyContextId?: string;
+  sourceIdentity?: IntakeSourceIdentity;
 }
 
 export interface CreateCriteriaRunInput {
@@ -130,7 +149,7 @@ export interface CreateCriteriaRunInput {
   initiatedBy: string;
   correlationId: string;
   idempotencyKey: string;
-  snapshotId: string;
+  snapshotId?: string;
   programKey: ProgramKey;
   runMode: 'FULL' | 'STEP_ONLY';
   pipelineId?: string;
@@ -140,6 +159,13 @@ export interface CreateCriteriaRunInput {
   parentRunId?: string;
   engagementId?: string;
   loanPropertyContextId?: string;
+  preparedContextId?: string;
+  preparedContextVersion?: string;
+  preparedDispatchId?: string;
+  preparedPayloadRef?: string;
+  preparedPayloadContractType?: 'axiom-review-dispatch' | 'mop-prio-review-dispatch';
+  preparedPayloadContractVersion?: string;
+  sourceIdentity?: IntakeSourceIdentity;
 }
 
 export interface RerunCriteriaStepInput {

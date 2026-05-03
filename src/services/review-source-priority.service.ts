@@ -1,6 +1,6 @@
 import type { ReviewContext } from '../types/review-context.types.js';
 
-type ReviewSourceType = 'order' | 'subjectProperty' | 'extraction' | 'providerData' | 'provenance';
+type ReviewSourceType = 'canonical' | 'order' | 'subjectProperty' | 'extraction' | 'providerData' | 'provenance';
 
 export interface CompetingDataBindingMatch {
   resolvedPath: string;
@@ -14,7 +14,11 @@ export interface ResolvedDataBinding {
   competingMatches?: CompetingDataBindingMatch[];
 }
 
+// `canonical` is the AMP canonical-schema (UAD 3.6 / URAR / MISMO 3.4 aligned)
+// projection of extraction data. It is the authoritative shape for review-program
+// criteria; everything else is fallback for legacy or partial data.
 const SOURCE_PRIORITY: ReadonlyArray<ReviewSourceType> = [
+  'canonical',
   'subjectProperty',
   'extraction',
   'providerData',
@@ -54,11 +58,11 @@ export class ReviewSourcePriorityService {
     }
 
     const unscopedCandidates = candidatePaths
-      .map((path) => this.normalizePath(path).replace(/^(subjectproperty|extraction|providerdata|order|provenance)\./, ''));
+      .map((path) => this.normalizePath(path).replace(/^(canonical|subjectproperty|extraction|providerdata|order|provenance)\./, ''));
     const unscopedMatches = this.collectMatches(availablePaths, (sourcePaths) => {
       for (const normalizedCandidate of unscopedCandidates) {
         for (const [normalizedAvailable, actualPath] of sourcePaths.entries()) {
-          if (normalizedAvailable.replace(/^(subjectproperty|extraction|providerdata|order|provenance)\./, '') === normalizedCandidate) {
+          if (normalizedAvailable.replace(/^(canonical|subjectproperty|extraction|providerdata|order|provenance)\./, '') === normalizedCandidate) {
             return actualPath;
           }
         }
@@ -125,6 +129,7 @@ export class ReviewSourcePriorityService {
   private getAvailablePathLookup(context: ReviewContext): Record<ReviewSourceType, Map<string, string>> {
     const snapshotPaths = context.latestSnapshot?.availableDataPathsBySource;
     return {
+      canonical: this.buildLookup(snapshotPaths?.canonical ?? []),
       subjectProperty: this.buildLookup(snapshotPaths?.subjectProperty ?? []),
       extraction: this.buildLookup(snapshotPaths?.extraction ?? []),
       providerData: this.buildLookup(snapshotPaths?.providerData ?? []),

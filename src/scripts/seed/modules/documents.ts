@@ -100,6 +100,10 @@ function buildDocuments(tenantId: string, clientId: string): Record<string, unkn
       orderId: ORDER_IDS.COMPLETED_001,
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_001],
       category: 'appraisal-report',
+      // documentType uses the Axiom document-type registry id so review-program
+      // criteria can match this doc by its acceptableDocuments / oneOf list.
+      // (See review-requirement-resolution.service.ts hasDocumentType().)
+      documentType: 'uniform-residential-appraisal-report',
       name: 'SEED-2026-00101_Full_1004_Report.pdf',
       mimeType: 'application/pdf', fileSize: 2_450_000,
       blobName: `${tenantId}/${ORDER_IDS.COMPLETED_001}/SEED-2026-00101_Full_1004_Report.pdf`,
@@ -158,6 +162,10 @@ function buildDocuments(tenantId: string, clientId: string): Record<string, unkn
       orderId: ORDER_IDS.IN_PROGRESS_003,
       orderNumber: ORDER_NUMBERS[ORDER_IDS.IN_PROGRESS_003],
       category: 'appraisal-report',
+      // documentType uses the Axiom document-type registry id so review-program
+      // criteria can match this doc by its acceptableDocuments / oneOf list.
+      // (See review-requirement-resolution.service.ts hasDocumentType().)
+      documentType: 'uniform-residential-appraisal-report',
       name: 'SEED-2026-00103_Rush_1004_Report.pdf',
       mimeType: 'application/pdf', fileSize: 2_180_000,
       blobName: `${tenantId}/${ORDER_IDS.IN_PROGRESS_003}/SEED-2026-00103_Rush_1004_Report.pdf`,
@@ -179,6 +187,10 @@ function buildDocuments(tenantId: string, clientId: string): Record<string, unkn
       orderId: ORDER_IDS.SUBMITTED_009,
       orderNumber: ORDER_NUMBERS[ORDER_IDS.SUBMITTED_009],
       category: 'appraisal-report',
+      // documentType uses the Axiom document-type registry id so review-program
+      // criteria can match this doc by its acceptableDocuments / oneOf list.
+      // (See review-requirement-resolution.service.ts hasDocumentType().)
+      documentType: 'uniform-residential-appraisal-report',
       name: 'SEED-2026-00109_MultiFam_1025_Report.pdf',
       mimeType: 'application/pdf', fileSize: 3_800_000,
       blobName: `${tenantId}/${ORDER_IDS.SUBMITTED_009}/SEED-2026-00109_MultiFam_1025_Report.pdf`,
@@ -200,6 +212,10 @@ function buildDocuments(tenantId: string, clientId: string): Record<string, unkn
       orderId: ORDER_IDS.COMPLETED_DRIVEBY_012,
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_DRIVEBY_012],
       category: 'appraisal-report',
+      // documentType uses the Axiom document-type registry id so review-program
+      // criteria can match this doc by its acceptableDocuments / oneOf list.
+      // (See review-requirement-resolution.service.ts hasDocumentType().)
+      documentType: 'uniform-residential-appraisal-report',
       name: 'SEED-2026-00112_DriveBy_2055_Report.pdf',
       mimeType: 'application/pdf', fileSize: 1_100_000,
       blobName: `${tenantId}/${ORDER_IDS.COMPLETED_DRIVEBY_012}/SEED-2026-00112_DriveBy_2055_Report.pdf`,

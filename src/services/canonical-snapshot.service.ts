@@ -4,6 +4,8 @@ import { Logger } from '../utils/logger.js';
 import type { CanonicalSnapshotRecord, RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { DocumentMetadata } from '../types/document.types.js';
 import type { PropertyDataResult } from '../types/property-data.types.js';
+import { extendIntakeSourceIdentity } from '../types/intake-source.types.js';
+import { mapAxiomExtractionToCanonical } from '../mappers/axiom-extraction.mapper.js';
 
 interface PropertyEnrichmentRecord {
   id: string;
@@ -46,6 +48,13 @@ export class CanonicalSnapshotService {
     }
 
     const normalizedData = this.buildNormalizedData(extractionRun, sourceArtifacts);
+    const sourceIdentity = extendIntakeSourceIdentity(
+      extractionRun.sourceIdentity ?? sourceArtifacts.document?.sourceIdentity,
+      {
+        ...(sourceArtifacts.document?.orderId ? { orderId: sourceArtifacts.document.orderId } : {}),
+        ...(sourceArtifacts.document?.id ? { documentId: sourceArtifacts.document.id } : {}),
+      },
+    );
 
     const snapshot: CanonicalSnapshotRecord = {
       id: `snapshot_${Date.now()}_${randomUUID().slice(0, 8)}`,
@@ -56,6 +65,7 @@ export class CanonicalSnapshotService {
       status: 'ready',
       ...(extractionRun.engagementId ? { engagementId: extractionRun.engagementId } : {}),
       ...(extractionRun.loanPropertyContextId ? { loanPropertyContextId: extractionRun.loanPropertyContextId } : {}),
+      ...(sourceIdentity ? { sourceIdentity } : {}),
       sourceRefs,
       normalizedDataRef: `canonical://${extractionRun.tenantId}/${extractionRun.id}/normalized-data`,
       createdByRunIds: [extractionRun.id],
@@ -115,12 +125,20 @@ export class CanonicalSnapshotService {
     const now = new Date().toISOString();
     const sourceArtifacts = await this.loadSourceArtifacts(extractionRun);
     const normalizedData = this.buildNormalizedData(extractionRun, sourceArtifacts);
+    const sourceIdentity = extendIntakeSourceIdentity(
+      extractionRun.sourceIdentity ?? sourceArtifacts.document?.sourceIdentity ?? existing.sourceIdentity,
+      {
+        ...(sourceArtifacts.document?.orderId ? { orderId: sourceArtifacts.document.orderId } : {}),
+        ...(sourceArtifacts.document?.id ? { documentId: sourceArtifacts.document.id } : {}),
+      },
+    );
 
     const refreshed: CanonicalSnapshotRecord = {
       ...existing,
       status: 'ready',
       ...(normalizedData ? { normalizedData } : {}),
       refreshedAt: now,
+      ...(sourceIdentity ? { sourceIdentity } : {}),
     } as CanonicalSnapshotRecord;
 
     const saveResult = await this.dbService.upsertItem<CanonicalSnapshotRecord>(this.runContainerName, refreshed);
@@ -254,15 +272,25 @@ export class CanonicalSnapshotService {
         : {}),
     };
 
+    // Project the raw extraction onto AMP canonical-schema shape (UAD 3.6 /
+    // URAR / MISMO 3.4 aligned). This is the source-of-truth shape for
+    // review-program data; the resolver prefers `canonical` over `extraction`
+    // when both have a path. See src/mappers/axiom-extraction.mapper.ts.
+    const canonical = artifacts.extractionData
+      ? (mapAxiomExtractionToCanonical(artifacts.extractionData) as Record<string, unknown>)
+      : {};
+
     return {
       subjectProperty,
       extraction: artifacts.extractionData ?? {},
+      canonical,
       providerData: providerData ?? {},
       provenance: {
         extractionRunId: extractionRun.id,
         documentId: artifacts.document?.id,
         orderId: artifacts.document?.orderId,
         enrichmentId: artifacts.enrichment?.id,
+        ...(extractionRun.sourceIdentity ? { sourceIdentity: extractionRun.sourceIdentity } : {}),
       },
     };
   }

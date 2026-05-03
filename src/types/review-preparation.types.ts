@@ -4,7 +4,9 @@ import type {
   ReviewContext,
 } from './review-context.types.js';
 
-export type PreparedInputSourceType = 'order' | 'subjectProperty' | 'extraction' | 'providerData' | 'provenance';
+// `canonical` = AMP canonical-schema (UAD 3.6 / URAR / MISMO 3.4) projection of
+// extraction data. Authoritative source for review-program criteria.
+export type PreparedInputSourceType = 'canonical' | 'order' | 'subjectProperty' | 'extraction' | 'providerData' | 'provenance';
 
 export interface PreparedResolvedBindingSummary {
   requirementPath: string;
