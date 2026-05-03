@@ -113,6 +113,9 @@
     <div class="brand-badges">
       <span class="brand-badge">Uniform Residential Appraisal Report</span>
       <span class="brand-badge">UAD 3.6 Compliant</span>
+      {{#if metadata.hasAxiomRef}}
+      <span class="brand-badge" style="color:#B8C9E0;border-color:rgba(196,154,26,.3)">AI Ref: {{metadata.axiomEvaluationId}}{{#if metadata.axiomCompletedAt}} &bull; {{metadata.axiomCompletedAt}}{{/if}}</span>
+      {{/if}}
       <span class="brand-contact">info@visionvmc.com &bull; 425 Town Plaza Ave., Ponte Vedra, FL 32081</span>
     </div>
   </div>

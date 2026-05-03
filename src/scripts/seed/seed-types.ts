@@ -15,9 +15,13 @@ export interface SeedContext {
   db: Database;
   /** The tenant ID to stamp on every document (from AZURE_TENANT_ID). */
   tenantId: string;
-  /** The platform client ID aligned with Axiom (from AXIOM_CLIENT_ID). */
+  /** The Axiom clientId to stamp on all seeded documents (from AXIOM_CLIENT_ID seed-bootstrap env var).
+   * In production this is our platform's registered Axiom identity (e.g. 'vision').
+   * This value is SEED-ONLY — the application reads clientId from the order/engagement at runtime. */
   clientId: string;
-  /** The platform sub-client ID aligned with Axiom (from AXIOM_SUB_CLIENT_ID). */
+  /** The default Axiom subClientId to stamp on seeded documents (from AXIOM_SUB_CLIENT_ID seed-bootstrap env var).
+   * Individual seed records override this with the per-lender slug (e.g. 'firsthorizon').
+   * This value is SEED-ONLY — the application reads subClientId from the order/engagement at runtime. */
   subClientId: string;
   /** Current ISO timestamp — consistent across the entire run. */
   now: string;

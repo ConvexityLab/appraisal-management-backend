@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { AxiomService } from './axiom.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import type {
   BaseEvent,
@@ -15,6 +16,7 @@ import type {
   BulkIngestionCriteriaRule,
   BulkIngestionJob,
 } from '../types/bulk-ingestion.types.js';
+import { ANALYSIS_TYPE_TO_AXIOM_PROGRAM } from '../types/bulk-portfolio.types.js';
 
 // ---------------------------------------------------------------------------
 // Criteria evaluation helpers
@@ -69,11 +71,13 @@ export class BulkIngestionCriteriaWorkerService {
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: ServiceBusEventPublisher;
   private readonly dbService: CosmosDbService;
+  private readonly axiomService: AxiomService;
   private isStarted = false;
   public isRunning = false;
 
   constructor(dbService: CosmosDbService) {
     this.dbService = dbService;
+    this.axiomService = new AxiomService(this.dbService);
     this.publisher = new ServiceBusEventPublisher();
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
@@ -199,7 +203,116 @@ export class BulkIngestionCriteriaWorkerService {
       return;
     }
 
-    // Load the criteria config for this tenant/client.
+    // Load the job once — used by both the Axiom path (T3.4) and the local-rules path.
+    const jobResult = await this.dbService.queryItems<BulkIngestionJob>(
+      'bulk-portfolio-jobs',
+      'SELECT * FROM c WHERE c.type = @type AND c.id = @id AND c.tenantId = @tenantId',
+      [
+        { name: '@type', value: 'bulk-ingestion-job' },
+        { name: '@id', value: jobId },
+        { name: '@tenantId', value: tenantId },
+      ],
+    );
+
+    if (!jobResult.success || !jobResult.data || jobResult.data.length === 0) {
+      throw new Error(`Criteria evaluation: job '${jobId}' not found for tenant '${tenantId}'`);
+    }
+    const job = jobResult.data[0];
+    if (!job) {
+      throw new Error(`Criteria evaluation: job '${jobId}' not found for tenant '${tenantId}'`);
+    }
+
+    const item = job.items.find((i) => i.id === itemId);
+    if (!item) {
+      throw new Error(`Criteria evaluation: item '${itemId}' not found in job '${jobId}'`);
+    }
+
+    // ── T3.4 — Axiom criteria path ──────────────────────────────────────────────
+    // When the job's analysisType maps to a programId, invoke the real Axiom
+    // criteria-only-evaluation pipeline (T2.3 endpoint) instead of local rules.
+    // The orderId must have been stamped on canonicalRecord by the extraction worker.
+    const { programId, programVersion } = ANALYSIS_TYPE_TO_AXIOM_PROGRAM[job.analysisType];
+    const orderId =
+      typeof item.canonicalRecord?.['orderId'] === 'string'
+        ? (item.canonicalRecord['orderId'] as string)
+        : undefined;
+
+    if (programId && orderId) {
+      // Pattern A: reuse the fileSetId derived from the extraction pipeline job.
+      const axiomPipelineJobId =
+        typeof item.canonicalRecord?.['axiomPipelineJobId'] === 'string'
+          ? (item.canonicalRecord['axiomPipelineJobId'] as string)
+          : undefined;
+      const fileSetId = axiomPipelineJobId ? `fs-${axiomPipelineJobId}` : undefined;
+
+      const submitResult = await this.axiomService.submitCriteriaReevaluation({
+        orderId,
+        tenantId,
+        clientId,
+        subClientId: job.subClientId ?? '',
+        programId,
+        programVersion,
+        ...(fileSetId ? { fileSetId } : {}),
+      });
+
+      if (submitResult !== null) {
+        // Wire SSE stream so verdicts land on the order via the existing webhook path.
+        this.axiomService.watchOrderPipelineStream(submitResult.pipelineJobId, orderId);
+
+        // Stamp the criteria pipeline IDs on the item for auditability.
+        const now = new Date().toISOString();
+        const updatedJob: BulkIngestionJob = {
+          ...job,
+          items: job.items.map((i) =>
+            i.id === itemId
+              ? {
+                  ...i,
+                  updatedAt: now,
+                  canonicalRecord: {
+                    ...(i.canonicalRecord ?? {}),
+                    axiomCriteriaPipelineJobId: submitResult.pipelineJobId,
+                    axiomCriteriaEvaluationId: submitResult.evaluationId,
+                  },
+                }
+              : i,
+          ),
+        };
+        const saveResult = await this.dbService.upsertItem<BulkIngestionJob>('bulk-portfolio-jobs', updatedJob);
+        if (!saveResult.success) {
+          throw new Error(`Failed to stamp axiomCriteriaPipelineJobId for item '${itemId}' in job '${jobId}'`);
+        }
+
+        this.logger.info('Axiom criteria-only evaluation submitted', {
+          jobId,
+          itemId,
+          orderId,
+          programId,
+          pipelineJobId: submitResult.pipelineJobId,
+        });
+
+        await this.publisher.publish(
+          this.buildCriteriaEvent(event, {
+            status: 'completed',
+            criteriaStatus: 'completed',
+            criteriaDecision: undefined,
+            reason: `Axiom criteria-only-evaluation submitted (pipelineJobId=${submitResult.pipelineJobId}); verdicts land via webhook`,
+            completedAt,
+            priority: EventPriority.NORMAL,
+          }),
+        );
+        return;
+      }
+
+      // submitResult === null means AxiomService is in mock/disabled mode.
+      // Fall through to local rules so non-production environments still run the worker.
+      this.logger.debug('AxiomService returned null (mock/disabled); falling through to local rules path', {
+        jobId,
+        itemId,
+      });
+    }
+
+    // ── Local rules path ─────────────────────────────────────────────────────────
+    // Used when no Axiom programId is available OR when Axiom is disabled.
     const criteriaConfig = await this.loadCriteriaConfig(tenantId, clientId);
 
     let criteriaDecision: 'PASSED' | 'FAILED' | 'REVIEW';
@@ -211,31 +324,6 @@ export class BulkIngestionCriteriaWorkerService {
       reason = 'No criteria rules configured for tenant; item auto-passed';
       this.logger.debug('No criteria config found; auto-passing item', { jobId, itemId });
     } else {
-      // Load the job to get the item's canonical record.
-      const jobResult = await this.dbService.queryItems<BulkIngestionJob>(
-        'bulk-portfolio-jobs',
-        'SELECT * FROM c WHERE c.type = @type AND c.id = @id AND c.tenantId = @tenantId',
-        [
-          { name: '@type', value: 'bulk-ingestion-job' },
-          { name: '@id', value: jobId },
-          { name: '@tenantId', value: tenantId },
-        ],
-      );
-
-      if (!jobResult.success || !jobResult.data || jobResult.data.length === 0) {
-        throw new Error(`Criteria evaluation: job '${jobId}' not found for tenant '${tenantId}'`);
-      }
-
-      const job = jobResult.data[0];
-      if (!job) {
-        throw new Error(`Criteria evaluation: job '${jobId}' not found for tenant '${tenantId}'`);
-      }
-
-      const item = job.items.find((i) => i.id === itemId);
-      if (!item) {
-        throw new Error(`Criteria evaluation: item '${itemId}' not found in job '${jobId}'`);
-      }
-
       // The canonical record is the merged fields available for evaluation.
       const fields = (item.canonicalRecord ?? {}) as Record<string, unknown>;
 

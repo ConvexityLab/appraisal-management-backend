@@ -249,6 +249,7 @@ export class BulkIngestionProcessorService {
       const rowLabel = `rowIndex=${item.rowIndex}`;
       let matchedDocumentBlob: string | undefined;
       let matchedDocumentNames: string[] = [...item.matchedDocumentFileNames];
+      let resolvedBlobNames: string[] = [];
 
       if (!item.source.loanNumber?.trim() && !item.source.externalId?.trim()) {
         newFailures.push({
@@ -320,6 +321,80 @@ export class BulkIngestionProcessorService {
         }
       }
 
+      // Multi-doc: items.*.documentFileNames[] (T3.3) — used when caller specifies multiple PDFs per row.
+      // Mutually exclusive with documentFileName; documentFileNames takes precedence when both somehow present.
+      if (!item.source.documentFileName && item.source.documentFileNames && item.source.documentFileNames.length > 0) {
+        const blobs: string[] = [];
+        const names: string[] = [];
+        let multiDocFailed = false;
+        for (const docName of item.source.documentFileNames) {
+          const association = this.associateDocumentBlobDeterministically(job, docName);
+          if (association.status === 'matched') {
+            blobs.push(association.blobName);
+            names.push(...association.matchedInputNames);
+          } else if (association.status === 'ambiguous') {
+            newFailures.push({
+              code: 'DOCUMENT_ASSOCIATION_AMBIGUOUS',
+              stage: 'artifact-resolution',
+              message: `Multiple staged documents match '${docName}'. Manual review required.`,
+              retryable: false,
+              occurredAt: now,
+            });
+            manualReviewItems.push({
+              id: `bulk-manual-review-${uuidv4()}`,
+              type: 'bulk-ingestion-manual-review-item',
+              tenantId: job.tenantId,
+              clientId: job.clientId,
+              jobId: job.id,
+              itemId: item.id,
+              rowIndex: item.rowIndex,
+              adapterKey: job.adapterKey,
+              status: 'QUEUED',
+              reasonCode: 'DOCUMENT_ASSOCIATION_AMBIGUOUS',
+              reason: `Ambiguous document association for '${docName}'`,
+              requestedDocumentFileName: docName,
+              candidateDocumentBlobNames: association.candidateBlobNames,
+              createdAt: now,
+              createdBy: 'bulk-ingestion-processor-service',
+            });
+            multiDocFailed = true;
+            break;
+          } else {
+            newFailures.push({
+              code: 'DOCUMENT_BLOB_NOT_FOUND',
+              stage: 'artifact-resolution',
+              message: `No staged document blob found for '${docName}'`,
+              retryable: true,
+              occurredAt: now,
+            });
+            manualReviewItems.push({
+              id: `bulk-manual-review-${uuidv4()}`,
+              type: 'bulk-ingestion-manual-review-item',
+              tenantId: job.tenantId,
+              clientId: job.clientId,
+              jobId: job.id,
+              itemId: item.id,
+              rowIndex: item.rowIndex,
+              adapterKey: job.adapterKey,
+              status: 'QUEUED',
+              reasonCode: 'DOCUMENT_NOT_FOUND',
+              reason: `No staged document blob matched '${docName}'`,
+              requestedDocumentFileName: docName,
+              candidateDocumentBlobNames: [],
+              createdAt: now,
+              createdBy: 'bulk-ingestion-processor-service',
+            });
+            multiDocFailed = true;
+            break;
+          }
+        }
+        if (!multiDocFailed) {
+          matchedDocumentBlob = blobs[0]; // first blob for backward compat
+          matchedDocumentNames = names;
+          resolvedBlobNames = blobs;
+        }
+      }
+
       if (newFailures.length > 0) {
         updatedItems.push({
           ...item,
@@ -341,6 +416,7 @@ export class BulkIngestionProcessorService {
           adapterKey: job.adapterKey,
           dataFileBlobName: job.dataFileBlobName,
           ...(matchedDocumentBlob ? { documentBlobName: matchedDocumentBlob } : {}),
+          ...(resolvedBlobNames.length > 1 ? { documentBlobNames: resolvedBlobNames } : {}),
           // Include all source loan/property fields so criteria rules can evaluate them
           ...(item.source.loanAmount !== undefined ? { loanAmount: item.source.loanAmount } : {}),
           ...(item.source.propertyType !== undefined ? { propertyType: item.source.propertyType } : {}),

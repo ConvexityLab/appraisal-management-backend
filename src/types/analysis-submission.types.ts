@@ -30,7 +30,7 @@ export interface ExtractionSubmissionRequest {
 
 export interface CriteriaSubmissionRequest {
   analysisType: 'CRITERIA';
-  snapshotId: string;
+  snapshotId?: string;
   programKey: CreateCriteriaRunInput['programKey'];
   runMode: CreateCriteriaRunInput['runMode'];
   criteriaStepKeys?: string[];
@@ -40,6 +40,12 @@ export interface CriteriaSubmissionRequest {
   enginePolicyRef?: CreateCriteriaRunInput['enginePolicyRef'];
   engagementId?: string;
   loanPropertyContextId?: string;
+  preparedContextId?: CreateCriteriaRunInput['preparedContextId'];
+  preparedContextVersion?: CreateCriteriaRunInput['preparedContextVersion'];
+  preparedDispatchId?: CreateCriteriaRunInput['preparedDispatchId'];
+  preparedPayloadRef?: CreateCriteriaRunInput['preparedPayloadRef'];
+  preparedPayloadContractType?: CreateCriteriaRunInput['preparedPayloadContractType'];
+  preparedPayloadContractVersion?: CreateCriteriaRunInput['preparedPayloadContractVersion'];
 }
 
 export type AnalysisSubmissionRequest =

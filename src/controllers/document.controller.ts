@@ -43,7 +43,22 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
     modifiedAt: doc.updatedAt,
     version: doc.version ?? 1,
     ...(doc.previousVersionId && { replacesDocumentId: doc.previousVersionId }),
-    metadata: doc.metadata ? { tags: doc.tags, ...doc.metadata as Record<string, unknown> } : (doc.tags ? { tags: doc.tags } : undefined)
+    metadata: doc.metadata
+      ? {
+          tags: doc.tags,
+          orderLinkedAt: doc.orderLinkedAt,
+          orderLinkedBy: doc.orderLinkedBy,
+          ...doc.metadata as Record<string, unknown>,
+        }
+      : (
+        doc.tags || doc.orderLinkedAt || doc.orderLinkedBy
+          ? {
+              ...(doc.tags ? { tags: doc.tags } : {}),
+              ...(doc.orderLinkedAt ? { orderLinkedAt: doc.orderLinkedAt } : {}),
+              ...(doc.orderLinkedBy ? { orderLinkedBy: doc.orderLinkedBy } : {}),
+            }
+          : undefined
+      )
   };
 }
 

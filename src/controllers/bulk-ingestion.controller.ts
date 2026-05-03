@@ -63,6 +63,8 @@ const validateSubmit = [
   body('items.*.loanNumber').optional().isString(),
   body('items.*.externalId').optional().isString(),
   body('items.*.documentFileName').optional().isString(),
+  body('items.*.documentFileNames').optional().isArray().withMessage('documentFileNames must be an array'),
+  body('items.*.documentFileNames.*').optional().isString().withMessage('each documentFileNames entry must be a string'),
 ];
 
 type NamedMulterFiles = {

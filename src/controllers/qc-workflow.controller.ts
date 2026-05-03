@@ -86,6 +86,7 @@ router.get(
   '/queue',
   ...qcQueueRead,
   [
+    query('orderId').optional().isString(),
     query('status').optional().isString(),
     query('priorityLevel').optional().isString(),
     query('assignedAnalystId').optional().isString(),
@@ -97,6 +98,7 @@ router.get(
   async (req: Request, res: Response) => {
     try {
       const criteria: any = {
+        orderId: req.query.orderId as string | undefined,
         status: req.query.status ? [req.query.status] : undefined,
         priorityLevel: req.query.priorityLevel ? [req.query.priorityLevel] : undefined,
         assignedAnalystId: req.query.assignedAnalystId as string,
@@ -118,6 +120,40 @@ router.get(
         success: false,
         error: 'Failed to retrieve QC queue',
         details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/qc-workflow/queue/order/:orderId/current
+ * Get the current queue review instance for an order.
+ *
+ * Orders remain the primary record of custody. The queue item represents the
+ * workflow instance used for analyst assignment and final QC decisioning.
+ */
+router.get(
+  '/queue/order/:orderId/current',
+  ...qcQueueRead,
+  [param('orderId').notEmpty().withMessage('orderId is required')],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const queueItem = await qcQueueService.getCurrentQueueItemForOrder(req.params.orderId!);
+
+      return res.json({
+        success: true,
+        data: queueItem,
+      });
+    } catch (error) {
+      logger.error('Failed to get current queue item for order', {
+        error: error instanceof Error ? error.message : String(error),
+        orderId: req.params.orderId,
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve current queue item for order',
+        details: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -1018,6 +1054,29 @@ router.post(
         }
       }
 
+      // Build MOP snapshot (best-effort — reads complianceViolations already stamped on the order)
+      let mopSnapshot: {
+        mopCriteriaSnapshot?: Array<{ ruleId: string; description: string; result: 'pass' | 'fail' | 'warn'; details?: string }>;
+      } = {};
+      if (orderId) {
+        try {
+          const orderResp = await dbService.findOrderById(orderId);
+          const orderDoc = orderResp?.data as any;
+          if (orderDoc?.complianceViolations && orderDoc.complianceViolations.length > 0) {
+            mopSnapshot = {
+              mopCriteriaSnapshot: (orderDoc.complianceViolations as any[]).map((v: any) => ({
+                ruleId: v.ruleId ?? v.id ?? 'unknown',
+                description: v.description ?? v.message ?? v.ruleId,
+                result: (v.severity === 'WARNING' ? 'warn' : 'fail') as 'fail' | 'warn',
+                details: v.severity,
+              })),
+            };
+          }
+        } catch (mopErr) {
+          logger.warn('Could not fetch MOP snapshot for QC decision record', { mopErr, orderId });
+        }
+      }
+
       const result = await qcQueueService.completeWithDecision(
         req.params.queueItemId!,
         {
@@ -1027,6 +1086,7 @@ router.post(
           conditions: req.body.conditions,
           score: req.body.score,
           ...axiomSnapshot,
+          ...mopSnapshot,
         }
       );
 

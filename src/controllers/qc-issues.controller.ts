@@ -27,6 +27,16 @@ export function createQCIssuesOrderScopedRouter(dbService: CosmosDbService): Rou
     const orderId = req.params['orderId'] as string;
     const tenantId = (req as any).user?.tenantId;
 
+    if (!tenantId || typeof tenantId !== 'string' || tenantId.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'TENANT_ID_REQUIRED',
+          message: 'Authenticated tenantId is required to retrieve QC issues.',
+        },
+      });
+    }
+
     try {
       const container = dbService.getContainer(QC_ISSUES_CONTAINER);
       const { resources } = await container.items.query({
@@ -40,9 +50,14 @@ export function createQCIssuesOrderScopedRouter(dbService: CosmosDbService): Rou
       return res.status(200).json({ success: true, data: resources });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('Failed to list qc-issues', { orderId, error: msg });
-      // Return empty list rather than 500 so the UI renders
-      return res.status(200).json({ success: true, data: [] });
+      logger.error('Failed to list qc-issues', { orderId, tenantId, error: msg });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'QC_ISSUES_LIST_FAILED',
+          message: `Failed to retrieve QC issues for order '${orderId}': ${msg}`,
+        },
+      });
     }
   });
 

@@ -14,6 +14,7 @@ import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority } from '../types/index.js';
 import { ANALYSIS_TYPE_TO_PRODUCT_TYPE } from '../types/bulk-portfolio.types.js';
+import { buildBulkItemSourceIdentity, extendIntakeSourceIdentity } from '../types/intake-source.types.js';
 import type {
   BaseEvent,
   BulkIngestionOrdersCreatedEvent,
@@ -189,6 +190,13 @@ export class BulkIngestionOrderCreationWorkerService {
         const orderNumber = this.generateOrderNumber(job.id, item.rowIndex);
         const dueDateDays = parseInt(process.env['BULK_INGESTION_DEFAULT_DUE_DATE_DAYS'] ?? '5', 10);
         const dueDate = new Date(Date.now() + dueDateDays * 24 * 60 * 60 * 1000).toISOString();
+        const sourceIdentity = item.sourceIdentity
+          ?? canonicalRecord.sourceIdentity
+          ?? buildBulkItemSourceIdentity({
+            bulkJobId: job.id,
+            bulkItemId: item.id,
+            engagementId: engagement.id,
+          });
 
         const createResult = await this.dbService.createOrder({
           orderNumber,
@@ -235,6 +243,7 @@ export class BulkIngestionOrderCreationWorkerService {
             adapterKey,
             rowIndex: item.rowIndex,
             correlationId,
+            sourceIdentity,
           },
           createdBy: job.submittedBy,
           createdAt: new Date(),
@@ -247,6 +256,17 @@ export class BulkIngestionOrderCreationWorkerService {
         }
 
         createdOrderCount++;
+
+        const resolvedSourceIdentity = extendIntakeSourceIdentity(sourceIdentity, {
+          orderId: createResult.data.id,
+          engagementId: engagement.id,
+          sourceArtifactRefs: [
+            {
+              artifactType: 'order',
+              artifactId: createResult.data.id,
+            },
+          ],
+        }) ?? sourceIdentity;
 
         // Publish order.created so downstream services (auto-assignment, notifications) can react
         await this.publisher.publish({
@@ -320,6 +340,7 @@ export class BulkIngestionOrderCreationWorkerService {
           orderCreatedAt: new Date().toISOString(),
           orderCreationStatus: 'CREATED',
         };
+        canonicalRecord.sourceIdentity = resolvedSourceIdentity;
 
         item.canonicalRecord = {
           ...(item.canonicalRecord ?? {}),
@@ -330,7 +351,9 @@ export class BulkIngestionOrderCreationWorkerService {
           engagementProductId,
           orderCreatedAt: new Date().toISOString(),
           orderCreationStatus: 'CREATED',
+          sourceIdentity: resolvedSourceIdentity,
         };
+        item.sourceIdentity = resolvedSourceIdentity;
         item.updatedAt = new Date().toISOString();
       } catch (error) {
         failedOrderCount++;

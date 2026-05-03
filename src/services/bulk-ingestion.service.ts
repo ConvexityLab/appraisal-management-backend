@@ -16,6 +16,7 @@ import type {
   BulkIngestionSubmitRequest,
 } from '../types/bulk-ingestion.types.js';
 import { EventCategory, EventPriority, type BulkIngestionRequestedEvent } from '../types/events.js';
+import { buildBulkItemSourceIdentity } from '../types/intake-source.types.js';
 
 type BulkIngestionAuditAction =
   | 'SUBMIT'
@@ -131,14 +132,19 @@ export class BulkIngestionService {
       const rowIndex = input.rowIndex ?? index + 1;
       const stableKey = input.loanNumber?.trim() || input.externalId?.trim() || `${rowIndex}`;
       const correlationKey = `${jobId}::${stableKey}`;
+      const itemId = `${jobId}:${rowIndex}`;
       return {
-        id: `${jobId}:${rowIndex}`,
+        id: itemId,
         rowIndex,
         correlationKey,
         status: 'PENDING',
         source: input,
         matchedDocumentFileNames: input.documentFileName ? [input.documentFileName] : [],
         failures: [],
+        sourceIdentity: buildBulkItemSourceIdentity({
+          bulkJobId: jobId,
+          bulkItemId: itemId,
+        }),
       };
     });
 
@@ -165,6 +171,9 @@ export class BulkIngestionService {
       successItems: 0,
       failedItems: 0,
       pendingItems: items.length,
+      sourceIdentity: buildBulkItemSourceIdentity({
+        bulkJobId: jobId,
+      }),
       items,
     };
 

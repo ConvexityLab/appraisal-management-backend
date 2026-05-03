@@ -69,8 +69,16 @@ export const BULK_ANALYSIS_LABELS: Record<BulkAnalysisType, string> = {
  * Maps BulkAnalysisType → the Axiom program and version to invoke for document
  * schema extraction and criteria evaluation.
  *
- * This is domain knowledge and must live in code — not in env vars.
- * To change a mapping: update the entry here. All callers derive from this table.
+ * TEMPORARY HARD-CODED TABLE — all types currently resolve to the FNMA-URAR program.
+ *
+ * TODO: replace with a CosmosDB-backed lookup (container: `program-config`, type:
+ * `analysis-type-program-mapping`, partitioned by tenantId).  The service method
+ * that resolves this should accept (tenantId, analysisType) and fall back to this
+ * table when no tenant-specific override is found.  Tracked in the production-
+ * readiness plan under Cap 3 / T3.10 (not yet scheduled).
+ *
+ * To change a mapping today: update the entry here. All callers derive from this
+ * table.
  */
 export const ANALYSIS_TYPE_TO_AXIOM_PROGRAM: Record<BulkAnalysisType, { programId: string; programVersion: string }> = {
   AVM:           { programId: 'FNMA-URAR', programVersion: '1.0.0' },

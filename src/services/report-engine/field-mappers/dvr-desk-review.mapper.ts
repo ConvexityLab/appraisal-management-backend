@@ -20,6 +20,7 @@
 
 import { IFieldMapper } from './field-mapper.interface';
 import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -282,6 +283,9 @@ export class DvrDeskReviewMapper implements IFieldMapper {
 
       // ── Limiting conditions ──────────────────────────────────────────
       limitingConditions: DEFAULT_DESKTOP_LIMITING_CONDITIONS,
-    };
+      // ── Capability-5: AI insights + enrichment ────────────────────
+      aiInsights:      buildAiInsightsContext(doc),
+      enrichmentData:  buildEnrichmentContext(doc),
+      sourceDocuments: buildSourceDocumentsContext(doc),    };
   }
 }

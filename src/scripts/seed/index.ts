@@ -38,6 +38,7 @@ import { module as constructionModule } from './modules/construction.js';
 import { module as bulkPortfoliosModule } from './modules/bulk-portfolios.js';
 import { module as matchingCriteriaModule } from './modules/matching-criteria.js';
 import { module as timelineModule } from './modules/timeline.js';
+import { module as mopCriteriaModule } from './modules/mop-criteria.js';
 import { module as reviewProgramsModule } from './modules/review-programs.js';
 import { module as pdfTemplatesModule } from './modules/pdf-templates.js';
 import { module as escalationsModule } from './modules/escalations.js';
@@ -69,7 +70,8 @@ const ALL_MODULES: SeedModule[] = [
   bulkPortfoliosModule, // Phase 11
   matchingCriteriaModule, // Phase 12
   timelineModule,       // Phase 13
-  reviewProgramsModule, // Phase 14
+  mopCriteriaModule,   // Phase 14 (must precede review-programs so refs resolve)
+  reviewProgramsModule, // Phase 15
   pdfTemplatesModule,   // Phase 15
   escalationsModule,    // Phase 16
   revisionsModule,      // Phase 17
@@ -132,6 +134,7 @@ const CONTAINER_PARTITION_KEYS: Record<string, string> = {
   'sla-tracking':             '/orderId',
   'sla-configurations':       '/clientId',
   'review-programs':          '/clientId',
+  'mop-criteria':             '/clientId',
   'review-results':           '/jobId',
   'properties':               '/address/state',
   'property-summaries':       '/propertyType',

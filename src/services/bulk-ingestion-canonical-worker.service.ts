@@ -21,12 +21,15 @@ import type {
   BulkIngestionItem,
 } from '../types/bulk-ingestion.types.js';
 import { BulkAdapterDefinitionService } from './bulk-adapter-definition.service.js';
+import { buildBulkItemSourceIdentity } from '../types/intake-source.types.js';
 
 type CanonicalValidationResult =
   | {
       ok: true;
       canonicalData: Record<string, unknown>;
       documentBlobName?: string;
+      /** Populated when item specified documentFileNames[]. First entry mirrors documentBlobName. */
+      documentBlobNames?: string[];
       diagnostics?: Record<string, unknown>;
     }
   | {
@@ -154,6 +157,12 @@ export class BulkIngestionCanonicalWorkerService {
         itemId: item.id,
         rowIndex: item.rowIndex,
         adapterKey: job.adapterKey,
+        sourceIdentity:
+          item.sourceIdentity
+          ?? buildBulkItemSourceIdentity({
+            bulkJobId: job.id,
+            bulkItemId: item.id,
+          }),
         canonicalData: validation.canonicalData,
         sourceData: {
           ...(item.source.loanNumber !== undefined ? { loanNumber: item.source.loanNumber } : {}),
@@ -173,8 +182,10 @@ export class BulkIngestionCanonicalWorkerService {
           ...(item.source.loanPurpose !== undefined ? { loanPurpose: item.source.loanPurpose } : {}),
           ...(item.source.occupancyType !== undefined ? { occupancyType: item.source.occupancyType } : {}),
           ...(item.source.documentUrl !== undefined ? { documentUrl: item.source.documentUrl } : {}),
+          ...(item.source.documentFileNames !== undefined ? { documentFileNames: item.source.documentFileNames } : {}),
         },
         ...(validation.documentBlobName ? { documentBlobName: validation.documentBlobName } : {}),
+        ...(validation.documentBlobNames?.length ? { documentBlobNames: validation.documentBlobNames } : {}),
         persistedAt: now,
       };
 
@@ -258,6 +269,17 @@ export class BulkIngestionCanonicalWorkerService {
   ): CanonicalValidationResult {
     const documentBlobName = this.resolveDocumentBlobName(job, item.source.documentFileName);
 
+    // Multi-doc: resolve each name individually; first resolved blob covers the required-doc check.
+    let documentBlobNames: string[] | undefined;
+    if (!documentBlobName && item.source.documentFileNames && item.source.documentFileNames.length > 0) {
+      const resolved = item.source.documentFileNames
+        .map((name) => this.resolveDocumentBlobName(job, name))
+        .filter((b): b is string => b !== undefined);
+      if (resolved.length === item.source.documentFileNames.length) {
+        documentBlobNames = resolved;
+      }
+    }
+
     for (const requirement of definition.requiredAnyOf ?? []) {
       const hasValue = requirement.sources.some(
         (source) => this.resolveDefinitionValue(job, item, source, requirement.trim) !== undefined,
@@ -282,7 +304,7 @@ export class BulkIngestionCanonicalWorkerService {
       }
     }
 
-    if (definition.documentRequirement?.required && !documentBlobName) {
+    if (definition.documentRequirement?.required && !documentBlobName && !documentBlobNames?.length) {
       return this.makeDefinitionFailure(
         job,
         item,
@@ -311,7 +333,8 @@ export class BulkIngestionCanonicalWorkerService {
     return {
       ok: true,
       canonicalData,
-      ...(documentBlobName ? { documentBlobName } : {}),
+      ...(documentBlobName ? { documentBlobName } : documentBlobNames?.length ? { documentBlobName: documentBlobNames[0] } : {}),
+      ...(documentBlobNames?.length ? { documentBlobNames } : {}),
     };
   }
 

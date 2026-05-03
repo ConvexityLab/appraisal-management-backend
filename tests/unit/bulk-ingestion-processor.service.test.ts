@@ -320,4 +320,100 @@ describe('BulkIngestionProcessorService', () => {
       }),
     );
   });
+
+  it('resolves documentFileNames[] and stamps documentBlobNames on the canonical record (T3.3)', async () => {
+    const db = makeDbStub({
+      documentFileNames: ['doc1.pdf', 'doc2.pdf'],
+      documentBlobMap: {
+        'doc1.pdf': 'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+        'doc2.pdf': 'bulk-ingestion/tenant-001/123/document/doc2.pdf',
+      },
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::1`,
+          status: 'PENDING' as const,
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-MULTI',
+            documentFileNames: ['doc1.pdf', 'doc2.pdf'],
+          },
+          matchedDocumentFileNames: [],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const blobService = { uploadBlob: vi.fn() } as any;
+    const service = new BulkIngestionProcessorService(db as any, blobService);
+
+    await (service as any).onBulkIngestionRequested(makeEvent());
+
+    const persistedJob = db.upsertItem.mock.calls[0][1];
+    expect(persistedJob.status).toBe('COMPLETED');
+    expect(persistedJob.items[0].status).toBe('COMPLETED');
+    expect(persistedJob.items[0].canonicalRecord).toEqual(
+      expect.objectContaining({
+        documentBlobName: 'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+        documentBlobNames: [
+          'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+          'bulk-ingestion/tenant-001/123/document/doc2.pdf',
+        ],
+      }),
+    );
+    expect(db.createItem).not.toHaveBeenCalled();
+  });
+
+  it('fails the item when any documentFileNames[] entry is missing from blobs (T3.3)', async () => {
+    const db = makeDbStub({
+      documentFileNames: ['doc1.pdf', 'missing.pdf'],
+      documentBlobMap: {
+        'doc1.pdf': 'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+      },
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::1`,
+          status: 'PENDING' as const,
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-MULTI-FAIL',
+            documentFileNames: ['doc1.pdf', 'missing.pdf'],
+          },
+          matchedDocumentFileNames: [],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const blobService = { uploadBlob: vi.fn() } as any;
+    const service = new BulkIngestionProcessorService(db as any, blobService);
+
+    await (service as any).onBulkIngestionRequested(makeEvent());
+
+    const persistedJob = db.upsertItem.mock.calls[0][1];
+    expect(persistedJob.status).toBe('FAILED');
+    expect(persistedJob.items[0].status).toBe('FAILED');
+    expect(
+      persistedJob.items[0].failures.some((f: any) => f.code === 'DOCUMENT_BLOB_NOT_FOUND'),
+    ).toBe(true);
+    expect(db.createItem).toHaveBeenCalledWith(
+      'bulk-portfolio-jobs',
+      expect.objectContaining({
+        type: 'bulk-ingestion-manual-review-item',
+        reasonCode: 'DOCUMENT_NOT_FOUND',
+        requestedDocumentFileName: 'missing.pdf',
+      }),
+    );
+  });
 });

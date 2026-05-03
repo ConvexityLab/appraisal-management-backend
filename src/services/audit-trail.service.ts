@@ -230,6 +230,28 @@ export class AuditTrailService {
     });
   }
 
+  async logDocumentReassociatedToOrder(
+    actor: AuditEvent['actor'],
+    params: {
+      documentId: string;
+      documentName: string;
+      orderId: string;
+      entityType?: string;
+      entityId?: string;
+    },
+  ): Promise<void> {
+    await this.log({
+      actor,
+      action: 'document.reassociated_to_order',
+      resource: { type: 'document', id: params.documentId, name: params.documentName },
+      metadata: {
+        orderId: params.orderId,
+        ...(params.entityType ? { entityType: params.entityType } : {}),
+        ...(params.entityId ? { entityId: params.entityId } : {}),
+      },
+    });
+  }
+
   // ===========================
   // QC AUDIT EVENTS
   // ===========================

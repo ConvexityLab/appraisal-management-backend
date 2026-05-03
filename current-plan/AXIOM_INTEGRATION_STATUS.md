@@ -65,8 +65,8 @@ Backend (receives, verifies, stamps Cosmos, broadcasts via WebPubSub)
 | `getEvaluationById(evaluationId)` | Direct lookup by evaluationId; enriches `documentReferences` with stored `_metadata` | ✅ Done |
 | `getEvaluationsForOrder(orderId)` | Returns all evaluations for an order, enriched | ✅ Done |
 | `compareDocuments(orderId, originalUrl, revisedUrl)` | Document diff via `POST /documents/compare` | ✅ Done |
-| `getCompiledCriteria(clientId, tenantId, programId, version)` | `GET /api/programs/:programId/:version/compiled` — cache-first with TTL | ✅ Done |
-| `compileCriteria(clientId, tenantId, programId, version)` | `POST /api/programs/:programId/:version/compile` — always fresh, warms cache | ✅ Done |
+| `getCompiledCriteria(clientId, subClientId, programId, version)` | `GET /api/criteria/clients/:clientId/sub-clients/:subClientId/programs/:programId/:version/compiled` — cache-first with TTL | ✅ Done |
+| `compileCriteria(clientId, subClientId, programId, version)` | `POST /api/criteria/clients/:clientId/sub-clients/:subClientId/programs/:programId/:version/compile` — always fresh, warms cache | ✅ Done |
 | `broadcastAxiomStatus(...)` | Pushes `axiom.evaluation.updated` to frontend via WebPubSub | ✅ Done |
 | `broadcastBatchJobUpdate(...)` | Pushes `axiom.batch.updated` to frontend via WebPubSub | ✅ Done |
 | **Mock mode** | Full lifecycle simulation (pending → processing → completed) with realistic 11-criterion result, 73-field tape extraction, and compiled criteria mock — fires when `AXIOM_API_BASE_URL` / `AXIOM_API_KEY` absent | ✅ Done |

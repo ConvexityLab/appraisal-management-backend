@@ -116,6 +116,7 @@ import { createRunsRouter } from '../controllers/runs.controller.js';
 import { createAnalysisSubmissionRouter } from '../controllers/analysis-submission.controller.js';
 import { createAxiomAdminRouter } from '../controllers/axiom-admin.controller.js';
 import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.controller.js';
+import { createMopCriteriaRouter } from '../controllers/mop-criteria.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
 
@@ -211,6 +212,7 @@ import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 // Import Audit Event Sink + Engagement Audit Controller
 import { AuditEventSinkService } from '../services/audit-event-sink.service.js';
 import { QCIssueRecorderService } from '../services/qc-issue-recorder.service.js';
+import { CriteriaReevaluationHandlerService } from '../services/criteria-reevaluation-handler.service.js';
 import { QCLifecycleHandler } from '../services/qc-lifecycle-handler.service.js';
 import { VendorIntegrationEventConsumerService } from '../services/vendor-integration-event-consumer.service.js';
 import { createEngagementAuditRouter } from '../controllers/engagement-audit.controller.js';
@@ -348,6 +350,7 @@ export class AppraisalManagementAPIServer {
   private rovSLAWatcherJob?: ROVSLAWatcherJob;
   private auditEventSinkService?: AuditEventSinkService;
   private qcIssueRecorderService?: QCIssueRecorderService;
+  private criteriaReevaluationHandlerService?: CriteriaReevaluationHandlerService;
   private qcLifecycleHandler?: QCLifecycleHandler;
   private vendorIntegrationEventConsumerService?: VendorIntegrationEventConsumerService;
   private axiomTimeoutWatcherJob?: AxiomTimeoutWatcherJob;
@@ -934,6 +937,12 @@ export class AppraisalManagementAPIServer {
       createCriteriaProgramsRouter(sharedAxiomService)
     );
 
+    // MOP Criteria Programs — GET compiled MOP rule sets (cache-first) / POST force-recompile
+    this.app.use('/api/mop-criteria',
+      this.unifiedAuth.authenticate(),
+      createMopCriteriaRouter(this.dbService)
+    );
+
     // ===== ITEM 3: ENHANCED VENDOR MANAGEMENT SYSTEM =====
     
     // Vendor Certifications - License tracking, expiry monitoring, document storage (authenticated users)
@@ -1416,6 +1425,20 @@ export class AppraisalManagementAPIServer {
       this.authorize('analytics', 'view'),
       this.validateAnalyticsQuery(),
       this.getPerformanceAnalytics.bind(this)
+    );
+
+    this.app.get('/api/analytics/orders/trend',
+      this.unifiedAuth.authenticate(),
+      ...this.loadUserProfileIfAvailable(),
+      this.authorize('analytics', 'view'),
+      this.getOrderTrend.bind(this)
+    );
+
+    this.app.get('/api/analytics/vendors/performance',
+      this.unifiedAuth.authenticate(),
+      ...this.loadUserProfileIfAvailable(),
+      this.authorize('analytics', 'view'),
+      this.getVendorPerformanceSummary.bind(this)
     );
 
     // Property Intelligence routes (with /api prefix)
@@ -2324,6 +2347,28 @@ export class AppraisalManagementAPIServer {
         code: 'PERFORMANCE_ANALYTICS_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  }
+
+  private async getOrderTrend(req: AuthenticatedRequest, res: express.Response): Promise<void> {
+    const weeks = Math.max(1, Math.min(parseInt(String(req.query['weeks'] ?? '12'), 10) || 12, 52));
+    const result = await this.dbService.getOrderTrendData({ weeks });
+    if (result.success) {
+      res.json(result.data);
+    } else {
+      res.status(500).json({ error: 'Failed to retrieve order trend data', code: 'ORDER_TREND_ERROR' });
+    }
+  }
+
+  private async getVendorPerformanceSummary(req: AuthenticatedRequest, res: express.Response): Promise<void> {
+    const params: { startDate?: string; endDate?: string } = {};
+    if (req.query['startDate']) params.startDate = req.query['startDate'] as string;
+    if (req.query['endDate']) params.endDate = req.query['endDate'] as string;
+    const result = await this.dbService.getPerformanceAnalytics(params);
+    if (result.success) {
+      res.json((result.data as any)?.vendorPerformance?.topPerformers ?? []);
+    } else {
+      res.status(500).json({ error: 'Failed to retrieve vendor performance data', code: 'VENDOR_PERF_ERROR' });
     }
   }
 
@@ -5148,6 +5193,21 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Criteria Reevaluation Handler — turns field-correction cascade requests
+    // into criteria-only reruns and per-criterion reevaluation audit events.
+    try {
+      this.criteriaReevaluationHandlerService = new CriteriaReevaluationHandlerService(this.dbService);
+      this.criteriaReevaluationHandlerService.start().catch(err => {
+        this.logger.warn('CriteriaReevaluationHandlerService failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('CriteriaReevaluationHandlerService could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start UCDP/EAD Auto-Submit Service (auto-submits delivered orders to GSE portals for eligible loan types)
     try {
       this.ucdpEadAutoSubmitService = new UcdpEadAutoSubmitService(this.dbService);
@@ -5271,6 +5331,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.auditEventSinkService) {
       this.auditEventSinkService.stop().catch(() => {});
+    }
+    if (this.criteriaReevaluationHandlerService) {
+      this.criteriaReevaluationHandlerService.stop().catch(() => {});
     }
     if (this.ucdpEadAutoSubmitService) {
       this.ucdpEadAutoSubmitService.stop().catch(() => {});

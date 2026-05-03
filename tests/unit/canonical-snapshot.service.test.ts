@@ -65,7 +65,14 @@ describe('CanonicalSnapshotService merge behavior', () => {
     const db = { queryItems, upsertItem };
 
     const service = new CanonicalSnapshotService(db as any);
-    const snapshot = await service.createFromExtractionRun(buildExtractionRun());
+    const snapshot = await service.createFromExtractionRun(buildExtractionRun({
+      sourceIdentity: {
+        sourceKind: 'manual-draft',
+        intakeDraftId: 'draft-123',
+        orderId: 'order-001',
+        sourceArtifactRefs: [{ artifactType: 'order-intake-draft', artifactId: 'draft-123' }],
+      },
+    }));
 
     expect(snapshot.sourceRefs).toEqual([
       expect.objectContaining({
@@ -82,7 +89,18 @@ describe('CanonicalSnapshotService merge behavior', () => {
       documentId: 'doc-001',
       orderId: 'order-001',
       enrichmentId: undefined,
+      sourceIdentity: expect.objectContaining({
+        sourceKind: 'manual-draft',
+        intakeDraftId: 'draft-123',
+      }),
     });
+    expect(snapshot.sourceIdentity).toEqual(
+      expect.objectContaining({
+        sourceKind: 'manual-draft',
+        intakeDraftId: 'draft-123',
+        documentId: 'doc-001',
+      }),
+    );
 
     expect(upsertItem).toHaveBeenCalledTimes(1);
     expect(upsertItem.mock.calls[0][0]).toBe('aiInsights');

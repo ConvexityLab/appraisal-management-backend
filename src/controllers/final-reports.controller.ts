@@ -6,6 +6,7 @@
  *   GET  /api/final-reports/orders/:orderId         — get current report record for an order
  *   POST /api/final-reports/orders/:orderId/generate — trigger generation (returns 202 + stub record)
  *   GET  /api/final-reports/orders/:orderId/download — stream filled PDF to client
+ *   GET  /api/final-reports/orders/:orderId/export  — download CSV or XLSX report data bundle
  */
 
 import { Router, Request, Response } from 'express';
@@ -238,6 +239,46 @@ export function createFinalReportsRouter(dbService: CosmosDbService): Router {
         }
       }
     }
+  );
+
+  // ==========================================================================
+  // GET /orders/:orderId/export?format=csv|xlsx
+  // Download a tabular export of the canonical report document for this order.
+  // Sections: Order Summary · Criteria Evaluations · Extracted Data · Enrichment.
+  // ==========================================================================
+  router.get(
+    '/orders/:orderId/export',
+    [param('orderId').notEmpty().withMessage('orderId is required')],
+    handleValidation,
+    async (req: Request, res: Response) => {
+      const orderId = req.params['orderId']!;
+      const format  = req.query['format'] as string | undefined;
+
+      if (format !== 'csv' && format !== 'xlsx') {
+        res.status(400).json({
+          error: `Invalid format "${format ?? ''}". Must be "csv" or "xlsx".`,
+        });
+        return;
+      }
+
+      try {
+        const { buffer, contentType, fileName } =
+          await service.exportReportData(orderId, format);
+
+        res.setHeader('Content-Type',        contentType);
+        res.setHeader('Content-Length',      buffer.length);
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.status(200).send(buffer);
+      } catch (error: any) {
+        const isNotFound = error.message?.includes('not found');
+        if (isNotFound) {
+          res.status(404).json({ error: error.message });
+        } else {
+          logger.error('Export failed', { orderId, format, error: error.message });
+          res.status(500).json({ error: 'Export failed', message: error.message });
+        }
+      }
+    },
   );
 
   // ==========================================================================

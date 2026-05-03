@@ -67,9 +67,14 @@ export class UnifiedAuthMiddleware {
       try {
         let authHeader = req.headers.authorization;
 
-        // Fallback to query parameter for EventSource (SSE) which cannot send headers
+        // Fallback to query parameter for EventSource (SSE) which cannot send headers.
+        // Mutate req.headers.authorization too so downstream middleware (e.g. azureAuth,
+        // which only reads from headers) sees the same token. Without this mutation only
+        // the test-token branch in this middleware honored the query param — Azure-token
+        // SSE clients silently 401'd because azureAuth re-read req.headers and found nothing.
         if (!authHeader && req.query.access_token && typeof req.query.access_token === 'string') {
           authHeader = `Bearer ${req.query.access_token}`;
+          req.headers.authorization = authHeader;
         }
 
         if (!authHeader) {

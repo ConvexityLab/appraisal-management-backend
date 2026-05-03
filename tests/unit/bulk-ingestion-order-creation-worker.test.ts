@@ -407,6 +407,62 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     expect(meta.propertyId).toBe('prop-001');
   });
 
+  it('propagates shared source identity from bulk row to created order metadata and canonical outputs', async () => {
+    const job = makeJob(1);
+    const db = makeDbStub(job);
+    const worker = new BulkIngestionOrderCreationWorkerService(db);
+
+    await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
+
+    expect(db.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          sourceIdentity: expect.objectContaining({
+            sourceKind: 'bulk-item',
+            bulkJobId: JOB_ID,
+            bulkItemId: `${JOB_ID}:0`,
+          }),
+        }),
+      }),
+    );
+
+    const upsertedCanonicalRecord = db.upsertItem.mock.calls.find(
+      ([, record]: [string, { type?: string }]) => record?.type === 'bulk-ingestion-canonical-record',
+    )?.[1] as any;
+
+    expect(upsertedCanonicalRecord.sourceIdentity).toEqual(
+      expect.objectContaining({
+        sourceKind: 'bulk-item',
+        bulkJobId: JOB_ID,
+        bulkItemId: `${JOB_ID}:0`,
+        orderId: expect.any(String),
+      }),
+    );
+
+    const upsertedJob = db.upsertItem.mock.calls.find(
+      ([, record]: [string, { type?: string }]) => record?.type === 'bulk-ingestion-job',
+    )?.[1] as any;
+
+    expect(upsertedJob.items[0].sourceIdentity).toEqual(
+      expect.objectContaining({
+        sourceKind: 'bulk-item',
+        bulkJobId: JOB_ID,
+        bulkItemId: `${JOB_ID}:0`,
+        orderId: expect.any(String),
+      }),
+    );
+    expect(upsertedJob.items[0].canonicalRecord).toEqual(
+      expect.objectContaining({
+        sourceIdentity: expect.objectContaining({
+          sourceKind: 'bulk-item',
+          bulkJobId: JOB_ID,
+          bulkItemId: `${JOB_ID}:0`,
+          orderId: expect.any(String),
+        }),
+      }),
+    );
+  });
+
   it('does not throw or abort order loop when enrichOrder rejects (non-fatal)', async () => {
     const job    = makeJob(2);
     const db     = makeDbStub(job);

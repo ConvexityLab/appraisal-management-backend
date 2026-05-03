@@ -134,6 +134,13 @@ describe('BulkIngestionCanonicalWorkerService', () => {
     expect(canonicalRecord.type).toBe('bulk-ingestion-canonical-record');
     expect(canonicalRecord.adapterKey).toBe('bridge-standard');
     expect(canonicalRecord.documentBlobName).toContain('/document/doc1.pdf');
+    expect(canonicalRecord.sourceIdentity).toEqual(
+      expect.objectContaining({
+        sourceKind: 'bulk-item',
+        bulkJobId: jobId,
+        bulkItemId: `${jobId}:1`,
+      }),
+    );
 
     expect(summary.type).toBe('bulk-ingestion-canonicalization-summary');
     expect(summary.persistedCount).toBe(1);

@@ -68,6 +68,7 @@ import { WaiverScreeningService } from '../services/waiver-screening.service.js'
 import { ComplianceService } from '../services/ComplianceService.js';
 import { PropertyEnrichmentService } from '../services/property-enrichment.service.js';
 import { PropertyRecordService } from '../services/property-record.service.js';
+import { buildApiOrderSourceIdentity, buildManualDraftSourceIdentity } from '../types/intake-source.types.js';
 
 const logger = new Logger('OrderController');
 
@@ -237,12 +238,36 @@ export class OrderController {
 
   public async createOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
+      const intakeDraftId = typeof req.body.intakeDraftId === 'string' && req.body.intakeDraftId.trim().length > 0
+        ? req.body.intakeDraftId.trim()
+        : undefined;
+      const requestBody = { ...req.body };
+      const requestMetadata = requestBody.metadata && typeof requestBody.metadata === 'object'
+        ? requestBody.metadata as Record<string, unknown>
+        : {};
+      if ('intakeDraftId' in requestBody) {
+        delete (requestBody as Record<string, unknown>).intakeDraftId;
+      }
+
+      const sourceIdentity = intakeDraftId
+        ? buildManualDraftSourceIdentity({
+            intakeDraftId,
+            engagementId: typeof requestBody.engagementId === 'string' ? requestBody.engagementId : undefined,
+          })
+        : buildApiOrderSourceIdentity({
+            engagementId: typeof requestBody.engagementId === 'string' ? requestBody.engagementId : undefined,
+          });
+
       const orderData = {
-        ...req.body,
+        ...requestBody,
         tenantId: req.user!.tenantId,
         createdBy: req.user?.id,
         status: OrderStatus.NEW,
-        priority: req.body.priority || 'STANDARD',
+        priority: requestBody.priority || 'STANDARD',
+        metadata: {
+          ...requestMetadata,
+          sourceIdentity,
+        },
       };
 
       // Run duplicate check before creating — advisory only, never blocks.
@@ -278,6 +303,41 @@ export class OrderController {
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
         const created = result.data as AppraisalOrder;
+
+        if (intakeDraftId) {
+          const documentAssociationResult = await this.documentService.associateEntityDocumentsToOrder({
+            tenantId: req.user!.tenantId,
+            entityType: 'order-intake-draft',
+            entityId: intakeDraftId,
+            orderId: created.id!,
+            linkedBy: req.user!.id,
+            linkReason: 'order-intake-submit',
+          });
+
+          if (!documentAssociationResult.success) {
+            logger.error('Failed to associate intake draft documents to created order', {
+              intakeDraftId,
+              orderId: created.id,
+              error: documentAssociationResult.error,
+            });
+          } else {
+            for (const document of documentAssociationResult.data ?? []) {
+                const reassociationAuditPayload = {
+                  documentId: document.id,
+                  documentName: document.name,
+                  orderId: created.id!,
+                  ...(document.entityType ? { entityType: document.entityType } : {}),
+                  ...(document.entityId ? { entityId: document.entityId } : {}),
+                };
+
+              await this.auditService.logDocumentReassociatedToOrder(
+                { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
+                  reassociationAuditPayload,
+              );
+            }
+          }
+        }
+
         this.eventService.publishOrderCreated(created).catch((err) =>
           logger.error('Failed to publish ORDER_CREATED event', { orderId: created?.id, error: err }),
         );

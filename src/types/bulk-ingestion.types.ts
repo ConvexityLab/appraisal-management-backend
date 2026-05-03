@@ -1,4 +1,5 @@
 import type { BulkAnalysisType } from './bulk-portfolio.types.js';
+import type { IntakeSourceIdentity } from './intake-source.types.js';
 
 export type BulkIngestionJobStatus =
   | 'PENDING'
@@ -58,6 +59,8 @@ export interface BulkIngestionItemInput {
 
   // Document correlation
   documentFileName?: string;
+  /** Multi-doc: explicit list of PDFs to associate with this row (T3.3). Mutually exclusive with documentFileName. */
+  documentFileNames?: string[];
   documentUrl?: string;
 }
 
@@ -102,6 +105,7 @@ export interface BulkIngestionItem {
   criteriaStatus?: 'PASSED' | 'FAILED' | 'REVIEW';
   /** Set by criteria evaluation stage. */
   criteriaDecision?: 'PASSED' | 'FAILED' | 'REVIEW';
+  sourceIdentity?: IntakeSourceIdentity;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -132,6 +136,7 @@ export interface BulkIngestionJob {
   failedItems: number;
   pendingItems: number;
   lastError?: string;
+  sourceIdentity?: IntakeSourceIdentity;
   items: BulkIngestionItem[];
 }
 
@@ -172,6 +177,7 @@ export interface BulkIngestionCanonicalRecord {
   itemId: string;
   rowIndex: number;
   adapterKey: string;
+  sourceIdentity?: IntakeSourceIdentity;
   canonicalData: Record<string, unknown>;
   sourceData: {
     loanNumber?: string;
@@ -190,9 +196,13 @@ export interface BulkIngestionCanonicalRecord {
     loanPurpose?: string;
     occupancyType?: string;
     documentFileName?: string;
+    /** Set when item specified documentFileNames[]. */
+    documentFileNames?: string[];
     documentUrl?: string;
   };
   documentBlobName?: string;
+  /** All resolved blob names when item specified documentFileNames[]. First entry mirrors documentBlobName for backward compat. */
+  documentBlobNames?: string[];
   persistedAt: string;
 }
 

@@ -42,6 +42,7 @@ import type {
   BulkIngestionExtractionCompletedEvent,
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
+import { extendIntakeSourceIdentity } from '../types/intake-source.types.js';
 import { normalizeAxiomPropertyRequestBody } from './axiom-request-normalizer.js';
 
 const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion--';
@@ -169,6 +170,22 @@ export class AxiomController {
     const correlationId = `axiom-document:${params.pipelineJobId ?? params.documentId}`;
     const extractionIdempotency = `axiom-document-extraction:${params.pipelineJobId ?? params.documentId}`;
 
+    const extractionSourceIdentity = (document.sourceIdentity || (order as any).metadata?.sourceIdentity)
+      ? extendIntakeSourceIdentity(
+          document.sourceIdentity ?? (order as any).metadata?.sourceIdentity,
+          {
+            ...(document.orderId ? { orderId: document.orderId } : {}),
+            ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
+            ...(typeof order['engagementLoanId'] === 'string'
+              ? { loanPropertyContextId: order['engagementLoanId'] }
+              : document.orderId
+                ? { loanPropertyContextId: document.orderId }
+                : {}),
+            documentId: document.id,
+          },
+        )
+      : undefined;
+
     const extractionRun = await this.runLedgerService.createExtractionRun({
       tenantId: document.tenantId,
       initiatedBy: 'SYSTEM:axiom-webhook',
@@ -187,6 +204,7 @@ export class AxiomController {
       loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
         ? order['engagementLoanId']
         : document.orderId,
+      ...(extractionSourceIdentity ? { sourceIdentity: extractionSourceIdentity } : {}),
     });
 
     const extractionStatus = this.mapWebhookStatusToRunStatus(params.webhookStatus);
@@ -228,6 +246,19 @@ export class AxiomController {
     }
 
     const criteriaIdempotency = `axiom-document-criteria:${params.pipelineJobId ?? params.documentId}`;
+    const criteriaSourceIdentity = snapshot.sourceIdentity
+      ? extendIntakeSourceIdentity(snapshot.sourceIdentity, {
+          ...(document.orderId ? { orderId: document.orderId } : {}),
+          ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
+          ...(typeof order['engagementLoanId'] === 'string'
+            ? { loanPropertyContextId: order['engagementLoanId'] }
+            : document.orderId
+              ? { loanPropertyContextId: document.orderId }
+              : {}),
+          documentId: document.id,
+        })
+      : undefined;
+
     const criteriaRun = await this.runLedgerService.createCriteriaRun({
       tenantId: document.tenantId,
       initiatedBy: 'SYSTEM:axiom-webhook',
@@ -246,6 +277,7 @@ export class AxiomController {
       loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
         ? order['engagementLoanId']
         : document.orderId,
+      ...(criteriaSourceIdentity ? { sourceIdentity: criteriaSourceIdentity } : {}),
     });
 
     const criteriaDispatch = await this.engineDispatchService.dispatchCriteria(criteriaRun);

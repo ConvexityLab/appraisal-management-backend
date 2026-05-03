@@ -33,6 +33,44 @@ Handlebars.registerHelper('add', (a: unknown, b: unknown) => Number(a) + Number(
 Handlebars.registerHelper('sub', (a: unknown, b: unknown) => Number(a) - Number(b));
 Handlebars.registerHelper('eq',  (a: unknown, b: unknown) => a === b);
 
+/**
+ * `{{citeHtml ref}}` — renders an inline citation for html-render templates.
+ *
+ * If the reference carries a blobUrl the citation becomes a hyperlink that
+ * opens to the specific page (fragment #page=N).  Otherwise it renders as a
+ * plain styled span so the template degrades gracefully.
+ *
+ * Example output (with URL):
+ *   <a href="https://…blob…#page=4" target="_blank" class="citation-link">[source: Appraisal Report.pdf, p.4]</a>
+ */
+Handlebars.registerHelper('citeHtml', (ref: {
+  documentName?: string;
+  page?:         number;
+  blobUrl?:      string;
+}) => {
+  if (!ref) return '';
+  const label =
+    `[source: ${ref.documentName ?? 'document'}` +
+    (ref.page != null ? `, p.${ref.page}` : '') +
+    ']';
+  if (ref.blobUrl) {
+    const href = ref.page != null ? `${ref.blobUrl}#page=${ref.page}` : ref.blobUrl;
+    return new Handlebars.SafeString(
+      `<a href="${href}" target="_blank" class="citation-link">${label}</a>`,
+    );
+  }
+  return new Handlebars.SafeString(`<span class="citation-ref">${label}</span>`);
+});
+
+/**
+ * `{{footnoteSup index}}` — renders a superscript footnote marker.
+ *
+ * Example output:  <sup class="footnote-sup">[3]</sup>
+ */
+Handlebars.registerHelper('footnoteSup', (index: unknown) => {
+  return new Handlebars.SafeString(`<sup class="footnote-sup">[${index}]</sup>`);
+});
+
 /** Minimal Playwright PDF print options. Override per template via sectionConfig if needed. */
 const DEFAULT_PDF_OPTIONS = {
   format: 'Letter' as const,

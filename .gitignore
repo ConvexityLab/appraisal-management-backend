@@ -1,3 +1,6 @@
+# Live-fire / smoke-test output (per-run artifacts, regenerated each invocation)
+test-artifacts/
+
 # Dependencies
 node_modules/
 npm-debug.log*

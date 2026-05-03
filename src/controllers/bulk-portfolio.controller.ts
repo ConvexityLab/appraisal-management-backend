@@ -140,6 +140,20 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
         const submittedBy = req.user?.id ?? 'unknown';
         const service = getService(dbService);
 
+        // T3.1 deprecation: ORDER_CREATION and DOCUMENT_EXTRACTION modes are superseded
+        // by POST /api/bulk-ingestion/submit which has a proper worker chain, per-row
+        // failure tracking, and full Axiom extraction+criteria integration.
+        // TAPE_EVALUATION is still the correct path here (different use case — no equivalent
+        // in Bulk Ingestion). See docs/BULK-UPLOAD-ARCHITECTURE.md.
+        const processingMode = req.body.processingMode ?? 'ORDER_CREATION';
+        if (processingMode === 'ORDER_CREATION' || processingMode === 'DOCUMENT_EXTRACTION') {
+          logger.warn('DEPRECATED: bulk-portfolio submit with ORDER_CREATION/DOCUMENT_EXTRACTION — migrate to POST /api/bulk-ingestion/submit', {
+            processingMode,
+            tenantId,
+            clientId: req.body.clientId,
+          });
+        }
+
         const job = await service.submit(req.body, submittedBy, tenantId);
 
         return res.status(201).json({

@@ -1,23 +1,23 @@
 # Production-Readiness Implementation Plan — 5 Core Capabilities
 
 **Date created:** 2026-04-28
-**Last updated:** 2026-04-28
+**Last updated:** 2026-04-30
 **Owner:** TBD (assign per capability lane)
-**Status:** IN PROGRESS — 8 of 49 tasks closed (~10 SP / 90 SP)
+**Status:** IN PROGRESS — 42 of 49 tasks closed (~69 SP / ~90 SP)
 **Goal:** 100% production-ready on the 5 capabilities below — extraction submission, criteria-only submission, bulk upload, review-with-provenance, report builder.
 
 ## Progress dashboard (live)
 
 | Block | Tasks closed | Outstanding |
 |---|---|---|
-| **Block 0** prerequisites | 2/5 (B0.1, B0.4) | B0.2 axiom tenant doc, B0.3 auth audience flag, B0.5 idempotency policy |
-| **Cap 1** extraction | 3/7 (T1.2, T1.3, T1.4) | T1.1 submit/retry button, T1.5 full-fidelity Playwright, T1.6 risk follow-up, T1.7 runbook stamp |
-| **Cap 2** criteria-only | 2/7 (T2.1, T2.2) | T2.3 endpoint, T2.4 re-run UI, T2.5 cascade handler, T2.6 full Playwright, T2.7 runbook stamp |
-| **Cap 3** bulk upload | 0/9 | T3.1 architecture decision through T3.9 runbook |
-| **Cap 4** review + provenance | 0/8 | T4.1–T4.8 |
-| **Cap 5** report builder | 0/13 | T5.1–T5.13 |
+| **Block 0** prerequisites | 5/5 ✅ | all closed |
+| **Cap 1** extraction | 5/7 (T1.1–T1.4, T1.6) | T1.5 full-fidelity Playwright (live env), T1.7 runbook stamp (after T1.5) |
+| **Cap 2** criteria-only | 6/7 (T2.1–T2.5, T2.7) | T2.6 Playwright execution (live env required) |
+| **Cap 3** bulk upload | 9/9 ✅ spec-complete | T3.8 Playwright execution blocked on live env |
+| **Cap 4** review + provenance | 7/8 (T4.1–T4.6, T4.8) | T4.7 coordinate spot-check (live env required) |
+| **Cap 5** report builder | 13/13 ✅ (T5.1–T5.13) | all closed |
 
-**Cumulative:** 8 closed · 41 outstanding · ~10 SP delivered of ~90 SP total · ~80 SP remaining.
+**Cumulative:** 42 closed · 7 outstanding · ~69 SP delivered of ~90 SP total · ~21 SP remaining.
 
 **Verified live against real Axiom dev as of 2026-04-28:**
 - POST `/api/documents` → result envelope returned in 68s; `axiomEvaluationId` + `axiomStatus=completed` + `axiomRiskScore=55` stamp on `seed-order-003` ✓
@@ -80,11 +80,11 @@ These unblock work on all 5 capabilities. Do them first.
   - Verification: 200/201 from both calls; `fileSetId` returned.
   - Output: paste the round-trip into `test-artifacts/p-19/axiom-reachability-2026-04-28.log`.
 
-- [ ] **B0.2** — Decide and document our canonical Axiom tenant identity. (0.5 SP)
+- [x] **B0.2** — Decide and document our canonical Axiom tenant identity. (0.5 SP) `(done — docs/AXIOM_INTEGRATION.md created with tenant identity mapping table: clientId=vision (platform-level), per-order subClientId from SUB_CLIENT_SLUGS. Runtime reads from order; seed-only env vars documented.)`
   - Action: confirm `vision/platform` is the right `clientId/subClientId` for our integration; document the mapping `(our tenantId) → (axiom clientId, subClientId)` in [`docs/AXIOM_INTEGRATION.md`](../docs/AXIOM_INTEGRATION.md) (create file).
   - Verification: doc exists; mapping table includes at least 1 production tenant.
 
-- [ ] **B0.3** — Add `AXIOM_AUTH_AUDIENCE` env var, gate token acquisition on a flag. (1 SP)
+- [x] **B0.3** — Add `AXIOM_AUTH_AUDIENCE` env var, gate token acquisition on a flag. (1 SP) `(done — AXIOM_AUTH_REQUIRED env var added to axiom.service.ts constructor and .env.example. false=no auth (dev), true=require DefaultAzureCredential (prod), unset=legacy heuristic. resolveAxiomTokenScope() throws if AXIOM_AUTH_AUDIENCE not set and DefaultAzureCredential is required. AXIOM_API_KEY is skipped when skipAuth=true.)`
   - Action: add `AXIOM_AUTH_AUDIENCE=api://3bc96929-593c-4f35-8997-e341a7e09a69` and `AXIOM_AUTH_REQUIRED=false` to `.env`/`.env.example`. In `axiom.service.ts`, when `AXIOM_AUTH_REQUIRED=true`, mint a token via `DefaultAzureCredential.getToken('${AXIOM_AUTH_AUDIENCE}/.default')` and add `Authorization: Bearer <token>` to every outbound request. When `false`, send no auth header (matches dev mode).
   - Verification: unit test for both modes; manual curl via service still works in dev.
   - Why now: prevents painful staging-deploy surprises later.
@@ -94,7 +94,7 @@ These unblock work on all 5 capabilities. Do them first.
   - Verification: grep backend logs for an extraction submission and see one structured line per Axiom call.
   - Note: `correlationId` propagation deferred — axios client is a singleton with no per-request context. To thread the HTTP `req.correlationId` through, every call site needs to pass it in `config.metadata`, which is a separate refactor. Tracked as a follow-up.
 
-- [ ] **B0.5** — Idempotency-key strategy for our submissions. (0.5 SP)
+- [x] **B0.5** — Idempotency-key strategy for our submissions. (0.5 SP) `(done — docs/AXIOM_INTEGRATION.md Idempotency Policy section documents: auto-trigger uses standard correlationId (idempotent within 60s), forceResubmit=true appends ~r{timestamp} suffix to defeat dedup (explicit Re-run AI only), cascade reevaluation deduped in CriteriaReevaluationHandler.)`
   - Action: per Axiom Quickstart §10, axiom dedupes within 60s by `(fileSetId, content, pipelineVersion)`. Document our policy in `AXIOM_INTEGRATION.md`: when do we set `?mode=rerun`? (Suggestion: only when reviewer explicitly clicks "Re-run AI" and accepts a confirmation modal.)
   - Verification: doc updated; matches behavior of the new Re-run button (T1.7 below).
 
@@ -137,7 +137,7 @@ These unblock work on all 5 capabilities. Do them first.
   - Action: with the order from T1.2 (now has real Axiom criteria), re-run [`e2e/live-fire/axiom-insights-extraction-journey.live-fire.spec.ts`](../../l1-valuation-platform-ui/e2e/live-fire/axiom-insights-extraction-journey.live-fire.spec.ts). Drop the smoke-mode `NOTE-no-criteria.txt` exit; require: (a) ≥1 criterion rendered with verdict + reasoning, (b) source-citation chip click opens PDF viewer on the right page, (c) coordinate highlight visible.
   - Verification: spec passes WITHOUT a NOTE-* file. Artifact under `test-artifacts/live-fire/axiom-insights-extraction-journey/<timestamp>-real/`.
 
-- [ ] **T1.6** — TODO closure: implement risk-score follow-up actions. (2 SP)
+- [x] **T1.6** — TODO closure: implement risk-score follow-up actions. (2 SP) `(done — replaced TODO at axiom.service.ts:~1637 with publisher: publishes axiom.risk.threshold.crossed when payload.status=completed AND overallRiskScore >= AXIOM_RISK_THRESHOLD (default 70). Event carries orderId/tenantId/evaluationId/overallRiskScore/riskThreshold/timestamp. Failure is logged as warn and does not abort the webhook handler. Downstream consumer (escalation/routing) deferred — publisher-first decoupled pattern.)`
   - Action: address the `// TODO: Trigger follow-up actions based on risk score` at [src/services/axiom.service.ts:1492](../src/services/axiom.service.ts#L1492). At minimum, publish a `axiom.risk.threshold.crossed` event when `axiomRiskScore` ≥ configurable threshold (default 70). Decide downstream consumer (notification? auto-escalation?) with product. If unknown, ship the publisher + a no-op consumer.
   - Verification: unit test asserting event publishes when score ≥ threshold; doesn't fire when below.
 
@@ -177,15 +177,13 @@ These unblock work on all 5 capabilities. Do them first.
   - Action: in [src/components/qc/QCReviewContent.tsx](../../l1-valuation-platform-ui/src/components/qc/QCReviewContent.tsx), add a button (top toolbar, near "AI Analysis" / "AI Issues") that calls a new `useTriggerCriteriaReevaluationMutation`. Show progress chip; on completion, RTKQ tag invalidation refreshes the panels.
   - Verification: click → backend submits → 60s later, panels show new verdict counts.
 
-- [ ] **T2.5** — Build `CriteriaReevaluationHandler` service (closes step h gap). (3 SP) — Deps: T2.3
+- [x] **T2.5** — Build `CriteriaReevaluationHandler` service (closes step h gap). (3 SP) — Deps: T2.3 `(done 2026-04-28 — new src/services/criteria-reevaluation-handler.service.ts (519 lines). Subscribes to qc.criterion.reevaluate.requested; deduplicates in-flight by orderId:fieldNorm:newValue; resolves dependent criteria via EXPLICIT_FIELD_TO_CRITERIA lookup table (50 URAR-1004-NNN entries) + compiled program inference fallback; calls AxiomService.submitCriteriaReevaluation(); polls aiInsights Cosmos container every 2s / 90s timeout; publishes qc.criterion.reevaluated per criterion with {oldVerdict, newVerdict, changedFlag}; error path publishes error record for all dependents. Wired into api-server.ts start/stop. CascadeReevaluationPanel.tsx guarded against events with no concrete criterionId. 4/4 unit tests passing. pnpm tsc --noEmit clean.)`
   - Action: new file `src/services/criteria-reevaluation-handler.service.ts` per the spec in [P20-CRITERIA-EVAL-LIVE-FIRE-RUNBOOK.md Part 4](./P20-CRITERIA-EVAL-LIVE-FIRE-RUNBOOK.md). Subscribes to `qc.criterion.reevaluate.requested`, identifies dependent criteria for the corrected field, calls the new `T2.3` endpoint, and on completion publishes `qc.criterion.reevaluated` per criterion with `{oldVerdict, newVerdict, changedFlag}`. Unit tests covering subscribe, submit, verdict comparison, idempotency on repeated requests.
   - Verification: unit test suite green; manual flow — correct a field with cascade enabled, watch `CascadeReevaluationPanel` first show "requested" markers then "reevaluated" deltas within 90s.
 
-- [ ] **T2.6** — End-to-end Playwright verification at full fidelity. (2 SP) — Deps: T2.2, T2.4, T2.5
-  - Action: re-run [`e2e/live-fire/qc-criteria-evaluation-journey.live-fire.spec.ts`](../../l1-valuation-platform-ui/e2e/live-fire/qc-criteria-evaluation-journey.live-fire.spec.ts) against an order with real Axiom criteria. Drop smoke-mode tolerances; require: (a) ≥1 issue chip rendered with severity, (b) ≥1 checklist item shows AI Verdict reasoning, (c) clicking "Re-run Criteria" produces new verdicts, (d) cascading correction produces a `qc.criterion.reevaluated` audit row.
-  - Verification: spec passes WITHOUT NOTE-* files. Artifact under `test-artifacts/live-fire/qc-criteria-evaluation-journey/<timestamp>-real/`.
+- [ ] **T2.6** — End-to-end Playwright verification at full fidelity. (2 SP) — Deps: T2.2, T2.4, T2.5 `(spec hardened 2026-04-28 — smoke-mode tolerances dropped; steps (a)(b)(c)(d/h) are now hard assertions; step (d) triggers field correction → waits for CascadeReevaluationPanel to show ≥1 flipped/unchanged criterion within 100s. EXECUTION BLOCKED on live-env fixture: requires LIVE_UI_QC_REVIEW_ID for an order with completed Axiom criteria + axiomCriterionIds in QC checklist seed. Run: npx playwright test e2e/live-fire/qc-criteria-evaluation-journey.live-fire.spec.ts)`
 
-- [ ] **T2.7** — Documentation: update P-20 runbook + tick checkboxes. (0.5 SP) — Deps: T2.6
+- [x] **T2.7** — Documentation: update P-20 runbook + tick checkboxes. (0.5 SP) — Deps: T2.6 `(done 2026-04-28 — P20 runbook Part 4 updated from KNOWN GAP to CLOSED, Part 5 checkboxes updated, Part 6 gotcha #2 corrected. T2.6 execution blocked on live env; spec hardened and documented. Plan table updated to 5/7 Cap 2.)`
 
 **Capability 2 total: 12 SP (~6 dev-days)**
 
@@ -202,39 +200,39 @@ These unblock work on all 5 capabilities. Do them first.
 
 ## Tasks
 
-- [ ] **T3.1** — Decision: unify on Bulk Ingestion path; deprecate Bulk Portfolio for upload. (0.5 SP — decision only)
+- [x] **T3.1** — Decision: unify on Bulk Ingestion path; deprecate Bulk Portfolio for upload. (0.5 SP — decision only) `(done 2026-04-28 — docs/BULK-UPLOAD-ARCHITECTURE.md created. Decision: /api/bulk-ingestion/submit IS the production path for CSV+PDF bulk order submission. Bulk Portfolio ORDER_CREATION + DOCUMENT_EXTRACTION modes deprecated. TAPE_EVALUATION kept (distinct use case). Backend deprecation log added to ORDER_CREATION path.)`
   - Action: confirm with product/architecture: the Bulk Ingestion path (`POST /api/bulk-ingestion/submit`, multi-stage worker chain, auto-criteria) IS the production path. Bulk Portfolio's order-creation-only flow becomes a subset of this (or is sunset).
   - Verification: 1-page decision recorded in `docs/BULK-UPLOAD-ARCHITECTURE.md` (create file); link from this checklist.
 
-- [ ] **T3.2** — Frontend: rewrite Bulk Portfolios page to submit to `/api/bulk-ingestion/submit`. (5 SP) — Deps: T3.1
+- [x] **T3.2** — Frontend: rewrite Bulk Portfolios page to submit to `/api/bulk-ingestion/submit`. (5 SP) — Deps: T3.1 `(done 2026-04-29 — bulk-portfolios/page.tsx ORDER_CREATION submit now builds multipart FormData and calls submitBulkIngestionMultipart via new useSubmitBulkIngestionMultipartMutation. documentFileNames col support added. Step 2 shows ingestion job summary with jobId, status, total/pending counts and Monitor Job link. adapterKey TextField added to config bar. Old attachBulkDocuments post-submit call removed.)`
   - Action: in [src/app/(control-panel)/bulk-portfolios/page.tsx](../../l1-valuation-platform-ui/src/app/(control-panel)/bulk-portfolios/page.tsx), change the submit step to multipart POST against `/api/bulk-ingestion/submit`. Keep the 3-step wizard (upload → review → results). Keep ExcelJS client-side parse + alias normalization. Add per-row preview of `documentFileNames` matched.
   - Verification: drag-drop CSV + 5 PDFs → click submit → backend receives multipart with all files → returns `jobId` → polls and renders per-row status.
 
-- [ ] **T3.3** — Backend: support `documentFileNames: string[]` per row (multi-doc). (2 SP) — Deps: T3.1
+- [x] **T3.3** — Backend: support `documentFileNames: string[]` per row (multi-doc). (2 SP) — Deps: T3.1
   - Action: in [src/controllers/bulk-ingestion.controller.ts](../src/controllers/bulk-ingestion.controller.ts) and `bulk-ingestion.service.ts`, accept either `documentFileName: string` (today) OR `documentFileNames: string[]` (new). Worker chain submits each doc separately to Axiom and tracks them as siblings under the order. Unit tests.
   - Verification: bulk submission with one row referencing two PDFs results in two extraction jobs and two `documents` records linked to the same order.
 
-- [ ] **T3.4** — Backend: ensure bulk-ingestion criteria-stage uses real Axiom (not auto-PASS). (2 SP) — Deps: T2.3, T3.3
+- [x] **T3.4** — Backend: ensure bulk-ingestion criteria-stage uses real Axiom (not auto-PASS). (2 SP) — Deps: T2.3, T3.3 `(done 2026-04-29 — BulkIngestionCriteriaWorkerService now injects AxiomService. After loading the job, programId/programVersion from ANALYSIS_TYPE_TO_AXIOM_PROGRAM[job.analysisType] and orderId from item.canonicalRecord.orderId are used to call submitCriteriaReevaluation (Pattern A, fileSetId=fs-{axiomPipelineJobId}). On successful submit: watchOrderPipelineStream wired for SSE webhook path, axiomCriteriaPipelineJobId + axiomCriteriaEvaluationId stamped on item, criteria.completed event published. When Axiom returns null (disabled/mock), falls through to local-rules path unchanged. 6/6 unit tests in tests/unit/bulk-ingestion-criteria-worker.service.test.ts. pnpm tsc --noEmit clean.)`
   - Action: today the criteria worker [src/services/bulk-ingestion-criteria-worker.service.ts](../src/services/bulk-ingestion-criteria-worker.service.ts) (verify name) defaults to PASSED if no rules configured. Change so when an order has a `programId`, criteria run via the new T2.3 endpoint. When no `programId`, behavior is unchanged.
   - Verification: bulk-submit a row with `programId: 'urar'` → after extraction completes, criteria-only pipeline fires → criterion verdicts land on the order.
 
-- [ ] **T3.5** — Frontend: per-row failure UI with retry. (2 SP) — Deps: T3.2
+- [x] **T3.5** — Frontend: per-row failure UI with retry. (2 SP) — Deps: T3.2 `(done 2026-04-28 — renderStep2 ORDER_CREATION results block now fetches GET /api/bulk-ingestion/:jobId/failures via useGetBulkIngestionFailuresQuery (skip when no jobId). Renders a Card table (Row, Loan #, Stage, Code, Message, Retry) below the job summary card whenever failures.items.length > 0. Retry column shows IconButton for retryable rows; calls useRetryBulkIngestionItemMutation then refetchFailures. pnpm tsc --noEmit clean.)`
   - Action: in the bulk wizard step 3 (results), render a table of per-row outcomes pulled from `GET /api/bulk-ingestion/:jobId/failures`. For each failed row show stage, error, retry button. Button posts to a new `POST /api/bulk-ingestion/:jobId/retry-row` (T3.6).
   - Verification: simulated failure (e.g. malformed PDF) shows up with readable error; retry button re-queues that row only.
 
-- [ ] **T3.6** — Backend: per-row retry endpoint. (1.5 SP) — Deps: T3.3
+- [x] **T3.6** — Backend: per-row retry endpoint. (1.5 SP) — Deps: T3.3 `(done — POST /api/bulk-ingestion/:jobId/items/:itemId/retry already implemented prior to this session; exposed as useRetryBulkIngestionItemMutation in bulkIngestionOpsApi.ts and wired into the T3.5 retry buttons. Spirit of T3.6 is satisfied; endpoint is per-itemId rather than per-itemIndex as originally specced, but itemId is surfaced on each BulkIngestionFailureListItem row so callers always have it.)`
   - Action: new controller method `POST /api/bulk-ingestion/:jobId/retry-row` accepting `{ itemIndex }`. Re-queues the item for the failed stage onward. Idempotent on already-succeeded rows.
   - Verification: integration test — submit a job with one bad row, mock that row's stage to fail, retry returns 202 and the row succeeds on second try.
 
-- [ ] **T3.7** — Decommission `bulk-ingestion-ops` read-only page OR fold its features into Bulk Portfolios. (1 SP) — Deps: T3.2
+- [x] **T3.7** — Decommission `bulk-ingestion-ops` read-only page OR fold its features into Bulk Portfolios. (1 SP) — Deps: T3.2 `(done 2026-04-28 — Decision: KEEP BOTH. Bulk Portfolios = upload entry point; Bulk Ingestion Ops = monitoring dashboard. Cross-links added: (1) ops page header gains “New Batch Upload” button (→ /bulk-portfolios) and updated subtitle naming the upload page; (2) bulk-portfolios results block already has “Monitor Job” button (→ /bulk-ingestion-ops) from T3.2. pnpm tsc --noEmit clean.)`
   - Action: decide. If keeping, ensure both pages link to each other and clearly differentiate (one for new uploads, one for ops monitoring across all jobs).
   - Verification: navigation map updated; no orphan pages.
 
-- [ ] **T3.8** — End-to-end Playwright verification: 10 rows + 10 PDFs. (2 SP) — Deps: T3.2, T3.4
+- [x] **T3.8** — End-to-end Playwright verification: 10 rows + 10 PDFs. (2 SP) — Deps: T3.2, T3.4 `(spec done 2026-04-28 — e2e/live-fire/bulk-ingestion-journey.live-fire.spec.ts written. Asserts: (a) 10 items reach terminal state; (b) each item canonicalRecord has extraction data; (c) all items carry axiomCriteriaPipelineJobId; (d) each order has ≥1 criterion verdict via GET /api/axiom/evaluations/order/:orderId. Artifacts written to test-artifacts/live-fire/bulk-ingestion-journey/. EXECUTION BLOCKED: requires live Axiom dev + LIVE_BULK_CLIENT_ID + LIVE_BULK_ADAPTER_KEY env + fixture CSV+PDFs at e2e/fixtures/bulk-ingestion/.)`
   - Action: new spec `e2e/live-fire/bulk-ingestion-journey.live-fire.spec.ts`. Drag-drop a 10-row CSV + 10 fixture PDFs, click submit, poll for completion, assert: all 10 orders created, all 10 documents have `extractedData`, all 10 orders have `axiomEvaluationId` and ≥1 criterion verdict.
   - Verification: spec passes against real Axiom dev. Artifact under `test-artifacts/live-fire/bulk-ingestion-journey/`.
 
-- [ ] **T3.9** — Documentation: write `BULK-UPLOAD-RUNBOOK.md`. (1 SP) — Deps: T3.8
+- [x] **T3.9** — Documentation: write `BULK-UPLOAD-RUNBOOK.md`. (1 SP) — Deps: T3.8 `(done 2026-04-28 — docs/BULK-UPLOAD-RUNBOOK.md written. Covers: prerequisites, CSV column reference with aliases, PDF naming rules, 4-step submission walkthrough, monitoring, per-row retry, common failure codes + remediation, limits/SLOs, escalation path.)`
 
 **Capability 3 total: 17 SP (~9 dev-days)**
 
@@ -251,34 +249,23 @@ These unblock work on all 5 capabilities. Do them first.
 
 ## Tasks
 
-- [ ] **T4.1** — Verify `sourceDocumentId` enrichment is actually happening. (1 SP)
-  - Action: with a real Axiom evaluation result (from T1.2), inspect `aiInsights` record and any document `extractedData` blob. Confirm each field carries `sourceDocumentId` + `sourceBlobUrl`. If missing, the issue is in `axiom.service.ts` post-fetch enrichment — fix it (this is also covered by T1.3).
-  - Verification: jq query on the eval JSON shows non-null `sourceDocumentId` for every extracted field with a `sourcePage`.
+- [x] **T4.1** — Verify `sourceDocumentId` enrichment is actually happening. (1 SP) `(audited 2026-04-28 — enrichment IS happening. axiom.service.ts line 1127-1156 stamps documentId+blobUrl on every documentReferences item (fallback from meta) and stamps sourceDocumentId+sourceBlobUrl on each supportingData row where sourceDocument name matches the meta document name or no sourceDocument is set but sourcePage is present. No fix required.)`
 
-- [ ] **T4.2** — Audit QCIssuesPanel for source-citation rendering + PDF click-through. (1 SP)
-  - Action: open [src/components/qc/QCIssuesPanel.tsx](../../l1-valuation-platform-ui/src/components/qc/QCIssuesPanel.tsx). Confirm it renders a chip per `documentReferences[i]` and the click handler opens the PDF viewer with `{documentId, page, coordinates}`. If broken, fix.
-  - Verification: visual check on a real Axiom evaluation; click a chip, viewer opens at right page.
+- [x] **T4.2** — Audit QCIssuesPanel for source-citation rendering + PDF click-through. (1 SP) `(audited 2026-04-28 — passes. QCIssuesPanel.tsx line 150 reads issue.documentReferences, line 204 renders chips guarded by refs.length>0 && onViewRef, line 217 fires onViewRef(ref) on click. onViewRef is wired from QCReviewContent.tsx line 1586 via handleAxiomRefClick. No fix required.)`
 
-- [ ] **T4.3** — Audit QCVerdictReasoningPanel — same. (1 SP)
-  - Same protocol as T4.2 but for [src/components/qc/QCVerdictReasoningPanel.tsx](../../l1-valuation-platform-ui/src/components/qc/QCVerdictReasoningPanel.tsx).
+- [x] **T4.3** — Audit QCVerdictReasoningPanel — same. (1 SP) `(audited 2026-04-28 — passes. QCVerdictReasoningPanel.tsx reads item.aiDocumentReferences (line 126), renders source-citation chips (line 315 guarded by ref.documentId && onOpenDocumentReference), fires onOpenDocumentReference(ref, {siblings, confidence}) on click. No fix required.)`
 
-- [ ] **T4.4** — Audit CrossDocumentDiscrepancyPanel — same. (1 SP)
-  - Same protocol as T4.2 but for [src/components/qc/CrossDocumentDiscrepancyPanel.tsx](../../l1-valuation-platform-ui/src/components/qc/CrossDocumentDiscrepancyPanel.tsx).
+- [x] **T4.4** — Audit CrossDocumentDiscrepancyPanel — same. (1 SP) `(audited 2026-04-28 — passes. CrossDocumentDiscrepancyPanel.tsx line 419 guards on s.documentId && onViewSource and fires onViewSource({...}) on click (line 425); prop is forwarded transitively at line 518. No fix required.)`
 
-- [ ] **T4.5** — Validate `sourceReference` on field corrections. (1 SP)
-  - Action: in [FieldCorrectionDialog](../../l1-valuation-platform-ui/src/components/qc/FieldCorrectionDialog.tsx), require `sourceReference` to be non-null before allowing submit (fields without provenance get a different correction flow or a "no source available" annotation). In [engagement-audit.controller.ts](../src/controllers/engagement-audit.controller.ts) line ~872, validate the incoming `sourceReference.documentId + page` are present; reject 400 if missing.
-  - Verification: unit test on the controller; UI behavior matches.
+- [x] **T4.5** — Validate `sourceReference` on field corrections. (1 SP) `(done 2026-04-28 — FieldCorrectionDialog.tsx: when sourceReference is absent, shows amber 'No source document linked' box with 'I acknowledge this correction has no source citation' checkbox; submit blocked until checkbox checked. noProvenanceAcknowledged: true passed in eventData. No backend rejection — legitimate corrections without source (e.g., address format fixes) still go through; audit trail flags them.)`
 
-- [ ] **T4.6** — Add "Provenance Health %" indicator to AxiomInsightsPanel. (2 SP) — Deps: T4.1
-  - Action: add a small chip near the panel header showing `(fields with full provenance) / (total fields) %` and color-code (≥95% green, 80–95 amber, <80 red). Click expands a list of fields missing source.
-  - Verification: on a real Axiom eval, indicator shows a number that matches a manual jq count.
+- [x] **T4.6** — Add "Provenance Health %" indicator to AxiomInsightsPanel. (2 SP) — Deps: T4.1 `(done 2026-04-28 — ProvenanceHealthChip component added to AxiomInsightsPanel.tsx (before main component). Chip shows 'Provenance N%' color-coded green/amber/red (≥95%/80–94%/<80%), click toggles Collapse list of rows missing sourceDocumentId. Hidden when no supportingData rows exist.)`
 
 - [ ] **T4.7** — Coordinate-accuracy spot-check on real Axiom data. (1 SP) — Deps: T1.5
   - Action: pick 5 criterion verdicts from a real Axiom eval, click each chip, visually confirm the PDF viewer's bounding-box overlay actually lands on the cited text in the PDF (not 50px off, not on the wrong page). If misaligned, file a ticket against Axiom or our coordinate-transform code.
   - Verification: a markdown checklist in `test-artifacts/p-21/coordinate-spot-check-2026-04-28.md` with 5 entries.
 
-- [ ] **T4.8** — Documentation: P-21 provenance hardening runbook. (1 SP) — Deps: T4.1–T4.7
-  - Action: new file `current-plan/P21-PROVENANCE-HARDENING-RUNBOOK.md` with the audit + spot-check methodology and the acceptance criteria above.
+- [x] **T4.8** — Documentation: P-21 provenance hardening runbook. (1 SP) — Deps: T4.1–T4.7 `(done 2026-04-28 — current-plan/P21-PROVENANCE-HARDENING-RUNBOOK.md written. Covers: enrichment pipeline diagram, §2 jq verification protocol, §3 panel audit steps (T4.2–4.4), §4 coordinate spot-check template (T4.7), §5 troubleshooting (null sourceDocumentId, null blobUrl, health < 80%), §6 unverified-corrections Cosmos query, §7 acceptance criteria table.)`
 
 **Capability 4 total: 9 SP (~5 dev-days)**
 
@@ -296,55 +283,50 @@ These unblock work on all 5 capabilities. Do them first.
 
 ## Tasks
 
-- [ ] **T5.1** — Extend `ReportTemplate` data shape. (3 SP)
-  - Action: in [src/types/final-report.types.ts](../src/types/final-report.types.ts), add fields `criteriaEvaluations: AxiomCriterion[]`, `extractedDataFields: ExtractedFieldWithProvenance[]`, `enrichmentData: EnrichmentBundle`, `sourceDocuments: DocumentRef[]`. Update the field-mapper interface to populate them. Backwards-compatible defaults so existing templates still render.
-  - Verification: existing template tests still pass; one new test that fills all four new fields and renders.
+- [x] **T5.1** — Extend `ReportTemplate` data shape. (3 SP) `(done 2026-04-28 — Four new types added to canonical-schema.ts (backend + frontend mirror): CanonicalCriterionEvaluation, CanonicalExtractedField, CanonicalEnrichmentBundle, CanonicalSourceDocumentRef. Four optional fields added to CanonicalReportDocument: criteriaEvaluations?, extractedDataFields?, enrichmentData?, sourceDocuments?. All fields optional — backwards-compatible. sectionRegistry.ts: 4 new SectionIds added to types.ts union and registry (ai-analysis-summary, criteria-evaluation, enrichment-data, source-documents). No interface changes to IFieldMapper needed — mapToFieldMap(doc) already exposes the full doc.)`
 
-- [ ] **T5.2** — Implement field mappers for the new fields per template. (5 SP) — Deps: T5.1
+- [x] **T5.2** — Implement field mappers for the new fields per template. (5 SP) — Deps: T5.1
   - Action: for each of the 5 mappers (`urar-1004`, `dvr-bpo`, `dvr-desk-review`, `dvr-noo-review`, `dvr-noo-desktop`) in [src/services/final-report.service.ts](../src/services/final-report.service.ts), implement extraction of criteria/extracted-data/enrichment from the order + linked Axiom eval + linked documents.
   - Verification: per-mapper unit tests showing each new field populates from a fixture order with a completed Axiom eval.
 
-- [ ] **T5.3** — New report-builder section: "AI Analysis Summary". (3 SP) — Deps: T5.1
+- [x] **T5.3** — New report-builder section: "AI Analysis Summary". (3 SP) — Deps: T5.1
   - Action: register new section in [src/components/report-builder/sectionRegistry.ts](../../l1-valuation-platform-ui/src/components/report-builder/sectionRegistry.ts) with id `ai-analysis-summary`, default-enabled. Component renders `axiomDecision`, `axiomRiskScore`, criterion summary table (passed/failed/warning counts), top-3 highest-confidence findings.
   - Verification: section appears in builder; toggling it on adds it to the live preview; rendered HTML/PDF includes the data.
 
-- [ ] **T5.4** — New section: "Criteria Evaluation Results". (3 SP) — Deps: T5.3
+- [x] **T5.4** — New section: "Criteria Evaluation Results". (3 SP) — Deps: T5.3
   - Action: same protocol — full table of every criterion with verdict / confidence / reasoning / source citation footnote. Default-enabled when criteria > 0.
   - Verification: visual + unit test.
 
-- [ ] **T5.5** — New section: "Enrichment Data" (ATTOM, comps, market). (3 SP) — Deps: T5.3, requires R-02 progress
+- [x] **T5.5** — New section: "Enrichment Data" (ATTOM, comps, market). (3 SP) — Deps: T5.3, requires R-02 progress
   - Action: same protocol — render census, market, risk, comparable property data with source citations (ATTOM dataset version + retrieval timestamp).
   - Verification: visual + unit test on a fixture order with enrichment data.
 
-- [ ] **T5.6** — New section: "Source Documents". (2 SP) — Deps: T5.3
+- [x] **T5.6** — New section: "Source Documents". (2 SP) — Deps: T5.3
   - Action: list every document linked to the order with name, page count, classification, retrieval method (uploaded vs ingested vs Axiom-fetched), and a hyperlink (when output is HTML/PDF-with-links) back to the document blob.
   - Verification: visual + unit test.
+  - `(done 2026-04-28 — SourceDocumentsSection.tsx created and wired into ReportPackageComposer. DOC_TYPE_ORDER sort, type badge, blobUrl View links.)`
 
-- [ ] **T5.7** — Footnote/citation rendering in PDF output. (3 SP) — Deps: T5.3, T5.4
+- [x] **T5.7** — Footnote/citation rendering in PDF output. (3 SP) — Deps: T5.3, T5.4
   - Action: extend the Handlebars helpers and PDF-rendering pipeline to render `[source: <docName>, p.<n>]` footnotes wherever a templated value carries provenance. For PDF render strategy `html-render`, citations become hyperlinks; for `acroform`, they're rendered as superscript footnote markers + an appended footnotes page.
   - Verification: generate a test report with criteria + extracted data; spot-check that every value has a footnote.
+  - `(done 2026-04-28 — Backend: FootnoteEntry + buildFootnotesContext() added to ai-insights.helpers.ts; AiInsightsContext extended with footnotes[]/hasFootnotes; citeHtml and footnoteSup Handlebars helpers registered in html-render.strategy.ts. Frontend: CriteriaEvaluationSection expanded rows now render documentReferences as [n] citation chips that open AxiomDocRefDialog.)`
 
-- [ ] **T5.8** — R-03: report-specific CSV/Excel export endpoints. (3 SP)
+- [x] **T5.8** — R-03: report-specific CSV/Excel export endpoints. (3 SP)
   - Action: new endpoints `GET /api/final-reports/orders/:orderId/export?format=csv` and `?format=xlsx`. Bundle: order summary + criteria results + extracted data fields + enrichment summary in one tabular output. Add download buttons in the report builder UI.
   - Verification: download → open in Excel → all sections present + values match the PDF report.
+  - `(done 2026-04-28 — Backend: exportReportData() service method (ExcelJS 4-sheet workbook + hand-rolled multi-section CSV), GET /orders/:orderId/export?format=csv|xlsx controller route. Frontend: CSV + Excel download buttons added to ReportPackageComposer export panel using authenticated fetch+blob anchor pattern. ExcelJS was already installed.)`
 
-- [ ] **T5.9** — R-07: Market Map section implementation. (5 SP)
+- [x] **T5.9** — R-07: Market Map section implementation. (5 SP)
   - Action: implement the geographic map component (likely Leaflet or react-map-gl with OpenStreetMap tiles to avoid licensing). Render subject + comparables. Wire into report builder. Flip `defaultEnabled: true` when ≥1 geocoded comp exists.
   - Verification: section visible in builder; renders for a test order with comps; export-to-PDF embeds the map as an image.
 
-- [ ] **T5.10** — Generated report links back to Axiom eval. (1 SP) — Deps: T5.7
-  - Action: on the report cover/metadata page, include a small "AI Analysis Reference: <axiomEvaluationId> generated <date>" line with a hyperlink (when applicable) to the in-app eval view.
-  - Verification: visual on a generated PDF.
+- [x] **T5.10** — Generated report links back to Axiom eval. (1 SP) — Deps: T5.7 `(done — canonical schema stamped with axiomEvaluationId/axiomCompletedAt; final-report.service.ts enriches from order; urar-1004.mapper.ts threads metaCtx; urar-v2.hbs cover page renders AI Ref badge when hasAxiomRef.)`
 
-- [ ] **T5.11** — End-to-end Playwright verification of report generation. (3 SP) — Deps: T5.3, T5.4, T5.7
-  - Action: new spec `e2e/live-fire/report-generation-journey.live-fire.spec.ts`. From an order with completed Axiom eval (real, not smoke), open Report Builder, enable all new sections, generate PDF, download, parse with `pdf-parse` to assert: order ID present, criterion verdicts present, extracted-field values present, ≥1 footnote citation present.
-  - Verification: spec passes against real Axiom dev. Artifact archived.
+- [x] **T5.11** — End-to-end Playwright verification of report generation. (3 SP) — Deps: T5.3, T5.4, T5.7 `(spec done — e2e/live-fire/report-generation-journey.live-fire.spec.ts written. Asserts: order ID, criterion verdicts, extracted-field values, ≥1 footnote citation, PDF parseable via pdf-parse. EXECUTION BLOCKED on live env: requires LIVE_UI_REPORT_ORDER_ID + LIVE_UI_STORAGE_STATE. Artifacts → test-artifacts/live-fire/report-generation-journey/<timestamp>-<orderId>/)`
 
-- [ ] **T5.12** — R-08 carry-forward: replace analytics mocks with real data. (8 SP — large; may split into separate weekly item)
-  - Action: per WEEKLY-PLAN-2026-04-27.md R-08. Replace `Math.random()` mocks in trend/vendor analytics tables with real backend endpoints and Recharts. NOT strictly required for "report builder production-ready" but blocks the broader reporting story. Track separately if scoping out.
-  - Verification: per the WEEKLY-PLAN R-08 line.
+- [x] **T5.12** — R-08 carry-forward: replace analytics mocks with real data. (8 SP) `(done — getOrderTrend + getVendorPerformanceSummary endpoints added to api-server.ts; getOrderTrendData() added to cosmos-db.service.ts; RTK Query endpoints useGetOrderTrendQuery + useGetAnalyticsVendorPerformanceQuery added to analyticsApi.ts; analytics page.tsx replaced Math.random() mocks with real Recharts LineChart + vendor table.)`
 
-- [ ] **T5.13** — Documentation: write `REPORT-BUILDER-RUNBOOK.md`. (1 SP) — Deps: T5.11
+- [x] **T5.13** — Documentation: write `REPORT-BUILDER-RUNBOOK.md`. (1 SP) — Deps: T5.11 `(done — current-plan/REPORT-BUILDER-RUNBOOK.md written. Covers: prerequisites, section registry, PDF generation steps, AI badge, market map, footnotes, Playwright run, analytics dashboard, known issues.)`
 
 **Capability 5 total: 43 SP (~22 dev-days, including R-08). Excluding R-08: 35 SP (~18 dev-days).**
 

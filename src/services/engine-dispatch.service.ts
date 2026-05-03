@@ -3,12 +3,14 @@ import { Logger } from '../utils/logger.js';
 import { AxiomService } from './axiom.service.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { BlobStorageService } from './blob-storage.service.js';
+import { ReviewPreparedContextService } from './review-prepared-context.service.js';
 import type {
   CriteriaStepEvidenceRef,
   EngineDispatchResult,
   EngineTarget,
   RunLedgerRecord,
 } from '../types/run-ledger.types.js';
+import type { AxiomPreparedPayload, MopPrioPreparedPayload, PreparedEngineDispatch } from '../types/review-preparation.types.js';
 
 interface CriteriaStepDispatchOptions {
   inputSliceRef: string;
@@ -28,9 +30,10 @@ export class EngineDispatchService {
   private readonly adapters: Record<EngineTarget, EngineAdapter>;
 
   constructor(axiomService: AxiomService, dbService: CosmosDbService) {
+    const preparedContextService = new ReviewPreparedContextService(dbService);
     this.adapters = {
-      AXIOM: new AxiomEngineAdapter(axiomService, dbService, new BlobStorageService()),
-      MOP_PRIO: new MopPrioEngineAdapter(),
+      AXIOM: new AxiomEngineAdapter(axiomService, dbService, new BlobStorageService(), preparedContextService),
+      MOP_PRIO: new MopPrioEngineAdapter(preparedContextService),
     };
   }
 
@@ -61,6 +64,7 @@ class AxiomEngineAdapter implements EngineAdapter {
     private readonly axiomService: AxiomService,
     private readonly dbService: CosmosDbService,
     private readonly blobService: BlobStorageService,
+    private readonly preparedContextService: ReviewPreparedContextService,
   ) {}
 
   async dispatchExtraction(run: RunLedgerRecord): Promise<EngineDispatchResult> {
@@ -130,24 +134,43 @@ class AxiomEngineAdapter implements EngineAdapter {
   }
 
   async dispatchCriteria(run: RunLedgerRecord): Promise<EngineDispatchResult> {
-    if (!run.programKey?.clientId) {
+    const preparedDispatch = await loadPreparedDispatchIfPresent<AxiomPreparedPayload>(
+      this.preparedContextService,
+      run,
+      'axiom-review-dispatch',
+      'AXIOM',
+    );
+    const resolvedProgramKey = preparedDispatch?.payload.programKey ?? run.programKey;
+    const resolvedSnapshotId = preparedDispatch?.payload.snapshotId ?? run.snapshotId;
+    const dispatchInputRef = preparedDispatch?.payload.preparedContextId ?? resolvedSnapshotId;
+
+    if (!resolvedProgramKey?.clientId) {
       throw new Error(`Criteria run '${run.id}' missing programKey.clientId required for Axiom dispatch`);
     }
-    if (!run.snapshotId) {
-      throw new Error(`Criteria run '${run.id}' missing snapshotId`);
+    if (!dispatchInputRef) {
+      throw new Error(`Criteria run '${run.id}' is missing preparedContextId or snapshotId required for Axiom dispatch`);
     }
 
     const response = await this.axiomService.submitPipeline(
       run.tenantId,
-      run.programKey.clientId,
-      run.programKey.subClientId,
-      run.snapshotId,
+      resolvedProgramKey.clientId,
+      resolvedProgramKey.subClientId,
+      dispatchInputRef,
       'CRITERIA_ONLY',
-      {
-        snapshotId: run.snapshotId,
-        programKey: run.programKey,
-        correlationId: run.correlationId,
-      },
+      preparedDispatch
+        ? {
+            dispatchMode: 'prepared-context' as const,
+            ...(resolvedSnapshotId ? { snapshotId: resolvedSnapshotId } : {}),
+            programKey: resolvedProgramKey,
+            preparedPayloadRef: preparedDispatch.payloadRef,
+            preparedPayload: preparedDispatch.payload,
+            correlationId: run.correlationId,
+          }
+        : {
+            snapshotId: resolvedSnapshotId,
+            programKey: resolvedProgramKey,
+            correlationId: run.correlationId,
+          },
       run.pipelineId,
     );
 
@@ -164,7 +187,7 @@ class AxiomEngineAdapter implements EngineAdapter {
       engineVersion: process.env.AXIOM_API_VERSION ?? 'axiom-current',
       engineRequestRef: `axiom:req:${run.id}`,
       engineResponseRef: `axiom:job:${response.jobId}`,
-      statusDetails: { providerStatus: response.status },
+      statusDetails: buildPreparedDispatchStatusDetails(response.status, preparedDispatch?.payload),
     };
   }
 
@@ -285,6 +308,8 @@ class AxiomEngineAdapter implements EngineAdapter {
 class MopPrioEngineAdapter implements EngineAdapter {
   private readonly logger = new Logger('MopPrioEngineAdapter');
 
+  constructor(private readonly preparedContextService: ReviewPreparedContextService) {}
+
   private getBaseUrl(): string {
     const baseUrl = process.env.MOP_PRIO_API_BASE_URL;
     if (!baseUrl) {
@@ -309,14 +334,16 @@ class MopPrioEngineAdapter implements EngineAdapter {
         schemaKey: run.schemaKey,
       });
 
-      const body = response.data as Record<string, unknown>;
-      const engineRunRef = String(body['runId'] ?? body['jobId'] ?? run.id);
-      const providerStatus = String(body['status'] ?? 'queued');
+      const { engineRunRef, providerStatus, engineVersion, status } = this.parseDispatchResponse(
+        response.data,
+        run,
+        'extraction',
+      );
 
       return {
-        status: providerStatus === 'completed' ? 'completed' : 'running',
+        status,
         engineRunRef,
-        engineVersion: String(body['engineVersion'] ?? 'mop-prio-current'),
+        engineVersion,
         engineRequestRef: `mop-prio:req:${run.id}`,
         engineResponseRef: `mop-prio:run:${engineRunRef}`,
         statusDetails: { providerStatus },
@@ -331,9 +358,11 @@ class MopPrioEngineAdapter implements EngineAdapter {
 
   async dispatchCriteria(run: RunLedgerRecord): Promise<EngineDispatchResult> {
     const baseUrl = this.getBaseUrl();
-    if (!run.programKey?.clientId || !run.snapshotId) {
-      throw new Error(`Criteria run '${run.id}' missing required programKey.clientId or snapshotId`);
+    if (run.preparedContextId && !run.preparedPayloadRef) {
+      throw new Error(`Criteria run '${run.id}' is linked to prepared context '${run.preparedContextId}' but is missing preparedPayloadRef`);
     }
+
+    const preparedDispatch = await this.loadPreparedDispatchIfPresent(run);
 
     try {
       const response = await axios.post(`${baseUrl}/api/runs/criteria`, {
@@ -341,21 +370,33 @@ class MopPrioEngineAdapter implements EngineAdapter {
         tenantId: run.tenantId,
         correlationId: run.correlationId,
         idempotencyKey: run.idempotencyKey,
-        snapshotId: run.snapshotId,
-        programKey: run.programKey,
+        ...(preparedDispatch
+          ? {
+              dispatchMode: 'prepared-context' as const,
+              preparedPayloadRef: preparedDispatch.payloadRef,
+              preparedPayloadContractType: preparedDispatch.payloadContractType,
+              preparedPayloadContractVersion: preparedDispatch.payloadContractVersion,
+              preparedPayload: preparedDispatch.payload,
+            }
+          : {
+              snapshotId: run.snapshotId,
+              programKey: run.programKey,
+            }),
       });
 
-      const body = response.data as Record<string, unknown>;
-      const engineRunRef = String(body['runId'] ?? body['jobId'] ?? run.id);
-      const providerStatus = String(body['status'] ?? 'queued');
+      const { engineRunRef, providerStatus, engineVersion, status } = this.parseDispatchResponse(
+        response.data,
+        run,
+        'criteria',
+      );
 
       return {
-        status: providerStatus === 'completed' ? 'completed' : 'running',
+        status,
         engineRunRef,
-        engineVersion: String(body['engineVersion'] ?? 'mop-prio-current'),
+        engineVersion,
         engineRequestRef: `mop-prio:req:${run.id}`,
         engineResponseRef: `mop-prio:run:${engineRunRef}`,
-        statusDetails: { providerStatus },
+        statusDetails: buildPreparedDispatchStatusDetails(providerStatus, preparedDispatch?.payload),
       };
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -387,14 +428,16 @@ class MopPrioEngineAdapter implements EngineAdapter {
         stepEvidenceRefs: options.evidenceRefs,
       });
 
-      const body = response.data as Record<string, unknown>;
-      const engineRunRef = String(body['runId'] ?? body['jobId'] ?? run.id);
-      const providerStatus = String(body['status'] ?? 'queued');
+      const { engineRunRef, providerStatus, engineVersion, status } = this.parseDispatchResponse(
+        response.data,
+        run,
+        'criteria-step',
+      );
 
       return {
-        status: providerStatus === 'completed' ? 'completed' : 'running',
+        status,
         engineRunRef,
-        engineVersion: String(body['engineVersion'] ?? 'mop-prio-current'),
+        engineVersion,
         engineRequestRef: `mop-prio:req:${run.id}`,
         engineResponseRef: `mop-prio:run:${engineRunRef}`,
         statusDetails: { providerStatus },
@@ -415,18 +458,12 @@ class MopPrioEngineAdapter implements EngineAdapter {
 
     try {
       const response = await axios.get(`${baseUrl}/api/runs/${encodeURIComponent(run.engineRunRef)}`);
-      const body = response.data as Record<string, unknown>;
-      const providerStatus = String(body['status'] ?? 'running').toLowerCase();
-
-      let mappedStatus: EngineDispatchResult['status'] = 'running';
-      if (providerStatus === 'completed' || providerStatus === 'success') mappedStatus = 'completed';
-      else if (providerStatus === 'failed' || providerStatus === 'error') mappedStatus = 'failed';
-      else if (providerStatus === 'queued' || providerStatus === 'pending') mappedStatus = 'queued';
+      const { providerStatus, mappedStatus, engineVersion } = this.parseRefreshResponse(response.data, run);
 
       return {
         status: mappedStatus,
         engineRunRef: run.engineRunRef,
-        engineVersion: String(body['engineVersion'] ?? run.engineVersion ?? 'mop-prio-current'),
+        engineVersion,
         engineRequestRef: run.engineRequestRef,
         engineResponseRef: run.engineResponseRef,
         statusDetails: { providerStatus },
@@ -443,4 +480,178 @@ class MopPrioEngineAdapter implements EngineAdapter {
       );
     }
   }
+
+  private async loadPreparedDispatchIfPresent(
+    run: RunLedgerRecord,
+  ): Promise<PreparedEngineDispatch & { payload: MopPrioPreparedPayload } | null> {
+    if (!run.preparedPayloadRef && !run.preparedContextId) {
+      if (!run.programKey?.clientId || !run.snapshotId) {
+        throw new Error(`Criteria run '${run.id}' missing required programKey.clientId or snapshotId`);
+      }
+      return null;
+    }
+
+    if (!run.preparedPayloadRef) {
+      throw new Error(`Criteria run '${run.id}' is missing preparedPayloadRef required for prepared-context dispatch`);
+    }
+    if (run.preparedPayloadContractType !== 'mop-prio-review-dispatch') {
+      throw new Error(
+        `Criteria run '${run.id}' has unsupported prepared payload contract '${run.preparedPayloadContractType ?? 'undefined'}'; expected 'mop-prio-review-dispatch'`,
+      );
+    }
+
+    const dispatch = await this.preparedContextService.getPreparedDispatchByRef(run.preparedPayloadRef, run.tenantId);
+    if (dispatch.engine !== 'MOP_PRIO') {
+      throw new Error(`Prepared payload '${run.preparedPayloadRef}' targets engine '${dispatch.engine}', not 'MOP_PRIO'`);
+    }
+    if (dispatch.payloadContractVersion !== (run.preparedPayloadContractVersion ?? dispatch.payloadContractVersion)) {
+      throw new Error(
+        `Prepared payload '${run.preparedPayloadRef}' version '${dispatch.payloadContractVersion}' does not match run version '${run.preparedPayloadContractVersion}'`,
+      );
+    }
+
+    return dispatch as PreparedEngineDispatch & { payload: MopPrioPreparedPayload };
+  }
+
+  private parseDispatchResponse(
+    responseData: unknown,
+    run: RunLedgerRecord,
+    operation: 'extraction' | 'criteria' | 'criteria-step',
+  ): {
+    engineRunRef: string;
+    providerStatus: string;
+    engineVersion: string;
+    status: EngineDispatchResult['status'];
+  } {
+    const body = this.readObjectResponse(responseData, operation, run);
+    const engineRunRef = this.readRequiredString(body, ['runId', 'jobId'], `${operation} dispatch response`, run);
+    const providerStatus = this.readRequiredString(body, ['status'], `${operation} dispatch response`, run).toLowerCase();
+
+    return {
+      engineRunRef,
+      providerStatus,
+      engineVersion: this.readOptionalString(body, ['engineVersion']) ?? 'mop-prio-current',
+      status: this.mapProviderStatus(providerStatus),
+    };
+  }
+
+  private parseRefreshResponse(
+    responseData: unknown,
+    run: RunLedgerRecord,
+  ): {
+    providerStatus: string;
+    mappedStatus: EngineDispatchResult['status'];
+    engineVersion: string;
+  } {
+    const body = this.readObjectResponse(responseData, 'status refresh', run);
+    const providerStatus = this.readRequiredString(body, ['status'], 'status refresh response', run).toLowerCase();
+
+    return {
+      providerStatus,
+      mappedStatus: this.mapProviderStatus(providerStatus),
+      engineVersion: this.readOptionalString(body, ['engineVersion']) ?? run.engineVersion ?? 'mop-prio-current',
+    };
+  }
+
+  private readObjectResponse(responseData: unknown, operation: string, run: RunLedgerRecord): Record<string, unknown> {
+    if (!responseData || typeof responseData !== 'object' || Array.isArray(responseData)) {
+      throw new Error(`MOP/Prio ${operation} failed for run '${run.id}': response body must be an object`);
+    }
+
+    return responseData as Record<string, unknown>;
+  }
+
+  private readRequiredString(
+    body: Record<string, unknown>,
+    keys: string[],
+    responseLabel: string,
+    run: RunLedgerRecord,
+  ): string {
+    const value = this.readOptionalString(body, keys);
+    if (!value) {
+      throw new Error(`MOP/Prio ${responseLabel} failed for run '${run.id}': missing required field ${keys.join(' or ')}`);
+    }
+    return value;
+  }
+
+  private readOptionalString(body: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = body[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private mapProviderStatus(providerStatus: string): EngineDispatchResult['status'] {
+    if (providerStatus === 'completed' || providerStatus === 'success') {
+      return 'completed';
+    }
+    if (providerStatus === 'failed' || providerStatus === 'error') {
+      return 'failed';
+    }
+    if (providerStatus === 'queued' || providerStatus === 'pending') {
+      return 'queued';
+    }
+    return 'running';
+  }
+}
+
+interface PreparedDispatchResolution<TPayload extends AxiomPreparedPayload | MopPrioPreparedPayload> {
+  payloadRef: string;
+  payload: TPayload;
+}
+
+async function loadPreparedDispatchIfPresent<TPayload extends AxiomPreparedPayload | MopPrioPreparedPayload>(
+  preparedContextService: ReviewPreparedContextService,
+  run: RunLedgerRecord,
+  expectedContractType: TPayload['contractType'],
+  expectedEngine: EngineTarget,
+): Promise<PreparedDispatchResolution<TPayload> | null> {
+  if (!run.preparedPayloadRef && !run.preparedContextId) {
+    return null;
+  }
+
+  if (!run.preparedPayloadRef) {
+    throw new Error(`Run '${run.id}' is linked to prepared context '${run.preparedContextId}' but is missing preparedPayloadRef`);
+  }
+  if (run.preparedPayloadContractType !== expectedContractType) {
+    throw new Error(
+      `Run '${run.id}' has unsupported prepared payload contract '${run.preparedPayloadContractType ?? 'undefined'}'; expected '${expectedContractType}'`,
+    );
+  }
+
+  const dispatch = await preparedContextService.getPreparedDispatchByRef(run.preparedPayloadRef, run.tenantId);
+  if (dispatch.engine !== expectedEngine) {
+    throw new Error(`Prepared payload '${run.preparedPayloadRef}' targets engine '${dispatch.engine}', not '${expectedEngine}'`);
+  }
+  if (dispatch.payloadContractType !== expectedContractType) {
+    throw new Error(
+      `Prepared payload '${run.preparedPayloadRef}' has contract '${dispatch.payloadContractType}', expected '${expectedContractType}'`,
+    );
+  }
+  if (run.preparedPayloadContractVersion && dispatch.payloadContractVersion !== run.preparedPayloadContractVersion) {
+    throw new Error(
+      `Prepared payload '${run.preparedPayloadRef}' version '${dispatch.payloadContractVersion}' does not match run version '${run.preparedPayloadContractVersion}'`,
+    );
+  }
+
+  return {
+    payloadRef: dispatch.payloadRef,
+    payload: dispatch.payload as TPayload,
+  };
+}
+
+function buildPreparedDispatchStatusDetails(
+  providerStatus: string,
+  payload?: Pick<AxiomPreparedPayload, 'unmetRequiredInputs' | 'criteriaSummary' | 'provenanceSummary'>,
+): Record<string, unknown> {
+  return {
+    providerStatus,
+    ...(payload?.unmetRequiredInputs ? { unmetRequiredInputs: payload.unmetRequiredInputs } : {}),
+    ...(payload?.criteriaSummary ? { criteriaSummary: payload.criteriaSummary } : {}),
+    ...(payload?.provenanceSummary ? { provenanceSummary: payload.provenanceSummary } : {}),
+  };
 }

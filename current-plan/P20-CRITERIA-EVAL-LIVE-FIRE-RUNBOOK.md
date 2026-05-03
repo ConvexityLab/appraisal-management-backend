@@ -162,40 +162,44 @@ Artifacts land in `test-artifacts/live-fire/qc-criteria-evaluation-journey/<time
 
 ---
 
-## Part 4 — ⚠️ Step (h) cascade re-evaluation: KNOWN GAP
+## Part 4 — ✅ Step (h) cascade re-evaluation: GAP CLOSED (T2.5, 2026-04-28)
 
-**Discovered during P-20 audit (2026-04-27).**
+**Originally discovered during P-20 audit (2026-04-27). Closed 2026-04-28 by T2.5.**
 
-The cascade re-evaluation flow is **half-implemented**:
+The cascade re-evaluation flow was half-implemented; it is now complete:
 
 - ✅ `engagement-audit.controller.ts:888` publishes `qc.criterion.reevaluate.requested` when a field correction has `cascadeReeval: true`
 - ✅ Frontend `CascadeReevaluationPanel.tsx` reads BOTH `qc.criterion.reevaluate.requested` AND `qc.criterion.reevaluated` audit events for display
-- ❌ **No backend handler subscribes to `qc.criterion.reevaluate.requested`**
-- ❌ **No code anywhere publishes `qc.criterion.reevaluated`**
+- ✅ **`src/services/criteria-reevaluation-handler.service.ts`** — new service (519 lines) subscribes to `qc.criterion.reevaluate.requested`, identifies dependent criteria via `EXPLICIT_FIELD_TO_CRITERIA` lookup table (50 URAR-1004-NNN entries) + compiled program inference, calls `AxiomService.submitCriteriaReevaluation()`, polls `aiInsights` Cosmos container every 2s (90s timeout), and publishes `qc.criterion.reevaluated` per criterion with `{oldVerdict, newVerdict, changedFlag}`.
+- ✅ **`CascadeReevaluationPanel.tsx`** guarded against events with no concrete `criterionId`
+- ✅ **4/4 unit tests passing** (`tests/unit/criteria-reevaluation-handler.service.test.ts`)
+- ✅ **Wired into `api-server.ts`** startup/shutdown (non-fatal on startup failure)
 
-The controller comment at line 886 admits this: _"The actual re-evaluation is wired in Phase 9.3; for now this just signals intent."_
-
-### Implications for P-20 closure
-
-- Frontend shows correctly when reviewer requests cascade re-eval (the "requested" event)
-- Frontend will sit empty for the "reevaluated" half of the cascade because no event ever fires
-- A reviewer who corrects a field with cascade enabled will see their request acknowledged but no downstream re-scoring happens
-
-### What needs to be built (separate ticket — descoped from P-20)
-
-A new service `CriteriaReevaluationHandler` (suggested location: `src/services/criteria-reevaluation-handler.service.ts`) that:
+### What the handler does
 1. Subscribes to `qc.criterion.reevaluate.requested`
-2. Loads the affected order's latest evaluation + the field that was corrected
-3. Calls Axiom's `criteria-only-evaluation` pipeline (see Part 2.2) targeting only the dependent criteria
-4. On completion, compares old vs new verdict per criterion and publishes `qc.criterion.reevaluated` for each:
-   ```ts
-   { type: 'qc.criterion.reevaluated', data: { orderId, criterionId, oldVerdict, newVerdict, changedFlag: oldVerdict !== newVerdict, triggeringFieldName, ... } }
-   ```
-5. Has unit tests covering: subscribe, evaluation submission, verdict comparison, idempotency on repeated requests
+2. Deduplicates in-flight by `${orderId}:${fieldNorm}:${newValue}` key
+3. Loads order + latest completed evaluation from Cosmos; reads `axiomProgramId`/`axiomProgramVersion`
+4. Resolves dependent criteria for the corrected field via explicit lookup + compiled program inference
+5. Calls `AxiomService.submitCriteriaReevaluation()` → polls Cosmos for completion
+6. Publishes `qc.criterion.reevaluated` per criterion with `{oldVerdict, newVerdict, changedFlag}`
+7. On error: publishes error record for all dependent criteria (so frontend doesn't hang in pending state)
 
-**Estimated effort:** 5 story points (1 day for one developer).
+### End-to-end Playwright verification (T2.6)
 
-**For now**, P-20 step (h) is documented as a **known limitation** and tracked as follow-up. The remaining steps (a-g) close fully.
+The live-fire Playwright spec at `e2e/live-fire/qc-criteria-evaluation-journey.live-fire.spec.ts` has been **hardened** (T2.6 code changes done 2026-04-28):
+- Smoke-mode tolerances removed — hard assertions for (a) issue chips, (b) AI verdict, (c) Re-run Criteria
+- Step (d/h) added: triggers a field correction → waits for "Cascade Re-Evaluations" panel → asserts ≥1 criterion shows "flipped" or "unchanged" within 100s
+
+**Execution requires live environment** with:
+- `LIVE_UI_QC_REVIEW_ID` — a QC review tied to an order with completed Axiom criteria
+- `VITE_API_BASE_URL` — running backend with `CriteriaReevaluationHandlerService` active
+- Order's QC checklist seed must have `axiomCriterionIds` arrays
+
+Run command:
+```bash
+cd c:/source/l1-valuation-platform-ui
+npx playwright test e2e/live-fire/qc-criteria-evaluation-journey.live-fire.spec.ts
+```
 
 ---
 
@@ -205,10 +209,10 @@ P-20 is **DONE** when:
 
 - [x] `axiomQcBridge.test.ts` passes locally (15 tests) — closed 2026-04-27
 - [ ] Backend live-fire Run 2.1 succeeds against staging (or `AXIOM_FORCE_MOCK=true` locally) AND step (b) curl returns expected criterion shape
-- [x] Frontend Run 3.1 (Playwright spec) passes — first PASS recorded 2026-04-28T02:07Z (`hasOverrides=true`, smoke mode for issues + verdict pending fixture data)
+- [x] Frontend Run 3.1 (Playwright spec) — first PASS recorded 2026-04-28T02:07Z (smoke mode). T2.6 full-fidelity spec hardened 2026-04-28; **execution against real data pending**.
 - [ ] Manual UI checklist (Part 3.2) Steps 1–9 all pass against an order with real Axiom criteria
 - [ ] Run artifacts archived under `test-artifacts/p-20/<timestamp>/`
-- [ ] Cascade re-eval gap (Part 4) tracked as a separate ticket and added to next week's plan
+- [x] Cascade re-eval gap (Part 4) — **CLOSED** by T2.5 (`CriteriaReevaluationHandlerService`) 2026-04-28. T2.6 spec updated to verify step (h) end-to-end.
 
 ---
 
@@ -218,6 +222,6 @@ Inherits all gotchas from [P-19 runbook Part 4](./P19-EXTRACTION-LIVE-FIRE-RUNBO
 
 1. **Criterion match requires `axiomCriterionIds` on QC checklist items.** If `applyAxiomPrefill` doesn't populate any `aiVerdict`, the QC checklist seed (`qc-checklists.ts`) is missing `axiomCriterionIds` arrays. This is the A-06/A-07 deferred work — once real Axiom criterion IDs land, the checklist seed must be updated to reference them.
 
-2. **`qc.criterion.reevaluated` events will never appear** until Part 4 is built — `CascadeReevaluationPanel` will show "requested" markers but no completion deltas.
+2. **`qc.criterion.reevaluated` events now fire** once `CriteriaReevaluationHandlerService` (T2.5) is running. If `CascadeReevaluationPanel` shows "Cascade pending" but never transitions to "flipped"/"unchanged", check: (a) the Service Bus subscription is active, (b) the field being corrected maps to ≥1 criterion in `EXPLICIT_FIELD_TO_CRITERIA`, (c) Axiom criteria pipeline completes within the 90s handler timeout. Previously this was documented as a permanent limitation — it is now resolved.
 
 3. **`programId` mismatch.** If the order was extracted with one program (e.g. `canonical-fnma-1033`) but criteria-only-evaluation is invoked with a different program (e.g. `FNMA-1004`), the criterion IDs won't line up and `applyAxiomPrefill` will produce zero matches.
