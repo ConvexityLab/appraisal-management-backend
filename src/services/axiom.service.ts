@@ -3138,24 +3138,60 @@ export class AxiomService {
       // ── Phase 8.7: Write extracted data back to the source document ─────
       // This makes the data available to the canonical snapshot layer, report
       // generation, and any other consumer that reads documents.extractedData.
-      const consolidateStage = (() => {
-        const inner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
-        return Array.isArray(inner['consolidate']) ? (inner['consolidate'] as any[])[0] : null;
+      //
+      // Two source paths, in priority order:
+      //   1. consolidate stage: a single consolidatedData object (preferred when
+      //      present — Axiom has already merged per-page extraction).
+      //   2. extractStructuredData stage: array of per-page extractedData blocks.
+      //      Merge across pages with first-non-null wins, since each page
+      //      typically populates a non-overlapping subset of the URAR fields.
+      const inner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
+      const consolidateStage = Array.isArray(inner['consolidate'])
+        ? (inner['consolidate'] as Array<{ consolidatedData?: Record<string, unknown> }>)[0]
+        : null;
+      const extractedDataForDoc: Record<string, unknown> | null = (() => {
+        if (consolidateStage?.consolidatedData && Object.keys(consolidateStage.consolidatedData).length > 0) {
+          return consolidateStage.consolidatedData;
+        }
+        const pages = inner['extractStructuredData'];
+        if (!Array.isArray(pages) || pages.length === 0) return null;
+        const merged: Record<string, unknown> = {};
+        for (const page of pages as Array<{ extractedData?: Record<string, unknown> }>) {
+          const data = page?.extractedData;
+          if (!data || typeof data !== 'object') continue;
+          for (const [key, val] of Object.entries(data)) {
+            if (val == null) continue;
+            const existing = merged[key];
+            if (
+              existing != null && typeof existing === 'object' && !Array.isArray(existing)
+              && typeof val === 'object' && !Array.isArray(val)
+            ) {
+              // Deep-merge nested objects (e.g. propertyAddress.{street,city,state,zip}).
+              merged[key] = { ...(existing as Record<string, unknown>), ...(val as Record<string, unknown>) };
+            } else if (existing == null) {
+              merged[key] = val;
+            }
+          }
+        }
+        return Object.keys(merged).length > 0 ? merged : null;
       })();
-      if (consolidateStage?.consolidatedData && meta.documentId) {
+
+      if (extractedDataForDoc && meta.documentId) {
         try {
           const docResp = await this.dbService.getItem<any>('documents', meta.documentId as string);
           if (docResp?.data) {
             const updatedDoc = {
               ...docResp.data,
-              extractedData: consolidateStage.consolidatedData,
+              extractedData: extractedDataForDoc,
               extractedDataSource: 'axiom',
               extractedDataAt: new Date().toISOString(),
               extractedDataPipelineJobId: pipelineJobId,
             };
             await this.dbService.updateItem('documents', meta.documentId as string, updatedDoc);
             this.logger.info('Wrote extracted data back to document', {
-              documentId: meta.documentId, fieldCount: Object.keys(consolidateStage.consolidatedData).length,
+              documentId: meta.documentId,
+              fieldCount: Object.keys(extractedDataForDoc).length,
+              source: consolidateStage?.consolidatedData ? 'consolidate-stage' : 'extractStructuredData-merged',
             });
 
             // A-13: Refresh the canonical snapshot (created at submit time) so
@@ -3163,12 +3199,15 @@ export class AxiomService {
             // rather than the pre-Axiom document state. Best-effort; a failure
             // here must not block the evaluation storage flow.
             try {
-              const runId = (meta as any).runId as string | undefined;
-              const tenantId = (meta as any).tenantId as string | undefined;
+              const runId = (meta as { runId?: string }).runId;
+              const tenantId = (meta as { tenantId?: string }).tenantId;
               if (runId && tenantId) {
                 const runResp = await this.dbService.getItem<any>('aiInsights', runId, tenantId);
                 const run = runResp?.data;
-                if (run && run.type === 'run-ledger-record' && run.runType === 'extraction') {
+                // Run-ledger documents are stored with type 'run-ledger-entry' (see
+                // src/services/run-ledger.service.ts). The prior 'run-ledger-record'
+                // string never matched, so the snapshot refresh silently no-op'd.
+                if (run && run.type === 'run-ledger-entry' && run.runType === 'extraction') {
                   const { CanonicalSnapshotService } = await import('./canonical-snapshot.service.js');
                   const snapshotService = new CanonicalSnapshotService(this.dbService);
                   await snapshotService.refreshFromExtractionRun(run);
