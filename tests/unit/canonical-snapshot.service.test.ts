@@ -225,6 +225,87 @@ describe('CanonicalSnapshotService merge behavior', () => {
       ]),
     );
   });
+
+  // Slice: feat/property-enrichment-mapper. Verifies the property-enrichment
+  // mapper is wired into normalizedData.canonical and that merge order is
+  // "enrichment first, extraction wins on overlap" — and that enrichment-only
+  // fields (parcelNumber, floodZone, county) survive when extraction also
+  // produces a subject.
+  it('projects enrichment data onto normalizedData.canonical.subject and lets extraction win on overlap', async () => {
+    const queryItems = vi.fn().mockImplementation(async (container: string) => {
+      if (container === 'documents') {
+        return {
+          success: true,
+          data: [
+            {
+              id: 'doc-001',
+              tenantId: 'tenant-001',
+              orderId: 'order-001',
+              extractedData: {
+                propertyAddress: {
+                  street: { value: '17 David Dr' },
+                  city: { value: 'Johnston' },
+                  state: { value: 'RI' },
+                  zipCode: { value: '02919' },
+                },
+                grossLivingArea: { value: 1900 },  // extraction differs from enrichment 1850
+                yearBuilt: { value: 1985 },
+              },
+            },
+          ],
+        };
+      }
+      if (container === 'property-enrichments') {
+        return {
+          success: true,
+          data: [
+            {
+              id: 'enrich-001',
+              type: 'property-enrichment',
+              orderId: 'order-001',
+              tenantId: 'tenant-001',
+              dataResult: {
+                source: 'Bridge',
+                fetchedAt: '2026-04-04T00:00:00.000Z',
+                core: {
+                  grossLivingArea: 1850,
+                  parcelNumber: 'APN-123',
+                  county: 'Providence',
+                  latitude: 41.82,
+                },
+                publicRecord: { zoning: 'R-7' },
+                flood: { femaFloodZone: 'X' },
+              },
+              createdAt: '2026-04-04T00:00:00.000Z',
+            },
+          ],
+        };
+      }
+      return { success: true, data: [] };
+    });
+    const upsertItem = vi.fn().mockResolvedValue({ success: true });
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+
+    const snapshot = await service.createFromExtractionRun(buildExtractionRun());
+
+    const canonical = snapshot.normalizedData?.canonical as { subject?: Record<string, unknown> } | undefined;
+    expect(canonical?.subject).toBeTruthy();
+
+    // Extraction wins on the overlapping field (grossLivingArea).
+    expect(canonical?.subject?.['grossLivingArea']).toBe(1900);
+    // Enrichment-only fields survive.
+    expect(canonical?.subject?.['parcelNumber']).toBe('APN-123');
+    expect(canonical?.subject?.['zoning']).toBe('R-7');
+    expect(canonical?.subject?.['floodZone']).toBe('X');
+    expect(canonical?.subject?.['latitude']).toBe(41.82);
+    // Address merged field-by-field: extraction supplies streetAddress, enrichment
+    // supplies county.
+    expect(canonical?.subject?.['address']).toMatchObject({
+      streetAddress: '17 David Dr',
+      city: 'Johnston',
+      county: 'Providence',
+    });
+  });
 });
 
 // ── refreshFromExtractionRun (P-19 / A-13 — post-Axiom snapshot refresh) ────
