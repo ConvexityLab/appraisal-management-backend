@@ -2,6 +2,7 @@ import { ServiceBusClient, ServiceBusSender, ServiceBusReceiver } from '@azure/s
 import { Logger } from '../utils/logger.js';
 import { AppraisalOrder, OrderStatus } from '../types/index.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
+import { buildCanonicalPayloadFromOrder } from '../integrations/outbound/canonical-event-payload.js';
 
 /**
  * Azure Service Bus Integration for Order Events
@@ -41,8 +42,15 @@ export class OrderEventService {
 
   /**
    * Publish order created event
+   *
+   * Includes a `canonical` block (subject/loan/ratios in MISMO-aligned shape)
+   * so subscribers reading canonical paths don't need to know the legacy
+   * AppraisalOrder shape. Legacy fields (propertyAddress, etc.) remain on
+   * the event for backward compatibility — slice 9 is additive.
    */
   async publishOrderCreated(order: AppraisalOrder): Promise<void> {
+    const canonical = buildCanonicalPayloadFromOrder(order);
+
     const event = {
       eventType: 'ORDER_CREATED',
       orderId: order.id,
@@ -53,6 +61,7 @@ export class OrderEventService {
       dueDate: order.dueDate,
       propertyAddress: order.propertyAddress,
       timestamp: new Date(),
+      ...(canonical ? { canonical } : {}),
       metadata: {
         orderNumber: order.orderNumber,
         rushOrder: order.rushOrder
@@ -60,7 +69,7 @@ export class OrderEventService {
     };
 
     await this.publishEvent(this.orderTopicName, event);
-    this.logger.info('Order created event published', { orderId: order.id });
+    this.logger.info('Order created event published', { orderId: order.id, hasCanonical: canonical != null });
   }
 
   /**
