@@ -44,6 +44,10 @@ import type {
 import { EventCategory, EventPriority } from '../types/events.js';
 import { extendIntakeSourceIdentity } from '../types/intake-source.types.js';
 import { normalizeAxiomPropertyRequestBody } from './axiom-request-normalizer.js';
+import {
+  AxiomWebhookValidationError,
+  parseAxiomWebhook,
+} from '../integrations/axiom/inbound.adapter.js';
 
 const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion--';
 
@@ -1184,6 +1188,51 @@ export class AxiomController {
   handleWebhook = async (req: Request, res: Response): Promise<void> => {
     try {
       const body = req.body as Record<string, unknown>;
+
+      // ── Inbound adapter: validate envelope shape at the door ─────────────
+      // The full handler downstream still operates on `body` (incremental
+      // migration); this entry-point validation rejects malformed envelopes
+      // BEFORE the imperative dispatch tree runs them. Bodies that carry an
+      // unknown `correlationType` we don't yet model are allowed through —
+      // the imperative tree's "Unrecognized webhook payload shape" branch
+      // catches those. We only reject when correlationType IS one of the
+      // known values (EXECUTION/TAPE_LOAN/DOCUMENT/ORDER) but the body fails
+      // schema. Logged-only side: parsed event is captured for telemetry.
+      const envelopeCorrelationType = body['correlationType'];
+      const KNOWN_TYPES = new Set(['EXECUTION', 'TAPE_LOAN', 'DOCUMENT', 'ORDER']);
+      if (typeof envelopeCorrelationType === 'string' && KNOWN_TYPES.has(envelopeCorrelationType)) {
+        try {
+          const event = parseAxiomWebhook(body);
+          this.logger.info('Axiom webhook envelope validated', {
+            kind: event.kind,
+            correlationType: envelopeCorrelationType,
+            ...(event.kind !== 'legacy' ? { correlationId: event.correlationId } : {}),
+          });
+        } catch (validationError) {
+          if (validationError instanceof AxiomWebhookValidationError) {
+            const issues = validationError.issues.issues.map((i) => ({
+              path: i.path.join('.'),
+              code: i.code,
+              message: i.message,
+            }));
+            this.logger.warn('Axiom webhook envelope validation failed', {
+              correlationType: envelopeCorrelationType,
+              issues,
+            });
+            res.status(400).json({
+              success: false,
+              error: {
+                code: 'WEBHOOK_VALIDATION_FAILED',
+                message: 'Webhook envelope failed schema validation',
+                issues,
+              },
+            });
+            return;
+          }
+          throw validationError;
+        }
+      }
+
 
       // ── New pipeline shape ────────────────────────────────────────────────
       const correlationType = body['correlationType'] as string | undefined;
