@@ -18,6 +18,7 @@
  *  - Managed Identity (DefaultAzureCredential) for all Azure SDK clients via BlobStorageService
  */
 
+import ExcelJS from 'exceljs';
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } from 'pdf-lib';
 import { v4 as uuidv4 } from 'uuid';
 import { CosmosDbService } from './cosmos-db.service.js';
@@ -230,7 +231,7 @@ export class FinalReportService {
     try {
       if (template.renderStrategy === 'html-render') {
         // HTML engine: Handlebars template compiled + Playwright → PDF buffer
-        const pdfBuffer = await this._generatePdfViaHtmlEngine(template, request, orderId);
+        const pdfBuffer = await this._generatePdfViaHtmlEngine(template, request, orderId, order, qcReview);
         filledPdfBytes = new Uint8Array(pdfBuffer);
       } else {
         // AcroForm engine: pdf-lib field fill on a blank fillable PDF
@@ -577,11 +578,14 @@ export class FinalReportService {
   async previewReportHtml(orderId: string, templateId: string): Promise<string> {
     this.logger.info('Generating HTML preview', { orderId, templateId });
 
-    const canonicalDocs = await this.db.queryDocuments<CanonicalReportDocument>(
-      this.REPORTING_CONTAINER,
-      'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
-      [{ name: '@orderId', value: orderId }],
-    );
+    const [canonicalDocs, order] = await Promise.all([
+      this.db.queryDocuments<CanonicalReportDocument>(
+        this.REPORTING_CONTAINER,
+        'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+        [{ name: '@orderId', value: orderId }],
+      ),
+      this._loadOrder(orderId),
+    ]);
 
     const canonicalDoc = canonicalDocs[0];
     if (!canonicalDoc) {
@@ -590,6 +594,10 @@ export class FinalReportService {
         `The appraiser must save the valuation workspace before a preview can be generated.`,
       );
     }
+
+    // Enrich source documents so the preview reflects what the final report will show.
+    // No qcReview available for preview — pass undefined to skip AI screening enrichment.
+    _enrichCanonicalDocForReport(canonicalDoc, order, undefined);
 
     return this.reportEngine.generateHtml(
       { orderId, templateId, requestedBy: 'preview' },
@@ -605,11 +613,18 @@ export class FinalReportService {
    * The CanonicalReportDocument must already exist — it is created/updated whenever
    * the appraiser saves work in the valuation workspace. If one is not found, the
    * caller receives a clear error explaining what action is needed.
+   *
+   * Enrichment applied before the mapper runs (non-destructive — only fills fields
+   * that are absent/empty on the stored canonical doc):
+   *   • sourceDocuments  ← order.documents[]
+   *   • criteriaEvaluations ← qcReview.aiPreScreening.flaggedItems (if populated)
    */
   private async _generatePdfViaHtmlEngine(
     _template: ReportTemplate,
     request: FinalReportGenerationRequest,
     orderId: string,
+    order: AppraisalOrder,
+    qcReview: QCReview,
   ): Promise<Buffer> {
     this.logger.info('Generating report via HTML engine', {
       orderId,
@@ -630,6 +645,9 @@ export class FinalReportService {
         `The appraiser must save the valuation workspace (subject data + comps) before a final report can be generated.`,
       );
     }
+
+    // ── Capability-5 enrichment (non-destructive) ────────────────────────────────
+    _enrichCanonicalDocForReport(canonicalDoc, order, qcReview);
 
     return this.reportEngine.generate(request, canonicalDoc);
   }
@@ -991,4 +1009,250 @@ export class FinalReportService {
       } as any,
     } as unknown as UadAppraisalReport;
   }
+
+  // ──────────────────────────────────────────────────────────────────
+  // T5.8 — CSV / Excel export
+  // ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Assembles a multi-section tabular export of the canonical report document:
+   *   Sheet 1 / Section 1 — Order Summary
+   *   Sheet 2 / Section 2 — Criteria Evaluations (from Axiom pre-screening)
+   *   Sheet 3 / Section 3 — Extracted Data Fields
+   *   Sheet 4 / Section 4 — Enrichment Summary (flattened key–value)
+   *
+   * @throws if no CanonicalReportDocument exists for the order.
+   */
+  async exportReportData(
+    orderId: string,
+    format: 'csv' | 'xlsx',
+  ): Promise<{ buffer: Buffer; contentType: string; fileName: string }> {
+    this.logger.info('Exporting report data', { orderId, format });
+
+    const canonicalDocs = await this.db.queryDocuments<CanonicalReportDocument>(
+      this.REPORTING_CONTAINER,
+      'SELECT * FROM c WHERE c.orderId = @orderId ORDER BY c.updatedAt DESC OFFSET 0 LIMIT 1',
+      [{ name: '@orderId', value: orderId }],
+    );
+
+    const doc = canonicalDocs[0];
+    if (!doc) {
+      throw new Error(
+        `No canonical report document found for order '${orderId}'. ` +
+        `The appraiser must save the valuation workspace before export is available.`,
+      );
+    }
+
+    const addr = doc.subject.address;
+
+    // ── Section 1: Order Summary (field/value pairs) ──────────────────────────────
+    const summaryRows: [string, unknown][] = [
+      ['Order ID',          doc.orderId],
+      ['Report ID',         doc.reportId],
+      ['Order Number',      doc.metadata.orderNumber ?? ''],
+      ['Borrower Name',     doc.metadata.borrowerName ?? ''],
+      ['Client Name',       doc.metadata.clientName ?? ''],
+      ['Report Type',       doc.reportType],
+      ['Status',            doc.status],
+      ['Street Address',    addr.streetAddress],
+      ['City',              addr.city],
+      ['State',             addr.state],
+      ['Zip Code',          addr.zipCode],
+      ['County',            addr.county],
+      ['Property Type',     doc.subject.propertyType],
+      ['GLA (sqft)',        doc.subject.grossLivingArea],
+      ['Bedrooms',          doc.subject.bedrooms],
+      ['Bathrooms',         doc.subject.bathrooms],
+      ['Year Built',        doc.subject.yearBuilt],
+      ['Appraised Value',   doc.valuation?.estimatedValue ?? ''],
+      ['Effective Date',    doc.valuation?.effectiveDate ?? doc.metadata.effectiveDate ?? ''],
+    ];
+
+    // ── Section 2: Criteria Evaluations ──────────────────────────────────────────
+    const criteriaHeaders = [
+      'Criterion ID', 'Name', 'Evaluation', 'Confidence (%)', 'Reasoning', 'Recommendation',
+    ];
+    const criteriaRows = (doc.criteriaEvaluations ?? []).map(c => [
+      c.criterionId,
+      c.name,
+      c.evaluation,
+      c.confidence != null ? Math.round(c.confidence * 100) : '',
+      c.reasoning ?? '',
+      c.recommendation ?? '',
+    ]);
+
+    // ── Section 3: Extracted Data Fields ───────────────────────────────────────
+    const extractedHeaders = [
+      'Field Name', 'Label', 'Value', 'Confidence (%)', 'Source Document', 'Source Page',
+    ];
+    const extractedRows = (doc.extractedDataFields ?? []).map(f => [
+      f.fieldName,
+      f.fieldLabel ?? '',
+      f.extractedValue != null ? String(f.extractedValue) : '',
+      f.confidence != null ? Math.round(f.confidence * 100) : '',
+      f.sourceDocument ?? '',
+      f.sourcePage ?? '',
+    ]);
+
+    // ── Section 4: Enrichment Summary ─────────────────────────────────────────────
+    const enrichmentHeaders = ['Section', 'Key', 'Value'];
+    const enrichmentRows: unknown[][] = [];
+    const enrich = doc.enrichmentData;
+    if (enrich) {
+      for (const [sectionKey, sectionData] of Object.entries(enrich)) {
+        if (sectionData && typeof sectionData === 'object') {
+          for (const [k, v] of Object.entries(sectionData as Record<string, unknown>)) {
+            enrichmentRows.push([sectionKey, k, v != null ? String(v) : '']);
+          }
+        }
+      }
+    }
+
+    if (format === 'xlsx') {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'L1 Valuation Platform';
+      wb.created = new Date();
+
+      const s1 = wb.addWorksheet('Order Summary');
+      s1.columns = [
+        { header: 'Field', key: 'field', width: 28 },
+        { header: 'Value', key: 'value', width: 50 },
+      ];
+      s1.getRow(1).font = { bold: true };
+      summaryRows.forEach(([field, value]) => s1.addRow({ field, value }));
+
+      const s2 = wb.addWorksheet('Criteria Evaluations');
+      s2.addRow(criteriaHeaders);
+      s2.getRow(1).font = { bold: true };
+      criteriaRows.forEach(r => s2.addRow(r as ExcelJS.CellValue[]));
+      s2.columns?.forEach(c => { c.width = 22; });
+
+      const s3 = wb.addWorksheet('Extracted Data Fields');
+      s3.addRow(extractedHeaders);
+      s3.getRow(1).font = { bold: true };
+      extractedRows.forEach(r => s3.addRow(r as ExcelJS.CellValue[]));
+      s3.columns?.forEach(c => { c.width = 22; });
+
+      const s4 = wb.addWorksheet('Enrichment Summary');
+      s4.addRow(enrichmentHeaders);
+      s4.getRow(1).font = { bold: true };
+      enrichmentRows.forEach(r => s4.addRow(r as ExcelJS.CellValue[]));
+      s4.columns?.forEach(c => { c.width = 28; });
+
+      const raw = await wb.xlsx.writeBuffer();
+      return {
+        buffer:      Buffer.from(raw),
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        fileName:    `report-data-${orderId}.xlsx`,
+      };
+    }
+
+    // CSV: multi-section separated by blank lines
+    const csv = [
+      '=== Order Summary ===',
+      'Field,Value',
+      ...summaryRows.map(([f, v]) => `${_csvEsc(f)},${_csvEsc(v)}`),
+      '',
+      '=== Criteria Evaluations ===',
+      criteriaHeaders.map(_csvEsc).join(','),
+      ...criteriaRows.map(r => r.map(_csvEsc).join(',')),
+      '',
+      '=== Extracted Data Fields ===',
+      extractedHeaders.map(_csvEsc).join(','),
+      ...extractedRows.map(r => r.map(_csvEsc).join(',')),
+      '',
+      '=== Enrichment Summary ===',
+      enrichmentHeaders.map(_csvEsc).join(','),
+      ...enrichmentRows.map(r => r.map(_csvEsc).join(',')),
+    ].join('\n');
+
+    return {
+      buffer:      Buffer.from(csv, 'utf-8'),
+      contentType: 'text/csv; charset=utf-8',
+      fileName:    `report-data-${orderId}.csv`,
+    };
+  }
+}
+
+// ── Module-level helpers ───────────────────────────────────────────────────────
+
+/**
+ * Non-destructively enriches a CanonicalReportDocument with Capability-5 fields
+ * sourced from the order and the QC review before the field mapper runs.
+ *
+ * Rules:
+ *  - Only fills a field if it is absent or empty on the stored canonical doc.
+ *  - Mutates `doc` in-place (the object is used locally and never re-persisted).
+ *
+ * @param doc       The canonical doc loaded from Cosmos (mutated in-place).
+ * @param order     The full AppraisalOrder (provides documents[]).
+ * @param qcReview  The approved QC review (provides aiPreScreening.flaggedItems).
+ */
+function _enrichCanonicalDocForReport(
+  doc: CanonicalReportDocument,
+  order: AppraisalOrder,
+  qcReview: QCReview | undefined,
+): void {
+  // ── sourceDocuments from order.documents ─────────────────────────────────
+  // order-management.ts AppraisalOrder has documents[]; index.ts version does not.
+  // Runtime access is safe — the actual stored document has the field.
+  const orderDocs: Array<{
+    id: string;
+    originalFilename: string;
+    fileUrl: string;
+    type: unknown;
+    uploadedAt: unknown;
+  }> = (order as unknown as { documents?: unknown[] }).documents as typeof orderDocs ?? [];
+
+  if (!doc.sourceDocuments || doc.sourceDocuments.length === 0) {
+    doc.sourceDocuments = orderDocs.map(d => ({
+      documentId:   d.id,
+      documentName: d.originalFilename,
+      blobUrl:      d.fileUrl,
+      documentType: String(d.type),
+      uploadedAt:
+        d.uploadedAt instanceof Date
+          ? d.uploadedAt.toISOString()
+          : String(d.uploadedAt),
+    }));
+  }
+
+  // ── criteriaEvaluations from QC AI pre-screening flagged items ────────────
+  if (!doc.criteriaEvaluations || doc.criteriaEvaluations.length === 0) {
+    const flagged = qcReview?.aiPreScreening?.flaggedItems ?? [];
+    if (flagged.length > 0) {
+      doc.criteriaEvaluations = flagged.map(fi => ({
+        criterionId: fi.itemId,
+        name:        fi.category,
+        evaluation:
+          fi.severity === 'critical' || fi.severity === 'high'
+            ? 'fail'
+            : fi.severity === 'medium'
+            ? 'warning'
+            : 'pass',
+        confidence: fi.confidence,
+        reasoning:  fi.description,
+      }));
+    }
+  }
+
+  // ── axiomEvaluationId + axiomCompletedAt from order ──────────────────────
+  if (!doc.metadata.axiomEvaluationId && order.axiomEvaluationId) {
+    doc.metadata.axiomEvaluationId = order.axiomEvaluationId;
+  }
+  if (!doc.metadata.axiomCompletedAt && order.axiomCompletedAt) {
+    doc.metadata.axiomCompletedAt = order.axiomCompletedAt;
+  }
+}
+
+/**
+ * CSV-escapes a single value: wraps in double-quotes only when the string
+ * contains a comma, double-quote, or newline; escapes embedded double-quotes.
+ */
+function _csvEsc(val: unknown): string {
+  const s = val == null ? '' : String(val);
+  if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
 }

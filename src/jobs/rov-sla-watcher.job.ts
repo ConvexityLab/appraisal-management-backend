@@ -202,6 +202,7 @@ export class ROVSLAWatcherJob {
         data: {
           escalationId: `esc-${rov.id}`,
           tenantId: rov.tenantId,
+          clientId: rov.clientId ?? '',
           orderId: rov.orderId,
           reason: 'ROV SLA deadline breached',
           priority: EventPriority.CRITICAL,

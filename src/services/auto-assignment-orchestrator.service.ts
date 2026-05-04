@@ -39,9 +39,16 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { VendorMatchingEngine } from './vendor-matching-engine.service.js';
+import {
+  AxiomService,
+  type AxiomVendorBidAnalysisResult,
+  type AxiomVendorBidCandidate,
+  type AxiomVendorBidOrderDetails,
+} from './axiom.service.js';
 import { QCReviewQueueService } from './qc-review-queue.service.js';
 import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
 import { SupervisoryReviewService } from './supervisory-review.service.js';
+import type { VendorMatchResult } from '../types/vendor-marketplace.types.js';
 import type {
   AppEvent,
   BaseEvent,
@@ -68,8 +75,11 @@ const MAX_VENDOR_ATTEMPTS = 5;
 /** Maximum reviewers to contact before escalating to a human. */
 const MAX_REVIEWER_ATTEMPTS = 5;
 
-/** Hours before a vendor bid expires and the timeout checker fires. */
-const BID_EXPIRY_HOURS = 4;
+/**
+ * V-05: Hours before a vendor bid expires. Env-overridable so Ops can tune
+ * without a deploy (e.g. shorter window for rush orders, longer for standard).
+ */
+const BID_EXPIRY_HOURS = Math.max(1, parseFloat(process.env.BID_EXPIRY_HOURS ?? '4'));
 
 /** Hours before a reviewer assignment expires and the timeout job fires. */
 const REVIEW_EXPIRY_HOURS = 8;
@@ -99,6 +109,13 @@ export interface AutoVendorAssignmentState {
   currentBidId: string | null;
   currentBidExpiresAt: string | null; // ISO date
   initiatedAt: string; // ISO date
+  /**
+   * V-02: ISO timestamp at which VendorTimeoutCheckerJob dispatched the
+   * "bid expiring soon" reminder for the CURRENT bid. The job clears this
+   * on every new bid (see orchestrator bid-send paths) so each attempt gets
+   * at most one reminder.
+   */
+  expiringReminderSentAt?: string | null;
   // Broadcast-mode extension fields (undefined in sequential mode)
   broadcastMode?: boolean;
   broadcastBidIds?: string[];
@@ -120,6 +137,41 @@ export interface AutoReviewAssignmentState {
   initiatedAt: string; // ISO date
 }
 
+export interface VendorBidAnalysisSnapshot {
+  analysisType: 'appraisal_vendor_bid_analysis';
+  analysisId?: string;
+  recommendation?: string;
+  recommendedVendorId?: string;
+  recommendedVendorName?: string;
+  confidence?: number;
+  rationale?: string;
+  rankedCandidates?: Array<Record<string, unknown>>;
+  rankTrajectory?: VendorBidRankTrajectoryEntry[];
+  overallRecommendation?: string;
+  artifacts?: Record<string, unknown>;
+  completedAt?: string;
+  iterations?: number;
+  source?: string;
+  appliedRecommendation: boolean;
+  appliedThreshold?: number;
+  rulesBasedTopVendorId?: string;
+  rulesBasedTopVendorName?: string;
+  finalTopVendorId?: string;
+  finalTopVendorName?: string;
+  dispatchDecisionReason?: string;
+  generatedAt: string;
+  error?: string;
+}
+
+export interface VendorBidRankTrajectoryEntry {
+  vendorId: string;
+  vendorName: string;
+  score: number;
+  rulesBasedRank: number;
+  finalRank: number;
+  aiRank?: number;
+}
+
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 
 export class AutoAssignmentOrchestratorService {
@@ -128,6 +180,7 @@ export class AutoAssignmentOrchestratorService {
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly dbService: CosmosDbService;
   private readonly matchingEngine: VendorMatchingEngine;
+  private readonly axiomService: AxiomService;
   private readonly qcQueueService: QCReviewQueueService;
   private readonly tenantConfigService: TenantAutomationConfigService;
   private readonly supervisoryReviewService: SupervisoryReviewService;
@@ -143,6 +196,7 @@ export class AutoAssignmentOrchestratorService {
       'auto-assignment-service',
     );
     this.matchingEngine = new VendorMatchingEngine();
+    this.axiomService = new AxiomService(this.dbService);
     this.qcQueueService = new QCReviewQueueService();
     this.tenantConfigService = new TenantAutomationConfigService();
     this.supervisoryReviewService = new SupervisoryReviewService();
@@ -302,8 +356,8 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
-    // --- Load tenant automation config ---
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    // --- Load client automation config ---
+    const tenantConfig = await this.tenantConfigService.getConfig(order.clientId);
 
     // --- Respect autoAssignmentEnabled flag ---
     if (!tenantConfig.autoAssignmentEnabled) {
@@ -316,8 +370,9 @@ export class AutoAssignmentOrchestratorService {
 
     // --- Rank vendors ---
     let rankedVendors: RankedVendorEntry[] = [];
+    let matchResults: VendorMatchResult[] = [];
     try {
-      const results = await this.matchingEngine.findMatchingVendors(
+      matchResults = await this.matchingEngine.findMatchingVendors(
         {
           orderId,
           tenantId,
@@ -340,7 +395,7 @@ export class AutoAssignmentOrchestratorService {
         maxAttempts,
       );
 
-      rankedVendors = results.map((r) => ({
+      rankedVendors = matchResults.map((r) => ({
         vendorId: r.vendorId,
         vendorName: r.vendor.name,
         score: r.matchScore,
@@ -360,6 +415,13 @@ export class AutoAssignmentOrchestratorService {
     //     for internal staff without extra DB lookups on each retry. ---
     rankedVendors = await this.enrichWithStaffType(rankedVendors, tenantId);
 
+    const { rankedVendors: maybeAiRankedVendors, vendorBidAnalysis } =
+      await this.maybeApplyAIVendorBidScoring(order, tenantId, rankedVendors, matchResults);
+    rankedVendors = maybeAiRankedVendors;
+    const orderForDispatch = vendorBidAnalysis
+      ? { ...order, vendorBidAnalysis }
+      : order;
+
     // --- Initialise state and send first bid (or direct staff assignment) ---
     const broadcastMode = tenantConfig.bidMode === 'broadcast';
     if (broadcastMode) {
@@ -374,7 +436,7 @@ export class AutoAssignmentOrchestratorService {
         broadcastBidIds: [],
         broadcastRound: 1,
       };
-      await this.sendBroadcastBids(order, state, tenantId, priority, tenantConfig.broadcastCount);
+      await this.sendBroadcastBids(orderForDispatch, state, tenantId, priority, tenantConfig.broadcastCount);
     } else {
       const state: AutoVendorAssignmentState = {
         status: 'PENDING_BID',
@@ -384,7 +446,7 @@ export class AutoAssignmentOrchestratorService {
         currentBidExpiresAt: null,
         initiatedAt: new Date().toISOString(),
       };
-      await this.sendBidToVendor(order, state, tenantId, priority);
+      await this.sendBidToVendor(orderForDispatch, state, tenantId, priority);
     }
 
     // --- Post-assignment: trigger supervisory review if tenant policy requires it ---
@@ -520,12 +582,12 @@ export class AutoAssignmentOrchestratorService {
    *   status: 'failed'      → pipeline failed; also route to QC so order is not stuck
    */
   private async onAxiomEvaluationCompleted(event: AxiomEvaluationCompletedEvent): Promise<void> {
-    const { orderId, tenantId, overallDecision, status, priority } = event.data;
+    const { orderId, tenantId, clientId, overallDecision, status, priority } = event.data;
 
     this.logger.info('axiom.evaluation.completed received', { orderId, overallDecision, status });
 
-    // Check whether this tenant actually uses Axiom auto-trigger.
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    // Check whether this client actually uses Axiom auto-trigger.
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (!tenantConfig.axiomAutoTrigger) {
       // Another tenant path — not our concern.
       return;
@@ -567,14 +629,14 @@ export class AutoAssignmentOrchestratorService {
    * Routes the order to human QC so it is not stuck indefinitely.
    */
   private async onAxiomEvaluationTimedOut(event: AxiomEvaluationTimedOutEvent): Promise<void> {
-    const { orderId, tenantId, timeoutMinutes } = event.data;
+    const { orderId, tenantId, clientId, timeoutMinutes } = event.data;
 
     this.logger.warn('axiom.evaluation.timeout received — routing to human QC', {
       orderId,
       timeoutMinutes,
     });
 
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (!tenantConfig.axiomAutoTrigger) {
       return;
     }
@@ -609,10 +671,10 @@ export class AutoAssignmentOrchestratorService {
   private async onOrderStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
     if (event.data.newStatus !== 'SUBMITTED') return;
 
-    const { orderId, tenantId, priority } = event.data;
+    const { orderId, tenantId, clientId, priority } = event.data;
 
     // Defer to the AI QC gate when it is enabled — routing happens in onQCAIScored.
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (tenantConfig.aiQcEnabled) {
       this.logger.info(
         'AI QC gate enabled — deferring review routing to qc.ai.scored event',
@@ -652,7 +714,7 @@ export class AutoAssignmentOrchestratorService {
    * needs_supervision → route to human QC analyst AND request supervisory co-sign.
    */
   private async onQCAIScored(event: QCAIScoredEvent): Promise<void> {
-    const { orderId, tenantId, decision, priority, score } = event.data;
+    const { orderId, tenantId, clientId, decision, priority, score } = event.data;
 
     this.logger.info('qc.ai.scored received', { orderId, score, decision });
 
@@ -672,7 +734,7 @@ export class AutoAssignmentOrchestratorService {
 
     // For needs_supervision, also request a supervisory co-sign.
     if (decision === 'needs_supervision') {
-      const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+      const tenantConfig = await this.tenantConfigService.getConfig(clientId);
       if (tenantConfig.defaultSupervisorId) {
         try {
           await this.supervisoryReviewService.requestSupervision({
@@ -766,6 +828,7 @@ export class AutoAssignmentOrchestratorService {
       ...state,
       currentBidId: bidId,
       currentBidExpiresAt: expiresAt.toISOString(),
+      expiringReminderSentAt: null, // V-02: reset so this new bid is eligible for a reminder
     };
 
     await this.dbService.updateItem(
@@ -790,6 +853,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         vendorId: vendor.vendorId,
         vendorName: vendor.vendorName,
         bidId,
@@ -922,6 +986,7 @@ export class AutoAssignmentOrchestratorService {
     const updatedState: AutoVendorAssignmentState = {
       ...state,
       currentBidExpiresAt: expiresAt.toISOString(),
+      expiringReminderSentAt: null, // V-02: reset so this new round is eligible for a reminder
       broadcastBidIds,
       broadcastRound: round,
     };
@@ -945,6 +1010,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         roundNumber: round,
         vendorIds: vendors.map((v) => v.vendorId),
         expiresAt,
@@ -965,6 +1031,7 @@ export class AutoAssignmentOrchestratorService {
           orderId: order.id,
           orderNumber: order.orderNumber,
           tenantId,
+          clientId: order.clientId,
           vendorId: vendor.vendorId,
           vendorName: vendor.vendorName,
           bidId: broadcastBidIds[idx]!,
@@ -1066,6 +1133,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         attemptsCount: vendorsContacted.length,
         vendorsContacted,
         priority: EventPriority.HIGH,
@@ -1157,6 +1225,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         vendorId: vendor.vendorId,
         vendorName: vendor.vendorName,
         staffRole: vendor.staffRole ?? 'appraiser_internal',
@@ -1228,6 +1297,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         qcReviewId,
         priority,
         dueDate,
@@ -1326,6 +1396,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         qcReviewId: state.qcReviewId,
         reviewerId: reviewer.reviewerId,
         reviewerName: reviewer.reviewerName,
@@ -1430,6 +1501,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         tenantId,
+        clientId: order.clientId,
         qcReviewId,
         attemptsCount: reviewersContacted.length,
         reviewersContacted,
@@ -1474,6 +1546,327 @@ export class AutoAssignmentOrchestratorService {
       }),
     );
     return enriched;
+  }
+
+  private async maybeApplyAIVendorBidScoring(
+    order: any,
+    tenantId: string,
+    rankedVendors: RankedVendorEntry[],
+    matchResults: VendorMatchResult[],
+  ): Promise<{ rankedVendors: RankedVendorEntry[]; vendorBidAnalysis?: VendorBidAnalysisSnapshot }> {
+    if (!this.isAIVendorBidScoringEnabled()) {
+      return { rankedVendors };
+    }
+
+    const generatedAt = new Date().toISOString();
+    let threshold: number;
+
+    try {
+      threshold = this.getAIVendorBidConfidenceThreshold();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('AI vendor bid scoring configuration is invalid — falling back to rules-based rank', {
+        orderId: order.id,
+        tenantId,
+        error: message,
+      });
+      return {
+        rankedVendors,
+        vendorBidAnalysis: {
+          analysisType: 'appraisal_vendor_bid_analysis',
+          appliedRecommendation: false,
+          generatedAt,
+          source: 'config-error',
+          dispatchDecisionReason: `Rules-based ranking was retained because AI vendor-bid scoring is misconfigured: ${message}`,
+          error: message,
+        },
+      };
+    }
+
+    try {
+      const analysis = await this.axiomService.analyzeVendorBid({
+        entityId: order.id,
+        entityType: 'order',
+        subClientId: tenantId,
+        sentinelApiBase: this.getVendorBidSentinelApiBase(),
+        vendorCandidates: this.buildVendorBidCandidates(matchResults),
+        orderDetails: this.buildVendorBidOrderDetails(order),
+        timeoutMs: 25_000,
+      });
+
+      const appliedRecommendation =
+        typeof analysis.confidence === 'number' && analysis.confidence >= threshold;
+      const reorderedRankedVendors = appliedRecommendation
+        ? this.reorderRankedVendorsByAnalysis(rankedVendors, analysis)
+        : rankedVendors;
+      const recommendedVendor = this.resolveRecommendedVendor(analysis, reorderedRankedVendors);
+      const rulesBasedTopVendor = rankedVendors[0];
+      const finalTopVendor = reorderedRankedVendors[0];
+      const rankTrajectory = this.buildVendorBidRankTrajectory(rankedVendors, reorderedRankedVendors, analysis);
+
+      return {
+        rankedVendors: reorderedRankedVendors,
+        vendorBidAnalysis: {
+          analysisType: 'appraisal_vendor_bid_analysis',
+          appliedRecommendation,
+          appliedThreshold: threshold,
+          generatedAt,
+          ...(analysis.analysisId ? { analysisId: analysis.analysisId } : {}),
+          ...(analysis.recommendation ? { recommendation: analysis.recommendation } : {}),
+          ...(typeof analysis.confidence === 'number' ? { confidence: analysis.confidence } : {}),
+          ...(analysis.rationale ? { rationale: analysis.rationale } : {}),
+          ...(analysis.rankedCandidates ? { rankedCandidates: analysis.rankedCandidates } : {}),
+          ...(rankTrajectory.length > 0
+            ? { rankTrajectory }
+            : {}),
+          ...(analysis.overallRecommendation ? { overallRecommendation: analysis.overallRecommendation } : {}),
+          ...(analysis.artifacts ? { artifacts: analysis.artifacts } : {}),
+          ...(analysis.completedAt ? { completedAt: analysis.completedAt } : {}),
+          ...(typeof analysis.iterations === 'number' ? { iterations: analysis.iterations } : {}),
+          ...(analysis.source ? { source: analysis.source } : {}),
+          ...(recommendedVendor?.vendorId ? { recommendedVendorId: recommendedVendor.vendorId } : {}),
+          ...(recommendedVendor?.vendorName ? { recommendedVendorName: recommendedVendor.vendorName } : {}),
+          ...(rulesBasedTopVendor?.vendorId ? { rulesBasedTopVendorId: rulesBasedTopVendor.vendorId } : {}),
+          ...(rulesBasedTopVendor?.vendorName ? { rulesBasedTopVendorName: rulesBasedTopVendor.vendorName } : {}),
+          ...(finalTopVendor?.vendorId ? { finalTopVendorId: finalTopVendor.vendorId } : {}),
+          ...(finalTopVendor?.vendorName ? { finalTopVendorName: finalTopVendor.vendorName } : {}),
+          dispatchDecisionReason: this.buildVendorBidDecisionReason({
+            appliedRecommendation,
+            threshold,
+            analysis,
+            rulesBasedTopVendor,
+            finalTopVendor,
+          }),
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('AI vendor bid scoring failed — falling back to rules-based rank', {
+        orderId: order.id,
+        tenantId,
+        error: message,
+      });
+      return {
+        rankedVendors,
+        vendorBidAnalysis: {
+          analysisType: 'appraisal_vendor_bid_analysis',
+          appliedRecommendation: false,
+          appliedThreshold: threshold,
+          generatedAt,
+          source: 'error',
+          dispatchDecisionReason: `Rules-based ranking was retained because AI vendor-bid scoring failed: ${message}`,
+          error: message,
+        },
+      };
+    }
+  }
+
+  private isAIVendorBidScoringEnabled(): boolean {
+    return String(process.env['BULK_INGESTION_AI_BID_SCORING'] ?? '').toLowerCase() === 'true';
+  }
+
+  private getAIVendorBidConfidenceThreshold(): number {
+    const raw = process.env['BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD'];
+    if (!raw) {
+      throw new Error(
+        'BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD is required when BULK_INGESTION_AI_BID_SCORING=true.',
+      );
+    }
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+      throw new Error(
+        `BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD must be a number between 0 and 1. Received '${raw}'.`,
+      );
+    }
+
+    return parsed;
+  }
+
+  private getVendorBidSentinelApiBase(): string {
+    const apiBase = process.env['API_BASE_URL'];
+    if (!apiBase) {
+      throw new Error(
+        'API_BASE_URL is required when BULK_INGESTION_AI_BID_SCORING=true so the vendor-bid analysis request can include sentinelApiBase.',
+      );
+    }
+    return apiBase;
+  }
+
+  private buildVendorBidCandidates(matchResults: VendorMatchResult[]): AxiomVendorBidCandidate[] {
+    return matchResults.map((result) => ({
+      id: result.vendorId,
+      name: result.vendor.name,
+      score: result.matchScore,
+      recentOrders: result.recentOrders ?? 0,
+      avgTurnaround: result.estimatedTurnaround ?? 0,
+      avgFee: result.estimatedFee ?? 0,
+    }));
+  }
+
+  private buildVendorBidOrderDetails(order: any): AxiomVendorBidOrderDetails {
+    const propertyAddress =
+      typeof order.propertyAddress === 'string'
+        ? order.propertyAddress
+        : [
+            order.propertyAddress?.streetAddress ?? order.propertyAddress?.street ?? '',
+            order.propertyAddress?.city ?? '',
+            order.propertyAddress?.state ?? '',
+            order.propertyAddress?.zipCode ?? order.propertyAddress?.zip ?? '',
+          ]
+            .filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
+            .join(', ');
+
+    return {
+      productType: order.productType ?? order.orderType ?? 'UNKNOWN',
+      propertyAddress,
+      priority: order.priority ?? 'STANDARD',
+      dueDate: order.dueDate ?? new Date().toISOString(),
+    };
+  }
+
+  private reorderRankedVendorsByAnalysis(
+    rankedVendors: RankedVendorEntry[],
+    analysis: AxiomVendorBidAnalysisResult,
+  ): RankedVendorEntry[] {
+    const preferredIds = this.extractPreferredVendorIds(analysis);
+    if (preferredIds.length === 0) {
+      return rankedVendors;
+    }
+
+    const byId = new Map(rankedVendors.map((vendor) => [vendor.vendorId, vendor]));
+    const reordered: RankedVendorEntry[] = [];
+
+    for (const vendorId of preferredIds) {
+      const vendor = byId.get(vendorId);
+      if (!vendor) {
+        continue;
+      }
+      reordered.push(vendor);
+      byId.delete(vendorId);
+    }
+
+    return reordered.concat([...byId.values()]);
+  }
+
+  private buildVendorBidRankTrajectory(
+    rulesBasedRankedVendors: RankedVendorEntry[],
+    finalRankedVendors: RankedVendorEntry[],
+    analysis: AxiomVendorBidAnalysisResult,
+  ): VendorBidRankTrajectoryEntry[] {
+    const finalRankById = new Map(finalRankedVendors.map((vendor, index) => [vendor.vendorId, index + 1]));
+    const aiRankById = new Map<string, number>();
+
+    if (Array.isArray(analysis.rankedCandidates)) {
+      analysis.rankedCandidates.forEach((candidate, index) => {
+        if (!candidate || typeof candidate !== 'object') {
+          return;
+        }
+
+        const candidateRecord = candidate as Record<string, unknown>;
+        const vendorId =
+          typeof candidateRecord['vendorId'] === 'string'
+            ? candidateRecord['vendorId']
+            : typeof candidateRecord['id'] === 'string'
+            ? candidateRecord['id']
+            : undefined;
+
+        if (!vendorId) {
+          return;
+        }
+
+        const aiRank = typeof candidateRecord['rank'] === 'number' ? candidateRecord['rank'] : index + 1;
+        aiRankById.set(vendorId, aiRank);
+      });
+    }
+
+    return rulesBasedRankedVendors.map((vendor, index) => ({
+      vendorId: vendor.vendorId,
+      vendorName: vendor.vendorName,
+      score: vendor.score,
+      rulesBasedRank: index + 1,
+      finalRank: finalRankById.get(vendor.vendorId) ?? index + 1,
+      ...(aiRankById.has(vendor.vendorId) ? { aiRank: aiRankById.get(vendor.vendorId) as number } : {}),
+    }));
+  }
+
+  private resolveRecommendedVendor(
+    analysis: AxiomVendorBidAnalysisResult,
+    rankedVendors: RankedVendorEntry[],
+  ): RankedVendorEntry | undefined {
+    const preferredIds = this.extractPreferredVendorIds(analysis);
+    if (preferredIds.length > 0) {
+      const preferredVendorId = preferredIds[0];
+      return rankedVendors.find((vendor) => vendor.vendorId === preferredVendorId);
+    }
+
+    if (typeof analysis.recommendation === 'string') {
+      return rankedVendors.find(
+        (vendor) => vendor.vendorId === analysis.recommendation || vendor.vendorName === analysis.recommendation,
+      );
+    }
+
+    return undefined;
+  }
+
+  private buildVendorBidDecisionReason(params: {
+    appliedRecommendation: boolean;
+    threshold: number;
+    analysis: AxiomVendorBidAnalysisResult;
+    rulesBasedTopVendor: RankedVendorEntry | undefined;
+    finalTopVendor: RankedVendorEntry | undefined;
+  }): string {
+    const { appliedRecommendation, threshold, analysis, rulesBasedTopVendor, finalTopVendor } = params;
+    const confidence = typeof analysis.confidence === 'number' ? Math.round(analysis.confidence * 100) : undefined;
+    const thresholdPct = Math.round(threshold * 100);
+    const preferredIds = this.extractPreferredVendorIds(analysis);
+
+    if (appliedRecommendation) {
+      if (
+        rulesBasedTopVendor?.vendorId &&
+        finalTopVendor?.vendorId &&
+        rulesBasedTopVendor.vendorId !== finalTopVendor.vendorId
+      ) {
+        return `AI recommendation was applied because confidence ${confidence ?? 'N/A'}% met the ${thresholdPct}% threshold, changing dispatch from ${rulesBasedTopVendor.vendorName} to ${finalTopVendor.vendorName}.`;
+      }
+
+      return `AI recommendation was applied because confidence ${confidence ?? 'N/A'}% met the ${thresholdPct}% threshold and confirmed ${finalTopVendor?.vendorName ?? rulesBasedTopVendor?.vendorName ?? 'the current vendor'} as the top dispatch choice.`;
+    }
+
+    if (preferredIds.length === 0) {
+      return 'Rules-based ranking was retained because the AI analysis did not return a preferred vendor order.';
+    }
+
+    if (typeof analysis.confidence !== 'number') {
+      return 'Rules-based ranking was retained because the AI analysis did not return a confidence score.';
+    }
+
+    return `Rules-based ranking was retained because confidence ${confidence}% was below the ${thresholdPct}% threshold.`;
+  }
+
+  private extractPreferredVendorIds(analysis: AxiomVendorBidAnalysisResult): string[] {
+    const rankedFromAnalysis = Array.isArray(analysis.rankedCandidates)
+      ? analysis.rankedCandidates
+          .map((candidate) => {
+            const record = candidate as Record<string, unknown>;
+            const vendorId = typeof record.vendorId === 'string'
+              ? record.vendorId
+              : typeof record.id === 'string'
+              ? record.id
+              : null;
+            const rank = typeof record.rank === 'number' ? record.rank : Number.MAX_SAFE_INTEGER;
+            return vendorId ? { vendorId, rank } : null;
+          })
+          .filter((candidate): candidate is { vendorId: string; rank: number } => candidate !== null)
+          .sort((left, right) => left.rank - right.rank)
+          .map((candidate) => candidate.vendorId)
+      : [];
+
+    if (rankedFromAnalysis.length > 0) {
+      return rankedFromAnalysis;
+    }
+
+    return typeof analysis.recommendation === 'string' ? [analysis.recommendation] : [];
   }
 
   private async loadOrder(orderId: string, tenantId: string): Promise<any | null> {

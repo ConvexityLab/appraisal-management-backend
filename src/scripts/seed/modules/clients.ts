@@ -7,15 +7,17 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer } from '../seed-types.js';
-import { CLIENT_IDS } from '../seed-ids.js';
+import { CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
 
 const CONTAINER = 'clients';
 
-function buildClients(tenantId: string, now: string): Record<string, unknown>[] {
+function buildClients(tenantId: string, clientId: string, now: string): Record<string, unknown>[] {
   return [
     {
       id: CLIENT_IDS.FIRST_HORIZON,
       tenantId,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON],
       clientName: 'First Horizon Bank',
       clientType: 'LENDER',
       contactName: 'Amanda Parsons',
@@ -31,6 +33,8 @@ function buildClients(tenantId: string, now: string): Record<string, unknown>[] 
     {
       id: CLIENT_IDS.PACIFIC_COAST,
       tenantId,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.PACIFIC_COAST],
       clientName: 'Pacific Coast Mortgage',
       clientType: 'LENDER',
       contactName: 'Derek Tanaka',
@@ -46,6 +50,8 @@ function buildClients(tenantId: string, now: string): Record<string, unknown>[] 
     {
       id: CLIENT_IDS.NATIONAL_AMC,
       tenantId,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.NATIONAL_AMC],
       clientName: 'National AMC Services',
       clientType: 'AMC',
       contactName: 'Rachel Monroe',
@@ -59,6 +65,8 @@ function buildClients(tenantId: string, now: string): Record<string, unknown>[] 
     {
       id: CLIENT_IDS.CLEARPATH,
       tenantId,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH],
       clientName: 'ClearPath Valuation Group',
       clientType: 'AMC',
       contactName: 'Steven Burke',
@@ -72,6 +80,8 @@ function buildClients(tenantId: string, now: string): Record<string, unknown>[] 
     {
       id: CLIENT_IDS.SUNCOAST,
       tenantId,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.SUNCOAST],
       clientName: 'Suncoast Mortgage Brokers',
       clientType: 'BROKER',
       contactName: 'Lisa Hernandez',
@@ -86,6 +96,8 @@ function buildClients(tenantId: string, now: string): Record<string, unknown>[] 
     {
       id: CLIENT_IDS.FIRST_TECH_CU,
       tenantId,
+      clientId,
+      subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_TECH_CU],
       clientName: 'First Tech Federal Credit Union',
       clientType: 'CREDIT_UNION',
       contactName: 'Brian Yao',
@@ -111,7 +123,7 @@ export const module: SeedModule = {
       result.cleaned = await cleanContainer(ctx, CONTAINER);
     }
 
-    const clients = buildClients(ctx.tenantId, ctx.now);
+    const clients = buildClients(ctx.tenantId, ctx.clientId, ctx.now);
     for (const client of clients) {
       await upsert(ctx, CONTAINER, client, result);
     }

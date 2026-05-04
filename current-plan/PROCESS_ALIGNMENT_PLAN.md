@@ -4,6 +4,10 @@
 > Updated: February 20, 2026 — Deep codebase audit: all phases audited, accurate status markers added
 > Based on: Comprehensive codebase audit against the 12-step business process
 
+> **Current convergence plan (2026-04-30):** [UNIFIED_DATA_GATHERING_ENRICHMENT_CRITERIA_IMPLEMENTATION_PLAN_2026-04-30.md](./UNIFIED_DATA_GATHERING_ENRICHMENT_CRITERIA_IMPLEMENTATION_PLAN_2026-04-30.md)
+>
+> **Current Phase 1 checklist:** [UNIFIED_CONVERGENCE_PHASE1_CHECKLIST_2026-04-30.md](./UNIFIED_CONVERGENCE_PHASE1_CHECKLIST_2026-04-30.md)
+
 ---
 
 ## Table of Contents

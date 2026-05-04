@@ -81,6 +81,25 @@ vi.mock('../../src/services/axiom.service.js', () => ({
   AxiomService: vi.fn().mockImplementation(() => ({})),
 }));
 
+vi.mock('../../src/services/blob-storage.service.js', () => ({
+  BlobStorageService: vi.fn().mockImplementation(() => ({
+    generateReadSasUrl: vi.fn().mockResolvedValue('https://blob.example/doc.pdf?sas=1'),
+  })),
+}));
+
+vi.mock('../../src/services/cosmos-db.service.js', () => ({
+  CosmosDbService: vi.fn().mockImplementation(() => ({
+    getItem: vi.fn().mockResolvedValue({ success: true, data: { id: 'doc-1', blobName: 'orders/doc-1/report.pdf', name: 'report.pdf' } }),
+    queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  })),
+}));
+
+vi.mock('../../src/services/tenant-automation-config.service.js', () => ({
+  TenantAutomationConfigService: vi.fn().mockImplementation(() => ({
+    getConfig: vi.fn().mockResolvedValue({ axiomPipelineIdExtraction: 'adaptive-document-processing', axiomPipelineIdCriteria: 'smart-criteria-evaluation', axiomPipelineIdComplete: 'complete-document-criteria-evaluation' }),
+  })),
+}));
+
 import { createRunsRouter } from '../../src/controllers/runs.controller.js';
 
 function buildApp() {

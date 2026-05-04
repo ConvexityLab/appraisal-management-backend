@@ -184,6 +184,7 @@ export class ROVManagementService {
           rovId: rovRequest.id,
           orderId: rovRequest.orderId,
           tenantId: (order as any).tenantId || 'default',
+          clientId: (order as any).clientId || '',
           requestorType: rovRequest.requestorType as any,
           challengeReason: rovRequest.challengeReason as any,
           originalValue: rovRequest.originalAppraisalValue || 0,
@@ -253,6 +254,7 @@ export class ROVManagementService {
             rovId: rovId,
             orderId: result.data.orderId,
             tenantId: (result.data as any).tenantId || 'default',
+            clientId: (result.data as any).clientId || '',
             assignedTo: assignedTo,
             priority: EventPriority.HIGH
           }
@@ -408,6 +410,7 @@ export class ROVManagementService {
             rovId: input.rovId,
             orderId: result.data.orderId,
             tenantId: (result.data as any).tenantId || 'default',
+            clientId: (result.data as any).clientId || '',
             decision: decisionType,
             ...(newValue !== originalValue ? { updatedValue: newValue } : {}),
             decidedBy: respondedBy,

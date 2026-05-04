@@ -1,15 +1,15 @@
 /**
- * Tenant Automation Config Controller
+ * Client Config Controller
  *
  * Endpoints:
- *   GET  /api/tenant-automation-config        — get current config
+ *   GET  /api/tenant-automation-config        — get current config for the authenticated client
  *   PUT  /api/tenant-automation-config        — update config (partial)
  *   GET  /api/tenant-automation-config/schema — JSON schema for UI form rendering
  */
 
 import express, { Request, Response, Router } from 'express';
 import { TenantAutomationConfigService } from '../services/tenant-automation-config.service.js';
-import { DEFAULT_TENANT_AUTOMATION_CONFIG } from '../types/tenant-automation-config.types.js';
+import { DEFAULT_CLIENT_AUTOMATION_CONFIG } from '../types/tenant-automation-config.types.js';
 import { Logger } from '../utils/logger.js';
 
 const router: Router = express.Router();
@@ -17,7 +17,7 @@ const service = new TenantAutomationConfigService();
 const logger = new Logger('TenantAutomationConfigController');
 
 // ── GET /api/tenant-automation-config/schema ─────────────────────────────────
-// Must be declared BEFORE /:tenantId routes to avoid shadowing.
+// Must be declared BEFORE other routes to avoid shadowing.
 
 router.get('/schema', (_req: Request, res: Response) => {
   const schema = {
@@ -108,7 +108,7 @@ router.get('/schema', (_req: Request, res: Response) => {
         description: 'Optional default step keys for auto-created criteria runs after extraction completion.',
       },
     ],
-    defaults: DEFAULT_TENANT_AUTOMATION_CONFIG,
+    defaults: DEFAULT_CLIENT_AUTOMATION_CONFIG,
   };
 
   return res.json({ success: true, data: schema });
@@ -118,15 +118,15 @@ router.get('/schema', (_req: Request, res: Response) => {
 
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] as string | undefined;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'x-tenant-id header is required' });
+    const clientId = (req as any).user?.clientId as string | undefined;
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId not found in JWT claims — ensure the token includes the clientId claim' });
     }
 
-    const config = await service.getConfig(tenantId);
+    const config = await service.getConfig(clientId);
     return res.json({ success: true, data: config });
   } catch (err: any) {
-    logger.error('GET tenant automation config failed', { error: err });
+    logger.error('GET client automation config failed', { error: err });
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -135,14 +135,14 @@ router.get('/', async (req: Request, res: Response) => {
 
 router.put('/', async (req: Request, res: Response) => {
   try {
-    const tenantId = req.headers['x-tenant-id'] as string | undefined;
-    const updatedBy = req.headers['x-user-id'] as string | undefined;
+    const clientId = (req as any).user?.clientId as string | undefined;
+    const updatedBy = (req as any).user?.id as string | undefined;
 
-    if (!tenantId) {
-      return res.status(400).json({ error: 'x-tenant-id header is required' });
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId not found in JWT claims — ensure the token includes the clientId claim' });
     }
     if (!updatedBy) {
-      return res.status(400).json({ error: 'x-user-id header is required' });
+      return res.status(400).json({ error: 'user id not found in JWT claims' });
     }
 
     const update = req.body;
@@ -150,10 +150,10 @@ router.put('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Request body must contain at least one field to update' });
     }
 
-    const updated = await service.updateConfig(tenantId, update, updatedBy);
+    const updated = await service.updateConfig(clientId, update, updatedBy);
     return res.json({ success: true, data: updated });
   } catch (err: any) {
-    logger.error('PUT tenant automation config failed', { error: err });
+    logger.error('PUT client automation config failed', { error: err });
     return res.status(500).json({ success: false, error: err.message });
   }
 });

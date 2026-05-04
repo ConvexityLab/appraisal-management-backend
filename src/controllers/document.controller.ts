@@ -7,6 +7,7 @@ import { AxiomService } from '../services/axiom.service';
 import { AxiomExecutionService } from '../services/axiom-execution.service';
 import { DocumentUploadRequest, DocumentUpdateRequest, DocumentListQuery, DocumentMetadata } from '../types/document.types';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 /**
  * Maps a backend DocumentMetadata record to the shape the frontend expects.
@@ -42,7 +43,22 @@ function toFrontendDocument(doc: DocumentMetadata): Record<string, unknown> {
     modifiedAt: doc.updatedAt,
     version: doc.version ?? 1,
     ...(doc.previousVersionId && { replacesDocumentId: doc.previousVersionId }),
-    metadata: doc.metadata ? { tags: doc.tags, ...doc.metadata as Record<string, unknown> } : (doc.tags ? { tags: doc.tags } : undefined)
+    metadata: doc.metadata
+      ? {
+          tags: doc.tags,
+          orderLinkedAt: doc.orderLinkedAt,
+          orderLinkedBy: doc.orderLinkedBy,
+          ...doc.metadata as Record<string, unknown>,
+        }
+      : (
+        doc.tags || doc.orderLinkedAt || doc.orderLinkedBy
+          ? {
+              ...(doc.tags ? { tags: doc.tags } : {}),
+              ...(doc.orderLinkedAt ? { orderLinkedAt: doc.orderLinkedAt } : {}),
+              ...(doc.orderLinkedBy ? { orderLinkedBy: doc.orderLinkedBy } : {}),
+            }
+          : undefined
+      )
   };
 }
 
@@ -62,15 +78,45 @@ export class DocumentController {
     return name;
   })();
 
-  // Multer configuration for file uploads
+  // D-02: Per-MIME file size limits enforced BEFORE the payload is fully
+  // buffered. The global `fileSize` is the hard ceiling (largest PDF we accept);
+  // the fileFilter rejects over-budget uploads for smaller types (e.g. images)
+  // with a clear 413-shaped error instead of silently trimming.
+  private static readonly MAX_UPLOAD_BYTES: Record<string, number> = {
+    'application/pdf': 100 * 1024 * 1024,          // 100MB
+    'image/jpeg': 10 * 1024 * 1024,                //  10MB
+    'image/png': 10 * 1024 * 1024,
+    'image/heic': 10 * 1024 * 1024,
+    'image/webp': 10 * 1024 * 1024,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 25 * 1024 * 1024, // 25MB .docx
+    'application/msword': 25 * 1024 * 1024,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 25 * 1024 * 1024,
+    'application/vnd.ms-excel': 25 * 1024 * 1024,
+    'text/csv': 25 * 1024 * 1024,
+  };
+  private static readonly DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
+  private static readonly HARD_CEILING_BYTES = 100 * 1024 * 1024;
+
   private upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-      fileSize: 50 * 1024 * 1024 // 50MB limit
-    }
+      fileSize: DocumentController.HARD_CEILING_BYTES,
+    },
+    fileFilter: (req, file, cb) => {
+      const max =
+        DocumentController.MAX_UPLOAD_BYTES[file.mimetype] ??
+        DocumentController.DEFAULT_MAX_BYTES;
+      // `req.headers['content-length']` is a cheap early-reject signal.
+      const declared = parseInt((req.headers['content-length'] as string) ?? '0', 10);
+      if (declared && declared > max) {
+        cb(new Error(`File too large: ${file.mimetype} limit is ${Math.round(max / 1024 / 1024)}MB`));
+        return;
+      }
+      cb(null, true);
+    },
   });
 
-  constructor(private dbService: CosmosDbService) {
+  constructor(private dbService: CosmosDbService, private authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     
     // Initialize services
@@ -82,12 +128,20 @@ export class DocumentController {
   }
 
   private initializeRoutes(): void {
+    const authz = this.authzMiddleware;
+    const lp     = authz ? [authz.loadUserProfile()] : [];
+    const read   = authz ? [...lp, authz.authorize('document', 'read')]   : [];
+    const create = authz ? [...lp, authz.authorize('document', 'create')] : [];
+    const update = authz ? [...lp, authz.authorize('document', 'update')] : [];
+    const del    = authz ? [...lp, authz.authorize('document', 'delete')] : [];
+
     /**
      * GET /stream/:executionId
      * Proxy SSE stream from Axiom for a document evaluation
      */
     this.router.get(
       '/stream/:executionId',
+      ...read,
       this.streamDocumentExecution.bind(this)
     );
 
@@ -98,6 +152,7 @@ export class DocumentController {
     this.router.post(
       '/upload',
       this.upload.single('file'),
+      ...create,
       this.uploadDocument.bind(this)
     );
 
@@ -107,6 +162,7 @@ export class DocumentController {
      */
     this.router.get(
       '/',
+      ...read,
       this.listDocuments.bind(this)
     );
 
@@ -117,6 +173,7 @@ export class DocumentController {
     this.router.post(
       '/:id/versions',
       this.upload.single('file'),
+      ...update,
       this.uploadNewVersion.bind(this)
     );
 
@@ -126,6 +183,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id/versions',
+      ...read,
       this.getVersionHistory.bind(this)
     );
 
@@ -135,6 +193,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id',
+      ...read,
       this.getDocument.bind(this)
     );
 
@@ -144,6 +203,7 @@ export class DocumentController {
      */
     this.router.get(
       '/:id/download',
+      ...read,
       this.downloadDocument.bind(this)
     );
 
@@ -153,6 +213,7 @@ export class DocumentController {
      */
     this.router.put(
       '/:id',
+      ...update,
       this.updateDocument.bind(this)
     );
 
@@ -162,6 +223,7 @@ export class DocumentController {
      */
     this.router.delete(
       '/:id',
+      ...del,
       this.deleteDocument.bind(this)
     );
   }
@@ -371,14 +433,39 @@ export class DocumentController {
       const result = await this.documentService.getDocument(id, tenantId);
 
       if (!result.success || !result.data) {
-        res.status(404).json({ success: false, error: 'Document not found' });
+        res.status(404).json({ success: false, error: `Document not found: ${id}` });
         return;
       }
 
       const doc = result.data;
 
+      // Guard: blobName is required to locate the file in storage.
+      // Seed data or manually-created records missing this field → 404, not 500.
+      if (!doc.blobName) {
+        res.status(404).json({
+          success: false,
+          error: `Document '${id}' has no blob path — the file has not been uploaded yet`
+        });
+        return;
+      }
+
       // Stream the blob through the backend
-      const { readableStream, contentType, contentLength } = await this.blobService.downloadBlob(DocumentController.BLOB_CONTAINER, doc.blobName);
+      let readableStream: NodeJS.ReadableStream;
+      let contentType: string;
+      let contentLength: number;
+      try {
+        ({ readableStream, contentType, contentLength } = await this.blobService.downloadBlob(DocumentController.BLOB_CONTAINER, doc.blobName));
+      } catch (blobError: any) {
+        // BlobNotFound from Azure Storage / Azurite — return 404 not 500
+        if (blobError?.statusCode === 404 || blobError?.code === 'BlobNotFound') {
+          res.status(404).json({
+            success: false,
+            error: `Blob file not found for document '${id}' (path: ${doc.blobName})`
+          });
+          return;
+        }
+        throw blobError; // re-throw non-404 storage errors
+      }
 
       res.setHeader('Content-Type', contentType);
       if (contentLength) {

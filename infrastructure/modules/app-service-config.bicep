@@ -113,6 +113,7 @@ resource appServiceConfig 'Microsoft.Web/sites/config@2023-12-01' = {
     // Storage Configuration
     STORAGE_CONTAINER_DOCUMENTS: 'appraisal-documents'
     STORAGE_CONTAINER_BULK_UPLOAD: 'bulk-upload'
+    BULK_INGESTION_ENABLE_CRITERIA_STAGE: 'true'
     STORAGE_CONTAINER_IMAGES: 'property-images'
     STORAGE_CONTAINER_CREDENTIALS: 'vendor-credentials'
     STORAGE_CONTAINER_TEMPLATES: 'templates'

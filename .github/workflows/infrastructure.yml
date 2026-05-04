@@ -19,6 +19,10 @@ on:
         required: true
       AXIOM_WEBHOOK_SECRET:
         required: false
+      AXIOM_CLIENT_ID:
+        required: false
+      AXIOM_SUB_CLIENT_ID:
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -45,8 +49,29 @@ jobs:
     name: Deploy Infrastructure (${{ inputs.environment }})
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    # All secrets below are pulled from the GitHub environment (dev/staging/prod)
+    # All secrets below are pulled from the GitHub environment (dev/staging/prod).
     # Configure these in: GitHub → Settings → Environments → [environment] → Secrets
+    #
+    # Required secrets (all environments):
+    #   AZURE_CREDENTIALS                   – Service principal JSON (az ad sp create-for-rbac --sdk-auth)
+    #   AZURE_SUBSCRIPTION_ID               – Azure subscription GUID
+    #   AZURE_TENANT_ID                     – Entra tenant GUID
+    #   AZURE_CLIENT_ID                     – App registration client ID (dd3e7944-ecf3-4cd9-bf1d-ba1a4e857e8a)
+    #   AZURE_CLIENT_SECRET                 – App registration client secret
+    #
+    # Required for Entra extension attributes (enables clientId/subClientId JWT claims):
+    #   AZURE_SERVICE_PRINCIPAL_OBJECT_ID   – Resolved automatically at deploy time from AZURE_CLIENT_ID.
+    #                                         No manual secret needed.
+    #
+    # Required for Axiom platform scoping (written to AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID env vars):
+    #   AXIOM_CLIENT_ID                     – Platform client ID per env  (e.g. "platform" in prod, "test-client" in dev)
+    #   AXIOM_SUB_CLIENT_ID                 – Platform sub-client ID per env (e.g. "platform-sub" in prod, "test-sub-client" in dev)
+    #
+    # Optional secrets (omit to skip that integration):
+    #   AXIOM_WEBHOOK_SECRET                – HMAC-SHA256 secret for Axiom inbound webhook verification
+    #   BATCHDATA_KEY, GOOGLE_MAPS_API_KEY, AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT
+    #   GOOGLE_GEMINI_API_KEY, CENSUS_API_KEY, BRIDGE_SERVER_TOKEN, NPS_API_KEY
+    #   SAMBANOVA_API_KEY, AZURE_COMMUNICATION_API_KEY
     env:
       BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -62,6 +87,8 @@ jobs:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
       AXIOM_WEBHOOK_SECRET: ${{ secrets.AXIOM_WEBHOOK_SECRET }}
+      AXIOM_CLIENT_ID: ${{ secrets.AXIOM_CLIENT_ID }}
+      AXIOM_SUB_CLIENT_ID: ${{ secrets.AXIOM_SUB_CLIENT_ID }}
     
     outputs:
       resource-group: ${{ steps.deploy.outputs.resourceGroupName }}
@@ -82,7 +109,24 @@ jobs:
         
     - name: Set Azure subscription
       run: az account set --subscription ${{ env.AZURE_SUBSCRIPTION_ID }}
-      
+
+    - name: Resolve service principal object ID
+      id: resolve-sp
+      run: |
+        # The SP object ID is not secret — derive it from the already-known app registration
+        # client ID so callers don't have to maintain a separate secret.
+        if [ -n "$AZURE_CLIENT_ID" ]; then
+          SP_OID=$(az ad sp show --id "$AZURE_CLIENT_ID" --query id -o tsv 2>/dev/null || echo '')
+          if [ -n "$SP_OID" ]; then
+            echo "SP_OBJECT_ID=$SP_OID" >> "$GITHUB_ENV"
+            echo "✅ Resolved SP object ID: $SP_OID"
+          else
+            echo "⚠️  Could not resolve SP object ID for client $AZURE_CLIENT_ID — entra-extension-attributes module will be skipped."
+          fi
+        else
+          echo "⚠️  AZURE_CLIENT_ID not set — entra-extension-attributes module will be skipped."
+        fi
+
     - name: Validate Bicep template
       run: |
         echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
@@ -104,6 +148,9 @@ jobs:
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
+        [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
+        [ -n "$AXIOM_CLIENT_ID" ] && PARAM_ARGS+=("axiomClientId=$AXIOM_CLIENT_ID")
+        [ -n "$AXIOM_SUB_CLIENT_ID" ] && PARAM_ARGS+=("axiomSubClientId=$AXIOM_SUB_CLIENT_ID")
         
         az deployment sub validate \
           --name "main-${GITHUB_RUN_ID}" \
@@ -133,6 +180,9 @@ jobs:
         [ -n "$AZURE_CLIENT_ID" ] && PARAM_ARGS+=("azureClientId=$AZURE_CLIENT_ID")
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
+        [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
+        [ -n "$AXIOM_CLIENT_ID" ] && PARAM_ARGS+=("axiomClientId=$AXIOM_CLIENT_ID")
+        [ -n "$AXIOM_SUB_CLIENT_ID" ] && PARAM_ARGS+=("axiomSubClientId=$AXIOM_SUB_CLIENT_ID")
         
         deployment_output=$(az deployment sub create \
           --name "main-${GITHUB_RUN_ID}" \

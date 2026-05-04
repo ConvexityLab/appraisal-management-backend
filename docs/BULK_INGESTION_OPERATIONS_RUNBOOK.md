@@ -9,6 +9,11 @@ Runbook for operating bulk-ingestion pipelines and associated Axiom bulk-submiss
   - `GET /api/bulk-ingestion/:jobId`
   - `GET /api/bulk-ingestion/:jobId/failures`
   - `GET /api/bulk-ingestion/:jobId/failures/export?format=csv|xlsx`
+   - `GET /api/bulk-adapter-definitions`
+   - `GET /api/bulk-adapter-definitions/:adapterKey`
+   - `POST /api/bulk-adapter-definitions`
+   - `PUT /api/bulk-adapter-definitions/:adapterKey`
+   - `DELETE /api/bulk-adapter-definitions/:adapterKey`
   - `GET /api/axiom/bulk-submission/metrics`
   - `GET /api/axiom/bulk-submission/dlq`
   - `POST /api/axiom/bulk-submission/dlq/:eventId/replay`
@@ -28,6 +33,68 @@ Runbook for operating bulk-ingestion pipelines and associated Axiom bulk-submiss
 2. Confirm P95 latency remains below threshold.
 3. Confirm OPEN DLQ count is not accumulating.
 4. Verify replay success rate remains healthy.
+
+## Criteria Stage Configuration
+
+### Required deployment flag
+- `BULK_INGESTION_ENABLE_CRITERIA_STAGE=true`
+
+This flag must be enabled in deployed environments so the bulk-ingestion criteria worker
+evaluates each extracted item, stamps the per-item criteria outcome, emits
+`bulk.ingestion.criteria.completed`, and allows the finalizer to advance jobs to terminal state.
+
+### Minimum criteria rule set
+At minimum, each tenant should have a `bulk-ingestion-criteria-config` document with rules equivalent to:
+
+1. `loanNumber exists` → fail as `FAILED`
+2. `loanAmount >= 50000` → fail as `FAILED`
+3. `loanAmount <= 5000000` → fail as `REVIEW`
+4. `propertyType in ['SFR', 'CONDO', 'PUD', '2-4 UNIT', 'MANUFACTURED']` → fail as `FAILED`
+
+The local/dev seed source of truth is:
+- [scripts/seed-bulk-ingestion-criteria-config.mjs](scripts/seed-bulk-ingestion-criteria-config.mjs)
+
+## Adapter Registry Operations
+
+Bulk canonicalization now resolves adapter behavior from the tenant-scoped bulk adapter definition registry.
+
+- Built-in adapters are always available.
+- Tenant-created definitions are stored in the `bulk-portfolio-jobs` container with `type = 'bulk-adapter-definition'`.
+- Tenant definitions override built-ins when the `adapterKey` matches exactly.
+- Prefix-mode adapters match both the exact key and suffixed variants like `statebridge-<runId>`.
+
+### Built-in adapter field expectations
+
+| Adapter | Match | Document required | Minimum row fields | Canonical fields copied |
+|---|---|---|---|---|
+| `bridge-standard` | exact | yes | `loanNumber` or `externalId` | `correlationKey`, `loanNumber`, `externalId`, `propertyAddress`, `dataFileBlobName` |
+| `statebridge` | prefix | yes | `loanNumber` or `externalId` | `correlationKey`, `loanNumber`, `externalId`, `propertyAddress`, `dataFileBlobName` |
+| `bpo-report-v1` | exact | yes | none beyond mapped document | `correlationKey`, `propertyAddress`, `externalId`, static `bpoDocumentType=BPO_REPORT` |
+| `tape-conversion-v1` | exact | no | `propertyAddress` and (`loanNumber` or `externalId`) | `correlationKey`, `loanNumber`, `externalId`, `propertyAddress`, `city`, `state`, `zipCode` |
+| `generic-appraisal-v1` | exact | yes | `propertyAddress` and (`loanNumber` or `externalId`) | `correlationKey`, `loanNumber`, `externalId`, `propertyAddress`, `city`, `state`, `zipCode`, `dataFileBlobName` |
+| `fnma-1004-v1` | exact | yes | `propertyAddress` and (`loanNumber` or `externalId`) | `correlationKey`, `loanNumber`, `externalId`, `propertyAddress`, `city`, `state`, `zipCode`, `propertyType`, `loanAmount`, `loanPurpose`, `occupancyType`, `dataFileBlobName`, static `appraisalForm=FNMA_1004` |
+| `residential-bpo-v2` | exact | yes | `propertyAddress` | `correlationKey`, `propertyAddress`, `externalId`, `city`, `state`, `zipCode`, static `bpoDocumentType=RESIDENTIAL_BPO` |
+
+### CRUD payload guidance
+
+Each tenant-defined adapter definition must provide:
+
+- `adapterKey`
+- `name`
+- `matchMode` (`EXACT` or `PREFIX`)
+- `sourceAdapter`
+- at least one `canonicalFieldMappings` entry
+
+Optional validation sections:
+
+- `requiredFields[]` for single mandatory fields
+- `requiredAnyOf[]` for “one-of-many” identity requirements
+- `documentRequirement` when a mapped PDF/blob is mandatory
+- `staticCanonicalData` for adapter-specific fixed fields
+
+Do not rely on implicit defaults. If an adapter needs a document, address, or identifier, encode that explicitly in the definition.
+
+Do not enable `BULK_INGESTION_SKIP_BLOB_COPY` in deployed environments. That flag is for local/dev-only smoke workflows.
 
 ## Incident Response
 1. **Detect impact**

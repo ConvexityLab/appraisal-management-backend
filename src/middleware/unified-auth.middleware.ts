@@ -18,6 +18,10 @@ export interface UnifiedAuthRequest extends Request {
     name: string;
     role?: string;  // Set by Azure Entra auth middleware; used by collaboration authz
     tenantId: string;
+    /** Platform client ID (aligned with Axiom) — from JWT claim or AXIOM_CLIENT_ID env. */
+    clientId?: string;
+    /** Platform sub-client ID (aligned with Axiom) — from JWT claim or AXIOM_SUB_CLIENT_ID env. */
+    subClientId?: string;
     azureAdObjectId?: string;
     accessScope?: any;
     isTestUser?: boolean;
@@ -63,9 +67,14 @@ export class UnifiedAuthMiddleware {
       try {
         let authHeader = req.headers.authorization;
 
-        // Fallback to query parameter for EventSource (SSE) which cannot send headers
+        // Fallback to query parameter for EventSource (SSE) which cannot send headers.
+        // Mutate req.headers.authorization too so downstream middleware (e.g. azureAuth,
+        // which only reads from headers) sees the same token. Without this mutation only
+        // the test-token branch in this middleware honored the query param — Azure-token
+        // SSE clients silently 401'd because azureAuth re-read req.headers and found nothing.
         if (!authHeader && req.query.access_token && typeof req.query.access_token === 'string') {
           authHeader = `Bearer ${req.query.access_token}`;
+          req.headers.authorization = authHeader;
         }
 
         if (!authHeader) {
@@ -106,9 +115,13 @@ export class UnifiedAuthMiddleware {
           }
           
           const validation = this.testTokenGen!.verifyToken(token);
-          
+
           if (validation.valid && validation.user) {
-            req.user = validation.user;
+            // Stamp the test-token marker on req.user so the downstream
+            // authorization middleware can synthesize a profile in dev/test
+            // environments without requiring a real Cosmos `users` record.
+            // Gated by allowTestTokens (NODE_ENV !== 'production') above.
+            req.user = { ...validation.user, isTestToken: true } as any;
             req.tenantId = validation.user.tenantId; // Set tenantId for profile loading
             return next();
           } else {
@@ -185,7 +198,8 @@ export class UnifiedAuthMiddleware {
         // Try Azure AD authentication (but don't fail if token is just missing)
         // Still reject malicious tokens
         try {
-          return this.azureAuth.authenticate(req as any, res, next);
+          await this.azureAuth.authenticate(req as any, res, next);
+          return;
         } catch (error: any) {
           // Only bypass auth for missing/expired tokens, not malformed ones
           if (error?.code === 'TOKEN_EXPIRED' || error?.code === 'TOKEN_INVALID') {

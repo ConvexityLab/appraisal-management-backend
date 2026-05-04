@@ -14,6 +14,10 @@ export interface TestUserProfile {
   name: string;
   role: 'admin' | 'manager' | 'qc_analyst' | 'appraiser';
   tenantId: string;
+  /** Platform client ID aligned with Axiom (defaults to AXIOM_CLIENT_ID env var). */
+  clientId?: string;
+  /** Platform sub-client ID aligned with Axiom (defaults to AXIOM_SUB_CLIENT_ID env var). */
+  subClientId?: string;
   accessScope?: Partial<AccessScope>;
   permissions?: string[];
 }
@@ -43,12 +47,23 @@ export class TestTokenGenerator {
    * Generate a test JWT token for a user
    */
   generateToken(user: TestUserProfile): string {
+    const clientId = user.clientId ?? process.env['AXIOM_CLIENT_ID'];
+    if (!clientId) {
+      throw new Error('clientId is required on TestUserProfile or AXIOM_CLIENT_ID must be set in environment');
+    }
+    const subClientId = user.subClientId ?? process.env['AXIOM_SUB_CLIENT_ID'];
+    if (!subClientId) {
+      throw new Error('subClientId is required on TestUserProfile or AXIOM_SUB_CLIENT_ID must be set in environment');
+    }
+
     const payload = {
       sub: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       tenantId: user.tenantId,
+      clientId,
+      subClientId,
       accessScope: user.accessScope || this.getDefaultAccessScope(user.role),
       permissions: user.permissions || this.getDefaultPermissions(user.role),
       iss: 'appraisal-management-test',
@@ -94,6 +109,7 @@ export class TestTokenGenerator {
           role: decoded.role,
           tenantId: decoded.tenantId,
           clientId: decoded.clientId,
+          subClientId: decoded.subClientId,
           permissions: decoded.permissions,
           accessScope: decoded.accessScope
         }
@@ -221,13 +237,18 @@ export class TestTokenGenerator {
    * Generate tokens for all test users
    */
   generateAllTestTokens(): Record<string, string> {
+    const tenantId = process.env['AZURE_TENANT_ID'];
+    if (!tenantId) {
+      throw new Error('AZURE_TENANT_ID must be set in environment to generate test tokens');
+    }
+
     return {
       admin: this.generateToken({
         id: 'test-admin',
         email: 'admin@test.local',
         name: 'Test Admin',
         role: 'admin',
-        tenantId: 'test-tenant'
+        tenantId
       }),
 
       manager: this.generateToken({
@@ -235,7 +256,7 @@ export class TestTokenGenerator {
         email: 'manager@test.local',
         name: 'Test Manager',
         role: 'manager',
-        tenantId: 'test-tenant'
+        tenantId
       }),
 
       qc_analyst: this.generateToken({
@@ -243,7 +264,7 @@ export class TestTokenGenerator {
         email: 'qc.analyst@test.local',
         name: 'Test QC Analyst',
         role: 'qc_analyst',
-        tenantId: 'test-tenant'
+        tenantId
       }),
 
       appraiser: this.generateToken({
@@ -251,7 +272,7 @@ export class TestTokenGenerator {
         email: 'appraiser@test.local',
         name: 'Test Appraiser',
         role: 'appraiser',
-        tenantId: 'test-tenant'
+        tenantId
       })
     };
   }

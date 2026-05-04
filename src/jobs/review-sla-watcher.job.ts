@@ -168,10 +168,11 @@ export class ReviewSLAWatcherJob {
         const orderId = raw.orderId ?? raw.id;
         const orderNumber = raw.orderNumber ?? orderId;
         const tenantId = raw.tenantId ?? '';
+        const clientId = (raw.clientId as string | undefined) ?? '';
 
         // Breach check (takes priority)
         if (now > dueDate && !raw.slaBreachFired) {
-          await this.fireBreachEvent(raw, orderId, orderNumber, tenantId, reviewerId, dueDate, minutesOverdue);
+          await this.fireBreachEvent(raw, orderId, orderNumber, tenantId, clientId, reviewerId, dueDate, minutesOverdue);
           await this.markAlertFired(container, raw, true, true);
           breachCount++;
           continue;
@@ -179,7 +180,7 @@ export class ReviewSLAWatcherJob {
 
         // Warning check
         if (pctElapsed >= this.WARNING_PCT_THRESHOLD && !raw.slaWarningFired && !raw.slaBreachFired) {
-          await this.fireWarningEvent(raw, orderId, orderNumber, tenantId, reviewerId, pctElapsed, dueDate, remainingMinutes);
+          await this.fireWarningEvent(raw, orderId, orderNumber, tenantId, clientId, reviewerId, pctElapsed, dueDate, remainingMinutes);
           await this.markAlertFired(container, raw, true, false);
           warnCount++;
         }
@@ -203,6 +204,7 @@ export class ReviewSLAWatcherJob {
     orderId: string,
     orderNumber: string,
     tenantId: string,
+    clientId: string,
     reviewerId: string,
     percentElapsed: number,
     targetDate: Date,
@@ -219,6 +221,7 @@ export class ReviewSLAWatcherJob {
         orderId,
         orderNumber,
         tenantId,
+        clientId,
         qcReviewId: review.id,
         reviewerId,
         percentElapsed,
@@ -237,6 +240,7 @@ export class ReviewSLAWatcherJob {
     orderId: string,
     orderNumber: string,
     tenantId: string,
+    clientId: string,
     reviewerId: string,
     targetDate: Date,
     minutesOverdue: number,
@@ -252,6 +256,7 @@ export class ReviewSLAWatcherJob {
         orderId,
         orderNumber,
         tenantId,
+        clientId,
         qcReviewId: review.id,
         reviewerId,
         targetDate,

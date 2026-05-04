@@ -5,6 +5,15 @@ export interface AiParseResult {
   presentationSchema: AiPresentationSchema;
 }
 
+export const AI_EXECUTABLE_INTENTS = [
+  'CREATE_ORDER',
+  'CREATE_ENGAGEMENT',
+  'ASSIGN_VENDOR',
+  'TRIGGER_AUTO_ASSIGNMENT',
+] as const;
+
+export type AiExecutableIntent = (typeof AI_EXECUTABLE_INTENTS)[number];
+
 export interface AiPresentationSchema {
   title: string;                 // e.g., "Create New Engagement"
   summary: string;               // e.g., "Extracted 1 new engagement from CSV..."

@@ -1394,6 +1394,10 @@ export interface CanonicalReportMetadata {
   specialIdentification?: string | null;
   /** FHA REO insurability level. */
   fhaReoInsurabilityLevel?: string | null;
+  /** Axiom evaluation ID embedded at report-generation time. */
+  axiomEvaluationId?: string | null;
+  /** ISO timestamp when Axiom completed the evaluation. */
+  axiomCompletedAt?: string | null;
 }
 
 
@@ -1734,6 +1738,82 @@ export interface CanonicalSubjectListing {
   currentOrFinalListPrice: number | null;
 }
 
+// ── Capability 5 (P-05): AI Insights + Provenance types ───────────────────────────
+
+/**
+ * A summary of a single Axiom criterion verdict embedded in the report.
+ * Mirrors AxiomCriterion from axiom.service.ts but scoped to report-generation concerns.
+ */
+export interface CanonicalCriterionEvaluation {
+  criterionId: string;
+  name: string;
+  /** 'pass' | 'fail' | 'warning' | 'skipped' */
+  evaluation: string;
+  confidence?: number;
+  reasoning?: string;
+  recommendation?: string;
+  /** Source document references cited for this criterion. */
+  documentReferences?: Array<{
+    documentId?: string;
+    documentName?: string;
+    page?: number;
+    section?: string;
+    quote?: string;
+  }>;
+}
+
+/**
+ * An AI-extracted field value with full provenance metadata.
+ * Used to drive report sections and footnotes that cite extract sources.
+ */
+export interface CanonicalExtractedField {
+  fieldName: string;
+  fieldLabel?: string;
+  extractedValue: unknown;
+  confidence?: number;
+  /** Cosmos document ID of the source PDF. */
+  sourceDocumentId?: string;
+  /** SAS / public URL of the source blob. */
+  sourceBlobUrl?: string;
+  sourceDocument?: string;
+  sourcePage?: number;
+  sourceSection?: string;
+  /** Verbatim quote from the source page. */
+  sourceQuote?: string;
+}
+
+/**
+ * Property enrichment data bundle populated at report-generation time.
+ * Sourced from ATTOM, comps market data, and market condition analyses.
+ */
+export interface CanonicalEnrichmentBundle {
+  /** ATTOM owner / tax / AVM data. */
+  attomData?: Record<string, unknown>;
+  /** Comparable market data / neighbourhood stats. */
+  marketData?: Record<string, unknown>;
+  /** Market conditions flags and narrative (1004MC-compatible). */
+  marketConditions?: {
+    trend?: string;
+    supply?: string;
+    demand?: string;
+    narrative?: string;
+  };
+}
+
+/**
+ * A source document linked to this report.
+ * Populated from the order's document list at report-generation time.
+ */
+export interface CanonicalSourceDocumentRef {
+  documentId: string;
+  documentName: string;
+  /** SAS / public blob URL for the PDF viewer. */
+  blobUrl?: string;
+  /** e.g. 'APPRAISAL_REPORT', 'COMP_MAP', 'PHOTO_ADDENDUM', 'SUBJECT_PHOTO' */
+  documentType?: string;
+  uploadedAt?: string;
+}
+
 // TOP-LEVEL REPORT DOCUMENT  (Cosmos container: reporting)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -1832,11 +1912,244 @@ export interface CanonicalReportDocument {
   // -- Phase 7C: Analyzed properties not used --------------------------------
   /** Properties analyzed but not selected as comparables -- URAR v1.3 Pages 29-30. */
   analyzedPropertiesNotUsed?: CanonicalAnalyzedPropertyNotUsed[];
+  // ── Capability 5 (P-05): AI insights + provenance fields ───────────────────────
+  /** Axiom criterion evaluation results — populated at report-generation time from the order’s latest completed evaluation. */
+  criteriaEvaluations?: CanonicalCriterionEvaluation[];
+  /** AI-extracted fields with provenance citations — sourced from Axiom extractedData. */
+  extractedDataFields?: CanonicalExtractedField[];
+  /** Property enrichment bundle — populated from ATTOM / market data at report-generation time. */
+  enrichmentData?: CanonicalEnrichmentBundle;
+  /** Source documents linked to this report — populated from order documents at report-generation time. */
+  sourceDocuments?: CanonicalSourceDocumentRef[];
+
+  // ─── Loan / risk domain (MISMO 3.4 / URLA-aligned) ────────────────────────
+  // These branches hold loan-economics, ratios, transaction history, AVM,
+  // comp-grid statistics, and risk flags that supplement the URAR/UAD subject
+  // data. They are populated by per-source mappers in src/mappers/ and merged
+  // by canonical-snapshot.service.ts. Optional because not every order has
+  // every source available.
+
+  /** Loan terms — MISMO LOANS/LOAN/TERMS_OF_LOAN. */
+  loan?: CanonicalLoan;
+  /** Calculated loan-to-collateral ratios — derived from loan + valuation. */
+  ratios?: CanonicalLoanRatios;
+  /** Subject + comparable transaction history with appreciation calcs. */
+  transactionHistory?: CanonicalTransactionHistory;
+  /** Independent AVM cross-check against the appraised value. */
+  avmCrossCheck?: CanonicalAvmCrossCheck;
+  /** Aggregate statistics computed across the comp grid (avg adjustment %, MLS share, etc.). */
+  compStatistics?: CanonicalCompStatistics;
+  /** Risk flags from various sources (chain-of-title, geography, comp sourcing, etc.). */
+  riskFlags?: CanonicalRiskFlags;
+
+  // ── Metadata ───────────────────────────────────────────────────────────────
   // â”€â”€ Metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createdAt: string;
   updatedAt: string;
   createdBy: string;
   updatedBy: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOAN / RISK DOMAIN — MISMO 3.4 / URLA aligned
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Adopts MISMO 3.4 field-name conventions where they exist. Several risk
+// metrics (LTV, CLTV, DSCR, AVM gap %, appreciation %) are CALCULATED — not
+// raw URLA fields — so we use industry-standard MISMO names from the broader
+// MISMO 3.4 vocabulary (LoanToValueRatioPercent, CombinedLoanToValueRatioPercent,
+// DebtServiceCoverageRatioPercent, etc.) that map cleanly to MISMO downstream.
+//
+// Source mappers populate these branches:
+//   src/mappers/loan-tape.mapper.ts            → loan, ratios
+//   src/mappers/transaction-history.mapper.ts  → transactionHistory
+//   src/mappers/avm.mapper.ts                  → avmCrossCheck
+//   src/mappers/comp-statistics.mapper.ts      → compStatistics (derived from comps[])
+//   src/mappers/risk-flags.mapper.ts           → riskFlags
+
+// ─── CanonicalLoan ────────────────────────────────────────────────────────────
+
+export type LoanPurposeType = 'Purchase' | 'Refinance' | 'ConstructionPermanent' | 'Construction' | 'Other';
+export type MortgageType = 'Conventional' | 'FHA' | 'VA' | 'USDA' | 'NonQM' | 'Jumbo' | 'Other';
+export type LienPriorityType = 'FirstLien' | 'SecondLien' | 'Other';
+export type RefinanceCashOutDeterminationType = 'CashOut' | 'NoCashOut' | 'LimitedCashOut' | 'Unknown';
+export type OccupancyType = 'PrimaryResidence' | 'SecondHome' | 'Investment' | 'Other';
+
+/**
+ * MISMO 3.4 LOANS/LOAN/TERMS_OF_LOAN aggregate. Loan-side facts about the
+ * subject transaction. Sourced from the loan tape, the order record, or
+ * upstream LOS systems.
+ */
+export interface CanonicalLoan {
+  /** MISMO BaseLoanAmount — base loan amount, excluding PMI / MIP / funding fee. */
+  baseLoanAmount: number | null;
+  /** MISMO LoanPurposeType — Purchase / Refinance / etc. */
+  loanPurposeType: LoanPurposeType | null;
+  /** MISMO MortgageType — Conventional / FHA / VA / etc. */
+  mortgageType: MortgageType | null;
+  /** MISMO LienPriorityType for the subject loan. */
+  lienPriorityType: LienPriorityType | null;
+  /** Outstanding balance on the first lien (post-current-loan if applicable). */
+  firstLienBalance: number | null;
+  /** Outstanding balance on the second lien, if any. */
+  secondLienBalance: number | null;
+  /** Total of all lien balances (firstLienBalance + secondLienBalance + …). */
+  totalLienBalance: number | null;
+  /** MISMO RefinanceCashOutDeterminationType — applicable when LoanPurposeType = 'Refinance'. */
+  refinanceCashOutDeterminationType: RefinanceCashOutDeterminationType | null;
+  /** MISMO RefinanceCashOutAmount — applicable when CashOut. */
+  refinanceCashOutAmount: number | null;
+  /** Convenience boolean: refinanceCashOutDeterminationType === 'CashOut'. */
+  isCashOutRefinance: boolean | null;
+  /** MISMO OccupancyType for the subject. */
+  occupancyType: OccupancyType | null;
+  /** MISMO InterestRatePercent — note rate, expressed as a percentage (e.g. 6.875). */
+  interestRatePercent: number | null;
+  /** Loan term in months. */
+  loanTermMonths: number | null;
+  /** Loan number / identifier from the originating system. */
+  loanNumber: string | null;
+}
+
+// ─── CanonicalLoanRatios ──────────────────────────────────────────────────────
+
+/**
+ * Calculated loan-to-collateral ratios. All percent values are expressed as
+ * a percentage (e.g. 80, not 0.80) per MISMO convention. Computed from
+ * canonical.loan + canonical.valuation; stored here so downstream consumers
+ * (review-program rules, audit, UI) read precomputed values.
+ */
+export interface CanonicalLoanRatios {
+  /** MISMO LoanToValueRatioPercent — baseLoanAmount / appraisedValue * 100. */
+  loanToValueRatioPercent: number | null;
+  /** MISMO CombinedLoanToValueRatioPercent — totalLienBalance / appraisedValue * 100. */
+  combinedLoanToValueRatioPercent: number | null;
+  /** MISMO HCLTVRatioPercent — high CLTV including HELOC max. Null when no HELOC. */
+  highCombinedLoanToValueRatioPercent: number | null;
+  /** MISMO DebtServiceCoverageRatioPercent — for income / investment properties. */
+  debtServiceCoverageRatio: number | null;
+  /** MISMO TotalDebtToIncomeRatioPercent — borrower DTI, when known. */
+  debtToIncomeRatioPercent: number | null;
+}
+
+// ─── CanonicalTransactionHistory ──────────────────────────────────────────────
+
+/**
+ * Subject-side transaction history (sales, refinances) plus computed
+ * appreciation deltas. Comparables track their own prior sales on
+ * CanonicalComp.priorSalePrice / priorSaleDate.
+ *
+ * Reuses CanonicalPriorTransfer (defined earlier in this file at the URAR
+ * Phase 6B / Prior-Transfers section) — that type is general enough to
+ * cover subject and comp transfers, with `propertyRole` distinguishing them.
+ */
+export interface CanonicalTransactionHistory {
+  /** All known prior sales / transfers of the subject, newest-first. (Filter to propertyRole === 'subject'.) */
+  subjectPriorTransfers: CanonicalPriorTransfer[];
+  /** Most recent prior sale price within the last 24 months, if any. */
+  priorSalePrice24m: number | null;
+  /** Date of the 24m prior sale. */
+  priorSaleDate24m: string | null;
+  /** Appreciation % over 24 months: (currentValue - priorPrice) / priorPrice * 100. */
+  appreciation24mPercent: number | null;
+  /** Most recent prior sale price within the last 36 months. */
+  priorSalePrice36m: number | null;
+  /** Date of the 36m prior sale. */
+  priorSaleDate36m: string | null;
+  /** Appreciation % over 36 months. */
+  appreciation36mPercent: number | null;
+}
+
+// ─── CanonicalAvmCrossCheck ───────────────────────────────────────────────────
+
+/**
+ * Independent automated valuation cross-check. Signals when the appraised
+ * value disagrees materially with model-driven valuations.
+ */
+export interface CanonicalAvmCrossCheck {
+  /** Headline AVM value in dollars (provider's primary point estimate). */
+  avmValue: number | null;
+  /** Lower bound of the AVM confidence range. */
+  avmLowerBound: number | null;
+  /** Upper bound of the AVM confidence range. */
+  avmUpperBound: number | null;
+  /** AVM confidence score (0–100). */
+  avmConfidenceScore: number | null;
+  /** AVM provider name (CoreLogic, Black Knight, ATTOM, internal, …). */
+  avmProvider: string | null;
+  /** AVM model identifier / version. */
+  avmModelVersion: string | null;
+  /**
+   * Gap percentage: (appraisedValue - avmValue) / avmValue * 100. Positive
+   * means the appraisal is above the AVM, negative below. Null when either
+   * value is missing.
+   */
+  avmGapPercent: number | null;
+  /** ISO date the AVM was generated. */
+  avmAsOfDate: string | null;
+}
+
+// ─── CanonicalCompStatistics ──────────────────────────────────────────────────
+
+/**
+ * Aggregate metrics computed across the SELECTED comps. Used by review-program
+ * rules to flag outlier adjustment patterns or sourcing issues.
+ */
+export interface CanonicalCompStatistics {
+  /** Number of comps used in the analysis. */
+  selectedCompCount: number | null;
+  /** Average net adjustment % across comps (signed). */
+  averageNetAdjustmentPercent: number | null;
+  /** Average gross adjustment % across comps (absolute values). */
+  averageGrossAdjustmentPercent: number | null;
+  /** Maximum net adjustment % across comps. */
+  maxNetAdjustmentPercent: number | null;
+  /** Maximum gross adjustment % across comps. */
+  maxGrossAdjustmentPercent: number | null;
+  /** Average distance in miles from subject. */
+  averageDistanceMiles: number | null;
+  /** Maximum distance in miles from subject. */
+  maxDistanceMiles: number | null;
+  /** Comp date range in months: oldest comp saleDate to most recent. */
+  saleDateRangeMonths: number | null;
+  /** Number of comps that are NOT MLS-sourced (public_record, avm, manual). */
+  nonMlsCompCount: number | null;
+  /** Percentage of comps NOT MLS-sourced — nonMlsCompCount / selectedCompCount * 100. */
+  nonMlsCompPercent: number | null;
+  /** Average sale price per square foot across comps. */
+  averagePricePerSqFt: number | null;
+  /** Lowest comp sale price. */
+  comparablePriceRangeLow: number | null;
+  /** Highest comp sale price. */
+  comparablePriceRangeHigh: number | null;
+}
+
+// ─── CanonicalRiskFlags ───────────────────────────────────────────────────────
+
+/**
+ * Boolean / categorical risk indicators derived from the loan tape, title
+ * report, geography providers, and other supplementary sources. Each flag
+ * captures an independent risk signal that review-program rules can gate on.
+ */
+export interface CanonicalRiskFlags {
+  /** Title chain has anomalies (rapid sequential transfers, related parties, etc.). */
+  chainOfTitleRedFlags: boolean | null;
+  /** UCDP SSR (Submission Summary Report) score, when available. */
+  ucdpSsrScore: string | null;
+  /** Collateral risk rating (low / moderate / high / specific score), provider-defined. */
+  collateralRiskRating: string | null;
+  /** Whether the appraiser is geo-competent for the subject market (license + recency). */
+  appraiserGeoCompetency: boolean | null;
+  /** Subject is in a flagged high-risk geography (disaster zone, declining market, fraud cluster). */
+  highRiskGeography: boolean | null;
+  /** Prior-sale appreciation falls outside expected market envelope. */
+  unusualAppreciation: boolean | null;
+  /** Subject DSCR is below program minimum (income / investment loans only). */
+  dscrBelowMinimum: boolean | null;
+  /** One or more comps come from non-public sources at a flagged ratio. */
+  nonPublicCompsFlag: boolean | null;
+  /** Free-form notes from upstream risk-scoring systems. */
+  notes: string | null;
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

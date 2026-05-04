@@ -30,6 +30,11 @@ const REQUIRED_AXIOM_ENVS = [
   'STORAGE_CONTAINER_DOCUMENTS',
 ] as const;
 
+const AXIOM_AUTH_MODE_ENVS = [
+  'AXIOM_API_KEY',
+  'AXIOM_USE_DEFAULT_CREDENTIAL',
+] as const;
+
 const FLOW_COMMANDS = [
   'axiom:livefire:preflight',
   'axiom:livefire:property-intake',
@@ -76,15 +81,24 @@ async function validateDeployedAxiomEnv(baseUrl: string, authHeader: { Authoriza
 
   const missing = health.data?.data?.services?.ai?.axiom?.missingEnvVars ?? [];
   const blockingMissing = REQUIRED_AXIOM_ENVS.filter((envName) => missing.includes(envName));
+  const hasAuthModeConfigured = AXIOM_AUTH_MODE_ENVS.some((envName) => !missing.includes(envName));
 
-  if (blockingMissing.length > 0) {
+  if (blockingMissing.length > 0 || !hasAuthModeConfigured) {
+    const blocking: string[] = [...blockingMissing];
+    if (!hasAuthModeConfigured) {
+      blocking.push('AXIOM_API_KEY (or AXIOM_USE_DEFAULT_CREDENTIAL=true)');
+    }
+
     throw new Error(
-      `Deployed backend is missing required Axiom env vars: ${blockingMissing.join(', ')}. ` +
+      `Deployed backend is missing required Axiom env vars: ${blocking.join(', ')}. ` +
       'Fix deployment configuration, then re-run the remote suite.',
     );
   }
 
-  console.log(`✓ Deployed backend reports required env vars present: ${REQUIRED_AXIOM_ENVS.join(', ')}`);
+  console.log(
+    `✓ Deployed backend reports required Axiom env vars present: ` +
+      `${[...REQUIRED_AXIOM_ENVS, 'AXIOM_API_KEY|AXIOM_USE_DEFAULT_CREDENTIAL'].join(', ')}`,
+  );
 }
 
 function validateRequiredLiveFireInputs(): void {

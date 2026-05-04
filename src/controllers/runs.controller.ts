@@ -7,12 +7,31 @@ import { CanonicalSnapshotService } from '../services/canonical-snapshot.service
 import { EngineDispatchService } from '../services/engine-dispatch.service.js';
 import { CriteriaStepInputService } from '../services/criteria-step-input.service.js';
 import { AxiomService } from '../services/axiom.service.js';
+import { AnalysisSubmissionService } from '../services/analysis-submission.service.js';
+import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
+import { EventCategory, EventPriority } from '../types/events.js';
+import { v4 as uuidv4 } from 'uuid';
+
+let eventPublisher: ServiceBusEventPublisher | null = null;
+function getPublisher(): ServiceBusEventPublisher {
+  if (!eventPublisher) eventPublisher = new ServiceBusEventPublisher();
+  return eventPublisher;
+}
+
+async function publishSafely(event: any): Promise<void> {
+  try {
+    await getPublisher().publish(event);
+  } catch {
+    // Best-effort — never throws
+  }
+}
 
 const router = express.Router();
 let service: RunLedgerService | null = null;
 let snapshotService: CanonicalSnapshotService | null = null;
 let dispatchService: EngineDispatchService | null = null;
 let stepInputService: CriteriaStepInputService | null = null;
+let analysisSubmissionService: AnalysisSubmissionService | null = null;
 
 function getService(dbService: CosmosDbService): RunLedgerService {
   if (!service) {
@@ -30,7 +49,7 @@ function getSnapshotService(dbService: CosmosDbService): CanonicalSnapshotServic
 
 function getDispatchService(dbService: CosmosDbService): EngineDispatchService {
   if (!dispatchService) {
-    dispatchService = new EngineDispatchService(new AxiomService(dbService));
+    dispatchService = new EngineDispatchService(new AxiomService(dbService), dbService);
   }
   return dispatchService;
 }
@@ -40,6 +59,13 @@ function getStepInputService(dbService: CosmosDbService): CriteriaStepInputServi
     stepInputService = new CriteriaStepInputService(dbService);
   }
   return stepInputService;
+}
+
+function getAnalysisSubmissionService(dbService: CosmosDbService): AnalysisSubmissionService {
+  if (!analysisSubmissionService) {
+    analysisSubmissionService = new AnalysisSubmissionService(dbService);
+  }
+  return analysisSubmissionService;
 }
 
 function resolveTenantId(req: UnifiedAuthRequest): string {
@@ -181,12 +207,8 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
 
     try {
       const tenantId = resolveTenantId(req);
-      const runService = getService(dbService);
-      const run = await runService.createExtractionRun({
-        tenantId,
-        initiatedBy: resolveInitiatedBy(req),
-        correlationId: String(req.header('X-Correlation-Id')),
-        idempotencyKey: String(req.header('Idempotency-Key')),
+      const submission = await getAnalysisSubmissionService(dbService).submit({
+        analysisType: 'EXTRACTION',
         documentId: req.body.documentId,
         schemaKey: req.body.schemaKey,
         runReason: req.body.runReason,
@@ -194,23 +216,18 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
         enginePolicyRef: req.body.enginePolicyRef,
         engagementId: req.body.engagementId,
         loanPropertyContextId: req.body.loanPropertyContextId,
+      }, {
+        tenantId,
+        initiatedBy: resolveInitiatedBy(req),
+        correlationId: String(req.header('X-Correlation-Id')),
+        idempotencyKey: String(req.header('Idempotency-Key')),
       });
 
-      const dispatchResult = await getDispatchService(dbService).dispatchExtraction(run);
-      const runningRun = await runService.setRunStatus(run.id, tenantId, dispatchResult.status, {
-        engineRunRef: dispatchResult.engineRunRef,
-        engineVersion: dispatchResult.engineVersion,
-        engineRequestRef: dispatchResult.engineRequestRef,
-        engineResponseRef: dispatchResult.engineResponseRef,
-        ...(dispatchResult.statusDetails ? { statusDetails: dispatchResult.statusDetails } : {}),
-      });
+      if (!submission.run) {
+        throw new Error('Unified extraction submission did not return a run record');
+      }
 
-      const snapshot = await getSnapshotService(dbService).createFromExtractionRun(runningRun);
-      const linkedRun = await runService.updateRun(run.id, tenantId, {
-        canonicalSnapshotId: snapshot.id,
-      });
-
-      res.status(202).json({ success: true, data: linkedRun });
+      res.status(202).json({ success: true, data: submission.run });
     } catch (error) {
       res.status(500).json({
         success: false,
@@ -227,24 +244,8 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
 
     try {
       const tenantId = resolveTenantId(req);
-      const runService = getService(dbService);
-      const snapshot = await getSnapshotService(dbService).getSnapshotById(req.body.snapshotId, tenantId);
-      if (!snapshot) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'SNAPSHOT_NOT_FOUND',
-            message: `Snapshot '${req.body.snapshotId}' was not found for tenant '${tenantId}'`,
-          },
-        });
-        return;
-      }
-
-      const run = await runService.createCriteriaRun({
-        tenantId,
-        initiatedBy: resolveInitiatedBy(req),
-        correlationId: String(req.header('X-Correlation-Id')),
-        idempotencyKey: String(req.header('Idempotency-Key')),
+      const submission = await getAnalysisSubmissionService(dbService).submit({
+        analysisType: 'CRITERIA',
         snapshotId: req.body.snapshotId,
         programKey: req.body.programKey,
         runMode: req.body.runMode,
@@ -252,80 +253,29 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
         enginePolicyRef: req.body.enginePolicyRef,
         rerunReason: req.body.rerunReason,
         parentRunId: req.body.parentRunId,
+        criteriaStepKeys: req.body.criteriaStepKeys,
         engagementId: req.body.engagementId,
         loanPropertyContextId: req.body.loanPropertyContextId,
+      }, {
+        tenantId,
+        initiatedBy: resolveInitiatedBy(req),
+        correlationId: String(req.header('X-Correlation-Id')),
+        idempotencyKey: String(req.header('Idempotency-Key')),
       });
 
-      const dispatchResult = await getDispatchService(dbService).dispatchCriteria(run);
-      const criteriaStepKeys: string[] =
-        Array.isArray(req.body.criteriaStepKeys) && req.body.criteriaStepKeys.length > 0
-          ? req.body.criteriaStepKeys
-          : (process.env.RUN_DEFAULT_CRITERIA_STEPS
-              ? process.env.RUN_DEFAULT_CRITERIA_STEPS.split(',').map((value) => value.trim()).filter(Boolean)
-              : ['overall-criteria']);
-
-      const updatedCriteriaRun = await runService.setRunStatus(run.id, tenantId, dispatchResult.status, {
-        engineRunRef: dispatchResult.engineRunRef,
-        engineVersion: dispatchResult.engineVersion,
-        engineRequestRef: dispatchResult.engineRequestRef,
-        engineResponseRef: dispatchResult.engineResponseRef,
-        canonicalSnapshotId: snapshot.id,
-        criteriaStepKeys,
-        ...(dispatchResult.statusDetails ? { statusDetails: dispatchResult.statusDetails } : {}),
-      });
-
-      const stepRuns = [];
-      for (const stepKey of criteriaStepKeys) {
-        const stepRun = await runService.createCriteriaStepRun({
-          tenantId,
-          initiatedBy: resolveInitiatedBy(req),
-          correlationId: `${String(req.header('X-Correlation-Id'))}:${stepKey}`,
-          idempotencyKey: `${String(req.header('Idempotency-Key'))}:${stepKey}`,
-          parentCriteriaRunId: updatedCriteriaRun.id,
-          stepKey,
-          engineTarget: req.body.engineTarget,
-          enginePolicyRef: req.body.enginePolicyRef,
-        });
-
-        const stepInputSlice = await getStepInputService(dbService).createStepInputSlice({
-          tenantId,
-          initiatedBy: resolveInitiatedBy(req),
-          criteriaRun: updatedCriteriaRun,
-          stepRun,
-          snapshot,
-        });
-
-        const stepDispatchResult = await getDispatchService(dbService).dispatchCriteriaStep(stepRun, {
-          inputSliceRef: stepInputSlice.payloadRef,
-          inputSlice: stepInputSlice.payload,
-          evidenceRefs: stepInputSlice.evidenceRefs,
-        });
-        const hydratedStepRun = await runService.setRunStatus(stepRun.id, tenantId, stepDispatchResult.status, {
-          engineRunRef: stepDispatchResult.engineRunRef,
-          engineVersion: stepDispatchResult.engineVersion,
-          engineRequestRef: stepDispatchResult.engineRequestRef,
-          engineResponseRef: stepDispatchResult.engineResponseRef,
-          statusDetails: {
-            ...(stepDispatchResult.statusDetails ?? {}),
-            stepInputSliceId: stepInputSlice.id,
-            stepInputPayloadRef: stepInputSlice.payloadRef,
-            stepEvidenceRefs: stepInputSlice.evidenceRefs,
-          },
-        });
-        stepRuns.push(hydratedStepRun);
+      if (!submission.run) {
+        throw new Error('Unified criteria submission did not return a run record');
       }
 
-      const finalCriteriaRun = await runService.updateRun(updatedCriteriaRun.id, tenantId, {
-        criteriaStepRunIds: stepRuns.map((item) => item.id),
-      });
-
-      res.status(202).json({ success: true, data: { run: finalCriteriaRun, stepRuns } });
+      res.status(202).json({ success: true, data: { run: submission.run, stepRuns: submission.stepRuns ?? [] } });
     } catch (error) {
-      res.status(500).json({
+      const message = error instanceof Error ? error.message : 'Failed to create criteria run';
+      const statusCode = message.includes('not found') ? 404 : 500;
+      res.status(statusCode).json({
         success: false,
         error: {
           code: 'RUN_CREATE_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to create criteria run',
+          message,
         },
       });
     }
@@ -339,56 +289,17 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
 
       try {
         const tenantId = resolveTenantId(req);
-        const runService = getService(dbService);
-        const stepRun = await runService.rerunCriteriaStep({
-          tenantId,
-          initiatedBy: resolveInitiatedBy(req),
-          correlationId: String(req.header('X-Correlation-Id')),
-          idempotencyKey: String(req.header('Idempotency-Key')),
+        const hydratedStepRun = await getAnalysisSubmissionService(dbService).rerunCriteriaStep({
           criteriaRunId: String(req.params.criteriaRunId),
           stepKey: String(req.params.stepKey),
           rerunReason: req.body.rerunReason,
           engineTarget: req.body.engineTarget,
           enginePolicyRef: req.body.enginePolicyRef,
-        });
-
-        const criteriaRun = await runService.getRunById(String(req.params.criteriaRunId), tenantId);
-        if (!criteriaRun) {
-          throw new Error(`Criteria run '${req.params.criteriaRunId}' was not found`);
-        }
-        const snapshotId = criteriaRun.canonicalSnapshotId ?? criteriaRun.snapshotId;
-        if (!snapshotId) {
-          throw new Error(`Criteria run '${req.params.criteriaRunId}' is missing snapshot linkage`);
-        }
-        const snapshot = await getSnapshotService(dbService).getSnapshotById(snapshotId, tenantId);
-        if (!snapshot) {
-          throw new Error(`Snapshot '${snapshotId}' was not found for tenant '${tenantId}'`);
-        }
-
-        const stepInputSlice = await getStepInputService(dbService).createStepInputSlice({
+        }, {
           tenantId,
           initiatedBy: resolveInitiatedBy(req),
-          criteriaRun,
-          stepRun,
-          snapshot,
-        });
-
-        const stepDispatchResult = await getDispatchService(dbService).dispatchCriteriaStep(stepRun, {
-          inputSliceRef: stepInputSlice.payloadRef,
-          inputSlice: stepInputSlice.payload,
-          evidenceRefs: stepInputSlice.evidenceRefs,
-        });
-        const hydratedStepRun = await runService.setRunStatus(stepRun.id, tenantId, stepDispatchResult.status, {
-          engineRunRef: stepDispatchResult.engineRunRef,
-          engineVersion: stepDispatchResult.engineVersion,
-          engineRequestRef: stepDispatchResult.engineRequestRef,
-          engineResponseRef: stepDispatchResult.engineResponseRef,
-          statusDetails: {
-            ...(stepDispatchResult.statusDetails ?? {}),
-            stepInputSliceId: stepInputSlice.id,
-            stepInputPayloadRef: stepInputSlice.payloadRef,
-            stepEvidenceRefs: stepInputSlice.evidenceRefs,
-          },
+          correlationId: String(req.header('X-Correlation-Id')),
+          idempotencyKey: String(req.header('Idempotency-Key')),
         });
 
         res.status(202).json({ success: true, data: hydratedStepRun });
@@ -574,6 +485,51 @@ export function createRunsRouter(dbService: CosmosDbService): express.Router {
         engineResponseRef: refreshed.engineResponseRef,
         ...(refreshed.statusDetails ? { statusDetails: refreshed.statusDetails } : {}),
       });
+
+      // Publish status-change events when terminal state detected via refresh
+      // (local-dev workaround for webhooks that can't reach localhost)
+      if (run.status !== refreshed.status) {
+        const orderId = run.loanPropertyContextId ?? run.documentId ?? run.id;
+        if (refreshed.status === 'completed') {
+          await publishSafely({
+            id: uuidv4(),
+            type: 'axiom.evaluation.completed',
+            timestamp: new Date(),
+            source: 'runs-controller-refresh',
+            version: '1.0',
+            category: EventCategory.AXIOM,
+            data: {
+              orderId,
+              engagementId: run.engagementId,
+              tenantId,
+              evaluationId: run.id,
+              pipelineJobId: run.engineRunRef,
+              pipelineName: run.pipelineId,
+              runType: run.runType,
+              status: 'passed',
+              priority: EventPriority.NORMAL,
+            },
+          });
+        } else if (refreshed.status === 'failed') {
+          await publishSafely({
+            id: uuidv4(),
+            type: 'axiom.evaluation.timeout',
+            timestamp: new Date(),
+            source: 'runs-controller-refresh',
+            version: '1.0',
+            category: EventCategory.QC,
+            data: {
+              orderId,
+              engagementId: run.engagementId,
+              tenantId,
+              evaluationId: run.id,
+              pipelineJobId: run.engineRunRef,
+              error: (refreshed.statusDetails as any)?.error,
+              priority: EventPriority.HIGH,
+            },
+          });
+        }
+      }
 
       res.status(200).json({ success: true, data: hydratedRun });
     } catch (error) {

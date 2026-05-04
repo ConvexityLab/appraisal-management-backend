@@ -49,7 +49,7 @@ import type {
   PropertyDataPublicRecord,
   PropertyDataFlood,
 } from '../../types/property-data.types.js';
-import { AttomService } from '../attom.service.js';
+import { AttomProviderService } from '../attom-provider.service.js';
 import { Logger } from '../../utils/logger.js';
 
 // ─── Narrow ATTOM response types ─────────────────────────────────────────────
@@ -59,11 +59,9 @@ type AttomRecord = Record<string, unknown>;
 type AttomEnvelope = { status: AttomRecord; property?: AttomRecord[] };
 
 export class AttomPropertyDataProvider implements PropertyDataProvider {
-  private readonly attom: AttomService;
   private readonly logger: Logger;
 
-  constructor() {
-    this.attom = new AttomService();
+  constructor(private readonly attomProvider: AttomProviderService) {
     this.logger = new Logger('AttomPropertyDataProvider');
   }
 
@@ -76,7 +74,7 @@ export class AttomPropertyDataProvider implements PropertyDataProvider {
     });
 
     // ── Step 1: Primary lookup — property detail + owner ──────────────────────
-    const detailEnvelope = await this.attom
+    const detailEnvelope = await this.attomProvider
       .getPropertyDetailOwner(address1, address2)
       .catch(err => {
         this.logger.warn('ATTOM /property/detailowner failed (non-fatal)', {
@@ -105,14 +103,14 @@ export class AttomPropertyDataProvider implements PropertyDataProvider {
 
     if (attomId != null) {
       const [assessmentEnvelope, saleHistoryEnvelope] = await Promise.all([
-        this.attom.getAssessmentDetail(attomId).catch(err => {
+        this.attomProvider.getAssessmentDetail(attomId).catch(err => {
           this.logger.warn('ATTOM /assessment/detail failed (non-fatal)', {
             attomId,
             error: (err as Error).message,
           });
           return null;
         }),
-        this.attom.getSaleHistoryBasic(attomId).catch(err => {
+        this.attomProvider.getSaleHistoryBasic(attomId).catch(err => {
           this.logger.warn('ATTOM /saleshistory/basichistory failed (non-fatal)', {
             attomId,
             error: (err as Error).message,

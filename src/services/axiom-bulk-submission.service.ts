@@ -150,7 +150,7 @@ export class AxiomBulkSubmissionService {
   }
 
   private async onBulkEvaluationRequested(event: AxiomBulkEvaluationRequestedEvent): Promise<void> {
-    const { jobId, tenantId, clientId, reviewProgramId } = event.data;
+    const { jobId, tenantId, clientId, subClientId, reviewProgramId } = event.data;
 
     if (!jobId || !tenantId || !clientId) {
       throw new Error(
@@ -193,6 +193,7 @@ export class AxiomBulkSubmissionService {
         jobId,
         tenantId,
         clientId,
+        subClientId ?? '',
         reviewProgramId,
       );
 
@@ -259,7 +260,7 @@ export class AxiomBulkSubmissionService {
       tenantId: string;
       clientId: string;
       jobId: string;
-      eventPayload?: { reviewProgramId?: string };
+      eventPayload?: { subClientId?: string; reviewProgramId?: string };
       status?: string;
       retryCount?: number;
     }>(dlqId);
@@ -277,11 +278,12 @@ export class AxiomBulkSubmissionService {
       timestamp: new Date(),
       source: 'axiom-bulk-submission-replayer',
       version: '1.0',
-      category: EventCategory.QC,
+      category: EventCategory.AXIOM,
       data: {
         jobId: dlq.jobId,
         tenantId: dlq.tenantId,
         clientId: dlq.clientId,
+        ...(dlq.eventPayload?.subClientId ? { subClientId: dlq.eventPayload.subClientId } : {}),
         ...(dlq.eventPayload?.reviewProgramId ? { reviewProgramId: dlq.eventPayload.reviewProgramId } : {}),
         priority: EventPriority.HIGH,
       },
@@ -292,6 +294,7 @@ export class AxiomBulkSubmissionService {
         replayEvent.data.jobId,
         replayEvent.data.tenantId,
         replayEvent.data.clientId,
+        replayEvent.data.subClientId ?? '',
         replayEvent.data.reviewProgramId,
       );
 

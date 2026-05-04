@@ -43,6 +43,13 @@ vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
   })),
 }));
 
+const mockAnalyzeVendorBid = vi.fn();
+vi.mock('../src/services/axiom.service.js', () => ({
+  AxiomService: vi.fn().mockImplementation(() => ({
+    analyzeVendorBid: mockAnalyzeVendorBid,
+  })),
+}));
+
 vi.mock('../src/services/qc-review-queue.service.js', () => ({
   QCReviewQueueService: vi.fn().mockImplementation(() => ({
     addToQueue: vi.fn(),
@@ -212,6 +219,10 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAnalyzeVendorBid.mockReset();
+    delete process.env.BULK_INGESTION_AI_BID_SCORING;
+    delete process.env.BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD;
+    delete process.env.API_BASE_URL;
     db = createMockDbService();
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
@@ -265,6 +276,147 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
     const event = publishedEvent(publisher, 'vendor.bid.sent');
     expect(event.data.vendorId).toBe('v1');
     expect(event.data.attemptNumber).toBe(1);
+  });
+
+  it('uses the Axiom vendor-bid recommendation as an override when confidence meets the threshold', async () => {
+    process.env.BULK_INGESTION_AI_BID_SCORING = 'true';
+    process.env.BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD = '0.85';
+    process.env.API_BASE_URL = 'https://backend.example.test';
+
+    mockAnalyzeVendorBid.mockResolvedValue({
+      analysisId: 'analysis-1',
+      analysisType: 'appraisal_vendor_bid_analysis',
+      entityId: 'order-ai-1',
+      recommendation: 'v2',
+      confidence: 0.93,
+      rationale: 'Vendor Two has the best turnaround for this rush order.',
+      rankedCandidates: [
+        { vendorId: 'v2', vendorName: 'Vendor Two', rank: 1 },
+        { vendorId: 'v1', vendorName: 'Vendor One', rank: 2 },
+      ],
+      overallRecommendation: 'Send the first bid to Vendor Two.',
+      completedAt: new Date().toISOString(),
+      source: 'axiom',
+    });
+
+    const order = makeOrder({ id: 'order-ai-1' });
+    db._orders.set(order.id, order);
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-001',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    expect(mockAnalyzeVendorBid).toHaveBeenCalledOnce();
+    expect(db.createItem).toHaveBeenCalledWith(
+      'vendor-bids',
+      expect.objectContaining({ vendorId: 'v2', vendorName: 'Vendor Two', status: 'PENDING' }),
+    );
+
+    expect(db.updateItem).toHaveBeenCalledWith(
+      'orders',
+      order.id,
+      expect.objectContaining({
+        vendorBidAnalysis: expect.objectContaining({
+          recommendation: 'v2',
+          recommendedVendorId: 'v2',
+          recommendedVendorName: 'Vendor Two',
+          appliedRecommendation: true,
+          appliedThreshold: 0.85,
+          rulesBasedTopVendorId: 'v1',
+          finalTopVendorId: 'v2',
+          dispatchDecisionReason: expect.stringContaining('changing dispatch from Vendor One to Vendor Two'),
+          rankTrajectory: expect.arrayContaining([
+            expect.objectContaining({ vendorId: 'v1', rulesBasedRank: 1, finalRank: 2, aiRank: 2 }),
+            expect.objectContaining({ vendorId: 'v2', rulesBasedRank: 2, finalRank: 1, aiRank: 1 }),
+          ]),
+        }),
+        autoVendorAssignment: expect.objectContaining({
+          rankedVendors: expect.arrayContaining([
+            expect.objectContaining({ vendorId: 'v2' }),
+            expect.objectContaining({ vendorId: 'v1' }),
+          ]),
+        }),
+      }),
+      TENANT_ID,
+    );
+
+    const event = publishedEvent(publisher, 'vendor.bid.sent');
+    expect(event.data.vendorId).toBe('v2');
+  });
+
+  it('keeps the rules-based dispatch order when AI confidence is below the threshold', async () => {
+    process.env.BULK_INGESTION_AI_BID_SCORING = 'true';
+    process.env.BULK_INGESTION_AI_BID_SCORING_CONFIDENCE_THRESHOLD = '0.95';
+    process.env.API_BASE_URL = 'https://backend.example.test';
+
+    mockAnalyzeVendorBid.mockResolvedValue({
+      analysisId: 'analysis-2',
+      analysisType: 'appraisal_vendor_bid_analysis',
+      entityId: 'order-ai-2',
+      recommendation: 'v2',
+      confidence: 0.82,
+      rankedCandidates: [
+        { vendorId: 'v2', vendorName: 'Vendor Two', rank: 1 },
+        { vendorId: 'v1', vendorName: 'Vendor One', rank: 2 },
+      ],
+      overallRecommendation: 'Vendor Two is preferred, but confidence is modest.',
+      completedAt: new Date().toISOString(),
+      source: 'axiom',
+    });
+
+    const order = makeOrder({ id: 'order-ai-2' });
+    db._orders.set(order.id, order);
+
+    await orchestrator.triggerVendorAssignment({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tenantId: TENANT_ID,
+      engagementId: 'eng-001',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '123 Test St, Fairfax, VA',
+      propertyState: 'VA',
+      clientId: 'client-001',
+      loanAmount: 500000,
+      priority: 'STANDARD',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    expect(db.createItem).toHaveBeenCalledWith(
+      'vendor-bids',
+      expect.objectContaining({ vendorId: 'v1', vendorName: 'Vendor One', status: 'PENDING' }),
+    );
+
+    expect(db.updateItem).toHaveBeenCalledWith(
+      'orders',
+      order.id,
+      expect.objectContaining({
+        vendorBidAnalysis: expect.objectContaining({
+          appliedRecommendation: false,
+          appliedThreshold: 0.95,
+          rulesBasedTopVendorId: 'v1',
+          finalTopVendorId: 'v1',
+          dispatchDecisionReason: 'Rules-based ranking was retained because confidence 82% was below the 95% threshold.',
+          rankTrajectory: expect.arrayContaining([
+            expect.objectContaining({ vendorId: 'v1', rulesBasedRank: 1, finalRank: 1, aiRank: 2 }),
+            expect.objectContaining({ vendorId: 'v2', rulesBasedRank: 2, finalRank: 2, aiRank: 1 }),
+          ]),
+        }),
+      }),
+      TENANT_ID,
+    );
+
+    const event = publishedEvent(publisher, 'vendor.bid.sent');
+    expect(event.data.vendorId).toBe('v1');
   });
 
   // ── 2. Idempotency: duplicate engagement.order.created is ignored ──────────

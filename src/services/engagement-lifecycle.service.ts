@@ -81,14 +81,14 @@ export class EngagementLifecycleService {
   // ── Handler ────────────────────────────────────────────────────────────────
 
   private async onOrderDelivered(event: OrderDeliveredEvent): Promise<void> {
-    const { orderId, engagementId, tenantId, priority } = event.data;
+    const { orderId, engagementId, tenantId, clientId, priority } = event.data;
 
     if (!engagementId) {
       // Order is not associated with an engagement — nothing to roll up.
       return;
     }
 
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (!tenantConfig.autoCloseEngagementEnabled) {
       this.logger.info('Auto-close engagement disabled by tenant config — skipping', {
         engagementId,
@@ -189,6 +189,7 @@ export class EngagementLifecycleService {
       data: {
         engagementId,
         tenantId,
+        clientId,
         previousStatus,
         newStatus: EngagementStatus.DELIVERED,
         reason: 'all_orders_delivered',

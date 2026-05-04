@@ -6,6 +6,10 @@
 **Overall Platform Coverage at Start:** ~38%  
 **Current Estimated Coverage:** ~55% (Phases 0–1 complete + Phase 1.5 automation backbone built + Phase 2 all BE services done)
 
+> **Active convergence plan (2026-04-30):** [UNIFIED_DATA_GATHERING_ENRICHMENT_CRITERIA_IMPLEMENTATION_PLAN_2026-04-30.md](./UNIFIED_DATA_GATHERING_ENRICHMENT_CRITERIA_IMPLEMENTATION_PLAN_2026-04-30.md)
+>
+> **Phase 1 execution checklist:** [UNIFIED_CONVERGENCE_PHASE1_CHECKLIST_2026-04-30.md](./UNIFIED_CONVERGENCE_PHASE1_CHECKLIST_2026-04-30.md)
+
 > **Ordering rationale:** Foundation fixes that unblock multiple features come first. Each phase
 > delivers working, testable value. Borrower-facing features are deferred (marked `[DEFERRED]`).
 > Items within each phase are sequenced so earlier items unblock later ones.

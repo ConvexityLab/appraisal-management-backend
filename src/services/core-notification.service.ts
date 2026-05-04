@@ -3,15 +3,16 @@
  * Orchestrates event processing and routes notifications to appropriate channels
  */
 
-import { 
-  AppEvent, 
+import {
+  AppEvent,
   BaseEvent,
-  EventHandler, 
-  NotificationMessage, 
-  NotificationChannel, 
+  EventHandler,
+  NotificationMessage,
+  NotificationChannel,
   EventPriority,
   EventCategory
 } from '../types/events.js';
+import type { QCIssueDetectedEvent } from '../types/events.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber';
 import { ServiceBusEventPublisher } from './service-bus-publisher';
 import { EmailNotificationService } from './email-notification.service.js';
@@ -126,13 +127,13 @@ export class NotificationService {
       id: 'qc-critical-issue-notification',
       eventType: 'qc.issue.detected',
       condition: (event: AppEvent) => {
-        const qcEvent = event as any;
-        return qcEvent.data?.severity === 'critical';
+        const qcEvent = event as QCIssueDetectedEvent;
+        return qcEvent.data?.severity === 'CRITICAL';
       },
       channels: [NotificationChannel.WEBSOCKET, NotificationChannel.EMAIL, NotificationChannel.SMS],
       template: {
         title: 'CRITICAL: QC Issue Detected',
-        message: 'CRITICAL QC issue detected in order {{orderId}}: {{description}}. Immediate action required.'
+        message: 'CRITICAL QC issue detected in order {{orderId}}: {{issueSummary}}. Immediate action required.'
       },
       priority: EventPriority.CRITICAL,
       throttleMs: 300000 // 5 minutes

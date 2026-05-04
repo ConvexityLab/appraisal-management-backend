@@ -10,11 +10,11 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo, hoursAgo, daysFromNow } from '../seed-types.js';
-import { ORDER_IDS, VENDOR_IDS, APPRAISER_IDS, NEGOTIATION_IDS } from '../seed-ids.js';
+import { ORDER_IDS, VENDOR_IDS, APPRAISER_IDS, NEGOTIATION_IDS, CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
 
 const CONTAINER = 'negotiations';
 
-function buildNegotiations(tenantId: string): Record<string, unknown>[] {
+function buildNegotiations(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     // Order 001 — accepted immediately, no counter
     {
@@ -75,14 +75,14 @@ function buildNegotiations(tenantId: string): Record<string, unknown>[] {
 
 // ─── Round-based negotiations (multi-round counter-offer workflows) ───────────
 
-function buildRoundNegotiations(tenantId: string): Record<string, unknown>[] {
+function buildRoundNegotiations(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     // ACCEPTED — direct accept, 1 round
     {
       id: NEGOTIATION_IDS.ACCEPTED_DIRECT, tenantId, type: 'negotiation',
       orderId: ORDER_IDS.ASSIGNED_007,
       vendorId: VENDOR_IDS.PREMIER,
-      clientId: 'client-first-national',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.NATIONAL_AMC], clientRecordId: CLIENT_IDS.NATIONAL_AMC,
       status: 'ACCEPTED',
       originalTerms: { fee: 575, dueDate: daysFromNow(5), rushFee: false, specialInstructions: '' },
       currentTerms: { fee: 575, dueDate: daysFromNow(5), additionalConditions: [] },
@@ -99,7 +99,7 @@ function buildRoundNegotiations(tenantId: string): Record<string, unknown>[] {
       id: NEGOTIATION_IDS.ACCEPTED_COUNTERED, tenantId, type: 'negotiation',
       orderId: ORDER_IDS.SUBMITTED_009,
       vendorId: VENDOR_IDS.TX_PROPERTY,
-      clientId: 'client-summit-lending',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH], clientRecordId: CLIENT_IDS.CLEARPATH,
       status: 'ACCEPTED',
       originalTerms: { fee: 600, dueDate: daysFromNow(7), rushFee: false, specialInstructions: '' },
       currentTerms: { fee: 625, dueDate: daysFromNow(7), additionalConditions: ['Additional comp research'], vendorNotes: 'Complex property requires additional comp research' },
@@ -119,7 +119,7 @@ function buildRoundNegotiations(tenantId: string): Record<string, unknown>[] {
       id: NEGOTIATION_IDS.REJECTED, tenantId, type: 'negotiation',
       orderId: ORDER_IDS.PENDING_004,
       vendorId: VENDOR_IDS.NVN,
-      clientId: 'client-rocky-credit',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH], clientRecordId: CLIENT_IDS.CLEARPATH,
       status: 'REJECTED',
       originalTerms: { fee: 650, dueDate: daysFromNow(10), rushFee: false, specialInstructions: '' },
       currentTerms: { fee: 650, dueDate: daysFromNow(10), additionalConditions: [], vendorNotes: 'Schedule conflict — already committed on that date' },
@@ -136,7 +136,7 @@ function buildRoundNegotiations(tenantId: string): Record<string, unknown>[] {
       id: NEGOTIATION_IDS.ACTIVE_COUNTER, tenantId, type: 'negotiation',
       orderId: ORDER_IDS.REVISION_010,
       vendorId: VENDOR_IDS.PREMIER,
-      clientId: 'client-alpine-mortgage',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.PACIFIC_COAST], clientRecordId: CLIENT_IDS.PACIFIC_COAST,
       status: 'VENDOR_COUNTERED',
       originalTerms: { fee: 500, dueDate: daysFromNow(14), rushFee: false, specialInstructions: '' },
       currentTerms: { fee: 575, dueDate: daysFromNow(14), additionalConditions: ['Mileage surcharge'], vendorNotes: 'Rural property — additional mileage and comparable difficulty' },
@@ -225,12 +225,12 @@ export const module: SeedModule = {
     }
 
     // Flat negotiations (simple accept/decline)
-    for (const neg of buildNegotiations(ctx.tenantId)) {
+    for (const neg of buildNegotiations(ctx.tenantId, ctx.clientId)) {
       await upsert(ctx, CONTAINER, neg, result);
     }
 
     // Round-based negotiations (multi-round counter-offer workflows)
-    for (const neg of buildRoundNegotiations(ctx.tenantId)) {
+    for (const neg of buildRoundNegotiations(ctx.tenantId, ctx.clientId)) {
       await upsert(ctx, CONTAINER, neg, result);
     }
 

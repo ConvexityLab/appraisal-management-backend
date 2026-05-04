@@ -5,6 +5,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { ServiceHealthCheckService } from '../services/service-health-check.service.js';
 import { Logger } from '../utils/logger.js';
+import { getEventPublishFailureStats } from '../utils/event-publish-failure-counter.js';
 
 const logger = new Logger();
 
@@ -136,6 +137,33 @@ export const createServiceHealthRouter = () => {
       res.status(500).json({
         success: false,
         error: 'Health check failed'
+      });
+    }
+  });
+
+  /**
+   * GET /api/health/event-publish-failures
+   *
+   * Returns the EventPublishFailureCounter stats: total failure count,
+   * per-event-type breakdown, and the most recent failure record. Used by
+   * ops to detect when event publication starts silently failing — the
+   * services that publish on a "best-effort, never-throw" basis (analysis-
+   * submission, audit-event-sink) record on this counter when the
+   * underlying Service Bus publish throws, so the value here climbs even
+   * though caller flow is unaffected.
+   *
+   * Counter is process-local; in a multi-instance deployment scrape every
+   * instance independently.
+   */
+  router.get('/event-publish-failures', healthApiKeyGuard, (_req: Request, res: Response) => {
+    try {
+      const stats = getEventPublishFailureStats();
+      res.json({ success: true, data: stats });
+    } catch (error) {
+      logger.error('Event-publish failure stats lookup failed', { error });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to read event-publish failure stats',
       });
     }
   });

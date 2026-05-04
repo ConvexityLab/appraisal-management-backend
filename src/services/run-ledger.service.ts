@@ -45,8 +45,10 @@ export class RunLedgerService {
       documentId: input.documentId,
       schemaKey: input.schemaKey,
       runReason: input.runReason,
+      ...(input.pipelineId ? { pipelineId: input.pipelineId } : {}),
       ...(input.engagementId ? { engagementId: input.engagementId } : {}),
       ...(input.loanPropertyContextId ? { loanPropertyContextId: input.loanPropertyContextId } : {}),
+      ...(input.sourceIdentity ? { sourceIdentity: input.sourceIdentity } : {}),
     };
 
     await this.persist(record);
@@ -77,13 +79,21 @@ export class RunLedgerService {
       engineRunRef: 'pending',
       engineRequestRef: 'pending',
       engineResponseRef: 'pending',
-      snapshotId: input.snapshotId,
+      ...(input.snapshotId ? { snapshotId: input.snapshotId } : {}),
       programKey: input.programKey,
       runMode: input.runMode,
+      ...(input.pipelineId ? { pipelineId: input.pipelineId } : {}),
       ...(input.rerunReason ? { rerunReason: input.rerunReason } : {}),
       ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
       ...(input.engagementId ? { engagementId: input.engagementId } : {}),
       ...(input.loanPropertyContextId ? { loanPropertyContextId: input.loanPropertyContextId } : {}),
+      ...(input.preparedContextId ? { preparedContextId: input.preparedContextId } : {}),
+      ...(input.preparedContextVersion ? { preparedContextVersion: input.preparedContextVersion } : {}),
+      ...(input.preparedDispatchId ? { preparedDispatchId: input.preparedDispatchId } : {}),
+      ...(input.preparedPayloadRef ? { preparedPayloadRef: input.preparedPayloadRef } : {}),
+      ...(input.preparedPayloadContractType ? { preparedPayloadContractType: input.preparedPayloadContractType } : {}),
+      ...(input.preparedPayloadContractVersion ? { preparedPayloadContractVersion: input.preparedPayloadContractVersion } : {}),
+      ...(input.sourceIdentity ? { sourceIdentity: input.sourceIdentity } : {}),
     };
 
     await this.persist(record);
@@ -130,6 +140,13 @@ export class RunLedgerService {
       ...(parentCriteriaRun.loanPropertyContextId
         ? { loanPropertyContextId: parentCriteriaRun.loanPropertyContextId }
         : {}),
+      ...(parentCriteriaRun.preparedContextId ? { preparedContextId: parentCriteriaRun.preparedContextId } : {}),
+      ...(parentCriteriaRun.preparedContextVersion ? { preparedContextVersion: parentCriteriaRun.preparedContextVersion } : {}),
+      ...(parentCriteriaRun.preparedDispatchId ? { preparedDispatchId: parentCriteriaRun.preparedDispatchId } : {}),
+      ...(parentCriteriaRun.preparedPayloadRef ? { preparedPayloadRef: parentCriteriaRun.preparedPayloadRef } : {}),
+      ...(parentCriteriaRun.preparedPayloadContractType ? { preparedPayloadContractType: parentCriteriaRun.preparedPayloadContractType } : {}),
+      ...(parentCriteriaRun.preparedPayloadContractVersion ? { preparedPayloadContractVersion: parentCriteriaRun.preparedPayloadContractVersion } : {}),
+      ...(parentCriteriaRun.sourceIdentity ? { sourceIdentity: parentCriteriaRun.sourceIdentity } : {}),
     };
 
     await this.persist(record);
@@ -191,6 +208,13 @@ export class RunLedgerService {
       ...(parentCriteriaRun.loanPropertyContextId
         ? { loanPropertyContextId: parentCriteriaRun.loanPropertyContextId }
         : {}),
+      ...(parentCriteriaRun.preparedContextId ? { preparedContextId: parentCriteriaRun.preparedContextId } : {}),
+      ...(parentCriteriaRun.preparedContextVersion ? { preparedContextVersion: parentCriteriaRun.preparedContextVersion } : {}),
+      ...(parentCriteriaRun.preparedDispatchId ? { preparedDispatchId: parentCriteriaRun.preparedDispatchId } : {}),
+      ...(parentCriteriaRun.preparedPayloadRef ? { preparedPayloadRef: parentCriteriaRun.preparedPayloadRef } : {}),
+      ...(parentCriteriaRun.preparedPayloadContractType ? { preparedPayloadContractType: parentCriteriaRun.preparedPayloadContractType } : {}),
+      ...(parentCriteriaRun.preparedPayloadContractVersion ? { preparedPayloadContractVersion: parentCriteriaRun.preparedPayloadContractVersion } : {}),
+      ...(parentCriteriaRun.sourceIdentity ? { sourceIdentity: parentCriteriaRun.sourceIdentity } : {}),
     };
 
     await this.persist(stepRecord);

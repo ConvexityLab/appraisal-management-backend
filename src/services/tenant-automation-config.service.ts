@@ -1,22 +1,22 @@
 /**
- * Tenant Automation Config Service
+ * Client Config Service
  *
- * Manages per-tenant automation settings stored in Cosmos DB.
- * Falls back to DEFAULT_TENANT_AUTOMATION_CONFIG when no document exists.
+ * Manages per-client automation settings stored in Cosmos DB.
+ * Falls back to DEFAULT_CLIENT_AUTOMATION_CONFIG when no document exists.
  *
- * Container: 'tenant-automation-configs'
- * Partition key: tenantId
+ * Container: 'client-configs'
+ * Partition key: clientId
  */
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import {
-  TenantAutomationConfig,
-  UpdateTenantAutomationConfigRequest,
-  DEFAULT_TENANT_AUTOMATION_CONFIG,
+  ClientAutomationConfig,
+  UpdateClientAutomationConfigRequest,
+  DEFAULT_CLIENT_AUTOMATION_CONFIG,
 } from '../types/tenant-automation-config.types.js';
 import { Logger } from '../utils/logger.js';
 
-const CONTAINER = 'tenant-automation-configs';
+const CONTAINER = 'client-configs';
 
 export class TenantAutomationConfigService {
   private readonly db: CosmosDbService;
@@ -30,80 +30,100 @@ export class TenantAutomationConfigService {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /**
-   * Returns the automation config for the given tenant.
-   * When no document exists the caller receives DEFAULT_TENANT_AUTOMATION_CONFIG
-   * so that features degrade gracefully without silent magic defaults in business
-   * logic (callers always get an explicit, typed object).
+   * Returns the automation config for the given client, with optional
+   * sub-client override cascade:
+   *   1. clientId + subClientId (sub-client-specific config)
+   *   2. clientId + subClientId="platform" (client-wide defaults)
+   *   3. DEFAULT_CLIENT_AUTOMATION_CONFIG (hardcoded fallback)
    */
-  async getConfig(tenantId: string): Promise<TenantAutomationConfig> {
-    if (!tenantId) {
-      throw new Error('tenantId is required');
+  async getConfig(clientId: string, subClientId?: string): Promise<ClientAutomationConfig> {
+    if (!clientId) {
+      throw new Error('clientId is required');
     }
 
-    this.logger.info('Loading automation config', { tenantId });
+    // Try sub-client-specific config first
+    if (subClientId && subClientId !== 'platform') {
+      this.logger.info('Loading sub-client automation config', { clientId, subClientId });
+      const subResult = await this.db.queryItems<ClientAutomationConfig>(
+        CONTAINER,
+        'SELECT * FROM c WHERE c.clientId = @clientId AND c.subClientId = @subClientId AND c.entityType = @entityType',
+        [
+          { name: '@clientId', value: clientId },
+          { name: '@subClientId', value: subClientId },
+          { name: '@entityType', value: 'client-config' },
+        ],
+      );
+      if (subResult.success && subResult.data && subResult.data.length > 0) {
+        return subResult.data[0]!;
+      }
+      this.logger.info('No sub-client config — falling back to client-level', { clientId, subClientId });
+    }
 
-    const result = await this.db.queryItems<TenantAutomationConfig>(
+    // Fall back to client-level (platform) config
+    this.logger.info('Loading client automation config', { clientId });
+    const result = await this.db.queryItems<ClientAutomationConfig>(
       CONTAINER,
-      'SELECT * FROM c WHERE c.tenantId = @tenantId AND c.entityType = @entityType',
+      'SELECT * FROM c WHERE c.clientId = @clientId AND (c.subClientId = @platform OR NOT IS_DEFINED(c.subClientId)) AND c.entityType = @entityType',
       [
-        { name: '@tenantId', value: tenantId },
-        { name: '@entityType', value: 'tenant-automation-config' },
+        { name: '@clientId', value: clientId },
+        { name: '@platform', value: 'platform' },
+        { name: '@entityType', value: 'client-config' },
       ],
     );
 
     if (!result.success || !result.data || result.data.length === 0) {
-      this.logger.info('No config found — returning defaults', { tenantId });
+      this.logger.info('No config found — returning defaults', { clientId });
       const now = new Date().toISOString();
       return {
-        ...DEFAULT_TENANT_AUTOMATION_CONFIG,
-        id: `automation-config-${tenantId}`,
-        tenantId,
+        ...DEFAULT_CLIENT_AUTOMATION_CONFIG,
+        id: `client-config-${clientId}`,
+        clientId,
         updatedAt: now,
         updatedBy: 'system',
         createdAt: now,
       };
     }
 
-    return result.data[0]!
+    return result.data[0]!;
   }
 
   /**
-   * Creates or replaces the automation config for the given tenant.
+   * Creates or replaces the automation config for the given client.
    * Always does a full upsert (idempotent).
    */
   async updateConfig(
-    tenantId: string,
-    update: UpdateTenantAutomationConfigRequest,
+    clientId: string,
+    update: UpdateClientAutomationConfigRequest,
     updatedBy: string,
-  ): Promise<TenantAutomationConfig> {
-    if (!tenantId) throw new Error('tenantId is required');
+  ): Promise<ClientAutomationConfig> {
+    if (!clientId) throw new Error('clientId is required');
     if (!updatedBy) throw new Error('updatedBy is required');
 
     // Load existing or start from defaults so we only override explicit fields.
-    const existing = await this.getConfig(tenantId);
+    const existing = await this.getConfig(clientId);
 
     const now = new Date().toISOString();
 
-    const updated: TenantAutomationConfig = {
+    const updated: ClientAutomationConfig = {
       ...existing,
       ...update,
-      tenantId,
-      entityType: 'tenant-automation-config' as const,
-      id: existing.id ?? `automation-config-${tenantId}`,
+      clientId,
+      entityType: 'client-config' as const,
+      id: existing.id ?? `client-config-${clientId}`,
       updatedAt: now,
       updatedBy,
       createdAt: existing.createdAt ?? now,
     };
 
-    const upsertResult = await this.db.upsertItem<TenantAutomationConfig>(CONTAINER, updated);
+    const upsertResult = await this.db.upsertItem<ClientAutomationConfig>(CONTAINER, updated);
 
     if (!upsertResult.success || !upsertResult.data) {
-      const message = `Failed to persist automation config for tenant ${tenantId}`;
-      this.logger.error(message, { tenantId, error: upsertResult.error });
+      const message = `Failed to persist automation config for client ${clientId}`;
+      this.logger.error(message, { clientId, error: upsertResult.error });
       throw new Error(message);
     }
 
-    this.logger.info('Automation config updated', { tenantId, updatedBy });
+    this.logger.info('Automation config updated', { clientId, updatedBy });
     return upsertResult.data;
   }
 
@@ -112,17 +132,17 @@ export class TenantAutomationConfigService {
    * retrieving the entire config doc.
    */
   async isFeatureEnabled(
-    tenantId: string,
+    clientId: string,
     feature: keyof Pick<
-      TenantAutomationConfig,
+      ClientAutomationConfig,
       'autoAssignmentEnabled' | 'bidLoopEnabled' | 'supervisoryReviewForAllOrders'
     >,
   ): Promise<boolean> {
-    const config = await this.getConfig(tenantId);
+    const config = await this.getConfig(clientId);
     const value = config[feature];
     if (typeof value !== 'boolean') {
       throw new Error(
-        `Feature flag '${feature}' is not a boolean on TenantAutomationConfig`,
+        `Feature flag '${feature}' is not a boolean on ClientAutomationConfig`,
       );
     }
     return value;

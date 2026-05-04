@@ -7,6 +7,7 @@ import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { DocumentMetadata, DocumentListQuery, DocumentUpdateRequest } from '../types/document.types';
 import { ApiResponse } from '../types/index';
 import { EventCategory } from '../types/events.js';
+import { buildManualDraftSourceIdentity, extendIntakeSourceIdentity } from '../types/intake-source.types.js';
 
 export class DocumentService {
   /** Cosmos container for document metadata */
@@ -70,8 +71,9 @@ export class DocumentService {
       });
 
       // Create document metadata
+      const documentId = uuidv4();
       const document: DocumentMetadata = {
-        id: uuidv4(),
+        id: documentId,
         tenantId,
         ...(orderId && { orderId }),
         name: file.originalname,
@@ -89,7 +91,16 @@ export class DocumentService {
         uploadedAt: new Date(),
         ...(metadata && { metadata }),
         ...(entityType && { entityType }),
-        ...(entityId && { entityId })
+        ...(entityId && { entityId }),
+        ...(entityType === 'order-intake-draft' && entityId
+          ? {
+              sourceIdentity: buildManualDraftSourceIdentity({
+                intakeDraftId: entityId,
+                ...(orderId ? { orderId } : {}),
+                documentId,
+              }),
+            }
+          : {})
       };
 
       // Save to Cosmos DB
@@ -108,6 +119,7 @@ export class DocumentService {
           documentId: document.id,
           ...(document.orderId && { orderId: document.orderId }),
           tenantId: document.tenantId,
+          ...(document.clientId && { clientId: document.clientId }),
           ...(document.category && { category: document.category }),
           ...(document.documentType && { documentType: document.documentType }),
           blobName: document.blobName,
@@ -198,6 +210,100 @@ export class DocumentService {
           message: error instanceof Error ? error.message : 'Failed to list documents',
           timestamp: new Date()
         }
+      };
+    }
+  }
+
+  async associateEntityDocumentsToOrder(params: {
+    tenantId: string;
+    entityType: string;
+    entityId: string;
+    orderId: string;
+    linkedBy: string;
+    linkReason?: string;
+  }): Promise<ApiResponse<DocumentMetadata[]>> {
+    try {
+      const response = await this.cosmosService.queryItems<DocumentMetadata>(
+        this.containerName,
+        'SELECT * FROM c WHERE c.tenantId = @tenantId AND c.entityType = @entityType AND c.entityId = @entityId ORDER BY c.uploadedAt DESC',
+        [
+          { name: '@tenantId', value: params.tenantId },
+          { name: '@entityType', value: params.entityType },
+          { name: '@entityId', value: params.entityId },
+        ],
+      );
+
+      if (!response.success) {
+        return {
+          success: false,
+          ...(response.error ? { error: response.error } : {}),
+        };
+      }
+
+      const documents = response.data ?? [];
+      if (documents.length === 0) {
+        return {
+          success: true,
+          data: [],
+        };
+      }
+
+      const now = new Date();
+      const updatedDocuments: DocumentMetadata[] = [];
+
+      for (const document of documents) {
+        if (document.orderId === params.orderId) {
+          updatedDocuments.push(document);
+          continue;
+        }
+
+        const updatedDocument: DocumentMetadata = {
+          ...document,
+          orderId: params.orderId,
+          updatedAt: now,
+          orderLinkedAt: now,
+          orderLinkedBy: params.linkedBy,
+          ...(document.sourceIdentity || document.entityType === 'order-intake-draft' || params.entityType === 'order-intake-draft'
+            ? {
+                sourceIdentity:
+                  extendIntakeSourceIdentity(document.sourceIdentity, {
+                    orderId: params.orderId,
+                    documentId: document.id,
+                  }) ?? buildManualDraftSourceIdentity({
+                    intakeDraftId: document.entityId ?? params.entityId,
+                    orderId: params.orderId,
+                    documentId: document.id,
+                  }),
+              }
+            : {}),
+          metadata: {
+            ...(document.metadata ?? {}),
+            linkedFromEntityType: document.entityType ?? params.entityType,
+            linkedFromEntityId: document.entityId ?? params.entityId,
+            linkedToOrderId: params.orderId,
+            linkedToOrderAt: now.toISOString(),
+            linkedToOrderBy: params.linkedBy,
+            ...(params.linkReason ? { linkedToOrderReason: params.linkReason } : {}),
+          },
+        };
+
+        await this.container.item(document.id, params.tenantId).replace(updatedDocument);
+        updatedDocuments.push(updatedDocument);
+      }
+
+      return {
+        success: true,
+        data: updatedDocuments,
+      };
+    } catch (error) {
+      console.error('Error associating entity documents to order:', error);
+      return {
+        success: false,
+        error: {
+          code: 'DOCUMENT_ORDER_ASSOCIATION_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to associate entity documents to order',
+          timestamp: new Date(),
+        },
       };
     }
   }

@@ -5,6 +5,7 @@ import {
   loadLiveFireContext,
   logConfig,
   logSection,
+  sleep,
 } from './_axiom-live-fire-common.js';
 
 interface OrderSummary {
@@ -17,6 +18,11 @@ interface OrderSummary {
 
 interface OrdersResponse {
   orders?: OrderSummary[];
+}
+
+interface WrappedOrderResponse {
+  success?: boolean;
+  data?: OrderSummary;
 }
 
 interface DocumentSummary {
@@ -43,10 +49,71 @@ function hasUsableBlob(document: DocumentSummary): boolean {
   return Boolean((document.blobPath && document.blobPath.trim()) || (document.blobUrl && document.blobUrl.trim()));
 }
 
-function hasTenantAndClient(order: OrderSummary): boolean {
+function hasTenantAndClient(order: OrderSummary | undefined): boolean {
+  if (!order) return false;
   const tenantId = typeof order.tenantId === 'string' ? order.tenantId.trim() : '';
   const clientId = typeof order.clientId === 'string' ? order.clientId.trim() : '';
   return Boolean(tenantId) && Boolean(clientId);
+}
+
+function parseClientAllowlist(): Set<string> {
+  const raw = process.env['AXIOM_LIVE_PREFLIGHT_CLIENT_ID_ALLOWLIST'];
+  if (!raw || !raw.trim()) {
+    return new Set<string>();
+  }
+
+  const items = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return new Set(items);
+}
+
+function isAllowedClient(order: OrderSummary | undefined, allowlist: Set<string>): boolean {
+  if (allowlist.size === 0) {
+    return true;
+  }
+
+  const clientId = typeof order?.clientId === 'string' ? order.clientId.trim() : '';
+  return clientId.length > 0 && allowlist.has(clientId);
+}
+
+async function getJsonWith429Retry<T>(
+  url: string,
+  headers: Record<string, string>,
+  attempts = 3,
+  retryDelayMs = 1500,
+): Promise<{ status: number; data: T }> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const res = await getJson<T>(url, headers);
+    if (res.status !== 429) {
+      return res;
+    }
+
+    if (attempt < attempts) {
+      await sleep(retryDelayMs * attempt);
+    }
+  }
+
+  return getJson<T>(url, headers);
+}
+
+function extractOrder(payload: OrderSummary | WrappedOrderResponse | undefined): OrderSummary | undefined {
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+
+  if ('orderId' in payload || 'id' in payload) {
+    return payload as OrderSummary;
+  }
+
+  const wrapped = payload as WrappedOrderResponse;
+  if (wrapped.data && typeof wrapped.data === 'object') {
+    return wrapped.data;
+  }
+
+  return undefined;
 }
 
 function quotePwsh(value: string): string {
@@ -62,6 +129,7 @@ async function main(): Promise<void> {
 
   const pageLimit = Number(process.env['AXIOM_LIVE_PREFLIGHT_ORDER_LIMIT'] ?? '50');
   const maxScan = Number(process.env['AXIOM_LIVE_PREFLIGHT_MAX_SCAN'] ?? '200');
+  const allowedClients = parseClientAllowlist();
 
   if (!Number.isFinite(pageLimit) || pageLimit <= 0) {
     throw new Error(`AXIOM_LIVE_PREFLIGHT_ORDER_LIMIT must be a positive number. Received: ${process.env['AXIOM_LIVE_PREFLIGHT_ORDER_LIMIT']}`);
@@ -70,9 +138,13 @@ async function main(): Promise<void> {
     throw new Error(`AXIOM_LIVE_PREFLIGHT_MAX_SCAN must be a positive number. Received: ${process.env['AXIOM_LIVE_PREFLIGHT_MAX_SCAN']}`);
   }
 
-  logConfig(context, { pageLimit, maxScan });
+  logConfig(context, {
+    pageLimit,
+    maxScan,
+    allowedClients: allowedClients.size > 0 ? Array.from(allowedClients).join(',') : undefined,
+  });
 
-  logSection('Step 1: Scan /api/orders for candidate orders');
+  logSection('Step 1: Scan /api/documents for candidate pairs');
 
   const scanned: string[] = [];
   let selectedOrder: OrderSummary | undefined;
@@ -80,48 +152,55 @@ async function main(): Promise<void> {
   let selectedDocument: DocumentSummary | undefined;
 
   for (let offset = 0; offset < maxScan; offset += pageLimit) {
-    const ordersRes = await getJson<OrdersResponse>(
-      `${context.baseUrl}/api/orders?limit=${pageLimit}&offset=${offset}`,
+    const docsRes = await getJsonWith429Retry<DocumentsResponse>(
+      `${context.baseUrl}/api/documents?limit=${pageLimit}&offset=${offset}`,
       context.authHeader,
     );
 
-    if (ordersRes.status !== 200) {
-      throw new Error(`GET /api/orders failed with status ${ordersRes.status}: ${JSON.stringify(ordersRes.data)}`);
+    if (docsRes.status !== 200) {
+      continue;
     }
 
-    const orders = Array.isArray(ordersRes.data?.orders) ? ordersRes.data.orders : [];
-    if (orders.length === 0) {
+    const documents = Array.isArray(docsRes.data?.documents) ? docsRes.data.documents : [];
+    if (documents.length === 0) {
       break;
     }
 
-    for (const order of orders) {
-      const orderId = requiredOrderId(order);
+    for (const doc of documents) {
+      const orderId = typeof doc.orderId === 'string' ? doc.orderId.trim() : '';
       if (!orderId) {
         continue;
       }
-
-      if (!hasTenantAndClient(order)) {
+      scanned.push(orderId);
+      if (!(typeof doc.id === 'string' && doc.id.trim()) || !hasUsableBlob(doc)) {
         continue;
       }
 
-      scanned.push(orderId);
-      const docsRes = await getJson<DocumentsResponse>(
-        `${context.baseUrl}/api/documents?orderId=${encodeURIComponent(orderId)}&limit=100&offset=0`,
+      selectedOrderId = orderId;
+      selectedDocument = doc;
+
+      const orderRes = await getJsonWith429Retry<OrderSummary | WrappedOrderResponse>(
+        `${context.baseUrl}/api/orders/${encodeURIComponent(selectedOrderId)}`,
         context.authHeader,
       );
 
-      if (docsRes.status !== 200) {
+      if (orderRes.status !== 200) {
+        selectedOrder = undefined;
+        selectedOrderId = undefined;
+        selectedDocument = undefined;
         continue;
       }
 
-      const documents = Array.isArray(docsRes.data?.documents) ? docsRes.data.documents : [];
-      const candidateDoc = documents.find((doc) => typeof doc.id === 'string' && doc.id.trim() && hasUsableBlob(doc));
-      if (candidateDoc) {
-        selectedOrder = order;
-        selectedOrderId = orderId;
-        selectedDocument = candidateDoc;
-        break;
+      const resolvedOrder = extractOrder(orderRes.data);
+      if (!isAllowedClient(resolvedOrder, allowedClients)) {
+        selectedOrder = undefined;
+        selectedOrderId = undefined;
+        selectedDocument = undefined;
+        continue;
       }
+
+      selectedOrder = resolvedOrder;
+      break;
     }
 
     if (selectedOrderId && selectedDocument) {
@@ -130,52 +209,70 @@ async function main(): Promise<void> {
   }
 
   if (!selectedOrderId || !selectedDocument?.id) {
-    logSection('Step 2: Fallback scan /api/documents for blob-backed docs');
+    logSection('Step 2: Fallback scan /api/orders and order-scoped documents');
 
-    const docsRes = await getJson<DocumentsResponse>(
-      `${context.baseUrl}/api/documents?limit=${maxScan}&offset=0`,
-      context.authHeader,
-    );
+    for (let offset = 0; offset < maxScan; offset += pageLimit) {
+      const ordersRes = await getJsonWith429Retry<OrdersResponse>(
+        `${context.baseUrl}/api/orders?limit=${pageLimit}&offset=${offset}`,
+        context.authHeader,
+      );
 
-    if (docsRes.status === 200) {
-      const docs = Array.isArray(docsRes.data?.documents) ? docsRes.data.documents : [];
-      const fallbackDoc = docs.find((doc) => {
-        const orderId = typeof doc.orderId === 'string' ? doc.orderId.trim() : '';
-        return Boolean(orderId) && typeof doc.id === 'string' && doc.id.trim() && hasUsableBlob(doc);
-      });
+      if (ordersRes.status !== 200) {
+        throw new Error(`GET /api/orders failed with status ${ordersRes.status}: ${JSON.stringify(ordersRes.data)}`);
+      }
 
-      if (fallbackDoc?.id && fallbackDoc.orderId) {
-        selectedOrderId = fallbackDoc.orderId;
-        selectedDocument = fallbackDoc;
+      const orders = Array.isArray(ordersRes.data?.orders) ? ordersRes.data.orders : [];
+      if (orders.length === 0) {
+        break;
+      }
 
-        const orderRes = await getJson<OrderSummary>(
-          `${context.baseUrl}/api/orders/${encodeURIComponent(selectedOrderId)}`,
+      for (const order of orders) {
+        if (!isAllowedClient(order, allowedClients)) {
+          continue;
+        }
+
+        const orderId = requiredOrderId(order);
+        if (!orderId) {
+          continue;
+        }
+
+        scanned.push(orderId);
+        const docsRes = await getJsonWith429Retry<DocumentsResponse>(
+          `${context.baseUrl}/api/documents?orderId=${encodeURIComponent(orderId)}&limit=100&offset=0`,
           context.authHeader,
         );
 
-        if (orderRes.status === 200 && orderRes.data && hasTenantAndClient(orderRes.data)) {
-          selectedOrder = orderRes.data;
-        } else {
-          selectedOrderId = undefined;
-          selectedDocument = undefined;
-          selectedOrder = undefined;
+        if (docsRes.status !== 200) {
+          continue;
         }
+
+        const documents = Array.isArray(docsRes.data?.documents) ? docsRes.data.documents : [];
+        const candidateDoc = documents.find((doc) => typeof doc.id === 'string' && doc.id.trim() && hasUsableBlob(doc));
+        if (candidateDoc) {
+          selectedOrder = order;
+          selectedOrderId = orderId;
+          selectedDocument = candidateDoc;
+          break;
+        }
+      }
+
+      if (selectedOrderId && selectedDocument) {
+        break;
       }
     }
   }
 
-  if (!selectedOrder || !selectedOrderId || !selectedDocument?.id) {
+  if (!selectedOrderId || !selectedDocument?.id) {
     throw new Error(
       `No valid order/document pair found. ` +
       `Order-first scan checked ${Math.min(scanned.length, maxScan)} order(s). ` +
-      'Fallback document scan also found no document with id + orderId + blobPath/blobUrl + order tenant/client linkage.',
+      'Fallback document scan also found no document with id + orderId + blobPath/blobUrl.',
     );
   }
 
-  const resolvedClientId =
-    (typeof selectedOrder.clientId === 'string' && selectedOrder.clientId.trim())
-      ? selectedOrder.clientId.trim()
-      : context.clientId;
+  const resolvedClientId = hasTenantAndClient(selectedOrder)
+    ? (selectedOrder as OrderSummary).clientId!.trim()
+    : context.clientId;
 
   logSection('Preflight result');
   console.log(`✓ orderId=${selectedOrderId}`);

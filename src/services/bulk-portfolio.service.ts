@@ -20,14 +20,19 @@ import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ReviewDocumentExtractionService } from './review-document-extraction.service.js';
 import { BlobStorageService } from './blob-storage.service.js';
 import { DocumentService } from './document.service.js';
+import { PropertyRecordService } from './property-record.service.js';
+import { PropertyEnrichmentService } from './property-enrichment.service.js';
+import { EngagementService } from './engagement.service.js';
 import {
   ANALYSIS_TYPE_TO_PRODUCT_TYPE,
   BulkAnalysisType,
+  BulkEngagementGranularity,
   BulkJobStatus,
   BulkPortfolioItem,
   BulkPortfolioJob,
   BulkSubmitRequest,
 } from '../types/bulk-portfolio.types.js';
+import type { CreateEngagementLoanRequest } from '../types/engagement.types.js';
 import type {
   RiskTapeItem,
   ReviewTapeResult,
@@ -88,10 +93,18 @@ export class BulkPortfolioService {
   private _axiomService: AxiomService | null = null;
   private _extractionService: ReviewDocumentExtractionService | null = null;
   private _documentService: DocumentService | null = null;
+  private _propertyRecordService: PropertyRecordService | null = null;
+  private _propertyEnrichmentService: PropertyEnrichmentService | null = null;
+  private _engagementService: EngagementService | null = null;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.logger = new Logger();
     this.eventPublisher = new ServiceBusEventPublisher();
+
+    // P2-AX-01: force extraction-service configuration validation during startup
+    // so missing AXIOM_API_BASE_URL is visible immediately rather than only on
+    // the first DOCUMENT_EXTRACTION request.
+    void this.extractionService;
   }
 
   private get tapeEvaluationService(): TapeEvaluationService {
@@ -123,6 +136,31 @@ export class BulkPortfolioService {
     return this._documentService;
   }
 
+  private get propertyRecordService(): PropertyRecordService {
+    if (!this._propertyRecordService) {
+      this._propertyRecordService = new PropertyRecordService(this.dbService);
+    }
+    return this._propertyRecordService;
+  }
+
+  private get propertyEnrichmentService(): PropertyEnrichmentService {
+    if (!this._propertyEnrichmentService) {
+      this._propertyEnrichmentService = new PropertyEnrichmentService(this.dbService, this.propertyRecordService);
+    }
+    return this._propertyEnrichmentService;
+  }
+
+  private get engagementService(): EngagementService {
+    if (!this._engagementService) {
+      this._engagementService = new EngagementService(
+        this.dbService,
+        this.propertyRecordService,
+        this.propertyEnrichmentService,
+      );
+    }
+    return this._engagementService;
+  }
+
   // ─── submit ────────────────────────────────────────────────────────────────
 
   /**
@@ -144,6 +182,7 @@ export class BulkPortfolioService {
       jobId,
       clientId: request.clientId,
       rowCount: request.items.length,
+      engagementId: request.engagementId,
       processingMode: request.processingMode ?? 'ORDER_CREATION',
     });
 
@@ -161,6 +200,26 @@ export class BulkPortfolioService {
     // request.items is guaranteed to be BulkPortfolioItem[] here because the
     // TAPE_EVALUATION branch returned early above.
     const orderItems = request.items as BulkPortfolioItem[];
+    const engagementGranularity: BulkEngagementGranularity = request.engagementGranularity ?? 'PER_BATCH';
+    if (request.engagementId && engagementGranularity === 'PER_LOAN') {
+      throw new Error('engagementGranularity PER_LOAN cannot be used when an existing engagementId is provided');
+    }
+
+    const validationByRowIndex = new Map<number, string[]>();
+    const validOrderItems: BulkPortfolioItem[] = [];
+    for (const item of orderItems) {
+      const errors = this._validateItem(item);
+      validationByRowIndex.set(item.rowIndex, errors);
+      if (errors.length === 0) {
+        validOrderItems.push(item);
+      }
+    }
+
+    const batchEngagementId =
+      !request.engagementId && engagementGranularity === 'PER_BATCH' && validOrderItems.length > 0
+        ? await this._createBatchEngagement(validOrderItems, request.clientId, tenantId, submittedBy, jobId)
+        : undefined;
+
     const results: BulkPortfolioItem[] = [];
     let successCount = 0;
     let failCount = 0;
@@ -168,11 +227,22 @@ export class BulkPortfolioService {
 
     for (const item of orderItems) {
       // Row-level validation
-      const errors = this._validateItem(item);
+      const errors = validationByRowIndex.get(item.rowIndex) ?? [];
       if (errors.length > 0) {
         results.push({ ...item, status: 'INVALID', validationErrors: errors });
         skippedCount++;
         continue;
+      }
+
+      let resolvedEngagementId = request.engagementId ?? batchEngagementId;
+      if (!resolvedEngagementId && engagementGranularity === 'PER_LOAN') {
+        resolvedEngagementId = await this._createLoanEngagement(
+          item,
+          request.clientId,
+          tenantId,
+          submittedBy,
+          jobId,
+        );
       }
 
       // Build AppraisalOrder shape
@@ -182,6 +252,7 @@ export class BulkPortfolioService {
       const orderPayload = {
         tenantId,
         clientId: request.clientId,
+        ...(resolvedEngagementId ? { engagementId: resolvedEngagementId } : {}),
         orderNumber: this._generateOrderNumber(item),
         type: 'order' as const,
         orderType: this._inferOrderType(item),
@@ -237,6 +308,7 @@ export class BulkPortfolioService {
         if (result.success && result.data) {
           const resultItem: BulkPortfolioItem = {
             ...item,
+            ...(resolvedEngagementId ? { engagementId: resolvedEngagementId } : {}),
             status: 'CREATED',
             orderId: result.data.id,
             orderNumber: (result.data as any).orderNumber,
@@ -310,7 +382,12 @@ export class BulkPortfolioService {
             rowIndex: item.rowIndex,
             error: msg,
           });
-          results.push({ ...item, status: 'FAILED', errorMessage: msg });
+          results.push({
+            ...item,
+            ...(resolvedEngagementId ? { engagementId: resolvedEngagementId } : {}),
+            status: 'FAILED',
+            errorMessage: msg,
+          });
           failCount++;
         }
       } catch (err) {
@@ -319,7 +396,12 @@ export class BulkPortfolioService {
           rowIndex: item.rowIndex,
           error: msg,
         });
-        results.push({ ...item, status: 'FAILED', errorMessage: msg });
+        results.push({
+          ...item,
+          ...(resolvedEngagementId ? { engagementId: resolvedEngagementId } : {}),
+          status: 'FAILED',
+          errorMessage: msg,
+        });
         failCount++;
       }
     }
@@ -336,6 +418,12 @@ export class BulkPortfolioService {
       tenantId,
       clientId: request.clientId,
       ...(request.jobName !== undefined ? { jobName: request.jobName } : {}),
+      engagementGranularity,
+      ...(request.engagementId !== undefined
+        ? { engagementId: request.engagementId }
+        : batchEngagementId !== undefined
+          ? { engagementId: batchEngagementId }
+          : {}),
       fileName: request.fileName,
       status: finalStatus,
       submittedAt: now,
@@ -442,6 +530,7 @@ export class BulkPortfolioService {
       tenantId,
       clientId: request.clientId,
       ...(request.jobName !== undefined ? { jobName: request.jobName } : {}),
+      ...(request.engagementId !== undefined ? { engagementId: request.engagementId } : {}),
       fileName: request.fileName,
       status: 'COMPLETED',
       processingMode: 'TAPE_EVALUATION',
@@ -486,7 +575,7 @@ export class BulkPortfolioService {
       timestamp: new Date(),
       source: 'bulk-portfolio-service',
       version: '1.0',
-      category: EventCategory.QC,
+      category: EventCategory.AXIOM,
       data: {
         jobId,
         tenantId,
@@ -519,6 +608,7 @@ export class BulkPortfolioService {
     jobId: string,
     tenantId: string,
     clientId: string,
+    subClientId: string,
     reviewProgramId?: string,
   ): Promise<{ pipelineJobId: string; batchId: string }> {
     const job = await this.getJob(jobId, tenantId);
@@ -559,6 +649,7 @@ export class BulkPortfolioService {
       loanSubmissions,
       tenantId,
       clientId,
+      subClientId,
       reviewProgramId ?? job.reviewProgramId,
     );
 
@@ -660,6 +751,7 @@ export class BulkPortfolioService {
       tenantId,
       clientId: request.clientId,
       ...(request.jobName !== undefined ? { jobName: request.jobName } : {}),
+      ...(request.engagementId !== undefined ? { engagementId: request.engagementId } : {}),
       fileName: request.fileName,
       status: failCount === docMap.size ? 'FAILED' : 'PROCESSING',
       processingMode: 'DOCUMENT_EXTRACTION',
@@ -1581,6 +1673,81 @@ export class BulkPortfolioService {
     if (purpose === 'REFINANCE' || purpose === 'CASH_OUT') return OrderType.REFINANCE;
     if (purpose === 'HELOC' || purpose === 'EQUITY_LINE') return OrderType.EQUITY_LINE;
     return OrderType.REFINANCE; // safe default for review-type bulk orders
+  }
+
+  private async _createBatchEngagement(
+    items: BulkPortfolioItem[],
+    clientId: string,
+    tenantId: string,
+    submittedBy: string,
+    jobId: string,
+  ): Promise<string> {
+    const engagement = await this.engagementService.createEngagement({
+      tenantId,
+      createdBy: submittedBy,
+      client: {
+        clientId,
+        clientName: clientId,
+      },
+      loans: items.map((item) => this._buildEngagementLoanInput(item, jobId)),
+    });
+
+    return engagement.id;
+  }
+
+  private async _createLoanEngagement(
+    item: BulkPortfolioItem,
+    clientId: string,
+    tenantId: string,
+    submittedBy: string,
+    jobId: string,
+  ): Promise<string> {
+    const engagement = await this.engagementService.createEngagement({
+      tenantId,
+      createdBy: submittedBy,
+      client: {
+        clientId,
+        clientName: clientId,
+      },
+      loans: [this._buildEngagementLoanInput(item, jobId)],
+    });
+
+    return engagement.id;
+  }
+
+  private _buildEngagementLoanInput(
+    item: BulkPortfolioItem,
+    jobId: string,
+  ): CreateEngagementLoanRequest {
+    return {
+      loanNumber: item.loanNumber ?? `bulk-${jobId}-${item.rowIndex}`,
+      borrowerName: `${item.borrowerFirstName} ${item.borrowerLastName}`.trim(),
+      ...(item.borrowerEmail ? { borrowerEmail: item.borrowerEmail } : {}),
+      ...(item.loanType ? { loanType: item.loanType } : {}),
+      property: {
+        address: item.propertyAddress,
+        city: item.city,
+        state: item.state,
+        zipCode: item.zipCode,
+        county: item.county ?? '',
+        coordinates: {
+          latitude: 0,
+          longitude: 0,
+        },
+        ...(item.apn ? { parcelNumber: item.apn } : {}),
+        propertyType: 'SINGLE_FAMILY',
+        ...(item.yearBuilt !== undefined ? { yearBuilt: item.yearBuilt } : {}),
+        ...(item.lotSize !== undefined ? { lotSize: item.lotSize } : {}),
+        ...(item.bedrooms !== undefined ? { bedrooms: item.bedrooms } : {}),
+        ...(item.bathrooms !== undefined ? { bathrooms: item.bathrooms } : {}),
+      },
+      products: [
+        { productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[item.analysisType] },
+        ...(item.additionalProducts ?? []).map((product) => ({
+          productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[product.analysisType],
+        })),
+      ],
+    };
   }
 
   /** Build metadata object with all extra UAD / review fields */

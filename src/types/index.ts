@@ -883,6 +883,7 @@ export interface AgentConfig {
 
 // Additional service interfaces
 export interface OrderFilters {
+  tenantId?: string;
   clientId?: string;
   status?: OrderStatus[];
   productType?: ProductType[];

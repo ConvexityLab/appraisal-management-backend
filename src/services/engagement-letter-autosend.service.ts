@@ -110,13 +110,7 @@ export class EngagementLetterAutoSendService {
     vendorId: string,
     vendorName: string,
   ): Promise<void> {
-    const config = await this.tenantConfigService.getConfig(tenantId);
-    if (!config.engagementLetterAutoSend) {
-      this.logger.info('engagementLetterAutoSend disabled for tenant — skipping', { tenantId, orderId });
-      return;
-    }
-
-    // Load order to get productType and other needed fields
+    // Load order to get clientId, productType and other needed fields
     const orderResult = await this.dbService.findOrderById(orderId);
     if (!orderResult.success || !orderResult.data) {
       this.logger.warn('Cannot auto-send engagement letter: order not found', { orderId });
@@ -124,7 +118,17 @@ export class EngagementLetterAutoSendService {
     }
     const order = orderResult.data as unknown as Record<string, unknown>;
     const productType = (order['productType'] as string | undefined) ?? 'full_appraisal';
-    const clientId = (order['clientId'] as string | undefined) ?? tenantId;
+    const clientId = order['clientId'] as string;
+    if (!clientId) {
+      this.logger.warn('Cannot auto-send engagement letter: order has no clientId', { orderId });
+      return;
+    }
+
+    const config = await this.tenantConfigService.getConfig(clientId);
+    if (!config.engagementLetterAutoSend) {
+      this.logger.info('engagementLetterAutoSend disabled for client — skipping', { clientId, orderId });
+      return;
+    }
 
     // Get vendor email
     const vendorEmail = await this.getVendorEmail(vendorId, tenantId);
@@ -197,6 +201,7 @@ export class EngagementLetterAutoSendService {
         orderId,
         orderNumber,
         tenantId,
+        clientId,
         vendorId,
         letterId: letter.letterId,
         signingToken: signing.token,

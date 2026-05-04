@@ -3,7 +3,8 @@
  * Streamlined controller using the proven CosmosDbService for order CRUD operations
  */
 
-import { Request, Response } from 'express';
+import { Response } from 'express';
+import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { 
@@ -28,7 +29,7 @@ export class ProductionOrderController {
   /**
    * POST /api/orders - Create a new appraisal order
    */
-  createOrder = async (req: Request, res: Response): Promise<void> => {
+  createOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const orderData = {
         ...req.body,
@@ -67,7 +68,7 @@ export class ProductionOrderController {
   /**
    * GET /api/orders/:id - Get order by ID
    */
-  getOrder = async (req: Request, res: Response): Promise<void> => {
+  getOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
 
@@ -112,7 +113,7 @@ export class ProductionOrderController {
   /**
    * PUT /api/orders/:id - Update order
    */
-  updateOrder = async (req: Request, res: Response): Promise<void> => {
+  updateOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
 
@@ -163,10 +164,12 @@ export class ProductionOrderController {
   /**
    * DELETE /api/orders/:id - Delete order
    */
-  deleteOrder = async (req: Request, res: Response): Promise<void> => {
+  deleteOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { tenantId } = req.query;
+      // Prefer auth-context tenantId (partition key); fall back to query param for
+      // admin scenarios where the caller explicitly specifies a tenant.
+      const tenantId = req.user?.tenantId ?? (req.query['tenantId'] as string | undefined);
 
       if (!id) {
         res.status(400).json({
@@ -176,10 +179,10 @@ export class ProductionOrderController {
         return;
       }
 
-      if (!tenantId || typeof tenantId !== 'string') {
+      if (!tenantId) {
         res.status(400).json({
           success: false,
-          error: 'tenantId query parameter is required for deletion'
+          error: 'tenantId could not be resolved: ensure the request is authenticated or pass ?tenantId='
         });
         return;
       }
@@ -212,7 +215,7 @@ export class ProductionOrderController {
   /**
    * GET /api/orders - List orders with optional filters
    */
-  getOrders = async (req: Request, res: Response): Promise<void> => {
+  getOrders = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { status, priority, clientId, offset = 0, limit = 50 } = req.query;
 
@@ -220,6 +223,11 @@ export class ProductionOrderController {
       if (status) filters.status = Array.isArray(status) ? status : [status];
       if (priority) filters.priority = priority;
       if (clientId) filters.clientId = clientId;
+
+      // Scope query to the authenticated user's tenant (partition-key filter).
+      if (req.user?.tenantId) {
+        filters.tenantId = req.user.tenantId;
+      }
 
       this.logger.info('Listing orders', { filters, offset, limit });
 

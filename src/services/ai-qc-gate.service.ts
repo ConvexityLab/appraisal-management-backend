@@ -81,10 +81,10 @@ export class AIQCGateService {
   private async onOrderStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
     if (event.data.newStatus !== 'SUBMITTED') return;
 
-    const { orderId, tenantId, priority } = event.data;
+    const { orderId, tenantId, clientId, priority } = event.data;
 
-    // Only act when the tenant has opted in to AI-assisted QC.
-    const tenantConfig = await this.tenantConfigService.getConfig(tenantId);
+    // Only act when the client has opted in to AI-assisted QC.
+    const tenantConfig = await this.tenantConfigService.getConfig(clientId);
     if (!tenantConfig.aiQcEnabled) return;
 
     this.logger.info('AI QC gate running for submitted order', { orderId, tenantId });
@@ -152,6 +152,7 @@ export class AIQCGateService {
         orderId,
         orderNumber: order.orderNumber ?? orderId,
         tenantId,
+        clientId: order.clientId ?? '',
         score,
         decision,
         findings,

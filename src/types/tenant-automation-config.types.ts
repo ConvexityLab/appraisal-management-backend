@@ -1,17 +1,18 @@
 /**
- * Tenant Automation Configuration Types
+ * Client Automation Configuration Types
  *
- * Per-tenant settings that control the auto-assignment orchestrator,
+ * Per-client settings that control the auto-assignment orchestrator,
  * supervisory review requirements, and notification behaviour.
  *
- * Stored in the 'tenant-automation-configs' Cosmos container.
- * Partition key: tenantId.
+ * Stored in the 'client-configs' Cosmos container.
+ * Partition key: clientId.
  */
 
-export interface TenantAutomationConfig {
-  /** Cosmos document id — same as tenantId for easy lookup. */
+export interface ClientAutomationConfig {
+  /** Cosmos document id — same as clientId for easy lookup. */
   id: string;
-  tenantId: string;
+  clientId: string;
+  subClientId?: string;
 
   // ── Auto-assignment behaviour ─────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ export interface TenantAutomationConfig {
 
   /**
    * When false, the bid loop still runs but no bid invitation documents
-   * are created.  Useful for tenants that want ranking but not auto-dispatch.
+   * are created.  Useful for clients that want ranking but not auto-dispatch.
    * @default true
    */
   bidLoopEnabled: boolean;
@@ -62,7 +63,7 @@ export interface TenantAutomationConfig {
 
   /**
    * Vendor IDs to try first in the ranked list before any other matching.
-   * Useful for routing all of a tenant's orders through a preferred internal
+   * Useful for routing all of a client's orders through a preferred internal
    * appraiser by default.
    */
   preferredVendorIds?: string[];
@@ -189,7 +190,7 @@ export interface TenantAutomationConfig {
 
   /**
    * Axiom program ID to invoke when axiomAutoTrigger fires for a document
-   * upload in this tenant.  Required when axiomAutoTrigger is true.
+   * upload in this client.  Required when axiomAutoTrigger is true.
    * Example: 'FNMA-URAR'
    */
   axiomProgramId?: string;
@@ -208,8 +209,26 @@ export interface TenantAutomationConfig {
   axiomSubClientId?: string;
 
   /**
+   * Registered Axiom pipeline ID for extraction-only submissions.
+   * Default: 'adaptive-document-processing'
+   */
+  axiomPipelineIdExtraction?: string;
+
+  /**
+   * Registered Axiom pipeline ID for criteria-only evaluation.
+   * Default: 'smart-criteria-evaluation'
+   */
+  axiomPipelineIdCriteria?: string;
+
+  /**
+   * Registered Axiom pipeline ID for complete (extraction + criteria) evaluation.
+   * Default: 'complete-document-criteria-evaluation'
+   */
+  axiomPipelineIdComplete?: string;
+
+  /**
    * Document schema version used for extraction run schemaKey.version.
-   * If omitted, orchestrators may use axiomProgramVersion from tenant config.
+   * If omitted, orchestrators may use axiomProgramVersion from client config.
    */
   axiomDocumentSchemaVersion?: string;
 
@@ -224,18 +243,18 @@ export interface TenantAutomationConfig {
   updatedAt: string; // ISO
   updatedBy: string;
   createdAt: string; // ISO
-  entityType: 'tenant-automation-config';
+  entityType: 'client-config';
 }
 
-/** Payload accepted by the update endpoint. All fields optional except tenantId guard. */
-export type UpdateTenantAutomationConfigRequest = Partial<
-  Omit<TenantAutomationConfig, 'id' | 'tenantId' | 'updatedAt' | 'updatedBy' | 'createdAt' | 'entityType'>
+/** Payload accepted by the update endpoint. All fields optional except clientId guard. */
+export type UpdateClientAutomationConfigRequest = Partial<
+  Omit<ClientAutomationConfig, 'id' | 'clientId' | 'updatedAt' | 'updatedBy' | 'createdAt' | 'entityType'>
 >;
 
-/** Default config used when no document exists yet for a tenant. */
-export const DEFAULT_TENANT_AUTOMATION_CONFIG: Omit<
-  TenantAutomationConfig,
-  'id' | 'tenantId' | 'updatedAt' | 'updatedBy' | 'createdAt'
+/** Default config used when no document exists yet for a client. */
+export const DEFAULT_CLIENT_AUTOMATION_CONFIG: Omit<
+  ClientAutomationConfig,
+  'id' | 'clientId' | 'updatedAt' | 'updatedBy' | 'createdAt'
 > = {
   autoAssignmentEnabled: true,
   bidLoopEnabled: true,
@@ -259,5 +278,13 @@ export const DEFAULT_TENANT_AUTOMATION_CONFIG: Omit<
   requireSignedLetterBeforeProgress: false,
   axiomAutoTrigger: true,
   axiomTimeoutMinutes: 10,
-  entityType: 'tenant-automation-config',
+  entityType: 'client-config',
 };
+
+// ── Backward-compat aliases — remove once all callers are updated ─────────────
+/** @deprecated Use ClientAutomationConfig */
+export type TenantAutomationConfig = ClientAutomationConfig;
+/** @deprecated Use UpdateClientAutomationConfigRequest */
+export type UpdateTenantAutomationConfigRequest = UpdateClientAutomationConfigRequest;
+/** @deprecated Use DEFAULT_CLIENT_AUTOMATION_CONFIG */
+export const DEFAULT_TENANT_AUTOMATION_CONFIG = DEFAULT_CLIENT_AUTOMATION_CONFIG;

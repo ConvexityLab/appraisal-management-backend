@@ -51,6 +51,15 @@ const validateCreateRfb = [
   body('criteriaSetIds').isArray({ min: 1 }).withMessage('criteriaSetIds must be a non-empty array'),
   body('deadlineAt').isISO8601().withMessage('deadlineAt must be an ISO-8601 date-time'),
   body('autoAward').optional().isBoolean(),
+  body('autoAwardThreshold').optional().isObject().withMessage('autoAwardThreshold must be an object'),
+  body('autoAwardThreshold.maxFeeMultiplier')
+    .optional()
+    .isFloat({ min: 1 })
+    .withMessage('autoAwardThreshold.maxFeeMultiplier must be a number >= 1'),
+  body('autoAwardThreshold.minVendorScore')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('autoAwardThreshold.minVendorScore must be between 0 and 100'),
   body('subjectCoords').optional().isObject(),
   body('subjectAddress').optional().isObject(),
 ];
@@ -200,7 +209,7 @@ export function createOrderRfbRouter(dbService: CosmosDbService) {
         const createdBy = req.user?.id ?? req.user?.azureAdObjectId ?? 'system';
         const orderId = req.params['orderId'] as string;
 
-        const { productId, criteriaSetIds, deadlineAt, autoAward, subjectCoords, subjectAddress } =
+        const { productId, criteriaSetIds, deadlineAt, autoAward, autoAwardThreshold, subjectCoords, subjectAddress } =
           req.body as CreateRfbRequest & {
             subjectCoords?: { lat: number; lng: number };
             subjectAddress?: { state?: string; county?: string; zipCode?: string };
@@ -229,6 +238,7 @@ export function createOrderRfbRouter(dbService: CosmosDbService) {
             criteriaSetIds,
             deadlineAt,
             ...(autoAward !== undefined && { autoAward }),
+            ...(autoAwardThreshold !== undefined && { autoAwardThreshold }),
           },
           tenantId,
           createdBy,

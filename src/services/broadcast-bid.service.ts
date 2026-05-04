@@ -113,6 +113,7 @@ export class BroadcastBidService {
           orderId,
           orderNumber,
           tenantId,
+          clientId: (order['clientId'] as string | undefined) ?? '',
           vendorId: vendor.vendorId,
           vendorName: vendor.vendorName,
           bidId,
@@ -142,6 +143,7 @@ export class BroadcastBidService {
         orderId,
         orderNumber,
         tenantId,
+        clientId: (order['clientId'] as string | undefined) ?? '',
         roundNumber,
         vendorIds,
         expiresAt,
@@ -223,6 +225,7 @@ export class BroadcastBidService {
     orderId: string,
     orderNumber: string,
     tenantId: string,
+    clientId: string,
     roundNumber: number,
     vendorIds: string[],
     priority: EventPriority,
@@ -234,7 +237,7 @@ export class BroadcastBidService {
       source: 'broadcast-bid-service',
       version: '1.0',
       category: EventCategory.VENDOR,
-      data: { orderId, orderNumber, tenantId, roundNumber, vendorIds, priority },
+      data: { orderId, orderNumber, tenantId, clientId, roundNumber, vendorIds, priority },
     };
     await this.publisher.publish(event);
     this.logger.info('Broadcast bid round exhausted', { orderId, roundNumber });

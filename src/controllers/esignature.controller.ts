@@ -9,47 +9,53 @@ import { CosmosDbService } from '../services/cosmos-db.service';
 import { ESignatureService } from '../services/esignature.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { CreateESignatureInput, UpdateESignatureStatusInput, ESignatureStatus } from '../types/esignature.types';
+import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
 export class ESignatureController {
   public router: Router;
   private esignatureService: ESignatureService;
 
-  constructor(private dbService: CosmosDbService) {
+  constructor(private dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.esignatureService = new ESignatureService(dbService);
-    this.initializeRoutes();
+    this.initializeRoutes(authzMiddleware);
   }
 
-  private initializeRoutes(): void {
+  private initializeRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('esignature', 'read')]   : [];
+    const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('esignature', 'create')] : [];
+    const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('esignature', 'update')] : [];
+    const del    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('esignature', 'delete')] : [];
+
     /**
      * POST /requests
      * Create a new e-signature request
      */
-    this.router.post('/requests', this.createSigningRequest.bind(this));
+    this.router.post('/requests', ...create, this.createSigningRequest.bind(this));
 
     /**
      * GET /requests
      * List signing requests (filter by orderId query param)
      */
-    this.router.get('/requests', this.listSigningRequests.bind(this));
+    this.router.get('/requests', ...read, this.listSigningRequests.bind(this));
 
     /**
      * GET /requests/:id
      * Get a single signing request
      */
-    this.router.get('/requests/:id', this.getSigningRequest.bind(this));
+    this.router.get('/requests/:id', ...read, this.getSigningRequest.bind(this));
 
     /**
      * PUT /requests/:id/status
      * Update signing request status (e.g. from provider webhook)
      */
-    this.router.put('/requests/:id/status', this.updateSigningStatus.bind(this));
+    this.router.put('/requests/:id/status', ...update, this.updateSigningStatus.bind(this));
 
     /**
      * DELETE /requests/:id
      * Cancel (void) a signing request
      */
-    this.router.delete('/requests/:id', this.cancelSigningRequest.bind(this));
+    this.router.delete('/requests/:id', ...del, this.cancelSigningRequest.bind(this));
   }
 
   /**

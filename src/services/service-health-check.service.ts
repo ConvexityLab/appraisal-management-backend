@@ -438,6 +438,9 @@ export class ServiceHealthCheckService {
     const apiBaseUrl = process.env.API_BASE_URL;
     const webhookSecret = process.env.AXIOM_WEBHOOK_SECRET;
     const storageContainerDocuments = process.env.STORAGE_CONTAINER_DOCUMENTS;
+    const axiomApiKey = process.env.AXIOM_API_KEY?.trim();
+    const useDefaultCredential = String(process.env.AXIOM_USE_DEFAULT_CREDENTIAL || '').toLowerCase() === 'true';
+    const hasAxiomAuthMode = !!axiomApiKey || useDefaultCredential;
     const requiredEnvVars = [
       'AZURE_APP_CONFIGURATION_ENDPOINT',
       'APP_CONFIG_LABEL',
@@ -445,6 +448,7 @@ export class ServiceHealthCheckService {
       'API_BASE_URL',
       'AXIOM_WEBHOOK_SECRET',
       'STORAGE_CONTAINER_DOCUMENTS',
+      'AXIOM_API_KEY (or AXIOM_USE_DEFAULT_CREDENTIAL=true)',
     ];
 
     if (!appConfigEndpoint) {
@@ -473,6 +477,10 @@ export class ServiceHealthCheckService {
     if (!apiBaseUrl) missingRuntimeVars.push('API_BASE_URL');
     if (!webhookSecret) missingRuntimeVars.push('AXIOM_WEBHOOK_SECRET');
     if (!storageContainerDocuments) missingRuntimeVars.push('STORAGE_CONTAINER_DOCUMENTS');
+    if (!hasAxiomAuthMode) {
+      missingRuntimeVars.push('AXIOM_API_KEY');
+      missingRuntimeVars.push('AXIOM_USE_DEFAULT_CREDENTIAL');
+    }
 
     if (missingRuntimeVars.length > 0) {
       return {
@@ -491,7 +499,7 @@ export class ServiceHealthCheckService {
       name: 'Axiom Configuration',
       status: 'healthy',
       configured: true,
-      details: `AXIOM_API_BASE_URL is set (label=${appConfigLabel})`,
+      details: `AXIOM_API_BASE_URL is set (label=${appConfigLabel}) with outbound auth mode configured`,
       requiredEnvVars,
       missingEnvVars: [],
       capabilities: ['evaluation-submit', 'evaluation-status', 'document-processing'],

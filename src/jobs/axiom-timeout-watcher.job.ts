@@ -187,7 +187,7 @@ export class AxiomTimeoutWatcherJob {
     }
 
     try {
-      const tenantConfig = await this.tenantConfigService.getConfig(order.tenantId);
+      const tenantConfig = await this.tenantConfigService.getConfig(order.clientId);
       if (!tenantConfig.axiomAutoTrigger) {
         // This tenant doesn't use Axiom — skip.
         return;
@@ -227,11 +227,12 @@ export class AxiomTimeoutWatcherJob {
         timestamp: new Date(),
         source: 'axiom-timeout-watcher-job',
         version: '1.0',
-        category: EventCategory.QC,
+        category: EventCategory.AXIOM,
         data: {
           orderId: order.id,
           orderNumber: order.orderNumber,
           tenantId: order.tenantId,
+          clientId: order.clientId,
           submittedAt,
           timeoutMinutes: tenantConfig.axiomTimeoutMinutes,
           priority: EventPriority.HIGH,

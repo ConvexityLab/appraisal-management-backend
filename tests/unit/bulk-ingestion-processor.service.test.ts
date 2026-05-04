@@ -140,6 +140,7 @@ describe('BulkIngestionProcessorService', () => {
   });
 
   it('copies shared storage artifacts and completes the job', async () => {
+    process.env.BULK_INGESTION_SKIP_BLOB_COPY = 'false';
     const db = makeDbStub({
       ingestionMode: 'SHARED_STORAGE',
       dataFileBlobName: undefined,
@@ -179,6 +180,8 @@ describe('BulkIngestionProcessorService', () => {
         },
       }),
     );
+
+    process.env.BULK_INGESTION_SKIP_BLOB_COPY = 'true';
 
     expect(blobService.uploadBlob).toHaveBeenCalledTimes(2);
     const persistedJob = db.upsertItem.mock.calls[0][1];
@@ -255,6 +258,161 @@ describe('BulkIngestionProcessorService', () => {
           'bulk-ingestion/tenant-001/a/document/doc1.pdf',
           'bulk-ingestion/tenant-001/b/document/doc1.pdf',
         ]),
+      }),
+    );
+  });
+
+  it('completes TAPE_CONVERSION jobs without requiring staged blobs', async () => {
+    const db = makeDbStub({
+      ingestionMode: 'TAPE_CONVERSION',
+      adapterKey: 'tape-conversion-v1',
+      dataFileBlobName: undefined,
+      dataFileName: 'tape-conversion-job.json',
+      documentFileNames: [],
+      documentBlobMap: {},
+      items: [
+        {
+          ...makeBaseJob().items[0],
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-TAPE-001',
+            propertyAddress: '456 Oak Ave',
+            city: 'Denver',
+            state: 'CO',
+            zipCode: '80202',
+            borrowerName: 'Jane Doe',
+            loanAmount: 410000,
+          },
+          matchedDocumentFileNames: [],
+        },
+      ],
+    });
+    const blobService = { uploadBlob: vi.fn() } as any;
+    const service = new BulkIngestionProcessorService(db as any, blobService);
+
+    await (service as any).onBulkIngestionRequested(
+      makeEvent({
+        ingestionMode: 'TAPE_CONVERSION',
+        adapterKey: 'tape-conversion-v1',
+        documentFileNames: [],
+      }),
+    );
+
+    const persistedJob = db.upsertItem.mock.calls[0][1];
+    expect(persistedJob.status).toBe('COMPLETED');
+    expect(persistedJob.items[0].status).toBe('COMPLETED');
+    expect(persistedJob.items[0].canonicalRecord).toEqual(
+      expect.objectContaining({
+        loanNumber: 'LN-TAPE-001',
+        propertyAddress: '456 Oak Ave',
+        adapterKey: 'tape-conversion-v1',
+      }),
+    );
+    expect(blobService.uploadBlob).not.toHaveBeenCalled();
+    expect(db.createItem).not.toHaveBeenCalled();
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'bulk.ingestion.processed',
+        data: expect.objectContaining({
+          ingestionMode: 'TAPE_CONVERSION',
+          status: 'COMPLETED',
+        }),
+      }),
+    );
+  });
+
+  it('resolves documentFileNames[] and stamps documentBlobNames on the canonical record (T3.3)', async () => {
+    const db = makeDbStub({
+      documentFileNames: ['doc1.pdf', 'doc2.pdf'],
+      documentBlobMap: {
+        'doc1.pdf': 'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+        'doc2.pdf': 'bulk-ingestion/tenant-001/123/document/doc2.pdf',
+      },
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::1`,
+          status: 'PENDING' as const,
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-MULTI',
+            documentFileNames: ['doc1.pdf', 'doc2.pdf'],
+          },
+          matchedDocumentFileNames: [],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const blobService = { uploadBlob: vi.fn() } as any;
+    const service = new BulkIngestionProcessorService(db as any, blobService);
+
+    await (service as any).onBulkIngestionRequested(makeEvent());
+
+    const persistedJob = db.upsertItem.mock.calls[0][1];
+    expect(persistedJob.status).toBe('COMPLETED');
+    expect(persistedJob.items[0].status).toBe('COMPLETED');
+    expect(persistedJob.items[0].canonicalRecord).toEqual(
+      expect.objectContaining({
+        documentBlobName: 'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+        documentBlobNames: [
+          'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+          'bulk-ingestion/tenant-001/123/document/doc2.pdf',
+        ],
+      }),
+    );
+    expect(db.createItem).not.toHaveBeenCalled();
+  });
+
+  it('fails the item when any documentFileNames[] entry is missing from blobs (T3.3)', async () => {
+    const db = makeDbStub({
+      documentFileNames: ['doc1.pdf', 'missing.pdf'],
+      documentBlobMap: {
+        'doc1.pdf': 'bulk-ingestion/tenant-001/123/document/doc1.pdf',
+      },
+      items: [
+        {
+          id: `${jobId}:1`,
+          jobId,
+          tenantId,
+          clientId,
+          rowIndex: 1,
+          correlationKey: `${jobId}::1`,
+          status: 'PENDING' as const,
+          source: {
+            rowIndex: 1,
+            loanNumber: 'LN-MULTI-FAIL',
+            documentFileNames: ['doc1.pdf', 'missing.pdf'],
+          },
+          matchedDocumentFileNames: [],
+          failures: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    const blobService = { uploadBlob: vi.fn() } as any;
+    const service = new BulkIngestionProcessorService(db as any, blobService);
+
+    await (service as any).onBulkIngestionRequested(makeEvent());
+
+    const persistedJob = db.upsertItem.mock.calls[0][1];
+    expect(persistedJob.status).toBe('FAILED');
+    expect(persistedJob.items[0].status).toBe('FAILED');
+    expect(
+      persistedJob.items[0].failures.some((f: any) => f.code === 'DOCUMENT_BLOB_NOT_FOUND'),
+    ).toBe(true);
+    expect(db.createItem).toHaveBeenCalledWith(
+      'bulk-portfolio-jobs',
+      expect.objectContaining({
+        type: 'bulk-ingestion-manual-review-item',
+        reasonCode: 'DOCUMENT_NOT_FOUND',
+        requestedDocumentFileName: 'missing.pdf',
       }),
     );
   });

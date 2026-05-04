@@ -30,6 +30,10 @@ export interface AuthenticatedUser {
   groups?: string[];
   appRoles?: string[];
   tenantId?: string;
+  /** Platform client ID — from JWT claim (extension_<appId>_clientId via optionalClaims). */
+  clientId?: string;
+  /** Platform sub-client ID — from JWT claim (extension_<appId>_subClientId via optionalClaims). */
+  subClientId?: string;
   oid?: string; // Azure AD Object ID
 }
 
@@ -61,12 +65,14 @@ export class AzureEntraAuthMiddleware {
       timeout: 30000 // 30 second timeout for JWKS requests
     });
 
-    // Role mapping from Azure AD groups/roles to application roles
+    // Role mapping: keys match the App Role 'value' strings defined on the app
+    // registration (these appear in the JWT 'roles' claim).  Groups are also
+    // checked as a fallback — same keys work for both because App Roles take priority.
     this.roleMapping = new Map([
-      ['admin-group-id', { role: 'admin', permissions: ['*'] }],
-      ['manager-group-id', { role: 'manager', permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics'] }],
-      ['qc-analyst-group-id', { role: 'qc_analyst', permissions: ['qc_validate', 'qc_execute', 'qc_metrics'] }],
-      ['appraiser-group-id', { role: 'appraiser', permissions: ['order_view', 'order_update'] }]
+      ['Admin',     { role: 'admin',     permissions: ['*'] }],
+      ['Manager',   { role: 'manager',   permissions: ['order_manage', 'vendor_manage', 'analytics_view', 'qc_metrics'] }],
+      ['QCAnalyst', { role: 'qc_analyst', permissions: ['qc_validate', 'qc_execute', 'qc_metrics'] }],
+      ['Appraiser', { role: 'appraiser', permissions: ['order_view', 'order_update'] }]
     ]);
 
     logger.info('Azure Entra ID authentication initialized', {
@@ -112,7 +118,10 @@ export class AzureEntraAuthMiddleware {
     const decoded = jwt.decode(token, { complete: true });
     
     if (!decoded || typeof decoded === 'string') {
-      logger.error('Invalid token format - could not decode');
+      logger.error('Invalid token format - could not decode', {
+        tokenLength: token.length,
+        tokenParts: token.split('.').length,
+      });
       throw new Error('Invalid token format');
     }
 
@@ -194,14 +203,6 @@ export class AzureEntraAuthMiddleware {
   }
 
   /**
-   * Configure role mappings from Azure AD groups to application roles
-   */
-  public setRoleMapping(groupId: string, role: string, permissions: string[]): void {
-    this.roleMapping.set(groupId, { role, permissions });
-    logger.info('Role mapping configured', { groupId, role, permissions });
-  }
-
-  /**
    * Main authentication middleware
    */
   public authenticate = async (
@@ -265,8 +266,16 @@ export class AzureEntraAuthMiddleware {
         groups,
         appRoles,
         tenantId: payload.tid,
+        // Custom claims set via Entra extension attributes (extension_<appId>_clientId/subClientId)
+        // mapped to short names via optional claims configuration.
+        clientId: payload.clientId,
+        subClientId: payload.subClientId,
         oid: payload.oid
       };
+
+      // Set req.tenantId so authorization middleware can find the user profile without
+      // falling back to req.user.id (the OID), which would produce the wrong tenant filter.
+      (req as any).tenantId = payload.tid;
 
       logger.info('User authenticated via Azure Entra ID', {
         userId: req.user.id,

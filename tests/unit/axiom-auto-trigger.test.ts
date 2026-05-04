@@ -209,7 +209,8 @@ describe('AxiomAutoTriggerService', () => {
     it('returns if tenant axiomAutoTrigger config is false', async () => {
       mockGetConfig.mockResolvedValue({ axiomAutoTrigger: false });
       await (service as any).onOrderStatusChanged(makeSubmittedEvent());
-      expect(db.findOrderById).not.toHaveBeenCalled();
+      expect(db.findOrderById).toHaveBeenCalled();
+      expect(mockSubmitOrderEvaluation).not.toHaveBeenCalled();
     });
 
     it('returns (with warning) if order is not found', async () => {

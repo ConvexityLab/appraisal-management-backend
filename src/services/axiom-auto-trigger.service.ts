@@ -39,6 +39,7 @@ interface OrderSnapshot {
   id: string;
   tenantId?: string;
   clientId?: string;
+  subClientId?: string;
   orderNumber?: string;
   axiomStatus?: string;
   axiomPipelineJobId?: string;
@@ -191,12 +192,7 @@ export class AxiomAutoTriggerService {
 
     const { orderId, tenantId } = event.data;
 
-    const config = await this.tenantConfigService.getConfig(tenantId);
-    if (!config.axiomAutoTrigger) {
-      return; // tenant hasn't enabled auto-trigger
-    }
-
-    // Load the order to build fields
+    // Load the order to build fields and resolve clientId
     const orderResult = await this.dbService.findOrderById(orderId);
     if (!orderResult.success || !orderResult.data) {
       this.logger.warn('AxiomAutoTrigger: order not found', { orderId });
@@ -214,6 +210,12 @@ export class AxiomAutoTriggerService {
     const clientId = order.clientId;
     if (!clientId) {
       this.logger.error('AxiomAutoTrigger: order has no clientId', { orderId });
+      return;
+    }
+
+    const config = await this.tenantConfigService.getConfig(clientId);
+    if (!config.axiomAutoTrigger) {
+      this.logger.info('AxiomAutoTrigger: axiomAutoTrigger disabled for client — skipping', { clientId, orderId });
       return;
     }
 
@@ -236,6 +238,25 @@ export class AxiomAutoTriggerService {
         { orderId, productType: order.productType },
       );
       await this.dbService.updateOrder(orderId, { axiomStatus: 'skipped-unknown-product-type' as any }).catch(() => undefined);
+      // Only publish the skipped event on the FIRST detection to avoid spam from retry passes.
+      if (order.axiomStatus !== 'skipped-unknown-product-type') {
+        await this.publisher.publish({
+          id: uuidv4(),
+          type: 'axiom.evaluation.skipped',
+          timestamp: new Date(),
+          source: 'axiom-auto-trigger-service',
+          version: '1.0',
+          category: EventCategory.AXIOM,
+          data: {
+            orderId,
+            orderNumber: order.orderNumber ?? orderId,
+            tenantId: resolvedTenantId,
+            reason: 'unknown-product-type',
+            productType: order.productType,
+            priority: EventPriority.NORMAL,
+          },
+        } as any).catch((err: Error) => this.logger.warn('AxiomAutoTrigger: failed to publish axiom.evaluation.skipped', { error: err.message }));
+      }
       return;
     }
 
@@ -281,7 +302,7 @@ export class AxiomAutoTriggerService {
         timestamp: new Date(),
         source: 'axiom-auto-trigger-service',
         version: '1.0',
-        category: EventCategory.QC,
+        category: EventCategory.AXIOM,
         data: { orderId, orderNumber: order.orderNumber ?? orderId, tenantId: resolvedTenantId, reason: 'no-documents', priority: EventPriority.NORMAL },
       } as any).catch((err: Error) => this.logger.warn('AxiomAutoTrigger: failed to publish axiom.evaluation.skipped', { error: err.message }));
       return;
@@ -291,12 +312,20 @@ export class AxiomAutoTriggerService {
     // Stamp submit-failed on the order and publish an event before re-throwing.
     let result: { pipelineJobId: string; evaluationId: string } | null;
     try {
+      const subClientId = order.subClientId ?? config.axiomSubClientId ?? '';
       result = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
         primaryDocs,
         resolvedTenantId,
         clientId,
+        subClientId,
+        config.axiomProgramId,
+        config.axiomProgramVersion,
+        'ORDER',
+        'COMPLETE_EVALUATION',
+        false,
+        config.axiomPipelineIdComplete,
       );
     } catch (submitErr) {
       this.logger.error('AxiomAutoTrigger: submitOrderEvaluation threw an exception', {
@@ -314,7 +343,7 @@ export class AxiomAutoTriggerService {
           timestamp: new Date(),
           source: 'axiom-auto-trigger-service',
           version: '1.0',
-          category: EventCategory.QC,
+          category: EventCategory.AXIOM,
           data: { orderId, orderNumber: order.orderNumber ?? orderId, tenantId: resolvedTenantId, reason: 'submit-exception', priority: EventPriority.NORMAL },
         } as any).catch(() => undefined);
       }
@@ -332,7 +361,7 @@ export class AxiomAutoTriggerService {
           timestamp: new Date(),
           source: 'axiom-auto-trigger-service',
           version: '1.0',
-          category: EventCategory.QC,
+          category: EventCategory.AXIOM,
           data: { orderId, orderNumber: order.orderNumber ?? orderId, tenantId: resolvedTenantId, reason: 'submit-null', priority: EventPriority.NORMAL },
         } as any).catch(() => undefined);
       }
@@ -360,11 +389,12 @@ export class AxiomAutoTriggerService {
       timestamp: new Date(),
       source: 'axiom-auto-trigger-service',
       version: '1.0',
-      category: EventCategory.QC,
+      category: EventCategory.AXIOM,
       data: {
         orderId,
         orderNumber: order.orderNumber ?? orderId,
         tenantId: resolvedTenantId,
+        clientId,
         evaluationId,
         pipelineJobId,
         priority: EventPriority.NORMAL,

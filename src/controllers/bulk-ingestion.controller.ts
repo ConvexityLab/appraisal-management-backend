@@ -7,6 +7,7 @@ import { BlobStorageService } from '../services/blob-storage.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type {
+  BulkIngestionEngagementGranularity,
   BulkIngestionItemStatus,
   BulkIngestionMode,
   BulkIngestionSharedStorageRef,
@@ -57,10 +58,13 @@ const validateSubmit = [
   body('analysisType')
     .isString().notEmpty().withMessage('analysisType is required')
     .isIn(VALID_ANALYSIS_TYPES).withMessage(`analysisType must be one of: ${VALID_ANALYSIS_TYPES.join(', ')}`),
-  body('ingestionMode').optional().isIn(['MULTIPART', 'SHARED_STORAGE']),
+  body('ingestionMode').optional().isIn(['MULTIPART', 'SHARED_STORAGE', 'TAPE_CONVERSION']),
+  body('engagementGranularity').optional().isIn(['PER_BATCH', 'PER_LOAN']),
   body('items.*.loanNumber').optional().isString(),
   body('items.*.externalId').optional().isString(),
   body('items.*.documentFileName').optional().isString(),
+  body('items.*.documentFileNames').optional().isArray().withMessage('documentFileNames must be an array'),
+  body('items.*.documentFileNames.*').optional().isString().withMessage('each documentFileNames entry must be a string'),
 ];
 
 type NamedMulterFiles = {
@@ -258,7 +262,7 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
       const hasSharedStorage = requestBody.sharedStorage !== undefined;
 
       let ingestionMode: BulkIngestionMode;
-      if (explicitMode === 'MULTIPART' || explicitMode === 'SHARED_STORAGE') {
+      if (explicitMode === 'MULTIPART' || explicitMode === 'SHARED_STORAGE' || explicitMode === 'TAPE_CONVERSION') {
         ingestionMode = explicitMode;
       } else if (hasUploadFiles) {
         ingestionMode = 'MULTIPART';
@@ -267,7 +271,7 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
       } else {
         return res.status(400).json({
           error:
-            "ingestionMode is required when no files are uploaded. Supported modes: 'MULTIPART' | 'SHARED_STORAGE'.",
+            "ingestionMode is required when no files are uploaded. Supported modes: 'MULTIPART' | 'SHARED_STORAGE' | 'TAPE_CONVERSION'.",
         });
       }
 
@@ -276,7 +280,14 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
         ...(requestBody.jobName ? { jobName: String(requestBody.jobName) } : {}),
         analysisType: String(requestBody.analysisType) as BulkAnalysisType,
         ingestionMode,
-        dataFileName: String(requestBody.dataFileName || dataFile?.originalname || ''),
+        ...(typeof requestBody.engagementGranularity === 'string'
+          ? { engagementGranularity: requestBody.engagementGranularity as BulkIngestionEngagementGranularity }
+          : {}),
+        dataFileName: String(
+          requestBody.dataFileName
+            || dataFile?.originalname
+            || (ingestionMode === 'TAPE_CONVERSION' ? `tape-conversion-${Date.now()}.json` : ''),
+        ),
         adapterKey: String(requestBody.adapterKey || ''),
         documentFileNames: requestBody.documentFileNames
           ? parseArrayField<string>(requestBody.documentFileNames, 'documentFileNames')
@@ -671,6 +682,63 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
       return res.status(500).json({ error: 'Failed to cancel bulk ingestion job', message });
     }
   });
+
+  router.post(
+    '/validate-document-urls',
+    body('urls').isArray({ min: 1, max: 200 }).withMessage('urls must be a non-empty array (max 200)'),
+    body('urls.*').isString().notEmpty().withMessage('each url must be a non-empty string'),
+    async (req: UnifiedAuthRequest, res: Response) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const urls: string[] = req.body.urls;
+      const concurrency = 10;
+
+      type UrlResult = {
+        url: string;
+        valid: boolean;
+        status?: number;
+        reason?: string;
+      };
+
+      async function checkUrl(url: string): Promise<UrlResult> {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8_000);
+          try {
+            const response = await fetch(url, { method: 'HEAD', signal: controller.signal });
+            return response.ok
+              ? { url, valid: true, status: response.status }
+              : { url, valid: false, status: response.status, reason: `HTTP ${response.status}` };
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { url, valid: false, reason: message };
+        }
+      }
+
+      const results: UrlResult[] = [];
+      for (let i = 0; i < urls.length; i += concurrency) {
+        const batch = urls.slice(i, i + concurrency);
+        const batchResults = await Promise.all(batch.map(checkUrl));
+        results.push(...batchResults);
+      }
+
+      return res.status(200).json({
+        valid: results.filter((result) => result.valid).map((result) => result.url),
+        invalid: results
+          .filter((result) => !result.valid)
+          .map((result) => ({
+            url: result.url,
+            reason: result.reason ?? (result.status ? `HTTP ${result.status}` : 'Unknown error'),
+          })),
+      });
+    },
+  );
 
   return router;
 }

@@ -11,6 +11,7 @@
 
 import { IFieldMapper } from './field-mapper.interface';
 import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 const fmt = (val: number | null | undefined): string =>
   val == null ? '' : val.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -168,6 +169,11 @@ export class DvrBpoMapper implements IFieldMapper {
         email:         appraiserInfo.email,
         signatureDate: appraiserInfo.signatureDate,
       } : null,
+
+      // ── Capability-5: AI insights + enrichment ───────────────────────
+      aiInsights:     buildAiInsightsContext(doc),
+      enrichmentData: buildEnrichmentContext(doc),
+      sourceDocuments: buildSourceDocumentsContext(doc),
     };
   }
 }

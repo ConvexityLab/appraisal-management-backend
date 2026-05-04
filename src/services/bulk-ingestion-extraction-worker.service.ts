@@ -49,6 +49,22 @@ export class BulkIngestionExtractionWorkerService {
       return;
     }
 
+    // P2-AX-01: Refuse to process bulk extraction in production without a real Axiom endpoint.
+    // In dev/test (NODE_ENV !== 'production') mock mode is tolerated but logged loudly.
+    if (!process.env.AXIOM_API_BASE_URL && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'BulkIngestionExtractionWorkerService cannot start in production without AXIOM_API_BASE_URL. ' +
+        'Set AXIOM_API_BASE_URL (and optionally AXIOM_API_KEY) to enable real Axiom extraction.',
+      );
+    }
+
+    if (!process.env.AXIOM_API_BASE_URL) {
+      this.logger.warn(
+        'AXIOM_API_BASE_URL is not configured — bulk extraction will use Axiom mock mode. ' +
+        'This is only acceptable for local development. Set AXIOM_API_BASE_URL before deploying.',
+      );
+    }
+
     await this.subscriber.subscribe<BulkIngestionOrdersCreatedEvent>(
       'bulk.ingestion.orders.created',
       this.makeHandler('bulk.ingestion.orders.created', this.onBulkIngestionOrdersCreated.bind(this)),
@@ -146,7 +162,7 @@ export class BulkIngestionExtractionWorkerService {
         continue;
       }
 
-      if (!record.documentBlobName) {
+      if (!record.documentBlobName && !record.documentBlobNames?.length) {
         immediateFailures++;
         await this.publishExtractionCompleted({
           job,
@@ -159,57 +175,76 @@ export class BulkIngestionExtractionWorkerService {
         continue;
       }
 
-      const correlationId = this.buildCorrelationId(job.id, item.id);
-      const fileName = record.documentBlobName.split('/').pop() ?? record.documentBlobName;
+      // Support both single-doc (documentBlobName) and multi-doc (documentBlobNames[]) per T3.3.
+      const docBlobNames: string[] =
+        record.documentBlobNames && record.documentBlobNames.length > 0
+          ? record.documentBlobNames
+          : [record.documentBlobName!];
+
+      const baseCorrelationId = this.buildCorrelationId(job.id, item.id);
       const { programId, programVersion } = ANALYSIS_TYPE_TO_AXIOM_PROGRAM[job.analysisType];
+      const allPipelineJobIds: string[] = [];
+      let docSubmitFailed = false;
 
-      const blobSasUrl = await this.blobStorageService.generateReadSasUrl(containerName, record.documentBlobName);
-      const submitResult = await this.axiomService.submitDocumentForSchemaExtraction({
-        documentId: correlationId,
-        blobSasUrl,
-        fileName,
-        documentType: 'APPRAISAL_REPORT',
-        tenantId: job.tenantId,
-        clientId: job.clientId,
-        programId,
-        programVersion,
-      });
+      for (let docIdx = 0; docIdx < docBlobNames.length; docIdx++) {
+        const docBlobName = docBlobNames[docIdx]!;
+        const correlationId = docBlobNames.length === 1
+          ? baseCorrelationId
+          : `${baseCorrelationId}-doc${docIdx}`;
+        const fileName = docBlobName.split('/').pop() ?? docBlobName;
 
-      if (!submitResult) {
-        immediateFailures++;
-        await this.publishExtractionCompleted({
-          job,
-          item,
-          correlationId,
-          status: 'failed',
-          completedAt: new Date().toISOString(),
-          error: `Axiom extraction submission failed for item '${item.id}'`,
+        const blobSasUrl = await this.blobStorageService.generateReadSasUrl(containerName, docBlobName);
+        const submitResult = await this.axiomService.submitDocumentForSchemaExtraction({
+          documentId: correlationId,
+          blobSasUrl,
+          fileName,
+          documentType: 'APPRAISAL_REPORT',
+          tenantId: job.tenantId,
+          clientId: job.clientId,
+          subClientId: job.subClientId ?? '',
+          programId,
+          programVersion,
         });
+
+        if (!submitResult) {
+          immediateFailures++;
+          await this.publishExtractionCompleted({
+            job,
+            item,
+            correlationId,
+            status: 'failed',
+            completedAt: new Date().toISOString(),
+            error: `Axiom extraction submission failed for item '${item.id}' document '${fileName}'`,
+          });
+          docSubmitFailed = true;
+          break;
+        }
+
+        allPipelineJobIds.push(submitResult.pipelineJobId);
+        this.axiomService.watchOrderPipelineStream(submitResult.pipelineJobId, orderId);
+      }
+
+      if (docSubmitFailed) {
         continue;
       }
 
+      const primaryPipelineJobId = allPipelineJobIds[0]!;
+
       item.canonicalRecord = {
         ...(item.canonicalRecord ?? {}),
-        axiomCorrelationId: correlationId,
-        axiomPipelineJobId: submitResult.pipelineJobId,
+        axiomCorrelationId: baseCorrelationId,
+        axiomPipelineJobId: primaryPipelineJobId,
+        ...(allPipelineJobIds.length > 1 ? { axiomPipelineJobIds: allPipelineJobIds } : {}),
         axiomExtractionStatus: 'AXIOM_PENDING',
         axiomSubmittedAt: new Date().toISOString(),
       };
       item.updatedAt = new Date().toISOString();
       submitted++;
 
-      // Open an SSE stream to Axiom for this item's pipeline execution.
-      // The stream fires fetchAndStorePipelineResults when pipeline_final arrives,
-      // writing axiomExtractionResult / axiomCriteriaResult to aiInsights while
-      // Axiom's results window is still open.  The subsequent DOCUMENT webhook
-      // will attempt the same call and receive a 409 (already consumed) — that
-      // is harmless since the data has already been persisted via this path.
-      this.axiomService.watchOrderPipelineStream(submitResult.pipelineJobId, orderId);
-
       // Stamp axiomPipelineJobId on the order document so the SSE proxy endpoint
       // (GET /api/axiom/evaluations/order/:orderId/stream) can look it up.
       await this.dbService.updateOrder(orderId, {
-        axiomPipelineJobId: submitResult.pipelineJobId,
+        axiomPipelineJobId: primaryPipelineJobId,
         axiomStatus: 'submitted' as any,
       }).catch((err: Error) =>
         this.logger.warn('ExtractionWorker: failed to stamp axiomPipelineJobId on order', {

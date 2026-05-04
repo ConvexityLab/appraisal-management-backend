@@ -4,6 +4,8 @@ param environment string = 'production'
 param cosmosAccountName string = 'appraisal-cosmos-${environment}-${uniqueString(resourceGroup().id)}'
 param databaseName string = 'appraisal-management'
 param containerAppPrincipalIds array = []
+@description('Additional public IP addresses to allow through the Cosmos DB firewall.')
+param allowedIpAddresses array = []
 
 var tags = {
   Environment: environment
@@ -12,6 +14,19 @@ var tags = {
   CostCenter: 'IT'
   Owner: 'Platform Team'
 }
+
+var allowedCosmosIpRules = [for ip in allowedIpAddresses: {
+  ipAddressOrRange: ip
+}]
+
+var cosmosIpRules = concat(
+  [
+    {
+      ipAddressOrRange: '0.0.0.0'
+    }
+  ],
+  allowedCosmosIpRules
+)
 
 // Container configurations optimized for appraisal management workload
 var containers = [
@@ -26,6 +41,72 @@ var containers = [
       ]
       excludedPaths: [
         { path: '/"_etag"/?' }
+      ]
+    }
+  }
+  {
+    name: 'vendor-connections'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/vendorType', order: 'ascending' }
+          { path: '/inboundIdentifier', order: 'ascending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/active', order: 'ascending' }
+          { path: '/updatedAt', order: 'descending' }
+        ]
+      ]
+    }
+    uniqueKeys: [
+      {
+        paths: [
+          '/tenantId'
+          '/vendorType'
+          '/inboundIdentifier'
+        ]
+      }
+    ]
+  }
+  {
+    name: 'vendor-event-outbox'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/status', order: 'ascending' }
+          { path: '/availableAt', order: 'ascending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/vendorType', order: 'ascending' }
+          { path: '/occurredAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/ourOrderId', order: 'ascending' }
+          { path: '/occurredAt', order: 'descending' }
+        ]
       ]
     }
   }
@@ -1072,7 +1153,7 @@ resource cosmosContainers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/co
       defaultTtl: -1
       indexingPolicy: container.indexingPolicy
       uniqueKeyPolicy: {
-        uniqueKeys: []
+        uniqueKeys: container.?uniqueKeys ?? []
       }
     }
     // No throughput option for serverless
@@ -1124,4 +1205,6 @@ output appSettings object = {
   COSMOS_CONTAINER_QC_REVIEWS: 'qc-reviews'
   COSMOS_CONTAINER_CLIENTS: 'clients'
   COSMOS_CONTAINER_PRODUCTS: 'products'
+  COSMOS_CONTAINER_VENDOR_CONNECTIONS: 'vendor-connections'
+  COSMOS_CONTAINER_VENDOR_EVENT_OUTBOX: 'vendor-event-outbox'
 }

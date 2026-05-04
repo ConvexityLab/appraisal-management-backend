@@ -9,7 +9,7 @@ import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js
 import { upsert, cleanContainer, daysAgo } from '../seed-types.js';
 import {
   CRITERIA_SET_IDS, RFB_IDS, ORDER_IDS, ORDER_NUMBERS,
-  CLIENT_IDS, PRODUCT_IDS, VENDOR_IDS,
+  CLIENT_IDS, SUB_CLIENT_SLUGS, PRODUCT_IDS, VENDOR_IDS,
 } from '../seed-ids.js';
 
 function buildCriteriaSets(tenantId: string): Record<string, unknown>[] {
@@ -103,13 +103,13 @@ function buildCriteriaSets(tenantId: string): Record<string, unknown>[] {
   ];
 }
 
-function buildRfbRequests(tenantId: string): Record<string, unknown>[] {
+function buildRfbRequests(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     {
       id: RFB_IDS.RFB_ORDER_004, tenantId, type: 'rfb-request',
       orderId: ORDER_IDS.PENDING_004,
       orderNumber: ORDER_NUMBERS[ORDER_IDS.PENDING_004],
-      clientId: CLIENT_IDS.CLEARPATH,
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH], clientRecordId: CLIENT_IDS.CLEARPATH,
       productId: PRODUCT_IDS.CONDO_1073,
       status: 'OPEN',
       criteriaSetIds: [CRITERIA_SET_IDS.GEO_DALLAS, CRITERIA_SET_IDS.ACTIVE_LICENSE],
@@ -140,7 +140,7 @@ export const module: SeedModule = {
     for (const cs of buildCriteriaSets(ctx.tenantId)) {
       await upsert(ctx, 'matching-criteria-sets', cs, result);
     }
-    for (const rfb of buildRfbRequests(ctx.tenantId)) {
+    for (const rfb of buildRfbRequests(ctx.tenantId, ctx.clientId)) {
       await upsert(ctx, 'rfb-requests', rfb, result);
     }
 

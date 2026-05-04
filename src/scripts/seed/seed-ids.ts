@@ -7,7 +7,7 @@
  * Convention: all IDs use a `seed-` prefix to make cleanup easy.
  */
 
-// ─── Clients ──────────────────────────────────────────────────────────────────
+// ─── Clients (sub-client records under the platform customer) ────────────────
 export const CLIENT_IDS = {
   FIRST_HORIZON: 'seed-client-lender-firsthorizon-001',
   PACIFIC_COAST: 'seed-client-lender-pacificcoast-002',
@@ -16,6 +16,20 @@ export const CLIENT_IDS = {
   SUNCOAST: 'seed-client-broker-suncoast-005',
   FIRST_TECH_CU: 'seed-client-cu-firsttechfcu-006',
 } as const;
+
+/**
+ * Short sub-client slugs used for config/Axiom routing.
+ * Maps 1:1 with CLIENT_IDS — the slug is the canonical subClientId
+ * that appears on orders, engagements, SLA configs, criteria lookups, etc.
+ */
+export const SUB_CLIENT_SLUGS: Record<string, string> = {
+  [CLIENT_IDS.FIRST_HORIZON]: 'firsthorizon',
+  [CLIENT_IDS.PACIFIC_COAST]: 'pacificcoast',
+  [CLIENT_IDS.NATIONAL_AMC]: 'nationalamc',
+  [CLIENT_IDS.CLEARPATH]: 'clearpath',
+  [CLIENT_IDS.SUNCOAST]: 'suncoast',
+  [CLIENT_IDS.FIRST_TECH_CU]: 'firsttechfcu',
+};
 
 // ─── Products ─────────────────────────────────────────────────────────────────
 export const PRODUCT_IDS = {
@@ -127,6 +141,7 @@ export const DOCUMENT_IDS = {
   REPORT_ORDER_001: 'seed-doc-report-001',
   ENGAGEMENT_ORDER_001: 'seed-doc-engagement-001',
   PHOTOS_ORDER_003: 'seed-doc-photos-003',
+  REPORT_ORDER_003: 'seed-doc-report-003',
   REPORT_ORDER_009: 'seed-doc-report-009',
   REPORT_ORDER_012: 'seed-doc-report-012',
   // Vendor-scoped

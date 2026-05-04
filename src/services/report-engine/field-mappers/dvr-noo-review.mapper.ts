@@ -16,6 +16,7 @@
 
 import { IFieldMapper } from './field-mapper.interface';
 import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
 
@@ -143,12 +144,17 @@ export class DvrNooReviewMapper implements IFieldMapper {
       // ── Subject photo ─────────────────────────────────────────────────
       subjectPhoto,
 
-      // ── Reviewer / appraiser info ─────────────────────────────────────
+      // ── Reviewer info ───────────────────────────────────────
       reviewerName:             a(ai?.name),
       reviewerLicenseNumber:    a(ai?.licenseNumber),
       reviewerLicenseState:     a(ai?.licenseState),
       reviewerLicenseExpiration: a(ai?.licenseExpirationDate),
       reviewerSignatureLine:    '',   // signature is ink-signed on printed copy
+
+      // ── Capability-5: AI insights + enrichment ────────────────────
+      aiInsights:      buildAiInsightsContext(doc),
+      enrichmentData:  buildEnrichmentContext(doc),
+      sourceDocuments: buildSourceDocumentsContext(doc),
     };
   }
 }

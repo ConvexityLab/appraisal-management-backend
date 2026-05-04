@@ -168,6 +168,7 @@ export interface AuthorizationContext {
 
 export interface AuthorizationAuditLog {
   id: string;
+  orderId: string;
   tenantId: string;
   userId: string;
   userEmail: string;
@@ -194,7 +195,14 @@ export type ResourceType =
   | 'analytics'
   | 'user'
   | 'rov_request'
-  | 'arv_analysis';
+  | 'arv_analysis'
+  | 'document'
+  | 'engagement'
+  | 'appraiser'
+  | 'inspection'
+  | 'client'
+  | 'negotiation'
+  | 'esignature';
 
 export type Action = 
   | 'read' 

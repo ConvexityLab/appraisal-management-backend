@@ -300,6 +300,7 @@ describe('BulkIngestionService', () => {
     await service.submit(
       {
         clientId: 'client-001',
+        analysisType: 'AVM',
         ingestionMode: 'MULTIPART',
         dataFileName: 'bulk.csv',
         documentFileNames: ['doc1.pdf'],
@@ -319,7 +320,135 @@ describe('BulkIngestionService', () => {
         immutable: true,
       }),
     );
+    expect(db.upsertItem).toHaveBeenCalledWith(
+      'bulk-portfolio-jobs',
+      expect.objectContaining({
+        engagementGranularity: 'PER_BATCH',
+      }),
+    );
     expect(mockPublish).toHaveBeenCalledTimes(1);
+    expect(mockPublish).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        engagementGranularity: 'PER_BATCH',
+      }),
+    }));
+  });
+
+  it('persists explicit PER_LOAN engagement granularity on submit', async () => {
+    const db = {
+      upsertItem: vi.fn().mockResolvedValue({
+        success: true,
+        data: makeJobWithFailedItem({
+          id: 'bulk-ingest-created-2',
+          status: 'PENDING',
+          failedItems: 0,
+          pendingItems: 1,
+          successItems: 0,
+          engagementGranularity: 'PER_LOAN',
+          items: [
+            {
+              ...makeJobWithFailedItem().items[0],
+              id: 'bulk-ingest-created-2:1',
+              jobId: 'bulk-ingest-created-2',
+              status: 'PENDING',
+              failures: [],
+            },
+          ],
+        }),
+      }),
+      createItem: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    };
+
+    const service = new BulkIngestionService(db as any);
+
+    await service.submit(
+      {
+        clientId: 'client-001',
+        analysisType: 'AVM',
+        ingestionMode: 'MULTIPART',
+        engagementGranularity: 'PER_LOAN',
+        dataFileName: 'bulk.csv',
+        documentFileNames: ['doc1.pdf'],
+        adapterKey: 'bridge-standard',
+        items: [{ rowIndex: 1, loanNumber: 'LN-001', documentFileName: 'doc1.pdf' }],
+      },
+      'tenant-001',
+      'operator-001',
+    );
+
+    expect(db.upsertItem).toHaveBeenCalledWith(
+      'bulk-portfolio-jobs',
+      expect.objectContaining({
+        engagementGranularity: 'PER_LOAN',
+      }),
+    );
+  });
+
+  it('stamps shared source identity onto bulk jobs and items on submit', async () => {
+    const db = {
+      upsertItem: vi.fn().mockResolvedValue({
+        success: true,
+        data: makeJobWithFailedItem({
+          id: 'bulk-ingest-created-3',
+          status: 'PENDING',
+          failedItems: 0,
+          pendingItems: 1,
+          successItems: 0,
+          items: [
+            {
+              ...makeJobWithFailedItem().items[0],
+              id: 'bulk-ingest-created-3:1',
+              jobId: 'bulk-ingest-created-3',
+              status: 'PENDING',
+              failures: [],
+            },
+          ],
+        }),
+      }),
+      createItem: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    };
+
+    const service = new BulkIngestionService(db as any);
+
+    await service.submit(
+      {
+        clientId: 'client-001',
+        analysisType: 'AVM',
+        ingestionMode: 'MULTIPART',
+        dataFileName: 'bulk.csv',
+        documentFileNames: ['doc1.pdf'],
+        adapterKey: 'bridge-standard',
+        items: [{ rowIndex: 1, loanNumber: 'LN-001', documentFileName: 'doc1.pdf' }],
+      },
+      'tenant-001',
+      'operator-001',
+    );
+
+    expect(db.upsertItem).toHaveBeenCalledWith(
+      'bulk-portfolio-jobs',
+      expect.objectContaining({
+        sourceIdentity: expect.objectContaining({
+          sourceKind: 'bulk-item',
+          bulkJobId: expect.stringMatching(/^bulk-ingest-/),
+          sourceArtifactRefs: [
+            expect.objectContaining({ artifactType: 'bulk-ingestion-job' }),
+          ],
+        }),
+        items: [
+          expect.objectContaining({
+            sourceIdentity: expect.objectContaining({
+              sourceKind: 'bulk-item',
+              bulkJobId: expect.stringMatching(/^bulk-ingest-/),
+              bulkItemId: expect.stringMatching(/^bulk-ingest-.*:1$/),
+              sourceArtifactRefs: expect.arrayContaining([
+                expect.objectContaining({ artifactType: 'bulk-ingestion-job' }),
+                expect.objectContaining({ artifactType: 'bulk-ingestion-item' }),
+              ]),
+            }),
+          }),
+        ],
+      }),
+    );
   });
 
   it('retries a specific FAILED item and writes immutable operator audit event', async () => {

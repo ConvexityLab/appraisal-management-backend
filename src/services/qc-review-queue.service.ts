@@ -311,6 +311,8 @@ export class QCReviewQueueService {
       axiomRiskScore?: number;
       axiomStatus?: QCReviewQueueItem['axiomStatus'];
       axiomCriteriaSnapshot?: QCReviewQueueItem['axiomCriteriaSnapshot'];
+      /** MOP_PRIO rule evaluation snapshot stamped at review completion time */
+      mopCriteriaSnapshot?: QCReviewQueueItem['mopCriteriaSnapshot'];
     }
   ): Promise<QCReviewQueueItem> {
     try {
@@ -358,6 +360,9 @@ export class QCReviewQueueService {
       }
       if (decision.axiomCriteriaSnapshot !== undefined) {
         queueItem.axiomCriteriaSnapshot = decision.axiomCriteriaSnapshot;
+      }
+      if (decision.mopCriteriaSnapshot !== undefined) {
+        queueItem.mopCriteriaSnapshot = decision.mopCriteriaSnapshot;
       }
 
       await this.dbService.upsertDocument('qc-reviews', queueItem);
@@ -740,6 +745,10 @@ export class QCReviewQueueService {
       });
 
       // Apply filters
+      if (criteria.orderId) {
+        queueItems = queueItems.filter(item => item.orderId === criteria.orderId);
+      }
+
       if (criteria.status) {
         queueItems = queueItems.filter(item => criteria.status!.includes(item.status));
       }
@@ -844,6 +853,49 @@ export class QCReviewQueueService {
     } catch {
       return null;
     }
+  }
+
+  async getCurrentQueueItemForOrder(orderId: string): Promise<QCReviewQueueItem | null> {
+    await this.ensureDbInitialized();
+
+    const items = await this.searchQueue({
+      orderId,
+      limit: 100,
+    });
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    const statusPriority = (status: QCReviewStatus): number => {
+      switch (status) {
+        case QCReviewStatus.IN_REVIEW:
+          return 0;
+        case QCReviewStatus.IN_PROGRESS:
+          return 1;
+        case QCReviewStatus.PENDING:
+          return 2;
+        case QCReviewStatus.REVISION_REQUESTED:
+          return 3;
+        case QCReviewStatus.ESCALATED:
+          return 4;
+        case QCReviewStatus.COMPLETED:
+          return 5;
+        case QCReviewStatus.CANCELLED:
+          return 6;
+        default:
+          return 99;
+      }
+    };
+
+    return [...items].sort((a, b) => {
+      const statusDelta = statusPriority(a.status) - statusPriority(b.status);
+      if (statusDelta !== 0) {
+        return statusDelta;
+      }
+
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    })[0] ?? null;
   }
 
   private async countReviews(analystId: string, statuses: QCReviewStatus[]): Promise<number> {

@@ -186,6 +186,71 @@ resource bulkPortfolioJobsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDa
   }
 }
 
+// ─── mop-criteria ─────────────────────────────────────────────────────────────
+// Stores MopCriteriaDefinition documents — the canonical (clientId = null)
+// and client-tier rule-set definitions consumed by the MOP_PRIO engine.
+//
+// Partition key: /clientId
+//   null    = canonical (platform-wide base rules)
+//   string  = client-specific override layer
+//
+// Queries always filter on (programId + programVersion + tier) and never need
+// to cross partition boundaries, so single-partition queries are the norm.
+
+resource mopCriteriaContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
+  parent: database
+  name: 'mop-criteria'
+  properties: {
+    resource: {
+      id: 'mop-criteria'
+      partitionKey: {
+        paths: ['/clientId']
+        kind: 'Hash'
+      }
+      defaultTtl: -1
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/"_etag"/?' }
+          // Whole autoFlags / manualFlags subtrees excluded from indexing —
+          // these arrays carry per-rule condition trees that explode the
+          // index. Nothing queries on their inner properties (only by
+          // programId + programVersion + tier), so exclusion is safe.
+          // Note: Cosmos requires `*` only at terminal position; the prior
+          // `/autoFlags/*/condition/*` form was rejected by the SDK at
+          // deploy time, which is why this Bicep was never successfully
+          // applied.
+          { path: '/autoFlags/*' }
+          { path: '/manualFlags/*' }
+        ]
+        compositeIndexes: [
+          [
+            { path: '/programId', order: 'ascending' }
+            { path: '/programVersion', order: 'ascending' }
+            { path: '/tier', order: 'ascending' }
+          ]
+          [
+            { path: '/clientId', order: 'ascending' }
+            { path: '/status', order: 'ascending' }
+          ]
+        ]
+      }
+      uniqueKeyPolicy: {
+        // One definition per (programId + programVersion + tier + clientId)
+        uniqueKeys: [
+          {
+            paths: ['/programId', '/programVersion', '/tier', '/clientId']
+          }
+        ]
+      }
+    }
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 @description('Resource ID of the review-programs container.')
@@ -196,3 +261,6 @@ output reviewResultsContainerId string = reviewResultsContainer.id
 
 @description('Resource ID of the bulk-portfolio-jobs container.')
 output bulkPortfolioJobsContainerId string = bulkPortfolioJobsContainer.id
+
+@description('Resource ID of the mop-criteria container.')
+output mopCriteriaContainerId string = mopCriteriaContainer.id

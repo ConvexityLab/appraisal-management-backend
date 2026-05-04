@@ -16,7 +16,9 @@ interface RateLimitEntry {
   firstRequest: number;
 }
 
-// In-memory store for rate limiting (in production, use Redis)
+// In-memory store for rate limiting. Fine for single-instance deployments; for
+// multi-instance scaling, front with a cheaper L7 rate-limit layer (Azure Front
+// Door / App Gateway) rather than introducing a shared cache dependency.
 const rateLimitStore = new Map<string, RateLimitEntry>();
 
 // Cleanup expired entries every 5 minutes

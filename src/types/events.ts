@@ -3,6 +3,12 @@
  * Defines all event schemas for the appraisal management platform
  */
 
+import type {
+  VendorEventPayload,
+  VendorEventType,
+  VendorType,
+} from './vendor-integration.types.js';
+
 // Base event interface that all events must implement
 export interface BaseEvent {
   id: string;
@@ -37,6 +43,7 @@ export enum EventCategory {
   CONSENT = 'consent',
   NEGOTIATION = 'negotiation',
   DOCUMENT = 'document',
+  AXIOM = 'axiom',
 }
 
 // Order-related events
@@ -61,6 +68,7 @@ export interface OrderStatusChangedEvent extends BaseEvent {
     orderId: string;
     /** Required so subscribers can perform tenant-scoped DB lookups without a cross-partition query. */
     tenantId: string;
+    clientId: string;
     previousStatus: string;
     newStatus: string;
     changedBy: string;
@@ -150,6 +158,7 @@ export interface EngagementStatusChangedEvent extends BaseEvent {
   data: {
     engagementId: string;
     tenantId: string;
+    clientId: string;
     previousStatus: string;
     newStatus: string;
     /** Human-readable reason for the transition. */
@@ -185,16 +194,45 @@ export interface QCCompletedEvent extends BaseEvent {
   };
 }
 
+/**
+ * Published by AxiomService#fetchAndStorePipelineResults for each criterion that
+ * fails or warns. Consumed by QCIssueRecorderService (persists qc-issue records),
+ * audit-event-sink.service (writes engagement audit row), and
+ * core-notification.service (fires the critical-issue notification rule).
+ *
+ * Shape mirrors what the publisher actually sends so downstream consumers can
+ * type-check their reads instead of casting through `any`.
+ */
 export interface QCIssueDetectedEvent extends BaseEvent {
   type: 'qc.issue.detected';
   category: EventCategory.QC;
   data: {
     orderId: string;
-    qcId: string;
-    issueType: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    description: string;
-    requiresAction: boolean;
+    tenantId: string;
+    criterionId: string;
+    issueSummary: string;
+    issueType: 'criterion-fail' | 'criterion-warning' | 'manual';
+    severity: 'CRITICAL' | 'MAJOR' | 'MINOR';
+    confidence?: number;
+    reasoning?: string;
+    remediation?: string;
+    documentReferences?: Array<{
+      documentId?: string;
+      documentName?: string;
+      page?: number;
+      section?: string;
+      quote?: string;
+      coordinates?: { x: number; y: number; width: number; height: number };
+      blobUrl?: string;
+    }>;
+    evaluationId?: string;
+    pipelineJobId?: string;
+    /** Axiom / MOP program id that produced the failing criterion (when known). */
+    programId?: string;
+    /** Version of the program that produced the failing criterion (when known). */
+    programVersion?: string;
+    /** Run-ledger run id that triggered the criteria evaluation (when known). */
+    sourceRunId?: string;
     priority: EventPriority;
   };
 }
@@ -210,6 +248,7 @@ export interface QCAIScoredEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     score: number;
     /** auto_pass → skip human QC; needs_review → route to analyst; needs_supervision → route + flag supervisor. */
     decision: 'auto_pass' | 'needs_review' | 'needs_supervision';
@@ -243,6 +282,22 @@ export interface VendorAvailabilityChangedEvent extends BaseEvent {
     isAvailable: boolean;
     availableUntil?: Date;
     workloadCapacity: number;
+    priority: EventPriority;
+  };
+}
+
+export interface VendorIntegrationEvent extends BaseEvent {
+  type: VendorEventType;
+  category: EventCategory.VENDOR;
+  data: {
+    connectionId: string;
+    tenantId: string;
+    lenderId: string;
+    vendorType: VendorType;
+    vendorOrderId: string;
+    ourOrderId: string | null;
+    occurredAt: string;
+    payload: VendorEventPayload;
     priority: EventPriority;
   };
 }
@@ -294,6 +349,7 @@ export interface VendorBidSentEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     bidId: string;
@@ -314,6 +370,7 @@ export interface VendorStaffAssignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     staffRole: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
@@ -330,6 +387,7 @@ export interface VendorBidAcceptedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     bidId: string;
@@ -346,10 +404,40 @@ export interface VendorBidTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     bidId: string;
     attemptNumber: number;
     totalAttempts: number;
+    priority: EventPriority;
+  };
+}
+
+/**
+ * V-02: Fired once per bid as the bid's expiry approaches, so the vendor can
+ * be reminded to accept or decline before the window closes. Emitted by
+ * `VendorTimeoutCheckerJob` when `currentBidExpiresAt - now` enters the
+ * configured reminder window and no reminder has been dispatched yet.
+ *
+ * Idempotency: the job stamps `autoVendorAssignment.expiringReminderSentAt`
+ * before publishing, so this event fires at most once per bid.
+ */
+export interface VendorBidExpiringEvent extends BaseEvent {
+  type: 'vendor.bid.expiring';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    orderNumber: string;
+    tenantId: string;
+    clientId: string;
+    vendorId: string;
+    vendorName?: string;
+    bidId: string;
+    /** Full ISO timestamp when the bid expires. */
+    expiresAt: string;
+    /** Minutes between now and expiresAt at the moment the reminder was dispatched. */
+    minutesRemaining: number;
+    attemptNumber: number;
     priority: EventPriority;
   };
 }
@@ -362,6 +450,7 @@ export interface VendorBidDeclinedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     vendorName: string;
     bidId: string;
@@ -380,6 +469,7 @@ export interface VendorAssignmentExhaustedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     attemptsCount: number;
     vendorsContacted: string[];
     priority: EventPriority;
@@ -395,6 +485,7 @@ export interface ReviewAssignmentRequestedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     priority: EventPriority;
     dueDate: Date;
@@ -409,6 +500,7 @@ export interface ReviewAssignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     reviewerName: string;
@@ -427,6 +519,7 @@ export interface ReviewAssignmentTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     attemptNumber: number;
@@ -443,6 +536,7 @@ export interface ReviewAssignmentExhaustedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     attemptsCount: number;
     reviewersContacted: string[];
@@ -460,6 +554,7 @@ export interface EngagementLetterSentEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     letterId: string;
     signingToken: string;
@@ -476,6 +571,7 @@ export interface EngagementLetterSignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     letterId: string;
     signedAt: Date;
@@ -492,6 +588,7 @@ export interface EngagementLetterDeclinedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     letterId: string;
     declinedAt: Date;
@@ -505,11 +602,12 @@ export interface EngagementLetterDeclinedEvent extends BaseEvent {
 /** Fired immediately after an order is submitted to the Axiom pipeline. */
 export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
   type: 'axiom.evaluation.submitted';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     evaluationId: string;
     pipelineJobId: string;
     priority: EventPriority;
@@ -519,11 +617,12 @@ export interface AxiomEvaluationSubmittedEvent extends BaseEvent {
 /** Fired when a completed tape-evaluation job should be submitted to Axiom in the background. */
 export interface AxiomBulkEvaluationRequestedEvent extends BaseEvent {
   type: 'axiom.bulk-evaluation.requested';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     jobId: string;
     tenantId: string;
     clientId: string;
+    subClientId?: string;
     reviewProgramId?: string;
     priority: EventPriority;
   };
@@ -537,7 +636,8 @@ export interface BulkIngestionRequestedEvent extends BaseEvent {
     jobId: string;
     tenantId: string;
     clientId: string;
-    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE';
+    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE' | 'TAPE_CONVERSION';
+    engagementGranularity: 'PER_BATCH' | 'PER_LOAN';
     adapterKey: string;
     dataFileName: string;
     dataFileBlobName?: string;
@@ -561,7 +661,7 @@ export interface BulkIngestionProcessedEvent extends BaseEvent {
     jobId: string;
     tenantId: string;
     clientId: string;
-    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE';
+    ingestionMode: 'MULTIPART' | 'SHARED_STORAGE' | 'TAPE_CONVERSION';
     status: 'COMPLETED' | 'PARTIAL' | 'FAILED';
     adapterKey: string;
     totalItems: number;
@@ -658,6 +758,8 @@ export interface BulkIngestionCriteriaCompletedEvent extends BaseEvent {
     rowIndex: number;
     status: 'completed' | 'failed';
     criteriaStatus: 'completed' | 'skipped' | 'failed';
+    /** PASSED/FAILED/REVIEW set by real criteria evaluation; absent when skipped. */
+    criteriaDecision?: 'PASSED' | 'FAILED' | 'REVIEW';
     completedAt: string;
     reason?: string;
     priority: EventPriority;
@@ -667,11 +769,12 @@ export interface BulkIngestionCriteriaCompletedEvent extends BaseEvent {
 /** Fired when Axiom completes the evaluation (published from the webhook handler). */
 export interface AxiomEvaluationCompletedEvent extends BaseEvent {
   type: 'axiom.evaluation.completed';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     evaluationId: string;
     pipelineJobId: string;
     overallRiskScore: number;
@@ -691,6 +794,7 @@ export interface ReviewSLAWarningEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     /** Percentage of SLA that has elapsed (0-100). */
@@ -709,6 +813,7 @@ export interface ReviewSLABreachedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     qcReviewId: string;
     reviewerId: string;
     targetDate: Date;
@@ -727,6 +832,7 @@ export interface VendorBidRoundStartedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     roundNumber: number;
     vendorIds: string[];
     expiresAt: Date;
@@ -745,6 +851,7 @@ export interface OrderOverdueEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     /** ISO string of the original due date. */
     dueDate: string;
     /** How many hours past due. */
@@ -760,11 +867,12 @@ export interface OrderOverdueEvent extends BaseEvent {
  */
 export interface AxiomEvaluationTimedOutEvent extends BaseEvent {
   type: 'axiom.evaluation.timeout';
-  category: EventCategory.QC;
+  category: EventCategory.AXIOM;
   data: {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     /** When the evaluation was originally submitted to Axiom. */
     submittedAt: Date;
     /** Configured timeout window in minutes. */
@@ -794,6 +902,7 @@ export interface SupervisionTimedOutEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     supervisorId: string;
     /** When supervision was first requested. */
     requestedAt: Date;
@@ -811,6 +920,7 @@ export interface VendorBidRoundExhaustedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     roundNumber: number;
     vendorIds: string[];
     priority: EventPriority;
@@ -829,6 +939,7 @@ export interface SupervisionRequiredEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     /** The staff member assigned to co-sign. */
     supervisorId: string;
     /** Why supervision was triggered (e.g. 'high_value', 'policy', 'ai_flag'). */
@@ -849,6 +960,7 @@ export interface SupervisionCosignedEvent extends BaseEvent {
     orderId: string;
     orderNumber: string;
     tenantId: string;
+    clientId: string;
     supervisorId: string;
     supervisorName: string;
     cosignedAt: Date;
@@ -866,6 +978,7 @@ export interface PaymentInitiatedEvent extends BaseEvent {
     paymentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     amountCents: number;
     currency: string;
     paymentMethod: string;
@@ -881,6 +994,7 @@ export interface PaymentCompletedEvent extends BaseEvent {
     paymentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     amountCents: number;
     providerTransactionId: string;
     priority: EventPriority;
@@ -894,6 +1008,7 @@ export interface PaymentFailedEvent extends BaseEvent {
     paymentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     amountCents: number;
     failureReason: string;
     priority: EventPriority;
@@ -909,6 +1024,7 @@ export interface SubmissionUploadedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     vendorId: string;
     documentCount: number;
     priority: EventPriority;
@@ -922,6 +1038,7 @@ export interface SubmissionApprovedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     approvedBy: string;
     priority: EventPriority;
   };
@@ -934,6 +1051,7 @@ export interface SubmissionRejectedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     rejectedBy: string;
     reason: string;
     priority: EventPriority;
@@ -947,8 +1065,101 @@ export interface SubmissionRevisionRequestedEvent extends BaseEvent {
     submissionId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     requestedBy: string;
     revisionNotes: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramSubmittedEvent extends BaseEvent {
+  type: 'review-program.submitted';
+  category: EventCategory.SUBMISSION;
+  data: {
+    reviewProgramId: string;
+    reviewProgramName: string;
+    orderId?: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId: string;
+    subClientId: string;
+    snapshotId?: string;
+    initiatedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramPrepareStartedEvent extends BaseEvent {
+  type: 'review-program.prepare.started';
+  category: EventCategory.SUBMISSION;
+  data: {
+    orderId: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId?: string;
+    subClientId?: string;
+    reviewProgramIds: string[];
+    initiatedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramPrepareCompletedEvent extends BaseEvent {
+  type: 'review-program.prepare.completed';
+  category: EventCategory.SUBMISSION;
+  data: {
+    orderId: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId?: string;
+    subClientId?: string;
+    reviewProgramIds: string[];
+    preparedContextId: string;
+    preparedContextVersion: string;
+    readyProgramCount: number;
+    blockedProgramCount: number;
+    warningCount: number;
+    recommendedActionCount: number;
+    initiatedBy: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramPrepareFailedEvent extends BaseEvent {
+  type: 'review-program.prepare.failed';
+  category: EventCategory.SUBMISSION;
+  data: {
+    orderId: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId?: string;
+    subClientId?: string;
+    reviewProgramIds: string[];
+    initiatedBy: string;
+    error: string;
+    priority: EventPriority;
+  };
+}
+
+export interface ReviewProgramDispatchCompletedEvent extends BaseEvent {
+  type: 'review-program.dispatch.completed';
+  category: EventCategory.SUBMISSION;
+  data: {
+    reviewProgramId: string;
+    reviewProgramName: string;
+    orderId?: string;
+    engagementId?: string;
+    tenantId: string;
+    clientId: string;
+    subClientId: string;
+    snapshotId?: string;
+    initiatedBy: string;
+    overallStatus: 'all_submitted' | 'partial' | 'none_submitted';
+    submittedLegs: number;
+    failedLegs: number;
+    skippedLegs: number;
+    axiomLegs: Array<{ programId: string; programVersion: string; status: 'submitted' | 'failed' | 'skipped'; runId?: string; error?: string }>;
+    mopLegs: Array<{ programId: string; programVersion: string; status: 'submitted' | 'failed' | 'skipped'; runId?: string; error?: string }>;
     priority: EventPriority;
   };
 }
@@ -962,6 +1173,7 @@ export interface EscalationCreatedEvent extends BaseEvent {
     escalationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     reason: string;
     escalatedBy: string;
     assignedTo?: string;
@@ -976,6 +1188,7 @@ export interface EscalationResolvedEvent extends BaseEvent {
     escalationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     resolvedBy: string;
     resolution: string;
     priority: EventPriority;
@@ -991,6 +1204,7 @@ export interface RovCreatedEvent extends BaseEvent {
     rovId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     requestorType: string;
     challengeReason: string;
     originalValue: number;
@@ -1006,6 +1220,7 @@ export interface RovAssignedEvent extends BaseEvent {
     rovId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     assignedTo: string;
     priority: EventPriority;
   };
@@ -1018,6 +1233,7 @@ export interface RovDecisionIssuedEvent extends BaseEvent {
     rovId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     decision: 'upheld' | 'value_changed' | 'withdrawn';
     updatedValue?: number;
     decidedBy: string;
@@ -1034,6 +1250,7 @@ export interface DeliveryReceiptConfirmedEvent extends BaseEvent {
     packageId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     confirmedBy: string;
     channel: 'portal' | 'email' | 'api';
     priority: EventPriority;
@@ -1047,6 +1264,7 @@ export interface DeliveryReceiptOpenedEvent extends BaseEvent {
     packageId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     openedBy: string;
     priority: EventPriority;
   };
@@ -1061,6 +1279,7 @@ export interface ConsentGivenEvent extends BaseEvent {
     consentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     borrowerEmail: string;
     disclosureVersion: string;
     method: 'portal' | 'email_link' | 'esign';
@@ -1075,6 +1294,7 @@ export interface ConsentDeniedEvent extends BaseEvent {
     consentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     borrowerEmail: string;
     priority: EventPriority;
   };
@@ -1087,6 +1307,7 @@ export interface ConsentWithdrawnEvent extends BaseEvent {
     consentId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     borrowerEmail: string;
     withdrawnAt: string;
     priority: EventPriority;
@@ -1102,6 +1323,7 @@ export interface NegotiationCounterOfferSubmittedEvent extends BaseEvent {
     negotiationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     originalFee: number;
     counterFee: number;
     submittedBy: string;  // vendor ID
@@ -1116,6 +1338,7 @@ export interface NegotiationAcceptedEvent extends BaseEvent {
     negotiationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     agreedFee: number;
     acceptedBy: string;
     priority: EventPriority;
@@ -1129,6 +1352,7 @@ export interface NegotiationRejectedEvent extends BaseEvent {
     negotiationId: string;
     orderId: string;
     tenantId: string;
+    clientId: string;
     rejectedBy: string;
     reason?: string;
     priority: EventPriority;
@@ -1150,6 +1374,7 @@ export type AppEvent =
   | QCAIScoredEvent
   | VendorPerformanceUpdatedEvent
   | VendorAvailabilityChangedEvent
+  | VendorIntegrationEvent
   | SystemAlertEvent
   | AxiomExecutionCompletedEvent
   // Auto-assignment workflow events
@@ -1158,6 +1383,7 @@ export type AppEvent =
   | VendorStaffAssignedEvent
   | VendorBidAcceptedEvent
   | VendorBidTimedOutEvent
+  | VendorBidExpiringEvent
   | VendorBidDeclinedEvent
   | VendorAssignmentExhaustedEvent
   | ReviewAssignmentRequestedEvent
@@ -1198,6 +1424,11 @@ export type AppEvent =
   | SubmissionApprovedEvent
   | SubmissionRejectedEvent
   | SubmissionRevisionRequestedEvent
+  | ReviewProgramSubmittedEvent
+  | ReviewProgramPrepareStartedEvent
+  | ReviewProgramPrepareCompletedEvent
+  | ReviewProgramPrepareFailedEvent
+  | ReviewProgramDispatchCompletedEvent
   // Escalation events
   | EscalationCreatedEvent
   | EscalationResolvedEvent
@@ -1278,6 +1509,7 @@ export interface DocumentUploadedEvent extends BaseEvent {
     documentId: string;
     orderId?: string;
     tenantId: string;
+    clientId?: string;
     category?: string;
     documentType?: string;
     blobName: string;

@@ -291,6 +291,14 @@ export interface QCReviewQueueItem {
     confidence: number;
   }>;
 
+  // MOP_PRIO rule evaluation snapshot (populated when MOP completes for the order)
+  mopCriteriaSnapshot?: Array<{
+    ruleId: string;
+    description: string;
+    result: 'pass' | 'fail' | 'warn';
+    details?: string;
+  }>;
+
   // Metadata
   createdAt: Date;
   updatedAt: Date;
@@ -329,6 +337,7 @@ export interface QCPriorityScoreFactors {
 }
 
 export interface QCReviewQueueSearchCriteria {
+  orderId?: string;
   status?: QCReviewStatus[];
   priorityLevel?: QCPriorityLevel[];
   assignedAnalystId?: string;

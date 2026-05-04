@@ -373,6 +373,18 @@ export class CosmosDbService {
       let query = 'SELECT * FROM c WHERE c.type = @type';
       const parameters: any[] = [{ name: '@type', value: 'order' }];
 
+      // Tenant isolation — always scope to the calling user's partition when provided.
+      if (filters.tenantId) {
+        query += ' AND c.tenantId = @tenantId';
+        parameters.push({ name: '@tenantId', value: filters.tenantId });
+      }
+
+      // Business-client scoping — filter by the lender/client that owns the order.
+      if (filters.clientId) {
+        query += ' AND c.clientId = @clientId';
+        parameters.push({ name: '@clientId', value: filters.clientId });
+      }
+
       // Build dynamic query based on filters
       if (filters.status && filters.status.length > 0) {
         query += ' AND c.status IN (' + filters.status.map((_, index) => `@status${index}`).join(', ') + ')';
@@ -1188,6 +1200,57 @@ export class CosmosDbService {
     }
   }
 
+  /**
+   * Returns weekly order-completion trend data for the last `weeks` weeks.
+   * Orders are fetched from Cosmos and bucketed in application code; each bucket
+   * contains total orders created and completed in that ISO calendar week.
+   */
+  async getOrderTrendData(params: { weeks?: number }): Promise<ApiResponse<any>> {
+    try {
+      if (!this.ordersContainer) {
+        throw new Error('Orders container not initialized');
+      }
+
+      const weeks = Math.max(1, Math.min(params.weeks ?? 12, 52));
+      const cutoff = new Date(Date.now() - weeks * 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const res = await this.ordersContainer.items.query({
+        query: `SELECT TOP 3000 c.id, c.createdAt, c.status
+                FROM c
+                WHERE IS_DEFINED(c.createdAt) AND c.createdAt != null
+                  AND c.createdAt >= @cutoff`,
+        parameters: [{ name: '@cutoff', value: cutoff }],
+      }).fetchAll();
+
+      // Bucket by ISO week (Mon-based) — key = "YYYY-WNN"
+      const buckets = new Map<string, { period: string; orders: number; completed: number }>();
+      for (const row of res.resources as Array<{ createdAt: string; status: string }>) {
+        const d = new Date(row.createdAt);
+        if (isNaN(d.getTime())) continue;
+        // compute ISO week key
+        const thursday = new Date(d);
+        thursday.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3); // nearest Thursday
+        const year = thursday.getFullYear();
+        const firstThursday = new Date(year, 0, 4); // 4-Jan is always in week 1
+        const weekNum = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * 86_400_000));
+        const key = `${year}-W${String(weekNum).padStart(2, '0')}`;
+        const bucket = buckets.get(key) ?? { period: key, orders: 0, completed: 0 };
+        bucket.orders++;
+        if (row.status === 'completed') bucket.completed++;
+        buckets.set(key, bucket);
+      }
+
+      const data = Array.from(buckets.values()).sort((a, b) => a.period.localeCompare(b.period));
+      return { success: true, data };
+    } catch (error) {
+      this.logger.error('Failed to get order trend data', { error });
+      return {
+        success: false,
+        error: createApiError('GET_ORDER_TREND_FAILED', error instanceof Error ? error.message : 'Unknown error'),
+      };
+    }
+  }
+
   async getPerformanceAnalytics(params: {
     startDate?: string;
     endDate?: string;
@@ -1356,6 +1419,52 @@ export class CosmosDbService {
         success: false,
         data: [],
         error: createApiError('FIND_ALL_VENDORS_FAILED', error instanceof Error ? error.message : 'Unknown error')
+      };
+    }
+  }
+
+  /**
+   * Full-text vendor search (A5 — backend-side).
+   *
+   * Uses Cosmos `CONTAINS(field, q, true)` for case-insensitive
+   * substring matching across business name, primary contact, email,
+   * and phone.  Runs inside Cosmos so the frontend doesn't have to
+   * pull every vendor just to filter.  The `q` parameter is
+   * parameterised to avoid injection; callers should still trim and
+   * length-cap input at the controller.
+   */
+  async searchVendors(q: string, limit: number = 50): Promise<ApiResponse<Vendor[]>> {
+    try {
+      if (!this.vendorsContainer) {
+        throw new Error('Vendors container not initialized');
+      }
+      const safeLimit = Math.min(Math.max(limit, 1), 200);
+      const querySpec = {
+        query: `SELECT TOP ${safeLimit} * FROM c
+          WHERE (NOT IS_DEFINED(c.type) OR c.type != 'appraiser')
+          AND (
+            CONTAINS(c.businessName, @q, true)
+            OR CONTAINS(c.name, @q, true)
+            OR CONTAINS(c.primaryContactName, @q, true)
+            OR CONTAINS(c.email, @q, true)
+            OR CONTAINS(c.phone, @q, true)
+          )
+          ORDER BY c.onboardingDate DESC`,
+        parameters: [{ name: '@q', value: q }],
+      };
+
+      const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();
+
+      return {
+        success: true,
+        data: resources,
+      };
+    } catch (error) {
+      this.logger.error('Failed to search vendors', { error, q });
+      return {
+        success: false,
+        data: [],
+        error: createApiError('SEARCH_VENDORS_FAILED', error instanceof Error ? error.message : 'Unknown error')
       };
     }
   }
@@ -3096,6 +3205,16 @@ export class CosmosDbService {
       throw new Error('matching-criteria-sets container not initialized');
     }
     return this.matchingCriteriaSetsContainer;
+  }
+
+  /**
+   * Returns the products container reference.
+   */
+  getProductsContainer(): import('@azure/cosmos').Container {
+    if (!this.productsContainer) {
+      throw new Error('products container not initialized');
+    }
+    return this.productsContainer;
   }
 
   /**

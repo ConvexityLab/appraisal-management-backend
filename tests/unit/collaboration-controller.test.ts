@@ -48,6 +48,7 @@ vi.mock('../../src/services/cosmos-db.service.js', () => ({
   CosmosDbService: vi.fn().mockImplementation(() => ({
     getDocument: mockGetDocument,
     upsertDocument: mockUpsertDocument,
+    queryDocuments: vi.fn().mockResolvedValue([]),
   })),
 }));
 

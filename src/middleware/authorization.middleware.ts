@@ -20,6 +20,7 @@ export interface AuthorizedRequest extends Request {
     role: string;
     permissions?: string[];
     azureAdObjectId?: string;
+    tenantId?: string;
   };
   userProfile?: UserProfile;
   tenantId?: string;
@@ -70,12 +71,60 @@ export class AuthorizationMiddleware {
           return;
         }
 
-        const tenantId = req.tenantId || req.user.id; // Default to user ID if no tenant
+        const tenantId = req.tenantId ?? req.user.tenantId;
+        if (!tenantId) {
+          // Both req.tenantId and req.user.tenantId are absent — the authentication
+          // chain didn't populate tenant context, which should not happen.
+          this.logger.error('Cannot resolve tenantId for user profile lookup', { userId: req.user.id });
+          res.status(500).json({
+            error: 'Tenant context missing — authentication chain error',
+            code: 'TENANT_RESOLUTION_FAILED'
+          });
+          return;
+        }
+
+        // ── E2E test-token bypass (dev/test environments only) ───────────
+        // Synthesize a fully-authorized admin profile when the request was
+        // authenticated via a test JWT (req.user.isTestToken). This unblocks
+        // Playwright / live-fire scripts without requiring a Cosmos `users`
+        // record for the synthetic subject. Gated to NODE_ENV !== 'production'
+        // so a stolen test JWT can never escalate against a prod deployment.
+        if (process.env.NODE_ENV !== 'production' && (req.user as any).isTestToken) {
+          this.logger.info('Authorization: synthesizing profile for test-token request', {
+            userId: req.user.id,
+            tenantId,
+          });
+          req.userProfile = {
+            id: req.user.id,
+            email: (req.user as any).email ?? `${req.user.id}@test.local`,
+            name: (req.user as any).name ?? 'E2E Test User',
+            azureAdObjectId: req.user.id,
+            tenantId,
+            role: (req.user as any).role ?? 'admin',
+            accessScope: {
+              teamIds: [],
+              departmentIds: [],
+              managedClientIds: [],
+              managedVendorIds: [],
+              managedUserIds: [],
+              regionIds: [],
+              statesCovered: [],
+              canViewAllOrders: true,
+              canViewAllVendors: true,
+              canOverrideQC: true,
+            },
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as any;
+          return next();
+        }
+
         const userProfile = await this.authzService.getUserProfile(req.user.id, tenantId);
 
         if (!userProfile) {
           this.logger.warn('User profile not found', { userId: req.user.id, tenantId });
-          res.status(404).json({
+          res.status(403).json({
             error: 'User profile not found',
             code: 'USER_PROFILE_NOT_FOUND'
           });
@@ -349,11 +398,11 @@ export class AuthorizationMiddleware {
       const dbService = this.authzService['dbService']; // Access private property
       const resource = await dbService.getDocument<any>(containerName, resourceId, tenantId);
 
-      if (!resource || !resource.accessControl) {
+      if (!resource) {
         return null;
       }
 
-      return resource.accessControl as Partial<AccessControl>;
+      return (resource.accessControl ?? {}) as Partial<AccessControl>;
     } catch (error) {
       this.logger.error('Failed to load resource access control', {
         resourceType,

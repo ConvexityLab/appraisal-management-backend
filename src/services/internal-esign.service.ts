@@ -33,6 +33,7 @@ export interface SigningTokenRecord {
   orderId: string;
   orderNumber: string;
   tenantId: string;
+  clientId?: string;
   vendorId: string;
   vendorEmail: string;
   expiresAt: string; // ISO
@@ -170,6 +171,7 @@ export class InternalESignService {
         orderId: record.orderId,
         orderNumber: record.orderNumber,
         tenantId: record.tenantId,
+        clientId: record.clientId ?? '',
         vendorId: record.vendorId,
         letterId: record.letterId,
         signedAt: new Date(),
@@ -215,6 +217,7 @@ export class InternalESignService {
         orderId: record.orderId,
         orderNumber: record.orderNumber,
         tenantId: record.tenantId,
+        clientId: record.clientId ?? '',
         vendorId: record.vendorId,
         letterId: record.letterId,
         declinedAt: new Date(),

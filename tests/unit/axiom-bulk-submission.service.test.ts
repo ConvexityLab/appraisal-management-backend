@@ -38,6 +38,7 @@ function makeEvent(overrides?: Partial<any>) {
       jobId: 'bulk-job-1',
       tenantId: 'tenant-1',
       clientId: 'client-1',
+      subClientId: 'sub-client-1',
       reviewProgramId: 'program-1',
       priority: 'normal',
       ...overrides,
@@ -68,6 +69,7 @@ describe('AxiomBulkSubmissionService idempotency and replay handling', () => {
       'bulk-job-1',
       'tenant-1',
       'client-1',
+      'sub-client-1',
       'program-1',
     );
 

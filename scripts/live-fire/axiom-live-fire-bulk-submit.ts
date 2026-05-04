@@ -45,10 +45,11 @@ interface JobResponse {
 async function main(): Promise<void> {
   const context = await loadLiveFireContext();
   const adapterKey = required('AXIOM_LIVE_BULK_ADAPTER_KEY');
+  const analysisType = required('AXIOM_LIVE_ANALYSIS_TYPE');
   const pollAttempts = envNumber('AXIOM_LIVE_POLL_ATTEMPTS', 20);
   const pollIntervalMs = envNumber('AXIOM_LIVE_POLL_INTERVAL_MS', 3000);
 
-  logConfig(context, { adapterKey, pollAttempts, pollIntervalMs });
+  logConfig(context, { adapterKey, analysisType, pollAttempts, pollIntervalMs });
 
   const timestamp = Date.now();
   const csvName = `live-bulk-${timestamp}.csv`;
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
   const form = new FormData();
   form.set('clientId', context.clientId);
   form.set('adapterKey', adapterKey);
+  form.set('analysisType', analysisType);
   form.set('ingestionMode', 'MULTIPART');
   form.set('jobName', `axiom-live-bulk-submit-${timestamp}`);
   form.set('items', JSON.stringify(items));

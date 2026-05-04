@@ -2,6 +2,10 @@
 
 These scripts run against a live backend deployment and exercise real Axiom integration paths end-to-end.
 
+For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-code triage, and recovery steps), see:
+
+- `scripts/live-fire/STAGING_RUNBOOK.md`
+
 ## Scripts
 
 - `axiom-live-fire-property-intake.ts`
@@ -33,6 +37,35 @@ These scripts run against a live backend deployment and exercise real Axiom inte
   - `GET /api/documents?orderId=...`
   - Finds first order/document pair where document has `id` and `blobPath/blobUrl`
   - Prints ready-to-run export commands for `AXIOM_LIVE_ORDER_ID`, `AXIOM_LIVE_DOCUMENT_ID`, `AXIOM_LIVE_CLIENT_ID`
+
+- `axiom-live-fire-ui-parity.ts`
+  - Mode `extraction`: `POST /api/runs/extraction` + `POST /api/runs/:runId/refresh-status` + `GET /api/runs/:runId/snapshot`
+  - Mode `criteria`: `POST /api/runs/criteria` + run/step polling + `GET /api/runs/:stepRunId/step-input`
+  - Mode `full`: `POST /api/axiom/analyze` + `GET /api/axiom/evaluations/order/:orderId` polling
+  - Purpose: backend-only UI-parity validation to isolate UI issues from pipeline/engine issues
+
+- `axiom-live-fire-aegis-connect.ts`
+  - Mode: direct Axiom API connectivity probe with Aegis-enforced auth
+  - Purpose: acquire a real Entra JWT (`az account get-access-token --resource api://3bc96929-593c-4f35-8997-e341a7e09a69`) and verify headers (`Authorization`, `X-Client-Id`, optional `X-Sub-Client-Id`) against Axiom endpoint
+
+- `axiom-live-fire-sse-full-round-trip.ts`  ← **pnpm axiom:livefire:sse-round-trip**
+  - `POST /api/analysis/submissions` — exact UI submission path
+  - `GET /api/axiom/evaluations/order/:orderId/stream` — live SSE stream (runs concurrently with poll)
+  - `GET /api/analysis/submissions/:submissionId` — poll until terminal status
+  - `GET /api/axiom/evaluations/:evaluationId` — full evaluation payload (not truncated)
+  - `POST /api/axiom/webhook` — unsigned + signed (when `AXIOM_LIVE_WEBHOOK_SECRET` set)
+  - Purpose: full round-trip mimicking exact UI flow with real-time SSE monitoring and complete response logging
+  - Extra env: `AXIOM_LIVE_EVALUATION_MODE` (default `COMPLETE_EVALUATION`), `AXIOM_LIVE_SSE_TIMEOUT_MS` (default `120000`)
+
+- `axiom-live-fire-analyze-with-sse.ts`  ← **pnpm axiom:livefire:analyze-with-sse**
+  - `POST /api/axiom/analyze` — legacy analyze path
+  - `GET /api/axiom/evaluations/:evaluationId` — immediate check after submit
+  - `GET /api/axiom/evaluations/order/:orderId/stream` — SSE stream (runs concurrently with order-list poll)
+  - `GET /api/axiom/evaluations/order/:orderId` — poll for evaluation in order list
+  - `GET /api/axiom/evaluations/:evaluationId` — poll to completed, full payload logged
+  - `POST /api/axiom/webhook` — unsigned + signed (when `AXIOM_LIVE_WEBHOOK_SECRET` set)
+  - Purpose: legacy analyze path with concurrent SSE, order-list polling, full response logging, and webhook round-trip
+  - Extra env: `AXIOM_LIVE_SSE_TIMEOUT_MS` (default `120000`)
 
 ## Required environment
 
@@ -98,6 +131,68 @@ Script-specific required values:
 ### Bulk submit
 
 - `AXIOM_LIVE_BULK_ADAPTER_KEY`
+- `AXIOM_LIVE_ANALYSIS_TYPE` (`AVM`, `FRAUD`, `ANALYSIS_1033`, `QUICK_REVIEW`, `DVR`, or `ROV`)
+
+### UI parity harness (`axiom-live-fire-ui-parity.ts`)
+
+All modes:
+
+- `AXIOM_LIVE_PARITY_MODE` = `extraction` | `criteria` | `full` (or pass `--mode`)
+
+### Direct Aegis connect probe (`axiom-live-fire-aegis-connect.ts`)
+
+Required:
+
+- `AXIOM_AEGIS_CLIENT_ID` (business client id sent as `X-Client-Id`)
+
+Optional:
+
+- `AXIOM_AEGIS_SUB_CLIENT_ID` (sent as `X-Sub-Client-Id`)
+- `AXIOM_AEGIS_BASE_URL` (default `https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io`)
+- `AXIOM_AEGIS_RESOURCE` (default `api://3bc96929-593c-4f35-8997-e341a7e09a69`)
+- `AXIOM_AEGIS_ENDPOINT` (default `/api/health`)
+- `AXIOM_AEGIS_AZ_PATH` (optional explicit Azure CLI path, e.g. `C:\\Program Files (x86)\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd`)
+- `AXIOM_AEGIS_CHECK_ROLE_ENDPOINT` (default `true`)
+- `AXIOM_AEGIS_ROLE_ENDPOINT` (default `/api/virtual-actors`)
+
+Example (PowerShell):
+
+```powershell
+$env:AXIOM_AEGIS_CLIENT_ID='live-fire-test'
+$env:AXIOM_AEGIS_SUB_CLIENT_ID='test-tenant'
+pnpm axiom:livefire:aegis-connect
+```
+
+Extraction mode (`extraction`):
+
+- `AXIOM_LIVE_DOCUMENT_ID`
+- Optional:
+  - `AXIOM_LIVE_SCHEMA_CLIENT_ID` (defaults to `AXIOM_LIVE_CLIENT_ID`)
+  - `AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID` (default `default-sub-client`)
+  - `AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE` (defaults to `AXIOM_LIVE_DOCUMENT_TYPE`, then `APPRAISAL`)
+  - `AXIOM_LIVE_SCHEMA_VERSION` (default `1.0.0`)
+  - `AXIOM_LIVE_RUN_REASON` (default `LIVE_FIRE_EXTRACTION_ONLY`)
+
+Criteria mode (`criteria`):
+
+- `AXIOM_LIVE_PROGRAM_ID`
+- One of:
+  - `AXIOM_LIVE_SNAPSHOT_ID`, or
+  - `AXIOM_LIVE_EXTRACTION_RUN_ID` (snapshot inferred from run linkage)
+- Optional:
+  - `AXIOM_LIVE_PROGRAM_CLIENT_ID` (defaults to `AXIOM_LIVE_CLIENT_ID`)
+  - `AXIOM_LIVE_PROGRAM_SUB_CLIENT_ID` (default `default-sub-client`)
+  - `AXIOM_LIVE_PROGRAM_VERSION` (default `1.0.0`)
+  - `AXIOM_LIVE_CRITERIA_RUN_MODE` (`FULL` or `STEP_ONLY`, default `FULL`)
+  - `AXIOM_LIVE_CRITERIA_STEP_KEYS` (comma-delimited, default `overall-criteria`)
+  - `AXIOM_LIVE_RERUN_REASON` (default `LIVE_FIRE_CRITERIA_ONLY`)
+
+Full mode (`full`, mirrors submit-from-document journey):
+
+- `AXIOM_LIVE_DOCUMENT_ID`
+- `AXIOM_LIVE_ORDER_ID`
+- Optional:
+  - `AXIOM_LIVE_DOCUMENT_TYPE` (default `appraisal`)
 
 Optional poll tuning for all scripts:
 
@@ -116,6 +211,9 @@ Optional preflight tuning:
 - `pnpm axiom:livefire:analyze-webhook`
 - `pnpm axiom:livefire:bulk-submit`
 - `pnpm axiom:livefire:preflight`
+- `pnpm axiom:livefire:ui-parity -- --mode extraction`
+- `pnpm axiom:livefire:ui-parity -- --mode criteria`
+- `pnpm axiom:livefire:ui-parity -- --mode full`
 - `pnpm axiom:livefire:remote-suite`
 - `pnpm axiom:livefire:verify-local-remote -- <flow>`
 

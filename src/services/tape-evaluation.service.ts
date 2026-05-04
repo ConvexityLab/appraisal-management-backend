@@ -46,6 +46,79 @@ import type {
   ReviewDecision,
   ReviewDecisionRules,
 } from '../types/review-tape.types.js';
+import type {
+  CanonicalCompStatistics,
+  CanonicalReportDocument,
+} from '../types/canonical-schema.js';
+import { mapLoanFromTape, computeLoanRatios } from '../mappers/loan-tape.mapper.js';
+import { mapTransactionHistoryFromTape } from '../mappers/transaction-history.mapper.js';
+import { mapAvmCrossCheckFromTape } from '../mappers/avm.mapper.js';
+import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
+
+/**
+ * Project a RiskTapeItem onto a canonical-schema view used by tape evaluation.
+ *
+ * Tape rows carry pre-computed comp statistics (avgNetAdjPct, nonMlsPct, etc.)
+ * as flat fields rather than full comp arrays — those are projected directly
+ * onto compStatistics. Loan, ratios, transactionHistory, AVM, and riskFlags
+ * branches use the per-source mappers in src/mappers/.
+ */
+function projectTapeItemToCanonicalView(item: RiskTapeItem): Partial<CanonicalReportDocument> {
+  const view: Partial<CanonicalReportDocument> = {};
+  const appraisedValue = typeof item.appraisedValue === 'number' ? item.appraisedValue : null;
+
+  const loan = mapLoanFromTape(item);
+  if (loan) view.loan = loan;
+
+  const ratios = computeLoanRatios(loan, appraisedValue, item);
+  if (ratios) view.ratios = ratios;
+
+  const transactionHistory = mapTransactionHistoryFromTape({
+    tape: item,
+    appraisedValue,
+    effectiveDate: typeof item.appraisalEffectiveDate === 'string' ? item.appraisalEffectiveDate : null,
+  });
+  if (transactionHistory) view.transactionHistory = transactionHistory;
+
+  const avmCrossCheck = mapAvmCrossCheckFromTape({
+    tape: item,
+    appraisedValue,
+    avmProviderData: null,
+  });
+  if (avmCrossCheck) view.avmCrossCheck = avmCrossCheck;
+
+  const riskFlags = mapRiskFlagsFromTape({ tape: item });
+  if (riskFlags) view.riskFlags = riskFlags;
+
+  // Comp statistics — RiskTapeItem carries these as precomputed flat fields,
+  // not as a comp array. Project them directly. RiskTapeItem stores
+  // percentages as FRACTIONS (0.20 for 20%) per legacy bulk-tape convention;
+  // CanonicalCompStatistics uses MISMO PERCENTAGE form (e.g. 20). Multiply
+  // every fraction-form field by 100 when copying. Counts and miles pass
+  // through unchanged.
+  const toPct = (v: unknown): number | null => (typeof v === 'number' ? v * 100 : null);
+  const compStats: CanonicalCompStatistics = {
+    selectedCompCount: typeof item.numComps === 'number' ? item.numComps : null,
+    averageNetAdjustmentPercent: toPct(item.avgNetAdjPct),
+    averageGrossAdjustmentPercent: toPct(item.avgGrossAdjPct),
+    maxNetAdjustmentPercent: null,
+    maxGrossAdjustmentPercent: null,
+    averageDistanceMiles: typeof item.avgDistanceMi === 'number' ? item.avgDistanceMi : null,
+    maxDistanceMiles: typeof item.maxDistanceMi === 'number' ? item.maxDistanceMi : null,
+    saleDateRangeMonths: typeof item.compsDateRangeMonths === 'number' ? item.compsDateRangeMonths : null,
+    nonMlsCompCount: typeof item.nonMlsCount === 'number' ? item.nonMlsCount : null,
+    nonMlsCompPercent: toPct(item.nonMlsPct),
+    averagePricePerSqFt: typeof item.avgPricePerSf === 'number' ? item.avgPricePerSf : null,
+    comparablePriceRangeLow: typeof item.compPriceRangeLow === 'number' ? item.compPriceRangeLow : null,
+    comparablePriceRangeHigh: typeof item.compPriceRangeHigh === 'number' ? item.compPriceRangeHigh : null,
+  };
+  // Only attach if at least one field is populated.
+  if (Object.values(compStats).some((v) => v != null)) {
+    view.compStatistics = compStats;
+  }
+
+  return view;
+}
 
 // ─── Critical source fields — absence triggers a data quality issue ───────────
 const CRITICAL_SOURCE_FIELDS: (keyof RiskTapeItem)[] = [
@@ -66,9 +139,27 @@ const ZERO_INVALID_SOURCE_FIELDS = new Set<keyof RiskTapeItem>([
 
 // ─── Inverted-boolean manual flag fields ─────────────────────────────────────
 // For these fields, a truthy value means "no risk" and falsy means "risk".
-const INVERTED_BOOLEAN_FLAGS = new Set<keyof RiskTapeItem>([
-  'appraiserGeoCompetency',
+// Keys are canonical-schema dotted paths (post-UAD-alignment). Add a path
+// here if a new manual flag follows the inverted convention.
+const INVERTED_BOOLEAN_FLAGS = new Set<string>([
+  'riskFlags.appraiserGeoCompetency',
 ]);
+
+/**
+ * Walk a dotted path on a record graph. Returns undefined when any segment
+ * doesn't exist. Mirrors getFieldValue in bulk-ingestion-criteria-worker.
+ */
+function getValueByPath(root: unknown, path: string): unknown {
+  if (root == null || typeof root !== 'object') return undefined;
+  if (!path) return undefined;
+  const parts = path.split('.');
+  let cursor: unknown = root;
+  for (const part of parts) {
+    if (cursor == null || typeof cursor !== 'object') return undefined;
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+  return cursor;
+}
 
 export class TapeEvaluationService {
   // ─── Public entry point ──────────────────────────────────────────────────────
@@ -149,8 +240,14 @@ export class TapeEvaluationService {
    * Returns one ReviewAutoFlag per definition in the program's autoFlags array,
    * whether fired or not.
    */
-  evaluateAutoFlags(item: RiskTapeItem, program: ReviewProgram): ReviewAutoFlag[] {
-    return program.autoFlags.map(def => this.evaluateAutoFlag(item, def, program.thresholds));
+  evaluateAutoFlags(item: Partial<CanonicalReportDocument>, program: ReviewProgram): ReviewAutoFlag[] {
+    if (!program.autoFlags || !program.thresholds) {
+      throw new Error(
+        `ReviewProgram '${program.id}' has no inline autoFlags/thresholds. ` +
+        'Use MopCriteriaService.getCompiledCriteria() to resolve rulesetRefs before calling TapeEvaluationService.',
+      );
+    }
+    return program.autoFlags.map(def => this.evaluateAutoFlag(item, def, program.thresholds!));
   }
 
   // ─── Manual flag evaluation ──────────────────────────────────────────────────
@@ -159,7 +256,13 @@ export class TapeEvaluationService {
    * Evaluate all manual-flag definitions against the item's boolean fields.
    * Returns one ReviewAutoFlag per definition.
    */
-  evaluateManualFlags(item: RiskTapeItem, program: ReviewProgram): ReviewAutoFlag[] {
+  evaluateManualFlags(item: Partial<CanonicalReportDocument>, program: ReviewProgram): ReviewAutoFlag[] {
+    if (!program.manualFlags) {
+      throw new Error(
+        `ReviewProgram '${program.id}' has no inline manualFlags. ` +
+        'Use MopCriteriaService.getCompiledCriteria() to resolve rulesetRefs before calling TapeEvaluationService.',
+      );
+    }
     return program.manualFlags.map(def => this.evaluateManualFlag(item, def));
   }
 
@@ -195,9 +298,19 @@ export class TapeEvaluationService {
     const item = this.computeCalculatedFields(raw);
     const dataQualityIssues = this.collectDataQualityIssues(item);
 
-    const autoFlagResults = this.evaluateAutoFlags(item, program);
-    const manualFlagResults = this.evaluateManualFlags(item, program);
+    // Project the tape item onto a canonical-schema view ONCE per evaluation —
+    // rule fields are dotted canonical paths, walked via getValueByPath below.
+    const canonicalView = projectTapeItemToCanonicalView(item);
+
+    const autoFlagResults = this.evaluateAutoFlags(canonicalView, program);
+    const manualFlagResults = this.evaluateManualFlags(canonicalView, program);
     const overallRiskScore = this.computeRiskScore(autoFlagResults, manualFlagResults);
+    if (!program.decisionRules) {
+      throw new Error(
+        `ReviewProgram '${program.id}' has no inline decisionRules. ` +
+        'Use MopCriteriaService.getCompiledCriteria() to resolve rulesetRefs before calling TapeEvaluationService.',
+      );
+    }
     const computedDecision = this.deriveDecision(overallRiskScore, program.decisionRules);
 
     return {
@@ -214,7 +327,7 @@ export class TapeEvaluationService {
   }
 
   private evaluateAutoFlag(
-    item: RiskTapeItem,
+    canonicalView: Partial<CanonicalReportDocument>,
     def: ReviewProgramAutoFlagDef,
     thresholds: ReviewThresholds,
   ): ReviewAutoFlag {
@@ -222,17 +335,19 @@ export class TapeEvaluationService {
     let isFired: boolean;
 
     if (operator === 'AND') {
-      isFired = rules.every(rule => this.evaluateRule(item, rule, thresholds));
+      isFired = rules.every(rule => this.evaluateRule(canonicalView, rule, thresholds));
     } else {
       // OR
-      isFired = rules.some(rule => this.evaluateRule(item, rule, thresholds));
+      isFired = rules.some(rule => this.evaluateRule(canonicalView, rule, thresholds));
     }
 
     // Surface the "interesting" (comparison) rule's value for display.
     // For AND conditions the guard rules (NOT_NULL / GT>0) come first;
     // the actual comparison rule is last — so we walk backwards.
-    const firedRule = isFired ? this.findDisplayRule(operator, rules, item, thresholds) : undefined;
-    const actualValue = firedRule ? (item[firedRule.field] as number | string | boolean | null | undefined) : undefined;
+    const firedRule = isFired ? this.findDisplayRule(operator, rules, canonicalView, thresholds) : undefined;
+    const actualValue = firedRule
+      ? (getValueByPath(canonicalView, firedRule.field) as number | string | boolean | null | undefined)
+      : undefined;
     const thresholdValue = firedRule?.thresholdKey != null
       ? thresholds[firedRule.thresholdKey]
       : firedRule?.value;
@@ -250,11 +365,11 @@ export class TapeEvaluationService {
   }
 
   private evaluateRule(
-    item: RiskTapeItem,
+    canonicalView: Partial<CanonicalReportDocument>,
     rule: ReviewFlagRule,
     thresholds: ReviewThresholds,
   ): boolean {
-    const fieldValue = item[rule.field];
+    const fieldValue = getValueByPath(canonicalView, rule.field);
     const threshold = rule.thresholdKey != null ? thresholds[rule.thresholdKey] : rule.value;
 
     return this.applyOperator(rule.op, fieldValue, threshold);
@@ -301,23 +416,23 @@ export class TapeEvaluationService {
   private findDisplayRule(
     operator: ReviewConditionOperator,
     rules: ReviewFlagRule[],
-    item: RiskTapeItem,
+    canonicalView: Partial<CanonicalReportDocument>,
     thresholds: ReviewThresholds,
   ): ReviewFlagRule | undefined {
     if (operator === 'AND') {
       for (let i = rules.length - 1; i >= 0; i--) {
-        if (this.evaluateRule(item, rules[i]!, thresholds)) return rules[i];
+        if (this.evaluateRule(canonicalView, rules[i]!, thresholds)) return rules[i];
       }
       return undefined;
     }
-    return rules.find(r => this.evaluateRule(item, r, thresholds));
+    return rules.find(r => this.evaluateRule(canonicalView, r, thresholds));
   }
 
   private evaluateManualFlag(
-    item: RiskTapeItem,
+    canonicalView: Partial<CanonicalReportDocument>,
     def: ReviewProgramManualFlagDef,
   ): ReviewAutoFlag {
-    const raw = item[def.field];
+    const raw = getValueByPath(canonicalView, def.field);
     const isInverted = INVERTED_BOOLEAN_FLAGS.has(def.field);
 
     let isFired: boolean;

@@ -87,6 +87,7 @@ export enum EngagementClientOrderStatus {
  */
 export interface EngagementClient {
   clientId: string;
+  subClientId?: string;
   clientName: string;
   loanOfficer?: string | undefined;
   loanOfficerEmail?: string | undefined;

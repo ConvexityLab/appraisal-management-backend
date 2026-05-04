@@ -4,23 +4,35 @@
  * REST endpoints for order CRUD and lifecycle operations.
  * Extracted from inline methods in api-server.ts (Phase 0.2).
  *
- * Routes:
- *   POST   /                       → createOrder       (validated)
- *   GET    /                       → getOrders
- *   GET    /dashboard              → getOrderDashboard
- *   GET    /needs-attention        → getNeedsAttentionOrders
- *   POST   /search                 → searchOrders       (validated)
- *   POST   /batch/status           → batchUpdateStatus   (validated)
- *   POST   /batch/assign           → batchAssign          (validated)
- *   POST   /export                 → exportOrders          (validated)
- *   GET    /:orderId               → getOrder
- *   PUT    /:orderId/status        → updateOrderStatus
- *   POST   /:orderId/cancel        → cancelOrder         (validated)
- *   POST   /:orderId/deliver       → deliverOrder
- *   POST   /:orderId/assign        → assignVendor
- *   GET    /:orderId/timeline                       → getOrderTimeline
- *   GET    /:orderId/property-enrichment           → getOrderPropertyEnrichment
- *   POST   /:orderId/property-enrichment/refresh   → refreshOrderPropertyEnrichment
+ * Routes (all guarded by Casbin authorization middleware when present):
+ *   GET    /                               → getOrders              (authorizeQuery read)
+ *   GET    /dashboard                      → getOrderDashboard      (authorizeQuery read)
+ *   GET    /needs-attention                → getNeedsAttentionOrders (authorizeQuery read)
+ *   POST   /                               → createOrder            (authorize create, validated)
+ *   POST   /search                         → searchOrders           (authorizeQuery read, validated)
+ *   POST   /batch-status                   → batchUpdateStatus      (authorize update, validated)
+ *   POST   /batch/status                   → batchUpdateStatus      (authorize update, validated)
+ *   POST   /batch/assign                   → batchAssign            (authorize update, validated)
+ *   POST   /export                         → exportOrders           (authorizeQuery read, validated)
+ *   POST   /duplicate-check               → checkDuplicates        (authorize read)
+ *   POST   /waiver-screening              → screenWaiver           (authorize read)
+ *   GET    /:orderId                        → getOrder               (authorizeResource read)
+ *   PUT    /:orderId                        → updateOrder            (authorizeResource update)
+ *   PUT    /:orderId/status                 → updateOrderStatus      (authorizeResource update)
+ *   POST   /:orderId/cancel                → cancelOrder            (authorizeResource execute, validated)
+ *   POST   /:orderId/deliver               → deliverOrder           (authorizeResource execute)
+ *   POST   /:orderId/assign                → assignVendor           (authorizeResource update)
+ *   POST   /:orderId/unassign              → unassignVendor         (authorizeResource update)
+ *   POST   /:orderId/payment               → markPayment            (authorizeResource update)
+ *   GET    /:orderId/timeline              → getOrderTimeline       (authorizeResource read)
+ *   POST   /:orderId/compliance-check      → evaluateCompliance     (authorizeResource execute)
+ *   GET    /:orderId/auto-assignment       → getAutoAssignmentStatus (authorizeResource read)
+ *   POST   /:orderId/trigger-auto-assignment → triggerAutoAssignment (authorizeResource execute)
+ *   POST   /:orderId/vendor-bid/:bidId/accept  → acceptVendorBid   (authorizeResource approve)
+ *   POST   /:orderId/vendor-bid/:bidId/decline → declineVendorBid  (authorizeResource reject)
+ *   POST   /:orderId/acknowledge-attention → acknowledgeAttention   (authorizeResource update)
+ *   GET    /:orderId/property-enrichment   → getOrderPropertyEnrichment (authorizeResource read)
+ *   POST   /:orderId/property-enrichment/refresh → refreshOrderPropertyEnrichment (authorizeResource execute)
  */
 
 import { Router, Response } from 'express';
@@ -159,53 +171,108 @@ export class OrderController {
   }
 
   private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
-    // IMPORTANT: Specific routes MUST come before parameterized routes
-    this.router.get('/dashboard', this.getOrderDashboard.bind(this));
-    this.router.get('/needs-attention', this.getNeedsAttentionOrders.bind(this));
-
-    // GET / — with optional authorization (audit mode)
-    const readMiddleware = authzMiddleware
+    // ── Middleware factory helpers ────────────────────────────────────────────
+    // Collection-level: coarse role check, no specific resource loaded.
+    const readQuery = authzMiddleware
       ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeQuery('order', 'read')]
       : [];
-    this.router.get('/', ...readMiddleware, this.getOrders.bind(this));
+    const create = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('order', 'create')]
+      : [];
+    const update = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('order', 'update')]
+      : [];
+    const readAuth = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('order', 'read')]
+      : [];
 
-    this.router.post('/', ...validateCreateOrder(), this.createOrder.bind(this));
-    this.router.post('/search', ...validateSearchOrders(), this.searchOrders.bind(this));
-    this.router.post('/batch-status', ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
-    this.router.post('/batch/status', ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
-    this.router.post('/batch/assign', ...validateBatchAssign(), this.batchAssign.bind(this));
-    this.router.post('/export', ...validateExportOrders(), this.exportOrders.bind(this));
-    this.router.post('/duplicate-check', this.checkDuplicates.bind(this));
-    this.router.post('/waiver-screening', this.screenWaiver.bind(this));
-    this.router.get('/:orderId', this.getOrder.bind(this));
-    this.router.put('/:orderId', this.updateOrder.bind(this));
-    this.router.put('/:orderId/status', this.updateOrderStatus.bind(this));
-    this.router.post('/:orderId/cancel', ...validateCancelOrder(), this.cancelOrder.bind(this));
-    this.router.post('/:orderId/deliver', this.deliverOrder.bind(this));
-    this.router.post('/:orderId/assign', this.assignVendor.bind(this));
-    this.router.post('/:orderId/unassign', this.unassignVendor.bind(this));
-    this.router.post('/:orderId/payment', this.markPayment.bind(this));
-    this.router.get('/:orderId/timeline', this.getOrderTimeline.bind(this));
-      this.router.post('/:orderId/compliance-check', this.evaluateCompliance.bind(this));
-    this.router.get('/:orderId/auto-assignment', this.getAutoAssignmentStatus.bind(this));
-    this.router.post('/:orderId/trigger-auto-assignment', this.triggerAutoAssignment.bind(this));
-    this.router.post('/:orderId/vendor-bid/:bidId/accept', this.acceptVendorBid.bind(this));
-    this.router.post('/:orderId/vendor-bid/:bidId/decline', this.declineVendorBid.bind(this));
-    this.router.post('/:orderId/acknowledge-attention', this.acknowledgeAttention.bind(this));
-    this.router.get('/:orderId/property-enrichment', this.getOrderPropertyEnrichment.bind(this));
-    this.router.post('/:orderId/property-enrichment/refresh', this.refreshOrderPropertyEnrichment.bind(this));
+    // Resource-level: full ABAC — loads the order from Cosmos to check ownerId / assignedUserIds.
+    const readRes = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('order', 'read',    { resourceIdParam: 'orderId' })]
+      : [];
+    const updateRes = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('order', 'update',  { resourceIdParam: 'orderId' })]
+      : [];
+    const execRes = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('order', 'execute', { resourceIdParam: 'orderId' })]
+      : [];
+    const approveRes = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('order', 'approve', { resourceIdParam: 'orderId' })]
+      : [];
+    const rejectRes = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('order', 'reject',  { resourceIdParam: 'orderId' })]
+      : [];
+
+    // ── Collection / utility routes (no specific resource ID) ────────────────
+    // IMPORTANT: Specific paths MUST come before parameterised /:orderId routes.
+    this.router.get('/dashboard',        ...readQuery, this.getOrderDashboard.bind(this));
+    this.router.get('/needs-attention',  ...readQuery, this.getNeedsAttentionOrders.bind(this));
+    this.router.get('/',                 ...readQuery, this.getOrders.bind(this));
+
+    this.router.post('/',                ...create,    ...validateCreateOrder(),      this.createOrder.bind(this));
+    this.router.post('/search',          ...readQuery, ...validateSearchOrders(),     this.searchOrders.bind(this));
+    this.router.post('/batch-status',    ...update,    ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
+    this.router.post('/batch/status',    ...update,    ...validateBatchStatusUpdate(), this.batchUpdateStatus.bind(this));
+    this.router.post('/batch/assign',    ...update,    ...validateBatchAssign(),       this.batchAssign.bind(this));
+    this.router.post('/export',          ...readQuery, ...validateExportOrders(),      this.exportOrders.bind(this));
+    // Advisory — reads order data so requires at least read permission.
+    this.router.post('/duplicate-check',  ...readAuth, this.checkDuplicates.bind(this));
+    this.router.post('/waiver-screening', ...readAuth, this.screenWaiver.bind(this));
+
+    // ── Resource routes — full ABAC (Casbin checks ownerId / assignedUserIds) ─
+    this.router.get('/:orderId',                            ...readRes,    this.getOrder.bind(this));
+    this.router.put('/:orderId',                            ...updateRes,  this.updateOrder.bind(this));
+    this.router.put('/:orderId/status',                     ...updateRes,  this.updateOrderStatus.bind(this));
+    this.router.post('/:orderId/cancel',                    ...execRes,    ...validateCancelOrder(), this.cancelOrder.bind(this));
+    this.router.post('/:orderId/deliver',                   ...execRes,    this.deliverOrder.bind(this));
+    this.router.post('/:orderId/assign',                    ...updateRes,  this.assignVendor.bind(this));
+    this.router.post('/:orderId/unassign',                  ...updateRes,  this.unassignVendor.bind(this));
+    this.router.post('/:orderId/payment',                   ...updateRes,  this.markPayment.bind(this));
+    this.router.get('/:orderId/timeline',                   ...readRes,    this.getOrderTimeline.bind(this));
+    this.router.post('/:orderId/compliance-check',          ...execRes,    this.evaluateCompliance.bind(this));
+    this.router.get('/:orderId/auto-assignment',            ...readRes,    this.getAutoAssignmentStatus.bind(this));
+    this.router.post('/:orderId/trigger-auto-assignment',   ...execRes,    this.triggerAutoAssignment.bind(this));
+    this.router.post('/:orderId/vendor-bid/:bidId/accept',  ...approveRes, this.acceptVendorBid.bind(this));
+    this.router.post('/:orderId/vendor-bid/:bidId/decline', ...rejectRes,  this.declineVendorBid.bind(this));
+    this.router.post('/:orderId/acknowledge-attention',     ...updateRes,  this.acknowledgeAttention.bind(this));
+    this.router.get('/:orderId/property-enrichment',        ...readRes,    this.getOrderPropertyEnrichment.bind(this));
+    this.router.post('/:orderId/property-enrichment/refresh', ...execRes,  this.refreshOrderPropertyEnrichment.bind(this));
   }
 
   // ─── POST / ──────────────────────────────────────────────────────────────
 
   public async createOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
+      const intakeDraftId = typeof req.body.intakeDraftId === 'string' && req.body.intakeDraftId.trim().length > 0
+        ? req.body.intakeDraftId.trim()
+        : undefined;
+      const requestBody = { ...req.body };
+      const requestMetadata = requestBody.metadata && typeof requestBody.metadata === 'object'
+        ? requestBody.metadata as Record<string, unknown>
+        : {};
+      if ('intakeDraftId' in requestBody) {
+        delete (requestBody as Record<string, unknown>).intakeDraftId;
+      }
+
+      const sourceIdentity = intakeDraftId
+        ? buildManualDraftSourceIdentity({
+            intakeDraftId,
+            engagementId: typeof requestBody.engagementId === 'string' ? requestBody.engagementId : undefined,
+          })
+        : buildApiOrderSourceIdentity({
+            engagementId: typeof requestBody.engagementId === 'string' ? requestBody.engagementId : undefined,
+          });
+
       const orderData = {
-        ...req.body,
+        ...requestBody,
         tenantId: req.user!.tenantId,
         createdBy: req.user?.id,
         status: OrderStatus.NEW,
-        priority: req.body.priority || 'STANDARD',
+        priority: requestBody.priority || 'STANDARD',
+        metadata: {
+          ...requestMetadata,
+          sourceIdentity,
+        },
       };
 
       // Run duplicate check before creating — advisory only, never blocks.
@@ -241,6 +308,41 @@ export class OrderController {
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
         const created = result.data as AppraisalOrder;
+
+        if (intakeDraftId) {
+          const documentAssociationResult = await this.documentService.associateEntityDocumentsToOrder({
+            tenantId: req.user!.tenantId,
+            entityType: 'order-intake-draft',
+            entityId: intakeDraftId,
+            orderId: created.id!,
+            linkedBy: req.user!.id,
+            linkReason: 'order-intake-submit',
+          });
+
+          if (!documentAssociationResult.success) {
+            logger.error('Failed to associate intake draft documents to created order', {
+              intakeDraftId,
+              orderId: created.id,
+              error: documentAssociationResult.error,
+            });
+          } else {
+            for (const document of documentAssociationResult.data ?? []) {
+                const reassociationAuditPayload = {
+                  documentId: document.id,
+                  documentName: document.name,
+                  orderId: created.id!,
+                  ...(document.entityType ? { entityType: document.entityType } : {}),
+                  ...(document.entityId ? { entityId: document.entityId } : {}),
+                };
+
+              await this.auditService.logDocumentReassociatedToOrder(
+                { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
+                  reassociationAuditPayload,
+              );
+            }
+          }
+        }
+
         this.eventService.publishOrderCreated(created).catch((err) =>
           logger.error('Failed to publish ORDER_CREATED event', { orderId: created?.id, error: err }),
         );
@@ -444,6 +546,11 @@ export class OrderController {
 
       const filters: any = {};
 
+      // Scope query to the authenticated user's tenant (partition-key filter).
+      if (req.user?.tenantId) {
+        filters.tenantId = req.user.tenantId;
+      }
+
       // Express may give a string ("PENDING_ASSIGNMENT") or an array
       // depending on whether the query param appears once or multiple times.
       if (status) {
@@ -589,6 +696,7 @@ export class OrderController {
           data: {
             orderId,
             tenantId: req.user!.tenantId,
+            clientId: current.data.clientId,
             previousStatus: currentStatus,
             newStatus,
             changedBy: req.user!.id,
@@ -1564,13 +1672,17 @@ export class OrderController {
         documentReference: d.blobUrl,
       }));
 
+      const subClientId: string = orderData.subClientId ?? '';
+
       const axiomResult = await this.axiomService.submitOrderEvaluation(
         orderId,
         fields,
         documents,
         tenantId,
         clientId,
-        undefined,
+        subClientId,
+        undefined, // programId
+        undefined, // programVersion
         'ORDER',
       );
 
@@ -2001,6 +2113,7 @@ export class OrderController {
           orderId,
           orderNumber: order.orderNumber ?? '',
           tenantId,
+          clientId: order.clientId ?? '',
           vendorId: bid.vendorId,
           vendorName: bid.vendorName,
           bidId,
@@ -2078,6 +2191,7 @@ export class OrderController {
           orderId,
           orderNumber: order?.orderNumber ?? '',
           tenantId,
+          clientId: order?.clientId ?? '',
           vendorId: bid.vendorId,
           vendorName: (bid as any).vendorName ?? bid.vendorId,
           bidId,

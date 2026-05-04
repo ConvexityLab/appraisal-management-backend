@@ -110,6 +110,7 @@ describe('AxiomController webhook durable ACK', () => {
       fetchAndStorePipelineResults: vi.fn().mockResolvedValue(undefined),
       handleWebhook: vi.fn().mockResolvedValue(undefined),
       broadcastBatchJobUpdate: vi.fn().mockResolvedValue(undefined),
+      signalPipelineTermination: vi.fn().mockResolvedValue(undefined),
     };
 
     const controller = new AxiomController(dbStub as any, axiomServiceStub as any);

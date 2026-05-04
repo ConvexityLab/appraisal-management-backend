@@ -16,6 +16,7 @@ import type {
   BulkIngestionSubmitRequest,
 } from '../types/bulk-ingestion.types.js';
 import { EventCategory, EventPriority, type BulkIngestionRequestedEvent } from '../types/events.js';
+import { buildBulkItemSourceIdentity } from '../types/intake-source.types.js';
 
 type BulkIngestionAuditAction =
   | 'SUBMIT'
@@ -125,19 +126,25 @@ export class BulkIngestionService {
   ): Promise<BulkIngestionJob> {
     const now = new Date().toISOString();
     const jobId = `bulk-ingest-${uuidv4()}`;
+    const engagementGranularity = request.engagementGranularity ?? 'PER_BATCH';
 
     const items: BulkIngestionItem[] = request.items.map((input, index) => {
       const rowIndex = input.rowIndex ?? index + 1;
       const stableKey = input.loanNumber?.trim() || input.externalId?.trim() || `${rowIndex}`;
       const correlationKey = `${jobId}::${stableKey}`;
+      const itemId = `${jobId}:${rowIndex}`;
       return {
-        id: `${jobId}:${rowIndex}`,
+        id: itemId,
         rowIndex,
         correlationKey,
         status: 'PENDING',
         source: input,
         matchedDocumentFileNames: input.documentFileName ? [input.documentFileName] : [],
         failures: [],
+        sourceIdentity: buildBulkItemSourceIdentity({
+          bulkJobId: jobId,
+          bulkItemId: itemId,
+        }),
       };
     });
 
@@ -149,6 +156,7 @@ export class BulkIngestionService {
       ...(request.jobName !== undefined ? { jobName: request.jobName } : {}),
       analysisType: request.analysisType,
       ingestionMode: request.ingestionMode,
+      engagementGranularity,
       status: 'PENDING',
       adapterKey: request.adapterKey,
       dataFileName: request.dataFileName,
@@ -163,6 +171,9 @@ export class BulkIngestionService {
       successItems: 0,
       failedItems: 0,
       pendingItems: items.length,
+      sourceIdentity: buildBulkItemSourceIdentity({
+        bulkJobId: jobId,
+      }),
       items,
     };
 
@@ -183,6 +194,7 @@ export class BulkIngestionService {
         tenantId,
         clientId: request.clientId,
         ingestionMode: request.ingestionMode,
+        engagementGranularity,
         adapterKey: request.adapterKey,
         dataFileName: request.dataFileName,
         ...(request.dataFileBlobName !== undefined ? { dataFileBlobName: request.dataFileBlobName } : {}),
@@ -211,6 +223,7 @@ export class BulkIngestionService {
       requestedAt: now,
       details: {
         ingestionMode: request.ingestionMode,
+        engagementGranularity,
         adapterKey: request.adapterKey,
         totalItems: items.length,
       },
@@ -221,6 +234,7 @@ export class BulkIngestionService {
       tenantId,
       clientId: request.clientId,
       itemCount: items.length,
+      engagementGranularity,
       dataFileName: request.dataFileName,
       documentCount: request.documentFileNames.length,
     });

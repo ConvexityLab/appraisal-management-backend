@@ -21,8 +21,10 @@ import type {
   MatchingCriteriaSet,
   CreateRfbRequest,
   SubmitBidRequest,
+  RfbAutoAwardThreshold,
   ProviderType,
 } from '../types/matching.types.js';
+import type { Product } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 
 const logger = new Logger();
@@ -61,9 +63,78 @@ interface MatchableProvider {
 
 export class RfbService {
   private readonly container: Container;
+  private readonly productsContainer: Container;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.container = dbService.getRfbRequestsContainer();
+    this.productsContainer = dbService.getProductsContainer();
+  }
+
+  private validateAutoAwardThreshold(threshold: RfbAutoAwardThreshold | undefined): void {
+    if (!threshold) {
+      return;
+    }
+
+    if (typeof threshold.maxFeeMultiplier !== 'number' || Number.isNaN(threshold.maxFeeMultiplier) || threshold.maxFeeMultiplier < 1) {
+      throw new Error(`RFB auto-award threshold maxFeeMultiplier must be >= 1. Received '${String(threshold.maxFeeMultiplier)}'.`);
+    }
+
+    if (typeof threshold.minVendorScore !== 'number' || Number.isNaN(threshold.minVendorScore) || threshold.minVendorScore < 0 || threshold.minVendorScore > 100) {
+      throw new Error(`RFB auto-award threshold minVendorScore must be between 0 and 100. Received '${String(threshold.minVendorScore)}'.`);
+    }
+  }
+
+  private async getProductForTenant(productId: string, tenantId: string): Promise<Product> {
+    const { resources } = await this.productsContainer.items
+      .query<Product>({
+        query: 'SELECT TOP 1 * FROM c WHERE c.id = @productId AND c.tenantId = @tenantId',
+        parameters: [
+          { name: '@productId', value: productId },
+          { name: '@tenantId', value: tenantId },
+        ],
+      })
+      .fetchAll();
+
+    const product = resources[0];
+    if (!product) {
+      throw new Error(`Product '${productId}' was not found for tenant '${tenantId}' while evaluating RFB auto-award rules.`);
+    }
+
+    if (typeof product.defaultFee !== 'number' || Number.isNaN(product.defaultFee)) {
+      throw new Error(`Product '${productId}' is missing a valid defaultFee, required for RFB auto-award evaluation.`);
+    }
+
+    return product;
+  }
+
+  private async shouldAutoAwardBid(
+    rfb: RfbRequest,
+    bid: RfbBid,
+    tenantId: string,
+  ): Promise<boolean> {
+    if (!rfb.autoAward) {
+      return false;
+    }
+
+    this.validateAutoAwardThreshold(rfb.autoAwardThreshold);
+
+    if (!rfb.autoAwardThreshold) {
+      return true;
+    }
+
+    const threshold = rfb.autoAwardThreshold;
+    const matchEntry = rfb.matchSnapshot.find((entry) => entry.providerId === bid.providerId);
+    if (!matchEntry) {
+      throw new Error(`Cannot evaluate auto-award for bid '${bid.id}' because provider '${bid.providerId}' is missing from the RFB match snapshot.`);
+    }
+
+    if (matchEntry.score < threshold.minVendorScore) {
+      return false;
+    }
+
+    const product = await this.getProductForTenant(rfb.productId, tenantId);
+    const maxAcceptableFee = product.defaultFee * threshold.maxFeeMultiplier;
+    return bid.proposedFee <= maxAcceptableFee;
   }
 
   // ── Matching preview (no DB write) ──────────────────────────────────────────
@@ -108,6 +179,7 @@ export class RfbService {
     subjectAddress?: { state?: string; county?: string; zipCode?: string };
   }): Promise<RfbRequest> {
     const { request, tenantId, createdBy, providers, criteriaSets, subjectCoords, subjectAddress } = params;
+    this.validateAutoAwardThreshold(request.autoAwardThreshold);
 
     const matchSnapshot: MatchResult[] = matchProviders(
       providers as unknown as Record<string, unknown>[],
@@ -130,6 +202,7 @@ export class RfbService {
       deadlineAt: request.deadlineAt,
       status: 'DRAFT',
       autoAward: request.autoAward ?? false,
+      ...(request.autoAwardThreshold !== undefined && { autoAwardThreshold: request.autoAwardThreshold }),
       bids: [],
       createdBy,
       createdAt: now(),
@@ -287,6 +360,8 @@ export class RfbService {
       respondedAt: now(),
     };
 
+    const autoAwardEligible = await this.shouldAutoAwardBid(rfb, newBid, tenantId);
+
     const updatedBids = [...rfb.bids, newBid];
     const updatedRfb: RfbRequest = {
       ...rfb,
@@ -302,8 +377,8 @@ export class RfbService {
 
     logger.info('Bid submitted', { rfbId, bidId: newBid.id, providerId: bid.providerId });
 
-    // Auto-award: if the product set autoAward=true, award the first bid received
-    if (rfb.autoAward) {
+    // Auto-award: if enabled and the first bid meets the configured guardrails.
+    if (autoAwardEligible) {
       return this.awardBid(rfbId, orderId, newBid.id, tenantId);
     }
 

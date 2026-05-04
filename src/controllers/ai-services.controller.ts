@@ -544,6 +544,98 @@ export class AIServicesController {
   };
 
   /**
+   * Phase 8 / A4 — Server-Sent Events streaming variant of
+   * generateCompletion.  Writes `data: {"delta":"..."}\n\n` frames as
+   * tokens arrive, followed by `data: {"done": true}`.  Falls back to
+   * one-chunk emission on providers that don't support streaming.
+   */
+  public generateCompletionStream = async (req: AuthenticatedRequest, res: express.Response): Promise<void> => {
+    // SSE headers MUST go out before any body write.  After these the
+    // stream owns the connection — we cannot switch to a JSON error
+    // body; downstream errors become `data: {"error":"..."}` frames.
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // disable nginx-style buffering
+    (res as unknown as { flushHeaders?: () => void }).flushHeaders?.();
+
+    const writeFrame = (payload: Record<string, unknown>): void => {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    // Phase 8.1 / A4 instrumentation — structured log events that SRE
+    // can pivot on in Log Analytics / App Insights.  `ai.completion.first_token`
+    // captures p95 first-token latency (the Phase 8.1 exit-gate target);
+    // `ai.completion.stream_done` gives stream duration + total chars for
+    // throughput dashboards.  See docs/ai-assistant-runbook.md §5 for the
+    // alert thresholds and KQL recipes that consume these.
+    const startedAt = Date.now();
+    let firstTokenLoggedAt = 0;
+    try {
+      const { messages, temperature, maxTokens, model, provider } = req.body ?? {};
+      if (!Array.isArray(messages) || messages.length === 0) {
+        writeFrame({ error: 'messages array is required' });
+        res.end();
+        return;
+      }
+
+      let accumulated = '';
+      const stream = this.aiService.generateCompletionStream({
+        messages,
+        temperature,
+        maxTokens,
+        model,
+        provider,
+      });
+
+      for await (const chunk of stream) {
+        if (typeof chunk !== 'string' || chunk.length === 0) continue;
+        if (firstTokenLoggedAt === 0) {
+          firstTokenLoggedAt = Date.now();
+          this.logger.info('ai.completion.first_token', {
+            eventType: 'ai.completion.first_token',
+            latencyMs: firstTokenLoggedAt - startedAt,
+            userId: req.user?.id,
+            provider: provider ?? 'default',
+            model: model ?? 'default',
+            messageCount: messages.length,
+            schemaVersion: 'v1',
+          });
+        }
+        accumulated += chunk;
+        writeFrame({ delta: chunk });
+      }
+
+      const completedAt = Date.now();
+      this.logger.info('ai.completion.stream_done', {
+        eventType: 'ai.completion.stream_done',
+        totalMs: completedAt - startedAt,
+        firstTokenMs: firstTokenLoggedAt > 0 ? firstTokenLoggedAt - startedAt : null,
+        totalChars: accumulated.length,
+        userId: req.user?.id,
+        provider: provider ?? 'default',
+        model: model ?? 'default',
+        success: true,
+        schemaVersion: 'v1',
+      });
+      writeFrame({ done: true, totalChars: accumulated.length, schemaVersion: 'v1' });
+      res.end();
+    } catch (error) {
+      this.logger.error('AI completion stream failed', {
+        eventType: 'ai.completion.stream_failed',
+        error: error instanceof Error ? error.message : String(error),
+        userId: req.user?.id,
+        totalMs: Date.now() - startedAt,
+        firstTokenMs: firstTokenLoggedAt > 0 ? firstTokenLoggedAt - startedAt : null,
+        success: false,
+        schemaVersion: 'v1',
+      });
+      writeFrame({ error: 'AI completion stream failed', code: 'COMPLETION_STREAM_ERROR' });
+      res.end();
+    }
+  };
+
+  /**
    * Generate custom AI completion
    */
   public generateCompletion = async (req: AuthenticatedRequest, res: express.Response): Promise<void> => {

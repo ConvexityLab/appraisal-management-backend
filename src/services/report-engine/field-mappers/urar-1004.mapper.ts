@@ -20,6 +20,7 @@ import {
   HighestAndBestUse,
   ValueType,
 } from '../../../types/canonical-schema';
+import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -520,6 +521,9 @@ export class Urar1004Mapper implements IFieldMapper {
       subjectPriorSalePrice1: currency(m.subjectPriorSalePrice1),
       subjectPriorSaleDate2:  shortDate(m.subjectPriorSaleDate2),
       subjectPriorSalePrice2: currency(m.subjectPriorSalePrice2),
+      axiomEvaluationId:      a(m.axiomEvaluationId),
+      axiomCompletedAt:       formatDate(m.axiomCompletedAt),
+      hasAxiomRef:            !!m.axiomEvaluationId,
     };
 
     // ── H&BU context (UAD 3.6 — 4-test framework) ──────────────────────────────
@@ -597,6 +601,11 @@ export class Urar1004Mapper implements IFieldMapper {
       generatedAt:         new Date().toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric',
       }),
+
+      // ── Capability-5: AI insights + enrichment ────────────────────
+      aiInsights:      buildAiInsightsContext(doc),
+      enrichmentData:  buildEnrichmentContext(doc),
+      sourceDocuments: buildSourceDocumentsContext(doc),
     };
   }
 }

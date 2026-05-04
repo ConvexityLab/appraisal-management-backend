@@ -3,9 +3,13 @@
  * Simple REST API approach for document upload and management
  */
 
+import type { IntakeSourceIdentity } from './intake-source.types.js';
+
 export interface DocumentMetadata {
   id: string;
   tenantId: string;
+  clientId?: string;
+  subClientId?: string;
   orderId?: string;  // Optional — entity-scoped docs (vendor, appraiser) may not have an order
   name: string;
   blobUrl: string;
@@ -30,17 +34,24 @@ export interface DocumentMetadata {
   uploadedBy: string;
   uploadedAt: Date;
   updatedAt?: Date;
+  /** When a non-order-scoped document is later linked to an order, record when that link was established. */
+  orderLinkedAt?: Date;
+  /** Actor that linked this document to an order after initial upload. */
+  orderLinkedBy?: string;
   metadata?: Record<string, unknown>;
+  sourceIdentity?: IntakeSourceIdentity;
   // Entity association — allows querying documents by vendor, appraiser, client, etc.
   entityType?: string;  // 'order' | 'vendor' | 'appraiser' | 'client' | 'property'
   entityId?: string;    // The ID of the associated entity
 }
 
 export interface DocumentUploadRequest {
-  orderId: string;
+  orderId?: string;
   category?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  entityType?: string;
+  entityId?: string;
 }
 
 export interface DocumentUpdateRequest {

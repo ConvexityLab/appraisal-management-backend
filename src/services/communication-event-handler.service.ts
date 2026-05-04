@@ -31,6 +31,7 @@ import type {
   VendorBidSentEvent,
   VendorBidAcceptedEvent,
   VendorBidTimedOutEvent,
+  VendorBidExpiringEvent,
   VendorAssignmentExhaustedEvent,
   ReviewAssignmentExhaustedEvent,
   OrderDeliveredEvent,
@@ -44,6 +45,7 @@ import type {
   SupervisionTimedOutEvent,
   AxiomEvaluationTimedOutEvent, PaymentInitiatedEvent, PaymentCompletedEvent, PaymentFailedEvent, SubmissionUploadedEvent, SubmissionApprovedEvent, SubmissionRejectedEvent, SubmissionRevisionRequestedEvent, EscalationCreatedEvent, EscalationResolvedEvent, RovCreatedEvent, RovAssignedEvent, RovDecisionIssuedEvent, DeliveryReceiptConfirmedEvent, DeliveryReceiptOpenedEvent, ConsentGivenEvent, ConsentDeniedEvent, ConsentWithdrawnEvent, NegotiationCounterOfferSubmittedEvent, NegotiationAcceptedEvent, NegotiationRejectedEvent,
 } from '../types/events.js';
+import { EventPriority } from '../types/events.js';
 
 export class CommunicationEventHandler {
   private readonly logger = new Logger('CommunicationEventHandler');
@@ -51,6 +53,9 @@ export class CommunicationEventHandler {
   private readonly dbService: CosmosDbService;
   private readonly tenantConfigService: TenantAutomationConfigService;
   private emailService: InstanceType<typeof import('./email.service.js').EmailService> | null = null;
+  // V-04: SMS service is lazy-loaded the same way as EmailService — if ACS SMS
+  // is not configured the service simply degrades to log-only mode.
+  private smsService: InstanceType<typeof import('./sms-notification.service.js').SmsNotificationService> | null = null;
   private isStarted = false;
 
   // Resolved once EmailService is loaded (or failed). Awaited inside every
@@ -85,6 +90,20 @@ export class CommunicationEventHandler {
       .catch(() => {
         // ACS package not installed in this environment — dry-run mode.
       });
+
+    // V-04: SMS service — same pattern as email.
+    void import('./sms-notification.service.js')
+      .then(mod => {
+        try {
+          this.smsService = new (mod as any).SmsNotificationService();
+        } catch (err) {
+          this.logger.warn(
+            'SmsNotificationService could not be initialised — SMS in log-only mode.',
+            { error: err instanceof Error ? err.message : String(err) },
+          );
+        }
+      })
+      .catch(() => undefined);
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -107,6 +126,10 @@ export class CommunicationEventHandler {
       this.subscriber.subscribe<VendorBidTimedOutEvent>(
         'vendor.bid.timeout',
         this.makeHandler('vendor.bid.timeout', this.onVendorBidTimedOut.bind(this)),
+      ),
+      this.subscriber.subscribe<VendorBidExpiringEvent>(
+        'vendor.bid.expiring',
+        this.makeHandler('vendor.bid.expiring', this.onVendorBidExpiring.bind(this)),
       ),
       this.subscriber.subscribe<VendorAssignmentExhaustedEvent>(
         'vendor.assignment.exhausted',
@@ -168,6 +191,10 @@ export class CommunicationEventHandler {
         'axiom.evaluation.timeout',
         this.makeHandler('axiom.evaluation.timeout', this.onAxiomEvaluationTimedOut.bind(this)),
       ),
+      this.subscriber.subscribe<SubmissionRevisionRequestedEvent>(
+        'submission.revision.requested',
+        this.makeHandler('submission.revision.requested', this.onSubmissionRevisionRequested.bind(this)),
+      ),
     ]);
 
     this.isStarted = true;
@@ -180,6 +207,7 @@ export class CommunicationEventHandler {
       this.subscriber.unsubscribe('vendor.bid.sent'),
       this.subscriber.unsubscribe('vendor.bid.accepted'),
       this.subscriber.unsubscribe('vendor.bid.timeout'),
+      this.subscriber.unsubscribe('vendor.bid.expiring'),
       this.subscriber.unsubscribe('vendor.assignment.exhausted'),
       this.subscriber.unsubscribe('review.assignment.exhausted'),
       this.subscriber.unsubscribe('order.delivered'),
@@ -192,6 +220,7 @@ export class CommunicationEventHandler {
       this.subscriber.unsubscribe('order.overdue'),
       this.subscriber.unsubscribe('supervision.timeout'),
       this.subscriber.unsubscribe('axiom.evaluation.timeout'),
+      this.subscriber.unsubscribe('submission.revision.requested'),
     ]);
     this.isStarted = false;
     this.logger.info('CommunicationEventHandler stopped');
@@ -200,7 +229,7 @@ export class CommunicationEventHandler {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   private async onVendorBidSent(event: VendorBidSentEvent): Promise<void> {
-    const { orderId, vendorId, vendorName, orderNumber, tenantId, expiresAt } = event.data;
+    const { orderId, vendorId, vendorName, orderNumber, tenantId, expiresAt, priority } = event.data;
 
     const vendorEmail = await this.resolveVendorEmail(vendorId, tenantId);
     if (!vendorEmail) {
@@ -215,6 +244,15 @@ export class CommunicationEventHandler {
       dateStyle: 'long',
       timeStyle: 'short',
     });
+
+    // V-04: HIGH/CRITICAL bids also get an SMS to the vendor phone if available.
+    if (priority === EventPriority.HIGH || priority === EventPriority.CRITICAL) {
+      await this.sendSmsToVendor(vendorId, tenantId, {
+        event: 'vendor.bid.sent',
+        text: `Rush appraisal bid ${orderNumber} — respond before ${expiry}. Check the portal.`,
+        context: { orderId, vendorId },
+      });
+    }
 
     await this.sendEmail({
       to: vendorEmail,
@@ -283,11 +321,55 @@ export class CommunicationEventHandler {
     });
   }
 
+  private async onVendorBidExpiring(event: VendorBidExpiringEvent): Promise<void> {
+    const { orderId, orderNumber, vendorId, vendorName, tenantId, expiresAt, minutesRemaining } =
+      event.data;
+
+    const vendorEmail = await this.resolveVendorEmail(vendorId, tenantId);
+    if (!vendorEmail) {
+      this.logger.warn('vendor.bid.expiring: no email for vendor — skipping reminder', {
+        orderId,
+        vendorId,
+      });
+      return;
+    }
+
+    // V-04: When less than 30 minutes remain, also send SMS so the vendor
+    // has a real chance of seeing the reminder.
+    if (minutesRemaining <= 30) {
+      await this.sendSmsToVendor(vendorId, tenantId, {
+        event: 'vendor.bid.expiring',
+        text: `Your bid on ${orderNumber} expires in ~${minutesRemaining}m. Accept or decline now.`,
+        context: { orderId, vendorId },
+      });
+    }
+
+    const expiryLabel = new Date(expiresAt).toLocaleString('en-US', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+    });
+
+    const displayName = vendorName ?? 'there';
+
+    await this.sendEmail({
+      to: vendorEmail,
+      subject: `⏰ Reminder: Bid Expires Soon — ${orderNumber}`,
+      html: `
+        <p>Hi ${displayName},</p>
+        <p>Your bid invitation for order <strong>${orderNumber}</strong> expires in about
+           <strong>${minutesRemaining} minute(s)</strong> (at <strong>${expiryLabel}</strong>).</p>
+        <p>Please log in to the portal to accept or decline before the window closes.
+           If we do not hear from you, the invitation will be routed to the next vendor.</p>
+      `,
+      context: { event: 'vendor.bid.expiring', orderId, vendorId },
+    });
+  }
+
   private async onVendorAssignmentExhausted(
     event: VendorAssignmentExhaustedEvent,
   ): Promise<void> {
-    const { orderId, orderNumber, tenantId, attemptsCount } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, attemptsCount } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
 
     if (recipients.length === 0) {
       this.logger.warn('vendor.assignment.exhausted: no escalation recipients configured', {
@@ -312,8 +394,8 @@ export class CommunicationEventHandler {
   private async onReviewAssignmentExhausted(
     event: ReviewAssignmentExhaustedEvent,
   ): Promise<void> {
-    const { orderId, orderNumber, tenantId, attemptsCount } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, attemptsCount } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
 
     if (recipients.length === 0) {
       this.logger.warn('review.assignment.exhausted: no escalation recipients configured', {
@@ -393,10 +475,10 @@ export class CommunicationEventHandler {
   }
 
   private async onReviewSLAWarning(event: ReviewSLAWarningEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, reviewerId, percentElapsed, remainingMinutes } =
+    const { orderId, orderNumber, tenantId, clientId, reviewerId, percentElapsed, remainingMinutes } =
       event.data;
 
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const reviewerEmail = await this.resolveReviewerEmail(reviewerId, tenantId);
 
     const to = Array.from(new Set([...recipients, ...(reviewerEmail ? [reviewerEmail] : [])]));
@@ -419,9 +501,9 @@ export class CommunicationEventHandler {
   }
 
   private async onReviewSLABreached(event: ReviewSLABreachedEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, reviewerId, minutesOverdue } = event.data;
+    const { orderId, orderNumber, tenantId, clientId, reviewerId, minutesOverdue } = event.data;
 
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const recipients = await this.resolveEscalationRecipients(clientId);
     if (recipients.length === 0) {
       this.logger.warn('review.sla.breached: no escalation recipients — skipping', { orderId });
       return;
@@ -495,9 +577,9 @@ export class CommunicationEventHandler {
   }
 
   private async onEngagementLetterDeclined(event: EngagementLetterDeclinedEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, vendorId, letterId, reason } = event.data;
+    const { orderId, orderNumber, tenantId, clientId, vendorId, letterId, reason } = event.data;
 
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
     const to = Array.from(
       new Set([...recipients, ...(coordinatorEmail ? [coordinatorEmail] : [])]),
@@ -529,8 +611,8 @@ export class CommunicationEventHandler {
   // ── Email resolution helpers ───────────────────────────────────────────────
 
   private async onOrderOverdue(event: OrderOverdueEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, dueDate, hoursOverdue, currentStatus } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, dueDate, hoursOverdue, currentStatus } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const coordinatorEmail = await this.resolveOrderContactEmail(orderId, tenantId);
     const to = Array.from(
       new Set([...recipients, ...(coordinatorEmail ? [coordinatorEmail] : [])]),
@@ -554,8 +636,8 @@ export class CommunicationEventHandler {
   }
 
   private async onSupervisionTimedOut(event: SupervisionTimedOutEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, supervisorId, requestedAt, slaHours } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, supervisorId, requestedAt, slaHours } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
     const supervisorEmail = await this.resolveReviewerEmail(supervisorId, tenantId);
     const to = Array.from(
       new Set([...recipients, ...(supervisorEmail ? [supervisorEmail] : [])]),
@@ -578,9 +660,64 @@ export class CommunicationEventHandler {
     });
   }
 
+  /**
+   * E-06: Submission revision requested — email the assigned vendor with the
+   * revision notes. We look up the order to find the assigned vendor; if no
+   * vendor is assigned we fall back to the coordinator so nothing is silently
+   * dropped.
+   */
+  private async onSubmissionRevisionRequested(
+    event: SubmissionRevisionRequestedEvent,
+  ): Promise<void> {
+    const { orderId, tenantId, revisionNotes, requestedBy, priority } = event.data;
+
+    let vendorEmail: string | null = null;
+    let vendorName = 'vendor';
+    let orderNumber = orderId;
+    try {
+      const orderResult = await this.dbService.getItem('orders', orderId, tenantId);
+      const order = (orderResult as any)?.data ?? orderResult;
+      orderNumber = order?.orderNumber ?? orderId;
+      const vendorId = order?.assignedVendorId ?? order?.vendorId;
+      if (vendorId) {
+        vendorEmail = await this.resolveVendorEmail(vendorId, tenantId);
+        const vendorResult = await this.dbService.getItem('vendors', vendorId, tenantId);
+        const vendor = (vendorResult as any)?.data ?? vendorResult;
+        vendorName = vendor?.name ?? vendor?.displayName ?? vendorId;
+      }
+    } catch {
+      // fall through to coordinator
+    }
+
+    const to = vendorEmail ?? (await this.resolveOrderContactEmail(orderId, tenantId));
+    if (!to) {
+      this.logger.warn('submission.revision.requested: no recipient — skipping', {
+        orderId,
+        requestedBy,
+      });
+      return;
+    }
+
+    const priorityBadge = priority === EventPriority.CRITICAL ? '🚨 Critical' : '⚠️ Revision';
+
+    await this.sendEmail({
+      to,
+      subject: `${priorityBadge} Request — ${orderNumber}`,
+      html: `
+        <p>Hi ${vendorName},</p>
+        <p>A revision has been requested on order <strong>${orderNumber}</strong> by
+           <strong>${requestedBy}</strong>.</p>
+        <p><strong>Revision notes:</strong></p>
+        <blockquote>${revisionNotes}</blockquote>
+        <p>Please log in to the portal to review the request and submit the updated report.</p>
+      `,
+      context: { event: 'submission.revision.requested', orderId, requestedBy },
+    });
+  }
+
   private async onAxiomEvaluationTimedOut(event: AxiomEvaluationTimedOutEvent): Promise<void> {
-    const { orderId, orderNumber, tenantId, submittedAt, timeoutMinutes } = event.data;
-    const recipients = await this.resolveEscalationRecipients(tenantId);
+    const { orderId, orderNumber, tenantId, clientId, submittedAt, timeoutMinutes } = event.data;
+    const recipients = await this.resolveEscalationRecipients(clientId);
     if (recipients.length === 0) {
       this.logger.warn('axiom.evaluation.timeout: no escalation recipients — skipping', { orderId });
       return;
@@ -611,6 +748,48 @@ export class CommunicationEventHandler {
       return vendor?.email ?? vendor?.contactEmail ?? null;
     } catch {
       return null;
+    }
+  }
+
+  // V-04: Vendor phone resolver — uses `phone` or `contactPhone` on vendor doc.
+  private async resolveVendorPhone(
+    vendorId: string,
+    tenantId: string,
+  ): Promise<string | null> {
+    try {
+      const result = await this.dbService.getItem('vendors', vendorId, tenantId);
+      const vendor = (result as any)?.data ?? result;
+      return vendor?.phone ?? vendor?.contactPhone ?? vendor?.mobile ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // V-04: Fire-and-never-fail SMS dispatcher mirroring sendEmail's semantics.
+  private async sendSmsToVendor(
+    vendorId: string,
+    tenantId: string,
+    params: { event: string; text: string; context: Record<string, unknown> },
+  ): Promise<void> {
+    const phone = await this.resolveVendorPhone(vendorId, tenantId);
+    if (!phone) {
+      this.logger.info('sms: no phone for vendor — skipping', { vendorId, ...params.context });
+      return;
+    }
+    if (!this.smsService) {
+      this.logger.info('[dry-run] Would send SMS', { to: phone, text: params.text, ...params.context });
+      return;
+    }
+    try {
+      const result = await this.smsService.sendSms(phone, params.text, tenantId);
+      if (!result.success) {
+        this.logger.warn('SMS send failed — non-fatal', { phone, error: result.error, ...params.context });
+      }
+    } catch (err) {
+      this.logger.error('SMS send threw — non-fatal', {
+        error: err instanceof Error ? err.message : String(err),
+        ...params.context,
+      });
     }
   }
 
@@ -686,9 +865,9 @@ export class CommunicationEventHandler {
     }
   }
 
-  private async resolveEscalationRecipients(tenantId: string): Promise<string[]> {
+  private async resolveEscalationRecipients(clientId: string): Promise<string[]> {
     try {
-      const config = await this.tenantConfigService.getConfig(tenantId);
+      const config = await this.tenantConfigService.getConfig(clientId);
       return config.escalationRecipients ?? [];
     } catch {
       return [];

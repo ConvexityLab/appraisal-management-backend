@@ -181,6 +181,7 @@ export class OverdueOrderDetectionJob {
                 orderId: order.id,
                 orderNumber: order.orderNumber,
                 tenantId: order.tenantId,
+                clientId: order.clientId,
                 dueDate: order.dueDate,
                 hoursOverdue,
                 currentStatus: order.status,

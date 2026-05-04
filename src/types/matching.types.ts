@@ -147,6 +147,11 @@ export interface RfbBid {
   respondedAt?: string;
 }
 
+export interface RfbAutoAwardThreshold {
+  maxFeeMultiplier: number;
+  minVendorScore: number;
+}
+
 export interface RfbRequest {
   id: string;
   tenantId: string;
@@ -161,6 +166,7 @@ export interface RfbRequest {
   status: RfbStatus;
   /** When true, the first accepted bid automatically awards the order. */
   autoAward: boolean;
+  autoAwardThreshold?: RfbAutoAwardThreshold;
   bids: RfbBid[];
   awardedBidId?: string;
   createdBy: string;
@@ -174,6 +180,7 @@ export interface CreateRfbRequest {
   criteriaSetIds: string[];
   deadlineAt: string;
   autoAward?: boolean;
+  autoAwardThreshold?: RfbAutoAwardThreshold;
 }
 
 export interface SubmitBidRequest {

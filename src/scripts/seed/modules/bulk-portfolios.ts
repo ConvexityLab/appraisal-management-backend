@@ -8,16 +8,16 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo } from '../seed-types.js';
-import { BULK_JOB_IDS, CLIENT_IDS } from '../seed-ids.js';
+import { BULK_JOB_IDS, CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
 
 const CONTAINER = 'bulk-portfolio-jobs';
 
-function buildJobs(tenantId: string): Record<string, unknown>[] {
+function buildJobs(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
     {
       id: BULK_JOB_IDS.TAPE_EVAL_COMPLETE, tenantId, type: 'bulk-portfolio-job',
       jobType: 'TAPE_EVALUATION', status: 'COMPLETED',
-      clientId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.FIRST_HORIZON], clientRecordId: CLIENT_IDS.FIRST_HORIZON, clientName: 'First Horizon Bank',
       fileName: 'FHB_Q4_Portfolio_Tape.xlsx',
       totalRows: 150, processedRows: 150, failedRows: 3,
       validOrders: 147, ordersCreated: 147,
@@ -31,7 +31,7 @@ function buildJobs(tenantId: string): Record<string, unknown>[] {
     {
       id: BULK_JOB_IDS.TAPE_EVAL_COMPLETE_2, tenantId, type: 'bulk-portfolio-job',
       jobType: 'TAPE_EVALUATION', status: 'COMPLETED',
-      clientId: CLIENT_IDS.NATIONAL_AMC, clientName: 'National AMC Services',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.NATIONAL_AMC], clientRecordId: CLIENT_IDS.NATIONAL_AMC, clientName: 'National AMC Services',
       fileName: 'NAMC_Refi_Batch_Jan2026.csv',
       totalRows: 82, processedRows: 82, failedRows: 0,
       validOrders: 82, ordersCreated: 82,
@@ -45,7 +45,7 @@ function buildJobs(tenantId: string): Record<string, unknown>[] {
     {
       id: BULK_JOB_IDS.ORDER_CREATION_PARTIAL, tenantId, type: 'bulk-portfolio-job',
       jobType: 'ORDER_CREATION', status: 'PARTIAL_FAILURE',
-      clientId: CLIENT_IDS.CLEARPATH, clientName: 'ClearPath Valuation Group',
+      clientId, subClientId: SUB_CLIENT_SLUGS[CLIENT_IDS.CLEARPATH], clientRecordId: CLIENT_IDS.CLEARPATH, clientName: 'ClearPath Valuation Group',
       fileName: 'ClearPath_Loss_Mit_Batch.xlsx',
       totalRows: 35, processedRows: 35, failedRows: 8,
       validOrders: 27, ordersCreated: 27,
@@ -70,7 +70,7 @@ export const module: SeedModule = {
       result.cleaned = await cleanContainer(ctx, CONTAINER);
     }
 
-    for (const job of buildJobs(ctx.tenantId)) {
+    for (const job of buildJobs(ctx.tenantId, ctx.clientId)) {
       await upsert(ctx, CONTAINER, job, result);
     }
 

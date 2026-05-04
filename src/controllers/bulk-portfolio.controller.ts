@@ -51,6 +51,27 @@ function resolveTenantId(req: UnifiedAuthRequest): string {
 const validateSubmit = [
   body('clientId').isString().notEmpty().withMessage('clientId is required'),
   body('fileName').optional().isString(),
+  body('engagementId').optional().isString().notEmpty().withMessage('engagementId must be a non-empty string'),
+  body('engagementGranularity')
+    .optional()
+    .isIn(['PER_BATCH', 'PER_LOAN'])
+    .withMessage('engagementGranularity must be PER_BATCH or PER_LOAN'),
+  body('engagementGranularity').custom((value, { req }) => {
+    if (value == null) {
+      return true;
+    }
+
+    const processingMode = req.body.processingMode ?? 'ORDER_CREATION';
+    if (processingMode !== 'ORDER_CREATION') {
+      throw new Error('engagementGranularity is only supported for ORDER_CREATION submissions');
+    }
+
+    if (req.body.engagementId && value === 'PER_LOAN') {
+      throw new Error('engagementGranularity PER_LOAN cannot be used when engagementId is provided');
+    }
+
+    return true;
+  }),
   body('processingMode')
     .optional()
     .isIn(['TAPE_EVALUATION', 'ORDER_CREATION', 'DOCUMENT_EXTRACTION'])
@@ -118,6 +139,20 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
         const tenantId = resolveTenantId(req);
         const submittedBy = req.user?.id ?? 'unknown';
         const service = getService(dbService);
+
+        // T3.1 deprecation: ORDER_CREATION and DOCUMENT_EXTRACTION modes are superseded
+        // by POST /api/bulk-ingestion/submit which has a proper worker chain, per-row
+        // failure tracking, and full Axiom extraction+criteria integration.
+        // TAPE_EVALUATION is still the correct path here (different use case — no equivalent
+        // in Bulk Ingestion). See docs/BULK-UPLOAD-ARCHITECTURE.md.
+        const processingMode = req.body.processingMode ?? 'ORDER_CREATION';
+        if (processingMode === 'ORDER_CREATION' || processingMode === 'DOCUMENT_EXTRACTION') {
+          logger.warn('DEPRECATED: bulk-portfolio submit with ORDER_CREATION/DOCUMENT_EXTRACTION — migrate to POST /api/bulk-ingestion/submit', {
+            processingMode,
+            tenantId,
+            clientId: req.body.clientId,
+          });
+        }
 
         const job = await service.submit(req.body, submittedBy, tenantId);
 

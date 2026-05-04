@@ -4,10 +4,12 @@
  */
 
 import crypto from 'node:crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { BlobStorageService } from './blob-storage.service';
 import { WebPubSubService } from './web-pubsub.service';
+import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ApiResponse } from '../types/index.js';
 import { EventPriority, EventCategory } from '../types/events.js';
 import {
@@ -53,15 +55,38 @@ export class DeliveryWorkflowService {
   private dbService: CosmosDbService;
   private blobService: BlobStorageService;
   private webPubSubService: WebPubSubService | null = null;
+  private publisher: ServiceBusEventPublisher;
 
   constructor(dbService?: CosmosDbService, blobService?: BlobStorageService) {
     this.logger = new Logger();
     this.dbService = dbService || new CosmosDbService();
     this.blobService = blobService || new BlobStorageService();
+    this.publisher = new ServiceBusEventPublisher();
     try {
       this.webPubSubService = new WebPubSubService({ enableLocalEmulation: true });
     } catch {
       this.logger.warn('WebPubSubService unavailable — delivery notifications disabled');
+    }
+  }
+
+  /** Best-effort event publishing — never throws */
+  private async publishEvent(
+    type: string,
+    category: EventCategory,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.publisher.publish({
+        id: uuidv4(),
+        type,
+        timestamp: new Date(),
+        source: 'delivery-workflow-service',
+        version: '1.0',
+        category,
+        data: { priority: EventPriority.NORMAL, ...data },
+      } as any);
+    } catch (err) {
+      this.logger.warn(`Failed to publish ${type}`, { error: (err as Error).message });
     }
   }
 
@@ -175,6 +200,19 @@ export class DeliveryWorkflowService {
 
       await this.dbService.createItem('documents', document);
 
+      // Publish document.uploaded event
+      await this.publishEvent('document.uploaded', EventCategory.DOCUMENT, {
+        orderId,
+        documentId: document.id,
+        documentName: document.fileName,
+        documentType: document.documentType,
+        documentSize: document.fileSize,
+        tenantId,
+        uploadedBy,
+        uploadedByRole,
+        isFinal: documentData.isFinal || false,
+      });
+
       // Update order status if final document
       if (documentData.isFinal) {
         await this.updateOrderStatusOnFinalSubmission(orderId, tenantId);
@@ -199,9 +237,18 @@ export class DeliveryWorkflowService {
       const order = orderResponse.data;
 
       if (order && order.status === 'IN_PROGRESS') {
+        const oldStatus = order.status;
         order.status = 'FINAL_SUBMITTED';
         order.updatedAt = new Date();
         await this.dbService.updateItem('orders', orderId, order, tenantId);
+
+        await this.publishEvent('order.status.changed', EventCategory.ORDER, {
+          orderId,
+          tenantId,
+          oldStatus,
+          newStatus: 'FINAL_SUBMITTED',
+          reason: 'Final document submitted',
+        });
       }
     } catch (error) {
       this.logger.error('Error updating order status on final submission', { orderId, error });
@@ -401,15 +448,37 @@ export class DeliveryWorkflowService {
 
       await this.dbService.createItem('deliveryPackages', deliveryPackage);
 
+      // Publish order.delivered event (for FINAL packages — treated as delivery milestone)
+      if (packageType === 'FINAL') {
+        await this.publishEvent('order.delivered', EventCategory.DELIVERY, {
+          orderId,
+          tenantId,
+          packageId: deliveryPackage.id,
+          packageType,
+          version,
+          documentCount: documentIds.length,
+          deliveredTo,
+        });
+      }
+
       // Update order status
       if (packageType === 'FINAL') {
         const orderResponse = await this.dbService.getItem('orders', orderId, tenantId) as ApiResponse<any>;
         const order = orderResponse.data;
-        
+
         if (order) {
+          const oldStatus = order.status;
           order.status = 'FINAL_UNDER_REVIEW';
           order.updatedAt = new Date();
           await this.dbService.updateItem('orders', orderId, order, tenantId);
+
+          await this.publishEvent('order.status.changed', EventCategory.ORDER, {
+            orderId,
+            tenantId,
+            oldStatus,
+            newStatus: 'FINAL_UNDER_REVIEW',
+            reason: `Final delivery package created (v${version})`,
+          });
         }
       }
 
@@ -654,6 +723,30 @@ export class DeliveryWorkflowService {
       };
 
       await this.dbService.createItem('revisionRequests', revisionRequest);
+
+      // Publish order.status.changed event for revision request
+      await this.publishEvent('order.status.changed', EventCategory.ORDER, {
+        orderId: document.orderId,
+        tenantId,
+        oldStatus: order?.status ?? 'unknown',
+        newStatus: 'REVISIONS_REQUESTED',
+        reason: `Revision requested (${revisionRequest.severity}): ${description.slice(0, 100)}`,
+        revisionId: revisionRequest.id,
+        severity: revisionRequest.severity,
+        documentId: document.id,
+      });
+
+      // E-06: Publish submission.revision.requested for the notification pipeline.
+      // CommunicationEventHandler subscribes to this and emails the assigned vendor.
+      await this.publishEvent('submission.revision.requested', EventCategory.SUBMISSION, {
+        submissionId: document.id,
+        orderId: document.orderId,
+        tenantId,
+        clientId: order?.clientId ?? 'unknown',
+        requestedBy,
+        revisionNotes: description,
+        priority: revisionRequest.severity === 'CRITICAL' ? EventPriority.CRITICAL : EventPriority.HIGH,
+      });
 
       // Update order status
       if (order) {

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { DefaultAzureCredential, DeviceCodeCredential } from '@azure/identity';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+
 
 type Primitive = string | number | boolean;
 
@@ -59,8 +59,7 @@ function envNumber(name: string, fallback: number): number {
   return parsed;
 }
 
-const currentFilePath = fileURLToPath(import.meta.url);
-const currentDir = path.dirname(currentFilePath);
+const currentDir = __dirname;
 
 function tokenCacheFilePath(): string {
   const configured = optionalEnv('AXIOM_LIVE_TOKEN_CACHE_FILE');
@@ -327,6 +326,38 @@ export function logConfig(context: LiveFireContext, extras?: Record<string, Prim
       }
     }
   }
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function hasMeaningfulContent(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'boolean') {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => hasMeaningfulContent(item));
+  }
+
+  if (isRecord(value)) {
+    return Object.values(value).some((item) => hasMeaningfulContent(item));
+  }
+
+  return false;
 }
 
 export async function getJson<T>(url: string, headers: Record<string, string>): Promise<{ status: number; data: T }> {
