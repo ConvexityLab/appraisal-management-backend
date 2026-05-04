@@ -475,7 +475,7 @@ export class BulkIngestionOrderCreationWorkerService {
       contexts.set(item.id, {
         engagement,
         loan,
-        ...(loan?.products?.[0]?.id ? { productId: loan.products[0].id } : {}),
+        ...(loan?.clientOrders?.[0]?.id ? { productId: loan.clientOrders[0].id } : {}),
       });
     }
 
@@ -501,7 +501,7 @@ export class BulkIngestionOrderCreationWorkerService {
     return {
       engagement,
       loan,
-      ...(loan?.products?.[0]?.id ? { productId: loan.products[0].id } : {}),
+      ...(loan?.clientOrders?.[0]?.id ? { productId: loan.clientOrders[0].id } : {}),
     };
   }
 

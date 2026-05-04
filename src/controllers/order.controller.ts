@@ -69,6 +69,10 @@ import { ComplianceService } from '../services/ComplianceService.js';
 import { PropertyEnrichmentService } from '../services/property-enrichment.service.js';
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { AddressServiceGeocoder } from '../services/address-service.geocoder.js';
+import {
+  buildManualDraftSourceIdentity,
+  buildApiOrderSourceIdentity,
+} from '../types/intake-source.types.js';
 
 const logger = new Logger('OrderController');
 
