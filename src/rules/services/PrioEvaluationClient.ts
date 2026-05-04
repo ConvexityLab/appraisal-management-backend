@@ -1,14 +1,12 @@
+import { parsePrioEvaluationResponse } from '../../integrations/mop/inbound.adapter.js';
+import type { PrioRuleViolation } from '../../integrations/mop/inbound.adapter.js';
+
 export interface EvaluationRequest {
   rules: any[]; // The flat array of rules coming from RuleMergerService
   facts: Record<string, any>; // The Appraisal data / variables to evaluate
 }
 
-export interface RuleViolation {
-  rule_id: string;
-  severity: string;
-  reason: string;
-  violation_code: string;
-}
+export type RuleViolation = PrioRuleViolation;
 
 export interface EvaluationResponse {
   success: boolean;
@@ -50,23 +48,16 @@ export class PrioEvaluationClient {
       }
 
       const rawResponse = await response.json();
-      
-      // Map the generic facts asserted back out from Prio into our known Violation domain model
-      const violations: RuleViolation[] = rawResponse.actions_fired
-        ?.filter((action: any) => action.fact_id === 'compliance_violation')
-        .map((action: any) => {
-           return {
-             rule_id: action.source || 'UNKNOWN_RULE',
-             severity: action.data?.severity || 'Warning',
-             reason: action.data?.reason || 'Unknown violation occurred',
-             violation_code: action.data?.violation_code || 'UNKNOWN_CODE'
-           };
-        }) || [];
+
+      // Validate + project via the Zod-backed adapter. Throws
+      // MopResponseValidationError on shape mismatch, which propagates as
+      // a hard failure (bad shape from internal infra is a contract bug).
+      const { violations, processingTimeMs } = parsePrioEvaluationResponse(rawResponse);
 
       return {
         success: true,
         violations,
-        processing_time_ms: rawResponse.processing_time_ms
+        ...(processingTimeMs != null ? { processing_time_ms: processingTimeMs } : {}),
       };
       
     } catch (error) {

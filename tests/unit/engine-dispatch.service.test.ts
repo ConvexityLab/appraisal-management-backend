@@ -360,7 +360,9 @@ describe('EngineDispatchService', () => {
     const axiomService = { submitPipeline: vi.fn(), getPipelineStatus: vi.fn(), fetchPipelineResults: vi.fn(), fetchAndStorePipelineResults: vi.fn() } as any;
     const service = new EngineDispatchService(axiomService, dbService);
 
-    await expect(service.dispatchCriteria(buildCriteriaRun())).rejects.toThrow('missing required field runId or jobId');
+    // Adapter rejects when neither runId nor jobId is present in the
+    // dispatch response. Wording lives in the Zod schema's refine().
+    await expect(service.dispatchCriteria(buildCriteriaRun())).rejects.toThrow('Dispatch response must include runId or jobId');
   });
 
   it('maps MOP/Prio refresh success and failure statuses explicitly', async () => {
