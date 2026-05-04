@@ -199,6 +199,62 @@ resource functionsAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-0
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Per-vendor API: AIM-Port inbound integration
+// ──────────────────────────────────────────────────────────────────────────
+// Dedicated APIM API resource that owns the /api/v1/integrations/aim-port path.
+// Per-vendor APIs let us attach per-vendor edge policies (IP allow-list, rate
+// limit, body-size cap, schema validation) without touching application code.
+// AIM-Port body-based auth (login.client_id + login.api_key) remains the
+// contractual line of defense — APIM is complementary hardening.
+// See docs/VENDOR_INTEGRATION_ARCHITECTURE.md.
+
+resource aimPortApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
+  parent: apim
+  name: 'vendor-integrations-aim-port'
+  properties: {
+    displayName: 'Vendor Integrations — AIM-Port'
+    description: 'Inbound vendor integration endpoint for AIM-Port (Atlas GPS LLC).'
+    path: 'api/v1/integrations/aim-port'
+    protocols: ['https']
+    subscriptionRequired: false
+    serviceUrl: 'https://${apiContainerAppFqdn}'
+    type: 'http'
+  }
+}
+
+// Wildcard operation so any /api/v1/integrations/aim-port/* path is routable;
+// the controller in vendor-integration.controller.ts owns the actual /inbound
+// route and any other path returns the Express 404.
+resource aimPortApiAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+  parent: aimPortApi
+  name: 'aim-port-all'
+  properties: {
+    displayName: 'AIM-Port operations'
+    method: '*'
+    urlTemplate: '/{*path}'
+    description: 'Forwarded as-is to the API Container App.'
+    templateParameters: [
+      {
+        name: 'path'
+        type: 'string'
+        required: true
+      }
+    ]
+  }
+}
+
+// Policy: backend selection + CORS. Path is preserved end-to-end (no rewrite)
+// because the Express controller mounts at /api/v1/integrations/aim-port.
+resource aimPortApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
+  parent: aimPortApi
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>POST</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
 // Outputs
 output apimName string = apim.name
 output apimId string = apim.id
@@ -206,3 +262,4 @@ output apimGatewayUrl string = apim.properties.gatewayUrl
 output apimPrincipalId string = apim.identity.principalId
 output apiUrl string = '${apim.properties.gatewayUrl}/api'
 output functionUrl string = '${apim.properties.gatewayUrl}/functions'
+output aimPortInboundUrl string = '${apim.properties.gatewayUrl}/api/v1/integrations/aim-port/inbound'
