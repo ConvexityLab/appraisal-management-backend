@@ -22,6 +22,7 @@ import type {
 } from '../types/bulk-ingestion.types.js';
 import { BulkAdapterDefinitionService } from './bulk-adapter-definition.service.js';
 import { buildBulkItemSourceIdentity } from '../types/intake-source.types.js';
+import { mapBulkIngestionSourceToCanonical } from '../mappers/bulk-ingestion-source.mapper.js';
 
 type CanonicalValidationResult =
   | {
@@ -164,6 +165,15 @@ export class BulkIngestionCanonicalWorkerService {
             bulkItemId: item.id,
           }),
         canonicalData: validation.canonicalData,
+        // Project the row onto AMP's CanonicalReportDocument shape so
+        // canonical-path criteria (subject.address.streetAddress,
+        // loan.baseLoanAmount, etc.) can resolve against bulk-tape data.
+        // The legacy adapter-mapped `canonicalData` above stays authoritative
+        // for adapter-driven consumers during incremental migration.
+        ...(() => {
+          const projected = mapBulkIngestionSourceToCanonical(item.source);
+          return projected ? { canonicalDocument: projected } : {};
+        })(),
         sourceData: {
           ...(item.source.loanNumber !== undefined ? { loanNumber: item.source.loanNumber } : {}),
           ...(item.source.externalId !== undefined ? { externalId: item.source.externalId } : {}),
