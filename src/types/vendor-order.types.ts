@@ -31,6 +31,7 @@
 import type { AppraisalOrder } from './index.js';
 import type { OrderStatus } from './order-status.js';
 import type { ProductType } from './product-catalog.js';
+import type { InspectionVendorData } from './inspection-vendor.types.js';
 
 // ─── Status (alias of existing OrderStatus) ──────────────────────────────────
 
@@ -104,6 +105,11 @@ export interface VendorOrderLinkage {
   productType: ProductType;
   propertyId: string;
   vendorWorkType: VendorWorkType;
+  /**
+   * Populated once an inspection vendor order is placed via InspectionVendorService.
+   * Tracks all vendor-side state, external IDs, and blob storage paths for artifacts.
+   */
+  inspectionVendorData?: InspectionVendorData;
 }
 
 // ─── VendorOrder ─────────────────────────────────────────────────────────────

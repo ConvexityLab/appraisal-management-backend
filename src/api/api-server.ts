@@ -145,6 +145,9 @@ import { QuickBooksController } from '../controllers/quickbooks.controller.js';
 
 // Import Phase 5 LOS / GSE / Portal controllers
 import { createLosRouter } from '../controllers/los.controller.js';
+
+// Import Inspection Vendor controller (generic inspection company integration)
+import { createInspectionVendorRouter } from '../controllers/inspection-vendor.controller.js';
 import { createGseRouter } from '../controllers/gse.controller.js';
 import { createPortalRouter } from '../controllers/portal.controller.js';
 
@@ -695,6 +698,12 @@ export class AppraisalManagementAPIServer {
         this.authzMiddleware.loadUserProfile(),
         createPortalRouter(this.dbService)
       );
+
+    // Inspection Vendor — generic inspection company API integration (iVueit etc.)
+    this.app.use('/api/inspection',
+      this.unifiedAuth.authenticate(),
+      createInspectionVendorRouter(this.dbService)
+    );
 
     // Auto-Assignment & Vendor Matching (authenticated users with proper permissions)
     this.app.use('/api/auto-assignment',
