@@ -6,7 +6,7 @@ import { ClassValuationWebhookAdapter } from './ClassValuationWebhookAdapter.js'
 import { VendorConnectionService } from './VendorConnectionService.js';
 import { VendorEventOutboxService } from './VendorEventOutboxService.js';
 import { VendorOrderReferenceService } from './VendorOrderReferenceService.js';
-import type { AdapterInboundResult, VendorConnection, VendorDomainEvent } from '../../types/vendor-integration.types.js';
+import type { AdapterInboundResult, VendorConnection, VendorDomainEvent, VendorType } from '../../types/vendor-integration.types.js';
 
 export interface VendorInboundProcessingResult extends AdapterInboundResult {
   connection: VendorConnection;
@@ -50,11 +50,16 @@ export class VendorIntegrationService {
   async processInbound(
     body: unknown,
     headers: IncomingHttpHeaders,
-    rawBody?: Buffer,
+    rawBody: Buffer | undefined,
+    expectedVendorType: VendorType,
   ): Promise<VendorInboundProcessingResult> {
-    const adapter = this.adapters.find((candidate) => candidate.canHandleInbound(body, headers));
+    const adapter = this.adapters.find((candidate) => candidate.vendorType === expectedVendorType);
     if (!adapter) {
-      throw new Error('No vendor adapter matched the inbound payload');
+      throw new Error(`No adapter registered for vendor type ${expectedVendorType}`);
+    }
+
+    if (!adapter.canHandleInbound(body, headers)) {
+      throw new Error(`Body shape does not match expected vendor type ${expectedVendorType}`);
     }
 
     const inboundIdentifier = adapter.identifyInboundConnection(body, headers);
