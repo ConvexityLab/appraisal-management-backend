@@ -32,6 +32,7 @@ import { buildQCIssueLinkage } from '../utils/qc-issue-linkage.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { RiskTapeItem, TapeExtractionRequest } from '../types/review-tape.types.js';
 import type { CompiledCriteriaResponse, CompiledCriterion } from '../types/axiom.types.js';
+import { parseAxiomPipelineResults } from '../integrations/axiom/llm-results.adapter.js';
 
 // ============================================================================
 // Type Definitions
@@ -3139,42 +3140,20 @@ export class AxiomService {
       // This makes the data available to the canonical snapshot layer, report
       // generation, and any other consumer that reads documents.extractedData.
       //
-      // Two source paths, in priority order:
-      //   1. consolidate stage: a single consolidatedData object (preferred when
-      //      present — Axiom has already merged per-page extraction).
-      //   2. extractStructuredData stage: array of per-page extractedData blocks.
-      //      Merge across pages with first-non-null wins, since each page
-      //      typically populates a non-overlapping subset of the URAR fields.
-      const inner = (rawResults['results'] as Record<string, unknown> | undefined) ?? rawResults;
-      const consolidateStage = Array.isArray(inner['consolidate'])
-        ? (inner['consolidate'] as Array<{ consolidatedData?: Record<string, unknown> }>)[0]
-        : null;
-      const extractedDataForDoc: Record<string, unknown> | null = (() => {
-        if (consolidateStage?.consolidatedData && Object.keys(consolidateStage.consolidatedData).length > 0) {
-          return consolidateStage.consolidatedData;
-        }
-        const pages = inner['extractStructuredData'];
-        if (!Array.isArray(pages) || pages.length === 0) return null;
-        const merged: Record<string, unknown> = {};
-        for (const page of pages as Array<{ extractedData?: Record<string, unknown> }>) {
-          const data = page?.extractedData;
-          if (!data || typeof data !== 'object') continue;
-          for (const [key, val] of Object.entries(data)) {
-            if (val == null) continue;
-            const existing = merged[key];
-            if (
-              existing != null && typeof existing === 'object' && !Array.isArray(existing)
-              && typeof val === 'object' && !Array.isArray(val)
-            ) {
-              // Deep-merge nested objects (e.g. propertyAddress.{street,city,state,zip}).
-              merged[key] = { ...(existing as Record<string, unknown>), ...(val as Record<string, unknown>) };
-            } else if (existing == null) {
-              merged[key] = val;
-            }
-          }
-        }
-        return Object.keys(merged).length > 0 ? merged : null;
-      })();
+      // Source preference (encapsulated in parseAxiomPipelineResults):
+      //   1. results.consolidate[0].consolidatedData (Axiom's merged output)
+      //   2. results.extractStructuredData[*].extractedData (deep-merged per-page)
+      //   3. top-level extractedData (legacy fallback)
+      const parsedResults = parseAxiomPipelineResults(rawResults);
+      if (!parsedResults.ok && parsedResults.issues.length > 0) {
+        // Permissive: log shape drift but continue with whatever was extracted.
+        this.logger.warn('Axiom pipeline results shape drifted from schema — extracting best-effort data', {
+          pipelineJobId,
+          issueCount: parsedResults.issues.length,
+          firstIssue: parsedResults.issues[0],
+        });
+      }
+      const extractedDataForDoc = parsedResults.result.mergedExtractedData;
 
       if (extractedDataForDoc && meta.documentId) {
         try {
@@ -3191,7 +3170,7 @@ export class AxiomService {
             this.logger.info('Wrote extracted data back to document', {
               documentId: meta.documentId,
               fieldCount: Object.keys(extractedDataForDoc).length,
-              source: consolidateStage?.consolidatedData ? 'consolidate-stage' : 'extractStructuredData-merged',
+              source: parsedResults.result.consolidatedData ? 'consolidate-stage' : 'extractStructuredData-merged',
             });
 
             // A-13: Refresh the canonical snapshot (created at submit time) so
