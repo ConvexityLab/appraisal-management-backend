@@ -20,9 +20,11 @@
  *   const provider = createPropertyDataProvider(initializedCosmosDbService);
  *   const result = await provider.lookupByAddress({ street, city, state, zipCode });
  *
- * Note: `cosmos` is required when COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT is set.
- * Pass the already-initialized CosmosDbService instance — do not let the factory
+ * Note: `cosmos` is required when COSMOS_ENDPOINT, AZURE_COSMOS_ENDPOINT, or ATTOM_API_KEY
+ * is set. Pass the already-initialized CosmosDbService instance — do not let the factory
  * create its own, as the new instance would never have initialize() called on it.
+ *
+ * ATTOM requires cosmos for its property-data cache even when LocalAttom is not enabled.
  */
 
 import type { PropertyDataProvider } from '../../types/property-data.types.js';
@@ -32,6 +34,9 @@ import { AttomPropertyDataProvider } from './attom.provider.js';
 import { ChainedPropertyDataProvider } from './chained.provider.js';
 import { NullPropertyDataProvider } from './null.provider.js';
 import { CosmosDbService } from '../cosmos-db.service.js';
+import { AttomProviderService } from '../attom-provider.service.js';
+import { AttomService } from '../attom.service.js';
+import { PropertyDataCacheService } from '../property-data-cache.service.js';
 import { Logger } from '../../utils/logger.js';
 
 const logger = new Logger('PropertyDataProviderFactory');
@@ -64,7 +69,15 @@ export function createPropertyDataProvider(cosmos?: CosmosDbService): PropertyDa
     chainNames.push('Bridge Interactive');
   }
   if (hasAttom) {
-    chain.push(new AttomPropertyDataProvider());
+    if (!cosmos) {
+      throw new Error(
+        'createPropertyDataProvider: a CosmosDbService instance must be provided when ' +
+          'ATTOM_API_KEY is set (required for the ATTOM property-data cache)',
+      );
+    }
+    const attomCache = new PropertyDataCacheService(cosmos);
+    const attomSvc = new AttomProviderService(attomCache, new AttomService());
+    chain.push(new AttomPropertyDataProvider(attomSvc));
     chainNames.push('ATTOM Data Solutions');
   }
 

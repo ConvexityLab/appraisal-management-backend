@@ -1741,7 +1741,7 @@ export class BulkPortfolioService {
         ...(item.bedrooms !== undefined ? { bedrooms: item.bedrooms } : {}),
         ...(item.bathrooms !== undefined ? { bathrooms: item.bathrooms } : {}),
       },
-      products: [
+      clientOrders: [
         { productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[item.analysisType] },
         ...(item.additionalProducts ?? []).map((product) => ({
           productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[product.analysisType],
