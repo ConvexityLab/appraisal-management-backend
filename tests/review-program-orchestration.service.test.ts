@@ -293,7 +293,7 @@ describe('ReviewProgramOrchestrationService.orchestrate()', () => {
     const result = await svc.orchestrate('vision-appraisal-v1.0', makeRequest(), makeActor());
 
     expect(result.overallStatus).toBe('all_submitted');
-    expect(result.axiomLegs[0]).toMatchObject({ programId: 'vision-appraisal-ai', status: 'submitted' });
+    expect(result.axiomLegs[0]).toMatchObject({ programId: 'appraisal-qc', status: 'submitted' });
     expect(result.mopLegs[0]).toMatchObject({ programId: 'vision-appraisal', status: 'submitted' });
   });
 

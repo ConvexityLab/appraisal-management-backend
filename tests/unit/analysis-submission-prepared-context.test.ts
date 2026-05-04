@@ -143,7 +143,7 @@ describe('AnalysisSubmissionService prepared-context criteria dispatch', () => {
   });
 
   it('allows prepared MOP/Prio criteria dispatch without a snapshot', async () => {
-    const service = new AnalysisSubmissionService({} as any, {
+    const service = new AnalysisSubmissionService({ findOrderById: vi.fn().mockResolvedValue({ success: false }) } as any, {
       submitOrderEvaluation: vi.fn(),
       getLastPipelineSubmissionError: vi.fn(),
     } as any);
@@ -224,7 +224,7 @@ describe('AnalysisSubmissionService prepared-context criteria dispatch', () => {
       preparedPayloadRef: 'prepared-context://prepared-1/dispatch/AXIOM/axiom-program:1.0',
     });
 
-    const service = new AnalysisSubmissionService({} as any, {
+    const service = new AnalysisSubmissionService({ findOrderById: vi.fn().mockResolvedValue({ success: false }) } as any, {
       submitOrderEvaluation: vi.fn(),
       getLastPipelineSubmissionError: vi.fn(),
     } as any);

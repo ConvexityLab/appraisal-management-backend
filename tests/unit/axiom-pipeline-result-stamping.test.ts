@@ -45,9 +45,11 @@ describe('AxiomService pipeline result stamping', () => {
     process.env.API_BASE_URL = 'http://localhost:3011';
     process.env.AXIOM_WEBHOOK_SECRET = 'test-webhook-secret';
     process.env.AXIOM_SUB_CLIENT_ID = 'test-sub-client-id';
+    process.env.AXIOM_AUTH_AUDIENCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
     delete process.env.AXIOM_API_TOKEN_SCOPE;
     delete process.env.AXIOM_API_RESOURCE;
     delete process.env.AXIOM_USE_DEFAULT_CREDENTIAL;
+    delete process.env.AXIOM_AUTH_REQUIRED;
   });
 
   it('replaces the checked-in placeholder key with a real Entra bearer token for live-fire requests', async () => {
