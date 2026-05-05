@@ -26,6 +26,7 @@ describe('AxiomService platform parity', () => {
     process.env.API_BASE_URL = 'https://backend.example';
     process.env.AXIOM_WEBHOOK_SECRET = 'webhook-secret';
     process.env.AXIOM_SUB_CLIENT_ID = 'tenant-123';
+    process.env.AXIOM_AUTH_AUDIENCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
     delete process.env.AXIOM_REQUIRED_DOCUMENT_TYPES;
     delete process.env.AXIOM_PIPELINE_ID_DOC_EXTRACT;
     delete process.env.AXIOM_PIPELINE_ID_CRITERIA_EVAL;
@@ -99,7 +100,7 @@ describe('AxiomService platform parity', () => {
 
   it.each([
     ['EXTRACTION', 'adaptive-document-processing'],
-    ['CRITERIA_EVALUATION', 'smart-criteria-evaluation'],
+    ['CRITERIA_EVALUATION', 'criteria-only-evaluation'],
     ['COMPLETE_EVALUATION', 'complete-document-criteria-evaluation'],
   ] as const)('uses %s pipeline id for submitOrderEvaluation', async (evaluationMode, pipelineId) => {
     const dbStub = {
