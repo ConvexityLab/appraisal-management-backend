@@ -231,6 +231,105 @@ describe('createEngagement', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2.5. createEngagement — slice 8d: loanReferences[] population
+// ---------------------------------------------------------------------------
+
+describe('createEngagement — loanReferences[] (slice 8d)', () => {
+  function captureDoc() {
+    let captured: Engagement | undefined;
+    const container = makeMockContainer(makeEngagement());
+    container.items.create = vi.fn().mockImplementation(async (d: Engagement) => {
+      captured = d;
+      return { resource: d };
+    });
+    return {
+      container,
+      get doc() { return captured!; },
+    };
+  }
+
+  it('back-fills loanReferences[0] from legacy top-level loanNumber/loanType/fhaCase', async () => {
+    const cap = captureDoc();
+    const svc = new EngagementService(makeDbService(cap.container), makePropertyRecordService());
+    await svc.createEngagement(makeCreateRequest({
+      loanNumber: 'LN-001',
+      loanType: 'Conventional',
+      fhaCase: undefined,
+    }));
+
+    const property = cap.doc.properties[0]!;
+    expect(property.loanReferences).toBeDefined();
+    expect(property.loanReferences).toHaveLength(1);
+    expect(property.loanReferences![0]!.loanNumber).toBe('LN-001');
+    expect(property.loanReferences![0]!.loanType).toBe('Conventional');
+    expect(property.loanReferences![0]!.lienPosition).toBe('First');
+  });
+
+  it('keeps top-level loanNumber/loanType/fhaCase in sync with loanReferences[0]', async () => {
+    const cap = captureDoc();
+    const svc = new EngagementService(makeDbService(cap.container), makePropertyRecordService());
+    await svc.createEngagement(makeCreateRequest({
+      loanNumber: 'LN-100',
+      loanType: 'FHA',
+      fhaCase: 'FHA-CASE-99',
+    }));
+
+    const property = cap.doc.properties[0]!;
+    // Both forms present and matching
+    expect(property.loanNumber).toBe('LN-100');
+    expect(property.loanType).toBe('FHA');
+    expect(property.fhaCase).toBe('FHA-CASE-99');
+    expect(property.loanReferences![0]!.loanNumber).toBe('LN-100');
+    expect(property.loanReferences![0]!.loanType).toBe('FHA');
+    expect(property.loanReferences![0]!.fhaCase).toBe('FHA-CASE-99');
+  });
+
+  it('accepts caller-supplied loanReferences[] with multiple liens (first + HELOC)', async () => {
+    const cap = captureDoc();
+    const svc = new EngagementService(makeDbService(cap.container), makePropertyRecordService());
+
+    // Caller hands us a property carrying a first lien + HELOC. Service
+    // preserves the array verbatim and uses [0] for the legacy-field sync.
+    const reqWithMultipleLiens = {
+      ...makeCreateRequest(),
+      properties: [
+        {
+          loanNumber: 'IGNORED-FROM-LEGACY-FIELD', // overridden by loanReferences
+          borrowerName: 'Multi-lien Borrower',
+          property: { address: '1 Multilien', state: 'CO', zipCode: '80203' },
+          clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }],
+          loanReferences: [
+            { loanNumber: 'LN-FIRST-001', loanAmount: 400000, loanType: 'Conventional', lienPosition: 'First' as const },
+            { loanNumber: 'HELOC-001', loanAmount: 75000, loanType: 'HELOC', lienPosition: 'HELOC' as const },
+          ],
+        } as any,
+      ],
+    };
+    await svc.createEngagement(reqWithMultipleLiens);
+
+    const property = cap.doc.properties[0]!;
+    expect(property.loanReferences).toHaveLength(2);
+    expect(property.loanReferences![0]!.loanNumber).toBe('LN-FIRST-001');
+    expect(property.loanReferences![0]!.lienPosition).toBe('First');
+    expect(property.loanReferences![1]!.loanNumber).toBe('HELOC-001');
+    expect(property.loanReferences![1]!.lienPosition).toBe('HELOC');
+
+    // Top-level legacy fields reflect the PRIMARY (first entry).
+    expect(property.loanNumber).toBe('LN-FIRST-001');
+    expect(property.loanType).toBe('Conventional');
+  });
+
+  it('does not emit fhaCase on loanReferences[0] when not supplied (omit, not undefined)', async () => {
+    const cap = captureDoc();
+    const svc = new EngagementService(makeDbService(cap.container), makePropertyRecordService());
+    await svc.createEngagement(makeCreateRequest({ loanNumber: 'LN-1', loanType: 'Conv' }));
+
+    const ref = cap.doc.properties[0]!.loanReferences![0]!;
+    expect(ref).not.toHaveProperty('fhaCase');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. changeStatus â€” engagement-level transition guard
 // ---------------------------------------------------------------------------
 

@@ -32,6 +32,7 @@ import type {
   UpdateEngagementLoanRequest,
   EngagementListRequest,
   EngagementListResponse,
+  LoanReference,
 } from '../types/engagement.types.js';
 import {
   EngagementStatus,
@@ -110,18 +111,45 @@ function buildClientOrder(
   };
 }
 
-/** Build a fully-initialized EngagementLoan from the create-request shape. */
+/**
+ * Build a `LoanReference` from the legacy top-level fields on the request.
+ * Caller passes whichever loan field set was supplied; lien position defaults
+ * to 'First' since most engagements arrive with a primary purchase or refi
+ * loan against the property.
+ */
+function buildPrimaryLoanReference(l: CreateEngagementLoanRequest): LoanReference {
+  return {
+    loanNumber: l.loanNumber,
+    ...(l.loanType !== undefined && { loanType: l.loanType }),
+    ...(l.fhaCase !== undefined && { fhaCase: l.fhaCase }),
+    lienPosition: 'First',
+  };
+}
+
+/** Build a fully-initialized EngagementProperty from the create-request shape. */
 function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
+  // Slice 8d: keep top-level loanNumber/loanType/fhaCase in sync with
+  // loanReferences[0] (the primary loan) so legacy readers continue to work
+  // while new code reads from loanReferences[]. Either source on the request
+  // is supported during transition: if the caller already populated
+  // `loanReferences`, prefer it; otherwise synthesise from top-level fields.
+  const incomingRefs = (l as { loanReferences?: LoanReference[] }).loanReferences;
+  const loanReferences: LoanReference[] = (incomingRefs && incomingRefs.length > 0)
+    ? incomingRefs
+    : [buildPrimaryLoanReference(l)];
+  const primary = loanReferences[0]!;
+
   return {
     id: generateLoanId(),
-    loanNumber: l.loanNumber,
+    loanNumber: primary.loanNumber,
     borrowerName: l.borrowerName,
     ...(l.borrowerEmail !== undefined && { borrowerEmail: l.borrowerEmail }),
     ...(l.loanOfficer !== undefined && { loanOfficer: l.loanOfficer }),
     ...(l.loanOfficerEmail !== undefined && { loanOfficerEmail: l.loanOfficerEmail }),
     ...(l.loanOfficerPhone !== undefined && { loanOfficerPhone: l.loanOfficerPhone }),
-    ...(l.loanType !== undefined && { loanType: l.loanType }),
-    ...(l.fhaCase !== undefined && { fhaCase: l.fhaCase }),
+    ...(primary.loanType !== undefined && { loanType: primary.loanType }),
+    ...(primary.fhaCase !== undefined && { fhaCase: primary.fhaCase }),
+    loanReferences,
     property: l.property,
     status: EngagementLoanStatus.PENDING,
     clientOrders: l.clientOrders.map(buildClientOrder),

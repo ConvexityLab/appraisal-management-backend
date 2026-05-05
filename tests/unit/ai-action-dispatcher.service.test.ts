@@ -70,13 +70,15 @@ describe('AiActionDispatcherService', () => {
       id: 'eng-1',
       engagementNumber: 'ENG-1',
       engagementType: 'SINGLE',
-      loans: [{ id: 'loan-1' }],
+      // Engagement.loans renamed to Engagement.properties; client orders moved
+      // from products[] to clientOrders[].
+      properties: [{ id: 'loan-1' }],
     });
     const { dispatcher } = createDispatcher({ engagementService: { createEngagement } });
 
     const result = await dispatcher.handleCreateEngagement({
       client: { clientId: 'client-1', clientName: 'Client' },
-      loans: [{ loanNumber: 'LN-1', property: { address: '123 Main', city: 'Dallas', state: 'TX', zipCode: '75001' }, products: [{ productType: 'FULL_APPRAISAL' }] }],
+      properties: [{ loanNumber: 'LN-1', property: { address: '123 Main', city: 'Dallas', state: 'TX', zipCode: '75001' }, clientOrders: [{ productType: 'FULL_APPRAISAL' }] }],
     }, context);
 
     expect(createEngagement).toHaveBeenCalledWith(expect.objectContaining({
