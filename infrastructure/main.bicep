@@ -692,6 +692,45 @@ module communicationServices 'modules/communication-services-deployment.bicep' =
   }
 }
 
+// ============================================================================
+// Azure API Management (APIM) — vendor-integration ingress
+// ============================================================================
+// Per-environment SKU split:
+//   dev     → Consumption tier (free tier; 1 MB request body cap)
+//   staging → Basic tier (~$150/mo; 99.95% SLA; 250 MB body cap)
+//   prod    → Basic tier (~$150/mo; 99.95% SLA; 250 MB body cap)
+//
+// CORS allow-list is dynamic from the Static Web App URL deployed in this same
+// run. dev also includes localhost frontend ports for local development.
+//
+// Implicit dependsOn via output references: the apim module uses
+// appServices.outputs.containerAppFqdns and staticWebApp.outputs.staticWebAppUrl
+// so Bicep schedules apim after both are deployed and have their URLs.
+//
+// See docs/VENDOR_INTEGRATION_ARCHITECTURE.md.
+module apim 'modules/apim.bicep' = {
+  name: 'apim-deployment'
+  scope: resourceGroup
+  params: {
+    environment: environment
+    location: location
+    suffix: substring(uniqueString(resourceGroup.id), 0, 6)
+    tags: tags
+    apiContainerAppFqdn: appServices.outputs.containerAppFqdns[0]
+    functionContainerAppFqdn: appServices.outputs.containerAppFqdns[1]
+    skuName: environment == 'dev' ? 'Consumption' : 'Basic'
+    skuCapacity: environment == 'dev' ? 0 : 1
+    allowedOrigins: environment == 'dev' ? [
+      'http://localhost:3000'
+      'http://localhost:4200'
+      'http://localhost:5173'
+      staticWebApp.outputs.staticWebAppUrl
+    ] : [
+      staticWebApp.outputs.staticWebAppUrl
+    ]
+  }
+}
+
 // Outputs
 output resourceGroupName string = resourceGroup.name
 output containerAppEnvironmentName string = appServices.outputs.containerAppEnvironmentName
@@ -759,3 +798,8 @@ output staticWebAppUrl string = staticWebApp.outputs.staticWebAppUrl
 // Communication services outputs
 output communicationServicesEndpoint string = communicationServices.outputs.communicationServicesEndpoint
 output emailDomainVerificationRecords object = communicationServices.outputs.emailVerificationRecords
+
+// APIM outputs — vendor-integration ingress
+output apimName string = apim.outputs.apimName
+output apimGatewayUrl string = apim.outputs.apimGatewayUrl
+output aimPortInboundUrl string = apim.outputs.aimPortInboundUrl

@@ -73,9 +73,12 @@ This means the connection is not hardcoded in request handlers; it is determined
 
 AIM-Port initiates inbound requests to:
 
-- `POST /api/v1/integrations/inbound`
+- `POST /api/v1/integrations/aim-port/inbound`
 
-This is the single public entry point for AIM-Port payloads.
+This is the public entry point for AIM-Port payloads. Each vendor has its own
+URL path under `/api/v1/integrations/{vendor}/inbound` so that per-vendor edge
+policies (IP allow-list, rate limit, request-size cap) can be applied at the
+gateway layer without touching application code.
 
 ### Outbound initiation point
 
@@ -186,14 +189,23 @@ Files, messages, and status effects are also available through the platform's no
 
 ## Base Endpoint
 
-AIM-Port should send inbound API calls to:
+AIM-Port should send inbound API calls to the APIM gateway:
 
-- `POST /api/v1/integrations/inbound`
+- `POST https://{apim-gateway}/api/v1/integrations/aim-port/inbound`
+
+The gateway URL per environment (output as `aimPortInboundUrl` from the Bicep
+deployment):
+
+- dev:     `https://apim-appraisal-dev-{suffix}.azure-api.net/api/v1/integrations/aim-port/inbound`
+- staging: `https://apim-appraisal-staging-{suffix}.azure-api.net/api/v1/integrations/aim-port/inbound`
+- prod:    `https://apim-appraisal-prod-{suffix}.azure-api.net/api/v1/integrations/aim-port/inbound`
 
 Notes:
 - Requests must be JSON.
-- AIM-Port authentication is handled inside the integration layer, not by standard app-user auth.
-- The integration layer determines the vendor adapter from the request body shape and the `login.client_id` value.
+- AIM-Port authentication is handled inside the integration layer, not by standard app-user auth or APIM subscription keys (the APIM API has `subscriptionRequired: false`).
+- The vendor adapter is selected from the URL path (`aim-port`); the request body shape is sanity-checked against that adapter and a 400 is returned on mismatch.
+- The connection (tenant) is resolved from `login.client_id` inside the body.
+- **Dev tier note:** dev is on APIM Consumption tier with a 1 MB request-body cap. Large `OrderFilesRequest` payloads will 413 in dev — staging and prod (Basic tier) accept up to 250 MB.
 
 ---
 

@@ -546,8 +546,10 @@ export class AppraisalManagementAPIServer {
 
     // Rule 3 — Global catch-all: 100 req/15-min window.
     //   Webhook and callback routes are exempted — they are server-to-server
-    //   calls from Axiom secured by HMAC-SHA256 and should never be blocked
-    //   based on the originating IP.
+    //   calls secured by adapter-level credentials (Axiom HMAC; vendor api_key
+    //   in Key Vault). Per-IP throttling is the wrong control for these.
+    //   Vendor-integration ingress will get per-vendor rate limits at APIM
+    //   in Phase 2.
     const limiter = rateLimit({
       windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // Default: 15 minutes
       max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // Default: 100 requests per window
@@ -558,6 +560,7 @@ export class AppraisalManagementAPIServer {
       skip: (req) => {
         const url = req.originalUrl;
         if (req.method === 'OPTIONS') return true;
+        if (url.startsWith('/api/v1/integrations/')) return true;
         return url.includes('/axiom/webhook') || url.includes('/axiom/callback');
       },
     });
@@ -574,13 +577,13 @@ export class AppraisalManagementAPIServer {
     }));
     this.app.use(morgan('combined'));
     this.app.use(express.json({
-      limit: '10mb',
+      limit: '50mb',
       // Capture the raw body buffer so HMAC signature verification in verifyAxiomWebhook
       // middleware can compare the exact bytes that were signed. express.json() buffers
       // the entire body anyway; this just makes the buffer accessible on req.rawBody.
       verify: (req, _res, buf) => { (req as any).rawBody = buf; },
     }));
-    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+    this.app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // API documentation
     this.app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(this.getSwaggerSpec()));

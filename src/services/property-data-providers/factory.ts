@@ -69,15 +69,19 @@ export function createPropertyDataProvider(cosmos?: CosmosDbService): PropertyDa
     chainNames.push('Bridge Interactive');
   }
   if (hasAttom) {
+    // AttomPropertyDataProvider now goes through AttomProviderService, which
+    // wraps the live AttomService with a Cosmos-backed cache. Cosmos is therefore
+    // required when ATTOM_API_KEY is set. Fail loudly rather than silently
+    // skipping ATTOM, so misconfiguration is obvious.
     if (!cosmos) {
       throw new Error(
         'createPropertyDataProvider: a CosmosDbService instance must be provided when ' +
-          'ATTOM_API_KEY is set (required for the ATTOM property-data cache)',
+          'ATTOM_API_KEY is set (required by the cached AttomProviderService chain)',
       );
     }
     const attomCache = new PropertyDataCacheService(cosmos);
-    const attomSvc = new AttomProviderService(attomCache, new AttomService());
-    chain.push(new AttomPropertyDataProvider(attomSvc));
+    const attomProviderService = new AttomProviderService(attomCache, new AttomService());
+    chain.push(new AttomPropertyDataProvider(attomProviderService));
     chainNames.push('ATTOM Data Solutions');
   }
 

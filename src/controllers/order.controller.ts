@@ -62,6 +62,7 @@ import {
 } from '../middleware/order-validation.middleware.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import { buildManualDraftSourceIdentity, buildApiOrderSourceIdentity } from '../types/intake-source.types.js';
 import type { AppraisalOrder } from '../types/index.js';
 import { DuplicateOrderDetectionService } from '../services/duplicate-order-detection.service.js';
 import { WaiverScreeningService } from '../services/waiver-screening.service.js';
