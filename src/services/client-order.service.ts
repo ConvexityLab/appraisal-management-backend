@@ -31,6 +31,7 @@
 
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
+import { VendorOrderService, type CreateVendorOrderInput } from './vendor-order.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import type { EventPublisher } from '../types/events.js';
 import { EventCategory, type ClientOrderCreatedEvent } from '../types/events.js';
@@ -159,20 +160,28 @@ const REQUIRED_FIELDS: Array<keyof PlaceClientOrderInput> = [
 export class ClientOrderService {
   private readonly logger = new Logger('ClientOrderService');
   private readonly publisher: EventPublisher;
+  private readonly vendorOrderService: VendorOrderService;
 
   /**
-   * @param dbService    Cosmos DB facade.
-   * @param publisher    Optional event publisher (defaults to a fresh
-   *                     `ServiceBusEventPublisher`). Tests inject a mock.
-   *                     Used to fire `client-order.created` after a
-   *                     ClientOrder is persisted so downstream consumers
-   *                     (comp-collection listener, etc.) can react.
+   * @param dbService            Cosmos DB facade.
+   * @param publisher            Optional event publisher (defaults to a fresh
+   *                             `ServiceBusEventPublisher`). Tests inject a mock.
+   *                             Used to fire `client-order.created` after a
+   *                             ClientOrder is persisted so downstream consumers
+   *                             (comp-collection listener, etc.) can react.
+   * @param vendorOrderService   Optional VendorOrderService injection for tests.
+   *                             When omitted, a default instance is constructed
+   *                             against the same dbService. Phase 1 (slice 8e)
+   *                             routes VendorOrder writes through this service
+   *                             instead of calling dbService.createOrder directly.
    */
   constructor(
     private readonly dbService: CosmosDbService,
     publisher?: EventPublisher,
+    vendorOrderService?: VendorOrderService,
   ) {
     this.publisher = publisher ?? new ServiceBusEventPublisher();
+    this.vendorOrderService = vendorOrderService ?? new VendorOrderService(dbService);
   }
 
   /**
@@ -435,36 +444,33 @@ export class ClientOrderService {
 
     const out: VendorOrder[] = [];
     for (const spec of specs) {
-      const vendorOrderInput = {
+      // Slice 8e: route through VendorOrderService (the canonical write path)
+      // instead of calling dbService.createOrder directly. Same write, same
+      // shape — just owns the discriminator + linkage decisions in one place.
+      const vendorOrderInput: CreateVendorOrderInput = {
         ...vendorPassthrough,
         status: OrderStatus.NEW,
-        clientOrderId: clientOrder.id,
-        vendorWorkType: spec.vendorWorkType,
-        ...(spec.vendorFee !== undefined ? { vendorFee: spec.vendorFee } : {}),
-        ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
-      } as Omit<AppraisalOrder, 'id'>;
-
-      const result = await this.dbService.createOrder(vendorOrderInput);
-      if (!result.success || !result.data) {
-        throw new Error(
-          `Failed to create VendorOrder for ClientOrder "${clientOrder.id}" ` +
-            `(spec vendorWorkType="${spec.vendorWorkType}"): ` +
-            `${result.error?.message ?? 'unknown error'}`,
-        );
-      }
-
-      const created = result.data as AppraisalOrder;
-      out.push({
-        ...created,
-        type: LEGACY_VENDOR_ORDER_DOC_TYPE,
         tenantId: clientOrder.tenantId,
         clientOrderId: clientOrder.id,
         engagementId: clientOrder.engagementId,
         engagementLoanId: clientOrder.engagementLoanId,
         clientId: clientOrder.clientId,
-        productType: clientOrder.productType,
         propertyId: clientOrder.propertyId ?? '',
         vendorWorkType: spec.vendorWorkType,
+        ...(spec.vendorFee !== undefined ? { vendorFee: spec.vendorFee } : {}),
+        ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
+      };
+
+      const created = await this.vendorOrderService.createVendorOrder(vendorOrderInput);
+
+      // VendorOrderService returns a VendorOrder already shaped with linkage;
+      // we only need to ensure productType reflects the parent ClientOrder
+      // (vendorWorkType may differ from the parent's productType after future
+      // multi-step decomposition; productType here mirrors the parent for
+      // back-compat).
+      out.push({
+        ...created,
+        productType: clientOrder.productType,
       } as VendorOrder);
     }
     return out;

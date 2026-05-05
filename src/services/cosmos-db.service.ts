@@ -291,6 +291,22 @@ export class CosmosDbService {
   // Order Operations
   // ===============================
 
+  /**
+   * @deprecated Application code should NOT call this directly. Route through:
+   *   - `ClientOrderService.placeClientOrder()` for client-initiated orders
+   *     (the lender places an engagement order against a property).
+   *   - `VendorOrderService.createVendorOrder()` for vendor-side fulfillment
+   *     work spawned from a ClientOrder.
+   *
+   * This method remains as a low-level Cosmos helper used internally by
+   * VendorOrderService. Direct callers (`order.controller`,
+   * `production-order.controller`, `bulk-portfolio.service`,
+   * `bulk-ingestion-order-creation-worker`, `ai-action-dispatcher.service`)
+   * are scheduled to migrate in slices 8e–8g per ORDER-DOMAIN-REDESIGN.md §4.
+   *
+   * Slice 8f (`feat/discriminator-flip`) will additionally rename `type: 'order'`
+   * → `type: 'vendor-order'` here in lockstep with all read queries.
+   */
   async createOrder(order: Omit<AppraisalOrder, 'id'>): Promise<ApiResponse<AppraisalOrder>> {
     try {
       if (!this.ordersContainer) {
