@@ -217,7 +217,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
         const createRequest: CreateEngagementRequest = {
           client: req.body.client,
-          loans: req.body.loans as CreateEngagementLoanRequest[],
+          properties: (req.body.properties ?? req.body.loans) as CreateEngagementLoanRequest[],
           ...(req.body.priority !== undefined && { priority: req.body.priority }),
           ...(req.body.clientDueDate !== undefined && { clientDueDate: req.body.clientDueDate }),
           ...(req.body.internalDueDate !== undefined && { internalDueDate: req.body.internalDueDate }),

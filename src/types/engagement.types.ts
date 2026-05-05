@@ -1,19 +1,33 @@
 /**
  * Engagement Domain Types
  *
- * A LenderEngagement is the aggregate root for all valuation work on one or more loans.
- * It represents what a client (lender/AMC) hired us to produce.
+ * A LenderEngagement is the aggregate root for all valuation work on one or
+ * more PROPERTIES. It represents what a client (lender/AMC) hired us to
+ * produce.
  *
- * Hierarchy:
+ * Hierarchy (corrected per design conversation 2026-05-05):
  *   LenderEngagement (1)
- *     └── EngagementLoan (1..1000) — one per property/loan in the portfolio
- *           └── EngagementClientOrder (1..N) — what the client ordered per loan
- *                 └── vendorOrderIds (0..N) — what we ordered from vendors
+ *     └── EngagementProperty (1..1000) — one per physical property in scope
+ *           ├── propertyId → PropertyRecord (load-bearing FK)
+ *           ├── loanReferences[]                  (informational metadata —
+ *           │                                      a property may carry multiple
+ *           │                                      loans: first lien + HELOC + refi.
+ *           │                                      Schema lands in slice 8d; until
+ *           │                                      then top-level loanNumber etc.
+ *           │                                      remain on this entity.)
+ *           └── EngagementClientOrder (1..N)      — what the client ordered for this property
+ *                 └── vendorOrderIds (0..N)       — what we ordered from vendors
+ *
+ * Legacy naming retained for back-compat:
+ *   `EngagementLoan` is now a deprecated type alias of `EngagementProperty`.
+ *   `Engagement.loans` is a deprecated read-alias of `Engagement.properties`.
+ *   `EngagementLoanStatus` is a deprecated enum alias of `EngagementPropertyStatus`.
+ *   These will be removed in slice 8k once all consumers have migrated.
  *
  * Lifecycles:
- *   Engagement:     RECEIVED → ACCEPTED → IN_PROGRESS → QC → DELIVERED
- *   EngagementLoan: PENDING → IN_PROGRESS → QC → DELIVERED
- *   VendorOrder:    NEW → ASSIGNED → ACCEPTED → IN_PROGRESS → DELIVERED (to us)
+ *   Engagement:         RECEIVED → ACCEPTED → IN_PROGRESS → QC → DELIVERED
+ *   EngagementProperty: PENDING → IN_PROGRESS → QC → DELIVERED
+ *   VendorOrder:        NEW → ASSIGNED → ACCEPTED → IN_PROGRESS → DELIVERED
  */
 
 import { OrderPriority, PropertyDetails } from './order-management.js';
@@ -30,8 +44,8 @@ export { ProductType as EngagementProductType } from './product-catalog.js';
 // =============================================================================
 
 /**
- * Whether the engagement covers a single loan or multiple loans (portfolio tape).
- * Auto-set by the service: SINGLE when loans.length === 1, PORTFOLIO otherwise.
+ * Whether the engagement covers a single property or multiple (portfolio tape).
+ * Auto-set by the service: SINGLE when properties.length === 1, PORTFOLIO otherwise.
  */
 export enum EngagementType {
   SINGLE    = 'SINGLE',
@@ -54,19 +68,27 @@ export enum EngagementStatus {
 }
 
 /**
- * Lifecycle for a single EngagementLoan within a portfolio engagement.
+ * Lifecycle for a single EngagementProperty within a portfolio engagement.
  * Independent of the parent EngagementStatus.
  */
-export enum EngagementLoanStatus {
-  PENDING     = 'PENDING',      // Loan received; work not yet begun
+export enum EngagementPropertyStatus {
+  PENDING     = 'PENDING',      // Property received; work not yet begun
   IN_PROGRESS = 'IN_PROGRESS',  // Active vendor orders underway
   QC          = 'QC',           // Report under internal review
   DELIVERED   = 'DELIVERED',    // Deliverable sent to lender
-  CANCELLED   = 'CANCELLED',    // Loan removed from engagement
+  CANCELLED   = 'CANCELLED',    // Property removed from engagement
 }
 
 /**
- * The status of a single client order within an engagement loan.
+ * @deprecated Use `EngagementPropertyStatus`. The old name was
+ * loan-anchored; the entity is property-anchored. Will be removed in slice 8k.
+ */
+export const EngagementLoanStatus = EngagementPropertyStatus;
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export type EngagementLoanStatus = EngagementPropertyStatus;
+
+/**
+ * The status of a single client order within an engagement property.
  */
 export enum EngagementClientOrderStatus {
   PENDING     = 'PENDING',      // Not yet assigned to a vendor
@@ -83,7 +105,7 @@ export enum EngagementClientOrderStatus {
 
 /**
  * Org-level client context — who hired us.
- * Contains only lender/AMC-level fields. All loan-level fields live on EngagementLoan.
+ * Contains only lender/AMC-level fields. All property-level fields live on EngagementProperty.
  */
 export interface EngagementClient {
   clientId: string;
@@ -95,8 +117,8 @@ export interface EngagementClient {
 }
 
 /**
- * A single client order placed by the lender for a specific loan — one
- * deliverable product the client wants from us. One EngagementLoan may have
+ * A single client order placed by the lender for a specific property — one
+ * deliverable product the client wants from us. One EngagementProperty may have
  * multiple client orders (e.g., Full Appraisal + AVM).
  */
 export interface EngagementClientOrder {
@@ -115,32 +137,55 @@ export interface EngagementClientOrder {
 }
 
 /**
- * A single loan/property within an engagement.
- * For SINGLE engagements there is exactly one. For PORTFOLIO engagements there are 1..1000.
- * Embedded inside the Engagement document (loansStoredExternally = false).
+ * A single physical property within an engagement.
+ *
+ * For SINGLE engagements there is exactly one. For PORTFOLIO engagements
+ * there are 1..1000. Embedded inside the Engagement document
+ * (loansStoredExternally = false).
+ *
+ * Property is the load-bearing entity — orders, products, third-party data,
+ * enrichment, canonical accumulation, comps history all hang off the property.
+ * Loans (loanNumber, loanType, etc.) are reference-only metadata for client
+ * conversations. Slice 8d will move those into a `loanReferences: LoanReference[]`
+ * array; until then they remain top-level for back-compat.
  */
-export interface EngagementLoan {
-  /** ID generated by the service: loan-<ts>-<rand> */
+export interface EngagementProperty {
+  /** ID generated by the service: prop-<ts>-<rand> (was loan-<ts>-<rand>) */
   id: string;
-  loanNumber: string;
-  borrowerName: string;
-  borrowerEmail?: string | undefined;
-  loanOfficer?: string | undefined;
-  loanOfficerEmail?: string | undefined;
-  loanOfficerPhone?: string | undefined;
-  loanType?: string | undefined;
-  fhaCase?: string | undefined;
-  /** FK → PropertyRecord.id — the canonical property record for this loan's collateral. Added Phase R0.4. */
+
+  // ── Property identity (load-bearing) ────────────────────────────────────
+  /** FK → PropertyRecord.id — the canonical property record for this collateral. */
   propertyId?: string;
   /**
    * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
    * Retained as a display cache during Phase R0–R2 migration.
    */
   property: PropertyDetails;
-  status: EngagementLoanStatus;
-  /** Client orders placed for this specific loan (1..N) */
+
+  // ── Loan reference metadata (slice 8d will move these into loanReferences[]) ─
+  loanNumber: string;
+  loanType?: string | undefined;
+  fhaCase?: string | undefined;
+
+  // ── Borrower (property-level — same person across multiple loans on same prop) ─
+  borrowerName: string;
+  borrowerEmail?: string | undefined;
+  loanOfficer?: string | undefined;
+  loanOfficerEmail?: string | undefined;
+  loanOfficerPhone?: string | undefined;
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
+  status: EngagementPropertyStatus;
+
+  // ── Client orders for this property (1..N) ──────────────────────────────
   clientOrders: EngagementClientOrder[];
 }
+
+/**
+ * @deprecated Use `EngagementProperty`. The old name was loan-anchored; the
+ * entity is property-anchored. Will be removed in slice 8k.
+ */
+export type EngagementLoan = EngagementProperty;
 
 /**
  * Engagement — the aggregate root for all valuation work.
@@ -148,7 +193,7 @@ export interface EngagementLoan {
  * Cosmos container: "engagements"
  * Partition key:    /tenantId
  *
- * Storage: loans are embedded in this document while loans.length ≤ 1000.
+ * Storage: properties are embedded in this document while properties.length ≤ 1000.
  * loansStoredExternally is reserved for a future external container path (not yet built).
  */
 export interface Engagement {
@@ -157,25 +202,25 @@ export interface Engagement {
   engagementNumber: string;
   tenantId: string;
 
-  // ── Type ──────────────────��───────────────────────��───────────────────────
-  /** SINGLE when loans.length === 1; PORTFOLIO when loans.length > 1. Set by service. */
+  // ── Type ────────────────────────────────────────────────────────────────
+  /** SINGLE when properties.length === 1; PORTFOLIO when > 1. Set by service. */
   engagementType: EngagementType;
   /** Always false until external loan container path is implemented. */
   loansStoredExternally: boolean;
 
-  // ── Who ordered it ─��──────────────────────────────────���───────────────────
-  /** Org-level client. Loan-level fields (loanNumber, borrowerName, etc.) live on each EngagementLoan. */
+  // ── Who ordered it ──────────────────────────────────────────────────────
+  /** Org-level client. Property-level fields live on each EngagementProperty. */
   client: EngagementClient;
 
-  // ── Loans ─────────────────────────────────────────────────────────────────
-  /** 1..1000 loans, each with its own property and client orders. */
-  loans: EngagementLoan[];
+  // ── Properties ──────────────────────────────────────────────────────────
+  /** 1..1000 properties, each with its own client orders. */
+  properties: EngagementProperty[];
 
-  // ── Lifecycle ─────────────────────���───────────────────────────────────────
+  // ── Lifecycle ───────────────────────────────────────────────────────────
   status: EngagementStatus;
   priority: OrderPriority;
 
-  // ── Dates ───���──────────────────────────────────��────────────────────���─────
+  // ── Dates ───────────────────────────────────────────────────────────────
   /** When we received the engagement from the lender */
   receivedAt: string;       // ISO datetime
   /** Lender's deadline for the final deliverable */
@@ -185,16 +230,17 @@ export interface Engagement {
   /** When the engagement was closed (delivered or cancelled) */
   closedAt?: string;        // ISO datetime
 
-  // ── Financials ────────────────────────────────────────────────────────────
-  /** Sum of all EngagementClientOrder fees across all loans — what we charge the lender */
-  totalEngagementFee?: number;  /** Links this Engagement to the QuickBooks Bill (Accounts Payable) generated for our vendors */
+  // ── Financials ──────────────────────────────────────────────────────────
+  /** Sum of all EngagementClientOrder fees across all properties — what we charge the lender */
+  totalEngagementFee?: number;
+  /** Links this Engagement to the QuickBooks Bill (Accounts Payable) generated for our vendors */
   quickbooksBillId?: string;
-  // ── Instructions ──���───────────────────────────────────────────────────────
+  // ── Instructions ────────────────────────────────────────────────────────
   accessInstructions?: string;
   specialInstructions?: string;
   engagementInstructions?: string;
 
-  // ── Audit ────────────────────��────────────────────────────────────────────
+  // ── Audit ───────────────────────────────────────────────────────────────
   createdAt: string;
   createdBy: string;
   updatedAt?: string;
@@ -205,21 +251,33 @@ export interface Engagement {
 // REQUEST / RESPONSE SHAPES
 // =============================================================================
 
-/** Shape for each loan entry when creating an engagement. */
-export type CreateEngagementLoanRequest = Omit<EngagementLoan, 'id' | 'status' | 'clientOrders'> & {
+/** Shape for each property entry when creating an engagement. */
+export type CreateEngagementPropertyRequest = Omit<EngagementProperty, 'id' | 'status' | 'clientOrders'> & {
   clientOrders: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>[];
 };
 
-/** Patch shape for updating scalar fields on an existing loan (not clientOrders, not status). */
-export type UpdateEngagementLoanRequest = Partial<
-  Omit<EngagementLoan, 'id' | 'status' | 'clientOrders'>
+/**
+ * @deprecated Use `CreateEngagementPropertyRequest`. Retained for back-compat
+ * during slice 8c migration.
+ */
+export type CreateEngagementLoanRequest = CreateEngagementPropertyRequest;
+
+/** Patch shape for updating scalar fields on an existing property (not clientOrders, not status). */
+export type UpdateEngagementPropertyRequest = Partial<
+  Omit<EngagementProperty, 'id' | 'status' | 'clientOrders'>
 >;
+
+/**
+ * @deprecated Use `UpdateEngagementPropertyRequest`. Retained for back-compat
+ * during slice 8c migration.
+ */
+export type UpdateEngagementLoanRequest = UpdateEngagementPropertyRequest;
 
 export interface CreateEngagementRequest {
   tenantId: string;
   client: EngagementClient;
-  /** 1..1000 loans. Must have at least one. Each must have at least one client order. */
-  loans: CreateEngagementLoanRequest[];
+  /** 1..1000 properties. Must have at least one. Each must have at least one client order. */
+  properties: CreateEngagementPropertyRequest[];
   priority?: OrderPriority;
   clientDueDate?: string;
   internalDueDate?: string;
@@ -232,9 +290,9 @@ export interface CreateEngagementRequest {
 
 export interface UpdateEngagementRequest {
   client?: Partial<EngagementClient>;
-  /** Direct loan array replacement — use targeted loan methods (addLoan, updateLoan, etc.) instead. */
-  loans?: EngagementLoan[];
-  /** Recalculated automatically by addLoanToEngagement / removeLoan. */
+  /** Direct property array replacement — use targeted methods (addProperty, updateProperty, etc.) instead. */
+  properties?: EngagementProperty[];
+  /** Recalculated automatically by addPropertyToEngagement / removeProperty. */
   engagementType?: EngagementType;
   status?: EngagementStatus;
   priority?: OrderPriority;
@@ -252,7 +310,7 @@ export interface EngagementListRequest {
   status?: EngagementStatus[];
   clientId?: string | undefined;
   priority?: OrderPriority[];
-  /** Filter by first-loan property state (covers SINGLE; PORTFOLIO uses loans[0] as proxy). */
+  /** Filter by first-property state (covers SINGLE; PORTFOLIO uses properties[0] as proxy). */
   propertyState?: string | undefined;
   propertyZipCode?: string | undefined;
   searchText?: string | undefined;

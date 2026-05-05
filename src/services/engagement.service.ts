@@ -182,16 +182,16 @@ export class EngagementService {
     if (!request.client?.clientId) {
       throw new Error('client.clientId is required to create an Engagement');
     }
-    if (!request.loans || request.loans.length === 0) {
+    if (!request.properties || request.properties.length === 0) {
       throw new Error('At least one EngagementLoan is required');
     }
-    if (request.loans.length > MAX_EMBEDDED_LOANS) {
+    if (request.properties.length > MAX_EMBEDDED_LOANS) {
       throw new Error(
         `Large portfolio ingestion (>${MAX_EMBEDDED_LOANS} loans) is not yet supported. ` +
-        `Submitted: ${request.loans.length} loans. Contact support.`,
+        `Submitted: ${request.properties.length} loans. Contact support.`,
       );
     }
-    for (const loan of request.loans) {
+    for (const loan of request.properties) {
       if (!loan.clientOrders || loan.clientOrders.length === 0) {
         throw new Error(
           `Each loan must have at least one client order. ` +
@@ -202,7 +202,7 @@ export class EngagementService {
 
     // Resolve a canonical PropertyRecord for each loan's collateral (Phase R2).
     const resolvedPropertyIds = await Promise.all(
-      request.loans.map(l =>
+      request.properties.map(l =>
         this.propertyRecordService.resolveOrCreate({
           address: {
             street: l.property.address,
@@ -216,7 +216,7 @@ export class EngagementService {
       ),
     );
 
-    const loans = request.loans.map((l, i) => ({
+    const loans = request.properties.map((l, i) => ({
       ...buildLoan(l),
       propertyId: resolvedPropertyIds[i]!.propertyId,
     }));
@@ -230,7 +230,7 @@ export class EngagementService {
       engagementType,
       loansStoredExternally: false,
       client: request.client,
-      loans,
+      properties: loans,
       status: EngagementStatus.RECEIVED,
       priority: request.priority ?? OrderPriority.ROUTINE,
       receivedAt: now(),
@@ -266,7 +266,7 @@ export class EngagementService {
     //      (comparable-analyses).
     // Step 1 is awaited inside enrichAndPlaceClientOrders before Step 2 so the
     // PropertyRecord has lat/lng by the time the listener reads it.
-    for (const loan of (resource as Engagement).loans) {
+    for (const loan of (resource as Engagement).properties) {
       this.enrichAndPlaceClientOrders(
         engagement.id,
         loan.id,
@@ -391,7 +391,7 @@ export class EngagementService {
       ...(updates.client !== undefined && {
         client: { ...existing.client, ...updates.client },
       }),
-      ...(updates.loans !== undefined && { loans: updates.loans }),
+      ...(updates.properties !== undefined && { properties: updates.properties }),
       ...(updates.engagementType !== undefined && { engagementType: updates.engagementType }),
       ...(updates.status !== undefined && { status: updates.status }),
       ...(updates.priority !== undefined && { priority: updates.priority }),
@@ -481,8 +481,8 @@ export class EngagementService {
   async getLoans(engagementId: string, tenantId: string): Promise<EngagementLoan[]> {
     const engagement = await this.getEngagement(engagementId, tenantId);
     // NOTE: loansStoredExternally=true path is not yet implemented.
-    // When needed, add: if (engagement.loansStoredExternally) { return this.queryExternalLoans(...); }
-    return engagement.loans;
+    // When needed, add: if (engagement.propertiesStoredExternally) { return this.queryExternalLoans(...); }
+    return engagement.properties;
   }
 
   /** Add a new loan to an existing engagement. */
@@ -494,10 +494,10 @@ export class EngagementService {
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
 
-    if (engagement.loans.length >= MAX_EMBEDDED_LOANS) {
+    if (engagement.properties.length >= MAX_EMBEDDED_LOANS) {
       throw new Error(
         `Large portfolio ingestion (>${MAX_EMBEDDED_LOANS} loans) is not yet supported. ` +
-        `Current loan count: ${engagement.loans.length}. Contact support.`,
+        `Current loan count: ${engagement.properties.length}. Contact support.`,
       );
     }
     if (!loanData.clientOrders || loanData.clientOrders.length === 0) {
@@ -530,11 +530,11 @@ export class EngagementService {
       });
     }
 
-    const updatedLoans = [...engagement.loans, newLoan];
+    const updatedLoans = [...engagement.properties, newLoan];
     const updatedType = updatedLoans.length > 1 ? EngagementType.PORTFOLIO : EngagementType.SINGLE;
 
     const updatedEngagement = await this.updateEngagement(engagementId, tenantId, {
-      loans: updatedLoans,
+      properties: updatedLoans,
       ...(updatedType !== engagement.engagementType && { engagementType: updatedType }),
       updatedBy,
     });
@@ -570,14 +570,14 @@ export class EngagementService {
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
-    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
         `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const existing = engagement.loans[loanIndex] as EngagementLoan;
+    const existing = engagement.properties[loanIndex] as EngagementLoan;
     const updatedLoan: EngagementLoan = {
       ...existing,
       ...(updates.loanNumber !== undefined && { loanNumber: updates.loanNumber }),
@@ -591,7 +591,7 @@ export class EngagementService {
       ...(updates.property !== undefined && { property: updates.property }),
     };
 
-    const updatedLoans = [...engagement.loans];
+    const updatedLoans = [...engagement.properties];
     updatedLoans[loanIndex] = updatedLoan;
 
     // Re-enrich when any address field changes. Both resolveOrCreate and enrichEngagement
@@ -630,7 +630,7 @@ export class EngagementService {
         });
       }
 
-      const updatedEngagement = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+      const updatedEngagement = await this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
 
       // Fire-and-forget enrichment with the new address (non-fatal).
       this.enrichmentService.enrichEngagement(
@@ -654,7 +654,7 @@ export class EngagementService {
       return updatedEngagement;
     }
 
-    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+    return this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
   }
 
   /**
@@ -668,14 +668,14 @@ export class EngagementService {
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
-    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
         `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementLoan;
     const hasLinkedOrders = loan.clientOrders.some((co) => co.vendorOrderIds.length > 0);
     if (hasLinkedOrders) {
       throw new Error(
@@ -684,8 +684,8 @@ export class EngagementService {
       );
     }
 
-    const updatedLoans = engagement.loans.filter((l) => l.id !== loanId);
-    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+    const updatedLoans = engagement.properties.filter((l) => l.id !== loanId);
+    return this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
   }
 
   /** Transition a single loan to a new status, enforcing ALLOWED_LOAN_TRANSITIONS. */
@@ -697,14 +697,14 @@ export class EngagementService {
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
-    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
         `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementLoan;
     const allowed = EngagementService.ALLOWED_LOAN_TRANSITIONS[loan.status];
     if (!allowed.includes(newStatus)) {
       throw new Error(
@@ -714,9 +714,9 @@ export class EngagementService {
       );
     }
 
-    const updatedLoans = [...engagement.loans];
+    const updatedLoans = [...engagement.properties];
     updatedLoans[loanIndex] = { ...loan, status: newStatus };
-    return this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+    return this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
   }
 
   /** Add a new client order to an existing loan. */
@@ -728,19 +728,19 @@ export class EngagementService {
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
-    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
         `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementLoan;
     const newClientOrder = buildClientOrder(clientOrderData);
-    const updatedLoans = [...engagement.loans];
+    const updatedLoans = [...engagement.properties];
     updatedLoans[loanIndex] = { ...loan, clientOrders: [...loan.clientOrders, newClientOrder] };
 
-    const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+    const result = await this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
 
     // Fire-and-forget standalone ClientOrder placement for the new order.
     // Mirrors the createEngagement path: placeClientOrder writes the
@@ -791,14 +791,14 @@ export class EngagementService {
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
-    const loanIndex = engagement.loans.findIndex((l) => l.id === loanId);
+    const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
         `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.loans[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementLoan;
     const clientOrder = loan.clientOrders.find((co) => co.id === clientOrderId);
     if (!clientOrder) {
       throw new Error(
@@ -809,9 +809,9 @@ export class EngagementService {
       clientOrder.vendorOrderIds.push(vendorOrderId);
     }
 
-    const updatedLoans = [...engagement.loans];
+    const updatedLoans = [...engagement.properties];
     updatedLoans[loanIndex] = loan;
-    const result = await this.updateEngagement(engagementId, tenantId, { loans: updatedLoans, updatedBy });
+    const result = await this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
 
     // Best-effort FK write-back: stamp engagementId, loanId, clientOrderId onto the order document.
     // Non-fatal — the order may not exist yet if it is being created concurrently.
@@ -857,21 +857,21 @@ export class EngagementService {
 
     if (request.propertyState) {
       // Use loans[0] as representative property for SINGLE; PORTFOLIO multi-state search is v2.
-      conditions.push('c.loans[0].property.state = @propertyState');
+      conditions.push('c.properties[0].property.state = @propertyState');
       parameters.push({ name: '@propertyState', value: request.propertyState });
     }
 
     if (request.propertyZipCode) {
-      conditions.push('c.loans[0].property.zipCode = @zipCode');
+      conditions.push('c.properties[0].property.zipCode = @zipCode');
       parameters.push({ name: '@zipCode', value: request.propertyZipCode });
     }
 
     if (request.searchText) {
       conditions.push(
-        '(CONTAINS(LOWER(c.loans[0].loanNumber), LOWER(@search)) OR ' +
-        'CONTAINS(LOWER(c.loans[0].borrowerName), LOWER(@search)) OR ' +
+        '(CONTAINS(LOWER(c.properties[0].loanNumber), LOWER(@search)) OR ' +
+        'CONTAINS(LOWER(c.properties[0].borrowerName), LOWER(@search)) OR ' +
         'CONTAINS(LOWER(c.engagementNumber), LOWER(@search)) OR ' +
-        'CONTAINS(LOWER(c.loans[0].property.city), LOWER(@search)))',
+        'CONTAINS(LOWER(c.properties[0].property.city), LOWER(@search)))',
       );
       parameters.push({ name: '@search', value: request.searchText });
     }
@@ -1005,7 +1005,7 @@ export class EngagementService {
     let orderIds: string[] = [];
     try {
       const engagement = await this.getEngagement(engagementId, tenantId);
-      orderIds = engagement.loans.flatMap((loan) =>
+      orderIds = engagement.properties.flatMap((loan) =>
         loan.clientOrders.flatMap((clientOrder) => clientOrder.vendorOrderIds ?? []),
       );
     } catch {
@@ -1052,7 +1052,7 @@ export class EngagementService {
     let orderCondition = '';
     try {
       const engagement = await this.getEngagement(engagementId, tenantId);
-      const orderIds = engagement.loans.flatMap((loan) =>
+      const orderIds = engagement.properties.flatMap((loan) =>
         loan.clientOrders.flatMap((clientOrder) => clientOrder.vendorOrderIds ?? []),
       );
       if (orderIds.length > 0) {

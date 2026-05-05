@@ -275,7 +275,7 @@ export class AiActionDispatcherService {
           engagementId: engagement.id,
           engagementNumber: engagement.engagementNumber,
           engagementType: engagement.engagementType,
-          loanCount: engagement.loans.length,
+          loanCount: engagement.properties.length,
         },
       };
     } catch (error) {

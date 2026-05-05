@@ -30,7 +30,7 @@ import type {
 
 type EngagementContext = {
   engagement: Awaited<ReturnType<EngagementService['createEngagement']>>;
-  loan: Awaited<ReturnType<EngagementService['createEngagement']>>['loans'][number] | undefined;
+  loan: Awaited<ReturnType<EngagementService['createEngagement']>>['properties'][number] | undefined;
   productId?: string;
 };
 
@@ -449,10 +449,10 @@ export class BulkIngestionOrderCreationWorkerService {
         clientId: job.clientId,
         clientName: job.clientId,
       },
-      loans: items.map((item) => this.buildEngagementLoanInput(job, item, adapterConfig)),
+      properties: items.map((item) => this.buildEngagementLoanInput(job, item, adapterConfig)),
     } as any);
 
-    const engagementLoans = [...engagement.loans].sort((left, right) => {
+    const engagementLoans = [...engagement.properties].sort((left, right) => {
       const leftLoan = left.loanNumber ?? '';
       const rightLoan = right.loanNumber ?? '';
       return leftLoan.localeCompare(rightLoan);
@@ -494,10 +494,10 @@ export class BulkIngestionOrderCreationWorkerService {
         clientId: job.clientId,
         clientName: job.clientId,
       },
-      loans: [this.buildEngagementLoanInput(job, item, adapterConfig)],
+      properties: [this.buildEngagementLoanInput(job, item, adapterConfig)],
     } as any);
 
-    const loan = engagement.loans[0];
+    const loan = engagement.properties[0];
     return {
       engagement,
       loan,

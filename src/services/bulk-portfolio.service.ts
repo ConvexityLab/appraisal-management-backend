@@ -1689,7 +1689,7 @@ export class BulkPortfolioService {
         clientId,
         clientName: clientId,
       },
-      loans: items.map((item) => this._buildEngagementLoanInput(item, jobId)),
+      properties: items.map((item) => this._buildEngagementLoanInput(item, jobId)),
     });
 
     return engagement.id;
@@ -1709,7 +1709,7 @@ export class BulkPortfolioService {
         clientId,
         clientName: clientId,
       },
-      loans: [this._buildEngagementLoanInput(item, jobId)],
+      properties: [this._buildEngagementLoanInput(item, jobId)],
     });
 
     return engagement.id;

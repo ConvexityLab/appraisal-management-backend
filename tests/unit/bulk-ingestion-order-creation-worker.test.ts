@@ -53,7 +53,7 @@ vi.mock('../../src/services/engagement.service.js', () => ({
     capturedCreateEngagement = vi.fn().mockResolvedValue({
       id:       'eng-001',
       tenantId: 'tenant-001',
-      loans: [
+      properties: [
         {
           id:         'loan-001',
           loanNumber: 'LN-001',
@@ -203,7 +203,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     capturedCreateEngagement.mockResolvedValue({
       id:       'eng-001',
       tenantId: TENANT,
-      loans: job.items.map((item, i) => ({
+      properties: job.items.map((item, i) => ({
         id:         `loan-00${i}`,
         loanNumber: `LN-00${i}`,
         propertyId: `prop-00${i}`,
@@ -229,7 +229,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
       .mockResolvedValueOnce({
         id: 'eng-loan-1',
         tenantId: TENANT,
-        loans: [
+        properties: [
           {
             id: 'loan-loan-1',
             loanNumber: 'LN-000',
@@ -242,7 +242,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
       .mockResolvedValueOnce({
         id: 'eng-loan-2',
         tenantId: TENANT,
-        loans: [
+        properties: [
           {
             id: 'loan-loan-2',
             loanNumber: 'LN-001',
@@ -276,7 +276,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     capturedCreateEngagement.mockResolvedValue({
       id: 'eng-batch-1',
       tenantId: TENANT,
-      loans: [
+      properties: [
         {
           id: 'loan-batch-1',
           loanNumber: 'LN-000',
@@ -353,7 +353,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
 
     expect(capturedCreateEngagement).toHaveBeenCalledWith(
       expect.objectContaining({
-        loans: [
+        properties: [
           expect.objectContaining({
             borrowerName: 'Grace Hopper',
             borrowerEmail: 'grace@example.com',
@@ -469,7 +469,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     capturedCreateEngagement.mockResolvedValue({
       id:       'eng-001',
       tenantId: TENANT,
-      loans: job.items.map((item, i) => ({
+      properties: job.items.map((item, i) => ({
         id: `loan-00${i}`, loanNumber: `LN-00${i}`, propertyId: `prop-00${i}`,
         products: [], property: { address: `12${i} Main St`, city: 'Denver', state: 'CO', zipCode: '80203' },
       })),

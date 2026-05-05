@@ -63,7 +63,7 @@ function makeEngagement(overrides: Partial<Engagement> = {}): Engagement {
       clientId:   'client-001',
       clientName: 'Test Lender',
     },
-    loans: [makeLoan()],
+    properties: [makeLoan()],
     createdAt: new Date().toISOString(),
     createdBy: 'test',
     ...overrides,
@@ -107,7 +107,7 @@ function makeCreateRequest(loanOverride: Record<string, unknown> = {}) {
     tenantId:  'tenant-001',
     createdBy: 'user-001',
     client: { clientId: 'c-001', clientName: 'Lender' },
-    loans: [
+    properties: [
       {
         loanNumber:   'LN-001',
         borrowerName: 'Borrower',
@@ -179,13 +179,13 @@ describe('createEngagement', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await svc.createEngagement(makeCreateRequest());
 
-    expect(capturedDoc!.loans).toHaveLength(1);
-    expect(capturedDoc!.loans[0]!.loanNumber).toBe('LN-001');
-    expect(capturedDoc!.loans[0]!.borrowerName).toBe('Borrower');
-    expect(capturedDoc!.loans[0]!.property.address).toBe('1 Main');
-    expect(capturedDoc!.loans[0]!.status).toBe(EngagementLoanStatus.PENDING);
-    expect(capturedDoc!.loans[0]!.clientOrders).toHaveLength(1);
-    expect(capturedDoc!.loans[0]!.clientOrders[0]!.productType).toBe(EngagementProductType.FULL_APPRAISAL);
+    expect(capturedDoc!.properties).toHaveLength(1);
+    expect(capturedDoc!.properties[0]!.loanNumber).toBe('LN-001');
+    expect(capturedDoc!.properties[0]!.borrowerName).toBe('Borrower');
+    expect(capturedDoc!.properties[0]!.property.address).toBe('1 Main');
+    expect(capturedDoc!.properties[0]!.status).toBe(EngagementLoanStatus.PENDING);
+    expect(capturedDoc!.properties[0]!.clientOrders).toHaveLength(1);
+    expect(capturedDoc!.properties[0]!.clientOrders[0]!.productType).toBe(EngagementProductType.FULL_APPRAISAL);
   });
 
   it('sets engagementType=SINGLE when 1 loan', async () => {
@@ -212,20 +212,20 @@ describe('createEngagement', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await svc.createEngagement({
       ...makeCreateRequest(),
-      loans: [
+      properties: [
         { loanNumber: 'LN-001', borrowerName: 'A', property: { address: '1 Main', state: 'CO', zipCode: '80203' }, clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }] },
         { loanNumber: 'LN-002', borrowerName: 'B', property: { address: '2 Main', state: 'CO', zipCode: '80204' }, clientOrders: [{ productType: EngagementProductType.DRIVE_BY }] },
       ],
     });
     expect(capturedDoc!.engagementType).toBe(EngagementType.PORTFOLIO);
-    expect(capturedDoc!.loans).toHaveLength(2);
+    expect(capturedDoc!.properties).toHaveLength(2);
   });
 
   it('rejects with a clear error when loans is empty', async () => {
     const container = makeMockContainer(makeEngagement());
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
-      svc.createEngagement({ ...makeCreateRequest(), loans: [] }),
+      svc.createEngagement({ ...makeCreateRequest(), properties: [] }),
     ).rejects.toThrow(/At least one EngagementLoan is required/);
   });
 });
@@ -298,7 +298,7 @@ describe('getLoans', () => {
   it('returns the loans array from the engagement', async () => {
     const loan1 = makeLoan({ id: 'loan-001', loanNumber: 'LN-001' });
     const loan2 = makeLoan({ id: 'loan-002', loanNumber: 'LN-002' });
-    const doc = makeEngagement({ loans: [loan1, loan2] });
+    const doc = makeEngagement({ properties: [loan1, loan2] });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -318,7 +318,7 @@ describe('getLoans', () => {
 
 describe('addLoanToEngagement', () => {
   it('appends a new loan and returns updated engagement', async () => {
-    const doc = makeEngagement({ loans: [makeLoan()] });
+    const doc = makeEngagement({ properties: [makeLoan()] });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -332,15 +332,15 @@ describe('addLoanToEngagement', () => {
       clientOrders: [{ productType: EngagementProductType.AVM }],
     }, 'user-001');
 
-    expect(result.loans).toHaveLength(2);
-    expect(result.loans[1]!.loanNumber).toBe('LN-NEW');
-    expect(result.loans[1]!.status).toBe(EngagementLoanStatus.PENDING);
+    expect(result.properties).toHaveLength(2);
+    expect(result.properties[1]!.loanNumber).toBe('LN-NEW');
+    expect(result.properties[1]!.status).toBe(EngagementLoanStatus.PENDING);
     expect(result.engagementType).toBe(EngagementType.PORTFOLIO);
   });
 
   it('throws when loan count would exceed 1000', async () => {
     const lotsOfLoans = Array.from({ length: 1000 }, (_, i) => makeLoan({ id: `loan-${i}` }));
-    const doc = makeEngagement({ loans: lotsOfLoans });
+    const doc = makeEngagement({ properties: lotsOfLoans });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -364,7 +364,7 @@ describe('addLoanToEngagement', () => {
 
 describe('updateLoan', () => {
   it('patches borrowerName on the matching loan', async () => {
-    const doc = makeEngagement({ loans: [makeLoan({ id: 'loan-001' })] });
+    const doc = makeEngagement({ properties: [makeLoan({ id: 'loan-001' })] });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -372,11 +372,11 @@ describe('updateLoan', () => {
     });
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.updateLoan('eng-test-001', 'tenant-001', 'loan-001', { borrowerName: 'Updated Name' }, 'user');
-    expect(result.loans[0]!.borrowerName).toBe('Updated Name');
+    expect(result.properties[0]!.borrowerName).toBe('Updated Name');
   });
 
   it('throws when loan not found', async () => {
-    const doc = makeEngagement({ loans: [makeLoan({ id: 'loan-001' })] });
+    const doc = makeEngagement({ properties: [makeLoan({ id: 'loan-001' })] });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -397,7 +397,7 @@ describe('removeLoan', () => {
   it('removes a loan that has no linked vendor orders', async () => {
     const loan1 = makeLoan({ id: 'loan-001', clientOrders: [{ id: 'p1', productType: EngagementProductType.AVM, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] }] });
     const loan2 = makeLoan({ id: 'loan-002', loanNumber: 'LN-002' });
-    const doc = makeEngagement({ loans: [loan1, loan2] });
+    const doc = makeEngagement({ properties: [loan1, loan2] });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -405,8 +405,8 @@ describe('removeLoan', () => {
     });
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user');
-    expect(result.loans).toHaveLength(1);
-    expect(result.loans[0]!.id).toBe('loan-002');
+    expect(result.properties).toHaveLength(1);
+    expect(result.properties[0]!.id).toBe('loan-002');
   });
 
   it('throws when loan has linked vendor orders', async () => {
@@ -416,7 +416,7 @@ describe('removeLoan', () => {
         { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-123'] },
       ],
     });
-    const doc = makeEngagement({ loans: [loanWithOrders] });
+    const doc = makeEngagement({ properties: [loanWithOrders] });
     const container = makeMockContainer(doc);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -453,7 +453,7 @@ describe('changeLoanStatus', () => {
 
   for (const [from, to] of VALID_LOAN_TRANSITIONS) {
     it(`allows loan ${from} â†’ ${to}`, async () => {
-      const doc = makeEngagement({ loans: [makeLoan({ id: 'loan-001', status: from })] });
+      const doc = makeEngagement({ properties: [makeLoan({ id: 'loan-001', status: from })] });
       const container = makeMockContainer(doc);
       container.item = vi.fn().mockReturnValue({
         read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -466,7 +466,7 @@ describe('changeLoanStatus', () => {
 
   for (const [from, to] of INVALID_LOAN_TRANSITIONS) {
     it(`rejects loan ${from} â†’ ${to} with a clear error`, async () => {
-      const doc = makeEngagement({ loans: [makeLoan({ id: 'loan-001', status: from })] });
+      const doc = makeEngagement({ properties: [makeLoan({ id: 'loan-001', status: from })] });
       const container = makeMockContainer(doc);
       container.item = vi.fn().mockReturnValue({
         read:    vi.fn().mockResolvedValue({ resource: doc }),
@@ -487,7 +487,7 @@ describe('changeLoanStatus', () => {
 describe('addVendorOrderToClientOrder', () => {
   it('adds vendorOrderId to the matching product within the correct loan', async () => {
     const engagement = makeEngagement({
-      loans: [
+      properties: [
         makeLoan({
           id: 'loan-001',
           clientOrders: [
@@ -507,13 +507,13 @@ describe('addVendorOrderToClientOrder', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.addVendorOrderToClientOrder('eng-test-001', 'tenant-001', 'loan-001', 'prod-001', 'ord-xyz', 'user');
 
-    expect(result.loans[0]!.clientOrders[0]!.vendorOrderIds).toContain('ord-xyz');
-    expect(saved!.loans[0]!.clientOrders[0]!.vendorOrderIds).toContain('ord-xyz');
+    expect(result.properties[0]!.clientOrders[0]!.vendorOrderIds).toContain('ord-xyz');
+    expect(saved!.properties[0]!.clientOrders[0]!.vendorOrderIds).toContain('ord-xyz');
   });
 
   it('is idempotent â€” does not add the same vendorOrderId twice', async () => {
     const engagement = makeEngagement({
-      loans: [
+      properties: [
         makeLoan({
           id: 'loan-001',
           clientOrders: [
@@ -531,11 +531,11 @@ describe('addVendorOrderToClientOrder', () => {
 
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.addVendorOrderToClientOrder('eng-test-001', 'tenant-001', 'loan-001', 'prod-001', 'ord-xyz', 'user');
-    expect(result.loans[0]!.clientOrders[0]!.vendorOrderIds.filter((id) => id === 'ord-xyz')).toHaveLength(1);
+    expect(result.properties[0]!.clientOrders[0]!.vendorOrderIds.filter((id) => id === 'ord-xyz')).toHaveLength(1);
   });
 
   it('throws a clear error when loanId does not exist', async () => {
-    const engagement = makeEngagement({ loans: [makeLoan({ id: 'loan-001', clientOrders: [] })] });
+    const engagement = makeEngagement({ properties: [makeLoan({ id: 'loan-001', clientOrders: [] })] });
     const container = makeMockContainer(engagement);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: engagement }),
@@ -548,7 +548,7 @@ describe('addVendorOrderToClientOrder', () => {
   });
 
   it('throws a clear error when productId does not exist within the loan', async () => {
-    const engagement = makeEngagement({ loans: [makeLoan({ id: 'loan-001', clientOrders: [] })] });
+    const engagement = makeEngagement({ properties: [makeLoan({ id: 'loan-001', clientOrders: [] })] });
     const container = makeMockContainer(engagement);
     container.item = vi.fn().mockReturnValue({
       read:    vi.fn().mockResolvedValue({ resource: engagement }),
@@ -578,7 +578,7 @@ describe('createEngagement â€” enrichment wiring', () => {
 
   it('calls enrichEngagement once per loan after creating the engagement', async () => {
     const storedEng = makeEngagement({
-      loans: [
+      properties: [
         makeLoan({ id: 'loan-a', property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' } }),
       ],
     });
@@ -594,7 +594,7 @@ describe('createEngagement â€” enrichment wiring', () => {
       tenantId:  'tenant-001',
       createdBy: 'user-001',
       client:    { clientId: 'c-001', clientName: 'Lender' },
-      loans: [{
+      properties: [{
         loanNumber:   'LN-A',
         borrowerName: 'Borrower',
         property:     { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
@@ -610,7 +610,7 @@ describe('createEngagement â€” enrichment wiring', () => {
   it('calls enrichEngagement once per loan in a multi-loan engagement', async () => {
     const storedEng = makeEngagement({
       engagementType: EngagementType.PORTFOLIO,
-      loans: [
+      properties: [
         makeLoan({ id: 'loan-a', property: { address: '1 A St', city: 'Denver', state: 'CO', zipCode: '80201' } }),
         makeLoan({ id: 'loan-b', property: { address: '2 B Ave', city: 'Boulder', state: 'CO', zipCode: '80302' } }),
       ],
@@ -627,7 +627,7 @@ describe('createEngagement â€” enrichment wiring', () => {
       tenantId:  'tenant-001',
       createdBy: 'user-001',
       client:    { clientId: 'c-001', clientName: 'Lender' },
-      loans: [
+      properties: [
         { loanNumber: 'LN-A', borrowerName: 'A', property: { address: '1 A St', city: 'Denver', state: 'CO', zipCode: '80201' }, clientOrders: [{ productType: EngagementProductType.FULL_APPRAISAL }] },
         { loanNumber: 'LN-B', borrowerName: 'B', property: { address: '2 B Ave', city: 'Boulder', state: 'CO', zipCode: '80302' }, clientOrders: [{ productType: EngagementProductType.DRIVE_BY }] },
       ],
@@ -681,7 +681,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
 
   it('places a standalone ClientOrder per embedded EngagementClientOrder, reusing the embedded id', async () => {
     const storedEng = makeEngagement({
-      loans: [
+      properties: [
         makeLoan({
           id: 'loan-a',
           propertyId: 'prop-test-001',
@@ -708,7 +708,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
       tenantId: 'tenant-001',
       createdBy: 'user-001',
       client: { clientId: 'c-001', clientName: 'Lender' },
-      loans: [{
+      properties: [{
         loanNumber: 'LN-A',
         borrowerName: 'B',
         property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
@@ -740,7 +740,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
 
   it('awaits enrichment BEFORE invoking placeClientOrder so the listener gets a record with lat/lng', async () => {
     const storedEng = makeEngagement({
-      loans: [makeLoan({
+      properties: [makeLoan({
         id: 'loan-a',
         propertyId: 'prop-test-001',
         clientOrders: [
@@ -780,7 +780,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
 
   it('still places ClientOrders when enrichment fails (so client-orders is populated; listener will write SKIPPED order-comparables)', async () => {
     const storedEng = makeEngagement({
-      loans: [makeLoan({
+      properties: [makeLoan({
         id: 'loan-a',
         propertyId: 'prop-test-001',
         clientOrders: [
@@ -808,7 +808,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
 
   it('isolates failures: one placeClientOrder rejection does not abort siblings', async () => {
     const storedEng = makeEngagement({
-      loans: [
+      properties: [
         makeLoan({
           id: 'loan-a',
           propertyId: 'prop-test-001',
@@ -839,7 +839,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
       tenantId: 'tenant-001',
       createdBy: 'user-001',
       client: { clientId: 'c-001', clientName: 'Lender' },
-      loans: [{
+      properties: [{
         loanNumber: 'LN-A',
         borrowerName: 'B',
         property: { address: '1 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
