@@ -14,9 +14,14 @@ import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
 import { validateCanonicalIngress } from '../utils/validate-canonical-ingress.js';
 import { mapAppraisalOrderToCanonical } from '../mappers/appraisal-order.mapper.js';
 import { mapPropertyEnrichmentToCanonical } from '../mappers/property-enrichment.mapper.js';
+import {
+  mergePropertyCanonical,
+  pickPropertyCanonical,
+} from '../mappers/property-canonical-projection.js';
 import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type { AppraisalOrder } from '../types/index.js';
+import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
 
 interface PropertyEnrichmentRecord {
   id: string;
@@ -98,6 +103,18 @@ export class CanonicalSnapshotService {
       hasEnrichment: Boolean(sourceArtifacts.enrichment),
     });
 
+    // Slice 8a: project property-scoped branches back to PropertyRecord.currentCanonical
+    // so cross-order accumulation survives. Best-effort — failures don't block
+    // the snapshot return (snapshot is the contract; property writeback is
+    // observability/accumulation).
+    await this.updatePropertyCurrentCanonical(
+      extractionRun,
+      sourceArtifacts.order,
+      normalizedData?.canonical ?? null,
+      snapshot.id,
+      now,
+    );
+
     return snapshot;
   }
 
@@ -167,6 +184,17 @@ export class CanonicalSnapshotService {
       hasExtraction: Boolean(sourceArtifacts.extractionData),
       hasEnrichment: Boolean(sourceArtifacts.enrichment),
     });
+
+    // Slice 8a: refresh the property's currentCanonical too, so post-Axiom
+    // consolidated extraction reaches the rolling property view.
+    await this.updatePropertyCurrentCanonical(
+      extractionRun,
+      sourceArtifacts.order,
+      normalizedData?.canonical ?? null,
+      existing.id,
+      now,
+    );
+
     return refreshed;
   }
 
@@ -193,6 +221,7 @@ export class CanonicalSnapshotService {
     extractionData: Record<string, unknown> | null;
     enrichment: PropertyEnrichmentRecord | null;
     order: AppraisalOrder | null;
+    propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
   }> {
     const document = await this.getDocumentById(extractionRun.documentId, extractionRun.tenantId);
     const extractionData = this.toRecord(document?.extractedData);
@@ -205,13 +234,47 @@ export class CanonicalSnapshotService {
     const order = orderId
       ? await this.getOrderById(orderId, extractionRun.tenantId)
       : null;
+    const propertyCurrentCanonical = order?.propertyId
+      ? await this.getPropertyCurrentCanonical(order.propertyId, extractionRun.tenantId)
+      : null;
 
     return {
       document,
       extractionData,
       enrichment,
       order,
+      propertyCurrentCanonical,
     };
+  }
+
+  /**
+   * Slice 8a: read the property's accumulated `currentCanonical` view so
+   * it can serve as a base layer when building this snapshot's canonical.
+   * Defensive — failures here are non-fatal (returns null).
+   */
+  private async getPropertyCurrentCanonical(
+    propertyId: string,
+    tenantId: string,
+  ): Promise<PropertyCurrentCanonicalView | null> {
+    try {
+      const result = await this.dbService.queryItems<PropertyRecord>(
+        'property-records',
+        `SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId`,
+        [
+          { name: '@id', value: propertyId },
+          { name: '@tenantId', value: tenantId },
+        ],
+      );
+      if (!result.success || !result.data?.[0]) return null;
+      return result.data[0].currentCanonical ?? null;
+    } catch (err) {
+      this.logger.warn('Snapshot: failed to load property currentCanonical — continuing without base layer', {
+        propertyId,
+        tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   private async getOrderById(
@@ -301,6 +364,7 @@ export class CanonicalSnapshotService {
       extractionData: Record<string, unknown> | null;
       enrichment: PropertyEnrichmentRecord | null;
       order: AppraisalOrder | null;
+      propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
     },
   ): CanonicalSnapshotRecord['normalizedData'] {
     const providerData = artifacts.enrichment?.dataResult
@@ -346,23 +410,37 @@ export class CanonicalSnapshotService {
     // absence.
     const canonical: Record<string, unknown> = {};
 
-    // Three-layer canonical projection. Each layer Object.assigns onto the
+    // Four-layer canonical projection. Each layer Object.assigns onto the
     // accumulator, so later layers override earlier ones for fields they
     // supply. The exception is extraction (layer 3): for `subject`, extraction
     // wins only on non-empty values, so earlier layers fill gaps where the
     // axiom mapper emits sentinel empty strings (e.g. county: '').
     //
-    // Layer 1: enrichment (public records, flood, geocoding) — least
-    //   authoritative; fills gaps for fields the lender / appraiser don't
-    //   supply directly.
+    // Layer 0 (Slice 8a): propertyCurrentCanonical — property-scoped state
+    //   accumulated across prior ClientOrders for the same property (last
+    //   year's appraised value as a prior sale, last recorded condition,
+    //   latest AVM, etc.). Least authoritative; everything from this order
+    //   layers on top.
+    // Layer 1: enrichment (public records, flood, geocoding) — fills gaps
+    //   for fields the lender / appraiser don't supply directly.
     // Layer 2: order-intake (AppraisalOrder, lender-supplied facts) —
-    //   overrides enrichment for fields the lender supplies, fills more gaps
-    //   for downstream review-program criteria that read canonical paths
-    //   before extraction runs.
+    //   overrides enrichment for fields the lender authoritatively supplies,
+    //   fills more gaps for downstream review-program criteria that read
+    //   canonical paths before extraction runs.
     // Layer 3: extraction (axiom output from the appraisal report) — most
     //   authoritative; overlays earlier layers but preserves their values
     //   where extraction is missing or empty (see mergePreferNonEmpty).
 
+    // Layer 0: propertyCurrentCanonical (accumulated from prior orders).
+    if (artifacts.propertyCurrentCanonical) {
+      const v = artifacts.propertyCurrentCanonical;
+      if (v.subject) (canonical as Partial<CanonicalReportDocument>).subject = v.subject;
+      if (v.transactionHistory) (canonical as Partial<CanonicalReportDocument>).transactionHistory = v.transactionHistory;
+      if (v.avmCrossCheck) (canonical as Partial<CanonicalReportDocument>).avmCrossCheck = v.avmCrossCheck;
+      if (v.riskFlags) (canonical as Partial<CanonicalReportDocument>).riskFlags = v.riskFlags;
+    }
+
+    // Layer 1: enrichment.
     const enrichmentCanonical = mapPropertyEnrichmentToCanonical(
       artifacts.enrichment?.dataResult ?? null,
     );
@@ -370,6 +448,7 @@ export class CanonicalSnapshotService {
       Object.assign(canonical, enrichmentCanonical);
     }
 
+    // Layer 2: order-intake.
     const orderCanonical = mapAppraisalOrderToCanonical(artifacts.order);
     if (orderCanonical) {
       Object.assign(canonical, orderCanonical);
@@ -489,6 +568,125 @@ export class CanonicalSnapshotService {
         ...(extractionRun.sourceIdentity ? { sourceIdentity: extractionRun.sourceIdentity } : {}),
       },
     };
+  }
+
+  /**
+   * Slice 8a: project property-scoped canonical branches back to
+   * PropertyRecord.currentCanonical so cross-order accumulation works.
+   *
+   * Best-effort — failures here are NON-FATAL. The snapshot is the
+   * authoritative per-order record (already persisted by the caller); this
+   * method just feeds the rolling property view. We log structured warnings
+   * but never throw.
+   *
+   * Resolution: needs `order.propertyId` to identify the target PropertyRecord.
+   * If the order isn't loaded or doesn't carry propertyId, we log and skip
+   * — there's no other reliable way to map an extraction run to a property.
+   */
+  private async updatePropertyCurrentCanonical(
+    extractionRun: RunLedgerRecord,
+    order: AppraisalOrder | null,
+    canonical: unknown,
+    snapshotId: string,
+    snapshotAt: string,
+  ): Promise<void> {
+    try {
+      if (!order || !order.propertyId) {
+        return; // no propertyId — nothing to write back to
+      }
+
+      const projected = pickPropertyCanonical(canonical as Partial<CanonicalReportDocument> | null, {
+        snapshotId,
+        lastSnapshotAt: snapshotAt,
+      });
+      if (!projected) {
+        return; // no property-scoped content
+      }
+
+      const propertyId = order.propertyId;
+      const tenantId = extractionRun.tenantId;
+
+      // Read the current property record so we can merge with existing
+      // currentCanonical. We go through the cosmos service directly here
+      // (rather than depending on PropertyRecordService) to avoid widening
+      // CanonicalSnapshotService's constructor signature mid-slice. The
+      // version-history pattern is preserved by appending an entry inline.
+      const propertyResult = await this.dbService.queryItems<PropertyRecord>(
+        'property-records',
+        `SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId`,
+        [
+          { name: '@id', value: propertyId },
+          { name: '@tenantId', value: tenantId },
+        ],
+      );
+      if (!propertyResult.success || !propertyResult.data?.[0]) {
+        this.logger.warn('Snapshot: PropertyRecord not found — skipping currentCanonical update', {
+          propertyId,
+          tenantId,
+          runId: extractionRun.id,
+        });
+        return;
+      }
+      const property = propertyResult.data[0];
+
+      const merged = mergePropertyCanonical(
+        property.currentCanonical as PropertyCurrentCanonicalView | undefined,
+        projected,
+      );
+
+      // No-op if the merged view is identical to existing — avoid unnecessary
+      // version bumps.
+      const existingJson = JSON.stringify(property.currentCanonical ?? {});
+      const mergedJson = JSON.stringify(merged);
+      if (existingJson === mergedJson) {
+        return;
+      }
+
+      const newVersion = property.recordVersion + 1;
+      const updated: PropertyRecord = {
+        ...property,
+        currentCanonical: merged,
+        recordVersion: newVersion,
+        versionHistory: [
+          ...property.versionHistory,
+          {
+            version: newVersion,
+            createdAt: snapshotAt,
+            createdBy: extractionRun.initiatedBy ?? 'SYSTEM:canonical-snapshot',
+            reason: `Canonical snapshot ${snapshotId} updated currentCanonical`,
+            source: 'CANONICAL_SNAPSHOT',
+            changedFields: ['currentCanonical'],
+            previousValues: { currentCanonical: property.currentCanonical ?? null },
+          },
+        ],
+        updatedAt: snapshotAt,
+      };
+
+      const writeResult = await this.dbService.upsertItem<PropertyRecord>(
+        'property-records',
+        updated,
+      );
+      if (!writeResult.success) {
+        this.logger.warn('Snapshot: PropertyRecord currentCanonical write failed — non-fatal', {
+          propertyId,
+          tenantId,
+          error: writeResult.error?.message,
+        });
+        return;
+      }
+
+      this.logger.info('PropertyRecord currentCanonical updated from snapshot', {
+        propertyId,
+        tenantId,
+        snapshotId,
+        newVersion,
+      });
+    } catch (err) {
+      this.logger.warn('Snapshot: PropertyRecord currentCanonical update threw — non-fatal', {
+        runId: extractionRun.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private toRecord(value: unknown): Record<string, unknown> | null {

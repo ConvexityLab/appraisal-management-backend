@@ -76,7 +76,8 @@ export interface PropertyVersionEntry {
     | 'MANUAL_CORRECTION'
     | 'REHAB_COMPLETE'
     | 'PUBLIC_RECORDS_API'
-    | 'APPRAISER_INSPECTION';
+    | 'APPRAISER_INSPECTION'
+    | 'CANONICAL_SNAPSHOT';
   /**
    * Granular provider/source identifier when `source` is a generic bucket.
    * Free-form string supplied by the caller — for `PUBLIC_RECORDS_API` versions
@@ -304,6 +305,53 @@ export interface PropertyRecord {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+
+  // ── Canonical accumulation (per-Property rolling view) ───────────────────
+  /**
+   * Property-level rolling canonical view. Updated after every
+   * CanonicalSnapshot build that targets this property — the
+   * canonical-snapshot service projects the property-scoped branches
+   * (subject, transactionHistory, avmCrossCheck, riskFlags) back to
+   * this field via PropertyRecordService.createVersion.
+   *
+   * Order-scoped branches (comps, loan, ratios, valuation, reconciliation,
+   * compStatistics) intentionally do NOT live here — they belong to the
+   * specific ClientOrder run. The frozen per-order CanonicalSnapshot
+   * remains the reproducibility record for QC; this field is the
+   * cross-order accumulation that lets next year's refi read last year's
+   * accumulated subject + prior-sale state for free.
+   *
+   * Optional because legacy property records don't carry it; absence is
+   * treated the same as an empty view by the snapshot service.
+   */
+  currentCanonical?: PropertyCurrentCanonicalView;
+}
+
+// ─── Property-level rolling canonical view ────────────────────────────────────
+
+/**
+ * The property-scoped projection of CanonicalReportDocument that
+ * accumulates across all ClientOrders against the same parcel. See
+ * `PropertyRecord.currentCanonical` for usage.
+ *
+ * Mirrors a strict subset of CanonicalReportDocument; the field types
+ * are imported as `import type` to avoid a circular dep with
+ * canonical-schema.ts (PropertyRecord is consumed by some canonical
+ * mappers).
+ */
+export interface PropertyCurrentCanonicalView {
+  /** Latest known subject characteristics (address, building, condition, …). */
+  subject?: import('./canonical-schema.js').CanonicalSubject;
+  /** All known prior sales / transfers of this property — accumulates across orders. */
+  transactionHistory?: import('./canonical-schema.js').CanonicalTransactionHistory;
+  /** Latest AVM cross-check we've seen for this property. */
+  avmCrossCheck?: import('./canonical-schema.js').CanonicalAvmCrossCheck;
+  /** Property-level risk flags (chain-of-title etc. — not order-scoped). */
+  riskFlags?: import('./canonical-schema.js').CanonicalRiskFlags;
+  /** ISO timestamp of the most recent snapshot that updated this view. */
+  lastSnapshotAt?: string;
+  /** Snapshot id that produced the most recent update — for traceability. */
+  lastSnapshotId?: string;
 }
 
 // ─── Resolution Utility Types ─────────────────────────────────────────────────
