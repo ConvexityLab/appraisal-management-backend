@@ -19,6 +19,8 @@
  */
 
 import type { ProductType } from './product-catalog.js';
+import type { ReviewFlagCondition } from './review-tape.types.js';
+import type { CanonicalReportDocument } from './canonical-schema.js';
 
 // ─── Discriminator + container ───────────────────────────────────────────────
 
@@ -96,14 +98,86 @@ export interface DecompositionRule {
   autoApply?: boolean;
 
   // ── Output ───────────────────────────────────────────────────────────────
-  /** One or more VendorOrder templates to instantiate. Must be non-empty. */
+  /**
+   * Static vendor-order templates — always included when this rule matches.
+   * Slice 8h: this is the BASE set. Selectors and conditional templates
+   * (below) compose ON TOP with their own match logic.
+   */
   vendorOrders: VendorOrderTemplate[];
+
+  /**
+   * Slice 8h: parameterised inclusion based on caller-supplied context
+   * options (loan type, property type, rush flag, etc.). Each selector's
+   * `when` clause is matched against the context's `productOptions`
+   * key/value bag. Selectors whose `when` matches contribute their
+   * `include` templates to the final set.
+   */
+  selectors?: DecompositionSelector[];
+
+  /**
+   * Slice 8h: rule-driven inclusion based on the canonical context (loan,
+   * property, ratios, risk flags). Each entry's `condition` is the same
+   * ReviewFlagCondition shape used by review-program rules — predicate
+   * paths walk into the CanonicalReportDocument supplied at compose time.
+   */
+  conditionalTemplates?: DecompositionConditionalTemplate[];
 
   // ── Audit ────────────────────────────────────────────────────────────────
   createdAt: string;
   updatedAt: string;
   /** Free-form note describing why this rule exists. */
   description?: string;
+}
+
+/**
+ * Slice 8h: parameterised composition. The `when` keys are looked up in the
+ * context's `productOptions` bag (free-form key/value pairs supplied by the
+ * caller — typical keys: loanType, loanPurpose, propertyType, isRush).
+ *
+ * Match semantics:
+ *   - All keys in `when` must equal the corresponding context option (AND
+ *     across keys).
+ *   - Missing-from-context keys do not match — selectors are explicit.
+ *   - String compare is case-insensitive ('Refinance' matches 'REFINANCE').
+ */
+export interface DecompositionSelector {
+  when: Record<string, string | number | boolean>;
+  include: VendorOrderTemplate[];
+}
+
+/**
+ * Slice 8h: rule-driven composition. Reuses the existing review-program
+ * rule shape so anyone who can author review-program rules can author
+ * decomposition rules too. The condition predicate paths walk into the
+ * `CanonicalReportDocument` view of the order context at compose time.
+ *
+ * Example: include an extra Inspection atom on a BPO when the property
+ * value is over $1M:
+ *   {
+ *     condition: {
+ *       operator: 'AND',
+ *       rules: [{ field: 'valuation.estimatedValue', op: 'GT', value: 1_000_000 }],
+ *     },
+ *     include: [{ vendorWorkType: 'INSPECTION', templateKey: 'high-value-inspection' }],
+ *   }
+ */
+export interface DecompositionConditionalTemplate {
+  condition: ReviewFlagCondition;
+  include: VendorOrderTemplate[];
+}
+
+/**
+ * Slice 8h: context bag passed to the composer at order placement time.
+ *
+ * `canonical` provides the structured fields predicates walk against (subject,
+ * loan, ratios, risk flags). `productOptions` is the free-form key/value bag
+ * selectors match against — typical keys are `loanType`, `loanPurpose`,
+ * `propertyType`, `isRush`. Both are optional; absent context just means
+ * selectors and conditional templates won't match.
+ */
+export interface DecompositionContext {
+  canonical?: Partial<CanonicalReportDocument>;
+  productOptions?: Record<string, string | number | boolean>;
 }
 
 /** Sentinel partition value for global default rules. */

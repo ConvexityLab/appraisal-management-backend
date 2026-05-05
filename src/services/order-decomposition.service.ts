@@ -30,9 +30,11 @@ import {
   DECOMPOSITION_RULES_CONTAINER,
   DECOMPOSITION_RULE_DOC_TYPE,
   GLOBAL_DEFAULT_TENANT,
+  type DecompositionContext,
   type DecompositionRule,
   type VendorOrderTemplate,
 } from '../types/decomposition-rule.types.js';
+import { evaluateReviewFlagCondition } from '../utils/review-flag-condition.evaluator.js';
 
 export class OrderDecompositionService {
   private readonly logger = new Logger('OrderDecompositionService');
@@ -108,9 +110,12 @@ export class OrderDecompositionService {
   }
 
   /**
-   * Convenience: returns the matched rule's `vendorOrders` templates, or `[]`
-   * if no rule matches. Use this when the caller doesn't need the rule
-   * metadata (id, autoApply, etc.) — only the suggested templates.
+   * Convenience: returns the matched rule's STATIC `vendorOrders` templates,
+   * or `[]` if no rule matches. Same behaviour as before slice 8h —
+   * intentionally ignores selectors/conditional templates so legacy callers
+   * that don't have a context bag still work.
+   *
+   * For full composition (static + selectors + conditional), use `compose()`.
    */
   async suggestVendorOrders(
     tenantId: string,
@@ -120,4 +125,103 @@ export class OrderDecompositionService {
     const rule = await this.findRule(tenantId, clientId, productType);
     return rule?.vendorOrders ?? [];
   }
+
+  /**
+   * Slice 8h: full rule-driven composition.
+   *
+   * Returns the union of every applicable VendorOrderTemplate for the given
+   * scope, given the placement context:
+   *
+   *   1. STATIC      — always-included templates from `rule.vendorOrders[]`
+   *   2. SELECTORS   — `rule.selectors[].include[]` whose `when` clause
+   *                    matches the context's `productOptions` bag
+   *                    (case-insensitive AND across keys).
+   *   3. CONDITIONAL — `rule.conditionalTemplates[].include[]` whose
+   *                    `condition` evaluates true against the context's
+   *                    `canonical` view (uses the shared
+   *                    review-flag-condition evaluator).
+   *
+   * Templates are deduplicated by `templateKey` (when present) — first occurrence
+   * wins, so static templates are stable and selectors/conditionals can't shadow
+   * them. Templates without a templateKey are always kept (assume distinct).
+   *
+   * Returns `[]` when no rule matches the scope (same as suggestVendorOrders).
+   */
+  async compose(
+    tenantId: string,
+    clientId: string,
+    productType: ProductType,
+    context: DecompositionContext = {},
+  ): Promise<VendorOrderTemplate[]> {
+    const rule = await this.findRule(tenantId, clientId, productType);
+    if (!rule) return [];
+    return composeFromRule(rule, context);
+  }
+}
+
+// ─── Composition helpers (exported for testability) ──────────────────────────
+
+/**
+ * Pure composition of a rule + context → final template list. Exposed for
+ * unit testing without needing a CosmosDbService.
+ */
+export function composeFromRule(
+  rule: DecompositionRule,
+  context: DecompositionContext,
+): VendorOrderTemplate[] {
+  const out: VendorOrderTemplate[] = [];
+  const seenKeys = new Set<string>();
+
+  const addAll = (templates: VendorOrderTemplate[]) => {
+    for (const t of templates) {
+      if (t.templateKey && seenKeys.has(t.templateKey)) continue;
+      if (t.templateKey) seenKeys.add(t.templateKey);
+      out.push(t);
+    }
+  };
+
+  // 1. Static — always-included.
+  addAll(rule.vendorOrders ?? []);
+
+  // 2. Selectors — match against productOptions.
+  const options = context.productOptions ?? {};
+  for (const selector of rule.selectors ?? []) {
+    if (selectorMatches(selector.when, options)) {
+      addAll(selector.include);
+    }
+  }
+
+  // 3. Conditional — evaluate predicate against canonical view.
+  if (rule.conditionalTemplates && rule.conditionalTemplates.length > 0) {
+    const view = context.canonical ?? {};
+    for (const ct of rule.conditionalTemplates) {
+      if (evaluateReviewFlagCondition(view, ct.condition)) {
+        addAll(ct.include);
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * AND-match a selector's `when` clause against the caller's productOptions
+ * bag. All keys must equal the corresponding option (case-insensitive for
+ * strings; strict equality for number/boolean). Missing-from-context keys
+ * fail the match (selectors are explicit).
+ */
+function selectorMatches(
+  when: Record<string, string | number | boolean>,
+  options: Record<string, string | number | boolean>,
+): boolean {
+  for (const [k, expected] of Object.entries(when)) {
+    const actual = options[k];
+    if (actual === undefined) return false;
+    if (typeof expected === 'string' && typeof actual === 'string') {
+      if (expected.toLowerCase() !== actual.toLowerCase()) return false;
+    } else if (expected !== actual) {
+      return false;
+    }
+  }
+  return true;
 }
