@@ -51,6 +51,10 @@ describe('AiActionDispatcherService', () => {
 
     const result = await dispatcher.handleCreateOrder({
       clientId: 'client-1',
+      // Slice 8g: engagement-primacy guard requires engagementId in the AI
+      // payload. The model is contracted to call CREATE_ENGAGEMENT first
+      // (or look up an existing engagement) and pass its id here.
+      engagementId: 'eng-1',
       propertyAddress: { streetAddress: '123 Main', city: 'Dallas', state: 'TX', zipCode: '75001' },
       orderType: 'PURCHASE',
       productType: 'FULL_APPRAISAL',
@@ -61,6 +65,7 @@ describe('AiActionDispatcherService', () => {
       tenantId: 'tenant-123',
       createdBy: 'user-123',
       clientId: 'client-1',
+      engagementId: 'eng-1',
     }));
     expect(result.data).toEqual({ orderId: 'order-1', orderNumber: 'ORD-1', status: 'NEW' });
   });

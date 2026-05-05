@@ -31,6 +31,19 @@ export class ProductionOrderController {
    */
   createOrder = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
+      // Slice 8g: engagement-primacy guard. Every order must be parented by
+      // an Engagement; reject orphan creates with 400.
+      const requestEngagementId = typeof req.body?.engagementId === 'string'
+        ? req.body.engagementId.trim()
+        : undefined;
+      if (!requestEngagementId) {
+        res.status(400).json({
+          success: false,
+          error: 'engagementId is required when creating an order. Place an Engagement first.',
+        });
+        return;
+      }
+
       const orderData = {
         ...req.body,
         createdAt: new Date(),

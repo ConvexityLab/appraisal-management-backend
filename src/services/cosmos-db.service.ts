@@ -314,6 +314,33 @@ export class CosmosDbService {
         throw new Error('Orders container not initialized');
       }
 
+      // Slice 8g: engagement-primacy guard. Every VendorOrder MUST be parented
+      // by an Engagement. Orphan creates are rejected here so the order
+      // hierarchy invariant (Engagement → ClientOrder → VendorOrder) holds
+      // unconditionally. Application-level callers either supply engagementId
+      // explicitly or route through ClientOrderService.placeClientOrder /
+      // VendorOrderService.createVendorOrder (both validate this upstream).
+      //
+      // Pre-existing orphan rows in production remain queryable via
+      // VENDOR_ORDER_TYPE_PREDICATE; backfilling them to a system-default
+      // engagement is a one-off migration (deferred to slice 8j or a
+      // dedicated PR).
+      if (!order.engagementId || (typeof order.engagementId === 'string' && order.engagementId.trim() === '')) {
+        this.logger.error('createOrder rejected — missing engagementId (slice 8g engagement-primacy guard)', {
+          clientId: order.clientId,
+          tenantId: order.tenantId,
+          productType: order.productType,
+        });
+        return {
+          success: false,
+          error: createApiError(
+            ErrorCodes.ORDER_CREATE_FAILED,
+            'engagementId is required to create an order. Route through ClientOrderService.placeClientOrder() ' +
+            'or VendorOrderService.createVendorOrder() — both enforce engagement parenting. Slice 8g.',
+          ),
+        };
+      }
+
       const orderWithId = {
         ...order,
         id: this.generateVendorOrderId(),

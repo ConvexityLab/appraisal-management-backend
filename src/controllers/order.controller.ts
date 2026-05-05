@@ -244,6 +244,26 @@ export class OrderController {
 
   public async createOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
+      // Slice 8g: engagement-primacy guard at the API edge. Every order MUST
+      // be parented by an Engagement. Reject orphan creates with a clear 400
+      // so callers know to either pass `engagementId` explicitly or use the
+      // engagement-creation flow first.
+      const requestEngagementId = typeof req.body?.engagementId === 'string'
+        ? req.body.engagementId.trim()
+        : undefined;
+      if (!requestEngagementId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'ENGAGEMENT_REQUIRED',
+            message:
+              'engagementId is required when creating an order. Place an Engagement first, ' +
+              'then create orders under it. Slice 8g engagement-primacy.',
+          },
+        });
+        return;
+      }
+
       const intakeDraftId = typeof req.body.intakeDraftId === 'string' && req.body.intakeDraftId.trim().length > 0
         ? req.body.intakeDraftId.trim()
         : undefined;

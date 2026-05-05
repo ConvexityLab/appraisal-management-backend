@@ -58,6 +58,8 @@ describe('OrderController.createOrder', () => {
     const req = {
       body: {
         intakeDraftId: 'draft-123',
+        // Slice 8g engagement-primacy: every order must reference an Engagement.
+        engagementId: 'eng-test-001',
         priority: 'RUSH',
         propertyAddress: {
           streetAddress: '123 Main St',

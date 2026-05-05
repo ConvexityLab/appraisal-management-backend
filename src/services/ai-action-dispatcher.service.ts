@@ -228,10 +228,15 @@ export class AiActionDispatcherService {
   async handleCreateOrder(payload: unknown, context: AiActionExecutionContext): Promise<AiActionDispatchResult> {
     try {
       const requestPayload = asRecord(payload, 'CREATE_ORDER');
+      // Slice 8g: AI-driven order creation must carry engagementId in the
+      // payload. The AI tool's contract requires the model to first call
+      // CREATE_ENGAGEMENT (or look up an existing engagement) and pass its
+      // id in here. getString throws AiActionDispatchError when missing.
       const orderData = {
         ...requestPayload,
         propertyAddress: normalizePropertyAddress(requestPayload),
         clientId: getString(requestPayload.clientId, 'clientId'),
+        engagementId: getString(requestPayload.engagementId, 'engagementId'),
         orderType: getString(requestPayload.orderType, 'orderType'),
         productType: getString(requestPayload.productType, 'productType'),
         dueDate: getDate(requestPayload.dueDate, 'dueDate'),
