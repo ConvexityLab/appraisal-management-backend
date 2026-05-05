@@ -143,6 +143,22 @@ export const ProductType = {
   DESK_REVIEW:      'DESK_REVIEW',
   /** Desktop Valuation Review */
   DVR:              'DVR',
+  /**
+   * Quality-control review pass on a deliverable before client release.
+   * Always assigned to internal staff (Vendor.staffType='internal',
+   * staffRole='reviewer' or 'supervisor'). Used as the final atom in
+   * multi-product compositions like DVR.
+   */
+  QC_REVIEW:        'QC_REVIEW',
+
+  // ── Inspection ────────────────────────────────────────────────────────────
+  /**
+   * Standalone property inspection (not an appraisal). Third-party inspector
+   * captures interior/exterior condition, photos, observable defects.
+   * Used as an atom in BPO and other multi-vendor compositions where
+   * physical access is required separately from valuation.
+   */
+  INSPECTION:       'INSPECTION',
 
   // ── Automated / AI ────────────────────────────────────────────────────────
   /** Automated Valuation Model */
@@ -151,6 +167,8 @@ export const ProductType = {
   ARV:              'ARV',
   /** AVM + Broker hybrid */
   AVB:              'AVB',
+  /** RapidVal — fast-turn package (AVM + appraiser desk review). Sellable. */
+  RAPIDVAL:         'RAPIDVAL',
   /** Reconsideration of Value (FHFA 2024 guidance) */
   ROV:              'ROV',
   /** AI fraud / collusion analysis of an existing appraisal */
@@ -388,7 +406,19 @@ export const PRODUCT_CATALOG: Record<ProductType, ProductDefinition> = {
     supportingDocumentCategories: [DocumentCategory.BPO_REPORT],
     requiresPhysicalInspection: false,
     requiresCertifiedAppraiser: false,
-    isAutomated: true,
+    isAutomated: false,
+  },
+
+  RAPIDVAL: {
+    label: 'RapidVal',
+    primaryDocumentCategory: DocumentCategory.AVM_REPORT,
+    supportingDocumentCategories: [DocumentCategory.APPRAISAL_REPORT],
+    // Package itself is not directly inspected; the desk-review component
+    // is appraiser-fulfilled. Composition specifics live in the
+    // decomposition rule (rule-default-RAPIDVAL).
+    requiresPhysicalInspection: false,
+    requiresCertifiedAppraiser: true,
+    isAutomated: false,
   },
 
   ROV: {
@@ -419,6 +449,31 @@ export const PRODUCT_CATALOG: Record<ProductType, ProductDefinition> = {
     requiresCertifiedAppraiser: true,
     isAutomated: false,
     bulkAnalysisType: 'ANALYSIS_1033',
+  },
+
+  // ── Composition-only atoms (vendor-fulfillable, not directly client-orderable
+  //     in most cases — they appear as VendorOrders inside multi-product
+  //     ClientOrder compositions like DVR / BPO / Hybrid / RapidVal).
+
+  QC_REVIEW: {
+    label: 'Quality Control Review',
+    primaryDocumentCategory: DocumentCategory.APPRAISAL_REPORT,
+    supportingDocumentCategories: [],
+    requiresPhysicalInspection: false,
+    // QC is internal-staff-assigned (Vendor.staffRole = 'reviewer'|'supervisor');
+    // not a USPAP-licensed appraiser activity per se — but reviewers are
+    // typically certified, so we keep this true to filter the staff pool.
+    requiresCertifiedAppraiser: true,
+    isAutomated: false,
+  },
+
+  INSPECTION: {
+    label: 'Property Inspection',
+    primaryDocumentCategory: DocumentCategory.INSPECTION_REPORT,
+    supportingDocumentCategories: [DocumentCategory.PHOTO],
+    requiresPhysicalInspection: true,
+    requiresCertifiedAppraiser: false,
+    isAutomated: false,
   },
 };
 
