@@ -29,7 +29,7 @@ import type {
     CanonicalReportDocument,
     CanonicalSubject,
 } from '../../types/canonical-schema.js';
-import type { AppraisalOrder } from '../../types/index.js';
+import type { Order } from '../../types/index.js';
 
 /**
  * Outbound canonical block. Each branch is independently optional so callers
@@ -48,7 +48,7 @@ export interface OutboundCanonicalPayload {
 }
 
 /**
- * Build an outbound canonical payload from an AppraisalOrder.
+ * Build an outbound canonical payload from an Order.
  *
  * Returns null when the order has no canonical-relevant data (rare —
  * orders almost always have a property address).
@@ -60,7 +60,7 @@ export interface OutboundCanonicalPayload {
  * extraction hasn't run yet).
  */
 export function buildCanonicalPayloadFromOrder(
-    order: AppraisalOrder | null | undefined,
+    order: Order | null | undefined,
     snapshotId?: string,
 ): OutboundCanonicalPayload | null {
     const projected = mapAppraisalOrderToCanonical(order);

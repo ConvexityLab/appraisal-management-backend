@@ -26,7 +26,7 @@ import {
 } from '../types/appraisal-draft.types.js';
 import type { CanonicalReportDocument, CanonicalSubject, CanonicalAddress } from '../types/canonical-schema.js';
 import { SCHEMA_VERSION } from '../types/canonical-schema.js';
-import { type AppraisalOrder, LoanPurpose } from '../types/index.js';
+import { type Order, LoanPurpose } from '../types/index.js';
 
 const logger = new Logger('AppraisalDraftService');
 
@@ -326,7 +326,7 @@ export class AppraisalDraftService {
    * Uses a cross-partition query because orders are partitioned by /tenantId
    * and the caller may not know the tenant at this point.
    */
-  private async loadOrder(orderId: string): Promise<AppraisalOrder> {
+  private async loadOrder(orderId: string): Promise<Order> {
     const ordersContainer = this.dbService.getContainer('orders');
     const querySpec: SqlQuerySpec = {
       query: 'SELECT * FROM c WHERE c.type = @type AND c.id = @id',
@@ -335,11 +335,11 @@ export class AppraisalDraftService {
         { name: '@id', value: orderId },
       ],
     };
-    const { resources } = await ordersContainer.items.query<AppraisalOrder>(querySpec).fetchAll();
+    const { resources } = await ordersContainer.items.query<Order>(querySpec).fetchAll();
     if (!resources || resources.length === 0) {
       throw createApiError(ErrorCodes.ORDER_NOT_FOUND, `Order not found: ${orderId}`);
     }
-    return resources[0] as AppraisalOrder;
+    return resources[0] as Order;
   }
 
   /**
@@ -347,7 +347,7 @@ export class AppraisalDraftService {
    * Pre-populates address, borrower, lender, and loan info.
    */
   private seedReportFromOrder(
-    order: AppraisalOrder,
+    order: Order,
     draftId: string,
     reportId: string,
     reportType: string,

@@ -19,7 +19,7 @@ import {
   AssignmentRule,
   VendorSelectionStrategy,
   AssignmentCondition,
-  AppraisalOrder
+  LegacyManagementOrder
 } from '../types/order-management.js';
 
 export interface VendorSearchCriteria {
@@ -35,7 +35,7 @@ export interface VendorSearchCriteria {
 }
 
 export interface VendorAssignmentRequest {
-  order: AppraisalOrder;
+  order: LegacyManagementOrder;
   assignmentRules?: AssignmentRule[];
   excludeVendorIds?: string[];
   requireSpecialCapabilities?: string[];
@@ -407,7 +407,7 @@ export class VendorManagementService {
    */
   private async scoreVendorsForOrder(
     vendors: VendorProfile[],
-    order: AppraisalOrder
+    order: LegacyManagementOrder
   ): Promise<Array<{
     vendor: VendorProfile;
     score: number;

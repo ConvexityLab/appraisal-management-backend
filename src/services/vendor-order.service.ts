@@ -32,7 +32,7 @@
 
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 import {
     VENDOR_ORDER_DOC_TYPE,
     type VendorOrder,
@@ -46,10 +46,10 @@ import {
  *
  * Carries the union of fields needed to instantiate the VendorOrder document
  * with proper linkage to its parent ClientOrder. The remaining
- * `Partial<AppraisalOrder>` fields are forwarded verbatim — propertyAddress,
+ * `Partial<Order>` fields are forwarded verbatim — propertyAddress,
  * propertyDetails, loanInformation, borrowerInformation, dueDate, etc.
  */
-export type CreateVendorOrderInput = Omit<Partial<AppraisalOrder>, 'id' | 'type'> & {
+export type CreateVendorOrderInput = Omit<Partial<Order>, 'id' | 'type'> & {
     tenantId: string;
     clientOrderId: string;
     engagementId: string;
@@ -78,7 +78,7 @@ export class VendorOrderService {
      * partial-fan-out error; standalone callers may retry or compensate).
      */
     async createVendorOrder(input: CreateVendorOrderInput): Promise<VendorOrder> {
-        const row = await this.dbService.createOrder(input as Omit<AppraisalOrder, 'id'>);
+        const row = await this.dbService.createOrder(input as Omit<Order, 'id'>);
         if (!row.success || !row.data) {
             const err = row.error?.message ?? 'unknown error';
             throw new Error(
@@ -87,7 +87,7 @@ export class VendorOrderService {
             );
         }
 
-        const created = row.data as AppraisalOrder;
+        const created = row.data as Order;
 
         // Apply the VendorOrder shape — adds the linkage fields + the new
         // discriminator. Slice 8f flipped writes from LEGACY_VENDOR_ORDER_DOC_TYPE

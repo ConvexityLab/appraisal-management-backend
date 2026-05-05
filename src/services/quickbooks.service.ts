@@ -189,7 +189,7 @@ export class QuickBooksService {
       if (entityType === 'Invoice' && isPaid) {
         // Find Order with quickbooksInvoiceId = entityId and mark AR paid
         logger.info(`Invoice ${entityId} is paid. Updating system...`);
-        // We'd update AppraisalOrder status if appropriate, or store AR status
+        // We'd update Order status if appropriate, or store AR status
         return;
       } 
       

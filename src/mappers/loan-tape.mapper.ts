@@ -7,7 +7,7 @@
  * canonical is the destination; vendor / legacy shapes are the source.
  *
  * Single-order callers can construct a partial RiskTapeItem from the
- * AppraisalOrder + canonical valuation if a real loan tape isn't available;
+ * Order + canonical valuation if a real loan tape isn't available;
  * fields not present default to null and downstream consumers handle missing
  * paths as missing (rather than silently defaulting).
  */

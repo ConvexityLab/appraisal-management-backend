@@ -2628,7 +2628,7 @@ export class AppraisalManagementAPIServer {
           }
         },
         schemas: {
-          AppraisalOrder: {
+          Order: {
             type: 'object',
             description: 'Core appraisal order entity',
             required: ['id', 'clientId', 'orderNumber', 'propertyAddress', 'propertyDetails',

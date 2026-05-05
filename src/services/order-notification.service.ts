@@ -19,7 +19,7 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { EmailNotificationService } from './email-notification.service.js';
 import { SmsNotificationService } from './sms-notification.service.js';
 import { TeamsService } from './teams.service.js';
-import type { AppraisalOrder, Vendor } from '../types/index.js';
+import type { Order, Vendor } from '../types/index.js';
 
 export class OrderNotificationService {
   private readonly logger: Logger;
@@ -42,7 +42,7 @@ export class OrderNotificationService {
    * Notify vendor they have been assigned to an order.
    * Sends: email to vendor, SMS to vendor, Teams ops channel post.
    */
-  async notifyVendorAssigned(order: AppraisalOrder): Promise<void> {
+  async notifyVendorAssigned(order: Order): Promise<void> {
     const { orderId, orderNumber, address } = this.extractOrderInfo(order);
 
     if (!order.assignedVendorId) {
@@ -82,7 +82,7 @@ export class OrderNotificationService {
    * Notify relevant parties that an order has been cancelled.
    * Sends: email to vendor (if assigned), Teams ops channel post.
    */
-  async notifyOrderCancelled(order: AppraisalOrder): Promise<void> {
+  async notifyOrderCancelled(order: Order): Promise<void> {
     const { orderId, orderNumber, address } = this.extractOrderInfo(order);
 
     const emailSubject = `Order Cancelled — #${orderNumber}`;
@@ -108,7 +108,7 @@ export class OrderNotificationService {
    * Notify the lender contact that an order has been delivered.
    * Sends: email to order contact, Teams ops channel post.
    */
-  async notifyOrderDelivered(order: AppraisalOrder): Promise<void> {
+  async notifyOrderDelivered(order: Order): Promise<void> {
     const { orderId, orderNumber, address } = this.extractOrderInfo(order);
 
     const emailSubject = `Appraisal Delivered — Order #${orderNumber}`;
@@ -132,7 +132,7 @@ export class OrderNotificationService {
 
   // ─── Private helpers ───────────────────────────────────────────────────────
 
-  private extractOrderInfo(order: AppraisalOrder): {
+  private extractOrderInfo(order: Order): {
     orderId: string;
     orderNumber: string;
     address: string;
@@ -230,7 +230,7 @@ export class OrderNotificationService {
   // ─── Email HTML builders ───────────────────────────────────────────────────
 
   private buildVendorAssignmentEmail(
-    order: AppraisalOrder,
+    order: Order,
     vendor: Vendor | null,
     orderNumber: string,
     address: string
@@ -259,7 +259,7 @@ export class OrderNotificationService {
   }
 
   private buildCancellationEmail(
-    order: AppraisalOrder,
+    order: Order,
     vendor: Vendor,
     orderNumber: string,
     address: string
@@ -282,7 +282,7 @@ export class OrderNotificationService {
   }
 
   private buildDeliveryEmail(
-    order: AppraisalOrder,
+    order: Order,
     orderNumber: string,
     address: string
   ): string {

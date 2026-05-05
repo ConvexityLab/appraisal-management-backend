@@ -1,7 +1,7 @@
 import { CosmosClient, Database, Container, ItemResponse, FeedResponse, SqlQuerySpec, PartitionKeyBuilder } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import { 
-  AppraisalOrder, 
+  Order, 
   Vendor, 
   OrderFilters, 
   PropertyDetails,
@@ -308,7 +308,7 @@ export class CosmosDbService {
    * Slice 8f (`feat/discriminator-flip`) will additionally rename `type: 'order'`
    * → `type: 'vendor-order'` here in lockstep with all read queries.
    */
-  async createOrder(order: Omit<AppraisalOrder, 'id'>): Promise<ApiResponse<AppraisalOrder>> {
+  async createOrder(order: Omit<Order, 'id'>): Promise<ApiResponse<Order>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -360,7 +360,7 @@ export class CosmosDbService {
 
       return {
         success: true,
-        data: resource as AppraisalOrder
+        data: resource as Order
       };
 
     } catch (error) {
@@ -375,7 +375,7 @@ export class CosmosDbService {
     }
   }
 
-  async findOrderById(id: string): Promise<ApiResponse<AppraisalOrder | null>> {
+  async findOrderById(id: string): Promise<ApiResponse<Order | null>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -392,12 +392,12 @@ export class CosmosDbService {
         ]
       };
 
-      const { resources } = await this.ordersContainer.items.query<AppraisalOrder>(querySpec).fetchAll();
+      const { resources } = await this.ordersContainer.items.query<Order>(querySpec).fetchAll();
       const order = resources.length > 0 ? resources[0] : null;
 
       return {
         success: true,
-        data: order as AppraisalOrder | null
+        data: order as Order | null
       };
 
     } catch (error) {
@@ -413,7 +413,7 @@ export class CosmosDbService {
     }
   }
 
-  async findOrders(filters: OrderFilters, offset: number = 0, limit: number = 50): Promise<ApiResponse<AppraisalOrder[]>> {
+  async findOrders(filters: OrderFilters, offset: number = 0, limit: number = 50): Promise<ApiResponse<Order[]>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -471,7 +471,7 @@ export class CosmosDbService {
       query += ` OFFSET ${offset} LIMIT ${limit}`;
 
       const querySpec = { query, parameters };
-      const { resources } = await this.ordersContainer.items.query<AppraisalOrder>(querySpec).fetchAll();
+      const { resources } = await this.ordersContainer.items.query<Order>(querySpec).fetchAll();
 
       // Get total count for pagination
       const countQuery = query.replace('SELECT *', 'SELECT VALUE COUNT(c)').replace(/ OFFSET \d+ LIMIT \d+/, '');
@@ -500,7 +500,7 @@ export class CosmosDbService {
     }
   }
 
-  async updateOrder(id: string, updates: Partial<AppraisalOrder>): Promise<ApiResponse<AppraisalOrder>> {
+  async updateOrder(id: string, updates: Partial<Order>): Promise<ApiResponse<Order>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -532,7 +532,7 @@ export class CosmosDbService {
       const partitionKey = this.resolvePartitionKey(existingOrder.tenantId);
 
       const replaceResponse = await this.ordersContainer.item(id, partitionKey).replace(updatedOrder);
-      const resource = replaceResponse.resource as AppraisalOrder;
+      const resource = replaceResponse.resource as Order;
 
       return {
         success: true,

@@ -2,7 +2,7 @@
  * Bulk Portfolio Service
  *
  * Accepts a pre-validated list of BulkPortfolioItems, creates one
- * AppraisalOrder per valid row via CosmosDbService, and persists a
+ * Order per valid row via CosmosDbService, and persists a
  * BulkPortfolioJob record for history / audit.
  *
  * Design constraints:
@@ -43,7 +43,7 @@ import type {
   ReviewDecision,
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
-import { OrderType, Priority, type AppraisalOrder } from '../types/index.js';
+import { OrderType, Priority, type Order } from '../types/index.js';
 import type { AxiomBulkEvaluationRequestedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -245,7 +245,7 @@ export class BulkPortfolioService {
         );
       }
 
-      // Build AppraisalOrder shape
+      // Build Order shape
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + DEFAULT_TURN_TIME_DAYS[item.analysisType]);
 

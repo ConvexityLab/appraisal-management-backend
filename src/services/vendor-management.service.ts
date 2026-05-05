@@ -5,7 +5,7 @@
  * for vendor availability checks, matching, and performance tracking.
  */
 
-import { Vendor, AppraisalOrder, VendorStatus, OrderStatus } from '../types/index.js';
+import { Vendor, Order, VendorStatus, OrderStatus } from '../types/index.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 
@@ -29,7 +29,7 @@ export class VendorManagementService {
   /**
    * Find vendors available for an order based on state, product type, and status.
    */
-  async findAvailableVendors(order: AppraisalOrder): Promise<Vendor[]> {
+  async findAvailableVendors(order: Order): Promise<Vendor[]> {
     try {
       const result = await this.dbService.findAllVendors();
       if (!result.success || !result.data) {
@@ -111,7 +111,7 @@ export class VendorManagementService {
    * Find the best vendor for an order (simple scoring: active + matching state).
    * For sophisticated multi-factor scoring, use VendorMatchingService via auto-assignment routes.
    */
-  async findBestVendorForOrder(order: AppraisalOrder): Promise<Vendor | null> {
+  async findBestVendorForOrder(order: Order): Promise<Vendor | null> {
     try {
       const available = await this.findAvailableVendors(order);
       if (available.length === 0) {
@@ -169,7 +169,7 @@ export class VendorManagementService {
   /**
    * Update vendor performance metrics after an order is completed.
    */
-  async updateVendorPerformance(vendorId: string, order: AppraisalOrder): Promise<void> {
+  async updateVendorPerformance(vendorId: string, order: Order): Promise<void> {
     try {
       const vendorResult = await this.dbService.findVendorById(vendorId);
       if (!vendorResult.success || !vendorResult.data) {

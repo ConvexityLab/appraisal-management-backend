@@ -1,5 +1,5 @@
 import { Appraiser } from '../../types/appraiser.types.js';
-import { AppraisalOrder } from '../../types/order-management.js';
+import { LegacyManagementOrder } from '../../types/order-management.js';
 import { ExclusionTier } from '../../types/routing.types.js';
 import { Logger } from '../../utils/logger.js';
 
@@ -9,7 +9,7 @@ export class TieringEngineService {
   /**
    * Determine the exact hierarchy tier for a vendor against a specific order.
    */
-  public async getVendorTier(appraiser: Appraiser, order: AppraisalOrder): Promise<ExclusionTier> {
+  public async getVendorTier(appraiser: Appraiser, order: LegacyManagementOrder): Promise<ExclusionTier> {
     logger.info(`Evaluating vendor tier for Appraiser ${appraiser.id} on Order ${order.id}`);
 
     // 1. Check DNU (Do Not Use) / Exclusion Lists

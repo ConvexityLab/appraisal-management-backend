@@ -408,7 +408,7 @@ export interface ReviewTapeResult extends RiskTapeItem {
   /** User id of the reviewer who saved the override */
   overriddenBy?: string;
   // ── Order creation (set via POST /:jobId/create-orders) ──────────────────
-  /** AppraisalOrder id stamped after create-orders converts this result to an order */
+  /** Order id stamped after create-orders converts this result to an order */
   orderId?: string;
   /** Human-readable order number (e.g. ORD-2026-00123) */
   orderNumber?: string;

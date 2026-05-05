@@ -48,7 +48,7 @@ import { DvrNooReviewMapper } from './report-engine/field-mappers/dvr-noo-review
 import { DvrNooDesktopMapper } from './report-engine/field-mappers/dvr-noo-desktop.mapper.js';
 import type { IFieldMapper } from './report-engine/field-mappers/field-mapper.interface.js';
 import type { CanonicalReportDocument } from '../types/canonical-schema.js';
-import { AppraisalOrder } from '../types/index.js';
+import { Order } from '../types/index.js';
 import type { UadAppraisalReport } from '../types/uad-3.6.js';
 import { QCReview, QCDecision } from '../types/qc-workflow.js';
 
@@ -436,7 +436,7 @@ export class FinalReportService {
     await this.db.updateOrder(report.orderId, { finalReports: updated });
   }
 
-  private async _loadOrder(orderId: string): Promise<AppraisalOrder> {
+  private async _loadOrder(orderId: string): Promise<Order> {
     const response = await this.db.findOrderById(orderId);
     if (!response.success || !response.data) {
       throw new Error(`Order '${orderId}' not found`);
@@ -496,7 +496,7 @@ export class FinalReportService {
    *   order fields (lowest) → QC result overlays → reviewer fieldOverrides (highest)
    */
   private _assembleFieldMap(
-    order: AppraisalOrder,
+    order: Order,
     review: QCReview,
     _template: ReportTemplate
   ): Record<string, string | boolean | number> {
@@ -623,7 +623,7 @@ export class FinalReportService {
     _template: ReportTemplate,
     request: FinalReportGenerationRequest,
     orderId: string,
-    order: AppraisalOrder,
+    order: Order,
     qcReview: QCReview,
   ): Promise<Buffer> {
     this.logger.info('Generating report via HTML engine', {
@@ -723,7 +723,7 @@ export class FinalReportService {
    */
   private async _firePostGenerationEvents(
     report: FinalReport,
-    order: AppraisalOrder,
+    order: Order,
     qcReview: QCReview
   ): Promise<void> {
     // --- Event 1: Notification email ---
@@ -847,7 +847,7 @@ export class FinalReportService {
     }
   }
 
-  private _getNotificationRecipients(order: AppraisalOrder): string[] {
+  private _getNotificationRecipients(order: Order): string[] {
     const recipients: string[] = [];
 
     // Primary contact on the order
@@ -869,7 +869,7 @@ export class FinalReportService {
     return [...new Set(recipients)];
   }
 
-  private _buildEmailBody(report: FinalReport, order: AppraisalOrder): string {
+  private _buildEmailBody(report: FinalReport, order: Order): string {
     const address = order.propertyAddress
       ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state}`
       : order.id;
@@ -890,16 +890,16 @@ export class FinalReportService {
   }
 
   /**
-   * Maps an AppraisalOrder + QCReview + FinalReport into the minimal UadAppraisalReport
+   * Maps an Order + QCReview + FinalReport into the minimal UadAppraisalReport
    * shape that MismoXmlGenerator.generateMismoXml() actually accesses at runtime.
    *
    * Many UAD fields (appraiser certification, site details, comparables) are not carried
-   * by AppraisalOrder.  Stubs are used where necessary and clearly noted.  The object is
+   * by Order.  Stubs are used where necessary and clearly noted.  The object is
    * returned as `unknown as UadAppraisalReport` to satisfy the generator's type contract
    * while avoiding hundreds of lines of placeholder data for fields that are never read.
    */
   private _buildMismoReport(
-    order: AppraisalOrder,
+    order: Order,
     qcReview: QCReview,
     report: FinalReport
   ): UadAppraisalReport {
@@ -980,7 +980,7 @@ export class FinalReportService {
         interiorInspected:           true,
       } as any,
 
-      // Appraiser data is not stored on AppraisalOrder — use vendor stub if available
+      // Appraiser data is not stored on Order — use vendor stub if available
       appraiserInfo: {
         name:                    'See Assigned Appraiser',
         companyName:             'Assigned Appraiser',
@@ -1185,16 +1185,16 @@ export class FinalReportService {
  *  - Mutates `doc` in-place (the object is used locally and never re-persisted).
  *
  * @param doc       The canonical doc loaded from Cosmos (mutated in-place).
- * @param order     The full AppraisalOrder (provides documents[]).
+ * @param order     The full Order (provides documents[]).
  * @param qcReview  The approved QC review (provides aiPreScreening.flaggedItems).
  */
 function _enrichCanonicalDocForReport(
   doc: CanonicalReportDocument,
-  order: AppraisalOrder,
+  order: Order,
   qcReview: QCReview | undefined,
 ): void {
   // ── sourceDocuments from order.documents ─────────────────────────────────
-  // order-management.ts AppraisalOrder has documents[]; index.ts version does not.
+  // order-management.ts Order has documents[]; index.ts version does not.
   // Runtime access is safe — the actual stored document has the field.
   const orderDocs: Array<{
     id: string;

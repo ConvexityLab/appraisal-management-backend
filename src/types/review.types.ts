@@ -3,7 +3,7 @@
  * Comprehensive review workflow, comparable analysis, and reporting
  */
 
-import { AppraisalOrder } from './index.js';
+import { Order } from './index.js';
 
 // ============================================================================
 // Review Assignment & Workflow Types
@@ -245,7 +245,7 @@ export interface ReviewDocument {
 
 export interface ComparableAnalysis {
   reviewId: string;
-  /** FK → AppraisalOrder.id — which order this comp analysis was performed for. Added Phase R0.4. */
+  /** FK → Order.id — which order this comp analysis was performed for. Added Phase R0.4. */
   orderId?: string;
   /** FK → PropertyRecord.id — the subject property this analysis is about. Added Phase R0.4. */
   propertyId?: string;

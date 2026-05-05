@@ -34,7 +34,7 @@ import type {
 import { EventCategory, EventPriority } from '../types/events.js';
 import { lookupProductDefinition } from '../types/product-catalog.js';
 
-/** Minimal fields the service reads from an AppraisalOrder document. */
+/** Minimal fields the service reads from an Order document. */
 interface OrderSnapshot {
   id: string;
   tenantId?: string;

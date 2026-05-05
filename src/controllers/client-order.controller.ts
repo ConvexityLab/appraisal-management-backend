@@ -42,7 +42,7 @@ import {
   type ClientOrder,
 } from '../types/client-order.types.js';
 import type { ProductType } from '../types/product-catalog.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { Logger } from '../utils/logger.js';
 
@@ -231,7 +231,7 @@ export class ClientOrderController {
     }
     const specs = body.vendorOrders as VendorOrderSpec[];
 
-    let inherited: Partial<AppraisalOrder> = {};
+    let inherited: Partial<Order> = {};
     if (body.inheritedFields !== undefined) {
       if (typeof body.inheritedFields !== 'object' || body.inheritedFields === null) {
         res.status(400).json({
@@ -240,7 +240,7 @@ export class ClientOrderController {
         });
         return;
       }
-      inherited = body.inheritedFields as Partial<AppraisalOrder>;
+      inherited = body.inheritedFields as Partial<Order>;
     }
 
     try {

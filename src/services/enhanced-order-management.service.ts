@@ -10,7 +10,7 @@ import { GenericCacheService } from './cache/generic-cache.service';
 import { ComprehensiveQCValidationService } from './comprehensive-qc-validation.service';
 import { OrderManagementService as BaseOrderService } from './order-management.service';
 import {
-  AppraisalOrder,
+  LegacyManagementOrder,
   OrderStatus,
   OrderPriority,
   OrderType,
@@ -432,7 +432,7 @@ export class EnhancedOrderManagementService {
     const orderId = this.generateOrderId();
     const orderNumber = await this.generateOrderNumber();
 
-    const order: AppraisalOrder = {
+    const order: LegacyManagementOrder = {
       id: orderId,
       orderNumber,
       clientInformation: orderData.clientInformation,
@@ -467,7 +467,7 @@ export class EnhancedOrderManagementService {
     try {
       const cached = await this.cache.get(`order:${orderId}`);
       if (cached) {
-        return { success: true, data: cached as AppraisalOrder };
+        return { success: true, data: cached as LegacyManagementOrder };
       }
 
       // In real implementation, query database
@@ -490,7 +490,7 @@ export class EnhancedOrderManagementService {
   ): Promise<boolean> {
     
     try {
-      const order = await this.cache.get(`order:${orderId}`) as AppraisalOrder;
+      const order = await this.cache.get(`order:${orderId}`) as LegacyManagementOrder;
       if (!order) return false;
 
       const previousStatus = order.status;
@@ -528,7 +528,7 @@ export class EnhancedOrderManagementService {
   /**
    * Perform property pre-qualification analysis
    */
-  private async performPropertyPreQualification(order: AppraisalOrder): Promise<any> {
+  private async performPropertyPreQualification(order: LegacyManagementOrder): Promise<any> {
     try {
       // Mock property intelligence analysis
       // In real implementation, this would call Census and property intelligence services

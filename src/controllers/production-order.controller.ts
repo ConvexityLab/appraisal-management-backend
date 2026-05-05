@@ -8,7 +8,7 @@ import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.j
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { 
-  AppraisalOrder, 
+  Order, 
   OrderStatus, 
   Priority, 
   OrderType, 

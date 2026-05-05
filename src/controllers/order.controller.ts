@@ -63,7 +63,7 @@ import {
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 import { buildManualDraftSourceIdentity, buildApiOrderSourceIdentity } from '../types/intake-source.types.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 import { DuplicateOrderDetectionService } from '../services/duplicate-order-detection.service.js';
 import { WaiverScreeningService } from '../services/waiver-screening.service.js';
 import { ComplianceService } from '../services/ComplianceService.js';
@@ -94,7 +94,7 @@ function normalizeOrder<T extends { status?: string }>(order: T): T {
  * Only includes fields with a non-empty / non-zero value.
  */
 function buildOrderFields(
-  order: AppraisalOrder,
+  order: Order,
 ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
   const addr = order.propertyAddress;
   const prop = order.propertyDetails;
@@ -328,7 +328,7 @@ export class OrderController {
 
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
-        const created = result.data as AppraisalOrder;
+        const created = result.data as Order;
 
         if (intakeDraftId) {
           const documentAssociationResult = await this.documentService.associateEntityDocumentsToOrder({
@@ -692,9 +692,9 @@ export class OrderController {
       }
 
       const result = await this.dbService.updateOrder(orderId, {
-        status: newStatus as unknown as AppraisalOrder['status'],
+        status: newStatus as unknown as Order['status'],
         ...(notes && { metadata: { statusNotes: notes } }),
-      } as Partial<AppraisalOrder>);
+      } as Partial<Order>);
 
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
@@ -818,7 +818,7 @@ export class OrderController {
 
         // Auto-transition to QC_REVIEW status when order enters queue
         if (newStatus === OrderStatus.SUBMITTED) {
-          this.dbService.updateOrder(orderId, { status: OrderStatus.QC_REVIEW as unknown as AppraisalOrder['status'] })
+          this.dbService.updateOrder(orderId, { status: OrderStatus.QC_REVIEW as unknown as Order['status'] })
             .catch((err) =>
               logger.error('Failed to auto-advance order to QC_REVIEW', { orderId, error: err }),
             );
@@ -872,7 +872,7 @@ export class OrderController {
       }
 
       const result = await this.dbService.updateOrder(orderId, {
-        status: OrderStatus.DELIVERED as unknown as AppraisalOrder['status'],
+        status: OrderStatus.DELIVERED as unknown as Order['status'],
         metadata: {
           ...(current.data.metadata || {}),
           reportUrl,
@@ -880,7 +880,7 @@ export class OrderController {
           deliveredAt: new Date().toISOString(),
           deliveredBy: req.user?.id,
         },
-      } as Partial<AppraisalOrder>);
+      } as Partial<Order>);
 
       if (result.success) {
         // Fire-and-forget: event bus + audit trail
@@ -967,12 +967,12 @@ export class OrderController {
       }
 
       const result = await this.dbService.updateOrder(orderId, {
-        status: OrderStatus.ASSIGNED as unknown as AppraisalOrder['status'],
+        status: OrderStatus.ASSIGNED as unknown as Order['status'],
         assignedVendorId: vendorId,
         assignedVendorName: vendorName || null,
         assignedAt: new Date().toISOString(),
         assignedBy: req.user!.id,
-      } as Partial<AppraisalOrder>);
+      } as Partial<Order>);
 
       if (result.success) {
         this.eventService.publishOrderStatusChanged(
@@ -1039,12 +1039,12 @@ export class OrderController {
       const previousVendorId = current.data.assignedVendorId;
 
       const result = await this.dbService.updateOrder(orderId, {
-        status: OrderStatus.PENDING_ASSIGNMENT as unknown as AppraisalOrder['status'],
+        status: OrderStatus.PENDING_ASSIGNMENT as unknown as Order['status'],
         assignedVendorId: undefined,
         assignedVendorName: undefined,
         assignedAt: undefined,
         assignedBy: undefined,
-      } as unknown as Partial<AppraisalOrder>);
+      } as unknown as Partial<Order>);
 
       if (result.success) {
         this.eventService.publishOrderStatusChanged(
@@ -1169,14 +1169,14 @@ export class OrderController {
       }
 
       const result = await this.dbService.updateOrder(orderId, {
-        status: OrderStatus.CANCELLED as unknown as AppraisalOrder['status'],
+        status: OrderStatus.CANCELLED as unknown as Order['status'],
         metadata: {
           ...(current.data.metadata || {}),
           cancellationReason: reason,
           cancelledAt: new Date().toISOString(),
           cancelledBy: req.user?.id || 'unknown',
         },
-      } as Partial<AppraisalOrder>);
+      } as Partial<Order>);
 
       if (result.success) {
         this.eventService.publishOrderStatusChanged(
@@ -1330,7 +1330,7 @@ export class OrderController {
         `SELECT * FROM c WHERE ${whereClause} ` +
         `ORDER BY c.${safeSortBy} ${safeSortOrder} ` +
         `OFFSET ${safeOffset} LIMIT ${safeLimit}`;
-      const orders = await this.dbService.queryDocuments<AppraisalOrder>('orders', dataSql, parameters);
+      const orders = await this.dbService.queryDocuments<Order>('orders', dataSql, parameters);
 
       // Compute simple aggregations from the returned page
       const byStatus: Record<string, number> = {};
@@ -1402,9 +1402,9 @@ export class OrderController {
           }
 
           const updateResult = await this.dbService.updateOrder(orderId, {
-            status: newStatus as unknown as AppraisalOrder['status'],
+            status: newStatus as unknown as Order['status'],
             ...(reason && { metadata: { ...((current.data as any).metadata || {}), statusNotes: reason } }),
-          } as Partial<AppraisalOrder>);
+          } as Partial<Order>);
 
           if (updateResult.success) {
             results.push({ orderId, success: true });
@@ -1681,7 +1681,7 @@ export class OrderController {
       }
 
       // Build structured field list from the order record.
-      const fields = buildOrderFields(orderData as AppraisalOrder);
+      const fields = buildOrderFields(orderData as Order);
 
       // Fetch all documents for this order and pass appraisal-report ones to Axiom.
       const docResult = await this.documentService.listDocuments(tenantId, { orderId });
@@ -1844,12 +1844,12 @@ export class OrderController {
           }
 
           const result = await this.dbService.updateOrder(orderId, {
-            status: OrderStatus.ASSIGNED as unknown as AppraisalOrder['status'],
+            status: OrderStatus.ASSIGNED as unknown as Order['status'],
             assignedVendorId: vendorId,
             assignedVendorName: vendorName,
             assignedAt: new Date().toISOString(),
             assignedBy: assignedBy || req.user?.id || 'unknown',
-          } as Partial<AppraisalOrder>);
+          } as Partial<Order>);
 
           if (result.success) {
             results.push({ orderId, success: true });
@@ -1904,11 +1904,11 @@ export class OrderController {
       const exportFormat = (format as string || 'CSV').toUpperCase();
 
       // Fetch all requested orders
-      const orders: AppraisalOrder[] = [];
+      const orders: Order[] = [];
       for (const orderId of orderIds as string[]) {
         const result = await this.dbService.findOrderById(orderId);
         if (result.success && result.data) {
-          orders.push(result.data as AppraisalOrder);
+          orders.push(result.data as Order);
         }
       }
 

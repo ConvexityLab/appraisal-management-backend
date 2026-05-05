@@ -16,11 +16,11 @@
  * Discriminator:    type === 'vendor-order'  (Phase 4 migration rewrites
  *                   existing rows from `type: 'order'` → `type: 'vendor-order'`)
  *
- * Phase 0 introduces the type only. Existing AppraisalOrder remains the
+ * Phase 0 introduces the type only. Existing Order remains the
  * authoritative shape for runtime operations until Phase 1 + Phase 4.
  *
  * Why a thin wrapper instead of a full re-shape now?
- *   The existing AppraisalOrder already carries every vendor-side field we
+ *   The existing Order already carries every vendor-side field we
  *   need. The split is conceptual: this file marks which fields *belong* to
  *   the vendor side and adds the new linkage fields (clientOrderId,
  *   denormalized ancestry, vendorWorkType). Later phases will progressively
@@ -28,7 +28,7 @@
  *   client-side fields out, etc.).
  */
 
-import type { AppraisalOrder } from './index.js';
+import type { Order } from './index.js';
 import type { OrderStatus } from './order-status.js';
 import type { ProductType } from './product-catalog.js';
 import type { InspectionVendorData } from './inspection-vendor.types.js';
@@ -94,7 +94,7 @@ export const VENDOR_ORDER_TYPE_PREDICATE =
 // ─── Linkage fields (NEW, added by Phase 1 / Phase 4 migration) ─────────────
 
 /**
- * Linkage fields VendorOrder docs gain on top of the existing AppraisalOrder
+ * Linkage fields VendorOrder docs gain on top of the existing Order
  * shape. Phase 1 starts writing these on every newly-created VendorOrder;
  * Phase 4 backfills them on historical rows.
  *
@@ -106,7 +106,7 @@ export const VENDOR_ORDER_TYPE_PREDICATE =
  *                          (= productType today).
  *
  * `engagementId`, `engagementLoanId`, and `propertyId` already exist on
- * AppraisalOrder as optional. They become REQUIRED on VendorOrder.
+ * Order as optional. They become REQUIRED on VendorOrder.
  */
 export interface VendorOrderLinkage {
   /**
@@ -115,7 +115,7 @@ export interface VendorOrderLinkage {
    * `'vendor-order'` in Phase 4.
    */
   type: typeof VENDOR_ORDER_DOC_TYPE | typeof LEGACY_VENDOR_ORDER_DOC_TYPE;
-  /** Partition key — REQUIRED on VendorOrder (optional on AppraisalOrder for legacy reasons). */
+  /** Partition key — REQUIRED on VendorOrder (optional on Order for legacy reasons). */
   tenantId: string;
   clientOrderId: string;
   engagementId: string;
@@ -134,10 +134,10 @@ export interface VendorOrderLinkage {
 // ─── VendorOrder ─────────────────────────────────────────────────────────────
 
 /**
- * VendorOrder is the AppraisalOrder fields PLUS the linkage fields above.
+ * VendorOrder is the Order fields PLUS the linkage fields above.
  *
  * Phases 1–3 progressively tighten this shape; Phase 4 enforces it on every
- * row in the `orders` container. Until then, treat AppraisalOrder as the
+ * row in the `orders` container. Until then, treat Order as the
  * runtime authority and `VendorOrder` as the target shape.
  */
-export type VendorOrder = AppraisalOrder & VendorOrderLinkage;
+export type VendorOrder = Order & VendorOrderLinkage;

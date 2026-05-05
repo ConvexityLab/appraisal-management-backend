@@ -20,7 +20,7 @@ import {
 } from '../mappers/property-canonical-projection.js';
 import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
 
 interface PropertyEnrichmentRecord {
@@ -220,7 +220,7 @@ export class CanonicalSnapshotService {
     document: DocumentMetadata | null;
     extractionData: Record<string, unknown> | null;
     enrichment: PropertyEnrichmentRecord | null;
-    order: AppraisalOrder | null;
+    order: Order | null;
     propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
   }> {
     const document = await this.getDocumentById(extractionRun.documentId, extractionRun.tenantId);
@@ -280,12 +280,12 @@ export class CanonicalSnapshotService {
   private async getOrderById(
     orderId: string,
     tenantId: string,
-  ): Promise<AppraisalOrder | null> {
+  ): Promise<Order | null> {
     // Orders live in the 'orders' container per the rest of the codebase. We
     // load defensively — failures here are non-fatal: snapshot still builds
     // from extraction + enrichment, just without order-intake values.
     try {
-      const result = await this.dbService.queryItems<AppraisalOrder>(
+      const result = await this.dbService.queryItems<Order>(
         'orders',
         `SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId`,
         [
@@ -363,7 +363,7 @@ export class CanonicalSnapshotService {
       document: DocumentMetadata | null;
       extractionData: Record<string, unknown> | null;
       enrichment: PropertyEnrichmentRecord | null;
-      order: AppraisalOrder | null;
+      order: Order | null;
       propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
     },
   ): CanonicalSnapshotRecord['normalizedData'] {
@@ -423,7 +423,7 @@ export class CanonicalSnapshotService {
     //   layers on top.
     // Layer 1: enrichment (public records, flood, geocoding) — fills gaps
     //   for fields the lender / appraiser don't supply directly.
-    // Layer 2: order-intake (AppraisalOrder, lender-supplied facts) —
+    // Layer 2: order-intake (Order, lender-supplied facts) —
     //   overrides enrichment for fields the lender authoritatively supplies,
     //   fills more gaps for downstream review-program criteria that read
     //   canonical paths before extraction runs.
@@ -590,7 +590,7 @@ export class CanonicalSnapshotService {
    */
   private async updatePropertyCurrentCanonical(
     extractionRun: RunLedgerRecord,
-    order: AppraisalOrder | null,
+    order: Order | null,
     canonical: unknown,
     snapshotId: string,
     snapshotAt: string,

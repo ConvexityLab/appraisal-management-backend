@@ -19,7 +19,7 @@ import { BulkPortfolioService } from '../services/bulk-portfolio.service';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 import { BlobStorageService } from '../services/blob-storage.service';
 import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service.js';
 import { TenantAutomationConfigService } from '../services/tenant-automation-config.service.js';
@@ -80,7 +80,7 @@ export class AxiomController {
    * Only includes fields with a non-empty / non-zero value.
    */
   private static buildOrderFields(
-    order: AppraisalOrder,
+    order: Order,
   ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
     const addr = order.propertyAddress;
     const prop = order.propertyDetails;
@@ -725,7 +725,7 @@ export class AxiomController {
 
       // Load order for structured pipeline fields (A-2)
       const orderResult = await this.dbService.findOrderById(notification.orderId);
-      const order: AppraisalOrder | null = orderResult.success ? orderResult.data ?? null : null;
+      const order: Order | null = orderResult.success ? orderResult.data ?? null : null;
       if (!order) {
         res.status(404).json({
           success: false,
@@ -1591,9 +1591,9 @@ export class AxiomController {
         const status = (webhookPayload3?.['status'] ?? body['status'] as string | undefined) ?? 'completed';
         const result = (webhookPayload3?.['result'] ?? body['result']) as Record<string, unknown> | undefined;
 
-        const updateData: Partial<AppraisalOrder> = {};
+        const updateData: Partial<Order> = {};
         // Narrow the status string so exactOptionalPropertyTypes is satisfied
-        const axiomStatusValue = status as AppraisalOrder['axiomStatus'];
+        const axiomStatusValue = status as Order['axiomStatus'];
         if (axiomStatusValue !== undefined) updateData.axiomStatus = axiomStatusValue;
         if (pipelineJobId) updateData.axiomPipelineJobId = pipelineJobId;
         // Stamp axiomCompletedAt on ALL terminal states so the timeout watcher can exclude
@@ -1603,7 +1603,7 @@ export class AxiomController {
         }
         if (result) {
           if (typeof result['overallRiskScore'] === 'number') updateData.axiomRiskScore = result['overallRiskScore'];
-          const dec = result['overallDecision'] as AppraisalOrder['axiomDecision'] | undefined;
+          const dec = result['overallDecision'] as Order['axiomDecision'] | undefined;
           if (dec !== undefined) updateData.axiomDecision = dec;
           if (Array.isArray(result['flags'])) updateData.axiomFlags = result['flags'] as string[];
         }

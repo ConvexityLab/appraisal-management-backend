@@ -1,4 +1,4 @@
-import type { AppraisalOrder } from './index.js';
+import type { Order } from './index.js';
 import type { DocumentMetadata } from './document.types.js';
 import type { IntakeSourceIdentity } from './intake-source.types.js';
 import type { ReviewProgram } from './review-tape.types.js';
@@ -125,7 +125,7 @@ export interface ReviewContext {
     subClientId?: string;
     sourceIdentity?: IntakeSourceIdentity;
   };
-  order: AppraisalOrder;
+  order: Order;
   canonicalData?: {
     subjectProperty?: Record<string, unknown>;
     extraction?: Record<string, unknown>;

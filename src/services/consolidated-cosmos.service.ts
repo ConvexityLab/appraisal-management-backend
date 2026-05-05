@@ -1,7 +1,7 @@
 import { CosmosClient, Database, Container, ItemResponse, FeedResponse } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import { 
-  AppraisalOrder, 
+  Order, 
   Vendor, 
   OrderFilters,
   ApiResponse,
@@ -229,7 +229,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Create a new appraisal order
    */
-  async createOrder(orderData: Omit<AppraisalOrder, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<AppraisalOrder>> {
+  async createOrder(orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<Order>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -238,7 +238,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const newOrder: AppraisalOrder = {
+      const newOrder: Order = {
         ...orderData,
         id: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         createdAt: new Date(),
@@ -251,7 +251,7 @@ export class ConsolidatedCosmosDbService {
       
       return {
         success: true,
-        data: resource as AppraisalOrder
+        data: resource as Order
       };
     } catch (error) {
       this.logger.error('Failed to create order', { error });
@@ -268,7 +268,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Get order by ID
    */
-  async getOrder(id: string, tenantId: string): Promise<ApiResponse<AppraisalOrder>> {
+  async getOrder(id: string, tenantId: string): Promise<ApiResponse<Order>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -277,7 +277,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const { resource } = await this.containers.orders.item(id, tenantId).read<AppraisalOrder>();
+      const { resource } = await this.containers.orders.item(id, tenantId).read<Order>();
       
       if (!resource) {
         return {
@@ -305,7 +305,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Search orders with filters
    */
-  async searchOrders(filters: OrderFilters = {}): Promise<ApiResponse<AppraisalOrder[]>> {
+  async searchOrders(filters: OrderFilters = {}): Promise<ApiResponse<Order[]>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -356,7 +356,7 @@ export class ConsolidatedCosmosDbService {
         parameters
       };
 
-      const { resources } = await this.containers.orders.items.query<AppraisalOrder>(querySpec).fetchAll();
+      const { resources } = await this.containers.orders.items.query<Order>(querySpec).fetchAll();
       
       this.logger.info('Orders search completed', { count: resources.length, filters });
       
@@ -379,7 +379,7 @@ export class ConsolidatedCosmosDbService {
   /**
    * Update an existing order
    */
-  async updateOrder(id: string, tenantId: string, updates: Partial<AppraisalOrder>): Promise<ApiResponse<AppraisalOrder>> {
+  async updateOrder(id: string, tenantId: string, updates: Partial<Order>): Promise<ApiResponse<Order>> {
     try {
       if (!this.containers.orders) {
         return {
@@ -388,7 +388,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const { resource: existingOrder } = await this.containers.orders.item(id, tenantId).read<AppraisalOrder>();
+      const { resource: existingOrder } = await this.containers.orders.item(id, tenantId).read<Order>();
       
       if (!existingOrder) {
         return {
@@ -397,7 +397,7 @@ export class ConsolidatedCosmosDbService {
         };
       }
 
-      const updatedOrder: AppraisalOrder = {
+      const updatedOrder: Order = {
         ...existingOrder,
         ...updates,
         id, // Ensure ID doesn't change
@@ -410,7 +410,7 @@ export class ConsolidatedCosmosDbService {
       
       return {
         success: true,
-        data: resource as AppraisalOrder
+        data: resource as Order
       };
     } catch (error) {
       this.logger.error('Failed to update order', { orderId: id, error });

@@ -108,7 +108,7 @@ export interface ArvAnalysis {
   tenantId: string;
   /** Links to the parent Engagement. Preferred over orderId for new analyses. */
   engagementId?: string;
-  /** Links to an AppraisalOrder (VendorOrder). Kept for backward compatibility. */
+  /** Links to an Order (VendorOrder). Kept for backward compatibility. */
   orderId?: string;
   /** FK → PropertyRecord.id — the physical property being valued. Added Phase R0.4. */
   propertyId?: string;

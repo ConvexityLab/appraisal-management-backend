@@ -1,7 +1,7 @@
 import { VendorScorecard, ExclusionTier, VendorCapacityThrottle } from '../../types/routing.types.js';
 import { Logger } from '../../utils/logger.js';
 // Stubbing dependencies for implementation phase
-import { AppraisalOrder } from '../../types/order-management.js';
+import { LegacyManagementOrder } from '../../types/order-management.js';
 import { Appraiser } from '../../types/appraiser.types.js';
 import { CompetencyVerificationService } from './competency-verification.service.js';
 import { TieringEngineService } from './tiering-engine.service.js';
@@ -26,7 +26,7 @@ export class AutoMatchingEngineService {
    * Evaluates the statistical probability of a vendor accepting an order without negotiation,
    * based on historical fee acceptance and current SLA tightness.
    */
-  private async calculatePredictiveAcceptanceProbability(appraiserId: string, order: AppraisalOrder): Promise<number> {
+  private async calculatePredictiveAcceptanceProbability(appraiserId: string, order: LegacyManagementOrder): Promise<number> {
     // A real implementation would query `vendor_acceptance_history` taking `feePaidToAgent` vs `historicalAverage`.
     // For now, generate a base probability based on fee constraints.
     const feeProvided = order.orderValue || 450;
@@ -55,7 +55,7 @@ export class AutoMatchingEngineService {
   /**
    * Generates a multi-factor scorecard combining Proximity, SLA, and Quality scores
    */
-  public async calculateVendorScorecard(appraiser: Appraiser, order: AppraisalOrder): Promise<VendorScorecard> {
+  public async calculateVendorScorecard(appraiser: Appraiser, order: LegacyManagementOrder): Promise<VendorScorecard> {
     logger.info(`Calculating detailed matching scorecard for Vendor ${appraiser.id} and Order ${order.id}`);
     
     // Evaluate complex property/loan compliance natively
@@ -131,7 +131,7 @@ export class AutoMatchingEngineService {
    * Main matching orchestrator: Given an order and a pool of appraisers, 
    * return a perfectly ranked list of vendors passing all constraints.
    */
-  public async generateTargetVendorList(order: AppraisalOrder, rawAppraisers: Appraiser[]): Promise<RankedVendorCandidate[]> {
+  public async generateTargetVendorList(order: LegacyManagementOrder, rawAppraisers: Appraiser[]): Promise<RankedVendorCandidate[]> {
     logger.info(`Running predictive match algorithm for Order ${order.id}`);
 
     // 1. Filter out via strict Licensing/Competency business rules

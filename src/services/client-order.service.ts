@@ -43,7 +43,7 @@ import {
 } from '../types/client-order.types.js';
 import type { VendorOrder } from '../types/vendor-order.types.js';
 import type { VendorOrderTemplate } from '../types/decomposition-rule.types.js';
-import type { AppraisalOrder, PropertyDetails } from '../types/index.js';
+import type { Order, PropertyDetails } from '../types/index.js';
 import type { ProductType } from '../types/product-catalog.js';
 import { OrderStatus } from '../types/order-status.js';
 
@@ -53,11 +53,11 @@ import { OrderStatus } from '../types/order-status.js';
  * Required input to place a ClientOrder. Carries the union of fields needed
  * to instantiate both the ClientOrder document and any child VendorOrder(s).
  *
- * Required fields are listed explicitly; the remaining `Partial<AppraisalOrder>`
+ * Required fields are listed explicitly; the remaining `Partial<Order>`
  * is forwarded onto every VendorOrder verbatim (propertyAddress,
  * loanInformation, borrowerInformation, dueDate, orderValue, etc.).
  */
-export type PlaceClientOrderInput = Partial<AppraisalOrder> & {
+export type PlaceClientOrderInput = Partial<Order> & {
   tenantId: string;
   createdBy: string;
   engagementId: string;
@@ -340,7 +340,7 @@ export class ClientOrderService {
     clientOrderId: string,
     tenantId: string,
     specs: VendorOrderSpec[],
-    inheritedFields: Partial<AppraisalOrder> = {},
+    inheritedFields: Partial<Order> = {},
   ): Promise<VendorOrder[]> {
     if (specs.length === 0) {
       return [];

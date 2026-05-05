@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger.js';
-import { AppraisalOrder, QualityControlResult } from '../types/index.js';
+import { Order, QualityControlResult } from '../types/index.js';
 import { SubstantiveReviewEngine, type SubstantiveReviewResult } from './substantive-review-engine.service.js';
 
 /**
@@ -22,7 +22,7 @@ export class QualityControlEngine {
   /**
    * Comprehensive automated quality control review
    */
-  async performQualityControl(order: AppraisalOrder, reportData: AppraisalReportData): Promise<QCResult> {
+  async performQualityControl(order: Order, reportData: AppraisalReportData): Promise<QCResult> {
     this.logger.info('Starting comprehensive QC review', { orderId: order.id });
 
     try {
@@ -127,7 +127,7 @@ export class QualityControlEngine {
   /**
    * Compliance QC - Regulatory and investor requirements
    */
-  private async performComplianceQC(reportData: AppraisalReportData, order: AppraisalOrder): Promise<ComplianceQCResult> {
+  private async performComplianceQC(reportData: AppraisalReportData, order: Order): Promise<ComplianceQCResult> {
     const issues: QCIssue[] = [];
     let score = 100;
 
@@ -162,7 +162,7 @@ export class QualityControlEngine {
   /**
    * Analytical QC - Statistical analysis and risk assessment
    */
-  private async performAnalyticalQC(reportData: AppraisalReportData, order: AppraisalOrder): Promise<AnalyticalQCResult> {
+  private async performAnalyticalQC(reportData: AppraisalReportData, order: Order): Promise<AnalyticalQCResult> {
     const issues: QCIssue[] = [];
     let score = 100;
 
@@ -294,7 +294,7 @@ export class QualityControlEngine {
   /**
    * Data consistency QC - Cross-reference validation
    */
-  private async performDataConsistencyQC(reportData: AppraisalReportData, order: AppraisalOrder): Promise<DataConsistencyQCResult> {
+  private async performDataConsistencyQC(reportData: AppraisalReportData, order: Order): Promise<DataConsistencyQCResult> {
     const issues: QCIssue[] = [];
     let score = 100;
 
@@ -598,7 +598,7 @@ export class QualityControlEngine {
     return { issues, deductions };
   }
 
-  private ruleApplies(rule: ComplianceRule, order: AppraisalOrder): boolean {
+  private ruleApplies(rule: ComplianceRule, order: Order): boolean {
     return rule.applicableOrders.includes('all') || 
            rule.applicableOrders.includes(order.productType) ||
            rule.applicableOrders.includes(order.orderType);
@@ -628,7 +628,7 @@ export class QualityControlEngine {
     return deductions[severity as keyof typeof deductions] || 5;
   }
 
-  private async checkInvestorRequirements(reportData: AppraisalReportData, order: AppraisalOrder): Promise<any> {
+  private async checkInvestorRequirements(reportData: AppraisalReportData, order: Order): Promise<any> {
     // Mock investor requirements check
     return {
       fnma: { compliant: true, issues: [] },
@@ -692,7 +692,7 @@ export class QualityControlEngine {
     return { issues: [], deductions: 0 }; // Mock implementation
   }
 
-  private checkOrderReportConsistency(order: AppraisalOrder, reportData: AppraisalReportData): { issues: QCIssue[], deductions: number } {
+  private checkOrderReportConsistency(order: Order, reportData: AppraisalReportData): { issues: QCIssue[], deductions: number } {
     return { issues: [], deductions: 0 }; // Mock implementation
   }
 

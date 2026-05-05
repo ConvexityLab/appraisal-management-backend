@@ -25,7 +25,7 @@
  *   Engagement
  *     └── EngagementLoan (many, embedded)
  *           └── EngagementClientOrder (many) — productType: ProductType
- *                 └── VendorOrder / AppraisalOrder (many) — productType: ProductType
+ *                 └── VendorOrder / Order (many) — productType: ProductType
  *                       └── Document (many) — category: DocumentCategory
  *
  * NAMING CONVENTION

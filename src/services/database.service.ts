@@ -1,10 +1,10 @@
-import { AppraisalOrder, Vendor, OrderFilters, PropertyDetails, PropertyAddress } from '../types/index.js';
+import { Order, Vendor, OrderFilters, PropertyDetails, PropertyAddress } from '../types/index.js';
 
 export interface DatabaseOrderRepository {
-  create(order: AppraisalOrder): Promise<AppraisalOrder>;
-  findById(id: string): Promise<AppraisalOrder | null>;
-  findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: AppraisalOrder[]; total: number }>;
-  update(id: string, order: AppraisalOrder): Promise<AppraisalOrder>;
+  create(order: Order): Promise<Order>;
+  findById(id: string): Promise<Order | null>;
+  findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: Order[]; total: number }>;
+  update(id: string, order: Order): Promise<Order>;
   delete(id: string): Promise<void>;
 }
 
@@ -54,7 +54,7 @@ export class DatabaseService {
 
 // Mock implementations for development
 class MockOrderRepository implements DatabaseOrderRepository {
-  private orders: Map<string, AppraisalOrder> = new Map();
+  private orders: Map<string, Order> = new Map();
 
   constructor() {
     // Seed with test data on initialization
@@ -308,16 +308,16 @@ class MockOrderRepository implements DatabaseOrderRepository {
     }
   }
 
-  async create(order: AppraisalOrder): Promise<AppraisalOrder> {
+  async create(order: Order): Promise<Order> {
     this.orders.set(order.id, order);
     return order;
   }
 
-  async findById(id: string): Promise<AppraisalOrder | null> {
+  async findById(id: string): Promise<Order | null> {
     return this.orders.get(id) || null;
   }
 
-  async findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: AppraisalOrder[]; total: number }> {
+  async findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: Order[]; total: number }> {
     let filteredOrders = Array.from(this.orders.values());
     
     // Apply status filter
@@ -374,7 +374,7 @@ class MockOrderRepository implements DatabaseOrderRepository {
     return { orders, total };
   }
 
-  async update(id: string, order: AppraisalOrder): Promise<AppraisalOrder> {
+  async update(id: string, order: Order): Promise<Order> {
     this.orders.set(id, order);
     return order;
   }

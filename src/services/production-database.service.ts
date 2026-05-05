@@ -1,6 +1,6 @@
 import { MongoClient, Db, Collection, ObjectId } from 'mongodb';
 import { 
-  AppraisalOrder, 
+  Order, 
   Vendor, 
   OrderFilters, 
   PropertyDetails,
@@ -22,7 +22,7 @@ export class ProductionDatabaseService {
   private isConnected: boolean = false;
 
   // Collections
-  private ordersCollection: Collection<AppraisalOrder> | null = null;
+  private ordersCollection: Collection<Order> | null = null;
   private vendorsCollection: Collection<Vendor> | null = null;
   private propertiesCollection: Collection<PropertyDetails> | null = null;
   private propertySummariesCollection: Collection<PropertySummary> | null = null;
@@ -60,7 +60,7 @@ export class ProductionDatabaseService {
       this.db = this.client.db();
       
       // Initialize collections
-      this.ordersCollection = this.db.collection<AppraisalOrder>('orders');
+      this.ordersCollection = this.db.collection<Order>('orders');
       this.vendorsCollection = this.db.collection<Vendor>('vendors');
       this.propertiesCollection = this.db.collection<PropertyDetails>('properties');
       this.propertySummariesCollection = this.db.collection<PropertySummary>('property_summaries');
@@ -137,7 +137,7 @@ export class ProductionDatabaseService {
   // Order Operations
   // ===============================
 
-  async createOrder(order: Omit<AppraisalOrder, 'id'>): Promise<ApiResponse<AppraisalOrder>> {
+  async createOrder(order: Omit<Order, 'id'>): Promise<ApiResponse<Order>> {
     try {
       if (!this.ordersCollection) throw new Error('Orders collection not initialized');
 
@@ -149,7 +149,7 @@ export class ProductionDatabaseService {
         updatedAt: new Date()
       };
 
-      const result = await this.ordersCollection.insertOne(orderWithId as AppraisalOrder);
+      const result = await this.ordersCollection.insertOne(orderWithId as Order);
       
       if (!result.acknowledged) {
         throw new Error('Failed to create order');
@@ -171,7 +171,7 @@ export class ProductionDatabaseService {
     }
   }
 
-  async findOrderById(id: string): Promise<ApiResponse<AppraisalOrder | null>> {
+  async findOrderById(id: string): Promise<ApiResponse<Order | null>> {
     try {
       if (!this.ordersCollection) throw new Error('Orders collection not initialized');
 
@@ -192,7 +192,7 @@ export class ProductionDatabaseService {
     }
   }
 
-  async findOrders(filters: OrderFilters, offset: number = 0, limit: number = 50): Promise<ApiResponse<AppraisalOrder[]>> {
+  async findOrders(filters: OrderFilters, offset: number = 0, limit: number = 50): Promise<ApiResponse<Order[]>> {
     try {
       if (!this.ordersCollection) throw new Error('Orders collection not initialized');
 
@@ -243,7 +243,7 @@ export class ProductionDatabaseService {
     }
   }
 
-  async updateOrder(id: string, updates: Partial<AppraisalOrder>): Promise<ApiResponse<AppraisalOrder>> {
+  async updateOrder(id: string, updates: Partial<Order>): Promise<ApiResponse<Order>> {
     try {
       if (!this.ordersCollection) throw new Error('Orders collection not initialized');
 

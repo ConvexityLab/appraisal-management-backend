@@ -1,5 +1,5 @@
 import { Appraiser, AppraiserSpecialty } from '../../types/appraiser.types.js';
-import { AppraisalOrder, OrderType } from '../../types/order-management.js';
+import { LegacyManagementOrder, OrderType } from '../../types/order-management.js';
 import { Logger } from '../../utils/logger.js';
 
 const logger = new Logger('CompetencyVerificationService');
@@ -12,9 +12,9 @@ export interface CompetencyResult {
 export class CompetencyVerificationService {
   /**
    * Evaluates if a given appraiser possesses the correct licensing and specialized
-   * competencies to legally and accurately fulfill the given AppraisalOrder.
+   * competencies to legally and accurately fulfill the given LegacyManagementOrder.
    */
-  public evaluateVendorCompetency(appraiser: Appraiser, order: AppraisalOrder): CompetencyResult {
+  public evaluateVendorCompetency(appraiser: Appraiser, order: LegacyManagementOrder): CompetencyResult {
     logger.info(`Evaluating competency: Appraiser ${appraiser.id} vs Order ${order.id}`);
     
     const missing: string[] = [];
@@ -97,7 +97,7 @@ export class CompetencyVerificationService {
   /**
    * Filters a batch of appraisers, returning only the fully eligible subset
    */
-  public filterEligibleVendors(appraisers: Appraiser[], order: AppraisalOrder): Appraiser[] {
+  public filterEligibleVendors(appraisers: Appraiser[], order: LegacyManagementOrder): Appraiser[] {
     return appraisers.filter(appraiser => {
       const result = this.evaluateVendorCompetency(appraiser, order);
       if (!result.isEligible) {

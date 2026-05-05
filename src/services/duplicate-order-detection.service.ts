@@ -8,7 +8,7 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 
 export interface DuplicateCheckRequest {
   /** Street address of the subject property */
@@ -198,7 +198,7 @@ export class DuplicateOrderDetectionService {
    * Uses the propertyAddress.state + propertyAddress.zipCode for initial filtering
    * to reduce the candidate set before in-memory address normalization.
    */
-  private async queryCandidateOrders(request: DuplicateCheckRequest): Promise<AppraisalOrder[]> {
+  private async queryCandidateOrders(request: DuplicateCheckRequest): Promise<Order[]> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - DuplicateOrderDetectionService.DATE_WINDOW_DAYS);
 
@@ -230,10 +230,10 @@ export class DuplicateOrderDetectionService {
       parameters,
     }).fetchAll();
 
-    return resources as AppraisalOrder[];
+    return resources as Order[];
   }
 
-  private extractAddressString(order: AppraisalOrder): string | null {
+  private extractAddressString(order: Order): string | null {
     const addr = order.propertyAddress;
     if (!addr) return null;
     if (typeof addr === 'string') return addr;

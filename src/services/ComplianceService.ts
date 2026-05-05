@@ -2,7 +2,7 @@ import { MopMapperService } from './mop/MopMapperService';
 import { MopApiClient, MopComplianceViolation } from './mop/MopApiClient';
 import { CanonicalReportDocument } from '../types/canonical-schema';
 import { CosmosDbService } from './cosmos-db.service';
-import { AppraisalOrder } from '../types/order-management';
+import { LegacyManagementOrder } from '../types/order-management';
 import { AppraisalDraft, DraftStatus } from '../types/appraisal-draft.types';
 import { Logger } from '../utils/logger';
 
@@ -31,7 +31,7 @@ export class ComplianceService {
     // 1. Get Order
     const ordersContainer = this.dbService.getContainer('orders');
     const { resources: orders } = await ordersContainer.items
-      .query<AppraisalOrder>({
+      .query<LegacyManagementOrder>({
         query: 'SELECT * FROM c WHERE c.type = "order" AND c.id = @id',
         parameters: [{ name: '@id', value: orderId }]
       })

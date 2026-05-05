@@ -207,7 +207,18 @@ export interface BpoExtractedData {
 // ORDER DEFINITIONS
 // =========================
 
-export interface AppraisalOrder {
+/**
+ * LegacyManagementOrder — the order shape used by the older order-management
+ * code path (status/assignment history, BPO details, supervisor cosign,
+ * compliance fields). Distinct from the richer `Order` shape in
+ * `types/index.ts` (which carries axiom evaluation + report linkage).
+ *
+ * Used by 7 consumers today (ComplianceService, comprehensive-vendor-management,
+ * engagement.service, enhanced-order-management, and the routing/ services).
+ * Eventually these should pivot to `VendorOrder` since they're vendor-side
+ * concerns, but that's a per-file architectural decision deferred for now.
+ */
+export interface LegacyManagementOrder {
   id: string;
   tenantId?: string;
   orderNumber: string; // Human-readable order number
@@ -716,7 +727,7 @@ export interface OrderSearchCriteria {
 }
 
 export interface OrderSearchResult {
-  orders: AppraisalOrder[];
+  orders: LegacyManagementOrder[];
   totalCount: number;
   page: number;
   pageSize: number;
@@ -729,7 +740,7 @@ export interface OrderSearchResult {
 
 export interface OrderResponse {
   success: boolean;
-  data?: AppraisalOrder;
+  data?: LegacyManagementOrder;
   error?: string;
   message?: string;
 }
@@ -757,5 +768,6 @@ export interface OrderOperationResult {
   timestamp: Date;
   performedBy: string;
 }
+
 
 

@@ -10,7 +10,7 @@ import {
   VendorTier,
   GeographicArea 
 } from '../types/vendor-marketplace.types.js';
-import { AppraisalOrder, OrderStatus } from '../types';
+import { Order, OrderStatus } from '../types';
 
 export class VendorPerformanceCalculatorService {
   private logger: Logger;
@@ -143,7 +143,7 @@ export class VendorPerformanceCalculatorService {
   /**
    * Calculate quality metrics
    */
-  private calculateQualityMetrics(orders: AppraisalOrder[]) {
+  private calculateQualityMetrics(orders: Order[]) {
     const completedOrders = orders.filter(o => 
       o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED
     );
@@ -181,7 +181,7 @@ export class VendorPerformanceCalculatorService {
   /**
    * Calculate speed metrics
    */
-  private calculateSpeedMetrics(orders: AppraisalOrder[]) {
+  private calculateSpeedMetrics(orders: Order[]) {
     const completedOrders = orders.filter(o => 
       o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED
     );
@@ -225,7 +225,7 @@ export class VendorPerformanceCalculatorService {
   /**
    * Calculate reliability metrics
    */
-  private calculateReliabilityMetrics(orders: AppraisalOrder[]) {
+  private calculateReliabilityMetrics(orders: Order[]) {
     const acceptedOrders = orders.filter(o => 
       (o as any).acceptedAt !== undefined
     );
@@ -255,7 +255,7 @@ export class VendorPerformanceCalculatorService {
   /**
    * Calculate communication metrics from real response-time data.
    */
-  private calculateCommunicationMetrics(orders: AppraisalOrder[]) {
+  private calculateCommunicationMetrics(orders: Order[]) {
     // Measure average response time to status-change requests
     const responseTimes = orders
       .filter(o => (o as any).lastResponseTimeHours !== undefined)
@@ -285,7 +285,7 @@ export class VendorPerformanceCalculatorService {
   /**
    * Calculate volume metrics
    */
-  private calculateVolumeMetrics(orders: AppraisalOrder[]) {
+  private calculateVolumeMetrics(orders: Order[]) {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -305,7 +305,7 @@ export class VendorPerformanceCalculatorService {
   /**
    * Calculate financial metrics
    */
-  private calculateFinancialMetrics(orders: AppraisalOrder[]) {
+  private calculateFinancialMetrics(orders: Order[]) {
     const ordersWithFees = orders.filter(o => (o as any).vendorFee > 0);
 
     const avgFee = ordersWithFees.length > 0
@@ -365,7 +365,7 @@ export class VendorPerformanceCalculatorService {
   private async getVendorOrders(
     vendorId: string,
     tenantId: string
-  ): Promise<AppraisalOrder[]> {
+  ): Promise<Order[]> {
     const query = `
       SELECT * FROM c 
       WHERE c.tenantId = @tenantId 
@@ -383,7 +383,7 @@ export class VendorPerformanceCalculatorService {
       ]
     ) as any;
 
-    return (result.resources || []) as AppraisalOrder[];
+    return (result.resources || []) as Order[];
   }
 
   /**
@@ -443,7 +443,7 @@ export class VendorPerformanceCalculatorService {
    * Calculate accuracy score from QC review data.
    * Uses CU risk score from UCDP submissions + AVM variance when available.
    */
-  private calculateAccuracyScore(completedOrders: AppraisalOrder[]): number {
+  private calculateAccuracyScore(completedOrders: Order[]): number {
     let totalScore = 0;
     let dataPoints = 0;
 

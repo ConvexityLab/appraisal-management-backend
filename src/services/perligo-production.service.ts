@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger.js';
-import { AppraisalOrder } from '../types/index.js';
+import { Order } from '../types/index.js';
 
 /**
  * Enhanced Perligo AI Integration Service for Production Use
@@ -25,7 +25,7 @@ export class PerligoProductionService {
   /**
    * Deploy and manage Perligo agents for production workloads
    */
-  async deployAgentForOrder(order: AppraisalOrder, capabilities: AgentCapabilities[]): Promise<AgentDeployment> {
+  async deployAgentForOrder(order: Order, capabilities: AgentCapabilities[]): Promise<AgentDeployment> {
     this.logger.info('Deploying Perligo agent for order', { 
       orderId: order.id, 
       capabilities: capabilities.map(c => c.type) 
@@ -418,7 +418,7 @@ export class PerligoProductionService {
     }
   }
 
-  private async selectOptimalAgent(order: AppraisalOrder, capabilities: AgentCapabilities[]): Promise<PerligoAgent> {
+  private async selectOptimalAgent(order: Order, capabilities: AgentCapabilities[]): Promise<PerligoAgent> {
     // Select agent based on availability, capabilities, and performance history
     const availableAgents = this.agentPool.filter(agent => 
       agent.status === 'available' && 
@@ -442,7 +442,7 @@ export class PerligoProductionService {
     return availableAgents[0]!; // We know it exists after length check
   }
 
-  private async deployAgent(agent: PerligoAgent, order: AppraisalOrder, capabilities: AgentCapabilities[]): Promise<AgentDeployment> {
+  private async deployAgent(agent: PerligoAgent, order: Order, capabilities: AgentCapabilities[]): Promise<AgentDeployment> {
     const deployment: AgentDeployment = {
       deploymentId: `deploy_${Date.now()}_${agent.id}`,
       agentId: agent.id,
@@ -466,14 +466,14 @@ export class PerligoProductionService {
     return deployment;
   }
 
-  private async initializeAgentContext(agentId: string, order: AppraisalOrder): Promise<void> {
+  private async initializeAgentContext(agentId: string, order: Order): Promise<void> {
     // Initialize agent with order-specific context and data
     const contextData = {
       order: order,
-      // propertyDetails: order.property, // Property not available on AppraisalOrder type
-      // clientRequirements: order.requirements, // Requirements not available on AppraisalOrder type
+      // propertyDetails: order.property, // Property not available on Order type
+      // clientRequirements: order.requirements, // Requirements not available on Order type
       historicalData: await this.getHistoricalContext(order)
-      // marketData: await this.getMarketContext(order.property.address) // Property not available on AppraisalOrder type
+      // marketData: await this.getMarketContext(order.property.address) // Property not available on Order type
     };
 
     // Send context to agent (mock implementation)
@@ -684,7 +684,7 @@ export class PerligoProductionService {
     );
   }
 
-  private async getHistoricalContext(order: AppraisalOrder): Promise<any> {
+  private async getHistoricalContext(order: Order): Promise<any> {
     return {}; // Mock historical context
   }
 

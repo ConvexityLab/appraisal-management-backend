@@ -1,9 +1,9 @@
 /**
- * AppraisalOrder → AMP canonical mapper
+ * Order → AMP canonical mapper
  *
  * Projects an order's intake fields (address, property details, loan info,
  * borrower info) onto the canonical schema. Same pattern as the other
- * vendor mappers — canonical is the destination shape; AppraisalOrder is
+ * vendor mappers — canonical is the destination shape; Order is
  * one source.
  *
  * Without this mapper, canonical only gets populated AFTER an extraction
@@ -26,7 +26,7 @@
  *   - ratios.{loanToValueRatioPercent,
  *             debtToIncomeRatioPercent}  from order.loanInformation
  *
- * Items not on AppraisalOrder (comparables, neighborhood, valuation,
+ * Items not on Order (comparables, neighborhood, valuation,
  * appraiser info) are omitted; downstream merge sources fill those in.
  */
 
@@ -37,7 +37,7 @@ import type {
     CanonicalReportDocument,
     CanonicalSubject,
 } from '../types/canonical-schema.js';
-import type { AppraisalOrder } from '../types/index.js';
+import type { Order } from '../types/index.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ function finiteOrNull(v: number | null | undefined): number | null {
 
 // ─── Loan-purpose / mortgage / occupancy normalisation ────────────────────────
 //
-// AppraisalOrder.LoanInfo carries loanType / loanPurpose as enums (LoanType /
+// Order.LoanInfo carries loanType / loanPurpose as enums (LoanType /
 // LoanPurpose) — we normalise them to MISMO-aligned canonical enums. Same
 // vocabulary as loan-tape.mapper / bulk-ingestion-source.mapper.
 
@@ -112,7 +112,7 @@ function toPercentValue(raw: number | null | undefined): number | null {
 
 // ─── Section builders ─────────────────────────────────────────────────────────
 
-function buildAddress(order: AppraisalOrder): CanonicalAddress | null {
+function buildAddress(order: Order): CanonicalAddress | null {
     const a = order.propertyAddress;
     if (!a) return null;
 
@@ -134,7 +134,7 @@ function buildAddress(order: AppraisalOrder): CanonicalAddress | null {
     };
 }
 
-function buildSubject(order: AppraisalOrder): Partial<CanonicalSubject> | null {
+function buildSubject(order: Order): Partial<CanonicalSubject> | null {
     const out: Partial<CanonicalSubject> = {};
 
     const address = buildAddress(order);
@@ -187,7 +187,7 @@ function buildSubject(order: AppraisalOrder): Partial<CanonicalSubject> | null {
     return Object.keys(out).length > 0 ? out : null;
 }
 
-function buildLoan(order: AppraisalOrder): CanonicalLoan | null {
+function buildLoan(order: Order): CanonicalLoan | null {
     const li = order.loanInformation;
     if (!li) return null;
 
@@ -209,7 +209,7 @@ function buildLoan(order: AppraisalOrder): CanonicalLoan | null {
         baseLoanAmount,
         loanPurposeType,
         mortgageType,
-        // AppraisalOrder doesn't carry lien priority; null until plumbed.
+        // Order doesn't carry lien priority; null until plumbed.
         lienPriorityType: null,
         firstLienBalance: null,
         secondLienBalance: null,
@@ -224,7 +224,7 @@ function buildLoan(order: AppraisalOrder): CanonicalLoan | null {
     };
 }
 
-function buildRatios(order: AppraisalOrder): CanonicalLoanRatios | null {
+function buildRatios(order: Order): CanonicalLoanRatios | null {
     const li = order.loanInformation;
     if (!li) return null;
 
@@ -235,7 +235,7 @@ function buildRatios(order: AppraisalOrder): CanonicalLoanRatios | null {
 
     return {
         loanToValueRatioPercent: ltv,
-        // CLTV / HCLTV / DSCR are not on AppraisalOrder — null until plumbed.
+        // CLTV / HCLTV / DSCR are not on Order — null until plumbed.
         combinedLoanToValueRatioPercent: null,
         highCombinedLoanToValueRatioPercent: null,
         debtServiceCoverageRatio: null,
@@ -246,7 +246,7 @@ function buildRatios(order: AppraisalOrder): CanonicalLoanRatios | null {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Project an AppraisalOrder onto a partial CanonicalReportDocument.
+ * Project an Order onto a partial CanonicalReportDocument.
  *
  * Returns null when the order has no canonical-relevant content (rare —
  * orders almost always have a property address). The returned partial is
@@ -254,7 +254,7 @@ function buildRatios(order: AppraisalOrder): CanonicalLoanRatios | null {
  * (extraction, enrichment, tape) in canonical-snapshot.service.
  */
 export function mapAppraisalOrderToCanonical(
-    order: AppraisalOrder | null | undefined,
+    order: Order | null | undefined,
 ): Partial<CanonicalReportDocument> | null {
     if (!order) return null;
 

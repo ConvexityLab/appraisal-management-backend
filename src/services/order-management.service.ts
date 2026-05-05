@@ -1,4 +1,4 @@
-import { AppraisalOrder, OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '../types/index.js';
+import { Order, OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '../types/index.js';
 import { isValidStatusTransition } from '../types/order-status.js';
 import { DatabaseService } from './database.service.js';
 import { VendorManagementService } from './vendor-management.service.js';
@@ -89,12 +89,12 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Create a new appraisal order
    */
-  async createOrder(orderData: Omit<AppraisalOrder, 'id' | 'createdAt' | 'updatedAt' | 'status'>): Promise<ApiResponse<AppraisalOrder>> {
+  async createOrder(orderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt' | 'status'>): Promise<ApiResponse<Order>> {
     try {
       const orderId = generateUUID();
       const now = new Date();
 
-      const order: AppraisalOrder = {
+      const order: Order = {
         ...orderData,
         id: orderId,
         status: OrderStatus.NEW,
@@ -159,7 +159,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Get order by ID
    */
-  async getOrderById(orderId: string): Promise<ApiResponse<AppraisalOrder>> {
+  async getOrderById(orderId: string): Promise<ApiResponse<Order>> {
     try {
       const order = await this.db.orders.findById(orderId);
       
@@ -198,7 +198,7 @@ export class OrderManagementService extends SimpleEventEmitter {
     filters: OrderFilters = {},
     page: number = 1,
     limit: number = 20
-  ): Promise<ApiResponse<AppraisalOrder[]>> {
+  ): Promise<ApiResponse<Order[]>> {
     try {
       const offset = (page - 1) * limit;
       const { orders, total } = await this.db.orders.findMany(filters, offset, limit);
@@ -233,7 +233,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Update an existing order
    */
-  async updateOrder(orderId: string, updateData: OrderUpdateData, userId: string): Promise<ApiResponse<AppraisalOrder>> {
+  async updateOrder(orderId: string, updateData: OrderUpdateData, userId: string): Promise<ApiResponse<Order>> {
     try {
       const existingOrder = await this.db.orders.findById(orderId);
       if (!existingOrder) {
@@ -316,7 +316,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Assign order to vendor
    */
-  async assignOrderToVendor(orderId: string, vendorId: string, userId: string): Promise<ApiResponse<AppraisalOrder>> {
+  async assignOrderToVendor(orderId: string, vendorId: string, userId: string): Promise<ApiResponse<Order>> {
     try {
       // Check if vendor is available and qualified
       const vendorCheck = await this.vendorService.checkVendorAvailability(vendorId, orderId);
@@ -361,7 +361,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Auto-assign order to best available vendor using AI routing
    */
-  async autoAssignOrder(orderId: string, userId: string): Promise<ApiResponse<AppraisalOrder>> {
+  async autoAssignOrder(orderId: string, userId: string): Promise<ApiResponse<Order>> {
     try {
       const order = await this.db.orders.findById(orderId);
       if (!order) {
@@ -415,7 +415,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Get orders requiring attention (late, unassigned, etc.)
    */
-  async getOrdersRequiringAttention(): Promise<ApiResponse<AppraisalOrder[]>> {
+  async getOrdersRequiringAttention(): Promise<ApiResponse<Order[]>> {
     try {
       const now = new Date();
       const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
@@ -472,7 +472,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   /**
    * Cancel an order
    */
-  async cancelOrder(orderId: string, reason: string, userId: string): Promise<ApiResponse<AppraisalOrder>> {
+  async cancelOrder(orderId: string, reason: string, userId: string): Promise<ApiResponse<Order>> {
     try {
       const order = await this.db.orders.findById(orderId);
       if (!order) {
@@ -529,7 +529,7 @@ export class OrderManagementService extends SimpleEventEmitter {
 
   // Private helper methods
 
-  private async validateOrderData(order: AppraisalOrder): Promise<void> {
+  private async validateOrderData(order: Order): Promise<void> {
     // Validate required fields
     if (!order.clientId) throw new Error('Client ID is required');
     if (!order.propertyAddress.streetAddress) throw new Error('Property address is required');
@@ -549,7 +549,7 @@ export class OrderManagementService extends SimpleEventEmitter {
     return isValidStatusTransition(currentStatus, newStatus);
   }
 
-  private async handleStatusChange(previousOrder: AppraisalOrder, currentOrder: AppraisalOrder): Promise<void> {
+  private async handleStatusChange(previousOrder: Order, currentOrder: Order): Promise<void> {
     if (previousOrder.status === currentOrder.status) return;
 
     switch (currentOrder.status) {
@@ -575,7 +575,7 @@ export class OrderManagementService extends SimpleEventEmitter {
     }
   }
 
-  private async triggerOrderWorkflow(order: AppraisalOrder): Promise<void> {
+  private async triggerOrderWorkflow(order: Order): Promise<void> {
     try {
       // Use Perligo workflow agent to trigger automation
       // await this.workflowAgent.triggerWorkflow('orderIntake', {

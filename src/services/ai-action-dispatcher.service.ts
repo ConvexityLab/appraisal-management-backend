@@ -13,7 +13,7 @@ import { Logger } from '../utils/logger.js';
 import { EngagementService } from './engagement.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { AutoAssignmentOrchestratorService } from './auto-assignment-orchestrator.service.js';
-import type { AppraisalOrder, OrderFilters } from '../types/index.js';
+import type { Order, OrderFilters } from '../types/index.js';
 import type { CreateEngagementRequest } from '../types/engagement.types.js';
 
 type RecordValue = Record<string, unknown>;
@@ -47,14 +47,14 @@ export interface AiActionDispatcherDependencies {
 class CosmosOrderRepository implements DatabaseOrderRepository {
   constructor(private readonly dbService: CosmosDbService) {}
 
-  async create(order: AppraisalOrder): Promise<AppraisalOrder> {
-    return this.dbService.createDocument<AppraisalOrder>('orders', {
-      ...(order as AppraisalOrder & Record<string, unknown>),
+  async create(order: Order): Promise<Order> {
+    return this.dbService.createDocument<Order>('orders', {
+      ...(order as Order & Record<string, unknown>),
       type: 'order',
-    } as AppraisalOrder & { type: 'order' });
+    } as Order & { type: 'order' });
   }
 
-  async findById(id: string): Promise<AppraisalOrder | null> {
+  async findById(id: string): Promise<Order | null> {
     const result = await this.dbService.findOrderById(id);
     if (!result.success) {
       throw new Error(result.error?.message ?? `Failed to load order '${id}'`);
@@ -62,7 +62,7 @@ class CosmosOrderRepository implements DatabaseOrderRepository {
     return result.data ?? null;
   }
 
-  async findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: AppraisalOrder[]; total: number }> {
+  async findMany(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: Order[]; total: number }> {
     const result = await this.dbService.findOrders(filters, offset, limit);
     if (!result.success) {
       throw new Error(result.error?.message ?? 'Failed to load orders');
@@ -73,7 +73,7 @@ class CosmosOrderRepository implements DatabaseOrderRepository {
     };
   }
 
-  async update(id: string, order: AppraisalOrder): Promise<AppraisalOrder> {
+  async update(id: string, order: Order): Promise<Order> {
     const result = await this.dbService.updateOrder(id, order);
     if (!result.success || !result.data) {
       throw new Error(result.error?.message ?? `Failed to update order '${id}'`);
@@ -179,8 +179,8 @@ function normalizePropertyAddress(payload: RecordValue): Record<string, unknown>
   };
 }
 
-function formatOrderAddress(order: AppraisalOrder): string {
-  const address = order.propertyAddress as AppraisalOrder['propertyAddress'] & Record<string, unknown>;
+function formatOrderAddress(order: Order): string {
+  const address = order.propertyAddress as Order['propertyAddress'] & Record<string, unknown>;
   const street = getOptionalString(address.streetAddress ?? address.street) ?? '';
   const city = getOptionalString(address.city) ?? '';
   const state = getOptionalString(address.state) ?? '';
@@ -198,7 +198,7 @@ function normalizeDispatcherError(error: unknown, fallbackMessage: string): AiAc
   return new AiActionDispatchError(message, statusCode);
 }
 
-function mapAutoAssignmentPriority(priority: AppraisalOrder['priority']): 'STANDARD' | 'RUSH' | 'EMERGENCY' {
+function mapAutoAssignmentPriority(priority: Order['priority']): 'STANDARD' | 'RUSH' | 'EMERGENCY' {
   if (priority === 'urgent') {
     return 'EMERGENCY';
   }
@@ -305,7 +305,7 @@ export class AiActionDispatcherService {
         if (order.tenantId !== context.tenantId) {
           throw new AiActionDispatchError(`Order '${orderId}' does not belong to tenant '${context.tenantId}'.`, 400);
         }
-        if ((order as AppraisalOrder & { autoVendorAssignment?: { status?: string } }).autoVendorAssignment?.status === 'ACCEPTED') {
+        if ((order as Order & { autoVendorAssignment?: { status?: string } }).autoVendorAssignment?.status === 'ACCEPTED') {
           throw new AiActionDispatchError(
             `Order '${orderId}' already has an accepted vendor assignment; re-trigger is not allowed.`,
             400,

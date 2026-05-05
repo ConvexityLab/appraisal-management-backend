@@ -3,7 +3,7 @@
  *
  * A client submits a spreadsheet (CSV / XLSX) of properties to be evaluated.
  * Each row specifies an analysis type. The operator reviews and corrects the
- * parsed rows in the UI, then submits. The service creates one AppraisalOrder
+ * parsed rows in the UI, then submits. The service creates one Order
  * per valid row and persists a BulkPortfolioJob record for tracking.
  *
  * Analysis types supported:

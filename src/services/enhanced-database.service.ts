@@ -1,5 +1,5 @@
 import { 
-  AppraisalOrder, 
+  Order, 
   Vendor, 
   OrderFilters, 
   PropertyDetails, 
@@ -22,7 +22,7 @@ import { Logger } from '../utils/logger.js';
  */
 export class EnhancedDatabaseService {
   private logger: Logger;
-  private orders: Map<string, AppraisalOrder>;
+  private orders: Map<string, Order>;
   private vendors: Map<string, Vendor>;
   private properties: Map<string, any>;
   private relationships: Map<string, string[]>; // Track relationships between entities
@@ -42,7 +42,7 @@ export class EnhancedDatabaseService {
   // Order Operations
   // ===============================
 
-  async createOrder(order: AppraisalOrder): Promise<AppraisalOrder> {
+  async createOrder(order: Order): Promise<Order> {
     this.orders.set(order.id, order);
     
     // Track relationships
@@ -54,11 +54,11 @@ export class EnhancedDatabaseService {
     return order;
   }
 
-  async findOrderById(id: string): Promise<AppraisalOrder | null> {
+  async findOrderById(id: string): Promise<Order | null> {
     return this.orders.get(id) || null;
   }
 
-  async findOrders(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: AppraisalOrder[]; total: number }> {
+  async findOrders(filters: OrderFilters, offset: number, limit: number): Promise<{ orders: Order[]; total: number }> {
     let allOrders = Array.from(this.orders.values());
     
     // Apply filters
@@ -92,7 +92,7 @@ export class EnhancedDatabaseService {
     return { orders, total };
   }
 
-  async updateOrder(id: string, order: AppraisalOrder): Promise<AppraisalOrder> {
+  async updateOrder(id: string, order: Order): Promise<Order> {
     const existing = this.orders.get(id);
     if (!existing) {
       throw new Error(`Order not found: ${id}`);
@@ -249,7 +249,7 @@ export class EnhancedDatabaseService {
    * Get orders by vendor with performance metrics
    */
   async getOrdersByVendor(vendorId: string): Promise<{
-    orders: AppraisalOrder[];
+    orders: Order[];
     metrics: {
       totalOrders: number;
       completedOrders: number;
@@ -258,7 +258,7 @@ export class EnhancedDatabaseService {
     };
   }> {
     const orderIds = this.getRelationships('vendor-orders', vendorId);
-    const orders = orderIds.map(id => this.orders.get(id)).filter(Boolean) as AppraisalOrder[];
+    const orders = orderIds.map(id => this.orders.get(id)).filter(Boolean) as Order[];
     
     const completedOrders = orders.filter(o => o.status === OrderStatus.COMPLETED);
     const totalOrders = orders.length;
@@ -618,7 +618,7 @@ export class EnhancedDatabaseService {
       throw new Error('Sample property required for orders');
     }
     
-    const sampleOrders: AppraisalOrder[] = [
+    const sampleOrders: Order[] = [
       {
         id: 'order-001',
         clientId: 'client-001',
