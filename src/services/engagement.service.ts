@@ -550,7 +550,6 @@ export class EngagementService {
         state: loanData.property.state,
         zipCode: loanData.property.zipCode,
       },
-      resolvedPropertyId,
     ).catch(err => {
       logger.warn('Property enrichment failed for added loan (non-fatal)', {
         engagementId,
@@ -644,7 +643,6 @@ export class EngagementService {
           state:   newProp.state    ?? oldProp.state,
           zipCode: newProp.zipCode  ?? oldProp.zipCode,
         },
-        resolvedPropertyId,
       ).catch(err => {
         logger.warn('Property enrichment failed for updated loan address (non-fatal)', {
           engagementId,
