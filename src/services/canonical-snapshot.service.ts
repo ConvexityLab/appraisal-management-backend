@@ -13,6 +13,7 @@ import { computeCompStatistics } from '../mappers/comp-statistics.mapper.js';
 import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
 import { validateCanonicalIngress } from '../utils/validate-canonical-ingress.js';
 import { mapAppraisalOrderToCanonical } from '../mappers/appraisal-order.mapper.js';
+import { mapPropertyEnrichmentToCanonical } from '../mappers/property-enrichment.mapper.js';
 import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type { AppraisalOrder } from '../types/index.js';
@@ -324,12 +325,18 @@ export class CanonicalSnapshotService {
     // when both have a path. See src/mappers/.
     //
     // Mappers invoked:
-    //   axiom-extraction → subject, comps, appraiserInfo, reconciliation
-    //   loan-tape        → loan, ratios
+    //   property-enrichment → subject (public-records, flood, geocoding)
+    //   axiom-extraction    → subject, comps, appraiserInfo, reconciliation
+    //   loan-tape           → loan, ratios
     //   transaction-history → transactionHistory
-    //   avm              → avmCrossCheck
-    //   comp-statistics  → compStatistics (derived from canonical.comps)
-    //   risk-flags       → riskFlags
+    //   avm                 → avmCrossCheck
+    //   comp-statistics     → compStatistics (derived from canonical.comps)
+    //   risk-flags          → riskFlags
+    //
+    // Merge order: enrichment first, then extraction on top. Extraction wins
+    // for any field both sources carry, since the appraisal report is the
+    // authoritative document being QC'd; enrichment is reference data that
+    // fills gaps and feeds cross-check branches (e.g. avmCrossCheck).
     //
     // Sources we don't have a feed for in this code path (e.g. real loan tape
     // for single-order dispatch, AVM provider data, title report) emit
@@ -339,12 +346,30 @@ export class CanonicalSnapshotService {
     // absence.
     const canonical: Record<string, unknown> = {};
 
-    // Order-intake projection: AppraisalOrder fields land in canonical at
-    // intake time so review-program criteria can read canonical paths even
-    // before extraction runs. Extraction merges on top below — extraction is
-    // the authoritative document being QC'd; intake is reference data that
-    // fills gaps. Merge happens via Object.assign after extraction so
-    // extraction wins on overlap.
+    // Three-layer canonical projection. Each layer Object.assigns onto the
+    // accumulator, so later layers override earlier ones for fields they
+    // supply. The exception is extraction (layer 3): for `subject`, extraction
+    // wins only on non-empty values, so earlier layers fill gaps where the
+    // axiom mapper emits sentinel empty strings (e.g. county: '').
+    //
+    // Layer 1: enrichment (public records, flood, geocoding) — least
+    //   authoritative; fills gaps for fields the lender / appraiser don't
+    //   supply directly.
+    // Layer 2: order-intake (AppraisalOrder, lender-supplied facts) —
+    //   overrides enrichment for fields the lender supplies, fills more gaps
+    //   for downstream review-program criteria that read canonical paths
+    //   before extraction runs.
+    // Layer 3: extraction (axiom output from the appraisal report) — most
+    //   authoritative; overlays earlier layers but preserves their values
+    //   where extraction is missing or empty (see mergePreferNonEmpty).
+
+    const enrichmentCanonical = mapPropertyEnrichmentToCanonical(
+      artifacts.enrichment?.dataResult ?? null,
+    );
+    if (enrichmentCanonical) {
+      Object.assign(canonical, enrichmentCanonical);
+    }
+
     const orderCanonical = mapAppraisalOrderToCanonical(artifacts.order);
     if (orderCanonical) {
       Object.assign(canonical, orderCanonical);
@@ -352,42 +377,35 @@ export class CanonicalSnapshotService {
 
     if (artifacts.extractionData) {
       const extractionCanonical = mapAxiomExtractionToCanonical(artifacts.extractionData);
-      // Merge: extraction overlays intake, but per-branch deep merge for
-      // subject so intake-only fields (parcelNumber, condition, etc.) survive
-      // when extraction emits its own subject without those fields.
-      const intakeSubject = (canonical as Partial<CanonicalReportDocument>).subject;
-      const extractSubject = extractionCanonical.subject;
-      if (intakeSubject && extractSubject) {
-        (canonical as Partial<CanonicalReportDocument>).subject = {
-          ...intakeSubject,
-          ...extractSubject,
-        };
-        // Address: deep-merge field-by-field, dropping empty-string sentinels
-        // from extraction (axiom mapper emits county: '' when missing — that
-        // would clobber a real intake county).
-        const intakeAddress = intakeSubject.address;
-        const extractAddress = extractSubject.address;
-        if (intakeAddress || extractAddress) {
-          const merged: Record<string, unknown> = { ...(intakeAddress ?? {}) };
-          for (const [k, v] of Object.entries(extractAddress ?? {})) {
-            if (v == null) continue;
-            if (typeof v === 'string' && v.trim().length === 0) continue;
-            merged[k] = v;
-          }
-          (canonical as Partial<CanonicalReportDocument>).subject = {
-            ...((canonical as Partial<CanonicalReportDocument>).subject ?? {}),
-            address: merged as unknown as CanonicalSubject['address'],
-          } as CanonicalSubject;
+
+      // Merge subject: extraction wins on non-empty fields; earlier layers
+      // (enrichment + intake) preserved where extraction is missing or empty.
+      const baseSubject = (canonical as Partial<CanonicalReportDocument>).subject ?? null;
+      const extractSubject = extractionCanonical.subject ?? null;
+      if (baseSubject || extractSubject) {
+        const baseAddress = (baseSubject?.address ?? null) as Partial<CanonicalSubject['address']> | null;
+        const extractAddress = (extractSubject?.address ?? null) as Partial<CanonicalSubject['address']> | null;
+        const mergedAddress = baseAddress || extractAddress
+          ? mergePreferNonEmpty(baseAddress ?? {}, extractAddress ?? {})
+          : undefined;
+
+        const baseSansAddress = baseSubject ? { ...baseSubject } : {};
+        delete (baseSansAddress as { address?: unknown }).address;
+        const extractSansAddress = extractSubject ? { ...extractSubject } : {};
+        delete (extractSansAddress as { address?: unknown }).address;
+
+        const mergedSubject: Partial<CanonicalSubject> = mergePreferNonEmpty(
+          baseSansAddress as Record<string, unknown>,
+          extractSansAddress as Record<string, unknown>,
+        ) as Partial<CanonicalSubject>;
+        if (mergedAddress) {
+          mergedSubject.address = mergedAddress as unknown as CanonicalSubject['address'];
         }
-      } else {
-        // No overlap — simple assign for non-subject branches.
-        for (const [k, v] of Object.entries(extractionCanonical)) {
-          (canonical as Record<string, unknown>)[k] = v;
-        }
+        (canonical as Partial<CanonicalReportDocument>).subject = mergedSubject as CanonicalSubject;
       }
 
-      // Non-subject branches always copy from extraction (no overlap with
-      // order-intake here — intake only emits subject/loan/ratios).
+      // Copy non-subject branches from extraction directly. Earlier layers
+      // don't produce these.
       for (const [k, v] of Object.entries(extractionCanonical)) {
         if (k === 'subject') continue;
         (canonical as Record<string, unknown>)[k] = v;
@@ -479,4 +497,26 @@ export class CanonicalSnapshotService {
     }
     return value as Record<string, unknown>;
   }
+}
+
+/**
+ * Merge two records preferring the second's value, but only when it is not
+ * empty (null, undefined, or empty string). Used to merge enrichment-derived
+ * subject fields with extraction-derived ones: extraction wins where it has
+ * real values, but enrichment fills in any field extraction left empty.
+ *
+ * Nested objects are NOT recursively merged — callers handle nested
+ * structures (e.g. address) explicitly.
+ */
+function mergePreferNonEmpty(
+  base: Record<string, unknown>,
+  preferred: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(preferred)) {
+    if (v == null) continue;
+    if (typeof v === 'string' && v.trim().length === 0) continue;
+    out[k] = v;
+  }
+  return out;
 }
