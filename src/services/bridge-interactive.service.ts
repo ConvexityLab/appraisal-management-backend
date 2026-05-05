@@ -669,6 +669,56 @@ export class BridgeInteractiveService {
     }
   }
 
+  /**
+   * Get Zestimate by structured address fields.
+   *
+   * Uses access_token as a query parameter instead of Authorization header —
+   * the Bridge zestimates_v2 endpoint requires this auth style. Also uses
+   * separate address.in / city / state / postalCode params instead of a
+   * combined address string.
+   */
+  async getZestimateByStructuredAddress(params: {
+    streetAddress: string;
+    city: string;
+    state: string;
+    postalCode: string;
+  }): Promise<any> {
+    const { streetAddress, city, state, postalCode } = params;
+
+    if (!streetAddress || !city || !state || !postalCode) {
+      throw new Error('streetAddress, city, state, and postalCode are all required');
+    }
+
+    if (!this.serverToken) {
+      throw new Error('BRIDGE_SERVER_TOKEN is not configured');
+    }
+
+    const url = new URL(`${this.zestimatesBaseUrl}/zestimates`);
+    url.searchParams.set('access_token', this.serverToken);
+    url.searchParams.set('address.in', streetAddress);
+    url.searchParams.set('city', city);
+    url.searchParams.set('state', state);
+    url.searchParams.set('postalCode', postalCode);
+
+    try {
+      // Direct fetch — NOT makeRequest() — because Bridge Zestimate requires
+      // access_token as a query param rather than Authorization: Bearer header.
+      const response = await fetch(url.toString(), {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Bridge Zestimate error: ${response.status} ${response.statusText} - ${errorBody}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      this.logger.error('Failed to get Zestimate by structured address', { error, params });
+      throw error;
+    }
+  }
+
   // ==================================================================================
   // ZILLOW GROUP ECONOMIC DATA (Market Statistics)
   // ==================================================================================

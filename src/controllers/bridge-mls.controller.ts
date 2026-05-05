@@ -542,6 +542,39 @@ export function createBridgeMlsRouter(): Router {
     }
   });
 
+  /**
+   * POST /api/bridge-mls/zestimate-address
+   * Get Zestimate by structured address fields (streetAddress, city, state, postalCode).
+   * Uses access_token query-param auth required by Bridge's zestimates_v2 endpoint.
+   */
+  router.post('/zestimate-address', async (req: Request, res: Response) => {
+    const { streetAddress, city, state, postalCode } = req.body;
+
+    if (!streetAddress || !city || !state || !postalCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'streetAddress, city, state, and postalCode are required',
+      });
+    }
+
+    try {
+      const results = await bridgeService.getZestimateByStructuredAddress({
+        streetAddress,
+        city,
+        state,
+        postalCode,
+      });
+      return res.json({ success: true, zestimates: results });
+    } catch (error: any) {
+      logger.error('Failed to get Zestimate by address', { error });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve Zestimate',
+        message: error.message,
+      });
+    }
+  });
+
   // ==================================================================================
   // MARKET DATA ENDPOINTS
   // ==================================================================================

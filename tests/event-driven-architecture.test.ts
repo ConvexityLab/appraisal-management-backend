@@ -3,6 +3,18 @@
  * Tests the Service Bus publisher, subscriber, and notification service integration
  */
 
+// Mock InAppNotificationService to prevent real Cosmos DB connections.
+// DefaultAzureCredential probes the IMDS managed-identity endpoint in CI which
+// silently hangs for ~25s before failing, consuming the entire test timeout.
+vi.mock('../src/services/in-app-notification.service.js', () => ({
+  InAppNotificationService: vi.fn().mockImplementation(() => ({
+    createNotification: vi.fn().mockResolvedValue({ id: 'mock-notification-id' }),
+    listNotifications: vi.fn().mockResolvedValue({ notifications: [], total: 0, unreadCount: 0 }),
+    markAsRead: vi.fn().mockResolvedValue(undefined),
+    dismiss: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 import { ServiceBusEventPublisher } from '../src/services/service-bus-publisher';
 import { ServiceBusEventSubscriber } from '../src/services/service-bus-subscriber';
 import { NotificationService } from '../src/services/core-notification.service';
@@ -15,9 +27,6 @@ import {
   NotificationChannel
 } from '../src/types/events';
 
-// Test timeout for async operations
-// Increased to 30s because the notification service may persist in-app notifications
-// to Azure Cosmos DB which can take up to ~20s on cold connections.
 const TEST_TIMEOUT = 30000;
 
 describe('Event-Driven Architecture', () => {

@@ -103,6 +103,37 @@ export interface OrderCompletedEvent extends BaseEvent {
   };
 }
 
+/**
+ * Fired when a ClientOrder is placed via ClientOrderService.placeClientOrder.
+ *
+ * Consumed by the comp-collection listener (`comp-collection-listener.job.ts`)
+ * to kick off comp-collection for product types in
+ * COMP_COLLECTION_TRIGGER_PRODUCT_TYPES. Other consumers may subscribe
+ * independently — this event is intentionally generic and not coupled to
+ * comp collection.
+ */
+export interface ClientOrderCreatedEvent extends BaseEvent {
+  type: 'client-order.created';
+  category: EventCategory.ORDER;
+  data: {
+    clientOrderId: string;
+    /**
+     * Human-readable client order number (currently aliased to `clientOrderId`
+     * but designed to diverge — e.g. tenant-scoped sequential `CO-2026-0001`).
+     * Carried alongside `clientOrderId` so downstream consumers (comp-selection,
+     * analytics) can persist a display handle without an extra Cosmos read.
+     */
+    clientOrderNumber: string;
+    tenantId: string;
+    /** Optional canonical PropertyRecord id; absent when caller didn't supply one. */
+    propertyId?: string;
+    /** ProductType value as a string (avoids cross-module enum import in the events module). */
+    productType: string;
+    /** ISO timestamp when the order was placed. */
+    placedAt: string;
+  };
+}
+
 /** Fired when an order report has been delivered to the client portal. */
 export interface OrderDeliveredEvent extends BaseEvent {
   type: 'order.delivered';
@@ -1335,6 +1366,7 @@ export type AppEvent =
   | OrderCompletedEvent
   | OrderDeliveredEvent
   | OrderOverdueEvent
+  | ClientOrderCreatedEvent
   | EngagementStatusChangedEvent
   | QCStartedEvent
   | QCCompletedEvent

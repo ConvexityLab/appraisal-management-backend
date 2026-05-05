@@ -122,10 +122,15 @@ export class ArchivingRetentionService {
       throw new Error(`Invalid retention period: ${updates.retentionYears} years. Minimum is 1 year.`);
     }
 
+    const now = new Date().toISOString();
+    const updatedAt = now > existing.updatedAt
+      ? now
+      : new Date(new Date(existing.updatedAt).getTime() + 1).toISOString();
+
     const updated: RetentionPolicy = {
       ...existing,
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     };
 
     const container = (this.dbService as any).ordersContainer;

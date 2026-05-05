@@ -68,7 +68,7 @@ import { WaiverScreeningService } from '../services/waiver-screening.service.js'
 import { ComplianceService } from '../services/ComplianceService.js';
 import { PropertyEnrichmentService } from '../services/property-enrichment.service.js';
 import { PropertyRecordService } from '../services/property-record.service.js';
-import { buildApiOrderSourceIdentity, buildManualDraftSourceIdentity } from '../types/intake-source.types.js';
+import { AddressServiceGeocoder } from '../services/address-service.geocoder.js';
 
 const logger = new Logger('OrderController');
 
@@ -149,7 +149,12 @@ export class OrderController {
     this.router = Router();
     this.dbService = dbService;
     const propertyRecordService = new PropertyRecordService(dbService);
-    this.enrichmentService = new PropertyEnrichmentService(dbService, propertyRecordService);
+    this.enrichmentService = new PropertyEnrichmentService(
+      dbService,
+      propertyRecordService,
+      undefined,
+      new AddressServiceGeocoder(),
+    );
     this.eventService = new OrderEventService(this.enrichmentService);
     this.auditService = new AuditTrailService();
     this.slaService = new SLATrackingService();

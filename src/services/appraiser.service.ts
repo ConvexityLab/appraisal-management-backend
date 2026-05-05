@@ -218,7 +218,7 @@ export class AppraiserService {
       type: 'appraiser_assignment',
       tenantId,
       orderId,
-      orderNumber: `ORD-${orderId}`,
+      orderNumber: orderId,
       appraiserId,
       assignedAt: new Date().toISOString(),
       assignedBy,

@@ -284,9 +284,48 @@ export interface CanonicalPropertyCore {
   /** Interior feature condition detail. */
   interiorConditionDetail?: CanonicalInteriorQualityCondition | null;
 
+  // -- Photos --------------------------------------------------------------
+  /**
+   * URL-based photos of the property (subject or comp).
+   * Supplements (does not replace) `MlsExtension.photos` (vendor URLs on comps)
+   * and `ReportPhotoAsset` (blob-path photos on the completion report).
+   * URLs only — never blob paths.
+   */
+  photos?: PropertyPhoto[] | null;
+
   // â”€â”€ Geolocation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   latitude: number | null;
   longitude: number | null;
+}
+
+// -------------------------------------------------------------------------------
+// PROPERTY PHOTO  (URL-based; embedded on CanonicalPropertyCore)
+// -------------------------------------------------------------------------------
+
+/**
+ * A single photo associated with a property (subject or comp).
+ * `url` is always an HTTPS URL — never a blob path. Blob-stored report photos
+ * are tracked separately on `CanonicalCompletionReport.photos` via `ReportPhotoAsset`.
+ */
+export interface PropertyPhoto {
+  /** HTTPS URL of the photo. */
+  url: string;
+  /** Origin of the photo. `mls` = vendor MLS feed; `manual` = user upload/entry. */
+  source?: 'mls' | 'manual' | 'vendor' | 'other' | null;
+  /** Optional UAD-aligned classification of what the photo depicts. */
+  type?:
+    | 'SUBJECT_FRONT'
+    | 'SUBJECT_REAR'
+    | 'SUBJECT_INTERIOR'
+    | 'SUBJECT_STREET'
+    | 'COMP_FRONT'
+    | 'AERIAL'
+    | 'FLOOR_PLAN'
+    | null;
+  /** Human-readable caption for the photo. */
+  caption?: string | null;
+  /** ISO-8601 timestamp of when the photo was taken. */
+  takenAt?: string | null;
 }
 
 // -------------------------------------------------------------------------------

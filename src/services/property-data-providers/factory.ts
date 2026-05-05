@@ -1,76 +1,87 @@
 /**
  * Property Data Provider Factory
  *
- * Selects the appropriate PropertyDataProvider implementation based on
+ * Selects and composes PropertyDataProvider implementations based on
  * available environment configuration.
  *
- * Resolution order:
- *   1. BRIDGE_SERVER_TOKEN + ATTOM_API_KEY → MergingPropertyDataProvider
- *        (Bridge + ATTOM run concurrently; results merged field-by-field so
- *        Bridge's MLS characteristics are preferred but ATTOM fills in APN,
- *        tax assessment, flood zone, ownership, and deed data that Bridge misses)
- *   2. BRIDGE_SERVER_TOKEN only            → BridgePropertyDataProvider
- *   3. ATTOM_API_KEY or cache present      → AttomPropertyDataProvider (cache-first)
- *   4. Neither                             → NullPropertyDataProvider (logs warning)
+ * Resolution order (highest priority first):
+ *   1. LocalAttomPropertyDataProvider — when COSMOS_ENDPOINT (or
+ *      AZURE_COSMOS_ENDPOINT) is set, queries the bulk-imported `attom-data`
+ *      Cosmos container before any live API call.
+ *   2. BridgePropertyDataProvider     — when BRIDGE_SERVER_TOKEN is set.
+ *   3. AttomPropertyDataProvider      — when ATTOM_API_KEY is set.
  *
- * AttomPropertyDataProvider always uses the property-data-cache as its primary
- * source and falls back to the live ATTOM API only when ATTOM_API_KEY is set.
- *
- * NOTE: MergingPropertyDataProvider is used (not ChainedPropertyDataProvider) when both
- * keys are present.  The chain short-circuits on the first non-null result, which means
- * ATTOM data (APN, tax, flood, ownership) would be silently discarded whenever Bridge
- * found ANY match — even a thin one with no public-record fields.
+ * Active providers are wrapped in a ChainedPropertyDataProvider when more
+ * than one is enabled (first non-null result wins). When none are enabled
+ * the factory returns a NullPropertyDataProvider that logs a warning on
+ * every lookup.
  *
  * Usage:
- *   const provider = createPropertyDataProvider(cosmosService);
+ *   const provider = createPropertyDataProvider(initializedCosmosDbService);
  *   const result = await provider.lookupByAddress({ street, city, state, zipCode });
+ *
+ * Note: `cosmos` is required when COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT is set.
+ * Pass the already-initialized CosmosDbService instance — do not let the factory
+ * create its own, as the new instance would never have initialize() called on it.
  */
 
 import type { PropertyDataProvider } from '../../types/property-data.types.js';
-import type { CosmosDbService } from '../cosmos-db.service.js';
+import { LocalAttomPropertyDataProvider } from './local-attom.provider.js';
 import { BridgePropertyDataProvider } from './bridge.provider.js';
 import { AttomPropertyDataProvider } from './attom.provider.js';
-import { MergingPropertyDataProvider } from './merging.provider.js';
+import { ChainedPropertyDataProvider } from './chained.provider.js';
 import { NullPropertyDataProvider } from './null.provider.js';
-import { PropertyDataCacheService } from '../property-data-cache.service.js';
-import { AttomProviderService } from '../attom-provider.service.js';
-import { AttomService } from '../attom.service.js';
+import { CosmosDbService } from '../cosmos-db.service.js';
 import { Logger } from '../../utils/logger.js';
 
 const logger = new Logger('PropertyDataProviderFactory');
 
-export function createPropertyDataProvider(cosmos: CosmosDbService): PropertyDataProvider {
+export function createPropertyDataProvider(cosmos?: CosmosDbService): PropertyDataProvider {
+  const hasCosmos = Boolean(
+    process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT,
+  );
   const hasBridge = Boolean(process.env.BRIDGE_SERVER_TOKEN);
   const hasAttom = Boolean(process.env.ATTOM_API_KEY);
 
-  // Always build the cache-backed ATTOM provider; live fallback is optional.
-  const cache = new PropertyDataCacheService(cosmos);
-  const attomService = hasAttom ? new AttomService() : null;
-  const attomProvider = new AttomProviderService(cache, attomService);
+  // Build the ordered chain of enabled providers. Order is intentional:
+  // Cosmos first to avoid live API calls when the bulk-imported cache
+  // already has the subject.
+  const chain: PropertyDataProvider[] = [];
+  const chainNames: string[] = [];
 
-  if (hasBridge && hasAttom) {
-    logger.info(
-      'Property data provider: Merging (Bridge Interactive ⊕ ATTOM Data Solutions — ' +
-      'concurrent lookup, field-level merge; Bridge preferred for physical characteristics)',
-    );
-    return new MergingPropertyDataProvider([
-      new BridgePropertyDataProvider(),
-      new AttomPropertyDataProvider(attomProvider),
-    ]);
+  if (hasCosmos) {
+    if (!cosmos) {
+      throw new Error(
+        'createPropertyDataProvider: a CosmosDbService instance must be provided when ' +
+          'COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT is set',
+      );
+    }
+    chain.push(new LocalAttomPropertyDataProvider(cosmos));
+    chainNames.push('LocalAttom (Cosmos)');
   }
-
   if (hasBridge) {
-    logger.info('Property data provider: Bridge Interactive (live data)');
-    return new BridgePropertyDataProvider();
+    chain.push(new BridgePropertyDataProvider());
+    chainNames.push('Bridge Interactive');
+  }
+  if (hasAttom) {
+    chain.push(new AttomPropertyDataProvider());
+    chainNames.push('ATTOM Data Solutions');
   }
 
-  // Use ATTOM provider (cache-first) whenever the cache is available, regardless
-  // of whether the live API key is also configured.
-  logger.info(
-    hasAttom
-      ? 'Property data provider: ATTOM Data Solutions (cache-first, live fallback enabled)'
-      : 'Property data provider: ATTOM Data Solutions (cache-only — ATTOM_API_KEY not set)',
-  );
-  return new AttomPropertyDataProvider(attomProvider);
+  if (chain.length === 0) {
+    logger.warn(
+      'Property data provider: None configured (NullPropertyDataProvider). ' +
+        'Set COSMOS_ENDPOINT, BRIDGE_SERVER_TOKEN, or ATTOM_API_KEY to enable subject property enrichment.',
+    );
+    return new NullPropertyDataProvider();
+  }
+
+  if (chain.length === 1) {
+    logger.info(`Property data provider: ${chainNames[0]}`);
+    return chain[0]!;
+  }
+
+  logger.info(`Property data provider chain: ${chainNames.join(' → ')}`);
+  return new ChainedPropertyDataProvider(chain);
 }
 

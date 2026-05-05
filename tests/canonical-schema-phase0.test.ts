@@ -398,4 +398,37 @@ describe('Canonical Schema — Phase 0', () => {
       expect(doc.effectiveDates).toBeUndefined();
     });
   });
+
+  // ─── PropertyPhoto on CanonicalPropertyCore ────────────────────────────────
+  describe('PropertyPhoto — photos field on CanonicalPropertyCore', () => {
+    it('should accept a populated photos array on a subject', () => {
+      const subject: Partial<CanonicalSubject> = {
+        photos: [
+          { url: 'https://example.com/front.jpg', source: 'manual', type: 'SUBJECT_FRONT' },
+          { url: 'https://example.com/rear.jpg', source: 'manual', type: 'SUBJECT_REAR', caption: 'Back yard' },
+        ],
+      };
+      expect(subject.photos).toHaveLength(2);
+      expect(subject.photos?.[0]?.type).toBe('SUBJECT_FRONT');
+      expect(subject.photos?.[1]?.caption).toBe('Back yard');
+    });
+
+    it('should accept photos: null (no photos available)', () => {
+      const subject: Partial<CanonicalSubject> = { photos: null };
+      expect(subject.photos).toBeNull();
+    });
+
+    it('should accept photos field omitted (backward-compat)', () => {
+      const subject: Partial<CanonicalSubject> = {};
+      expect(subject.photos).toBeUndefined();
+    });
+
+    it('PropertyPhoto requires only `url`; other fields are optional', () => {
+      const subject: Partial<CanonicalSubject> = {
+        photos: [{ url: 'https://example.com/x.jpg' }],
+      };
+      expect(subject.photos?.[0]?.url).toBe('https://example.com/x.jpg');
+      expect(subject.photos?.[0]?.source).toBeUndefined();
+    });
+  });
 });

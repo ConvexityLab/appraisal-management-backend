@@ -134,10 +134,16 @@ export class FieldReviewTriggerService {
     const existing = await this.getRule(ruleId, tenantId);
     if (!existing) throw new Error(`Trigger rule not found: ${ruleId}`);
 
+    // Always produce a timestamp strictly later than the existing one.
+    // Math.max(now, existingMs + 1) guarantees this even when Date.now()
+    // returns the same millisecond as existing.updatedAt (fast CI runners).
+    const existingMs = new Date(existing.updatedAt).getTime();
+    const updatedAt = new Date(Math.max(Date.now(), existingMs + 1)).toISOString();
+
     const updated: ReviewTriggerRule = {
       ...existing,
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     };
 
     const container = (this.dbService as any).ordersContainer;

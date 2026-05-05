@@ -664,7 +664,9 @@ var containers = [
         { path: '/"_etag"/?' }
       ]
     }
-  }  // PDF form template catalog — platform-wide, independent of individual orders
+  }
+  // attom-data container is managed by the dedicated cosmos-attom-data-container.bicep module.
+  // PDF form template catalog — platform-wide, independent of individual orders
   {
     name: 'document-templates'
     partitionKey: '/id'
@@ -1033,12 +1035,12 @@ var containers = [
       ]
     }
   }
-  // Client automation configuration — per-client feature flags and pipeline settings.
-  // Replaces tenant-automation-configs; partition key /clientId reflects the business domain
-  // (clientId = logical client identifier, e.g. "vision"), distinct from Azure AD tenantId.
+  // Raw property enrichment records — audit trail for every Bridge/provider call.
+  // Used by PropertyEnrichmentService to persist results and support cache-hit tracking.
+  // Queries filter by orderId or engagementId within tenant, ordered by createdAt.
   {
-    name: 'client-configs'
-    partitionKey: '/clientId'
+    name: 'property-enrichments'
+    partitionKey: '/tenantId'
     indexingPolicy: {
       indexingMode: 'consistent'
       automatic: true
@@ -1047,11 +1049,23 @@ var containers = [
       ]
       excludedPaths: [
         { path: '/"_etag"/?' }
+        { path: '/dataResult/*' }
       ]
       compositeIndexes: [
         [
-          { path: '/clientId', order: 'ascending' }
-          { path: '/entityType', order: 'ascending' }
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/orderId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/propertyId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/engagementId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
         ]
       ]
     }
@@ -1085,8 +1099,12 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
       { name: 'EnableServerless' }
     ]
     publicNetworkAccess: 'Enabled'
-    // Allow all Azure services (includes Container Apps) plus approved public clients.
-    ipRules: cosmosIpRules
+    ipRules: [
+      // Allow all Azure services (includes Container Apps)
+      { ipAddressOrRange: '0.0.0.0' }
+      // hiroh dev access
+      { ipAddressOrRange: '72.66.11.53' }
+    ]
     isVirtualNetworkFilterEnabled: false
     enableAnalyticalStorage: true
     analyticalStorageConfiguration: {

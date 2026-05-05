@@ -24,7 +24,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
     // ── ENG-001: SINGLE Full Appraisal — IN_PROGRESS ──────────────────────
     {
       id: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
-      engagementNumber: 'SEED-ENG-2026-00201',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -59,9 +59,9 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
             coordinates: { latitude: 32.8312, longitude: -96.8187 },
           },
           status: 'IN_PROGRESS',
-          products: [
+          clientOrders: [
             {
-              id: 'seed-prod-eng001-001',
+              id: 'seed-co-eng001-001',
               productType: 'FULL_APPRAISAL',
               status: 'IN_PROGRESS',
               instructions: 'Standard 1004 — purchase transaction.',
@@ -87,7 +87,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
     // ── ENG-002: SINGLE BPO — ACCEPTED (awaiting site visit) ──────────────
     {
       id: ENGAGEMENT_IDS.SINGLE_BPO_002,
-      engagementNumber: 'SEED-ENG-2026-00202',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_BPO_002,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -122,9 +122,9 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
             coordinates: { latitude: 32.7942, longitude: -96.7711 },
           },
           status: 'IN_PROGRESS',
-          products: [
+          clientOrders: [
             {
-              id: 'seed-prod-eng002-001',
+              id: 'seed-co-eng002-001',
               productType: 'BPO',
               status: 'ASSIGNED',
               instructions: 'Interior + exterior BPO. Distressed sale — confirm condition.',
@@ -150,7 +150,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
     // ── ENG-003: PORTFOLIO — 2 loans, BPO + Drive-By — IN_PROGRESS ────────
     {
       id: ENGAGEMENT_IDS.PORTFOLIO_BPO_DRIVEBY_003,
-      engagementNumber: 'SEED-ENG-2026-00203',
+      engagementNumber: ENGAGEMENT_IDS.PORTFOLIO_BPO_DRIVEBY_003,
       tenantId,
       engagementType: 'PORTFOLIO',
       loansStoredExternally: false,
@@ -185,9 +185,9 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
             coordinates: { latitude: 32.7484, longitude: -97.3308 },
           },
           status: 'IN_PROGRESS',
-          products: [
+          clientOrders: [
             {
-              id: 'seed-prod-eng003-001',
+              id: 'seed-co-eng003-001',
               productType: 'BPO',
               status: 'IN_PROGRESS',
               instructions: 'Exterior BPO only. REO listing — no occupant access.',
@@ -217,9 +217,9 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
             coordinates: { latitude: 32.8081, longitude: -96.7743 },
           },
           status: 'PENDING',
-          products: [
+          clientOrders: [
             {
-              id: 'seed-prod-eng003-002',
+              id: 'seed-co-eng003-002',
               productType: 'DRIVE_BY',
               status: 'PENDING',
               instructions: 'VA certificate of eligibility confirmed. No interior access needed.',
@@ -245,7 +245,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
     // ── ENG-004: SINGLE Full Appraisal — DELIVERED (completed) ────────────
     {
       id: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
-      engagementNumber: 'SEED-ENG-2026-00204',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -280,9 +280,9 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
             coordinates: { latitude: 32.8312, longitude: -96.7987 },
           },
           status: 'DELIVERED',
-          products: [
+          clientOrders: [
             {
-              id: 'seed-prod-eng004-001',
+              id: 'seed-co-eng004-001',
               productType: 'FULL_APPRAISAL',
               status: 'COMPLETED',
               instructions: 'Standard 1004 — refinance transaction.',
@@ -308,7 +308,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
     // ── ENG-005: SINGLE Hybrid (inspector + desk appraiser) — QC ──────────
     {
       id: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
-      engagementNumber: 'SEED-ENG-2026-00205',
+      engagementNumber: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
       tenantId,
       engagementType: 'SINGLE',
       loansStoredExternally: false,
@@ -342,9 +342,9 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
             coordinates: { latitude: 40.0150, longitude: -105.2705 },
           },
           status: 'QC',
-          products: [
+          clientOrders: [
             {
-              id: 'seed-prod-eng005-001',
+              id: 'seed-co-eng005-001',
               productType: 'HYBRID',
               status: 'DELIVERED',
               instructions: 'Hybrid — 3rd-party inspector collects data; desk appraiser completes UAD form.',

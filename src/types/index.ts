@@ -92,8 +92,8 @@ export interface AppraisalOrder {
   engagementId?: string;
   /** FK to the specific EngagementLoan within the engagement */
   engagementLoanId?: string;
-  /** FK to the specific EngagementProduct within the loan */
-  engagementProductId?: string;
+  /** FK to the specific EngagementClientOrder within the loan */
+  engagementClientOrderId?: string;
   // â”€â”€ Report linkage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the report document in the reporting container, written back on upsert. */
   reportId?: string;

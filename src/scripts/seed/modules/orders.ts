@@ -39,7 +39,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       qcStatus: 'PASSED', qcScore: 94,
       engagementId: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
       engagementLoanId: 'seed-loan-eng004-001',
-      engagementProductId: 'seed-prod-eng004-001',
+      engagementClientOrderId: 'seed-co-eng004-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
         rankedVendors: [
@@ -125,7 +125,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       reportId: REPORT_IDS.FULL_1004_ORDER_003,
       engagementId: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
       engagementLoanId: 'seed-loan-eng001-001',
-      engagementProductId: 'seed-prod-eng001-001',
+      engagementClientOrderId: 'seed-co-eng001-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
         rankedVendors: [
@@ -264,7 +264,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       appraiserFee: 390,
       engagementId: ENGAGEMENT_IDS.SINGLE_BPO_002,
       engagementLoanId: 'seed-loan-eng002-001',
-      engagementProductId: 'seed-prod-eng002-001',
+      engagementClientOrderId: 'seed-co-eng002-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
         rankedVendors: [
@@ -296,7 +296,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       appraiserFee: 600, appraisedValue: 720000,
       engagementId: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
       engagementLoanId: 'seed-loan-eng005-001',
-      engagementProductId: 'seed-prod-eng005-001',
+      engagementClientOrderId: 'seed-co-eng005-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
         rankedVendors: [

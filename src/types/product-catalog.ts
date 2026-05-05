@@ -6,7 +6,7 @@
  * The codebase previously had six separate, partially-overlapping product type
  * vocabularies maintained in isolation:
  *
- *   • EngagementProductType enum (engagement.types.ts)             — 12 SCREAMING_SNAKE values
+ *   • EngagementClientOrder product types (engagement.types.ts)             — 12 SCREAMING_SNAKE values
  *   • OrderType enum (order-management.ts)                         — 8 SCREAMING_SNAKE values (legacy)
  *   • order.productType free string (various services)             — snake_case values from frontend
  *   • ProductType union (order-schema.ts, frontend)                — SCREAMING_SNAKE w/ form numbers
@@ -24,7 +24,7 @@
  * ---------
  *   Engagement
  *     └── EngagementLoan (many, embedded)
- *           └── EngagementProduct (many) — productType: ProductType
+ *           └── EngagementClientOrder (many) — productType: ProductType
  *                 └── VendorOrder / AppraisalOrder (many) — productType: ProductType
  *                       └── Document (many) — category: DocumentCategory
  *
@@ -93,13 +93,13 @@ export type DocumentCategory = typeof DocumentCategory[keyof typeof DocumentCate
  * Canonical product type identifiers — SCREAMING_SNAKE strings.
  *
  * These values flow through the full hierarchy:
- *   EngagementProduct.productType → VendorOrder.productType → Document routing
+ *   EngagementClientOrder.productType → VendorOrder.productType → Document routing
  *
  * SCREAMING_SNAKE is used (not snake_case) so values are self-documenting in
  * Cosmos documents and JSON payloads without needing a lookup table.
  *
  * Backward-compat note:
- *   - All former EngagementProductType enum values are present unchanged.
+ *   - All former product type enum values are present unchanged.
  *   - snake_case aliases used by the direct-order form (full_appraisal, etc.)
  *     normalize to these keys via `.toUpperCase()` — see file header.
  */
@@ -113,13 +113,13 @@ export const ProductType = {
   EXTERIOR_ONLY:    'EXTERIOR_ONLY',
   /** FNMA 1004D desktop appraisal (no inspection) */
   DESKTOP_APPRAISAL: 'DESKTOP_APPRAISAL',
-  /** Alias — EngagementProductType backward compat */
+  /** Alias — backward compat */
   DESKTOP_REVIEW:   'DESKTOP_REVIEW',
   /** FNMA 1073 condominium appraisal */
   CONDO_APPRAISAL:  'CONDO_APPRAISAL',
   /** Hybrid: third-party inspector + desk appraiser */
   HYBRID_APPRAISAL: 'HYBRID_APPRAISAL',
-  /** Alias — EngagementProductType backward compat */
+  /** Alias — backward compat */
   HYBRID:           'HYBRID',
   /** Non-USPAP evaluation (evaluation report) */
   EVALUATION:       'EVALUATION',

@@ -79,44 +79,45 @@ export const APPRAISER_IDS = {
 // ─── Orders ───────────────────────────────────────────────────────────────────
 export const ORDER_IDS = {
   /** COMPLETED — full 1004, passed QC, delivered */
-  COMPLETED_001: 'seed-order-001',
+  COMPLETED_001: 'SEED-VO-00101',
   /** QC_REVIEW — pending QC analyst assignment */
-  QC_REVIEW_002: 'seed-order-002',
+  QC_REVIEW_002: 'SEED-VO-00102',
   /** IN_PROGRESS — rush, inspection completed */
-  IN_PROGRESS_003: 'seed-order-003',
+  IN_PROGRESS_003: 'SEED-VO-00103',
   /** PENDING_ASSIGNMENT — new, awaiting RFB */
-  PENDING_004: 'seed-order-004',
+  PENDING_004: 'SEED-VO-00104',
   /** NEW — just received from client */
-  NEW_005: 'seed-order-005',
+  NEW_005: 'SEED-VO-00105',
   /** IN_PROGRESS — fix-and-flip, ARV analysis */
-  FIX_FLIP_006: 'seed-order-006',
+  FIX_FLIP_006: 'SEED-VO-00106',
   /** ASSIGNED — vendor assigned, awaiting acceptance */
-  ASSIGNED_007: 'seed-order-007',
+  ASSIGNED_007: 'SEED-VO-00107',
   /** ACCEPTED — vendor accepted, inspection scheduled */
-  ACCEPTED_008: 'seed-order-008',
+  ACCEPTED_008: 'SEED-VO-00108',
   /** SUBMITTED — report submitted, awaiting QC */
-  SUBMITTED_009: 'seed-order-009',
+  SUBMITTED_009: 'SEED-VO-00109',
   /** REVISION_REQUESTED — QC found issues */
-  REVISION_010: 'seed-order-010',
+  REVISION_010: 'SEED-VO-00110',
   /** CANCELLED — client cancelled */
-  CANCELLED_011: 'seed-order-011',
+  CANCELLED_011: 'SEED-VO-00111',
   /** COMPLETED — drive-by, routine */
-  COMPLETED_DRIVEBY_012: 'seed-order-012',
+  COMPLETED_DRIVEBY_012: 'SEED-VO-00112',
 } as const;
 
+/** @deprecated ID and orderNumber are now the same value. Use ORDER_IDS directly. */
 export const ORDER_NUMBERS: Record<string, string> = {
-  [ORDER_IDS.COMPLETED_001]: 'SEED-2026-00101',
-  [ORDER_IDS.QC_REVIEW_002]: 'SEED-2026-00102',
-  [ORDER_IDS.IN_PROGRESS_003]: 'SEED-2026-00103',
-  [ORDER_IDS.PENDING_004]: 'SEED-2026-00104',
-  [ORDER_IDS.NEW_005]: 'SEED-2026-00105',
-  [ORDER_IDS.FIX_FLIP_006]: 'SEED-2026-00106',
-  [ORDER_IDS.ASSIGNED_007]: 'SEED-2026-00107',
-  [ORDER_IDS.ACCEPTED_008]: 'SEED-2026-00108',
-  [ORDER_IDS.SUBMITTED_009]: 'SEED-2026-00109',
-  [ORDER_IDS.REVISION_010]: 'SEED-2026-00110',
-  [ORDER_IDS.CANCELLED_011]: 'SEED-2026-00111',
-  [ORDER_IDS.COMPLETED_DRIVEBY_012]: 'SEED-2026-00112',
+  [ORDER_IDS.COMPLETED_001]: ORDER_IDS.COMPLETED_001,
+  [ORDER_IDS.QC_REVIEW_002]: ORDER_IDS.QC_REVIEW_002,
+  [ORDER_IDS.IN_PROGRESS_003]: ORDER_IDS.IN_PROGRESS_003,
+  [ORDER_IDS.PENDING_004]: ORDER_IDS.PENDING_004,
+  [ORDER_IDS.NEW_005]: ORDER_IDS.NEW_005,
+  [ORDER_IDS.FIX_FLIP_006]: ORDER_IDS.FIX_FLIP_006,
+  [ORDER_IDS.ASSIGNED_007]: ORDER_IDS.ASSIGNED_007,
+  [ORDER_IDS.ACCEPTED_008]: ORDER_IDS.ACCEPTED_008,
+  [ORDER_IDS.SUBMITTED_009]: ORDER_IDS.SUBMITTED_009,
+  [ORDER_IDS.REVISION_010]: ORDER_IDS.REVISION_010,
+  [ORDER_IDS.CANCELLED_011]: ORDER_IDS.CANCELLED_011,
+  [ORDER_IDS.COMPLETED_DRIVEBY_012]: ORDER_IDS.COMPLETED_DRIVEBY_012,
 };
 
 // ─── QC ───────────────────────────────────────────────────────────────────────
@@ -332,15 +333,15 @@ export const TENANT_CONFIG_IDS = {
 // ─── Engagements ──────────────────────────────────────────────────────────────
 export const ENGAGEMENT_IDS = {
   /** SINGLE, Full Appraisal, IN_PROGRESS — First Horizon */
-  SINGLE_FULL_APPRAISAL_001: 'seed-engagement-001',
+  SINGLE_FULL_APPRAISAL_001: 'SEED-ENG-2026-00201',
   /** SINGLE, BPO, IN_PROGRESS (BPO site visit awaiting) — Pacific Coast */
-  SINGLE_BPO_002: 'seed-engagement-002',
+  SINGLE_BPO_002: 'SEED-ENG-2026-00202',
   /** PORTFOLIO (2 loans: BPO + Drive-By), IN_PROGRESS — National AMC */
-  PORTFOLIO_BPO_DRIVEBY_003: 'seed-engagement-003',
+  PORTFOLIO_BPO_DRIVEBY_003: 'SEED-ENG-2026-00203',
   /** SINGLE, Full Appraisal, DELIVERED — First Horizon */
-  SINGLE_DELIVERED_004: 'seed-engagement-004',
+  SINGLE_DELIVERED_004: 'SEED-ENG-2026-00204',
   /** SINGLE, Hybrid, QC — ClearPath AMC */
-  SINGLE_HYBRID_005: 'seed-engagement-005',
+  SINGLE_HYBRID_005: 'SEED-ENG-2026-00205',
 } as const;
 
 // ─── Reports (canonical reporting container) ──────────────────────────────────

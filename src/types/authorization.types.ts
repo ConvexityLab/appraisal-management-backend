@@ -185,6 +185,8 @@ export interface AuthorizationAuditLog {
 
 export type ResourceType = 
   | 'order' 
+  | 'client_order'
+  | 'vendor_order'
   | 'vendor' 
   | 'qc_review' 
   | 'qc_queue' 

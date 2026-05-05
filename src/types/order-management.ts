@@ -275,8 +275,8 @@ export interface AppraisalOrder {
   engagementId?: string;
   /** FK to the specific EngagementLoan within the parent Engagement */
   engagementLoanId?: string;
-  /** FK to the specific EngagementProduct within the parent Engagement */
-  engagementProductId?: string;
+  /** FK to the specific EngagementClientOrder within the parent Engagement */
+  engagementClientOrderId?: string;
 
   // Metadata
   createdBy: string;

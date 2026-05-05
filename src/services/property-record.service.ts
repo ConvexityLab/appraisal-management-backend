@@ -63,7 +63,7 @@ function normCity(city: string): string {
 /**
  * Returns a 5-digit ZIP code regardless of whether the input includes ZIP+4.
  */
-function zip5(zip: string): string {
+export function zip5(zip: string): string {
   return (zip ?? '').replace(/\s/g, '').split('-')[0]!.padEnd(5, ' ').slice(0, 5).trim();
 }
 
@@ -337,7 +337,8 @@ export class PropertyRecordService {
     changes: Partial<Omit<PropertyRecord, 'id' | 'tenantId' | 'recordVersion' | 'versionHistory' | 'createdAt' | 'createdBy'>>,
     reason: string,
     source: PropertyVersionEntry['source'],
-    changedBy: string
+    changedBy: string,
+    sourceProvider?: string,
   ): Promise<PropertyRecord> {
     if (!reason || !reason.trim()) {
       throw new Error('PropertyRecordService.createVersion: reason is required');
@@ -378,6 +379,7 @@ export class PropertyRecordService {
       createdBy: changedBy,
       reason,
       source,
+      ...(sourceProvider ? { sourceProvider } : {}),
       changedFields,
       previousValues,
     };

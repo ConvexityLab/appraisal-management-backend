@@ -150,6 +150,9 @@ import { QuickBooksController } from '../controllers/quickbooks.controller.js';
 
 // Import Phase 5 LOS / GSE / Portal controllers
 import { createLosRouter } from '../controllers/los.controller.js';
+
+// Import Inspection Vendor controller (generic inspection company integration)
+import { createInspectionVendorRouter } from '../controllers/inspection-vendor.controller.js';
 import { createGseRouter } from '../controllers/gse.controller.js';
 import { createPortalRouter } from '../controllers/portal.controller.js';
 
@@ -197,6 +200,16 @@ import { BulkIngestionProcessorService } from '../services/bulk-ingestion-proces
 import { BulkIngestionCanonicalWorkerService } from '../services/bulk-ingestion-canonical-worker.service.js';
 import { BulkIngestionOrderCreationWorkerService } from '../services/bulk-ingestion-order-creation-worker.service.js';
 import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.job.js';
+import { CompCollectionListenerJob } from '../jobs/comp-collection-listener.job.js';
+import { OrderCompCollectionService } from '../services/order-comp-collection.service.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
+import { AttomDataCompSearchService } from '../services/attom-data-comp-search.service.js';
+import { CompSelectionStrategyRegistry } from '../services/comp-selection/registry.js';
+import { CompSelectionPromptLoader } from '../services/comp-selection/prompt-loader.js';
+import { TieredAiCompSelectionStrategy } from '../services/comp-selection/strategies/tiered-ai.strategy.js';
+import { WeightedCompSelectionStrategy } from '../services/comp-selection/strategies/weighted.strategy.js';
+import { CompBasedValueEstimator } from '../services/value-estimate/comp-based.estimator.js';
+import { UniversalAIService } from '../services/universal-ai.service.js';
 import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion-extraction-worker.service.js';
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
@@ -244,6 +257,9 @@ import { ESignatureController } from '../controllers/esignature.controller.js';
 
 // Import Order Controller (Phase 0.2 — extracted from inline handlers)
 import { OrderController } from '../controllers/order.controller.js';
+import { ClientOrderController } from '../controllers/client-order.controller.js';
+import { VendorOrderController } from '../controllers/vendor-order.controller.js';
+import { OrderComparablesController } from '../controllers/order-comparables.controller.js';
 
 // Import Client Controller (G10 — Lender / AMC / Broker management)
 import { ClientController } from '../controllers/client.controller.js';
@@ -337,6 +353,7 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionCanonicalWorkerService?: BulkIngestionCanonicalWorkerService;
   private bulkIngestionOrderCreationWorkerService?: BulkIngestionOrderCreationWorkerService;
   private bulkUploadEventListenerJob?: BulkUploadEventListenerJob;
+  private compCollectionListenerJob?: CompCollectionListenerJob;
   private bulkIngestionExtractionWorkerService?: BulkIngestionExtractionWorkerService;
   private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
@@ -705,6 +722,12 @@ export class AppraisalManagementAPIServer {
         this.authzMiddleware.loadUserProfile(),
         createPortalRouter(this.dbService)
       );
+
+    // Inspection Vendor — generic inspection company API integration (iVueit etc.)
+    this.app.use('/api/inspection',
+      this.unifiedAuth.authenticate(),
+      createInspectionVendorRouter(this.dbService)
+    );
 
     // Auto-Assignment & Vendor Matching (authenticated users with proper permissions)
     this.app.use('/api/auto-assignment',
@@ -1252,8 +1275,55 @@ export class AppraisalManagementAPIServer {
       this.app.post('/api/auth/test-token', this.generateTestToken.bind(this));
     }
 
-    // NOTE: Order Management and other authz-guarded routes registered in setupAuthorizationRoutes()
-    // after authzMiddleware is initialized.
+    // NOTE: Authorization routes registered separately after authzMiddleware initialization
+
+    // Order Management - CRUD, status lifecycle, dashboard (Phase 0.2)
+    // Registered here (not in setupAuthorizationRoutes) so it works even when authzMiddleware is absent.
+    // OrderController handles its own authz internally via optional authzMiddleware param.
+    this.orderController = new OrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      this.orderController.router
+    );
+
+    // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
+    // Additive: legacy /api/orders is unchanged. Frontends opt in by
+    // posting to /api/client-orders. See controllers/client-order.controller.ts.
+    const clientOrderController = new ClientOrderController(this.dbService);
+    this.app.use('/api/client-orders',
+      this.unifiedAuth.authenticate(),
+      clientOrderController.router
+    );
+
+    // VendorOrder reads — children of a parent ClientOrder. Read-only:
+    // writes go through ClientOrderController or legacy OrderController.
+    const vendorOrderController = new VendorOrderController(this.dbService);
+    this.app.use('/api/vendor-orders',
+      this.unifiedAuth.authenticate(),
+      vendorOrderController.router
+    );
+
+    // Order comparables (read-only) — exposes the `order-comparables`
+    // Cosmos container to the UI's Comp Workspace. Mounted under both
+    // /api/orders/:orderId/comparables (orderId === clientOrderId) and
+    // /api/vendor-orders/:vendorOrderId/comparables (resolves the parent
+    // ClientOrder first). See controllers/order-comparables.controller.ts.
+    const orderComparablesController = new OrderComparablesController(this.dbService);
+    this.app.use('/api/orders/:orderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByClientOrder
+    );
+    this.app.use('/api/vendor-orders/:vendorOrderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByVendorOrder
+    );
+
+    // Client (Lender / AMC / Broker) management — G10
+    const clientController = new ClientController(this.dbService);
+    this.app.use('/api/clients',
+      this.unifiedAuth.authenticate(),
+      clientController.router
+    );
 
     // Construction Finance Module — Loan management
     const constructionLoanController = new ConstructionLoanController(this.dbService);
@@ -5002,6 +5072,50 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Comp Collection Listener Job (subscribes to client-order.created on
+    // the appraisal-events topic; runs OrderCompCollectionService for product
+    // types in COMP_COLLECTION_TRIGGER_PRODUCT_TYPES). In real Azure mode the
+    // `comp-collection` subscription on `appraisal-events` must exist (Bicep);
+    // in mock mode this is routed via the in-memory event bus with no infra.
+    //
+    // Comp-selection wiring: build the strategy registry + value estimator
+    // here and inject into OrderCompCollectionService so the inline
+    // selection step runs after candidate upsert when a product config
+    // names a strategy. Strategies must be constructed at bootstrap so
+    // missing prompt templates fail loudly at startup, not on first order.
+    try {
+      const compSelectionRegistry = new CompSelectionStrategyRegistry();
+      const promptLoader = new CompSelectionPromptLoader('v1');
+      compSelectionRegistry.register(
+        new TieredAiCompSelectionStrategy(new UniversalAIService(), promptLoader),
+      );
+      compSelectionRegistry.register(new WeightedCompSelectionStrategy());
+      const valueEstimator = new CompBasedValueEstimator();
+
+      const propertyRecordsForCollection = new PropertyRecordService(this.dbService);
+      const compSearchForCollection = new AttomDataCompSearchService(this.dbService);
+      const orderCompCollectionService = new OrderCompCollectionService(
+        this.dbService,
+        propertyRecordsForCollection,
+        compSearchForCollection,
+        undefined,
+        { registry: compSelectionRegistry, valueEstimator },
+      );
+
+      this.compCollectionListenerJob = new CompCollectionListenerJob(this.dbService, {
+        service: orderCompCollectionService,
+      });
+      this.compCollectionListenerJob.start().catch(err => {
+        this.logger.warn('CompCollectionListenerJob failed to start', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      });
+    } catch (err) {
+      this.logger.warn('CompCollectionListenerJob could not be created', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
     // Start Bulk Ingestion Processor Service (subscribes to bulk.ingestion.requested)
     try {
       this.bulkIngestionProcessorService = new BulkIngestionProcessorService(this.dbService);
@@ -5298,6 +5412,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.bulkUploadEventListenerJob) {
       this.bulkUploadEventListenerJob.stop();
+    }
+    if (this.compCollectionListenerJob) {
+      this.compCollectionListenerJob.stop().catch(() => {});
     }
     if (this.bulkIngestionOrderCreationWorkerService) {
       this.bulkIngestionOrderCreationWorkerService.stop().catch(() => {});

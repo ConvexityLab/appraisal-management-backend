@@ -29,13 +29,14 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyRecordType } from '../types/property-record.types.js';
-import type { PropertyRecord, TaxAssessmentRecord, CanonicalAddress } from '../types/property-record.types.js';
+import type { PropertyRecord, TaxAssessmentRecord } from '../types/property-record.types.js';
 import type {
   PropertyDataProvider,
   PropertyDataLookupParams,
   PropertyDataResult,
 } from '../types/property-data.types.js';
 import { createPropertyDataProvider } from './property-data-providers/factory.js';
+import { BridgeInteractiveService } from './bridge-interactive.service.js';
 
 // ─── Container name constant ──────────────────────────────────────────────────
 
@@ -86,11 +87,38 @@ export interface EnrichmentResult {
   status: EnrichmentStatus;
 }
 
+/**
+ * Minimal geocoding port used by `PropertyEnrichmentService` to populate
+ * `PropertyRecord.address.latitude/longitude` for newly resolved subjects.
+ *
+ * Decoupled from any specific provider so the enrichment service can be
+ * unit-tested without pulling in `AddressService` (which carries a
+ * provider-credentials matrix and an HTTP cache). Production wiring lives
+ * at the composition root — see `AddressServiceGeocoder`.
+ *
+ * Contract:
+ *   - Resolve to `{ latitude, longitude }` when geocoding succeeded.
+ *   - Resolve to `null` when the provider responded but found no result
+ *     (no-match for the address). NOT for transient failures.
+ *   - Reject when the provider call itself failed (network, auth, etc.).
+ *     The caller logs the failure and continues; it is NOT swallowed.
+ */
+export interface Geocoder {
+  geocode(address: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  }): Promise<{ latitude: number; longitude: number } | null>;
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class PropertyEnrichmentService {
   private readonly logger: Logger;
   private readonly provider: PropertyDataProvider;
+  private readonly geocoder: Geocoder;
+  private readonly bridge: BridgeInteractiveService;
 
   constructor(
     private readonly cosmosService: CosmosDbService,
@@ -100,9 +128,32 @@ export class PropertyEnrichmentService {
      * provider selection). When omitted, createPropertyDataProvider() is called.
      */
     provider?: PropertyDataProvider,
+    /**
+     * Geocoder used to populate `PropertyRecord.address.latitude/longitude`
+     * when the resolved subject record lacks coordinates. REQUIRED — the
+     * service refuses to start without one. Production composition root
+     * passes `AddressServiceGeocoder`; tests pass a stub.
+     *
+     * No silent fallback: if you don't want geocoding to run, inject a
+     * geocoder that always returns `null` (and own that decision in your
+     * wiring code, not here).
+     */
+    geocoder?: Geocoder,
+    /**
+     * Optional: inject a BridgeInteractiveService instance (used in tests).
+     * When omitted, a default instance is created automatically.
+     */
+    bridgeService?: BridgeInteractiveService,
   ) {
     this.logger = new Logger('PropertyEnrichmentService');
-    this.provider = provider ?? createPropertyDataProvider(this.cosmosService);
+    this.provider = provider ?? createPropertyDataProvider(cosmosService);
+    if (!geocoder) {
+      throw new Error(
+        'PropertyEnrichmentService: geocoder is required. Pass an implementation of `Geocoder` (e.g. `AddressServiceGeocoder`) to the constructor.',
+      );
+    }
+    this.geocoder = geocoder;
+    this.bridge = bridgeService ?? new BridgeInteractiveService();
   }
 
   /**
@@ -116,15 +167,7 @@ export class PropertyEnrichmentService {
     orderId: string,
     tenantId: string,
     address: { street: string; city: string; state: string; zipCode: string },
-    meta?: {
-      engagementId?: string;
-      /**
-       * Skip the resolveOrCreate call when the caller already resolved the
-       * PropertyRecord (e.g. EngagementService resolves it before firing enrichment).
-       * Eliminates a redundant Cosmos query on every engagement-loan enrichment.
-       */
-      propertyId?: string;
-    },
+    meta?: { engagementId?: string },
   ): Promise<EnrichmentResult> {
     if (!orderId) {
       throw new Error('PropertyEnrichmentService.enrichOrder: orderId is required');
@@ -146,30 +189,17 @@ export class PropertyEnrichmentService {
     });
 
     // ── Step 1: Resolve or create the PropertyRecord ────────────────────────
-    // Skip resolution when the caller already resolved it (e.g. EngagementService).
-    const resolution = meta?.propertyId
-      ? (() => {
-          this.logger.info(
-            'PropertyEnrichmentService: using pre-resolved propertyId from meta',
-            { orderId, propertyId: meta.propertyId },
-          );
-          return {
-            propertyId: meta.propertyId,
-            isNew: false,
-            method: 'MANUAL' as const,
-          };
-        })()
-      : await this.propertyRecordService.resolveOrCreate({
-          address: {
-            street: address.street,
-            city: address.city,
-            state: address.state,
-            zip: address.zipCode,
-          },
-          tenantId,
-          createdBy: 'SYSTEM:property-enrichment',
-          propertyType: PropertyRecordType.SINGLE_FAMILY,
-        });
+    const resolution = await this.propertyRecordService.resolveOrCreate({
+      address: {
+        street: address.street,
+        city: address.city,
+        state: address.state,
+        zip: address.zipCode,
+      },
+      tenantId,
+      createdBy: 'SYSTEM:property-enrichment',
+      propertyType: PropertyRecordType.SINGLE_FAMILY,
+    });
 
     this.logger.info('PropertyEnrichmentService: PropertyRecord resolved', {
       orderId,
@@ -185,6 +215,68 @@ export class PropertyEnrichmentService {
       tenantId,
     );
 
+    // ── Step 2.5: Geocode the address when the record lacks coordinates.
+    // Coordinates are required by downstream comp-collection (it skips with
+    // NO_COORDINATES otherwise). The provider call below returns parcel /
+    // tax / building data but NOT lat/lng, so geocoding is a separate
+    // explicit step here. We re-fetch the record after a successful patch so
+    // the rest of this method sees the updated address.
+    let workingRecord = existingRecord;
+    if (workingRecord.address.latitude == null || workingRecord.address.longitude == null) {
+      let geo: { latitude: number; longitude: number } | null = null;
+      try {
+        geo = await this.geocoder.geocode({
+          street: address.street,
+          city: address.city,
+          state: address.state,
+          zip: address.zipCode,
+        });
+      } catch (err) {
+        // No silent swallow: surface the failure so an operator can see why
+        // the subject ended up without coordinates. Continue without coords —
+        // the order is the source of truth and must still be placed.
+        this.logger.warn('PropertyEnrichmentService: geocoder threw — continuing without coordinates', {
+          orderId,
+          tenantId,
+          propertyId: resolution.propertyId,
+          address: `${address.street}, ${address.city}, ${address.state} ${address.zipCode}`,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      if (geo === null) {
+        this.logger.warn('PropertyEnrichmentService: geocoder returned no result', {
+          orderId,
+          tenantId,
+          propertyId: resolution.propertyId,
+          address: `${address.street}, ${address.city}, ${address.state} ${address.zipCode}`,
+        });
+      } else {
+        const patchedAddress = {
+          ...workingRecord.address,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          isNormalized: true,
+          geocodedAt: new Date().toISOString(),
+        };
+        const patched = await this.propertyRecordService.createVersion(
+          resolution.propertyId,
+          tenantId,
+          { address: patchedAddress },
+          'Geocoded subject coordinates at enrichment time',
+          'PUBLIC_RECORDS_API',
+          'SYSTEM:property-enrichment',
+          'geocoder',
+        );
+        // createVersion returns the updated record; fall back to a synthesised
+        // copy if the implementation returns void in some test stubs.
+        workingRecord = (patched as PropertyRecord) ?? {
+          ...workingRecord,
+          address: patchedAddress,
+        };
+      }
+    }
+
     // ── Step 3: Cache check — skip Bridge if data is still fresh ───────────
     //
     // We only skip the provider call when:
@@ -193,11 +285,11 @@ export class PropertyEnrichmentService {
     //
     // When CACHE_TTL_DAYS=0 the isFreshEnough check always returns false,
     // effectively disabling caching.
-    if (!resolution.isNew && this.isFreshEnough(existingRecord.lastVerifiedAt)) {
+    if (!resolution.isNew && this.isFreshEnough(workingRecord.lastVerifiedAt)) {
       this.logger.info('PropertyEnrichmentService: PropertyRecord is fresh — skipping Bridge call', {
         orderId,
         propertyId: resolution.propertyId,
-        lastVerifiedAt: existingRecord.lastVerifiedAt,
+        lastVerifiedAt: workingRecord.lastVerifiedAt,
         cacheTtlDays: CACHE_TTL_DAYS,
       });
 
@@ -216,6 +308,9 @@ export class PropertyEnrichmentService {
         PROPERTY_ENRICHMENTS_CONTAINER,
         cachedRecord,
       );
+
+      // ── Step 8 (cached path): Fetch Zestimate AVM — non-fatal ────────────
+      await this.fetchAndPatchAvm(resolution.propertyId, tenantId, address, orderId);
 
       return {
         enrichmentId: cachedRecord.id,
@@ -252,25 +347,6 @@ export class PropertyEnrichmentService {
       // ── Step 5: Merge enriched data into PropertyRecord ─────────────────
       const buildingChanges = this.buildBuildingChanges(dataResult);
       const topLevelChanges = this.buildTopLevelChanges(dataResult);
-      // Enrich address geocoding fields (county, coordinates) that are not
-      // returned as stand-alone top-level fields by providers but are captured
-      // in PropertyDataCore.  Because createVersion() spreads the entire
-      // address object (not just changed sub-fields), we must provide the full
-      // merged address to avoid wiping the existing street/city/state/zip.
-      const core = dataResult.core;
-      const addrPatch: Partial<CanonicalAddress> = {};
-      if (core?.county && !existingRecord.address.county) {
-        addrPatch.county = core.county;
-      }
-      if (core?.latitude != null && existingRecord.address.latitude == null) {
-        addrPatch.latitude = core.latitude;
-      }
-      if (core?.longitude != null && existingRecord.address.longitude == null) {
-        addrPatch.longitude = core.longitude;
-      }
-      if (Object.keys(addrPatch).length > 0) {
-        topLevelChanges.address = { ...existingRecord.address, ...addrPatch };
-      }
       const hasChanges =
         Object.keys(buildingChanges).length > 0 ||
         Object.keys(topLevelChanges).length > 0;
@@ -290,6 +366,7 @@ export class PropertyEnrichmentService {
         }
         versionChanges.dataSource = 'PUBLIC_RECORDS_API';
         versionChanges.lastVerifiedAt = dataResult.fetchedAt;
+        versionChanges.lastVerifiedSource = dataResult.source;
 
         await this.propertyRecordService.createVersion(
           resolution.propertyId,
@@ -300,6 +377,7 @@ export class PropertyEnrichmentService {
             : 'Public-records refresh at order creation',
           'PUBLIC_RECORDS_API',
           'SYSTEM:property-enrichment',
+          dataResult.source,
         );
       }
 
@@ -310,12 +388,12 @@ export class PropertyEnrichmentService {
           resolution.propertyId,
           tenantId,
           dataResult,
-          existingRecord,
+          workingRecord,
         );
       }
     }
 
-    // ── Step 5: Persist the enrichment record for audit ────────────────────
+    // ── Step 7: Persist the enrichment record for audit ────────────────────
     const enrichmentRecord: PropertyEnrichmentRecord = {
       id: `enrich-${orderId}-${Date.now()}`,
       type: 'property-enrichment',
@@ -340,11 +418,77 @@ export class PropertyEnrichmentService {
       provider: dataResult?.source ?? 'none',
     });
 
+    // ── Step 8: Fetch Zestimate AVM — non-fatal ──────────────────────────────
+    await this.fetchAndPatchAvm(resolution.propertyId, tenantId, address, orderId);
+
     return {
       enrichmentId: enrichmentRecord.id,
       propertyId: resolution.propertyId,
       status,
     };
+  }
+
+  /**
+   * Fetches a Zestimate from Bridge Interactive and patches `avm` onto the
+   * PropertyRecord via createVersion(). Non-fatal — logs a warning and returns
+   * without throwing if the API call fails or returns no numeric value.
+   */
+  private async fetchAndPatchAvm(
+    propertyId: string,
+    tenantId: string,
+    address: { street: string; city: string; state: string; zipCode: string },
+    orderId: string,
+  ): Promise<void> {
+    try {
+      const result = await this.bridge.getZestimateByStructuredAddress({
+        streetAddress: address.street,
+        city: address.city,
+        state: address.state,
+        postalCode: address.zipCode,
+      });
+
+      // Bridge response shape is untyped — probe known envelope variants.
+      const bundle = result?.bundle?.[0] ?? result?.value?.[0] ?? result;
+      const value: unknown = bundle?.zestimate ?? bundle?.value;
+      if (value == null || typeof value !== 'number') {
+        this.logger.warn('PropertyEnrichmentService: Zestimate returned no numeric value', {
+          orderId,
+          propertyId,
+        });
+        return;
+      }
+
+      await this.propertyRecordService.createVersion(
+        propertyId,
+        tenantId,
+        {
+          avm: {
+            value,
+            fetchedAt: new Date().toISOString(),
+            source: 'bridge-zestimate' as const,
+          },
+        },
+        'AVM value fetched from Bridge Interactive (Zestimate)',
+        'PUBLIC_RECORDS_API',
+        'SYSTEM:property-enrichment',
+        'Bridge Interactive',
+      );
+
+      this.logger.info('PropertyEnrichmentService: AVM patched on PropertyRecord', {
+        orderId,
+        propertyId,
+        avmValue: value,
+      });
+    } catch (err) {
+      this.logger.warn(
+        'PropertyEnrichmentService: Zestimate fetch failed — continuing without AVM',
+        {
+          orderId,
+          propertyId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
   }
 
   /**
@@ -426,20 +570,16 @@ export class PropertyEnrichmentService {
    * (the loanId is the finest-grained property-owning entity in an engagement).
    * `getLatestEnrichment(loanId, tenantId)` retrieves engagement enrichments.
    *
-   * @param engagementId  Parent engagement — used for log context and stored on the record.
+   * @param engagementId  Parent engagement — used for log context only.
    * @param loanId        The loan whose collateral is being enriched.
    * @param tenantId      Tenant scope for all Cosmos operations.
    * @param address       The subject property address from the loan.
-   * @param propertyId    Optional: pre-resolved PropertyRecord ID. When provided, the
-   *                      internal resolveOrCreate() call is skipped (saves one Cosmos query;
-   *                      EngagementService already resolves this during createEngagement).
    */
   async enrichEngagement(
     engagementId: string,
     loanId: string,
     tenantId: string,
     address: { street: string; city: string; state: string; zipCode: string },
-    propertyId?: string,
   ): Promise<EnrichmentResult> {
     if (!engagementId) {
       throw new Error('PropertyEnrichmentService.enrichEngagement: engagementId is required');
@@ -452,15 +592,10 @@ export class PropertyEnrichmentService {
       loanId,
       tenantId,
       address: `${address.street}, ${address.city}, ${address.state} ${address.zipCode}`,
-      ...(propertyId && { propertyId }),
     });
     // Delegate to enrichOrder using loanId as the entity reference.
-    // Pass engagementId + propertyId in meta: engagementId makes the record
-    // queryable by engagement; propertyId skips a redundant resolveOrCreate call.
-    return this.enrichOrder(loanId, tenantId, address, {
-      engagementId,
-      ...(propertyId ? { propertyId } : {}),
-    });
+    // Pass engagementId in meta so the persisted record is queryable by engagement.
+    return this.enrichOrder(loanId, tenantId, address, { engagementId });
   }
 
   // ─── Private field mappers ───────────────────────────────────────────────────
@@ -512,12 +647,6 @@ export class PropertyEnrichmentService {
     if (c?.parcelNumber != null) changes.apn = c.parcelNumber;
     if (c?.lotSizeSqFt != null) changes.lotSizeSqFt = c.lotSizeSqFt;
 
-    // Map raw property-type string to the canonical PropertyRecordType enum.
-    // Providers surface strings like "SFR", "Single Family Residential", "Condominium",
-    // "Multi Family" etc.; mapPropertyType() normalises these best-effort.
-    const mappedType = this.mapPropertyType(c?.propertyType);
-    if (mappedType != null) changes.propertyType = mappedType;
-
     const pr = dataResult.publicRecord;
     if (pr?.zoning != null) changes.zoning = pr.zoning;
     if (pr?.legalDescription != null) changes.legalDescription = pr.legalDescription;
@@ -528,38 +657,19 @@ export class PropertyEnrichmentService {
     if (fl?.femaMapNumber != null) changes.floodMapNumber = fl.femaMapNumber;
     if (fl?.femaMapDate != null) changes.floodMapDate = fl.femaMapDate;
 
+    // Photos: providers that supply them (e.g. local-attom) do so as a
+    // complete array. Only overwrite when the provider returned a non-empty
+    // list — an empty array means "no photos this run" and shouldn't blow
+    // away photos from a previous enrichment.
+    if (dataResult.photos && dataResult.photos.length > 0) {
+      changes.photos = dataResult.photos;
+    }
+
     return changes;
   }
 
   /**
-   * Maps a raw provider property-type string to the canonical PropertyRecordType enum.
-   * Matching is best-effort (case-insensitive substring), intentionally broad to
-   * handle the many variations used by Bridge MLS and ATTOM.
-   * Returns null when no confident match can be made — caller should not overwrite
-   * the existing PropertyRecord type in that case.
-   */
-  private mapPropertyType(raw: string | null | undefined): PropertyRecordType | null {
-    if (!raw) return null;
-    const s = raw.toLowerCase();
-
-    // Ordered from most-specific to least-specific to avoid false matches.
-    if (s.includes('condo'))                                              return PropertyRecordType.CONDO;
-    if (s.includes('townhome') || s.includes('townhouse'))                return PropertyRecordType.TOWNHOME;
-    if (s.includes('manufactured') || s.includes('mobile'))              return PropertyRecordType.MANUFACTURED;
-    if (s.includes('multi') || s.includes('duplex') ||
-        s.includes('triplex') || s.includes('fourplex'))                  return PropertyRecordType.MULTI_FAMILY;
-    if (s.includes('commercial') || s.includes('retail') ||
-        s.includes('office') || s.includes('industrial'))                 return PropertyRecordType.COMMERCIAL;
-    if (s.includes('land') && !s.includes('residential'))                 return PropertyRecordType.LAND;
-    if (s.includes('mixed'))                                              return PropertyRecordType.MIXED_USE;
-    // SFR, single family, residential — broadest match last.
-    if (s.includes('single') || s.includes('sfr') ||
-        s.includes('rsfr') || s.includes('residential'))                  return PropertyRecordType.SINGLE_FAMILY;
-
-    return null;
-  }
-
-  /**
+   * Determines whether the property record is fresh enough to skip a Bridge call.
    * Returns false when lastVerifiedAt is absent, or CACHE_TTL_DAYS is 0.
    */
   private isFreshEnough(lastVerifiedAt?: string): boolean {
@@ -615,6 +725,7 @@ export class PropertyEnrichmentService {
       `Tax assessment appended for year ${taxYear}`,
       'PUBLIC_RECORDS_API',
       'SYSTEM:property-enrichment',
+      dataResult.source,
     );
   }
 }

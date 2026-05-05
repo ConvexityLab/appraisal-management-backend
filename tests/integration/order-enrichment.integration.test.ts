@@ -174,7 +174,8 @@ function buildStack(existingPropertyRecord?: Partial<PropertyRecord>) {
   const cosmos = makeCosmosStub(existingPropertyRecord);
   const propRecordSvc = new PropertyRecordService(cosmos as any);
   const provider      = new BridgePropertyDataProvider();
-  const enrichSvc     = new PropertyEnrichmentService(cosmos as any, propRecordSvc as any, provider);
+  const noopGeocoder  = { geocode: vi.fn().mockResolvedValue(null) };
+  const enrichSvc     = new PropertyEnrichmentService(cosmos as any, propRecordSvc as any, provider, noopGeocoder);
   return { cosmos, propRecordSvc, provider, enrichSvc };
 }
 
