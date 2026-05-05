@@ -976,6 +976,23 @@ export type ProductStatus = 'ACTIVE' | 'INACTIVE';
 export interface Product {
   id: string;
   tenantId: string;
+  /**
+   * Slice 8i: client-tier scoping.
+   *
+   *   null      → PLATFORM-DEFAULT product. Available to every client in the
+   *               tenant. Authored by tenant-admins.
+   *   <string>  → CLIENT-SPECIFIC product / override. Only visible to (or
+   *               overrides the same name on) that one client.
+   *
+   * Resolution at order placement: clients see the union of platform defaults
+   * + their own overrides, with overrides winning by `name` (the human-
+   * readable product slug — clients override "Full Appraisal" by writing
+   * their own row with the same name).
+   *
+   * Optional during transition — pre-8i rows without the field are treated
+   * as platform defaults (clientId === null).
+   */
+  clientId?: string | null;
   name: string;
   productType: string;           // maps to ProductType enum in frontend
   description?: string;
@@ -1000,6 +1017,12 @@ export interface CreateProductRequest {
   name: string;
   productType: string;
   description?: string;
+  /**
+   * Slice 8i: optional client-tier scoping. Omit (or null) for a platform-
+   * default product available to every client in the tenant. Set to a
+   * specific clientId to author a client-specific product / override.
+   */
+  clientId?: string | null;
   defaultFee: number;
   rushFeeMultiplier?: number;
   techFee?: number;

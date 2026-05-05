@@ -754,6 +754,9 @@ export class CosmosDbService {
       defaultFee: product.defaultFee,
       turnTimeDays: product.turnTimeDays,
       tenantId: product.tenantId,
+      // Slice 8i: client-tier scoping. Default to platform (null) when caller
+      // doesn't supply clientId — same as pre-8i behaviour.
+      clientId: product.clientId ?? null,
       createdBy: product.createdBy,
       ...(product.description !== undefined && { description: product.description }),
       ...(product.techFee !== undefined && { techFee: product.techFee }),
@@ -773,6 +776,60 @@ export class CosmosDbService {
       })
       .fetchAll();
     return { success: true, data: resources };
+  }
+
+  /**
+   * Slice 8i: tier-resolved product list for a specific client.
+   *
+   * Returns the union of:
+   *   - Platform-default products (clientId === null OR not defined)
+   *   - Client-specific overrides for this clientId
+   *
+   * Override semantics: when a client-tier and a platform-tier row share the
+   * same `name` (the human-readable product slug), the client row WINS — it's
+   * intended to override the platform default for that client. The platform
+   * row stays for OTHER clients.
+   *
+   * Pre-slice-8i rows that don't have `clientId` defined at all are treated
+   * as platform defaults.
+   */
+  async findProductsForClient(
+    tenantId: string,
+    clientId: string,
+  ): Promise<ApiResponse<import('../types/index.js').Product[]>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const { resources } = await this.productsContainer.items
+      .query<import('../types/index.js').Product>({
+        query:
+          'SELECT * FROM c WHERE c.tenantId = @tenantId ' +
+          'AND (NOT IS_DEFINED(c.clientId) OR c.clientId = null OR c.clientId = @clientId) ' +
+          'ORDER BY c.name ASC',
+        parameters: [
+          { name: '@tenantId', value: tenantId },
+          { name: '@clientId', value: clientId },
+        ],
+      })
+      .fetchAll();
+
+    // Override-by-name: when a client row exists for the same name as a
+    // platform row, drop the platform row.
+    const merged = new Map<string, import('../types/index.js').Product>();
+    for (const row of resources) {
+      const key = row.name;
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, row);
+        continue;
+      }
+      // Both exist: client-tier wins over platform-tier.
+      const incomingIsClient = row.clientId === clientId;
+      const existingIsClient = existing.clientId === clientId;
+      if (incomingIsClient && !existingIsClient) {
+        merged.set(key, row);
+      }
+      // else: keep existing.
+    }
+    return { success: true, data: Array.from(merged.values()) };
   }
 
   async findProductById(id: string, tenantId: string): Promise<ApiResponse<import('../types/index.js').Product | null>> {
