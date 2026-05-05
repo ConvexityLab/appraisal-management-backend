@@ -555,11 +555,16 @@ export class CanonicalSnapshotService {
       });
     }
 
+    // Slice 8k: legacy `subjectProperty` flat shim and `providerData` raw
+    // blob are no longer emitted on new snapshots. Slice 8j migrated the
+    // known readers (CriteriaStepInputService, PreparedDispatchPayloadAssembly)
+    // to prefer the canonical view. Pre-8k snapshots continue to carry the
+    // shim fields; readers handle the absent-on-new-records case via `?? {}`.
+    void subjectProperty;
+    void providerData;
     return {
-      subjectProperty,
       extraction: artifacts.extractionData ?? {},
       canonical,
-      providerData: providerData ?? {},
       provenance: {
         extractionRunId: extractionRun.id,
         documentId: artifacts.document?.id,

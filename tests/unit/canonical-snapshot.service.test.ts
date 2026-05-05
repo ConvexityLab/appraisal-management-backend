@@ -82,8 +82,10 @@ describe('CanonicalSnapshotService merge behavior', () => {
       }),
     ]);
     expect(snapshot.normalizedData?.extraction).toMatchObject({ appraisalValue: 510000, qualityScore: 'A' });
-    expect(snapshot.normalizedData?.providerData).toEqual({});
-    expect(snapshot.normalizedData?.subjectProperty).toEqual({});
+    // Slice 8k: subjectProperty / providerData shims are no longer emitted on new
+    // snapshots. Readers migrated to canonical paths in slice 8j.
+    expect(snapshot.normalizedData?.providerData).toBeUndefined();
+    expect(snapshot.normalizedData?.subjectProperty).toBeUndefined();
     expect(snapshot.normalizedData?.provenance).toMatchObject({
       extractionRunId: 'ext_run_001',
       documentId: 'doc-001',
@@ -153,13 +155,20 @@ describe('CanonicalSnapshotService merge behavior', () => {
     const snapshot = await service.createFromExtractionRun(buildExtractionRun());
 
     expect(snapshot.normalizedData?.extraction).toEqual({});
-    expect(snapshot.normalizedData?.providerData).toMatchObject({ source: 'Bridge Interactive' });
-    expect(snapshot.normalizedData?.subjectProperty).toMatchObject({
+    // Slice 8k: subjectProperty / providerData shims removed from snapshot.
+    // Enrichment data now lives in `canonical.subject` (slice 1's
+    // mapPropertyEnrichmentToCanonical).
+    expect(snapshot.normalizedData?.providerData).toBeUndefined();
+    expect(snapshot.normalizedData?.subjectProperty).toBeUndefined();
+    const canonicalSubject = (snapshot.normalizedData as { canonical?: { subject?: any } } | undefined)?.canonical?.subject;
+    expect(canonicalSubject).toMatchObject({
       grossLivingArea: 2450,
       bedrooms: 4,
-      taxAssessedValue: 420000,
-      femaFloodZone: 'X',
+      // taxAssessedValue is provenance-only (not on canonical subject) — see
+      // mapPropertyEnrichmentToCanonical comments. Asserted by absence below.
+      floodZone: 'X',
     });
+    expect(canonicalSubject?.taxAssessedValue).toBeUndefined();
     expect(snapshot.sourceRefs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ sourceType: 'property-enrichment', sourceId: 'enrich-001' }),

@@ -36,6 +36,22 @@ import { FinalReport } from './final-report.types.js';
 
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIAL';
 
+/**
+ * @deprecated Slice 8k: AppraisalOrder over-fits the order domain — it
+ * conflates the client-side order (lender → AMP) with the vendor-side
+ * fulfillment work (AMP → vendor/staff). New code should use:
+ *
+ *   - `ClientOrder` (in `client-order.types.ts`) for client-initiated
+ *     orders; placement goes through ClientOrderService.placeClientOrder().
+ *   - `VendorOrder` (in `vendor-order.types.ts`) for vendor-side fulfillment
+ *     work; creation goes through VendorOrderService.createVendorOrder().
+ *
+ * Roughly 260 references survive across the codebase. Migrating them
+ * file-by-file is its own multi-day project (tracked separately, not in
+ * this slice). The type stays for now so the migration can happen
+ * incrementally without breaking the tree. Final removal lands once
+ * every reference has moved to the right specific type.
+ */
 export interface AppraisalOrder {
   id: string;
   clientId: string;
