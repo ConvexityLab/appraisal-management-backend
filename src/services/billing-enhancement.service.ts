@@ -195,7 +195,7 @@ export class BillingEnhancementService {
       try {
         // Load the order
         const { resources: orders } = await container.items.query({
-          query: `SELECT * FROM c WHERE c.type = 'order' AND c.id = @oid AND c.tenantId = @tid`,
+          query: `SELECT * FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.id = @oid AND c.tenantId = @tid`,
           parameters: [
             { name: '@oid', value: orderId },
             { name: '@tid', value: request.tenantId },

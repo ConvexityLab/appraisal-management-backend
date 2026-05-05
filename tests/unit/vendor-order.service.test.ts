@@ -13,7 +13,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { VendorOrderService } from '../../src/services/vendor-order.service.js';
 import type { CreateVendorOrderInput } from '../../src/services/vendor-order.service.js';
-import { LEGACY_VENDOR_ORDER_DOC_TYPE } from '../../src/types/vendor-order.types.js';
+import { VENDOR_ORDER_DOC_TYPE } from '../../src/types/vendor-order.types.js';
 import { ProductType } from '../../src/types/product-catalog.js';
 
 function makeDbServiceWithSuccess(returnedId = 'vorder-001') {
@@ -59,12 +59,15 @@ describe('VendorOrderService.createVendorOrder', () => {
     expect(db.createOrder).toHaveBeenCalledTimes(1);
   });
 
-  it('returns a VendorOrder with the legacy discriminator (Phase A)', async () => {
+  it('returns a VendorOrder with the new discriminator (slice 8f flipped)', async () => {
     const db = makeDbServiceWithSuccess();
     const svc = new VendorOrderService(db);
     const out = await svc.createVendorOrder(makeInput());
-    // Slice 8f will flip this to VENDOR_ORDER_DOC_TYPE in lockstep with reads.
-    expect(out.type).toBe(LEGACY_VENDOR_ORDER_DOC_TYPE);
+    // Slice 8f flipped the write from LEGACY_VENDOR_ORDER_DOC_TYPE ('order')
+    // to VENDOR_ORDER_DOC_TYPE ('vendor-order'). Reads tolerate both via
+    // VENDOR_ORDER_TYPE_PREDICATE for back-compat with pre-flip rows.
+    expect(out.type).toBe(VENDOR_ORDER_DOC_TYPE);
+    expect(out.type).toBe('vendor-order');
   });
 
   it('stamps linkage fields onto the returned VendorOrder', async () => {

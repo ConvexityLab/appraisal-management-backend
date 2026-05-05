@@ -124,7 +124,7 @@ export class SupervisionTimeoutWatcherJob {
       const { resources: candidates } = await container.items.query({
         query: `
           SELECT * FROM c
-          WHERE c.type = 'order'
+          WHERE (c.type = 'vendor-order' OR c.type = 'order')
             AND c.requiresSupervisoryReview = true
             AND (NOT IS_DEFINED(c.supervisoryCosignedAt) OR IS_NULL(c.supervisoryCosignedAt))
             AND (NOT IS_DEFINED(c.requiresHumanIntervention) OR c.requiresHumanIntervention != true)

@@ -129,7 +129,7 @@ export class AxiomMissedTriggerJob {
         query: `
           SELECT c.id, c.tenantId, c.orderNumber, c.submittedAt, c.axiomStatus
           FROM c
-          WHERE c.type = 'order'
+          WHERE (c.type = 'vendor-order' OR c.type = 'order')
             AND c.status = 'SUBMITTED'
             AND (NOT IS_DEFINED(c.axiomSubmittedAt) OR IS_NULL(c.axiomSubmittedAt))
             AND (

@@ -207,7 +207,7 @@ export class DuplicateOrderDetectionService {
       throw new Error('Orders container not initialized');
     }
 
-    let query = `SELECT * FROM c WHERE c.type = 'order' AND c.tenantId = @tenantId AND c.createdAt >= @cutoff`;
+    let query = `SELECT * FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.tenantId = @tenantId AND c.createdAt >= @cutoff`;
     const parameters: Array<{ name: string; value: string }> = [
       { name: '@tenantId', value: request.tenantId },
       { name: '@cutoff', value: cutoffDate.toISOString() },

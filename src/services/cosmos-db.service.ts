@@ -14,6 +14,7 @@ import {
 } from '../types/property-enhanced.js';
 import { Logger } from '../utils/logger.js';
 import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
+import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
 
 /**
  * Comprehensive Azure Cosmos DB Service for Appraisal Management Platform
@@ -316,7 +317,12 @@ export class CosmosDbService {
       const orderWithId = {
         ...order,
         id: this.generateVendorOrderId(),
-        type: 'order' as const, // Required: findOrderById and findOrders filter by c.type = 'order'
+        // Slice 8f: writes flip to 'vendor-order' (the VendorOrder
+        // discriminator). Reads tolerate BOTH values via
+        // VENDOR_ORDER_TYPE_PREDICATE so pre-migration rows
+        // (`type: 'order'`) stay queryable. Slice 8j+ retires the legacy
+        // half once all rows are backfilled.
+        type: 'vendor-order' as const,
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -349,11 +355,12 @@ export class CosmosDbService {
       }
 
       // Find by id field - our orders use string IDs like 'order-005'
-      // CRITICAL: Filter by type='order' to exclude ROV requests and other document types
+      // CRITICAL: Filter by VendorOrder discriminator to exclude ROV requests
+      // and other document types. Slice 8f: tolerates both 'vendor-order'
+      // (post-flip writes) and 'order' (legacy rows pre-backfill).
       const querySpec = {
-        query: 'SELECT * FROM c WHERE c.type = @type AND c.id = @id',
+        query: `SELECT * FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.id = @id`,
         parameters: [
-          { name: '@type', value: 'order' },
           { name: '@id', value: id }
         ]
       };
@@ -385,9 +392,11 @@ export class CosmosDbService {
         throw new Error('Orders container not initialized');
       }
 
-      // CRITICAL: Filter by type='order' to exclude ROV requests and other document types
-      let query = 'SELECT * FROM c WHERE c.type = @type';
-      const parameters: any[] = [{ name: '@type', value: 'order' }];
+      // CRITICAL: Filter by VendorOrder discriminator to exclude ROV requests
+      // and other document types. Slice 8f: tolerates both 'vendor-order'
+      // and legacy 'order'.
+      let query = `SELECT * FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE}`;
+      const parameters: any[] = [];
 
       // Tenant isolation — always scope to the calling user's partition when provided.
       if (filters.tenantId) {

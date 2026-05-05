@@ -45,9 +45,10 @@ async function verify(): Promise<void> {
     logger.info(`  ${a.id} | ${a.orderNumber} | ${a.propertyAddress}`);
   }
 
-  // Query 3: All type='order' documents
+  // Query 3: All VendorOrder documents (slice 8f tolerates legacy 'order' rows
+  // alongside the new 'vendor-order' discriminator).
   const q3 = {
-    query: `SELECT c.id, c.type, c.status, c.orderNumber FROM c WHERE c.type = 'order'`
+    query: `SELECT c.id, c.type, c.status, c.orderNumber FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order')`
   };
   const { resources: allOrders } = await container.items.query(q3).fetchAll();
   logger.info(`\nAll order records: ${allOrders.length}`);

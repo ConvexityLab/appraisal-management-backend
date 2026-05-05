@@ -138,7 +138,7 @@ export class AxiomTimeoutWatcherJob {
       const { resources: candidates } = await container.items.query({
         query: `
           SELECT * FROM c
-          WHERE c.type = 'order'
+          WHERE (c.type = 'vendor-order' OR c.type = 'order')
             AND IS_DEFINED(c.axiomSubmittedAt)
             AND (NOT IS_DEFINED(c.axiomCompletedAt) OR IS_NULL(c.axiomCompletedAt))
             AND (NOT IS_DEFINED(c.axiomStatus) OR (c.axiomStatus != 'completed' AND c.axiomStatus != 'failed'))

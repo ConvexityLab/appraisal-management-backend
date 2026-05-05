@@ -41,10 +41,7 @@ import {
   ClientOrderStatus,
   type ClientOrder,
 } from '../types/client-order.types.js';
-import {
-  LEGACY_VENDOR_ORDER_DOC_TYPE,
-  type VendorOrder,
-} from '../types/vendor-order.types.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
 import type { VendorOrderTemplate } from '../types/decomposition-rule.types.js';
 import type { AppraisalOrder, PropertyDetails } from '../types/index.js';
 import type { ProductType } from '../types/product-catalog.js';

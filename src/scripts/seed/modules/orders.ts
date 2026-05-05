@@ -21,7 +21,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
   return [
     // 1 — COMPLETED, full 1004
     {
-      id: ORDER_IDS.COMPLETED_001, tenantId, type: 'order',
+      id: ORDER_IDS.COMPLETED_001, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_001],
       status: 'COMPLETED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -67,7 +67,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 2 — QC_REVIEW — PREMIER timed out on attempt 0, ROCKY_MOUNTAIN accepted on attempt 1
     {
-      id: ORDER_IDS.QC_REVIEW_002, tenantId, type: 'order',
+      id: ORDER_IDS.QC_REVIEW_002, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.QC_REVIEW_002],
       status: 'QC_REVIEW', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -108,7 +108,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 3 — IN_PROGRESS, rush — TX_PROPERTY scored highest for rush; Sarah Chen (internal) ranked 3rd
     {
-      id: ORDER_IDS.IN_PROGRESS_003, tenantId, type: 'order',
+      id: ORDER_IDS.IN_PROGRESS_003, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.IN_PROGRESS_003],
       status: 'IN_PROGRESS', priority: 'RUSH', isRush: true,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -142,7 +142,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 4 — PENDING_ASSIGNMENT — PREMIER timed out, NVN is current live bid
     {
-      id: ORDER_IDS.PENDING_004, tenantId, type: 'order',
+      id: ORDER_IDS.PENDING_004, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.PENDING_004],
       status: 'PENDING_ASSIGNMENT', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.CONDO_1073, productName: 'Condo Appraisal (1073)', productType: 'CONDO',
@@ -168,7 +168,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 5 — NEW / Desktop — internal direct assignment in progress for Sarah Chen (no bid loop)
     {
-      id: ORDER_IDS.NEW_005, tenantId, type: 'order',
+      id: ORDER_IDS.NEW_005, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.NEW_005],
       status: 'NEW', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DESKTOP_REVIEW, productName: 'Desktop Appraisal', productType: 'DESKTOP',
@@ -192,7 +192,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 6 — FIX_AND_FLIP, in progress with ARV
     {
-      id: ORDER_IDS.FIX_FLIP_006, tenantId, type: 'order',
+      id: ORDER_IDS.FIX_FLIP_006, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.FIX_FLIP_006],
       status: 'IN_PROGRESS', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -223,7 +223,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 7 — ASSIGNED — NVN is current live bid, expires in ~4 hours
     {
-      id: ORDER_IDS.ASSIGNED_007, tenantId, type: 'order',
+      id: ORDER_IDS.ASSIGNED_007, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ASSIGNED_007],
       status: 'ASSIGNED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DRIVE_BY_2055, productName: 'Drive-By Appraisal (2055)', productType: 'DRIVE_BY',
@@ -249,7 +249,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 8 — ACCEPTED — PREMIER ranked first, James Okonkwo (internal reviewer) ranked 3rd as fallback
     {
-      id: ORDER_IDS.ACCEPTED_008, tenantId, type: 'order',
+      id: ORDER_IDS.ACCEPTED_008, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.ACCEPTED_008],
       status: 'ACCEPTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -281,7 +281,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 9 — SUBMITTED — QC review assignment pending for Jordan Lee (QC Analyst 2)
     {
-      id: ORDER_IDS.SUBMITTED_009, tenantId, type: 'order',
+      id: ORDER_IDS.SUBMITTED_009, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.SUBMITTED_009],
       status: 'SUBMITTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.MULTI_FAMILY_1025, productName: 'Multi-Family (1025)', productType: 'MULTI_FAMILY',
@@ -323,7 +323,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 10 — REVISION_REQUESTED — QC review accepted and completed, then revision triggered
     {
-      id: ORDER_IDS.REVISION_010, tenantId, type: 'order',
+      id: ORDER_IDS.REVISION_010, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.REVISION_010],
       status: 'REVISION_REQUESTED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -365,7 +365,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 11 — CANCELLED
     {
-      id: ORDER_IDS.CANCELLED_011, tenantId, type: 'order',
+      id: ORDER_IDS.CANCELLED_011, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.CANCELLED_011],
       status: 'CANCELLED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.FULL_1004, productName: 'Uniform Residential Appraisal (1004)', productType: 'FULL_APPRAISAL',
@@ -379,7 +379,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
     },
     // 12 — COMPLETED, drive-by
     {
-      id: ORDER_IDS.COMPLETED_DRIVEBY_012, tenantId, type: 'order',
+      id: ORDER_IDS.COMPLETED_DRIVEBY_012, tenantId, type: 'vendor-order',
       orderNumber: ORDER_NUMBERS[ORDER_IDS.COMPLETED_DRIVEBY_012],
       status: 'COMPLETED', priority: 'NORMAL', isRush: false,
       productId: PRODUCT_IDS.DRIVE_BY_2055, productName: 'Drive-By Appraisal (2055)', productType: 'DRIVE_BY',

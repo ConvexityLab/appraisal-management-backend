@@ -1,6 +1,7 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import type { SqlParameter } from '@azure/cosmos';
+import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Query parameter helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
@@ -381,7 +382,7 @@ export class PortfolioAnalyticsService {
 
   private async calculateVolumeMetrics(filters: PortfolioFilters): Promise<VolumeMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const [totals, byStatus, byType, valueSummary] = await Promise.all([
       this.db.runOrdersQuery({
@@ -431,7 +432,7 @@ export class PortfolioAnalyticsService {
 
   private async calculatePerformanceMetrics(filters: PortfolioFilters): Promise<PerformanceMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const [completionRows, onTimeRows, dailyThroughput] = await Promise.all([
       this.db.runOrdersQuery({
@@ -475,7 +476,7 @@ export class PortfolioAnalyticsService {
 
   private async calculateQualityMetrics(filters: PortfolioFilters): Promise<QualityMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     // Use Axiom decision data where available as a proxy for QC pass/fail
     const [acceptRows, totalWithAxiom] = await Promise.all([
@@ -507,7 +508,7 @@ export class PortfolioAnalyticsService {
 
   private async calculateTurntimeMetrics(filters: PortfolioFilters): Promise<TurntimeMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
       query: `SELECT AVG(DateDiff('day', c.createdAt, c.completedAt)) AS avg,
@@ -534,7 +535,7 @@ export class PortfolioAnalyticsService {
 
   private async calculateVendorMetrics(filters: PortfolioFilters): Promise<VendorMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
       query: `SELECT c.assignedVendorId AS vendorId, COUNT(1) AS orderCount
@@ -571,7 +572,7 @@ export class PortfolioAnalyticsService {
 
   private async calculateRiskMetrics(filters: PortfolioFilters): Promise<RiskMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const [highRisk, medRisk, critical] = await Promise.all([
       this.db.runOrdersQuery({
@@ -603,7 +604,7 @@ export class PortfolioAnalyticsService {
 
   private async calculateGeographicMetrics(filters: PortfolioFilters): Promise<GeographicMetrics> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
       query: `SELECT c.propertyAddress.state AS state, COUNT(1) AS cnt
@@ -640,7 +641,7 @@ export class PortfolioAnalyticsService {
 
   private async performTrendAnalysis(filters: PortfolioFilters): Promise<TrendAnalysis> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     // Monthly order counts to derive trend direction
     const monthlyRows = await this.db.runOrdersQuery({
@@ -678,7 +679,7 @@ export class PortfolioAnalyticsService {
 
   private async generateAlerts(filters: PortfolioFilters): Promise<Alert[]> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
     const now = new Date().toISOString();
 
     const overdueRows = await this.db.runOrdersQuery({
@@ -748,7 +749,7 @@ export class PortfolioAnalyticsService {
 
   private async identifyBottlenecks(filters: PortfolioFilters): Promise<any> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const statusRows = await this.db.runOrdersQuery({
       query: `SELECT c.status AS status, COUNT(1) AS cnt FROM c ${baseWhere} AND c.status NOT IN ('completed', 'cancelled') GROUP BY c.status`,
@@ -827,7 +828,7 @@ export class PortfolioAnalyticsService {
     if (!vendorId) return { rank: null, percentile: null };
 
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
       query: `SELECT c.assignedVendorId AS vendorId, COUNT(1) AS cnt FROM c ${baseWhere} AND c.assignedVendorId != null GROUP BY c.assignedVendorId ORDER BY cnt DESC`,
@@ -888,7 +889,7 @@ export class PortfolioAnalyticsService {
 
   private async analyzeValuationTrends(filters: PortfolioFilters): Promise<any> {
     const { where, params } = buildBaseWhere(filters);
-    const baseWhere = `WHERE c.type = 'order'${where}`;
+    const baseWhere = `WHERE ${VENDOR_ORDER_TYPE_PREDICATE}${where}`;
 
     const rows = await this.db.runOrdersQuery({
       query: `SELECT AVG(c.loanInformation.loanAmount) AS avg FROM c ${baseWhere}`,
@@ -925,14 +926,14 @@ export class PortfolioAnalyticsService {
 
   private async getCurrentMetrics(): Promise<any> {
     const rows = await this.db.runOrdersQuery({
-      query: `SELECT VALUE COUNT(1) FROM c WHERE c.type = 'order' AND c.status NOT IN ('completed', 'cancelled')`,
+      query: `SELECT VALUE COUNT(1) FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.status NOT IN ('completed', 'cancelled')`,
     });
     return { activeOrders: (rows[0] as any) ?? 0 };
   }
 
   private async getActiveOrders(): Promise<any[]> {
     return this.db.runOrdersQuery({
-      query: `SELECT TOP 200 c.id, c.status, c.dueDate FROM c WHERE c.type = 'order' AND c.status NOT IN ('completed', 'cancelled') ORDER BY c.dueDate`,
+      query: `SELECT TOP 200 c.id, c.status, c.dueDate FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.status NOT IN ('completed', 'cancelled') ORDER BY c.dueDate`,
     });
   }
 
@@ -942,7 +943,7 @@ export class PortfolioAnalyticsService {
 
   private async getKPIs(): Promise<any> {
     const rows = await this.db.runOrdersQuery({
-      query: `SELECT VALUE COUNT(1) FROM c WHERE c.type = 'order' AND c.createdAt >= @since`,
+      query: `SELECT VALUE COUNT(1) FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.createdAt >= @since`,
       parameters: [{ name: '@since', value: new Date(Date.now() - 60 * 60 * 1000).toISOString() }],
     });
     const ordersLastHour: number = (rows[0] as any) ?? 0;

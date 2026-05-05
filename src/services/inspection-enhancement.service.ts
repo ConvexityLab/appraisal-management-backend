@@ -329,7 +329,7 @@ export class InspectionEnhancementService {
 
     // Get all assigned orders that don't have completed inspections
     const { resources: orders } = await container.items.query({
-      query: `SELECT c.id, c.assignedAt, c.tenantId FROM c WHERE c.type = 'order' AND c.tenantId = @tid AND c.status IN ('ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'INSPECTION_SCHEDULED')`,
+      query: `SELECT c.id, c.assignedAt, c.tenantId FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.tenantId = @tid AND c.status IN ('ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'INSPECTION_SCHEDULED')`,
       parameters: [{ name: '@tid', value: tenantId }],
     }).fetchAll();
 

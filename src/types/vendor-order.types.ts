@@ -72,6 +72,25 @@ export const LEGACY_VENDOR_ORDER_DOC_TYPE = 'order' as const;
 /** Cosmos container name for VendorOrder documents. */
 export const VENDOR_ORDERS_CONTAINER = 'orders' as const;
 
+/**
+ * SQL predicate fragment that matches BOTH the new VendorOrder discriminator
+ * AND the legacy `'order'` value. Use this in any WHERE clause that needs to
+ * find VendorOrder rows.
+ *
+ * Phase A (today): writes use VENDOR_ORDER_DOC_TYPE. Reads tolerate both so
+ * pre-migration rows (`type: 'order'`) remain queryable until they're
+ * backfilled. Slice 8j+ retires the legacy half once all rows have been
+ * migrated.
+ *
+ * Use as: `WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.id = @id`
+ *
+ * The predicate is hardcoded (not parameterized) because Cosmos query plans
+ * cache better with literal predicates than with parameters in IN-style
+ * matches, and the values are compile-time constants.
+ */
+export const VENDOR_ORDER_TYPE_PREDICATE =
+    `(c.type = '${VENDOR_ORDER_DOC_TYPE}' OR c.type = '${LEGACY_VENDOR_ORDER_DOC_TYPE}')` as const;
+
 // ─── Linkage fields (NEW, added by Phase 1 / Phase 4 migration) ─────────────
 
 /**

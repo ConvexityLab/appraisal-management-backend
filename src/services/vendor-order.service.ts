@@ -34,7 +34,7 @@ import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
 import type { AppraisalOrder } from '../types/index.js';
 import {
-    LEGACY_VENDOR_ORDER_DOC_TYPE,
+    VENDOR_ORDER_DOC_TYPE,
     type VendorOrder,
     type VendorWorkType,
 } from '../types/vendor-order.types.js';
@@ -89,12 +89,14 @@ export class VendorOrderService {
 
         const created = row.data as AppraisalOrder;
 
-        // Apply the VendorOrder shape — adds the linkage fields + the legacy
-        // discriminator. Phase 4 (slice 8f) replaces LEGACY_VENDOR_ORDER_DOC_TYPE
-        // with VENDOR_ORDER_DOC_TYPE in lockstep with the read-query update.
+        // Apply the VendorOrder shape — adds the linkage fields + the new
+        // discriminator. Slice 8f flipped writes from LEGACY_VENDOR_ORDER_DOC_TYPE
+        // ('order') to VENDOR_ORDER_DOC_TYPE ('vendor-order'). Reads tolerate
+        // both via VENDOR_ORDER_TYPE_PREDICATE so pre-flip rows remain
+        // queryable until backfilled.
         const vendorOrder: VendorOrder = {
             ...created,
-            type: LEGACY_VENDOR_ORDER_DOC_TYPE,
+            type: VENDOR_ORDER_DOC_TYPE,
             tenantId: input.tenantId,
             clientOrderId: input.clientOrderId,
             engagementId: input.engagementId,

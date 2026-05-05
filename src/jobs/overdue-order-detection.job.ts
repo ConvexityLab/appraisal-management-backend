@@ -92,13 +92,14 @@ export class OverdueOrderDetectionJob {
       const now = new Date().toISOString();
 
       // Find orders that are:
-      //   - type = 'order' (not assignments or other doc types)
+      //   - type matches the VendorOrder discriminator (slice 8f migrates writes
+      //     from 'order' → 'vendor-order'; the OR keeps pre-migration rows queryable)
       //   - have a dueDate in the past
       //   - are NOT in a final status
       //   - are NOT already flagged as overdue
       const query = `
         SELECT * FROM c
-        WHERE c.type = 'order'
+        WHERE (c.type = 'vendor-order' OR c.type = 'order')
           AND IS_DEFINED(c.dueDate)
           AND c.dueDate < @now
           AND NOT ARRAY_CONTAINS(@finalStatuses, c.status)
