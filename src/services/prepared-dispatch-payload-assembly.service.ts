@@ -172,13 +172,27 @@ export class PreparedDispatchPayloadAssemblyService {
     if (path.startsWith('order.')) {
       return this.readPath(context.order, path.slice('order.'.length));
     }
+    // Slice 8j: canonical paths are the preferred way to address data on
+    // a snapshot. `subject`, `comps`, `loan`, `ratios` etc. all live under
+    // `canonical`. Authors of new criteria/dispatch rules should use this
+    // prefix; the legacy `subjectProperty.` / `providerData.` prefixes
+    // below remain for rules authored pre-8j.
+    if (path.startsWith('canonical.')) {
+      return this.readPath(
+        (context.canonicalData as { canonical?: unknown } | undefined)?.canonical,
+        path.slice('canonical.'.length),
+      );
+    }
     if (path.startsWith('subjectProperty.')) {
+      // @deprecated path prefix — read from `canonical.subject.X` instead.
       return this.readPath(context.canonicalData?.subjectProperty, path.slice('subjectProperty.'.length));
     }
     if (path.startsWith('extraction.')) {
       return this.readPath(context.canonicalData?.extraction, path.slice('extraction.'.length));
     }
     if (path.startsWith('providerData.')) {
+      // @deprecated path prefix — read from `canonical.subject.X` instead;
+      // raw provider audit data lives on PropertyEnrichmentRecord.
       return this.readPath(context.canonicalData?.providerData, path.slice('providerData.'.length));
     }
     if (path.startsWith('provenance.')) {

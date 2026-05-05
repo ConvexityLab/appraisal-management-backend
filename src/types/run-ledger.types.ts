@@ -80,7 +80,18 @@ export interface CanonicalSnapshotRecord {
   normalizedDataRef: string;
   createdByRunIds: string[];
   normalizedData?: {
+    /**
+     * @deprecated Slice 8j: legacy flat shim that pre-dated the canonical
+     * mapper. Read `canonical.subject` instead. Field is still populated by
+     * the snapshot service for back-compat; final removal is slice 8k once
+     * all readers have migrated.
+     */
     subjectProperty?: Record<string, unknown>;
+    /**
+     * Raw Axiom extraction output, retained for provenance and re-projection
+     * if the mapper changes. NOT the canonical view — read `canonical.subject`
+     * / `canonical.comps` etc. for the canonical shape.
+     */
     extraction?: Record<string, unknown>;
     /**
      * AMP canonical-schema (UAD 3.6 / URAR / MISMO 3.4 aligned) projection of
@@ -90,6 +101,12 @@ export interface CanonicalSnapshotRecord {
      * with snapshots produced before the mapper was introduced.
      */
     canonical?: Record<string, unknown>;
+    /**
+     * @deprecated Slice 8j: raw third-party-provider response. Kept as
+     * provenance only; consume `canonical.subject` (enrichment already
+     * projected) or fetch the PropertyEnrichmentRecord directly when raw
+     * audit data is needed. Final removal is slice 8k.
+     */
     providerData?: Record<string, unknown>;
     provenance?: Record<string, unknown>;
   };

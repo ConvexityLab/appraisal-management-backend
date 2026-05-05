@@ -96,13 +96,22 @@ export class CriteriaStepInputService {
     stepKey: string,
   ): Record<string, unknown> {
     const stepKeyMapJson = process.env.RUN_CRITERIA_STEP_INPUT_PATHS_JSON;
+    // Slice 8j: prefer the canonical view (the one true shape) over the
+    // legacy parallel shims. `subjectProperty` and `providerData` remain
+    // populated for now so any stragglers continue working; final removal
+    // is slice 8k.
+    const normalized = snapshot.normalizedData ?? {};
     const defaultPayload = {
       stepKey,
       snapshotId: snapshot.id,
-      subjectProperty: snapshot.normalizedData?.subjectProperty ?? {},
-      extraction: snapshot.normalizedData?.extraction ?? {},
-      providerData: snapshot.normalizedData?.providerData ?? {},
-      provenance: snapshot.normalizedData?.provenance ?? {},
+      canonical: (normalized as { canonical?: unknown }).canonical ?? {},
+      extraction: normalized.extraction ?? {},
+      provenance: normalized.provenance ?? {},
+      // @deprecated — read from `canonical.subject` instead. Retained until slice 8k.
+      subjectProperty: normalized.subjectProperty ?? {},
+      // @deprecated — raw provider blob; consume `canonical.subject` (enrichment
+      // already projected) or fetch the property-enrichment record directly.
+      providerData: normalized.providerData ?? {},
     };
 
     if (!stepKeyMapJson) {

@@ -178,6 +178,15 @@ export interface BulkIngestionCanonicalRecord {
   rowIndex: number;
   adapterKey: string;
   sourceIdentity?: IntakeSourceIdentity;
+  /**
+   * @deprecated Slice 8j: legacy adapter-specific flat dictionary populated
+   * by `BulkAdapterDefinition.canonicalFieldMappings`. Read `canonicalDocument`
+   * instead — same data in the canonical-schema shape. The order-creation
+   * worker still writes back order-completion metadata (orderId, orderNumber,
+   * engagementId) here for back-compat; that responsibility moves to a
+   * dedicated `lifecycleMetadata` field in slice 8k along with final removal
+   * of this field.
+   */
   canonicalData: Record<string, unknown>;
   /**
    * Projection of the source row onto AMP's CanonicalReportDocument
@@ -186,9 +195,8 @@ export interface BulkIngestionCanonicalRecord {
    * downstream consumers (criteria, dispatch, snapshot) can read the row
    * via canonical paths (e.g. `subject.address.streetAddress`,
    * `loan.baseLoanAmount`) instead of the adapter-specific flat
-   * `canonicalData` shape. Optional: rows that carry no canonical-relevant
-   * content (rare) omit it; the legacy `canonicalData` field remains
-   * authoritative for adapter-driven consumers during incremental migration.
+   * `canonicalData` shape. Slice 8j: this is the CANONICAL form going
+   * forward; `canonicalData` is deprecated.
    */
   canonicalDocument?: Partial<import('./canonical-schema.js').CanonicalReportDocument>;
   sourceData: {
