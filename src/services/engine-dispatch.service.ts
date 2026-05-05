@@ -11,6 +11,11 @@ import type {
   RunLedgerRecord,
 } from '../types/run-ledger.types.js';
 import type { AxiomPreparedPayload, MopPrioPreparedPayload, PreparedEngineDispatch } from '../types/review-preparation.types.js';
+import {
+  parseMopDispatchResponse,
+  parseMopRefreshResponse,
+  MopResponseValidationError,
+} from '../integrations/mop/inbound.adapter.js';
 
 interface CriteriaStepDispatchOptions {
   inputSliceRef: string;
@@ -523,16 +528,22 @@ class MopPrioEngineAdapter implements EngineAdapter {
     engineVersion: string;
     status: EngineDispatchResult['status'];
   } {
-    const body = this.readObjectResponse(responseData, operation, run);
-    const engineRunRef = this.readRequiredString(body, ['runId', 'jobId'], `${operation} dispatch response`, run);
-    const providerStatus = this.readRequiredString(body, ['status'], `${operation} dispatch response`, run).toLowerCase();
-
-    return {
-      engineRunRef,
-      providerStatus,
-      engineVersion: this.readOptionalString(body, ['engineVersion']) ?? 'mop-prio-current',
-      status: this.mapProviderStatus(providerStatus),
-    };
+    try {
+      const parsed = parseMopDispatchResponse(responseData, 'mop-prio-current');
+      return {
+        engineRunRef: parsed.engineRunRef,
+        providerStatus: parsed.providerStatus,
+        engineVersion: parsed.engineVersion,
+        status: parsed.runStatus,
+      };
+    } catch (error) {
+      if (error instanceof MopResponseValidationError) {
+        throw new Error(
+          `MOP/Prio ${operation} dispatch response failed validation for run '${run.id}': ${error.issues.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+        );
+      }
+      throw error;
+    }
   }
 
   private parseRefreshResponse(
@@ -543,59 +554,21 @@ class MopPrioEngineAdapter implements EngineAdapter {
     mappedStatus: EngineDispatchResult['status'];
     engineVersion: string;
   } {
-    const body = this.readObjectResponse(responseData, 'status refresh', run);
-    const providerStatus = this.readRequiredString(body, ['status'], 'status refresh response', run).toLowerCase();
-
-    return {
-      providerStatus,
-      mappedStatus: this.mapProviderStatus(providerStatus),
-      engineVersion: this.readOptionalString(body, ['engineVersion']) ?? run.engineVersion ?? 'mop-prio-current',
-    };
-  }
-
-  private readObjectResponse(responseData: unknown, operation: string, run: RunLedgerRecord): Record<string, unknown> {
-    if (!responseData || typeof responseData !== 'object' || Array.isArray(responseData)) {
-      throw new Error(`MOP/Prio ${operation} failed for run '${run.id}': response body must be an object`);
-    }
-
-    return responseData as Record<string, unknown>;
-  }
-
-  private readRequiredString(
-    body: Record<string, unknown>,
-    keys: string[],
-    responseLabel: string,
-    run: RunLedgerRecord,
-  ): string {
-    const value = this.readOptionalString(body, keys);
-    if (!value) {
-      throw new Error(`MOP/Prio ${responseLabel} failed for run '${run.id}': missing required field ${keys.join(' or ')}`);
-    }
-    return value;
-  }
-
-  private readOptionalString(body: Record<string, unknown>, keys: string[]): string | null {
-    for (const key of keys) {
-      const value = body[key];
-      if (typeof value === 'string' && value.trim().length > 0) {
-        return value.trim();
+    try {
+      const parsed = parseMopRefreshResponse(responseData);
+      return {
+        providerStatus: parsed.providerStatus,
+        mappedStatus: parsed.runStatus,
+        engineVersion: parsed.engineVersion ?? run.engineVersion ?? 'mop-prio-current',
+      };
+    } catch (error) {
+      if (error instanceof MopResponseValidationError) {
+        throw new Error(
+          `MOP/Prio status refresh response failed validation for run '${run.id}': ${error.issues.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+        );
       }
+      throw error;
     }
-
-    return null;
-  }
-
-  private mapProviderStatus(providerStatus: string): EngineDispatchResult['status'] {
-    if (providerStatus === 'completed' || providerStatus === 'success') {
-      return 'completed';
-    }
-    if (providerStatus === 'failed' || providerStatus === 'error') {
-      return 'failed';
-    }
-    if (providerStatus === 'queued' || providerStatus === 'pending') {
-      return 'queued';
-    }
-    return 'running';
   }
 }
 
