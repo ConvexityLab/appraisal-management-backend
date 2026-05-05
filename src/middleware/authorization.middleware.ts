@@ -88,8 +88,13 @@ export class AuthorizationMiddleware {
         // authenticated via a test JWT (req.user.isTestToken). This unblocks
         // Playwright / live-fire scripts without requiring a Cosmos `users`
         // record for the synthetic subject. Gated to NODE_ENV !== 'production'
-        // so a stolen test JWT can never escalate against a prod deployment.
-        if (process.env.NODE_ENV !== 'production' && (req.user as any).isTestToken) {
+        // AND BYPASS_TEST_TOKEN_PROFILE_CHECK=true so that unit/integration
+        // tests that specifically test the profile-gate path are not bypassed.
+        if (
+          process.env.NODE_ENV !== 'production' &&
+          process.env.BYPASS_TEST_TOKEN_PROFILE_CHECK === 'true' &&
+          (req.user as any).isTestToken
+        ) {
           this.logger.info('Authorization: synthesizing profile for test-token request', {
             userId: req.user.id,
             tenantId,

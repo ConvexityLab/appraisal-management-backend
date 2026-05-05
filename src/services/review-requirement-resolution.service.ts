@@ -154,8 +154,8 @@ export class ReviewRequirementResolutionService {
       : [];
 
     return this.buildResolution({
-      criterionId: criterion.code || criterion.id,
-      criterionTitle: criterion.statement || criterion.code || 'Unnamed Axiom criterion',
+      criterionId: criterion.concept || criterion.code || criterion.id,
+      criterionTitle: criterion.title || criterion.statement || criterion.code || 'Unnamed Axiom criterion',
       engine: 'AXIOM',
       engineProgramId,
       engineProgramVersion,

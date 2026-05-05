@@ -21,6 +21,14 @@ if (!process.env.AZURE_COSMOS_ENDPOINT) {
   process.env.AZURE_COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT || 'https://test-placeholder.documents.azure.com:443/';
 }
 
+// AxiomService constructor calls resolveAxiomTokenScope() when
+// useDefaultCredential is true. Disable that code path in tests by setting
+// AXIOM_AUTH_REQUIRED=false, which makes the constructor skip auth entirely.
+// Tests that need real Axiom calls are responsible for mocking AxiomService.
+if (!process.env.AXIOM_AUTH_REQUIRED) {
+  process.env.AXIOM_AUTH_REQUIRED = 'false';
+}
+
 // CI does not provide these by default; set non-production placeholders so
 // constructor-time validation in services does not fail test collection.
 if (!process.env.AZURE_STORAGE_ACCOUNT_NAME) {

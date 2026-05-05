@@ -31,14 +31,18 @@ export class ReviewPreparationService {
     dependencies: ReviewPreparationServiceDependencies = {},
   ) {
     this.assemblyService = dependencies.assemblyService ?? new ReviewContextAssemblyService(dbService);
-    const axiomCriteriaService = dependencies.axiomCriteriaService ?? new AxiomService(dbService);
-    const mopCriteriaService = dependencies.mopCriteriaService ?? new MopCriteriaService(dbService);
-    const sourcePriorityService = dependencies.sourcePriorityService ?? new ReviewSourcePriorityService();
-    this.requirementResolutionService = dependencies.requirementResolutionService ?? new ReviewRequirementResolutionService(dbService, {
-      axiomCriteriaService,
-      mopCriteriaService,
-      sourcePriorityService,
-    });
+    if (dependencies.requirementResolutionService) {
+      this.requirementResolutionService = dependencies.requirementResolutionService;
+    } else {
+      const axiomCriteriaService = dependencies.axiomCriteriaService ?? new AxiomService(dbService);
+      const mopCriteriaService = dependencies.mopCriteriaService ?? new MopCriteriaService(dbService);
+      const sourcePriorityService = dependencies.sourcePriorityService ?? new ReviewSourcePriorityService();
+      this.requirementResolutionService = new ReviewRequirementResolutionService(dbService, {
+        axiomCriteriaService,
+        mopCriteriaService,
+        sourcePriorityService,
+      });
+    }
   }
 
   async prepare(

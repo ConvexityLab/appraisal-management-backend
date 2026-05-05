@@ -101,8 +101,10 @@ vi.mock('../../src/services/tenant-automation-config.service.js', () => ({
 }));
 
 import { createRunsRouter } from '../../src/controllers/runs.controller.js';
+import { CosmosDbService } from '../../src/services/cosmos-db.service.js';
 
 function buildApp() {
+  const dbService = new CosmosDbService() as any;
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -114,7 +116,7 @@ function buildApp() {
     };
     next();
   });
-  app.use('/api/runs', createRunsRouter({} as any));
+  app.use('/api/runs', createRunsRouter(dbService));
   return app;
 }
 
