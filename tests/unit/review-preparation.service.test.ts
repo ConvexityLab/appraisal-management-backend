@@ -86,6 +86,7 @@ describe('ReviewPreparationService', () => {
           canonNodeId: 'canon-1',
           canonPath: 'property.address',
           taxonomyCategory: 'property',
+          code: 'PROPERTY_ADDRESS_COMPLETE',
           concept: 'PROPERTY_ADDRESS_COMPLETE',
           title: 'Property address complete',
           description: 'Address must be present',
@@ -299,6 +300,7 @@ describe('ReviewPreparationService', () => {
         {
           id: 'node-2',
           nodeId: 'node-2',
+          code: 'COMPARABLE_SUPPORT_PRESENT',
           concept: 'COMPARABLE_SUPPORT_PRESENT',
           title: 'Comparable support present',
           dataRequirements: [{ path: 'comparables.selected', required: true }],
@@ -370,6 +372,7 @@ describe('ReviewPreparationService', () => {
         {
           id: 'node-3',
           nodeId: 'node-3',
+          code: 'GROSS_ADJUSTMENT_SUPPORT',
           concept: 'GROSS_ADJUSTMENT_SUPPORT',
           title: 'Gross adjustment support',
           dataRequirements: [{ path: 'comparables.adjustments.grossAdjustmentPct', required: true }],

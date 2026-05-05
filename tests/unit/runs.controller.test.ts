@@ -101,6 +101,7 @@ vi.mock('../../src/services/tenant-automation-config.service.js', () => ({
 }));
 
 import { createRunsRouter } from '../../src/controllers/runs.controller.js';
+import { CosmosDbService } from '../../src/services/cosmos-db.service.js';
 
 function buildApp() {
   const app = express();
@@ -114,7 +115,9 @@ function buildApp() {
     };
     next();
   });
-  app.use('/api/runs', createRunsRouter({} as any));
+  // Use the mocked CosmosDbService so AnalysisSubmissionService.loadDocumentById
+  // (called via resolveSubmissionSourceIdentity) gets a working queryItems.
+  app.use('/api/runs', createRunsRouter(new CosmosDbService() as any));
   return app;
 }
 

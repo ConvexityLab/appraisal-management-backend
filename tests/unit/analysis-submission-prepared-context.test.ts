@@ -143,7 +143,13 @@ describe('AnalysisSubmissionService prepared-context criteria dispatch', () => {
   });
 
   it('allows prepared MOP/Prio criteria dispatch without a snapshot', async () => {
-    const service = new AnalysisSubmissionService({} as any, {
+    const service = new AnalysisSubmissionService({
+      // Minimal CosmosDbService stub for resolveSubmissionSourceIdentity:
+      // findOrderById is called when loanPropertyContextId is supplied;
+      // queryItems is called for documentId-based lookups.
+      findOrderById: vi.fn().mockResolvedValue({ success: false, data: null }),
+      queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    } as any, {
       submitOrderEvaluation: vi.fn(),
       getLastPipelineSubmissionError: vi.fn(),
     } as any);
@@ -224,7 +230,13 @@ describe('AnalysisSubmissionService prepared-context criteria dispatch', () => {
       preparedPayloadRef: 'prepared-context://prepared-1/dispatch/AXIOM/axiom-program:1.0',
     });
 
-    const service = new AnalysisSubmissionService({} as any, {
+    const service = new AnalysisSubmissionService({
+      // Minimal CosmosDbService stub for resolveSubmissionSourceIdentity:
+      // findOrderById is called when loanPropertyContextId is supplied;
+      // queryItems is called for documentId-based lookups.
+      findOrderById: vi.fn().mockResolvedValue({ success: false, data: null }),
+      queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    } as any, {
       submitOrderEvaluation: vi.fn(),
       getLastPipelineSubmissionError: vi.fn(),
     } as any);

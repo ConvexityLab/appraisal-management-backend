@@ -48,6 +48,10 @@ describe('AxiomService pipeline result stamping', () => {
     delete process.env.AXIOM_API_TOKEN_SCOPE;
     delete process.env.AXIOM_API_RESOURCE;
     delete process.env.AXIOM_USE_DEFAULT_CREDENTIAL;
+    // .env sets AXIOM_AUTH_REQUIRED=false for local dev which short-circuits
+    // credential setup. Clear it so the placeholder→DefaultAzureCredential
+    // path runs in this test.
+    delete process.env.AXIOM_AUTH_REQUIRED;
   });
 
   it('replaces the checked-in placeholder key with a real Entra bearer token for live-fire requests', async () => {
@@ -192,6 +196,7 @@ describe('AxiomService pipeline result stamping', () => {
       [{ documentName: 'Appraisal.pdf', documentReference: 'https://blob/doc.pdf?sas=1' }],
       'tenant-001',
       'client-001',
+      'sub-001',
     );
 
     expect(result).toEqual({

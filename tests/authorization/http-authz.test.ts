@@ -207,10 +207,24 @@ describe('Layer 1 — Authentication gate (401)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Layer 2 — User profile gate (403)', () => {
+  // The auth middleware bypasses profile lookup for test tokens when
+  // NODE_ENV !== 'production' (so E2E flows can run without seeded users).
+  // Flip NODE_ENV for these tests so the real loadUserProfile path runs.
+  const originalNodeEnv = process.env.NODE_ENV;
+  beforeAll(() => {
+    process.env.NODE_ENV = 'production';
+  });
+  afterAll(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  // /api/qc-checklists-new explicitly mounts loadUserProfile() in its chain
+  // — /api/orders only mounts unifiedAuth.authenticate() so the 403 path
+  // can't be exercised through it.
   it('valid JWT but user not found in DB → 403 USER_PROFILE_NOT_FOUND', async () => {
     const token = mintToken('ghost-uid', 'admin');
     const res = await request(app)
-      .get('/api/orders')
+      .get('/api/qc-checklists-new')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('USER_PROFILE_NOT_FOUND');
@@ -219,7 +233,7 @@ describe('Layer 2 — User profile gate (403)', () => {
   it('valid JWT but user is inactive → 403 USER_INACTIVE', async () => {
     const token = mintToken('inactive-uid', 'admin');
     const res = await request(app)
-      .get('/api/orders')
+      .get('/api/qc-checklists-new')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('USER_INACTIVE');

@@ -99,7 +99,9 @@ describe('AxiomService platform parity', () => {
 
   it.each([
     ['EXTRACTION', 'adaptive-document-processing'],
-    ['CRITERIA_EVALUATION', 'smart-criteria-evaluation'],
+    // Axiom renamed CRITERIA_ONLY pipeline 'smart-criteria-evaluation'
+    // -> 'criteria-only-evaluation' (axiom.service.ts:314-316).
+    ['CRITERIA_EVALUATION', 'criteria-only-evaluation'],
     ['COMPLETE_EVALUATION', 'complete-document-criteria-evaluation'],
   ] as const)('uses %s pipeline id for submitOrderEvaluation', async (evaluationMode, pipelineId) => {
     const dbStub = {

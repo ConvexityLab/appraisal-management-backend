@@ -32,13 +32,15 @@ export class AttomProviderService {
   private readonly cacheTtlDays: number;
 
   /**
-   * @param cache   PropertyDataCacheService instance
+   * @param cache   Optional PropertyDataCacheService. When null the provider
+   *                bypasses the cache and goes straight to the live AttomService
+   *                — the legacy "Attom-only without Cosmos" configuration.
    * @param attom   Optional AttomService instance. If omitted, the provider only
    *                uses the cache and throws on misses (appropriate for environments
    *                where ATTOM_API_KEY is not configured).
    */
   constructor(
-    private readonly cache: PropertyDataCacheService,
+    private readonly cache: PropertyDataCacheService | null,
     private readonly attom: AttomService | null = null,
   ) {
     this.logger = new Logger('AttomProviderService');
@@ -73,7 +75,7 @@ export class AttomProviderService {
     const parsed = parseAddress1(address1);
     const { zip } = parseAddress2(address2);
 
-    if (!options.forceRefresh && parsed) {
+    if (this.cache && !options.forceRefresh && parsed) {
       const cached = await this.cache.getByAddress(parsed.houseNumber, parsed.streetName, zip);
       if (cached && !this.cache.isStale(cached, this.cacheTtlDays)) {
         this.logger.debug('AttomProviderService: cache hit (address)', { address1, address2 });
@@ -85,7 +87,7 @@ export class AttomProviderService {
       if (!this.attom) this.throwNoApiKey(address1, address2);
       const response = await this.attom!.getPropertyDetailOwner(address1, address2);
       const attomId = extractAttomId(response);
-      if (attomId) {
+      if (attomId && this.cache) {
         await this.mergeAndCacheApiResponse(attomId, 'propertyDetail', response);
       }
       return response;
@@ -101,7 +103,7 @@ export class AttomProviderService {
   ): Promise<unknown> {
     const id = String(attomId);
 
-    if (!options.forceRefresh) {
+    if (this.cache && !options.forceRefresh) {
       const cached = await this.cache.getByAttomId(id);
       if (cached && !this.cache.isStale(cached, this.cacheTtlDays)) {
         this.logger.debug('AttomProviderService: cache hit (assessment)', { attomId });
@@ -112,7 +114,9 @@ export class AttomProviderService {
     return this.fetchLiveAndCache('getAssessmentDetail', async () => {
       if (!this.attom) this.throwNoApiKey(String(attomId));
       const response = await this.attom!.getAssessmentDetail(attomId);
-      await this.mergeAndCacheApiResponse(id, 'assessment', response);
+      if (this.cache) {
+        await this.mergeAndCacheApiResponse(id, 'assessment', response);
+      }
       return response;
     });
   }
@@ -126,7 +130,7 @@ export class AttomProviderService {
   ): Promise<unknown> {
     const id = String(attomId);
 
-    if (!options.forceRefresh) {
+    if (this.cache && !options.forceRefresh) {
       const cached = await this.cache.getByAttomId(id);
       if (cached && !this.cache.isStale(cached, this.cacheTtlDays)) {
         this.logger.debug('AttomProviderService: cache hit (sales history)', { attomId });
@@ -137,7 +141,9 @@ export class AttomProviderService {
     return this.fetchLiveAndCache('getSaleHistoryBasic', async () => {
       if (!this.attom) this.throwNoApiKey(String(attomId));
       const response = await this.attom!.getSaleHistoryBasic(attomId);
-      await this.mergeAndCacheApiResponse(id, 'salesHistory', response);
+      if (this.cache) {
+        await this.mergeAndCacheApiResponse(id, 'salesHistory', response);
+      }
       return response;
     });
   }
@@ -164,6 +170,7 @@ export class AttomProviderService {
     section: 'propertyDetail' | 'assessment' | 'salesHistory',
     response: unknown,
   ): Promise<void> {
+    if (!this.cache) return; // No-op when running without a cache (Attom-only mode)
     try {
       const existing = await this.cache.getByAttomId(attomId);
       if (!existing) {
