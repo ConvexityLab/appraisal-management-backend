@@ -32,6 +32,7 @@ process.env.NODE_ENV = 'test';
 process.env.ENFORCE_AUTHORIZATION = 'true';
 process.env.AXIOM_CLIENT_ID = 'test-client-id';
 process.env.AXIOM_SUB_CLIENT_ID = 'test-sub-client-id';
+process.env.AXIOM_API_BASE_URL = 'https://axiom-stub.test';
 // COSMOS_ENDPOINT already set by tests/setup.ts to a placeholder URL.
 
 // ─── Mock CosmosDbService ────────────────────────────────────────────────────
