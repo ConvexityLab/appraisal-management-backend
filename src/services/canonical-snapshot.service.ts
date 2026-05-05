@@ -11,6 +11,7 @@ import { mapTransactionHistoryFromTape } from '../mappers/transaction-history.ma
 import { mapAvmCrossCheckFromTape } from '../mappers/avm.mapper.js';
 import { computeCompStatistics } from '../mappers/comp-statistics.mapper.js';
 import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
+import { validateCanonicalIngress } from '../utils/validate-canonical-ingress.js';
 import type { CanonicalReportDocument } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
 
@@ -348,6 +349,23 @@ export class CanonicalSnapshotService {
     if (Array.isArray(compsForStats) && compsForStats.length > 0) {
       const compStats = computeCompStatistics(compsForStats);
       if (compStats) (canonical as Partial<CanonicalReportDocument>).compStatistics = compStats;
+    }
+
+    // Strict-canonical-ingress validation. Runs after all mappers + the merge
+    // produced the candidate canonical fragment. Logs structured warnings when
+    // a high-leverage branch (address / loan / ratios / riskFlags) drifted —
+    // the snapshot still persists. This is observability into mapper bugs;
+    // the per-source upstream adapters already strict-validate at the wire
+    // boundary.
+    const ingressValidation = validateCanonicalIngress(canonical as Partial<CanonicalReportDocument>);
+    if (!ingressValidation.ok) {
+      this.logger.warn('Canonical ingress validation: drift detected', {
+        runId: extractionRun.id,
+        tenantId: extractionRun.tenantId,
+        issueCount: ingressValidation.issues.length,
+        issues: ingressValidation.issues.slice(0, 10),
+        branchesChecked: ingressValidation.branchesChecked,
+      });
     }
 
     return {
