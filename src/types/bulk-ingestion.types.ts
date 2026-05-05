@@ -179,6 +179,18 @@ export interface BulkIngestionCanonicalRecord {
   adapterKey: string;
   sourceIdentity?: IntakeSourceIdentity;
   canonicalData: Record<string, unknown>;
+  /**
+   * Projection of the source row onto AMP's CanonicalReportDocument
+   * (UAD 3.6 / URAR / MISMO 3.4 aligned). Populated by
+   * `mapBulkIngestionSourceToCanonical` in the canonical-worker stage so
+   * downstream consumers (criteria, dispatch, snapshot) can read the row
+   * via canonical paths (e.g. `subject.address.streetAddress`,
+   * `loan.baseLoanAmount`) instead of the adapter-specific flat
+   * `canonicalData` shape. Optional: rows that carry no canonical-relevant
+   * content (rare) omit it; the legacy `canonicalData` field remains
+   * authoritative for adapter-driven consumers during incremental migration.
+   */
+  canonicalDocument?: Partial<import('./canonical-schema.js').CanonicalReportDocument>;
   sourceData: {
     loanNumber?: string;
     externalId?: string;
