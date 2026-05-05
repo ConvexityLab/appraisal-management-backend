@@ -1,431 +1,264 @@
-# Order Domain Redesign — Design Document
+# Order Domain Redesign — Design Document (v2)
 
 **Status:** Draft for review
-**Author:** Canonical-alignment workstream (slices 8b–8f)
-**Prereqs:** Slices 1–7, 9, 8a all shipped (canonical-alignment foundation in place; per-Property accumulating canonical view in place via 8a)
-**Last updated:** 2026-05-04
+**Branch context:** `integration/feature-merge-2026-05-04`
+**Prereqs shipped:** Slices 1–7, 9, 8a (canonical-alignment foundation; per-Property accumulating canonical view)
+**Last updated:** 2026-05-05
+**Supersedes:** v1 (2026-05-04)
 
 ---
 
-## 1. Problem statement
+## What changed in v2
 
-The current model conflates three distinct concepts under one type:
+The v1 doc was written before I'd surveyed the integration branch. This rewrite incorporates four corrections from the design conversation:
 
-```
-AppraisalOrder  ← does triple duty:
-                  (a) the client's order for our product
-                  (b) our work order to a vendor
-                  (c) the workflow state machine for both
-```
-
-This is wrong on several axes:
-
-- **The name is misleading.** We sell more than appraisals: DTR, Hybrid Appraisal,
-  RapidVal, BPO, etc. "AppraisalOrder" is a product-fitted name on a generic concept.
-- **One client order can spawn multiple vendor orders.** A BPO ClientOrder fans
-  out to: Realtor VendorOrder + Inspection VendorOrder + staff Review VendorOrder.
-  Today there's no fan-out — one row per "order" with no clear distinction.
-- **Products aren't first-class.** The `productType` enum is hard-coded; clients
-  can't author their own product packages; composition rules don't exist.
-- **Engagement isn't load-bearing.** Engagement exists but isn't required as the
-  parent of every order; orphaned-order paths exist.
-
-There are no external consumers of the AppraisalOrder shape today — so we have
-freedom to redesign cleanly.
+1. **Property is the load-bearing entity, not Loan.** v1 echoed the codebase's existing `EngagementLoan` naming. That's the wrong anchor — engagements hold *properties*; loans are reference metadata that hangs off properties.
+2. **More of v1's scope is already built than v1 acknowledged.** The integration branch already has `Engagement`, `ClientOrder`, `VendorOrder`, `Product`, `ProductType` (atomic catalog), and `DecompositionRule` (composition mechanism). What's missing is wiring, seeds, and the legacy-removal cleanup — not the entities themselves.
+3. **One canonical SHAPE, multiple stores by lifecycle.** v1 was silent on this. The clarification is now explicit: provenance stores (raw) + rolling property view + frozen per-order snapshot — all the same `CanonicalReportDocument` shape, distinct lifecycles.
+4. **Decomposition is "rules-as-suggestions", not auto-fan-out.** v1 implied automatic fan-out at order create. The integration branch deliberately makes this human-confirmable (with `autoApply: true` for low-risk products). The doc now reflects that.
 
 ---
 
-## 2. Target domain model
+## 1. Target domain model (corrected)
 
 ```
-Engagement                               (Client → AMP, established by client)
-    │   id, clientId, tenantId, status, products[], createdAt
-    │
-    ├─ ClientOrder                       (one per product the client buys)
-    │     │   id, engagementId, productId, status, dueDate, propertyId
-    │     │   slaTargets, clientPONumber, productOptions
-    │     │
-    │     ├─ VendorOrder                 (AMP → vendor/staff, per fulfillment unit)
-    │     │     id, clientOrderId, productId (atomic),
-    │     │     vendorId, scope, fee, instructions,
-    │     │     status, dueDate, deliverables, payments
-    │     │
-    │     ├─ VendorOrder
-    │     └─ VendorOrder
-    │
-    └─ ClientOrder
-          └─ VendorOrder ...
+Engagement                              (Client → AMP, lender relationship)
+   │   id, clientId, tenantId, status, properties[]
+   │
+   └─ EngagementProperty[]              ← Properties, not Loans (currently mis-named EngagementLoan in code)
+         │   propertyId  → PropertyRecord     (load-bearing FK)
+         │   loanReferences[]                 (reference-only metadata; many loans possible per property)
+         │   clientOrders[]                   (orders for THIS property)
+         │   ...
+         │
+         └─ ClientOrder[]               (one per product the client buys for this property: DVR, BPO, Appraisal, ROV, ...)
+               │   id, engagementId, engagementPropertyId, productId,
+               │   propertyId, productSnapshot, resolvedComposition, vendorOrderIds[]
+               │
+               └─ VendorOrder[]         (the fan-out — AMP → vendor/staff per fulfillment unit)
+                     id, clientOrderId, productId (atomic), vendorId,
+                     scope, fee, dueDate, status, deliverables, ...
 
-Vendor                                   (kind: 'EXTERNAL' | 'INTERNAL')
-                                         (staff are vendors with kind=INTERNAL)
+PropertyRecord                          (the canonical physical asset; data hangs HERE)
+   ├─ address, building, taxAssessments, permits
+   ├─ currentCanonical: PropertyCurrentCanonicalView    (rolling, slice 8a)
+   └─ versionHistory[]
 
-Product (catalog)                        (clientFacing | vendorFulfillable | both)
-    composition: { alwaysInclude, selectors, rules }   (all three modes supported)
+Vendor                                  (kind via staffType: 'EXTERNAL' | 'INTERNAL')
+                                        (staff are vendors with staffType=INTERNAL)
+
+Product (catalog)                       (clientFacing | vendorFulfillable | both)
+DecompositionRule                       (1 ClientOrder → N VendorOrders mapping; rules-as-suggestions)
 ```
 
-### 2.1 Entities
+### 1.1 Cardinality at every level
+- 1 Engagement → N EngagementProperty
+- 1 EngagementProperty → 1 PropertyRecord (FK) + N LoanReference (metadata) + N ClientOrder
+- 1 ClientOrder → N VendorOrder
+- 1 PropertyRecord → 1 currentCanonical (rolling) + N CanonicalSnapshot (per-order, frozen)
 
-**Engagement** — already exists; we tighten its parenthood.
-```ts
-interface Engagement {
-  id: string;
-  tenantId: string;
-  clientId: string;
-  status: 'ACTIVE' | 'CLOSED';
-  // ... existing fields ...
-  /** Optional override of client-facing pricing for this engagement. */
-  pricingOverrides?: ProductPricingOverride[];
-}
+### 1.2 What lives WHERE on the property
+
+Properties are the unit of work — orders, products, third-party data, enrichment, canonical accumulation, comps history all hang off the property.
+
+```
+PropertyRecord
+  ├─ identity: address, apn, fipsCode, propertyType
+  ├─ characteristics: building.{gla, yearBuilt, bedrooms, ...}
+  ├─ history: taxAssessments[], permits[], versionHistory[]
+  ├─ currentCanonical (rolling canonical view — slice 8a)
+  └─ provenance: dataSource, lastVerifiedAt
 ```
 
-**ClientOrder** (new — replaces `AppraisalOrder` in the client-facing role).
-```ts
-interface ClientOrder {
-  id: string;
-  type: 'client-order';
-  tenantId: string;
-  engagementId: string;            // REQUIRED parent
-  clientId: string;
-  /** What the client bought — references Product.id where clientFacing=true. */
-  productId: string;
-  /** Product config snapshot at order time (frozen for reproducibility). */
-  productSnapshot: ProductSnapshot;
-  /** Resolved composition at order time — list of vendor-order specs. */
-  resolvedComposition: ComposedAtomRef[];
-  propertyId: string;              // FK → PropertyRecord
-  status: ClientOrderStatus;
-  // SLA / pricing / contact
-  dueDate: string;
-  rushOrder: boolean;
-  clientPONumber?: string;
-  productOptions?: Record<string, unknown>;  // e.g. loanType, loanPurpose for parameterized composition
-  // Lifecycle
-  createdAt: string;
-  createdBy: string;
-  acceptedAt?: string;
-  completedAt?: string;
-  cancelledAt?: string;
-  // Linkage
-  vendorOrderIds: string[];        // populated as fan-out happens
-  canonicalSnapshotId?: string;    // QC reproducibility
-}
-
-type ClientOrderStatus =
-  | 'PENDING_CLIENT_REVIEW'
-  | 'ACCEPTED'
-  | 'IN_PROGRESS'           // ≥1 VendorOrder is active
-  | 'AWAITING_DELIVERABLES'
-  | 'COMPLETED'
-  | 'CANCELLED';
-```
-
-**VendorOrder** (new).
-```ts
-interface VendorOrder {
-  id: string;
-  type: 'vendor-order';
-  tenantId: string;
-  clientOrderId: string;           // REQUIRED parent
-  /** Atomic industry-standard product (Appraisal, AVM, BPO, Inspection, Review). */
-  productId: string;
-  /** The role this vendor-order plays inside the client-order (Primary,
-   *  Supporting, QC). Comes from the composition spec. */
-  role: VendorOrderRole;
-  vendorId: string;                // FK → Vendor (kind: EXTERNAL or INTERNAL)
-  status: VendorOrderStatus;
-  // Scope / fee / SLA
-  scope: VendorOrderScope;
-  fee?: VendorFee;
-  dueDate: string;
-  instructions?: string;
-  // Deliverables (accumulates as the vendor produces output)
-  deliverables: VendorDeliverable[];
-  // Lifecycle
-  createdAt: string;
-  acceptedAt?: string;             // when vendor accepted
-  completedAt?: string;
-  cancelledAt?: string;
-  // Linkage
-  parentClientOrderId: string;     // dup of clientOrderId for partition-safety
-  canonicalSnapshotId?: string;    // optional per-vendor-order snapshot
-}
-
-type VendorOrderRole = 'PRIMARY' | 'SUPPORTING' | 'QC' | 'INSPECTION' | 'REVIEW';
-type VendorOrderStatus =
-  | 'PENDING_VENDOR_ACCEPT'
-  | 'ACCEPTED'
-  | 'IN_PROGRESS'
-  | 'DELIVERED'              // vendor submitted; awaiting QC
-  | 'COMPLETED'
-  | 'REJECTED'
-  | 'CANCELLED';
-```
-
-**Vendor** — already exists; add `kind` flag.
-```ts
-interface Vendor {
-  id: string;
-  tenantId: string;
-  kind: 'EXTERNAL' | 'INTERNAL';   // NEW: staff = INTERNAL
-  name: string;
-  // ... existing fields ...
-  staffUserId?: string;            // populated when kind=INTERNAL
-}
-```
-
-**Product (catalog)** — new container.
-```ts
-interface Product {
-  id: string;
-  type: 'product';
-  tenantId: string;                // null = platform-default
-  clientId: string | null;         // null = platform-default; client-id = client override
-  name: string;
-  version: string;                 // semver-style
-  status: 'ACTIVE' | 'INACTIVE' | 'DRAFT';
-
-  // Two independent flags
-  clientFacing: boolean;           // can a ClientOrder reference it?
-  vendorFulfillable: boolean;      // can a VendorOrder reference it?
-
-  // Composition — empty/absent means atomic (no fan-out)
-  composition?: {
-    alwaysInclude?: AtomRef[];                       // static
-    selectors?: SelectorRule[];                      // parameterized
-    rules?: RuleBasedRule[];                         // rule-driven (slice 8e)
-  };
-
-  // Pricing (high-level — line-items live elsewhere)
-  pricing?: ProductPricing;
-
-  createdAt: string;
-  createdBy: string;
-}
-
-interface AtomRef {
-  productId: string;               // points to a vendorFulfillable product
-  role: VendorOrderRole;
-  optional?: boolean;
-}
-
-interface SelectorRule {
-  /** Match against ClientOrder.productOptions (loanType, loanPurpose, etc.). */
-  when: Record<string, unknown>;
-  include: AtomRef[];
-}
-
-interface RuleBasedRule {
-  /** Same path-based predicate vocabulary as review-program rules. */
-  condition: ReviewFlagCondition;  // reuse existing type
-  include: AtomRef[];
-}
-```
-
-### 2.2 The composer
-
-Core function called at ClientOrder creation:
-```ts
-composeOrder(product: Product, context: CanonicalReportDocument | null) → AtomRef[]
-```
-
-- **Static**: return `composition.alwaysInclude`.
-- **Parameterized**: walk `composition.selectors`, match each `when` against
-  `context.loan.loanPurposeType`, `context.subject.propertyType`, etc. Union
-  matched `include` lists.
-- **Rule-driven**: walk `composition.rules`, evaluate `condition` against
-  context using the existing review-program rule evaluator. Union matched
-  `include` lists.
-- Final result: union + dedupe (by productId+role).
-
-Returns the spec for fan-out. ClientOrder.resolvedComposition stores the
-RESULT so reproducibility is preserved even if the catalog evolves.
+`PropertyEnrichmentRecord` (per-call audit blob) and `Document.extractedData` (per-document Axiom output) sit alongside as raw provenance — not children of the property, but linked by propertyId / orderId so we can re-derive canonical if mappers change.
 
 ---
 
-## 3. Slice breakdown
+## 2. State of the integration branch — what's built vs missing
 
-Each slice is independently shippable (modulo dependency order). Tests +
-typecheck pass at each slice; no breaking changes to running services.
+### 2.1 Already built ✓
+
+| Entity / capability | File | Status |
+|---|---|---|
+| `Engagement` (aggregate root) | [`engagement.types.ts`](src/types/engagement.types.ts) | Built; **mis-anchored on Loan** |
+| `EngagementLoan` (per-loan child) | same | Built; should be `EngagementProperty` |
+| `EngagementClientOrder` (embedded per-loan order) | same | Built; FK fields named `engagementLoanId` |
+| `ClientOrder` (standalone) | [`client-order.types.ts`](src/types/client-order.types.ts) | Built (`client-orders` container) |
+| `VendorOrder` | [`vendor-order.types.ts`](src/types/vendor-order.types.ts) | Built as `AppraisalOrder & VendorOrderLinkage` alias |
+| `ClientOrderService.placeClientOrder(input, vendorOrderSpecs)` | `client-order.service.ts` | Built; performs fan-out from caller-supplied specs |
+| Industry-standard atom catalog | [`product-catalog.ts`](src/types/product-catalog.ts) — `ProductType` enum (23 atoms) + `ProductDefinition` | Built |
+| Sellable products | `Product` interface in `index.ts` | Built; 8 seeded |
+| Composition mechanism | [`decomposition-rule.types.ts`](src/types/decomposition-rule.types.ts) + `OrderDecompositionService` | Built (rules-as-suggestions) |
+| Internal staff as vendor | `Vendor.staffType: 'internal' \| 'external'` + `staffRole` enum | Built; 3 staff seeded |
+| Per-property rolling canonical | `PropertyRecord.currentCanonical` (slice 8a) | Built |
+| Per-order frozen canonical | `CanonicalSnapshotRecord` | Built |
+
+### 2.2 Built but not yet wired / activated ⚠️
+
+| Item | Why it matters | Current state |
+|---|---|---|
+| **DecompositionRule seed data** | Without rule rows, every ClientOrder fans out to exactly one VendorOrder (default 1:1). DVR, BPO multi-atom flows can't fire. | No rules seeded |
+| **`type: 'vendor-order'` discriminator flip** | Phase 4 plan: switch reads/writes from legacy `type:'order'` to `'vendor-order'`. | Still on `type:'order'` for back-compat |
+| **`ClientOrder.engagementId` enforcement** | Required parent in the target model. | Optional in current type; orphan-order paths still possible |
+
+### 2.3 Wrong / needs renaming ❌
+
+| Current (wrong) | Target |
+|---|---|
+| `Engagement.loans: EngagementLoan[]` | `Engagement.properties: EngagementProperty[]` |
+| `EngagementLoan` interface (loan-anchored fields at top level) | `EngagementProperty` interface (property-anchored; loan info → `loanReferences[]`) |
+| `engagementLoanId` (FKs throughout codebase) | `engagementPropertyId` |
+| `EngagementClientOrder` embedded shape with loan fields hoisted | property-anchored; loan fields nested as references |
+
+### 2.4 Missing (still real work) 🔨
+
+| Item | Slice |
+|---|---|
+| Rule-driven composition (predicate against canonical context) | 8h |
+| `subjectProperty` flat-shim retirement (legacy parallel view in snapshot) | 8j |
+| `BulkIngestionCanonicalRecord.canonicalData` retirement (legacy adapter blob) | 8j |
+| Direct write-paths to `orders` container (~30 services + 10 controllers still bypass `ClientOrderService` / `VendorOrderService`) | 8e |
+| Final `AppraisalOrder` type removal | 8k |
+
+---
+
+## 3. One canonical SHAPE, multiple STORES
+
+This is the data-architecture clarification I owe the doc. It's NOT a multi-source problem; it's the same shape persisted at different lifecycles.
+
+```
+THE SHAPE
+   CanonicalReportDocument  (canonical-schema.ts)
+   ───────────────────────
+   Every source (Axiom, BatchData, MLS, intake, CSV, MOP) projects ONTO this shape via per-source mappers.
+
+THE STORES (different lifecycles)
+   Provenance / raw          — kept for audit + re-projection
+     ├─ PropertyEnrichmentRecord     (`property-enrichments`, per-call vendor blob)
+     └─ Document.extractedData       (`documents`, per-document Axiom output)
+
+   Rolling per-property      — accumulates across orders
+     └─ PropertyRecord.currentCanonical  (`property-records`, slice 8a)
+
+   Frozen per-order          — USPAP / legal reproducibility
+     └─ CanonicalSnapshotRecord      (`aiInsights`, per-extraction-run)
+```
+
+Why each store is necessary:
+- **Raw provenance** lets us re-project canonical when a mapper changes without re-calling the vendor or re-running Axiom.
+- **Rolling per-property** lets next year's refi read last year's accumulated subject + transaction history.
+- **Frozen per-order** lets us legally reproduce "what data did the rules run against for this specific QC outcome" months later.
+
+The three stores can't be merged because their lifecycles are incompatible — you can't both freeze and accumulate on the same record.
+
+### 3.1 Legacy parallel views (transitional debt to retire — slice 8j)
+
+```ts
+CanonicalSnapshotRecord.normalizedData {
+  canonical:        { ... }   // ← THE ONE, read this
+  extraction:       { ... }   // raw provenance — keep
+  providerData:     { ... }   // raw provenance — keep
+  subjectProperty:  { ... }   // ← LEGACY shim, duplicates canonical, DELETE
+  provenance:       { ... }   // metadata — keep
+}
+
+BulkIngestionCanonicalRecord {
+  canonicalDocument: { ... }  // ← THE ONE (slice 3 added this)
+  canonicalData:     { ... }  // ← LEGACY adapter blob, DELETE once consumers migrate
+  sourceData:        { ... }  // raw row — keep for provenance
+}
+```
+
+These survived the slice 1–9 work for backward compat. Slice 8j retires them once the readers have migrated.
+
+---
+
+## 4. Refactored slice sequence
+
+Renumbered and re-scoped against the integration branch's actual state. Slice numbers continue from 8a (which already shipped):
 
 | Slice | Branch | Scope | Size | Depends |
 |---|---|---|---|---|
-| **8b** | `feat/product-catalog` | Product entity + Cosmos container + composer (static + parameterized only) + seed of platform atoms | 3-5 d | – |
-| **8c** | `feat/client-order-domain` | ClientOrder entity (new container or evolve existing); auto-fan-out runs composer; spawns VendorOrders | 3-5 d | 8b |
-| **8d** | `feat/vendor-order-domain` | VendorOrder entity + Vendor.kind='INTERNAL'; assignment paths consume VendorOrder | 3-5 d | 8c |
-| **8e** | `feat/composition-rules-engine` | Add rule-driven composition (`composition.rules[]`); reuse review-program rule evaluator | 2-3 d | 8b |
-| **8f** | `feat/engagement-primacy` | Engagement is mandatory parent of every ClientOrder; cleanup orphan paths | 1-2 d | 8c |
+| **8b** | `feat/decomposition-rule-seeds` | Author DecompositionRule rows for multi-atom products (DVR, BPO, Hybrid). Activates the dormant fan-out. | ½ – 1 d | – |
+| **8c** | `feat/engagement-property-rename` | **THE BIG ONE.** Rename `EngagementLoan` → `EngagementProperty`; `Engagement.loans` → `Engagement.properties`; `engagementLoanId` → `engagementPropertyId` everywhere; loan fields → `loanReferences[]`. ~30 service + 10 controller touches. | 4–5 d | – |
+| **8d** | `feat/loan-references-shape` | Define `LoanReference` interface; migrate existing top-level loan fields (loanNumber, loanAmount, loanType, loanPurpose, borrowerName, ...) into the array. Multiple loans-per-property supported. | 1–2 d | 8c |
+| **8e** | `feat/migrate-write-paths` | Route all "create order" paths through `ClientOrderService.placeClientOrder` / `VendorOrderService`. Stop direct `orders`-container writes with raw `AppraisalOrder` shape. | 3–5 d | 8c |
+| **8f** | `feat/discriminator-flip` | Flip `type:'order'` → `'vendor-order'` on writes; update read queries; backfill legacy rows. **Coordinated PR — single biggest risk.** | 2–3 d | 8e |
+| **8g** | `feat/engagement-primacy` | Make `ClientOrder.engagementId` required on creation; reject orphan creates; backfill any in-flight orphans to a system-default engagement. | 1–2 d | 8c |
+| **8h** | `feat/composition-rules-engine` | Add rule-driven composition (`composition.rules[]`) using the review-program rule evaluator against canonical context. Clients can author rules. | 2–3 d | 8b |
+| **8i** | `feat/client-authored-products` | Persist client-tier Product rows (`clientId: <id>` overrides platform default). Same canonical/client tier pattern as review-programs. | 1–2 d | 8b |
+| **8j** | `feat/retire-legacy-shims` | Delete `subjectProperty` shim from snapshot.normalizedData; delete `canonicalData` legacy adapter blob from BulkIngestionCanonicalRecord; migrate readers to `canonical` / `canonicalDocument`. | 2–3 d | 8e (so reader paths are clean) |
+| **8k** | `feat/appraisal-order-removal` | Final cleanup: zero `AppraisalOrder` reads/writes left → delete the type, delete the legacy controller + service. | 1–2 d | 8e, 8f, 8j |
 
-**Total estimate:** 12–20 days of focused work. Not a single sprint.
+**Total estimate:** 18–28 days of focused work. ~3–4 weeks at one engineer.
 
-### 8b — Product Catalog
+### 4.1 Critical-path order
+The dependency graph means the high-leverage chain is:
+```
+8c (rename) → 8e (write paths) → 8f (discriminator flip) → 8j (retire shims) → 8k (delete legacy)
+```
+Everything else (8b seeds, 8d loan refs, 8g engagement guard, 8h rules, 8i client-authoring) can run in parallel branches off 8c once it lands.
 
-**Ship:**
-- `src/types/product.types.ts` with `Product`, `AtomRef`, `SelectorRule`, etc.
-- `src/services/product-catalog.service.ts` with CRUD + `compose()` (static + parameterized only).
-- New Cosmos container `products` (Bicep, partition `/tenantId`).
-- Seed platform-default atoms via `src/scripts/seed/modules/products.ts`:
-  - Industry-standard atoms: Appraisal-1004, Appraisal-1073-Condo, AVM, BPO,
-    Inspection, QC-Review, Desktop-Review, Field-Review.
-  - Platform packages: DVR (= [Appraisal-1004, AVM, Desktop-Review, QC-Review]),
-    RapidVal (= [AVM, Inspection]).
-- `src/scripts/seed/modules/products.test.ts` for catalog seeding.
-- Unit tests for `compose()` covering static and parameterized.
+8b is the cheapest win that unlocks visible behaviour change (ClientOrders actually fanning out to multiple vendor work units). Recommended first.
 
-**Out of scope:**
-- Rule-driven composition (slice 8e).
-- Client-authored products (clientId-tier write API; deferred — same pattern as review-programs).
+### 4.2 Migration strategy for 8c (the rename)
 
-**Not breaking:** existing AppraisalOrder + review-program flows unchanged.
-The catalog is dormant infrastructure until 8c consumes it.
+Rename touches are mechanical but high-volume. Approach:
 
-### 8c — ClientOrder Domain
+1. **Add new types alongside old** — `EngagementProperty` defined; `EngagementLoan` becomes a deprecated type alias `= EngagementProperty` so existing code compiles.
+2. **Add accessor properties** — `engagement.properties` getter that returns `engagement.loans` during transition (and back-fills the rename later).
+3. **Migrate consumers in waves** — controllers first (smallest surface), then services (largest), then tests.
+4. **Final pass** — delete the deprecated alias; delete the `loans` accessor; update the persisted document shape.
 
-**Ship:**
-- `src/types/client-order.types.ts` with `ClientOrder` + status enum.
-- New Cosmos container `client-orders` (Bicep). Partition `/tenantId`.
-- `src/services/client-order.service.ts`:
-  - `createClientOrder({engagementId, productId, productOptions, propertyId})`
-  - At create time: load Product, load canonical context (PropertyRecord.currentCanonical),
-    run composer, store `resolvedComposition`, spawn VendorOrder records.
-  - State transitions, queries, etc.
-- `src/controllers/client-order.controller.ts` with REST endpoints.
-- Migration helper: a script that backfills new `ClientOrder` rows from existing
-  `AppraisalOrder` rows. Existing `AppraisalOrder` rows STAY (read-only) for
-  in-flight work; new orders go to ClientOrder.
-- Tests for create + fan-out + state transitions.
-
-**Not breaking:** AppraisalOrder controller / endpoints continue to exist.
-ClientOrder is alongside, not replacing-yet.
-
-### 8d — VendorOrder Domain
-
-**Ship:**
-- `src/types/vendor-order.types.ts` with `VendorOrder` + status enum.
-- New Cosmos container `vendor-orders` (Bicep).
-- `src/services/vendor-order.service.ts`:
-  - `createVendorOrder` (called from ClientOrder fan-out).
-  - Lifecycle: accept, decline, deliver, complete.
-  - Vendor selection (manual + auto-assignment integration).
-- `src/types/vendor.types.ts` extension: `kind: 'EXTERNAL' | 'INTERNAL'`,
-  `staffUserId?: string`.
-- Update existing assignment paths (`auto-assignment.controller`) to consume
-  VendorOrder when triggered by a ClientOrder.
-- Tests.
-
-**Not breaking:** legacy AppraisalOrder vendor-assignment paths unchanged.
-
-### 8e — Composition Rules Engine
-
-**Ship:**
-- Extend `Product.composition` with `rules: RuleBasedRule[]`.
-- Reuse `tape-evaluation.service`'s rule evaluator. The composer now runs
-  rules against the canonical context (subject.condition, loan.loanPurposeType, etc.).
-- Catalog editor: clients (and platform admins) can author rule-based
-  composition via REST.
-- Tests covering: rule fires → atom included; rule misses → atom omitted;
-  multiple rules union+dedup correctly.
-
-**Not breaking:** existing static + parameterized compositions continue to work.
-
-### 8f — Engagement Primacy
-
-**Ship:**
-- ClientOrder.engagementId required (was optional during 8c).
-- Migrate any orphan ClientOrders / AppraisalOrders to a default
-  "auto-created" engagement per client.
-- Update controller-layer guards: any client-order create call without
-  `engagementId` is rejected.
-- Tests.
+Cosmos doesn't enforce field names so existing rows continue to read. We backfill the field rename in the document on next write (`{...existing, properties: existing.loans, loans: undefined}`).
 
 ---
 
-## 4. Migration strategy
+## 5. Open questions — answered in design conversation
 
-**Two-track during transition:**
+The v1 doc had 6 open questions; conversation answered all of them:
 
-```
-LEGACY TRACK                          NEW TRACK
-─────────────────                     ──────────────────────────────
-AppraisalOrder              alongside  ClientOrder + VendorOrder
-(in-flight work continues)            (new orders use new shape)
+| # | Question | Answer |
+|---|---|---|
+| 1 | Pricing — flat package or composition-derived? | (Not yet answered — defer until 8b/8h) |
+| 2 | VendorOrder partition key — `/tenantId` or `/clientOrderId`? | `/tenantId` (already chosen on integration branch). Cross-partition fan-out queries are small N (~3–5). |
+| 3 | Vendor selection at fan-out — automatic or deferred? | Deferred. ClientOrderService spawns VendorOrders with `vendorId=null`; auto-assignment runs after. (Already implemented this way.) |
+| 4 | Composition result versioning — recompose on catalog update? | Frozen at order time (`ClientOrder.resolvedComposition`). Recompose only on explicit reorder. |
+| 5 | Engagement granularity — multi-property per engagement? | **YES, multi-property.** Engagement has many properties; each property has many client orders; each client order has many vendor orders. |
+| 6 | Loan-level granularity — load-bearing or reference? | **Reference only.** A property may have multiple loans (first lien + HELOC + refi-in-flight); we store them as `loanReferences[]` so client conversations resolve, but no workflow hangs off "loan." |
 
-Cleanup phase (after 8f):  migrate remaining in-flight AppraisalOrders →
-                            ClientOrder/VendorOrder, then delete the
-                            legacy controller + service, remove the type.
-```
+### 5.1 Still-open (blockers for specific slices)
 
-Cleanup is its own slice (`feat/appraisal-order-removal`), gated on:
-- Zero open AppraisalOrders in production.
-- All UI consumers reading ClientOrder.
-- All workers (axiom-trigger, qc-execution, etc.) reading ClientOrder.
-
-This keeps the migration low-risk: at no point is the system half-broken.
-
----
-
-## 5. Open questions (need user input before 8b starts)
-
-1. **Pricing — flat per-product or composition-derived?**
-   When a DVR ClientOrder fans out to 4 VendorOrders, does the client pay
-   the package price (flat) or sum of components (derived)? Most platforms
-   do package price externally + line-item derivation internally. Confirm.
-
-2. **Cosmos partition keys** —
-   - `client-orders`: `/tenantId` (consistent with rest of platform). Cross-
-     tenant queries are admin-only.
-   - `vendor-orders`: `/tenantId` OR `/clientOrderId`? The latter co-locates
-     a ClientOrder with all its VendorOrders for cheap reads, but fragments
-     vendor-side queries ("show all VendorOrders for vendor X"). Vote:
-     `/tenantId` for query flexibility; we accept the cross-partition cost
-     for ClientOrder→VendorOrders fan-out (it's a small N, ~3-5).
-
-3. **Vendor selection at fan-out time — automatic or deferred?**
-   Two flavors:
-   - "Spawn VendorOrder rows immediately with vendorId=null; assignment
-     happens via auto-assignment service afterwards."
-   - "Spawn VendorOrder rows already assigned via auto-assignment."
-   The first is simpler and matches today's flow. Vote: do (1).
-
-4. **Versioning of the composition result.**
-   ClientOrder.resolvedComposition stores the result of `compose()` at order
-   time. If the catalog updates the Product later, does an in-flight order
-   get recomposed or stays frozen? Vote: stays frozen (legal/USPAP repro).
-   Recompose only on explicit reorder.
-
-5. **Engagement granularity — `PER_LOAN` vs `PER_BATCH`.**
-   Existing `BulkIngestionEngagementGranularity` enum suggests we already
-   distinguish these. Confirm: a single Engagement can hold ClientOrders
-   from MULTIPLE properties (PER_BATCH) or is restricted to one property
-   per engagement? Vote: multi-property; engagement is the relationship
-   container.
-
-6. **Product clientId tier semantics.**
-   Same as review-programs / mop-criteria? `clientId: null` = platform-
-   default, available to all clients; `clientId: <id>` = override for one
-   client. Confirm.
+- **For 8b (decomposition seeds):** What atoms make up each multi-product? Confirm: DVR = Appraisal + AVM + DesktopReview + QC; BPO = Realtor BPO + Inspection + Review. Author wants list to seed.
+- **For 8d (loan references):** What loan fields move into `LoanReference`? Confirm: `loanNumber`, `loanAmount`, `loanType`, `loanPurpose`, `lienPosition`, `originator`, `borrowerName`, `borrowerEmail`, `borrowerPhone`. (Borrower could arguably move to property — TBD.)
 
 ---
 
 ## 6. What's NOT in this redesign (deferred)
 
-- **Sub-products / nested packages.** A package containing a package
-  (DVR-Plus = DVR + extra Inspection) — the composer can recurse, but the
-  catalog UI gets complicated. Defer until we have a real demand.
-- **Versioned vendor agreements.** Vendor.fee structure today is per-order;
-  long-term we want negotiated fee schedules per vendor + product.
-- **Marketplace-side scoring.** "Which vendor is best for this VendorOrder?"
-  is the auto-assignment service's job — already exists in
-  `auto-assignment.controller`.
+- **Pricing model** (flat package vs derived). Real but not in any slice yet.
+- **Sub-products / nested packages** (DVR-Plus = DVR + extra Inspection). Composer can recurse; UI cost is too high to justify.
+- **Versioned vendor agreements** (negotiated fee schedules per vendor + product over time).
+- **Marketplace scoring** ("which vendor is best for this VendorOrder?") — already in `auto-assignment.controller`.
 
 ---
 
 ## 7. Approval gate
 
-**Before I start 8b:**
-- [ ] Domain model in §2 confirmed
-- [ ] Slice sequence in §3 confirmed (or reordered)
-- [ ] Open questions in §5 answered
-- [ ] Migration strategy in §4 confirmed
+**Before 8b starts:**
+- [ ] §1 hierarchy (Engagement → EngagementProperty[] → ClientOrder[] → VendorOrder[]) confirmed
+- [ ] §2 state-of-codebase mapping confirmed (or corrected)
+- [ ] §3 store lifecycles confirmed
+- [ ] §4 slice sequence + estimate confirmed (or reordered)
+- [ ] §5.1 atom-list for DVR / BPO confirmed (blocks 8b seed)
+- [ ] §5.1 LoanReference field list confirmed (blocks 8d)
 
-Once those are green, I'll branch `feat/product-catalog` and start
-shipping 8b.
+Once green: branch `feat/decomposition-rule-seeds` and start 8b.
+
+---
+
+## Appendix A — slice 8a recap (for context)
+
+`feat/property-canonical-accumulation` (commit `8dec967`, shipped) wired the per-Property rolling canonical view. After every snapshot build, property-scoped branches (subject, transactionHistory, avmCrossCheck, riskFlags) write back to `PropertyRecord.currentCanonical`. New snapshots seed from the property's accumulated state as a base layer. Order-scoped branches (comps, loan, ratios, valuation, reconciliation) intentionally don't propagate — they belong to the specific ClientOrder run, not the property.
+
+This is the "C is IDEAL" lifecycle: per-property accumulation + per-order frozen reproducibility. Both directions wired; never blocks the snapshot return.
