@@ -12,8 +12,10 @@ import { mapAvmCrossCheckFromTape } from '../mappers/avm.mapper.js';
 import { computeCompStatistics } from '../mappers/comp-statistics.mapper.js';
 import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
 import { validateCanonicalIngress } from '../utils/validate-canonical-ingress.js';
-import type { CanonicalReportDocument } from '../types/canonical-schema.js';
+import { mapAppraisalOrderToCanonical } from '../mappers/appraisal-order.mapper.js';
+import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
+import type { AppraisalOrder } from '../types/index.js';
 
 interface PropertyEnrichmentRecord {
   id: string;
@@ -189,6 +191,7 @@ export class CanonicalSnapshotService {
     document: DocumentMetadata | null;
     extractionData: Record<string, unknown> | null;
     enrichment: PropertyEnrichmentRecord | null;
+    order: AppraisalOrder | null;
   }> {
     const document = await this.getDocumentById(extractionRun.documentId, extractionRun.tenantId);
     const extractionData = this.toRecord(document?.extractedData);
@@ -198,12 +201,46 @@ export class CanonicalSnapshotService {
     const enrichment = orderId
       ? await this.getLatestEnrichmentByOrderId(orderId, extractionRun.tenantId)
       : null;
+    const order = orderId
+      ? await this.getOrderById(orderId, extractionRun.tenantId)
+      : null;
 
     return {
       document,
       extractionData,
       enrichment,
+      order,
     };
+  }
+
+  private async getOrderById(
+    orderId: string,
+    tenantId: string,
+  ): Promise<AppraisalOrder | null> {
+    // Orders live in the 'orders' container per the rest of the codebase. We
+    // load defensively — failures here are non-fatal: snapshot still builds
+    // from extraction + enrichment, just without order-intake values.
+    try {
+      const result = await this.dbService.queryItems<AppraisalOrder>(
+        'orders',
+        `SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId`,
+        [
+          { name: '@id', value: orderId },
+          { name: '@tenantId', value: tenantId },
+        ],
+      );
+      if (!result.success || !result.data || result.data.length === 0) {
+        return null;
+      }
+      return result.data[0] ?? null;
+    } catch (err) {
+      this.logger.warn('Snapshot: failed to load order for canonical projection — continuing', {
+        orderId,
+        tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   private async getDocumentById(
@@ -262,6 +299,7 @@ export class CanonicalSnapshotService {
       document: DocumentMetadata | null;
       extractionData: Record<string, unknown> | null;
       enrichment: PropertyEnrichmentRecord | null;
+      order: AppraisalOrder | null;
     },
   ): CanonicalSnapshotRecord['normalizedData'] {
     const providerData = artifacts.enrichment?.dataResult
@@ -300,8 +338,60 @@ export class CanonicalSnapshotService {
     // record's metadata once that path is plumbed; the snapshot tolerates its
     // absence.
     const canonical: Record<string, unknown> = {};
+
+    // Order-intake projection: AppraisalOrder fields land in canonical at
+    // intake time so review-program criteria can read canonical paths even
+    // before extraction runs. Extraction merges on top below — extraction is
+    // the authoritative document being QC'd; intake is reference data that
+    // fills gaps. Merge happens via Object.assign after extraction so
+    // extraction wins on overlap.
+    const orderCanonical = mapAppraisalOrderToCanonical(artifacts.order);
+    if (orderCanonical) {
+      Object.assign(canonical, orderCanonical);
+    }
+
     if (artifacts.extractionData) {
-      Object.assign(canonical, mapAxiomExtractionToCanonical(artifacts.extractionData));
+      const extractionCanonical = mapAxiomExtractionToCanonical(artifacts.extractionData);
+      // Merge: extraction overlays intake, but per-branch deep merge for
+      // subject so intake-only fields (parcelNumber, condition, etc.) survive
+      // when extraction emits its own subject without those fields.
+      const intakeSubject = (canonical as Partial<CanonicalReportDocument>).subject;
+      const extractSubject = extractionCanonical.subject;
+      if (intakeSubject && extractSubject) {
+        (canonical as Partial<CanonicalReportDocument>).subject = {
+          ...intakeSubject,
+          ...extractSubject,
+        };
+        // Address: deep-merge field-by-field, dropping empty-string sentinels
+        // from extraction (axiom mapper emits county: '' when missing — that
+        // would clobber a real intake county).
+        const intakeAddress = intakeSubject.address;
+        const extractAddress = extractSubject.address;
+        if (intakeAddress || extractAddress) {
+          const merged: Record<string, unknown> = { ...(intakeAddress ?? {}) };
+          for (const [k, v] of Object.entries(extractAddress ?? {})) {
+            if (v == null) continue;
+            if (typeof v === 'string' && v.trim().length === 0) continue;
+            merged[k] = v;
+          }
+          (canonical as Partial<CanonicalReportDocument>).subject = {
+            ...((canonical as Partial<CanonicalReportDocument>).subject ?? {}),
+            address: merged as unknown as CanonicalSubject['address'],
+          } as CanonicalSubject;
+        }
+      } else {
+        // No overlap — simple assign for non-subject branches.
+        for (const [k, v] of Object.entries(extractionCanonical)) {
+          (canonical as Record<string, unknown>)[k] = v;
+        }
+      }
+
+      // Non-subject branches always copy from extraction (no overlap with
+      // order-intake here — intake only emits subject/loan/ratios).
+      for (const [k, v] of Object.entries(extractionCanonical)) {
+        if (k === 'subject') continue;
+        (canonical as Record<string, unknown>)[k] = v;
+      }
     }
 
     // Loan / ratios. Today the source is either a RiskTapeItem on the
