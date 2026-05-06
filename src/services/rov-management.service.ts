@@ -13,6 +13,12 @@ import { CosmosDbService } from './cosmos-db.service';
 import { AccessControlHelper } from './access-control-helper.service';
 import { UniversalAIService } from './universal-ai.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getLoanInformation,
+  getBorrowerInformation,
+} from './order-context-loader.service.js';
 import { EventCategory, EventPriority, RovCreatedEvent, RovAssignedEvent, RovDecisionIssuedEvent } from '../types/events.js';
 import {
   ROVRequest,
@@ -59,6 +65,7 @@ export class ROVManagementService {
   private accessControlHelper: AccessControlHelper;
   private aiService: UniversalAIService;
   private eventPublisher: ServiceBusEventPublisher;
+  private contextLoader: OrderContextLoader;
 
   constructor() {
     this.logger = new Logger();
@@ -66,6 +73,7 @@ export class ROVManagementService {
     this.accessControlHelper = new AccessControlHelper();
     this.aiService = new UniversalAIService();
     this.eventPublisher = new ServiceBusEventPublisher();
+    this.contextLoader = new OrderContextLoader(this.dbService);
   }
 
   /**
@@ -79,13 +87,20 @@ export class ROVManagementService {
     try {
       this.logger.info('Creating new ROV request', { orderId: input.orderId, createdBy });
 
-      // Fetch original order to get property and appraisal details
-      const orderResult = await this.dbService.findOrderById(input.orderId);
-      if (!orderResult.success || !orderResult.data) {
+      // Phase 7: load the joined OrderContext so we can pull
+      // propertyAddress / loanInformation / borrowerInformation from the
+      // parent ClientOrder when the VendorOrder doesn't carry them.
+      let ctx;
+      try {
+        ctx = await this.contextLoader.loadByVendorOrderId(input.orderId);
+      } catch {
         return { success: false, error: 'Order not found' };
       }
+      const order = ctx.vendorOrder;
+      const propertyAddress = getPropertyAddress(ctx);
+      const loanInformation = getLoanInformation(ctx);
+      const borrowerInformation = getBorrowerInformation(ctx);
 
-      const order = orderResult.data;
       const rovNumber = await this.generateROVNumber();
 
       // Calculate SLA tracking (default: 10 business days)
@@ -97,17 +112,14 @@ export class ROVManagementService {
         rovNumber,
         orderId: input.orderId,
         ...(input.engagementId ? { engagementId: input.engagementId } : {}),
-        // Lender-side fields are now optional on VendorOrder (Phase 2 of
-        // Order-relocation). Engagement-flow rows don't carry them. Falling
-        // back to '-' so the ROV record still creates; a later phase will
-        // load the parent ClientOrder via clientOrderId for the proper
-        // values.
-        propertyAddress: order.propertyAddress
-          ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`
+        propertyAddress: propertyAddress
+          ? `${propertyAddress.streetAddress}, ${propertyAddress.city}, ${propertyAddress.state} ${propertyAddress.zipCode}`
           : '-',
-        ...(order.loanInformation?.loanAmount ? { loanNumber: order.loanInformation.loanAmount.toString() } : {}),
-        borrowerName: order.borrowerInformation
-          ? `${order.borrowerInformation.firstName} ${order.borrowerInformation.lastName}`
+        ...(loanInformation?.loanAmount
+          ? { loanNumber: loanInformation.loanAmount.toString() }
+          : {}),
+        borrowerName: borrowerInformation
+          ? `${borrowerInformation.firstName} ${borrowerInformation.lastName}`
           : '-',
         
         status: ROVStatus.SUBMITTED,
