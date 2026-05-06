@@ -7,6 +7,12 @@ param suffix string
 param tags object
 param logAnalyticsWorkspaceId string
 param useBootstrapImage bool = true // Set to false after first deployment
+
+@description('Image tag for the appraisal-api container. Pass the build SHA tag from CI on each deploy. Defaults to "latest" only for initial bootstrap or manual dispatches that did not resolve a tag.')
+param appImageTag string = 'latest'
+
+@description('Image tag for the appraisal-functions container. Same semantics as appImageTag.')
+param functionsImageTag string = 'latest'
 param storageAccountName string
 param applicationInsightsConnectionString string
 param applicationInsightsInstrumentationKey string
@@ -567,7 +573,7 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
       containers: [
         {
           name: app.name
-          image: useBootstrapImage ? bootstrapImage : '${containerRegistry.properties.loginServer}/${app.imageName}:latest'
+          image: useBootstrapImage ? bootstrapImage : '${containerRegistry.properties.loginServer}/${app.imageName}:${app.name == 'appraisal-api' ? appImageTag : functionsImageTag}'
           resources: {
             cpu: json(app.cpu)
             memory: app.memory

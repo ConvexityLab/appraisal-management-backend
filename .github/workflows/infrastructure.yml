@@ -12,6 +12,16 @@ on:
         type: string
         default: 'eastus'
         description: 'Azure region for deployment'
+      appImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-api image. Empty = preserve current Container App tag (or fall back to "latest" on first deploy).'
+      functionsImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-functions image. Same semantics as appImageTag.'
     secrets:
       AZURE_CREDENTIALS:
         required: true
@@ -39,6 +49,16 @@ on:
         type: string
         default: 'eastus'
         description: 'Azure region for deployment'
+      appImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-api image. Empty = preserve current Container App tag (or fall back to "latest" on first deploy).'
+      functionsImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-functions image. Same semantics as appImageTag.'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -127,11 +147,53 @@ jobs:
           echo "⚠️  AZURE_CLIENT_ID not set — entra-extension-attributes module will be skipped."
         fi
 
+    - name: Resolve Container App image tags
+      id: resolve-image-tags
+      run: |
+        # Why this step exists: app-services.bicep parameterizes the Container App
+        # image tag, but if a deploy runs without an explicit tag (e.g. infra-only
+        # change, manual dispatch) we must NOT silently reset the running revision
+        # to ":latest". So when the input is empty we read the tag currently
+        # running on each Container App and reuse it. Only true first-time
+        # bootstraps (Container App does not yet exist) fall back to "latest".
+        RG_NAME="rg-appraisal-mgmt-${{ inputs.environment }}-${{ inputs.location }}"
+        APP_INPUT="${{ inputs.appImageTag }}"
+        FUNCTIONS_INPUT="${{ inputs.functionsImageTag }}"
+
+        resolve_tag() {
+          local app_name="$1"
+          local input_tag="$2"
+          if [ -n "$input_tag" ]; then
+            echo "$input_tag"
+            return
+          fi
+          local current_image
+          current_image=$(az containerapp show -g "$RG_NAME" -n "$app_name" \
+            --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || echo "")
+          if [ -z "$current_image" ]; then
+            echo "latest"
+            return
+          fi
+          # Image is "<acr>/<repo>:<tag>" — split on last ':'
+          echo "${current_image##*:}"
+        }
+
+        APP_TAG=$(resolve_tag "appraisal-api" "$APP_INPUT")
+        FUNCTIONS_TAG=$(resolve_tag "appraisal-functions" "$FUNCTIONS_INPUT")
+
+        echo "appImageTag=$APP_TAG" >> "$GITHUB_OUTPUT"
+        echo "functionsImageTag=$FUNCTIONS_TAG" >> "$GITHUB_OUTPUT"
+
+        echo "🏷️  Resolved appraisal-api image tag: $APP_TAG (input='$APP_INPUT')"
+        echo "🏷️  Resolved appraisal-functions image tag: $FUNCTIONS_TAG (input='$FUNCTIONS_INPUT')"
+
     - name: Validate Bicep template
       run: |
         echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
         PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
         PARAM_ARGS=(--parameters "@${PARAM_FILE}")
+        PARAM_ARGS+=("appImageTag=${{ steps.resolve-image-tags.outputs.appImageTag }}")
+        PARAM_ARGS+=("functionsImageTag=${{ steps.resolve-image-tags.outputs.functionsImageTag }}")
         
         # Add secret parameters if they exist
         [ -n "$BATCHDATA_KEY" ] && PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
@@ -164,6 +226,8 @@ jobs:
         echo "🚀 Deploying infrastructure to ${{ inputs.environment }}..."
         PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
         PARAM_ARGS=(--parameters "@${PARAM_FILE}")
+        PARAM_ARGS+=("appImageTag=${{ steps.resolve-image-tags.outputs.appImageTag }}")
+        PARAM_ARGS+=("functionsImageTag=${{ steps.resolve-image-tags.outputs.functionsImageTag }}")
         
         # Add secret parameters if they exist
         [ -n "$BATCHDATA_KEY" ] && PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")

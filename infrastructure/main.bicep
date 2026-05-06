@@ -134,6 +134,12 @@ param ciServicePrincipalId string = ''
 @description('Additional public IP addresses to allow through the Cosmos DB firewall.')
 param cosmosAllowedIpAddresses array = []
 
+@description('Image tag for the appraisal-api container. CI passes the build-SHA tag on each deploy so bicep does not silently revert the running revision to ":latest". Defaults to "latest" only for initial bootstrap or manual dispatches.')
+param appImageTag string = 'latest'
+
+@description('Image tag for the appraisal-functions container. Same semantics as appImageTag.')
+param functionsImageTag string = 'latest'
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -510,6 +516,8 @@ module appServices 'modules/app-services.bicep' = {
     googleGeminiApiKey: googleGeminiApiKey
     sambanovaApiKey: sambanovaApiKey
     sambanovaEndpoint: 'https://api.sambanova.ai/v1'
+    appImageTag: appImageTag
+    functionsImageTag: functionsImageTag
   }
 }
 
