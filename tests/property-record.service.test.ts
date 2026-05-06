@@ -148,6 +148,23 @@ describe('normalizeStreetForMatch', () => {
   it('expands LANE to LN while leaving non-suffix words unchanged', () => {
     expect(normalizeStreetForMatch('123 Oak Tree Lane')).toBe('123 OAK TREE LN');
   });
+
+  it('expands directional WEST to W', () => {
+    expect(normalizeStreetForMatch('1949 Sevilla Boulevard West')).toBe('1949 SEVILLA BLVD W');
+    expect(normalizeStreetForMatch('1949 Sevilla Blvd W')).toBe('1949 SEVILLA BLVD W');
+  });
+
+  it('expands all four cardinal directionals (N/S/E/W)', () => {
+    expect(normalizeStreetForMatch('1 Main Street North')).toBe('1 MAIN ST N');
+    expect(normalizeStreetForMatch('1 Main Street South')).toBe('1 MAIN ST S');
+    expect(normalizeStreetForMatch('1 Main Street East')).toBe('1 MAIN ST E');
+    expect(normalizeStreetForMatch('1 Main Street West')).toBe('1 MAIN ST W');
+  });
+
+  it('expands intercardinal directionals (NE/NW/SE/SW)', () => {
+    expect(normalizeStreetForMatch('100 Northeast Road')).toBe('100 NE RD');
+    expect(normalizeStreetForMatch('100 Southwest Avenue')).toBe('100 SW AVE');
+  });
 });
 
 describe('PropertyRecordService.findByApn', () => {

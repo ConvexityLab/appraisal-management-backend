@@ -75,10 +75,29 @@ export const STREET_SUFFIX_CANONICAL: Readonly<Record<string, string>> = {
 } as const;
 
 /**
+ * Maps full-word USPS directionals to their single-letter abbreviations so that
+ * "1949 SEVILLA BLVD WEST" and "1949 SEVILLA BLVD W" compare equal. Applied
+ * word-by-word in normalizeStreetForMatch alongside the suffix map.
+ *
+ * Source: USPS Publication 28, Appendix C2.
+ */
+export const STREET_DIRECTION_CANONICAL: Readonly<Record<string, string>> = {
+  NORTH: 'N',
+  SOUTH: 'S',
+  EAST: 'E',
+  WEST: 'W',
+  NORTHEAST: 'NE',
+  NORTHWEST: 'NW',
+  SOUTHEAST: 'SE',
+  SOUTHWEST: 'SW',
+} as const;
+
+/**
  * Returns a normalized form of a street string for fuzzy matching.
  * Uppercases, strips punctuation, collapses whitespace, and maps common full-form
- * street suffixes (e.g. "DRIVE" → "DR", "AVENUE" → "AVE") to their USPS
- * abbreviations so that addresses submitted with either form compare equal.
+ * street suffixes (e.g. "DRIVE" → "DR", "AVENUE" → "AVE") and directionals
+ * ("WEST" → "W") to their USPS abbreviations so that addresses submitted with
+ * either form compare equal.
  *
  * This is NOT a full USPS normalization — it is a best-effort match helper.
  * Full USPS normalization is AddressService's domain.
@@ -90,7 +109,11 @@ export function normalizeStreetForMatch(street: string): string {
     .replace(/\s+/g, ' ')     // collapse whitespace
     .trim()
     .split(' ')
-    .map(word => STREET_SUFFIX_CANONICAL[word] ?? word)
+    .map(word =>
+      STREET_SUFFIX_CANONICAL[word] ??
+      STREET_DIRECTION_CANONICAL[word] ??
+      word,
+    )
     .join(' ');
 }
 
