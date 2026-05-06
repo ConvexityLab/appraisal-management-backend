@@ -218,6 +218,51 @@ export class BridgePropertyDataProvider implements PropertyDataProvider {
         const county = parcel['county'] as string | undefined;
         if (county) core.county = county;
       }
+
+      // Bridge public API stores building characteristics in parcel.building[] and
+      // parcel.areas[]. Use these as fallbacks when the MLS record did not supply
+      // them (e.g. condo or non-active listing not in the MLS OData feed).
+      const buildingArr = parcel['building'] as Record<string, unknown>[] | undefined;
+      const buildingRow = Array.isArray(buildingArr) ? buildingArr[0] : undefined;
+
+      if (buildingRow) {
+        if (core.grossLivingArea == null) {
+          // Bridge public API: GLA lives in parcel.areas[], not directly on building.
+          // Fall back to the first "Heated Building Area" (or "Effective Building Area")
+          // from the areas array, which is the closest equivalent to appraiser GLA.
+          const areasArr = parcel['areas'] as Array<{ areaSquareFeet?: number; type?: string }> | undefined;
+          if (Array.isArray(areasArr)) {
+            const heated = areasArr.find(a =>
+              typeof a.type === 'string' &&
+              (a.type.toLowerCase().includes('heated') || a.type.toLowerCase().includes('effective building'))
+            );
+            const sqft = heated?.areaSquareFeet;
+            if (sqft != null && sqft > 0) core.grossLivingArea = sqft;
+          }
+        }
+
+        if (core.yearBuilt == null) {
+          const yr = buildingRow['yearBuilt'] as number | undefined;
+          if (yr != null && yr > 0) core.yearBuilt = yr;
+        }
+
+        if (core.bedrooms == null) {
+          const beds = buildingRow['bedrooms'] as number | undefined;
+          if (beds != null) core.bedrooms = beds;
+        }
+
+        if (core.bathsFull == null && core.bathsHalf == null) {
+          const full = buildingRow['fullBaths'] as number | undefined;
+          const half = buildingRow['halfBaths'] as number | undefined;
+          if (full != null) core.bathsFull = full;
+          if (half != null) core.bathsHalf = half;
+        }
+
+        if (core.stories == null) {
+          const stories = buildingRow['totalStories'] as number | undefined;
+          if (stories != null) core.stories = stories;
+        }
+      }
     }
 
     return core;
