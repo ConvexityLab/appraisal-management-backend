@@ -40,9 +40,47 @@ export const PROPERTY_RECORDS_CONTAINER = 'property-records';
 // ─── Address normalization (pure, sync) ───────────────────────────────────────
 
 /**
+ * Maps common full-form street suffixes and USPS variants to a single canonical
+ * abbreviation. Applied word-by-word in normalizeStreetForMatch so that "DRIVE"
+ * and "DR" compare equal regardless of which form the caller or the ATTOM CSV
+ * data uses.
+ *
+ * Source: USPS Publication 28, Appendix C1 (most common suffixes only — not
+ * the full ~800-entry table, which is overkill for a match helper).
+ *
+ * Only full-form / alternate-form entries are listed here. USPS standard
+ * abbreviations (DR, AVE, …) are already in canonical form and need no mapping.
+ */
+export const STREET_SUFFIX_CANONICAL: Readonly<Record<string, string>> = {
+  ALLEY: 'ALY', ALLY: 'ALY',
+  AVENUE: 'AVE', AV: 'AVE',
+  BOULEVARD: 'BLVD', BOULV: 'BLVD',
+  CIRCLE: 'CIR', CIRC: 'CIR', CIRCL: 'CIR',
+  COURT: 'CT',
+  COVE: 'CV',
+  CROSSING: 'XING', CRSSNG: 'XING',
+  DRIVE: 'DR', DRV: 'DR',
+  EXPRESSWAY: 'EXPY', EXPWY: 'EXPY',
+  FREEWAY: 'FWY', FRWY: 'FWY',
+  HIGHWAY: 'HWY', HIGHWY: 'HWY', HIWAY: 'HWY', HIWY: 'HWY',
+  LANE: 'LN',
+  PARKWAY: 'PKWY', PARKWY: 'PKWY', PKWAY: 'PKWY', PWY: 'PKWY',
+  PLACE: 'PL',
+  ROAD: 'RD',
+  SQUARE: 'SQ',
+  STREET: 'ST',
+  TERRACE: 'TER', TERR: 'TER',
+  TRAIL: 'TRL', TRAILS: 'TRL',
+  TURNPIKE: 'TPKE', TURNPK: 'TPKE',
+} as const;
+
+/**
  * Returns a normalized form of a street string for fuzzy matching.
- * Uppercases, strips punctuation, collapses whitespace.
- * This is NOT a USPS normalization — it is a best-effort match helper.
+ * Uppercases, strips punctuation, collapses whitespace, and maps common full-form
+ * street suffixes (e.g. "DRIVE" → "DR", "AVENUE" → "AVE") to their USPS
+ * abbreviations so that addresses submitted with either form compare equal.
+ *
+ * This is NOT a full USPS normalization — it is a best-effort match helper.
  * Full USPS normalization is AddressService's domain.
  */
 export function normalizeStreetForMatch(street: string): string {
@@ -50,7 +88,10 @@ export function normalizeStreetForMatch(street: string): string {
     .toUpperCase()
     .replace(/[.,#']/g, '')   // strip punctuation
     .replace(/\s+/g, ' ')     // collapse whitespace
-    .trim();
+    .trim()
+    .split(' ')
+    .map(word => STREET_SUFFIX_CANONICAL[word] ?? word)
+    .join(' ');
 }
 
 /**

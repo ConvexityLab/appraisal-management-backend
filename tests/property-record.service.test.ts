@@ -124,6 +124,30 @@ describe('normalizeStreetForMatch', () => {
   it('handles empty string', () => {
     expect(normalizeStreetForMatch('')).toBe('');
   });
+
+  it('expands DRIVE to DR so full-form and abbreviated addresses compare equal', () => {
+    expect(normalizeStreetForMatch('8703 Como Lake Drive')).toBe('8703 COMO LAKE DR');
+    expect(normalizeStreetForMatch('8703 Como Lake Dr')).toBe('8703 COMO LAKE DR');
+  });
+
+  it('expands STREET to ST', () => {
+    expect(normalizeStreetForMatch('100 Main Street')).toBe('100 MAIN ST');
+    expect(normalizeStreetForMatch('100 Main St')).toBe('100 MAIN ST');
+  });
+
+  it('expands BOULEVARD to BLVD', () => {
+    expect(normalizeStreetForMatch('200 Sunset Boulevard')).toBe('200 SUNSET BLVD');
+    expect(normalizeStreetForMatch('200 Sunset Blvd')).toBe('200 SUNSET BLVD');
+  });
+
+  it('expands AVENUE to AVE', () => {
+    expect(normalizeStreetForMatch('5 Elm Avenue')).toBe('5 ELM AVE');
+    expect(normalizeStreetForMatch('5 Elm Ave')).toBe('5 ELM AVE');
+  });
+
+  it('expands LANE to LN while leaving non-suffix words unchanged', () => {
+    expect(normalizeStreetForMatch('123 Oak Tree Lane')).toBe('123 OAK TREE LN');
+  });
 });
 
 describe('PropertyRecordService.findByApn', () => {
