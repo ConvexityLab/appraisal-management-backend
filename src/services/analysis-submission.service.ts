@@ -1,4 +1,11 @@
-import type { VendorOrder } from '../types/vendor-order.types.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getPropertyDetails,
+  getLoanInformation,
+  getBorrowerInformation,
+  type OrderContext,
+} from './order-context-loader.service.js';
 import { BlobStorageService } from './blob-storage.service.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { AxiomService } from './axiom.service.js';
@@ -36,6 +43,7 @@ export class AnalysisSubmissionService {
   private readonly blobService: BlobStorageService;
   private readonly configService: TenantAutomationConfigService;
   private readonly publisher: ServiceBusEventPublisher;
+  private readonly contextLoader: OrderContextLoader;
   private readonly logger = new Logger('AnalysisSubmissionService');
 
   constructor(private readonly dbService: CosmosDbService, axiomService?: AxiomService) {
@@ -45,6 +53,7 @@ export class AnalysisSubmissionService {
     this.dispatchService = new EngineDispatchService(this.axiomService, dbService);
     this.stepInputService = new CriteriaStepInputService(dbService);
     this.blobService = new BlobStorageService();
+    this.contextLoader = new OrderContextLoader(dbService);
     this.configService = new TenantAutomationConfigService(dbService);
     this.publisher = new ServiceBusEventPublisher();
   }
@@ -324,11 +333,18 @@ export class AnalysisSubmissionService {
       throw new Error(`Document '${request.documentId}' not found`);
     }
 
-    const orderResult = await this.dbService.findOrderById(request.orderId);
-    const order: VendorOrder | null = orderResult.success ? orderResult.data ?? null : null;
-    if (!order) {
-      throw new Error(`Order '${request.orderId}' not found`);
+    // Phase 7: load the joined OrderContext so buildOrderFields can pull
+    // borrower / loan / propertyAddress / propertyDetails from the parent
+    // ClientOrder (their proper home post Phase 4).
+    let ctx: OrderContext;
+    try {
+      ctx = await this.contextLoader.loadByVendorOrderId(request.orderId);
+    } catch (err) {
+      throw new Error(
+        `Order '${request.orderId}' not found: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
+    const order = ctx.vendorOrder;
 
     if (!document.blobName) {
       throw new Error(`Document '${request.documentId}' has no blobName — cannot generate SAS URL`);
@@ -341,7 +357,7 @@ export class AnalysisSubmissionService {
 
     const sasUrl = await this.blobService.generateReadSasUrl(documentContainerName, document.blobName);
 
-    const fields = this.buildOrderFields(order);
+    const fields = this.buildOrderFields(ctx);
     // T1.3: pass our internal documentId alongside the SAS URL so submitOrderEvaluation
     // can stamp _metadata for downstream resolvedDocumentId enrichment.
     const documents = [
@@ -653,11 +669,12 @@ export class AnalysisSubmissionService {
     };
   }
 
-  private buildOrderFields(order: VendorOrder): Array<{ fieldName: string; fieldType: string; value: unknown }> {
-    const address = order.propertyAddress;
-    const property = order.propertyDetails;
-    const loan = order.loanInformation;
-    const borrower = order.borrowerInformation;
+  private buildOrderFields(ctx: OrderContext): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+    const order = ctx.vendorOrder;
+    const address = getPropertyAddress(ctx);
+    const property = getPropertyDetails(ctx);
+    const loan = getLoanInformation(ctx);
+    const borrower = getBorrowerInformation(ctx);
 
     return [
       { fieldName: 'orderId', fieldType: 'string', value: order.id },
