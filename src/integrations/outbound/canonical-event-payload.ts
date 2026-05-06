@@ -29,7 +29,7 @@ import type {
     CanonicalReportDocument,
     CanonicalSubject,
 } from '../../types/canonical-schema.js';
-import type { VendorOrder as Order } from '../../types/vendor-order.types.js';
+import type { OrderContext } from '../../services/order-context-loader.service.js';
 
 /**
  * Outbound canonical block. Each branch is independently optional so callers
@@ -48,7 +48,11 @@ export interface OutboundCanonicalPayload {
 }
 
 /**
- * Build an outbound canonical payload from an Order.
+ * Build an outbound canonical payload from an OrderContext.
+ *
+ * Phase 7 of the Order-relocation refactor: this helper now takes an
+ * OrderContext (VendorOrder + parent ClientOrder joined) so the
+ * projection sees lender-side fields from their proper home.
  *
  * Returns null when the order has no canonical-relevant data (rare —
  * orders almost always have a property address).
@@ -60,10 +64,10 @@ export interface OutboundCanonicalPayload {
  * extraction hasn't run yet).
  */
 export function buildCanonicalPayloadFromOrder(
-    order: Order | null | undefined,
+    ctx: OrderContext | null | undefined,
     snapshotId?: string,
 ): OutboundCanonicalPayload | null {
-    const projected = mapAppraisalOrderToCanonical(order);
+    const projected = mapAppraisalOrderToCanonical(ctx);
     if (!projected) return null;
 
     const out: OutboundCanonicalPayload = { eventCanonicalVersion: '1.0' };

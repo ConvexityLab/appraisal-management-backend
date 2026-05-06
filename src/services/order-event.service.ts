@@ -4,6 +4,13 @@ import { OrderStatus } from '../types/index.js';
 import type { VendorOrder } from '../types/vendor-order.types.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { buildCanonicalPayloadFromOrder } from '../integrations/outbound/canonical-event-payload.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getRushOrder,
+  getDueDate,
+} from './order-context-loader.service.js';
+import type { CosmosDbService } from './cosmos-db.service.js';
 
 /**
  * Azure Service Bus Integration for Order Events
@@ -17,11 +24,18 @@ export class OrderEventService {
   private vendorTopicName: string = 'vendor-events';
   private qcTopicName: string = 'quality-control-events';
 
+  private readonly contextLoader?: OrderContextLoader;
+
   constructor(
     private readonly enrichmentService?: PropertyEnrichmentService,
+    dbService?: CosmosDbService,
   ) {
     this.logger = new Logger();
     this.connectionString = process.env.AZURE_SERVICEBUS_CONNECTION_STRING || '';
+
+    if (dbService) {
+      this.contextLoader = new OrderContextLoader(dbService);
+    }
 
     if (this.connectionString) {
       this.initializeServiceBus();
@@ -52,7 +66,16 @@ export class OrderEventService {
    * the event for backward compatibility — slice 9 is additive.
    */
   async publishOrderCreated(order: VendorOrder): Promise<void> {
-    const canonical = buildCanonicalPayloadFromOrder(order);
+    // Phase 7: load joined OrderContext (when a dbService was injected) so
+    // the canonical projection sees lender-side fields from ClientOrder
+    // (their proper home post Phase 4). When the loader isn't available
+    // (legacy callers that didn't inject dbService) we fall back to the
+    // bare VendorOrder via a synthetic context — same behavior as before
+    // this refactor.
+    const ctx = this.contextLoader
+      ? await this.contextLoader.loadByVendorOrder(order)
+      : { vendorOrder: order, clientOrder: null };
+    const canonical = buildCanonicalPayloadFromOrder(ctx);
 
     const event = {
       eventType: 'ORDER_CREATED',
@@ -61,14 +84,14 @@ export class OrderEventService {
       clientId: order.clientId,
       productType: order.productType,
       priority: order.priority,
-      dueDate: order.dueDate,
-      propertyAddress: order.propertyAddress,
+      dueDate: getDueDate(ctx),
+      propertyAddress: getPropertyAddress(ctx),
       timestamp: new Date(),
       ...(canonical ? { canonical } : {}),
       metadata: {
         orderNumber: order.orderNumber,
-        rushOrder: order.rushOrder
-      }
+        rushOrder: getRushOrder(ctx),
+      },
     };
 
     await this.publishEvent(this.orderTopicName, event);

@@ -38,6 +38,12 @@ import type {
     CanonicalSubject,
 } from '../types/canonical-schema.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
+import {
+  getPropertyAddress,
+  getPropertyDetails,
+  getLoanInformation,
+  type OrderContext,
+} from '../services/order-context-loader.service.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -112,8 +118,8 @@ function toPercentValue(raw: number | null | undefined): number | null {
 
 // ─── Section builders ─────────────────────────────────────────────────────────
 
-function buildAddress(order: Order): CanonicalAddress | null {
-    const a = order.propertyAddress;
+function buildAddress(ctx: OrderContext): CanonicalAddress | null {
+    const a = getPropertyAddress(ctx);
     if (!a) return null;
 
     const street = trimOrNull(a.streetAddress);
@@ -134,19 +140,20 @@ function buildAddress(order: Order): CanonicalAddress | null {
     };
 }
 
-function buildSubject(order: Order): Partial<CanonicalSubject> | null {
+function buildSubject(ctx: OrderContext): Partial<CanonicalSubject> | null {
     const out: Partial<CanonicalSubject> = {};
 
-    const address = buildAddress(order);
+    const address = buildAddress(ctx);
     if (address) out.address = address;
 
-    const apn = trimOrNull(order.propertyAddress?.apn);
+    const propertyAddress = getPropertyAddress(ctx);
+    const apn = trimOrNull(propertyAddress?.apn);
     if (apn) out.parcelNumber = apn;
 
-    const legal = trimOrNull(order.propertyAddress?.legalDescription);
+    const legal = trimOrNull(propertyAddress?.legalDescription);
     if (legal) out.legalDescription = legal;
 
-    const coords = order.propertyAddress?.coordinates;
+    const coords = propertyAddress?.coordinates;
     if (coords?.latitude != null && Number.isFinite(coords.latitude)) {
         out.latitude = coords.latitude;
     }
@@ -154,7 +161,7 @@ function buildSubject(order: Order): Partial<CanonicalSubject> | null {
         out.longitude = coords.longitude;
     }
 
-    const details = order.propertyDetails;
+    const details = getPropertyDetails(ctx);
     if (details) {
         const propertyType = trimOrNull(details.propertyType as unknown as string);
         if (propertyType) out.propertyType = propertyType;
@@ -187,14 +194,16 @@ function buildSubject(order: Order): Partial<CanonicalSubject> | null {
     return Object.keys(out).length > 0 ? out : null;
 }
 
-function buildLoan(order: Order): CanonicalLoan | null {
-    const li = order.loanInformation;
+function buildLoan(ctx: OrderContext): CanonicalLoan | null {
+    const li = getLoanInformation(ctx);
     if (!li) return null;
 
     const baseLoanAmount = finiteOrNull(li.loanAmount);
     const loanPurposeType = mapLoanPurpose(li.loanPurpose as unknown as string);
     const mortgageType = mapMortgageType(li.loanType as unknown as string);
-    const occupancyType = mapOccupancyToCanonicalLoan(order.propertyDetails?.occupancy as unknown as string);
+    const occupancyType = mapOccupancyToCanonicalLoan(
+        getPropertyDetails(ctx)?.occupancy as unknown as string,
+    );
 
     if (
         baseLoanAmount == null
@@ -224,8 +233,8 @@ function buildLoan(order: Order): CanonicalLoan | null {
     };
 }
 
-function buildRatios(order: Order): CanonicalLoanRatios | null {
-    const li = order.loanInformation;
+function buildRatios(ctx: OrderContext): CanonicalLoanRatios | null {
+    const li = getLoanInformation(ctx);
     if (!li) return null;
 
     const ltv = toPercentValue(li.ltv);
@@ -253,21 +262,42 @@ function buildRatios(order: Order): CanonicalLoanRatios | null {
  * suitable for merging with other source-projected canonical fragments
  * (extraction, enrichment, tape) in canonical-snapshot.service.
  */
+/**
+ * Project an OrderContext (VendorOrder + parent ClientOrder) onto a partial
+ * CanonicalReportDocument. Phase 7 of the Order-relocation refactor moved
+ * lender-side fields onto ClientOrder, so this mapper now reads through
+ * `OrderContext` accessors that prefer the ClientOrder copy and fall back
+ * to the deprecated VendorOrder fields.
+ */
 export function mapAppraisalOrderToCanonical(
-    order: Order | null | undefined,
+    ctx: OrderContext | null | undefined,
 ): Partial<CanonicalReportDocument> | null {
-    if (!order) return null;
+    if (!ctx) return null;
 
     const out: Partial<CanonicalReportDocument> = {};
 
-    const subject = buildSubject(order);
+    const subject = buildSubject(ctx);
     if (subject) out.subject = subject as CanonicalSubject;
 
-    const loan = buildLoan(order);
+    const loan = buildLoan(ctx);
     if (loan) out.loan = loan;
 
-    const ratios = buildRatios(order);
+    const ratios = buildRatios(ctx);
     if (ratios) out.ratios = ratios;
 
     return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * Convenience wrapper for legacy callers that hold a bare Order/VendorOrder.
+ * Wraps the order in a synthetic OrderContext (clientOrder: null) and
+ * delegates to `mapAppraisalOrderToCanonical`. New callers should pass an
+ * OrderContext loaded via OrderContextLoader so the lender-side fields
+ * resolve from the parent ClientOrder.
+ */
+export function mapOrderToCanonical(
+    order: Order | null | undefined,
+): Partial<CanonicalReportDocument> | null {
+    if (!order) return null;
+    return mapAppraisalOrderToCanonical({ vendorOrder: order, clientOrder: null });
 }

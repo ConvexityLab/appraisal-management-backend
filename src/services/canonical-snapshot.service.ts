@@ -22,6 +22,7 @@ import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonic
 import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
+import { OrderContextLoader, type OrderContext } from './order-context-loader.service.js';
 
 interface PropertyEnrichmentRecord {
   id: string;
@@ -38,7 +39,11 @@ export class CanonicalSnapshotService {
   private readonly documentContainerName = 'documents';
   private readonly enrichmentContainerName = 'property-enrichments';
 
-  constructor(private readonly dbService: CosmosDbService) {}
+  private readonly contextLoader: OrderContextLoader;
+
+  constructor(private readonly dbService: CosmosDbService) {
+    this.contextLoader = new OrderContextLoader(dbService);
+  }
 
   async createFromExtractionRun(extractionRun: RunLedgerRecord): Promise<CanonicalSnapshotRecord> {
     if (extractionRun.runType !== 'extraction') {
@@ -109,7 +114,7 @@ export class CanonicalSnapshotService {
     // observability/accumulation).
     await this.updatePropertyCurrentCanonical(
       extractionRun,
-      sourceArtifacts.order,
+      sourceArtifacts.orderContext?.vendorOrder ?? null,
       normalizedData?.canonical ?? null,
       snapshot.id,
       now,
@@ -189,7 +194,7 @@ export class CanonicalSnapshotService {
     // consolidated extraction reaches the rolling property view.
     await this.updatePropertyCurrentCanonical(
       extractionRun,
-      sourceArtifacts.order,
+      sourceArtifacts.orderContext?.vendorOrder ?? null,
       normalizedData?.canonical ?? null,
       existing.id,
       now,
@@ -220,7 +225,7 @@ export class CanonicalSnapshotService {
     document: DocumentMetadata | null;
     extractionData: Record<string, unknown> | null;
     enrichment: PropertyEnrichmentRecord | null;
-    order: Order | null;
+    orderContext: OrderContext | null;
     propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
   }> {
     const document = await this.getDocumentById(extractionRun.documentId, extractionRun.tenantId);
@@ -231,18 +236,24 @@ export class CanonicalSnapshotService {
     const enrichment = orderId
       ? await this.getLatestEnrichmentByOrderId(orderId, extractionRun.tenantId)
       : null;
-    const order = orderId
-      ? await this.getOrderById(orderId, extractionRun.tenantId)
+    // Phase 7: load joined OrderContext so the canonical projection can pull
+    // lender-side fields from the parent ClientOrder (their proper home post
+    // Phase 4) instead of the deprecated copy on the VendorOrder row.
+    const orderContext = orderId
+      ? await this.getOrderContextById(orderId, extractionRun.tenantId)
       : null;
-    const propertyCurrentCanonical = order?.propertyId
-      ? await this.getPropertyCurrentCanonical(order.propertyId, extractionRun.tenantId)
+    const propertyCurrentCanonical = orderContext?.vendorOrder.propertyId
+      ? await this.getPropertyCurrentCanonical(
+          orderContext.vendorOrder.propertyId,
+          extractionRun.tenantId,
+        )
       : null;
 
     return {
       document,
       extractionData,
       enrichment,
-      order,
+      orderContext,
       propertyCurrentCanonical,
     };
   }
@@ -277,28 +288,18 @@ export class CanonicalSnapshotService {
     }
   }
 
-  private async getOrderById(
+  private async getOrderContextById(
     orderId: string,
     tenantId: string,
-  ): Promise<Order | null> {
-    // Orders live in the 'orders' container per the rest of the codebase. We
-    // load defensively — failures here are non-fatal: snapshot still builds
-    // from extraction + enrichment, just without order-intake values.
+  ): Promise<OrderContext | null> {
+    // Phase 7: load via OrderContextLoader so we get the joined VendorOrder
+    // + parent ClientOrder view. Failures here are non-fatal: snapshot
+    // still builds from extraction + enrichment, just without
+    // order-intake values.
     try {
-      const result = await this.dbService.queryItems<Order>(
-        'orders',
-        `SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId`,
-        [
-          { name: '@id', value: orderId },
-          { name: '@tenantId', value: tenantId },
-        ],
-      );
-      if (!result.success || !result.data || result.data.length === 0) {
-        return null;
-      }
-      return result.data[0] ?? null;
+      return await this.contextLoader.loadByVendorOrderId(orderId);
     } catch (err) {
-      this.logger.warn('Snapshot: failed to load order for canonical projection — continuing', {
+      this.logger.warn('Snapshot: failed to load order context for canonical projection — continuing', {
         orderId,
         tenantId,
         error: err instanceof Error ? err.message : String(err),
@@ -363,7 +364,7 @@ export class CanonicalSnapshotService {
       document: DocumentMetadata | null;
       extractionData: Record<string, unknown> | null;
       enrichment: PropertyEnrichmentRecord | null;
-      order: Order | null;
+      orderContext: OrderContext | null;
       propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
     },
   ): CanonicalSnapshotRecord['normalizedData'] {
@@ -449,7 +450,7 @@ export class CanonicalSnapshotService {
     }
 
     // Layer 2: order-intake.
-    const orderCanonical = mapAppraisalOrderToCanonical(artifacts.order);
+    const orderCanonical = mapAppraisalOrderToCanonical(artifacts.orderContext);
     if (orderCanonical) {
       Object.assign(canonical, orderCanonical);
     }
