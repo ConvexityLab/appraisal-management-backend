@@ -108,10 +108,15 @@ export class LocalAttomPropertyDataProvider implements PropertyDataProvider {
     });
 
     // ── Step 1: Pull candidate set scoped by state + zip ────────────────────
-    // Sorted newest-first so the first match wins the multi-match tiebreaker.
+    // No ORDER BY: the ingest script upserts by attomId so there is at most
+    // one document per physical property. Adding ORDER BY c.sourcedAt DESC
+    // forces a cross-partition merge-sort over the full state/zip result set
+    // (6+ MB for dense zips), inflating query time from ~300ms to 4300ms+
+    // and causing intermittent Cosmos throttle/timeout errors that caused
+    // the chained provider to silently fall through to Bridge Interactive.
     const candidates = await this.cosmos.queryDocuments<AttomDataDocument>(
       ATTOM_DATA_CONTAINER,
-      "SELECT * FROM c WHERE c.type = 'attom-data' AND c.address.state = @state AND c.address.zip = @zip ORDER BY c.sourcedAt DESC",
+      "SELECT * FROM c WHERE c.type = 'attom-data' AND c.address.state = @state AND c.address.zip = @zip",
       [
         { name: '@state', value: state },
         { name: '@zip', value: zip },
