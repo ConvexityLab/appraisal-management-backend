@@ -236,6 +236,35 @@ export class ClientOrderService {
           }
         : {}),
       ...(input.clientFee !== undefined ? { clientFee: input.clientFee } : {}),
+
+      // Lender-side fields (Phase 4 of Order-relocation): pick up
+      // borrower / loan / contact / address / etc. from PlaceClientOrderInput
+      // (which is still `Partial<Order>` today) so they land on the
+      // ClientOrder doc — their proper home — instead of being
+      // forwarded onto every child VendorOrder.
+      ...(input.orderType !== undefined ? { orderType: input.orderType } : {}),
+      ...(input.propertyAddress !== undefined ? { propertyAddress: input.propertyAddress } : {}),
+      ...(input.rushOrder !== undefined ? { rushOrder: input.rushOrder } : {}),
+      ...(input.borrowerInformation !== undefined
+        ? { borrowerInformation: input.borrowerInformation }
+        : {}),
+      ...(input.loanInformation !== undefined
+        ? { loanInformation: input.loanInformation }
+        : {}),
+      ...(input.contactInformation !== undefined
+        ? { contactInformation: input.contactInformation }
+        : {}),
+      ...(input.specialInstructions !== undefined
+        ? { specialInstructions: input.specialInstructions }
+        : {}),
+      ...(input.tags !== undefined ? { tags: input.tags } : {}),
+      ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+      // input.priority on Order is the vendor-side urgency (Priority enum).
+      // The lender-side ClientOrder.priority is OrderPriority (ROUTINE/...)
+      // and is set above. Carry the vendor-side signal as `vendorPriority`
+      // on ClientOrder so the materialization listener can stamp child
+      // VendorOrders with it later without re-reading the order.
+      ...(input.priority !== undefined ? { vendorPriority: input.priority } : {}),
     };
 
     // 1. Persist ClientOrder.
