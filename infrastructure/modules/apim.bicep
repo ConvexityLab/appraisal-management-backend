@@ -223,24 +223,18 @@ resource aimPortApi 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = 
   }
 }
 
-// Wildcard operation so any /api/v1/integrations/aim-port/* path is routable;
-// the controller in vendor-integration.controller.ts owns the actual /inbound
-// route and any other path returns the Express 404.
-resource aimPortApiAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
+// Explicit POST /inbound operation. AIM-Port V2.9 only uses one URL
+// (POST /inbound), so a single explicit operation is sufficient and avoids
+// APIM's broken `method: '*'` + `urlTemplate: '/{*path}'` wildcard pattern
+// (verified empirically — wildcard returns APIM 404 for everything).
+resource aimPortApiPostInbound 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-preview' = {
   parent: aimPortApi
-  name: 'aim-port-all'
+  name: 'aim-port-post-inbound'
   properties: {
-    displayName: 'AIM-Port operations'
-    method: '*'
-    urlTemplate: '/{*path}'
-    description: 'Forwarded as-is to the API Container App.'
-    templateParameters: [
-      {
-        name: 'path'
-        type: 'string'
-        required: true
-      }
-    ]
+    displayName: 'POST /inbound'
+    method: 'POST'
+    urlTemplate: '/inbound'
+    description: 'AIM-Port inbound webhook. Forwarded as-is to the API Container App.'
   }
 }
 
