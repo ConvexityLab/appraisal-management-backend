@@ -12,6 +12,16 @@ on:
         type: string
         default: 'eastus'
         description: 'Azure region for deployment'
+      appImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-api image. Empty = preserve current Container App tag (or fall back to "latest" on first deploy).'
+      functionsImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-functions image. Same semantics as appImageTag.'
     secrets:
       AZURE_CREDENTIALS:
         required: true
@@ -39,6 +49,16 @@ on:
         type: string
         default: 'eastus'
         description: 'Azure region for deployment'
+      appImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-api image. Empty = preserve current Container App tag (or fall back to "latest" on first deploy).'
+      functionsImageTag:
+        required: false
+        type: string
+        default: ''
+        description: 'Tag for appraisal-functions image. Same semantics as appImageTag.'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -127,11 +147,70 @@ jobs:
           echo "⚠️  AZURE_CLIENT_ID not set — entra-extension-attributes module will be skipped."
         fi
 
+    - name: Resolve Container App image tags
+      id: resolve-image-tags
+      run: |
+        # Why this step exists: app-services.bicep parameterizes the Container App
+        # image tag. If a deploy runs without an explicit tag (e.g. infra-only
+        # change, manual dispatch, or CI build failure that gated build-and-push)
+        # we must NOT silently reset the running revision to ":latest" — that
+        # quietly republishes whatever stale digest ACR's :latest happens to hold.
+        # So when the input is empty we read the tag currently running on each
+        # Container App and reuse it. Only a true first-time bootstrap (Container
+        # App does not yet exist) falls back to "latest".
+        #
+        # Container App names are bicep-generated from the ACR suffix and are
+        # NOT predictable from environment alone — they look like
+        # ca-appraisalapi-<env3>-<suffix4>. Discover them by substring match,
+        # the same way deploy.yml's deploy-container-app job does (line 368).
+        RG_NAME="rg-appraisal-mgmt-${{ inputs.environment }}-${{ inputs.location }}"
+        APP_INPUT="${{ inputs.appImageTag }}"
+        FUNCTIONS_INPUT="${{ inputs.functionsImageTag }}"
+
+        API_APP_NAME=$(az containerapp list --resource-group "$RG_NAME" \
+          --query "[?contains(name, 'appraisalapi')].name | [0]" -o tsv 2>/dev/null || echo "")
+        FUNCTIONS_APP_NAME=$(az containerapp list --resource-group "$RG_NAME" \
+          --query "[?contains(name, 'appraisalfunctions')].name | [0]" -o tsv 2>/dev/null || echo "")
+
+        resolve_tag() {
+          local app_name="$1"
+          local input_tag="$2"
+          if [ -n "$input_tag" ]; then
+            echo "$input_tag"
+            return
+          fi
+          if [ -z "$app_name" ]; then
+            # Container App not yet created (first-time bootstrap) — defer to bootstrap default.
+            echo "latest"
+            return
+          fi
+          local current_image
+          current_image=$(az containerapp show -g "$RG_NAME" -n "$app_name" \
+            --query 'properties.template.containers[0].image' -o tsv 2>/dev/null || echo "")
+          if [ -z "$current_image" ]; then
+            echo "latest"
+            return
+          fi
+          # Image is "<acr>/<repo>:<tag>" — split on last ':'
+          echo "${current_image##*:}"
+        }
+
+        APP_TAG=$(resolve_tag "$API_APP_NAME" "$APP_INPUT")
+        FUNCTIONS_TAG=$(resolve_tag "$FUNCTIONS_APP_NAME" "$FUNCTIONS_INPUT")
+
+        echo "appImageTag=$APP_TAG" >> "$GITHUB_OUTPUT"
+        echo "functionsImageTag=$FUNCTIONS_TAG" >> "$GITHUB_OUTPUT"
+
+        echo "🏷️  appraisal-api Container App: ${API_APP_NAME:-<not yet created>} → tag=$APP_TAG (input='$APP_INPUT')"
+        echo "🏷️  appraisal-functions Container App: ${FUNCTIONS_APP_NAME:-<not yet created>} → tag=$FUNCTIONS_TAG (input='$FUNCTIONS_INPUT')"
+
     - name: Validate Bicep template
       run: |
         echo "🔍 Validating Bicep template for ${{ inputs.environment }}..."
         PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
         PARAM_ARGS=(--parameters "@${PARAM_FILE}")
+        PARAM_ARGS+=("appImageTag=${{ steps.resolve-image-tags.outputs.appImageTag }}")
+        PARAM_ARGS+=("functionsImageTag=${{ steps.resolve-image-tags.outputs.functionsImageTag }}")
         
         # Add secret parameters if they exist
         [ -n "$BATCHDATA_KEY" ] && PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")
@@ -164,6 +243,8 @@ jobs:
         echo "🚀 Deploying infrastructure to ${{ inputs.environment }}..."
         PARAM_FILE="infrastructure/parameters/${{ inputs.environment }}.parameters.json"
         PARAM_ARGS=(--parameters "@${PARAM_FILE}")
+        PARAM_ARGS+=("appImageTag=${{ steps.resolve-image-tags.outputs.appImageTag }}")
+        PARAM_ARGS+=("functionsImageTag=${{ steps.resolve-image-tags.outputs.functionsImageTag }}")
         
         # Add secret parameters if they exist
         [ -n "$BATCHDATA_KEY" ] && PARAM_ARGS+=("batchDataApiKey=$BATCHDATA_KEY")

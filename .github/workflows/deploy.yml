@@ -291,14 +291,27 @@ jobs:
 
   deploy-infrastructure:
     name: Deploy Infrastructure
-    needs: [determine-environment, detect-changes]
+    needs: [determine-environment, detect-changes, build-and-push-container]
+    # always() so infra still deploys when build-and-push-container is skipped
+    # (no code changes) or fails. The reusable workflow's resolve-image-tags step
+    # will fall back to the currently-running Container App tag in that case.
     if: |
-      (github.event_name == 'workflow_dispatch' && needs.determine-environment.outputs.deploy-infrastructure == 'true') ||
-      (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.infrastructure == 'true')
+      always() &&
+      (
+        (github.event_name == 'workflow_dispatch' && needs.determine-environment.outputs.deploy-infrastructure == 'true') ||
+        (github.event_name != 'workflow_dispatch' && needs.detect-changes.outputs.infrastructure == 'true')
+      ) &&
+      needs.determine-environment.result == 'success' &&
+      needs.build-and-push-container.result != 'failure'
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: ${{ needs.determine-environment.outputs.environment }}
       location: 'eastus'
+      # Pass the freshly-built tag so bicep deploys the new image. If build
+      # was skipped (no code change), this is the empty string and the
+      # reusable workflow preserves the currently-running Container App tag.
+      appImageTag: ${{ needs.build-and-push-container.outputs.image-tag }}
+      functionsImageTag: ${{ needs.build-and-push-container.outputs.image-tag }}
     secrets:
       AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
