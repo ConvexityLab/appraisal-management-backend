@@ -15,6 +15,13 @@ import { PropertyRecordService } from './property-record.service.js';
 import { AutoAssignmentOrchestratorService } from './auto-assignment-orchestrator.service.js';
 import type { OrderFilters } from '../types/index.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getLoanInformation,
+  getDueDate,
+  type OrderContext,
+} from './order-context-loader.service.js';
 import type { CreateEngagementRequest } from '../types/engagement.types.js';
 
 type RecordValue = Record<string, unknown>;
@@ -180,12 +187,13 @@ function normalizePropertyAddress(payload: RecordValue): Record<string, unknown>
   };
 }
 
-function formatOrderAddress(order: Order): string {
-  const address = order.propertyAddress as Order['propertyAddress'] & Record<string, unknown>;
-  const street = getOptionalString(address.streetAddress ?? address.street) ?? '';
+function formatOrderAddress(ctx: OrderContext): string {
+  const address = getPropertyAddress(ctx);
+  if (!address) return '';
+  const street = getOptionalString(address.streetAddress) ?? '';
   const city = getOptionalString(address.city) ?? '';
   const state = getOptionalString(address.state) ?? '';
-  const zipCode = getOptionalString(address.zipCode ?? address.zip) ?? '';
+  const zipCode = getOptionalString(address.zipCode) ?? '';
   return `${street}, ${city} ${state} ${zipCode}`.trim();
 }
 
@@ -214,6 +222,7 @@ export class AiActionDispatcherService {
   private readonly orderService: Pick<OrderManagementService, 'createOrder' | 'assignOrderToVendor'>;
   private readonly engagementService: Pick<EngagementService, 'createEngagement'>;
   private readonly autoAssignmentOrchestrator: Pick<AutoAssignmentOrchestratorService, 'triggerVendorAssignment'>;
+  private readonly contextLoader: OrderContextLoader;
 
   constructor(
     private readonly dbService: CosmosDbService,
@@ -224,6 +233,7 @@ export class AiActionDispatcherService {
       new EngagementService(dbService, new PropertyRecordService(dbService));
     this.autoAssignmentOrchestrator = dependencies.autoAssignmentOrchestrator ??
       new AutoAssignmentOrchestratorService(dbService);
+    this.contextLoader = new OrderContextLoader(dbService);
   }
 
   async handleCreateOrder(payload: unknown, context: AiActionExecutionContext): Promise<AiActionDispatchResult> {
@@ -313,18 +323,22 @@ export class AiActionDispatcherService {
           );
         }
 
+        // Phase 7: load joined OrderContext so propertyAddress / loanAmount
+        // / dueDate / orderType resolve from the parent ClientOrder when
+        // present (engagement-flow rows don't carry them on the VendorOrder).
+        const ctx = await this.contextLoader.loadByVendorOrder(order);
         await this.autoAssignmentOrchestrator.triggerVendorAssignment({
           orderId: order.id,
           orderNumber: order.orderNumber ?? '',
           tenantId: context.tenantId,
           engagementId: order.engagementId ?? order.id,
-          productType: String(order.productType ?? order.orderType ?? ''),
-          propertyAddress: formatOrderAddress(order),
-          propertyState: getString(order.propertyAddress?.state, `order '${orderId}' propertyAddress.state`),
+          productType: String(order.productType ?? ctx.clientOrder?.orderType ?? order.orderType ?? ''),
+          propertyAddress: formatOrderAddress(ctx),
+          propertyState: getString(getPropertyAddress(ctx)?.state, `order '${orderId}' propertyAddress.state`),
           clientId: getString(order.clientId, `order '${orderId}' clientId`),
-          loanAmount: getNumber(order.loanInformation?.loanAmount ?? 0, `order '${orderId}' loanInformation.loanAmount`),
+          loanAmount: getNumber(getLoanInformation(ctx)?.loanAmount ?? 0, `order '${orderId}' loanInformation.loanAmount`),
           priority: mapAutoAssignmentPriority(order.priority),
-          dueDate: getDate(order.dueDate, `order '${orderId}' dueDate`),
+          dueDate: getDate(getDueDate(ctx), `order '${orderId}' dueDate`),
           ...(getOptionalString((order as unknown as { productId?: unknown }).productId)
             ? { productId: getOptionalString((order as unknown as { productId?: unknown }).productId)! }
             : {}),
