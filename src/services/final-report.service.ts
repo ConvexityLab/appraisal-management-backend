@@ -20,6 +20,16 @@
 
 import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import type { PropertyAddress } from "../types/index.js";
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getPropertyDetails,
+  getLoanInformation,
+  getBorrowerInformation,
+  getContactInformation,
+  getDueDate,
+  type OrderContext,
+} from './order-context-loader.service.js';
 import ExcelJS from 'exceljs';
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } from 'pdf-lib';
 import { v4 as uuidv4 } from 'uuid';
@@ -75,6 +85,7 @@ export class FinalReportService {
   private readonly blob: BlobStorageService;
   private readonly notification: NotificationService;
   private readonly reportEngine: ReportEngineService;
+  private readonly contextLoader: OrderContextLoader;
 
   /** Blob container that holds blank template PDFs — must pre-exist */
   private readonly TEMPLATE_CONTAINER = 'pdf-report-templates';
@@ -88,6 +99,7 @@ export class FinalReportService {
   constructor(private readonly db: CosmosDbService) {
     this.blob = new BlobStorageService();
     this.notification = new NotificationService();
+    this.contextLoader = new OrderContextLoader(db);
 
     // ── Report Engine (html-render + acroform strategy dispatcher) ──────────
     const mappers: ReadonlyMap<string, IFieldMapper> = new Map<string, IFieldMapper>([
@@ -192,14 +204,15 @@ export class FinalReportService {
     // ------------------------------------------------------------------
     // Steps 1–3: Validate preconditions (throw → 4xx to caller)
     // ------------------------------------------------------------------
-    const order = await this._loadOrder(orderId);
+    const ctx = await this._loadOrderContext(orderId);
+    const order = ctx.vendorOrder;
     const qcReview = await this._loadApprovedQcReview(orderId);
     const template = await this._loadTemplate(templateId);
 
     // ------------------------------------------------------------------
     // Step 4: Assemble form-field map
     // ------------------------------------------------------------------
-    const fieldMap = this._assembleFieldMap(order, qcReview, template);
+    const fieldMap = this._assembleFieldMap(ctx, qcReview, template);
 
     // ------------------------------------------------------------------
     // Stub record in Cosmos while we generate (allows polling)
@@ -286,7 +299,7 @@ export class FinalReportService {
     // ------------------------------------------------------------------
     // Step 9: Post-generation events (best-effort — never fail the request)
     // ------------------------------------------------------------------
-    void this._firePostGenerationEvents(finalRecord, order, qcReview);
+    void this._firePostGenerationEvents(finalRecord, ctx, qcReview);
 
     return finalRecord;
   }
@@ -342,18 +355,17 @@ export class FinalReportService {
       return { blobPath: report.mismoXmlBlobPath, alreadyExisted: true };
     }
 
-    // Load dependencies
-    const orderResp = await this.db.findOrderById(orderId);
-    if (!orderResp.success || !orderResp.data) {
-      throw new Error(`Order '${orderId}' not found`);
-    }
-    const order = orderResp.data;
+    // Load dependencies. Use OrderContextLoader so we get the joined
+    // VendorOrder + parent ClientOrder view — lender-side fields
+    // (contactInformation, etc.) live on ClientOrder post Phase 4.
+    const ctx = await this.contextLoader.loadByVendorOrderId(orderId);
+    const order = ctx.vendorOrder;
     const qcReview = await this._loadApprovedQcReview(orderId);
 
     // Generate XML — route by formType
     const submissionInfo: SubmissionInfo = {
       loanNumber:          qcReview.loanNumber ?? orderId,
-      lenderName:          order.contactInformation?.name ?? order.clientId,
+      lenderName:          getContactInformation(ctx)?.name ?? order.clientId,
       lenderIdentifier:    order.clientId,
       submittingUserName:  requestedBy,
       submittingUserId:    requestedBy,
@@ -383,7 +395,7 @@ export class FinalReportService {
     } else {
       // ── URAR / DVR path ───────────────────────────────────────────────────
       const xmlGenerator = new MismoXmlGenerator();
-      const mismoReport = this._buildMismoReport(order, qcReview, report);
+      const mismoReport = this._buildMismoReport(ctx, qcReview, report);
       xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
     }
 
@@ -445,6 +457,15 @@ export class FinalReportService {
     return response.data;
   }
 
+  /**
+   * Phase 7 (Order-relocation refactor): when callers need lender-side
+   * fields (borrower / loan / contact / address / dueDate / etc.), load
+   * the joined OrderContext instead of the bare VendorOrder.
+   */
+  private async _loadOrderContext(orderId: string): Promise<OrderContext> {
+    return this.contextLoader.loadByVendorOrderId(orderId);
+  }
+
   private async _loadApprovedQcReview(orderId: string): Promise<QCReview> {
     const reviews = await this.db.queryDocuments<QCReview>(
       'qc-reviews',
@@ -497,28 +518,29 @@ export class FinalReportService {
    *   order fields (lowest) → QC result overlays → reviewer fieldOverrides (highest)
    */
   private _assembleFieldMap(
-    order: Order,
+    ctx: OrderContext,
     review: QCReview,
     _template: ReportTemplate
   ): Record<string, string | boolean | number> {
     const map: Record<string, string | boolean | number> = {};
+    const order = ctx.vendorOrder;
 
-    // --- Tier 1: Order base data ---
-    if (order.propertyAddress) {
-      const addr = order.propertyAddress;
+    // --- Tier 1: Order base data (joined from ClientOrder where present) ---
+    const addr = getPropertyAddress(ctx);
+    if (addr) {
       if (addr.streetAddress) map['SubjectAddress'] = addr.streetAddress;
       if (addr.city)          map['SubjectCity']    = addr.city;
       if (addr.state)         map['SubjectState']   = addr.state;
       if (addr.zipCode)       map['SubjectZip']     = addr.zipCode;
       if (addr.county)        map['SubjectCounty']  = addr.county;
     }
-    if (order.borrowerInformation) {
-      const b = order.borrowerInformation;
+    const b = getBorrowerInformation(ctx);
+    if (b) {
       map['BorrowerName'] = `${b.firstName} ${b.lastName}`.trim();
       if (b.email) map['BorrowerEmail'] = b.email;
     }
-    if (order.loanInformation) {
-      const l = order.loanInformation;
+    const l = getLoanInformation(ctx);
+    if (l) {
       if (l.loanAmount) map['LoanAmount'] = l.loanAmount;
       if (l.loanType)   map['LoanType']   = l.loanType;
     }
@@ -724,17 +746,18 @@ export class FinalReportService {
    */
   private async _firePostGenerationEvents(
     report: FinalReport,
-    order: Order,
+    ctx: OrderContext,
     qcReview: QCReview
   ): Promise<void> {
+    const order = ctx.vendorOrder;
     // --- Event 1: Notification email ---
     try {
-      const recipients = this._getNotificationRecipients(order);
+      const recipients = this._getNotificationRecipients(ctx);
       for (const email of recipients) {
         await this.notification.sendEmail({
           to: email,
           subject: `Final Report Generated — Order ${order.id}`,
-          body: this._buildEmailBody(report, order),
+          body: this._buildEmailBody(report, ctx),
           priority: 'normal'
         });
       }
@@ -755,7 +778,7 @@ export class FinalReportService {
       try {
         const submissionInfo: SubmissionInfo = {
           loanNumber:         qcReview.loanNumber ?? order.id,
-          lenderName:         order.contactInformation?.name ?? order.clientId,
+          lenderName:         getContactInformation(ctx)?.name ?? order.clientId,
           lenderIdentifier:   order.clientId,
           submittingUserName: report.generatedBy,
           submittingUserId:   report.generatedBy,
@@ -787,7 +810,7 @@ export class FinalReportService {
         } else {
           // ── URAR / DVR path (all other form types) ────────────────────────────
           const xmlGenerator = new MismoXmlGenerator();
-          const mismoReport  = this._buildMismoReport(order, qcReview, report);
+          const mismoReport  = this._buildMismoReport(ctx, qcReview, report);
           xml = xmlGenerator.generateMismoXml(mismoReport, submissionInfo);
         }
 
@@ -848,13 +871,15 @@ export class FinalReportService {
     }
   }
 
-  private _getNotificationRecipients(order: Order): string[] {
+  private _getNotificationRecipients(ctx: OrderContext): string[] {
     const recipients: string[] = [];
 
-    // Primary contact on the order
-    if (order.contactInformation?.email) recipients.push(order.contactInformation.email);
-    // Borrower email
-    if (order.borrowerInformation?.email) recipients.push(order.borrowerInformation.email);
+    // Primary contact on the order — joins from ClientOrder
+    const contact = getContactInformation(ctx);
+    if (contact?.email) recipients.push(contact.email);
+    // Borrower email — joins from ClientOrder
+    const borrower = getBorrowerInformation(ctx);
+    if (borrower?.email) recipients.push(borrower.email);
 
     // Platform-configured default recipients (comma-separated env var)
     const defaultRecipients = process.env['FINAL_REPORT_NOTIFICATION_EMAILS'];
@@ -870,9 +895,11 @@ export class FinalReportService {
     return [...new Set(recipients)];
   }
 
-  private _buildEmailBody(report: FinalReport, order: Order): string {
-    const address = order.propertyAddress
-      ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state}`
+  private _buildEmailBody(report: FinalReport, ctx: OrderContext): string {
+    const order = ctx.vendorOrder;
+    const addr = getPropertyAddress(ctx);
+    const address = addr
+      ? `${addr.streetAddress}, ${addr.city}, ${addr.state}`
       : order.id;
 
     return [
@@ -900,25 +927,26 @@ export class FinalReportService {
    * while avoiding hundreds of lines of placeholder data for fields that are never read.
    */
   private _buildMismoReport(
-    order: Order,
+    ctx: OrderContext,
     qcReview: QCReview,
     report: FinalReport
   ): UadAppraisalReport {
-    // Lender-side fields are now optional on Order (Phase 2 of the
-    // Order-relocation refactor). On legacy rows these are populated; on
-    // engagement-flow rows they are not. Fall back to empty values so the
-    // MISMO report still renders — the caller is responsible for ensuring
-    // a ClientOrder context is loaded when production-grade output is
-    // required (Phase 6+ join helper).
-    const addr: PropertyAddress = order.propertyAddress ?? {
+    // Phase 7: the MISMO builder now reads through OrderContext, which
+    // resolves lender-side fields from the parent ClientOrder (their
+    // proper home post Phase 4) and falls back to the deprecated copy
+    // on the VendorOrder for legacy rows.
+    const order = ctx.vendorOrder;
+    const addr: PropertyAddress = getPropertyAddress(ctx) ?? {
       streetAddress: '',
       city: '',
       state: '',
       zipCode: '',
       county: '',
     };
-    const det = order.propertyDetails;
-    const loan = order.loanInformation;
+    const det = getPropertyDetails(ctx);
+    const loan = getLoanInformation(ctx);
+    const dueDate = getDueDate(ctx);
+    const contact = getContactInformation(ctx);
     const now = new Date();
     const generatedAt = report.generatedAt ? new Date(report.generatedAt) : now;
 
@@ -964,13 +992,13 @@ export class FinalReportService {
       } as any,
 
       appraisalInfo: {
-        clientName:              order.contactInformation?.name ?? order.clientId,
+        clientName:              contact?.name ?? order.clientId,
         clientAddress:           `${addr.streetAddress}, ${addr.city}, ${addr.state} ${addr.zipCode}`,
         appraisalOrderDate:      new Date(order.createdAt),
-        inspectionDate:          order.dueDate ? new Date(order.dueDate) : now,   // best proxy available from order data; falls back to now when dueDate is on the parent ClientOrder
+        inspectionDate:          dueDate ? new Date(dueDate) : now,   // best proxy available from order data; falls back to now when no due date is recorded
         reportDate:              generatedAt,
         intendedUse:             'Mortgage finance',
-        intendedUser:            order.contactInformation?.name ?? order.clientId,
+        intendedUser:            contact?.name ?? order.clientId,
         propertyRightsAppraised: 'FeeSimple',
         loanNumber:              qcReview.loanNumber,
         salePrice:               loan?.contractPrice,
