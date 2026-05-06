@@ -36,6 +36,21 @@ if (!process.env.STORAGE_CONTAINER_DOCUMENTS) {
   process.env.STORAGE_CONTAINER_DOCUMENTS = 'test-documents';
 }
 
+// BulkPortfolioService instantiates ReviewDocumentExtractionService eagerly in
+// its constructor (P2-AX-01 startup-validation guardrail), which throws when
+// AXIOM_API_BASE_URL is empty. CI has no .env file, so any test that does
+// `new BulkPortfolioService(db)` would fail at construction. Provide a
+// non-empty placeholder so the constructor passes; tests that exercise real
+// Axiom behaviour set their own value (e.g. axiom-platform-parity.test.ts).
+// AXIOM_AUTH_REQUIRED=false keeps AxiomService from constructing a
+// DefaultAzureCredential, which would also fail in CI without managed identity.
+if (!process.env.AXIOM_API_BASE_URL) {
+  process.env.AXIOM_API_BASE_URL = 'https://test-placeholder.axiom.local';
+}
+if (!process.env.AXIOM_AUTH_REQUIRED) {
+  process.env.AXIOM_AUTH_REQUIRED = 'false';
+}
+
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 
 // Global test configuration
