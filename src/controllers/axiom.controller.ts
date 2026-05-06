@@ -20,6 +20,14 @@ import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getPropertyDetails,
+  getLoanInformation,
+  getBorrowerInformation,
+  type OrderContext,
+} from '../services/order-context-loader.service.js';
 import { BlobStorageService } from '../services/blob-storage.service';
 import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service.js';
 import { TenantAutomationConfigService } from '../services/tenant-automation-config.service.js';
@@ -65,6 +73,7 @@ export class AxiomController {
   private readonly engineDispatchService: EngineDispatchService;
   private readonly criteriaStepInputService: CriteriaStepInputService;
   private readonly analysisSubmissionService: AnalysisSubmissionService;
+  private readonly contextLoader: OrderContextLoader;
   private readonly logger = new Logger('AxiomController');
 
   private createHeaderOrGeneratedValue(req: UnifiedAuthRequest, headerName: string, prefix: string): string {
@@ -76,16 +85,20 @@ export class AxiomController {
   }
 
   /**
-   * Build structured Axiom pipeline fields from an order.
+   * Build structured Axiom pipeline fields from an OrderContext.
    * Only includes fields with a non-empty / non-zero value.
+   *
+   * Phase 7 of the Order-relocation refactor: lender-side fields live
+   * on the parent ClientOrder, so this builder reads through the
+   * OrderContext accessors instead of the bare VendorOrder.
    */
   private static buildOrderFields(
-    order: Order,
+    ctx: OrderContext,
   ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
-    const addr = order.propertyAddress;
-    const prop = order.propertyDetails;
-    const loan = order.loanInformation;
-    const borrower = order.borrowerInformation;
+    const addr = getPropertyAddress(ctx);
+    const prop = getPropertyDetails(ctx);
+    const loan = getLoanInformation(ctx);
+    const borrower = getBorrowerInformation(ctx);
     return [
       { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
       { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
@@ -368,6 +381,7 @@ export class AxiomController {
     this.engineDispatchService = new EngineDispatchService(this.axiomService, dbService);
     this.criteriaStepInputService = new CriteriaStepInputService(dbService);
     this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
+    this.contextLoader = new OrderContextLoader(dbService);
   }
 
   /**
@@ -723,10 +737,12 @@ export class AxiomController {
         return;
       }
 
-      // Load order for structured pipeline fields (A-2)
-      const orderResult = await this.dbService.findOrderById(notification.orderId);
-      const order: Order | null = orderResult.success ? orderResult.data ?? null : null;
-      if (!order) {
+      // Load order context (joined VendorOrder + parent ClientOrder) so the
+      // Axiom pipeline payload sees lender-side fields from their proper home.
+      let ctx: OrderContext;
+      try {
+        ctx = await this.contextLoader.loadByVendorOrderId(notification.orderId);
+      } catch {
         res.status(404).json({
           success: false,
           error: {
@@ -736,7 +752,8 @@ export class AxiomController {
         });
         return;
       }
-      const fields = AxiomController.buildOrderFields(order);
+      const order: Order = ctx.vendorOrder;
+      const fields = AxiomController.buildOrderFields(ctx);
       const documents = [{
         documentName: (notification.metadata as any)?.fileName ?? notification.orderId,
         documentReference: notification.documentUrl,
