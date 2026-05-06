@@ -43,7 +43,7 @@ import type {
   ReviewDecision,
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
-import { OrderType, Priority, type Order } from '../types/index.js';
+import { OrderType, Priority } from '../types/index.js';
 import type { AxiomBulkEvaluationRequestedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 

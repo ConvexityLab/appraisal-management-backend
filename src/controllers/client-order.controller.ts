@@ -42,7 +42,7 @@ import {
   type ClientOrder,
 } from '../types/client-order.types.js';
 import type { ProductType } from '../types/product-catalog.js';
-import type { Order } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { Logger } from '../utils/logger.js';
 

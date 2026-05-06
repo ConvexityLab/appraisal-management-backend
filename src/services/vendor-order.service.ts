@@ -32,10 +32,10 @@
 
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
-import type { Order } from '../types/index.js';
 import {
     VENDOR_ORDER_DOC_TYPE,
     type VendorOrder,
+    type VendorOrder as Order,
     type VendorWorkType,
 } from '../types/vendor-order.types.js';
 

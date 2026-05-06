@@ -19,7 +19,7 @@ import { BulkPortfolioService } from '../services/bulk-portfolio.service';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
-import type { Order } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import { BlobStorageService } from '../services/blob-storage.service';
 import { AxiomBulkSubmissionService } from '../services/axiom-bulk-submission.service.js';
 import { TenantAutomationConfigService } from '../services/tenant-automation-config.service.js';

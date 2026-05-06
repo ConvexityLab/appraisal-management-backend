@@ -20,7 +20,7 @@ import {
 } from '../mappers/property-canonical-projection.js';
 import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
-import type { Order } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
 
 interface PropertyEnrichmentRecord {

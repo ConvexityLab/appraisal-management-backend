@@ -43,7 +43,8 @@ import {
 } from '../types/client-order.types.js';
 import type { VendorOrder } from '../types/vendor-order.types.js';
 import type { VendorOrderTemplate } from '../types/decomposition-rule.types.js';
-import type { Order, PropertyDetails } from '../types/index.js';
+import type { PropertyDetails } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { ProductType } from '../types/product-catalog.js';
 import { OrderStatus } from '../types/order-status.js';
 
