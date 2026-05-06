@@ -13,7 +13,8 @@ import { Logger } from '../utils/logger.js';
 import { EngagementService } from './engagement.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { AutoAssignmentOrchestratorService } from './auto-assignment-orchestrator.service.js';
-import type { Order, OrderFilters } from '../types/index.js';
+import type { OrderFilters } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { CreateEngagementRequest } from '../types/engagement.types.js';
 
 type RecordValue = Record<string, unknown>;

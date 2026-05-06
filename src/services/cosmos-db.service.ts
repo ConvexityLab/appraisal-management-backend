@@ -500,7 +500,7 @@ export class CosmosDbService {
     }
   }
 
-  async updateOrder(id: string, updates: Partial<Order>): Promise<ApiResponse<Order>> {
+  async updateOrder(id: string, updates: Partial<VendorOrder>): Promise<ApiResponse<VendorOrder>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -532,7 +532,7 @@ export class CosmosDbService {
       const partitionKey = this.resolvePartitionKey(existingOrder.tenantId);
 
       const replaceResponse = await this.ordersContainer.item(id, partitionKey).replace(updatedOrder);
-      const resource = replaceResponse.resource as Order;
+      const resource = replaceResponse.resource as VendorOrder;
 
       return {
         success: true,

@@ -1,5 +1,6 @@
 import { Logger } from '../utils/logger.js';
-import { Order, PropertyDetails, PropertyAddress } from '../types/index.js';
+import { PropertyDetails, PropertyAddress } from '../types/index.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
 
 /**
  * Advanced Valuation Engine with ML Models
@@ -19,7 +20,7 @@ export class ValuationEngine {
   /**
    * Comprehensive property valuation using multiple models
    */
-  async performValuation(order: Order): Promise<ValuationResult> {
+  async performValuation(order: VendorOrder): Promise<ValuationResult> {
     this.logger.info('Starting comprehensive valuation', { orderId: order.id });
 
     try {
@@ -465,7 +466,7 @@ export class ValuationEngine {
     return 'luxury-residential'; // Based on property characteristics
   }
 
-  private async calculateConfidenceMetrics(order: Order): Promise<ConfidenceMetrics> {
+  private async calculateConfidenceMetrics(order: VendorOrder): Promise<ConfidenceMetrics> {
     return {
       overall: 0.85,
       dataQuality: 0.9,

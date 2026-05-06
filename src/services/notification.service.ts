@@ -12,7 +12,8 @@
  * up here lights up notifications across the entire platform.
  */
 
-import { Order, Vendor } from '../types/index.js';
+import { Vendor } from '../types/index.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { EmailNotificationService } from './email-notification.service.js';
 import { Logger } from '../utils/logger.js';
@@ -83,7 +84,7 @@ export class NotificationService {
   /**
    * Notify a vendor they've been assigned to an order.
    */
-  async notifyVendorAssignment(vendorId: string, order: Order): Promise<void> {
+  async notifyVendorAssignment(vendorId: string, order: VendorOrder): Promise<void> {
     try {
       const vendorResult = await this.dbService.findVendorById(vendorId);
       if (!vendorResult.success || !vendorResult.data) {
@@ -124,7 +125,7 @@ export class NotificationService {
   /**
    * Notify a vendor their assignment has been cancelled.
    */
-  async notifyVendorCancellation(vendorId: string, order: Order, reason: string): Promise<void> {
+  async notifyVendorCancellation(vendorId: string, order: VendorOrder, reason: string): Promise<void> {
     try {
       const vendorResult = await this.dbService.findVendorById(vendorId);
       if (!vendorResult.success || !vendorResult.data) {
@@ -156,7 +157,7 @@ export class NotificationService {
   /**
    * Send an acceptance reminder to a vendor (e.g., approaching 4-hour deadline).
    */
-  async sendVendorAcceptanceReminder(vendorId: string, order: Order): Promise<void> {
+  async sendVendorAcceptanceReminder(vendorId: string, order: VendorOrder): Promise<void> {
     try {
       const vendorResult = await this.dbService.findVendorById(vendorId);
       if (!vendorResult.success || !vendorResult.data) {

@@ -1,4 +1,5 @@
-import { Order, OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '../types/index.js';
+import { OrderStatus, Priority, ProductType, ApiResponse, PaginationInfo, OrderFilters, OrderUpdateData } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import { isValidStatusTransition } from '../types/order-status.js';
 import { DatabaseService } from './database.service.js';
 import { VendorManagementService } from './vendor-management.service.js';

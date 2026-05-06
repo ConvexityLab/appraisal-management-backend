@@ -1,6 +1,7 @@
 import { ServiceBusClient, ServiceBusSender, ServiceBusReceiver } from '@azure/service-bus';
 import { Logger } from '../utils/logger.js';
-import { Order, OrderStatus } from '../types/index.js';
+import { OrderStatus } from '../types/index.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { buildCanonicalPayloadFromOrder } from '../integrations/outbound/canonical-event-payload.js';
 
@@ -50,7 +51,7 @@ export class OrderEventService {
    * Order shape. Legacy fields (propertyAddress, etc.) remain on
    * the event for backward compatibility — slice 9 is additive.
    */
-  async publishOrderCreated(order: Order): Promise<void> {
+  async publishOrderCreated(order: VendorOrder): Promise<void> {
     const canonical = buildCanonicalPayloadFromOrder(order);
 
     const event = {

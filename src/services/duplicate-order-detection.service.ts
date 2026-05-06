@@ -8,7 +8,7 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
-import type { Order } from '../types/index.js';
+import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
 
 export interface DuplicateCheckRequest {
   /** Street address of the subject property */
@@ -198,7 +198,7 @@ export class DuplicateOrderDetectionService {
    * Uses the propertyAddress.state + propertyAddress.zipCode for initial filtering
    * to reduce the candidate set before in-memory address normalization.
    */
-  private async queryCandidateOrders(request: DuplicateCheckRequest): Promise<Order[]> {
+  private async queryCandidateOrders(request: DuplicateCheckRequest): Promise<VendorOrder[]> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - DuplicateOrderDetectionService.DATE_WINDOW_DAYS);
 
@@ -207,7 +207,7 @@ export class DuplicateOrderDetectionService {
       throw new Error('Orders container not initialized');
     }
 
-    let query = `SELECT * FROM c WHERE (c.type = 'vendor-order' OR c.type = 'order') AND c.tenantId = @tenantId AND c.createdAt >= @cutoff`;
+    let query = `SELECT * FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.tenantId = @tenantId AND c.createdAt >= @cutoff`;
     const parameters: Array<{ name: string; value: string }> = [
       { name: '@tenantId', value: request.tenantId },
       { name: '@cutoff', value: cutoffDate.toISOString() },
@@ -230,10 +230,10 @@ export class DuplicateOrderDetectionService {
       parameters,
     }).fetchAll();
 
-    return resources as Order[];
+    return resources as VendorOrder[];
   }
 
-  private extractAddressString(order: Order): string | null {
+  private extractAddressString(order: VendorOrder): string | null {
     const addr = order.propertyAddress;
     if (!addr) return null;
     if (typeof addr === 'string') return addr;

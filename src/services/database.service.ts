@@ -1,4 +1,5 @@
-import { Order, Vendor, OrderFilters, PropertyDetails, PropertyAddress } from '../types/index.js';
+import { Vendor, OrderFilters, PropertyDetails, PropertyAddress } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 
 export interface DatabaseOrderRepository {
   create(order: Order): Promise<Order>;

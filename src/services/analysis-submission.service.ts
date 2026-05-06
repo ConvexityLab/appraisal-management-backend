@@ -1,4 +1,4 @@
-import type { Order } from '../types/index.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
 import { BlobStorageService } from './blob-storage.service.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { AxiomService } from './axiom.service.js';
@@ -325,7 +325,7 @@ export class AnalysisSubmissionService {
     }
 
     const orderResult = await this.dbService.findOrderById(request.orderId);
-    const order: Order | null = orderResult.success ? orderResult.data ?? null : null;
+    const order: VendorOrder | null = orderResult.success ? orderResult.data ?? null : null;
     if (!order) {
       throw new Error(`Order '${request.orderId}' not found`);
     }
@@ -653,7 +653,7 @@ export class AnalysisSubmissionService {
     };
   }
 
-  private buildOrderFields(order: Order): Array<{ fieldName: string; fieldType: string; value: unknown }> {
+  private buildOrderFields(order: VendorOrder): Array<{ fieldName: string; fieldType: string; value: unknown }> {
     const address = order.propertyAddress;
     const property = order.propertyDetails;
     const loan = order.loanInformation;
