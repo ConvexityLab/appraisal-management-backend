@@ -51,24 +51,44 @@ export interface Order {
   clientId: string;
   tenantId: string;
   orderNumber: string;
-  propertyAddress: PropertyAddress;
-  propertyDetails: PropertyDetails;
-  orderType: OrderType;
+  /**
+   * @deprecated Phase 3 of Order-relocation refactor. These lender-supplied
+   * fields are moving to ClientOrder (their proper home). They remain
+   * optional here so legacy reads of pre-relocation rows still type-check.
+   * New code should join through `clientOrderId` and read from ClientOrder.
+   */
+  propertyAddress?: PropertyAddress;
+  /** @deprecated see propertyAddress note. */
+  propertyDetails?: PropertyDetails;
+  /** @deprecated see propertyAddress note. */
+  orderType?: OrderType;
   productType: ProductType;
-  dueDate: Date;
-  rushOrder: boolean;
+  /** @deprecated lender-side; lives on ClientOrder. */
+  dueDate?: Date;
+  /** @deprecated lender-side; lives on ClientOrder. */
+  rushOrder?: boolean;
+  /** @deprecated lender-side; lives on ClientOrder. */
   specialInstructions?: string;
-  borrowerInformation: BorrowerInfo;
-  loanInformation: LoanInfo;
-  contactInformation: ContactInfo;
+  /** @deprecated lender-side; lives on ClientOrder. */
+  borrowerInformation?: BorrowerInfo;
+  /** @deprecated lender-side; lives on ClientOrder. */
+  loanInformation?: LoanInfo;
+  /** @deprecated lender-side; lives on ClientOrder. */
+  contactInformation?: ContactInfo;
   status: OrderStatus;
-  priority: Priority;
+  /**
+   * Vendor-side urgency. Distinct value space from ClientOrder.priority
+   * (which is the engagement-level OrderPriority: ROUTINE/EXPEDITED/...).
+   */
+  priority?: Priority;
   assignedVendorId?: string;
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
-  tags: string[];
-  metadata: Record<string, any>;
+  /** @deprecated lender-side; lives on ClientOrder. */
+  tags?: string[];
+  /** @deprecated lender-side; lives on ClientOrder. */
+  metadata?: Record<string, any>;
   // Payment tracking
   paymentStatus?: PaymentStatus;
   paidAt?: string;

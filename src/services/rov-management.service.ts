@@ -97,9 +97,18 @@ export class ROVManagementService {
         rovNumber,
         orderId: input.orderId,
         ...(input.engagementId ? { engagementId: input.engagementId } : {}),
-        propertyAddress: `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`,
+        // Lender-side fields are now optional on VendorOrder (Phase 2 of
+        // Order-relocation). Engagement-flow rows don't carry them. Falling
+        // back to '-' so the ROV record still creates; a later phase will
+        // load the parent ClientOrder via clientOrderId for the proper
+        // values.
+        propertyAddress: order.propertyAddress
+          ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`
+          : '-',
         ...(order.loanInformation?.loanAmount ? { loanNumber: order.loanInformation.loanAmount.toString() } : {}),
-        borrowerName: `${order.borrowerInformation.firstName} ${order.borrowerInformation.lastName}`,
+        borrowerName: order.borrowerInformation
+          ? `${order.borrowerInformation.firstName} ${order.borrowerInformation.lastName}`
+          : '-',
         
         status: ROVStatus.SUBMITTED,
         requestorType: input.requestorType,

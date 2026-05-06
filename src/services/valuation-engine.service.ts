@@ -23,6 +23,22 @@ export class ValuationEngine {
   async performValuation(order: VendorOrder): Promise<ValuationResult> {
     this.logger.info('Starting comprehensive valuation', { orderId: order.id });
 
+    // ValuationEngine requires both propertyDetails and propertyAddress to
+    // run. These are now optional on VendorOrder (Phase 2 of the
+    // Order-relocation refactor), so we fail fast at the boundary rather
+    // than threading null through every valuation model. Callers that hit
+    // this branch should be loading a joined view (Phase 6+ helper) before
+    // invoking the engine.
+    if (!order.propertyDetails || !order.propertyAddress) {
+      throw new Error(
+        `ValuationEngine.performValuation requires order.propertyDetails and order.propertyAddress. ` +
+        `Order '${order.id}' is missing one or both — load the parent ClientOrder via clientOrderId ` +
+        `and pass a joined view, or write the lender-side fields onto the row before invoking valuation.`,
+      );
+    }
+    const propertyDetails = order.propertyDetails;
+    const propertyAddress = order.propertyAddress;
+
     try {
       // Run multiple valuation approaches in parallel
       const [
@@ -32,10 +48,10 @@ export class ValuationEngine {
         marketTrends,
         confidenceMetrics
       ] = await Promise.all([
-        this.runAVMModel(order.propertyDetails, order.propertyAddress),
-        this.performComparativeMarketAnalysis(order.propertyAddress),
-        this.assessPropertyRisk(order.propertyDetails, order.propertyAddress),
-        this.analyzeMarketTrends(order.propertyAddress),
+        this.runAVMModel(propertyDetails, propertyAddress),
+        this.performComparativeMarketAnalysis(propertyAddress),
+        this.assessPropertyRisk(propertyDetails, propertyAddress),
+        this.analyzeMarketTrends(propertyAddress),
         this.calculateConfidenceMetrics(order)
       ]);
 

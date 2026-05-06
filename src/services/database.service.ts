@@ -338,7 +338,9 @@ class MockOrderRepository implements DatabaseOrderRepository {
     
     // Apply priority filter
     if (filters.priority && filters.priority.length > 0) {
-      filteredOrders = filteredOrders.filter(order => filters.priority!.includes(order.priority));
+      filteredOrders = filteredOrders.filter(order =>
+        order.priority !== undefined && filters.priority!.includes(order.priority),
+      );
     }
     
     // Apply assignedVendorId filter

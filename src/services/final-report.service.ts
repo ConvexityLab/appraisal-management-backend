@@ -19,6 +19,7 @@
  */
 
 import type { VendorOrder as Order } from "../types/vendor-order.types.js";
+import type { PropertyAddress } from "../types/index.js";
 import ExcelJS from 'exceljs';
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } from 'pdf-lib';
 import { v4 as uuidv4 } from 'uuid';
@@ -903,10 +904,22 @@ export class FinalReportService {
     qcReview: QCReview,
     report: FinalReport
   ): UadAppraisalReport {
-    const addr  = order.propertyAddress;
-    const det   = order.propertyDetails;
-    const loan  = order.loanInformation;
-    const now   = new Date();
+    // Lender-side fields are now optional on Order (Phase 2 of the
+    // Order-relocation refactor). On legacy rows these are populated; on
+    // engagement-flow rows they are not. Fall back to empty values so the
+    // MISMO report still renders — the caller is responsible for ensuring
+    // a ClientOrder context is loaded when production-grade output is
+    // required (Phase 6+ join helper).
+    const addr: PropertyAddress = order.propertyAddress ?? {
+      streetAddress: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      county: '',
+    };
+    const det = order.propertyDetails;
+    const loan = order.loanInformation;
+    const now = new Date();
     const generatedAt = report.generatedAt ? new Date(report.generatedAt) : now;
 
     return {
@@ -954,7 +967,7 @@ export class FinalReportService {
         clientName:              order.contactInformation?.name ?? order.clientId,
         clientAddress:           `${addr.streetAddress}, ${addr.city}, ${addr.state} ${addr.zipCode}`,
         appraisalOrderDate:      new Date(order.createdAt),
-        inspectionDate:          new Date(order.dueDate),   // best proxy available from order data
+        inspectionDate:          order.dueDate ? new Date(order.dueDate) : now,   // best proxy available from order data; falls back to now when dueDate is on the parent ClientOrder
         reportDate:              generatedAt,
         intendedUse:             'Mortgage finance',
         intendedUser:            order.contactInformation?.name ?? order.clientId,

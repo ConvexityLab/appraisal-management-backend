@@ -443,8 +443,10 @@ export class OrderManagementService extends SimpleEventEmitter {
           return true;
         }
         
-        // Orders due within 24 hours
-        if (order.dueDate < twentyFourHoursFromNow) {
+        // Orders due within 24 hours. dueDate is now optional on
+        // VendorOrder (lender-side; lives on ClientOrder); rows without it
+        // are simply not flagged as due-soon here.
+        if (order.dueDate && order.dueDate < twentyFourHoursFromNow) {
           return true;
         }
 
@@ -534,9 +536,13 @@ export class OrderManagementService extends SimpleEventEmitter {
   // Private helper methods
 
   private async validateOrderData(order: Order): Promise<void> {
-    // Validate required fields
+    // Validate required fields. propertyAddress / orderType / dueDate are now
+    // optional on VendorOrder (Phase 2 of the Order-relocation refactor) —
+    // they're populated only on legacy /api/orders POSTs that supplied a
+    // full lender intake. The legacy create path is the one that calls this
+    // validator, so it's reasonable to enforce them here.
     if (!order.clientId) throw new Error('Client ID is required');
-    if (!order.propertyAddress.streetAddress) throw new Error('Property address is required');
+    if (!order.propertyAddress?.streetAddress) throw new Error('Property address is required');
     if (!order.orderType) throw new Error('Order type is required');
     if (!order.productType) throw new Error('Product type is required');
     if (!order.dueDate) throw new Error('Due date is required');

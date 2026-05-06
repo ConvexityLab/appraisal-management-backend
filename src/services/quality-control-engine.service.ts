@@ -600,9 +600,12 @@ export class QualityControlEngine {
   }
 
   private ruleApplies(rule: ComplianceRule, order: VendorOrder): boolean {
-    return rule.applicableOrders.includes('all') || 
+    // orderType is now optional on VendorOrder (lender-side; lives on
+    // ClientOrder). Match against productType always; match against
+    // orderType only when present.
+    return rule.applicableOrders.includes('all') ||
            rule.applicableOrders.includes(order.productType) ||
-           rule.applicableOrders.includes(order.orderType);
+           (order.orderType !== undefined && rule.applicableOrders.includes(order.orderType));
   }
 
   private applyComplianceRule(rule: ComplianceRule, reportData: AppraisalReportData): ComplianceRuleResult {

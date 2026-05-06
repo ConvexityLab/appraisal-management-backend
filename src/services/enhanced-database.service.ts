@@ -66,7 +66,9 @@ export class EnhancedDatabaseService {
       allOrders = allOrders.filter(order => filters.status!.includes(order.status));
     }
     if (filters.priority && filters.priority.length > 0) {
-      allOrders = allOrders.filter(order => filters.priority!.includes(order.priority));
+      allOrders = allOrders.filter(order =>
+        order.priority !== undefined && filters.priority!.includes(order.priority),
+      );
     }
     if (filters.productType && filters.productType.length > 0) {
       allOrders = allOrders.filter(order => filters.productType!.includes(order.productType));
@@ -271,11 +273,15 @@ export class EnhancedDatabaseService {
       const turnaround = new Date(order.updatedAt).getTime() - new Date(order.createdAt).getTime();
       totalTurnaroundTime += turnaround;
       
-      // Check if delivered on time (simplified)
-      const dueDate = new Date(order.dueDate).getTime();
-      const completedDate = new Date(order.updatedAt).getTime();
-      if (completedDate <= dueDate) {
-        onTimeCount++;
+      // Check if delivered on time (simplified). dueDate is now optional on
+      // VendorOrder (lender-side; lives on ClientOrder); skip the on-time
+      // check when it isn't carried on the row.
+      if (order.dueDate) {
+        const dueDate = new Date(order.dueDate).getTime();
+        const completedDate = new Date(order.updatedAt).getTime();
+        if (completedDate <= dueDate) {
+          onTimeCount++;
+        }
       }
     });
 

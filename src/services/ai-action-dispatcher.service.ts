@@ -320,7 +320,7 @@ export class AiActionDispatcherService {
           engagementId: order.engagementId ?? order.id,
           productType: String(order.productType ?? order.orderType ?? ''),
           propertyAddress: formatOrderAddress(order),
-          propertyState: getString(order.propertyAddress.state, `order '${orderId}' propertyAddress.state`),
+          propertyState: getString(order.propertyAddress?.state, `order '${orderId}' propertyAddress.state`),
           clientId: getString(order.clientId, `order '${orderId}' clientId`),
           loanAmount: getNumber(order.loanInformation?.loanAmount ?? 0, `order '${orderId}' loanInformation.loanAmount`),
           priority: mapAutoAssignmentPriority(order.priority),
