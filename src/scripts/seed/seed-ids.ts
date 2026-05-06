@@ -125,15 +125,6 @@ export const QC_CHECKLIST_IDS = {
   UAD_STANDARD: 'seed-checklist-uad-standard-2026',
 } as const;
 
-export const QC_CHECKLIST_ASSIGNMENT_IDS = {
-  /** UAD checklist → First Horizon (appraisal) */
-  UAD_FIRST_HORIZON: 'seed-qc-assignment-uad-firsthorizon',
-  /** UAD checklist → Pacific Coast (BPO) */
-  UAD_PACIFIC_COAST: 'seed-qc-assignment-uad-pacificcoast',
-  /** UAD checklist → National AMC (portfolio BPO + drive-by) */
-  UAD_NATIONAL_AMC: 'seed-qc-assignment-uad-nationalamc',
-} as const;
-
 export const QC_REVIEW_IDS = {
   REVIEW_ORDER_001: 'seed-qc-review-001',
   REVIEW_ORDER_002: 'seed-qc-review-002',

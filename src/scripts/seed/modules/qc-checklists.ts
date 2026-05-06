@@ -1,12 +1,8 @@
 /**
- * Seed Module: QC Checklists & Assignments
+ * Seed Module: QC Checklists
  *
- * Seeds 1 UAD-standard QC checklist with 4 categories and 10 scored questions,
- * plus QC checklist assignments that link the checklist to specific clients.
- *
- * Containers:
- *   - criteria  (partition /clientId) — checklist definitions
- *   - qc_assignments (partition /targetId) — checklist-to-client assignments
+ * Seeds 1 UAD-standard QC checklist with 4 categories and 10 scored questions.
+ * Container: criteria (partition /clientId)
  *
  * `axiomCriterionIds` map each checklist question to one or more canonical
  * Axiom criterion IDs from the FNMA-1004 program (URAR-1004-001..033).
@@ -26,10 +22,9 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo } from '../seed-types.js';
-import { QC_CHECKLIST_IDS, QC_CHECKLIST_ASSIGNMENT_IDS, CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
+import { QC_CHECKLIST_IDS, CLIENT_IDS, SUB_CLIENT_SLUGS } from '../seed-ids.js';
 
-const CHECKLISTS_CONTAINER = 'criteria';
-const ASSIGNMENTS_CONTAINER = 'qc_assignments';
+const CONTAINER = 'criteria';
 
 function buildChecklists(tenantId: string, clientId: string): Record<string, unknown>[] {
   return [
@@ -178,67 +173,19 @@ function buildChecklists(tenantId: string, clientId: string): Record<string, unk
   ];
 }
 
-/**
- * Build QC checklist assignments that link the UAD checklist to specific clients.
- * This allows any client's orders (including BPO) to resolve a checklist via
- * `getActiveChecklistsForTarget(clientId)`.
- */
-function buildAssignments(): Record<string, unknown>[] {
-  return [
-    {
-      id: QC_CHECKLIST_ASSIGNMENT_IDS.UAD_FIRST_HORIZON,
-      checklistId: QC_CHECKLIST_IDS.UAD_STANDARD,
-      assignmentType: 'client',
-      targetId: CLIENT_IDS.FIRST_HORIZON,
-      isDefault: true,
-      priority: 10,
-      effectiveFrom: daysAgo(90),
-      createdBy: 'seed-system',
-      createdAt: daysAgo(90),
-    },
-    {
-      id: QC_CHECKLIST_ASSIGNMENT_IDS.UAD_PACIFIC_COAST,
-      checklistId: QC_CHECKLIST_IDS.UAD_STANDARD,
-      assignmentType: 'client',
-      targetId: CLIENT_IDS.PACIFIC_COAST,
-      isDefault: true,
-      priority: 10,
-      effectiveFrom: daysAgo(90),
-      createdBy: 'seed-system',
-      createdAt: daysAgo(90),
-    },
-    {
-      id: QC_CHECKLIST_ASSIGNMENT_IDS.UAD_NATIONAL_AMC,
-      checklistId: QC_CHECKLIST_IDS.UAD_STANDARD,
-      assignmentType: 'client',
-      targetId: CLIENT_IDS.NATIONAL_AMC,
-      isDefault: true,
-      priority: 10,
-      effectiveFrom: daysAgo(90),
-      createdBy: 'seed-system',
-      createdAt: daysAgo(90),
-    },
-  ];
-}
-
 export const module: SeedModule = {
   name: 'qc-checklists',
-  containers: [CHECKLISTS_CONTAINER, ASSIGNMENTS_CONTAINER],
+  containers: [CONTAINER],
 
   async run(ctx: SeedContext): Promise<SeedModuleResult> {
     const result: SeedModuleResult = { created: 0, failed: 0, skipped: 0, cleaned: 0 };
 
     if (ctx.clean) {
-      result.cleaned += await cleanContainer(ctx, CHECKLISTS_CONTAINER, '/clientId');
-      result.cleaned += await cleanContainer(ctx, ASSIGNMENTS_CONTAINER, '/targetId');
+      result.cleaned = await cleanContainer(ctx, CONTAINER, '/clientId');
     }
 
     for (const checklist of buildChecklists(ctx.tenantId, ctx.clientId)) {
-      await upsert(ctx, CHECKLISTS_CONTAINER, checklist, result);
-    }
-
-    for (const assignment of buildAssignments()) {
-      await upsert(ctx, ASSIGNMENTS_CONTAINER, assignment, result);
+      await upsert(ctx, CONTAINER, checklist, result);
     }
 
     return result;
