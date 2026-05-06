@@ -246,9 +246,6 @@ import { InspectionController } from '../controllers/inspection.controller';
 // Import Photo Controller (Phase 4.5)
 import { PhotoController } from '../controllers/photo.controller.js';
 
-// Import Enhanced Order Controller (Phase 5)
-import { EnhancedOrderController } from '../controllers/enhanced-order.controller.js';
-
 // Import Document Controller (Phase 6)
 import { DocumentController } from '../controllers/document.controller.js';
 
@@ -837,14 +834,6 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/photos',
       this.unifiedAuth.authenticate(),
       photoController.router
-    );
-
-    // Enhanced Order Management - Advanced lifecycle, QC integration, analytics (Phase 5)
-    // Comprehensive order management with property intelligence and automated QC validation
-    const enhancedOrderController = new EnhancedOrderController(this.dbService);
-    this.app.use('/api/enhanced-orders',
-      this.unifiedAuth.authenticate(),
-      enhancedOrderController.router
     );
 
     // Document Management - per-route ABAC handled by DocumentController internally.
