@@ -9,6 +9,11 @@
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
+import {
+  getPropertyAddress,
+  getBorrowerInformation,
+  type OrderContext,
+} from './order-context-loader.service.js';
 
 export interface DuplicateCheckRequest {
   /** Street address of the subject property */
@@ -132,7 +137,14 @@ export class DuplicateOrderDetectionService {
           continue;
         }
 
-        const orderAddress = this.extractAddressString(order);
+        // Phase 7: read lender-side fields through OrderContext so that
+        // post-Phase-8 (when these fields no longer live on VendorOrder)
+        // the accessors fall back to ClientOrder. Today the accessors
+        // resolve directly off the VendorOrder copy without an extra
+        // cosmos read — see synthesizeContext below.
+        const ctx = synthesizeContext(order);
+
+        const orderAddress = extractAddressString(ctx);
         if (!orderAddress) continue;
 
         const normalizedOrderAddress = normalizeAddress(orderAddress);
@@ -141,8 +153,9 @@ export class DuplicateOrderDetectionService {
         if (!addressMatch) continue;
 
         // Address matches — check borrower for stronger match
-        const orderBorrower = order.borrowerInformation
-          ? normalizeName(`${order.borrowerInformation.firstName ?? ''} ${order.borrowerInformation.lastName ?? ''}`.trim())
+        const orderBorrowerInfo = getBorrowerInformation(ctx);
+        const orderBorrower = orderBorrowerInfo
+          ? normalizeName(`${orderBorrowerInfo.firstName ?? ''} ${orderBorrowerInfo.lastName ?? ''}`.trim())
           : null;
 
         const borrowerMatch = normalizedBorrower && orderBorrower
@@ -152,8 +165,8 @@ export class DuplicateOrderDetectionService {
         const matchType = borrowerMatch ? 'ADDRESS_AND_BORROWER' : 'ADDRESS';
         const matchScore = borrowerMatch ? 95 : 75;
 
-        const borrowerNameVal = order.borrowerInformation
-          ? `${order.borrowerInformation.firstName ?? ''} ${order.borrowerInformation.lastName ?? ''}`.trim()
+        const borrowerNameVal = orderBorrowerInfo
+          ? `${orderBorrowerInfo.firstName ?? ''} ${orderBorrowerInfo.lastName ?? ''}`.trim()
           : undefined;
 
         matches.push({
@@ -213,13 +226,25 @@ export class DuplicateOrderDetectionService {
       { name: '@cutoff', value: cutoffDate.toISOString() },
     ];
 
-    // Narrow by state if provided
+    // Narrow by state / zip if provided. These predicates are against the
+    // VendorOrder document fields. Phase 4 of the Order-relocation refactor
+    // moved propertyAddress onto ClientOrder, but VendorOrders still receive
+    // a copy via the placeClientOrder fan-out spread — so the predicate
+    // matches both legacy and engagement-flow rows today.
+    //
+    // TODO(Phase 8): once VendorOrder no longer carries propertyAddress, this
+    //   query has to change. Two options:
+    //     (a) query the `client-orders` container by propertyAddress.state/zip,
+    //         then resolve the VendorOrders for those ClientOrders;
+    //     (b) query `property-records` by address fields, then VendorOrders
+    //         by propertyId.
+    //   (b) is preferred because it deduplicates orders against the same
+    //   physical property correctly.
     if (request.state) {
       query += ' AND c.propertyAddress.state = @state';
       parameters.push({ name: '@state', value: request.state.toUpperCase() });
     }
 
-    // Narrow by zip if provided
     if (request.zipCode) {
       query += ' AND c.propertyAddress.zipCode = @zip';
       parameters.push({ name: '@zip', value: request.zipCode });
@@ -233,10 +258,23 @@ export class DuplicateOrderDetectionService {
     return resources as VendorOrder[];
   }
 
-  private extractAddressString(order: VendorOrder): string | null {
-    const addr = order.propertyAddress;
-    if (!addr) return null;
-    if (typeof addr === 'string') return addr;
-    return addr.streetAddress ?? null;
-  }
+}
+
+/**
+ * Wrap a VendorOrder in a synthetic OrderContext so the field accessors can
+ * read its lender-side fields. Today this is a zero-cost wrapper because the
+ * accessors fall back to the deprecated VendorOrder copy. Once Phase 8 strips
+ * those fields, this synthesizeContext should be replaced with an actual
+ * OrderContextLoader call (either upfront in batch via clientOrderIds, or
+ * per-candidate as a follow-up cosmos read).
+ */
+function synthesizeContext(order: VendorOrder): OrderContext {
+  return { vendorOrder: order, clientOrder: null };
+}
+
+function extractAddressString(ctx: OrderContext): string | null {
+  const addr = getPropertyAddress(ctx);
+  if (!addr) return null;
+  if (typeof addr === 'string') return addr;
+  return addr.streetAddress ?? null;
 }
