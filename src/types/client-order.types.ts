@@ -19,7 +19,15 @@
  */
 
 import type { ProductType } from './product-catalog.js';
-import type { PropertyDetails } from './index.js';
+import type {
+  PropertyDetails,
+  PropertyAddress,
+  BorrowerInfo,
+  LoanInfo,
+  ContactInfo,
+  OrderType,
+  Priority,
+} from './index.js';
 
 // ─── Status ──────────────────────────────────────────────────────────────────
 
@@ -75,16 +83,51 @@ export interface ClientOrder {
 
   // ── What was ordered ─────────────────────────────────────────────────────
   productType: ProductType;
+  /** Loan purpose (purchase / refinance / equity_line / construction / other). */
+  orderType?: OrderType;
   /** FK to the canonical PropertyRecord. Optional during Phase 0/1; required once enrichment is wired. */
   propertyId?: string;
   /** Display cache of the property until propertyId joins are universal. */
   propertyDetails: PropertyDetails;
+  /**
+   * Structured property address (street, city, state, zip, county, etc.).
+   * Carried alongside `propertyDetails` because legacy /api/orders payloads
+   * supplied them as separate sections; new placements may leave this
+   * undefined and rely on `propertyId` → PropertyRecord.
+   */
+  propertyAddress?: PropertyAddress;
   /** Free-form lender instructions for this order. */
   instructions?: string;
-  /** ROUTINE | EXPEDITED | RUSH | EMERGENCY. Stringly-typed to avoid a circular import. */
+  /**
+   * ROUTINE | EXPEDITED | RUSH | EMERGENCY (engagement priority value space)
+   * — stringly-typed to avoid a circular import. The vendor-side urgency on
+   * VendorOrder uses a different value space (`Priority` from index.ts).
+   */
   priority?: string;
   /** Lender-facing due date (ISO date). */
   dueDate?: string;
+  /** True when the lender requested rush turnaround. */
+  rushOrder?: boolean;
+
+  // ── Lender-supplied parties (Phase 3 — NEW HOME) ─────────────────────────
+  // These fields used to live on Order/VendorOrder. They've been relocated
+  // here because they describe the lender's submission of the order, not
+  // the vendor's fulfillment of it. VendorOrder readers that need this
+  // context join through `clientOrderId`.
+  /** The borrower(s) on the loan. */
+  borrowerInformation?: BorrowerInfo;
+  /** The loan being underwritten — amount, type, purpose, ratios. */
+  loanInformation?: LoanInfo;
+  /** Lender point of contact for this order. */
+  contactInformation?: ContactInfo;
+  /** Vendor-priority signal carried over from the lender's request, if any. */
+  vendorPriority?: Priority;
+  /** Free-form notes the lender wants attached to the order. */
+  specialInstructions?: string;
+  /** Free-form tags applied at intake (kept on ClientOrder for reporting). */
+  tags?: string[];
+  /** Caller-supplied metadata bag (kept on ClientOrder, not VendorOrder). */
+  metadata?: Record<string, unknown>;
 
   // ── Money in (client) ────────────────────────────────────────────────────
   /** What the lender is charged for this order. */
