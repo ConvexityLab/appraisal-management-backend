@@ -64,6 +64,15 @@ import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.j
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 import { buildManualDraftSourceIdentity, buildApiOrderSourceIdentity } from '../types/intake-source.types.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getPropertyDetails,
+  getLoanInformation,
+  getBorrowerInformation,
+  getDueDate,
+  type OrderContext,
+} from '../services/order-context-loader.service.js';
 import { DuplicateOrderDetectionService } from '../services/duplicate-order-detection.service.js';
 import { WaiverScreeningService } from '../services/waiver-screening.service.js';
 import { ComplianceService } from '../services/ComplianceService.js';
@@ -94,12 +103,12 @@ function normalizeOrder<T extends { status?: string }>(order: T): T {
  * Only includes fields with a non-empty / non-zero value.
  */
 function buildOrderFields(
-  order: Order,
+  ctx: OrderContext,
 ): Array<{ fieldName: string; fieldType: string; value: unknown }> {
-  const addr = order.propertyAddress;
-  const prop = order.propertyDetails;
-  const loan = order.loanInformation;
-  const borrower = order.borrowerInformation;
+  const addr = getPropertyAddress(ctx);
+  const prop = getPropertyDetails(ctx);
+  const loan = getLoanInformation(ctx);
+  const borrower = getBorrowerInformation(ctx);
   return [
     { fieldName: 'loanAmount',      fieldType: 'number', value: loan?.loanAmount ?? 0 },
     { fieldName: 'loanType',        fieldType: 'string', value: String(loan?.loanType ?? '') },
@@ -136,6 +145,7 @@ export class OrderController {
   private waiverScreening: WaiverScreeningService;
   private complianceService: ComplianceService;
   private enrichmentService: PropertyEnrichmentService;
+  private contextLoader: OrderContextLoader;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -168,6 +178,7 @@ export class OrderController {
     this.duplicateDetection = new DuplicateOrderDetectionService(dbService);
     this.waiverScreening = new WaiverScreeningService(dbService);
       this.complianceService = new ComplianceService(dbService);
+    this.contextLoader = new OrderContextLoader(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -1680,8 +1691,13 @@ export class OrderController {
         return;
       }
 
-      // Build structured field list from the order record.
-      const fields = buildOrderFields(orderData as Order);
+      // Build structured field list from the order record. Phase 7: load
+      // OrderContext so lender-side fields resolve from the parent
+      // ClientOrder when the VendorOrder doesn't carry them.
+      const ctx: OrderContext = await this.contextLoader.loadByVendorOrder(
+        orderData as Order,
+      );
+      const fields = buildOrderFields(ctx);
 
       // Fetch all documents for this order and pass appraisal-report ones to Axiom.
       const docResult = await this.documentService.listDocuments(tenantId, { orderId });
@@ -2023,7 +2039,13 @@ export class OrderController {
         return;
       }
 
-      const addr = order.propertyAddress;
+      // Phase 7: load joined OrderContext so we read propertyAddress /
+      // loanAmount / dueDate / orderType from ClientOrder when present.
+      const ctx = await this.contextLoader.loadByVendorOrder(order as Order);
+      const addr = getPropertyAddress(ctx);
+      const loan = getLoanInformation(ctx);
+      const dueDate = getDueDate(ctx);
+      const orderType = ctx.clientOrder?.orderType ?? (order as { orderType?: string }).orderType;
       const addrString: string =
         typeof addr === 'string'
           ? addr
@@ -2036,13 +2058,13 @@ export class OrderController {
         orderNumber: order.orderNumber ?? '',
         tenantId,
         engagementId: order.engagementId ?? orderId,
-        productType: order.productType ?? order.orderType ?? '',
+        productType: order.productType ?? orderType ?? '',
         propertyAddress: addrString,
         propertyState: addr?.state ?? '',
         clientId: order.clientId ?? '',
-        loanAmount: order.loanInformation?.loanAmount ?? 0,
+        loanAmount: loan?.loanAmount ?? 0,
         priority: (order.priority as 'STANDARD' | 'RUSH' | 'EMERGENCY') ?? 'STANDARD',
-        dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         // Eligibility gates — carried from the order record into the event envelope
         ...(order.productId ? { productId: order.productId as string } : {}),
         ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
@@ -2308,21 +2330,26 @@ export class OrderController {
         return;
       }
 
-      // Fetch the order to extract its property address
-      const orderResult = await this.dbService.findOrderById(orderId);
-      if (!orderResult.success || !orderResult.data) {
+      // Fetch the order to extract its property address. Phase 7: load
+      // joined context so propertyAddress resolves from ClientOrder when
+      // the VendorOrder doesn't carry it.
+      let ctx: OrderContext;
+      try {
+        ctx = await this.contextLoader.loadByVendorOrderId(orderId);
+      } catch {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
+      const order = ctx.vendorOrder as any;
+      const addr = getPropertyAddress(ctx);
 
-      const order = orderResult.data as any;
-      const addr = order.propertyAddress;
-
-      // Normalise — backend stores the street as either `streetAddress` or `street`
-      const street: string = addr?.streetAddress ?? addr?.street ?? '';
+      // Phase 7: getPropertyAddress returns the typed PropertyAddress shape.
+      // The legacy `street` / `zip` aliases that pre-typed reads handled are
+      // gone — typed callers always read streetAddress / zipCode.
+      const street: string = addr?.streetAddress ?? '';
       const city: string = addr?.city ?? '';
       const state: string = addr?.state ?? '';
-      const zipCode: string = addr?.zipCode ?? addr?.zip ?? '';
+      const zipCode: string = addr?.zipCode ?? '';
 
       if (!street || !city || !state || !zipCode) {
         res.status(422).json({
