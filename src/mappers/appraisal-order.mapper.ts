@@ -37,7 +37,7 @@ import type {
     CanonicalReportDocument,
     CanonicalSubject,
 } from '../types/canonical-schema.js';
-import type { Order } from '../types/index.js';
+import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

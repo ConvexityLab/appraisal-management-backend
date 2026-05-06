@@ -115,6 +115,11 @@ export interface Order {
    * Required when autoGenerateReport is true; not needed for on-demand generation.
    */
   defaultReportTemplateId?: string;
+  // ── Compliance (Phase 1.4 — written by ComplianceService) ─────────────────
+  /** Outcome of the most recent compliance evaluation against MOP rules. */
+  complianceStatus?: 'PENDING' | 'PASSED' | 'WARNINGS' | 'HARD_STOP';
+  /** Detailed violations from the most recent compliance evaluation. */
+  complianceViolations?: Array<{ code: string; reason: string; severity: 'WARNING' | 'STOP' }>;
 }
 
 export interface PropertyAddress {

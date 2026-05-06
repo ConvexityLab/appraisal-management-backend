@@ -208,15 +208,19 @@ export interface BpoExtractedData {
 // =========================
 
 /**
- * LegacyManagementOrder — the order shape used by the older order-management
- * code path (status/assignment history, BPO details, supervisor cosign,
- * compliance fields). Distinct from the richer `Order` shape in
- * `types/index.ts` (which carries axiom evaluation + report linkage).
+ * LegacyManagementOrder — the order shape used by the
+ * `enhanced-order-management.service` parallel API surface
+ * (POST /api/enhanced-orders/create-with-intelligence + dashboard).
  *
- * Used by 7 consumers today (ComplianceService, comprehensive-vendor-management,
- * engagement.service, enhanced-order-management, and the routing/ services).
- * Eventually these should pivot to `VendorOrder` since they're vendor-side
- * concerns, but that's a per-file architectural decision deferred for now.
+ * Distinct from the canonical `VendorOrder` (vendor-side) and
+ * `ClientOrder` (client-side) types — this shape carries
+ * `clientInformation` (object), `propertyDetails.coordinates`,
+ * `assignmentHistory`, `bpoDetails`, and `orderValue` that the
+ * canonical types do NOT carry, and is the contract of the
+ * `/api/enhanced-orders/*` endpoints. The other historical
+ * consumers (routing/*, comprehensive-vendor-management,
+ * ComplianceService) have either been deleted as dead code or
+ * migrated to VendorOrder.
  */
 export interface LegacyManagementOrder {
   id: string;

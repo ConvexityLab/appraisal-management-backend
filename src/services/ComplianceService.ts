@@ -2,7 +2,7 @@ import { MopMapperService } from './mop/MopMapperService';
 import { MopApiClient, MopComplianceViolation } from './mop/MopApiClient';
 import { CanonicalReportDocument } from '../types/canonical-schema';
 import { CosmosDbService } from './cosmos-db.service';
-import { LegacyManagementOrder } from '../types/order-management';
+import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
 import { AppraisalDraft, DraftStatus } from '../types/appraisal-draft.types';
 import { Logger } from '../utils/logger';
 
@@ -31,8 +31,8 @@ export class ComplianceService {
     // 1. Get Order
     const ordersContainer = this.dbService.getContainer('orders');
     const { resources: orders } = await ordersContainer.items
-      .query<LegacyManagementOrder>({
-        query: 'SELECT * FROM c WHERE c.type = "order" AND c.id = @id',
+      .query<VendorOrder>({
+        query: `SELECT * FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.id = @id`,
         parameters: [{ name: '@id', value: orderId }]
       })
       .fetchAll();
@@ -71,9 +71,9 @@ export class ComplianceService {
     
     order.complianceStatus = hasStop ? 'HARD_STOP' : (hasWarning ? 'WARNINGS' : 'PASSED');
     order.complianceViolations = results;
-    order.lastUpdated = new Date();
+    order.updatedAt = new Date();
 
-    await ordersContainer.item(order.id, (order as any).tenantId || orderId).replace(order);
+    await ordersContainer.item(order.id, order.tenantId || orderId).replace(order);
     this.logger.info(`Compliance eval complete for order ${orderId}. Status: ${order.complianceStatus}`);
 
     return results;
