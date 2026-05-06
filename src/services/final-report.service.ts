@@ -18,6 +18,7 @@
  *  - Managed Identity (DefaultAzureCredential) for all Azure SDK clients via BlobStorageService
  */
 
+import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import ExcelJS from 'exceljs';
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } from 'pdf-lib';
 import { v4 as uuidv4 } from 'uuid';
@@ -48,7 +49,7 @@ import { DvrNooReviewMapper } from './report-engine/field-mappers/dvr-noo-review
 import { DvrNooDesktopMapper } from './report-engine/field-mappers/dvr-noo-desktop.mapper.js';
 import type { IFieldMapper } from './report-engine/field-mappers/field-mapper.interface.js';
 import type { CanonicalReportDocument } from '../types/canonical-schema.js';
-import { Order } from '../types/index.js';
+import {} from '../types/index.js';
 import type { UadAppraisalReport } from '../types/uad-3.6.js';
 import { QCReview, QCDecision } from '../types/qc-workflow.js';
 

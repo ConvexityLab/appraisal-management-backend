@@ -384,8 +384,11 @@ export class OrderManagementService extends SimpleEventEmitter {
       //   dueDate: order.dueDate
       // });
 
-      // Temporary fallback until Perligo is integrated
-      const bestVendor = await this.vendorService.findBestVendorForOrder(order);
+      // Temporary fallback until Perligo is integrated.
+      // VendorOrder cast: by this point in the create flow, slice 8g guarantees
+      // engagementId/propertyId are set; clientOrderId is filled when the order
+      // was spawned via ClientOrderService.placeClientOrder.
+      const bestVendor = await this.vendorService.findBestVendorForOrder(order as unknown as import('../types/vendor-order.types.js').VendorOrder);
       
       if (!bestVendor) {
         return {
@@ -569,8 +572,13 @@ export class OrderManagementService extends SimpleEventEmitter {
         break;
       
       case OrderStatus.DELIVERED:
-        // Update vendor performance metrics
-        await this.vendorService.updateVendorPerformance(currentOrder.assignedVendorId!, currentOrder);
+        // Update vendor performance metrics. VendorOrder cast: at DELIVERED
+        // status the order is a fully-linked VendorOrder (vendor was assigned
+        // to deliver, so all linkage fields are set).
+        await this.vendorService.updateVendorPerformance(
+          currentOrder.assignedVendorId!,
+          currentOrder as unknown as import('../types/vendor-order.types.js').VendorOrder,
+        );
         break;
     }
   }

@@ -1,5 +1,6 @@
+import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import { Logger } from '../utils/logger.js';
-import { Order } from '../types/index.js';
+import {} from '../types/index.js';
 
 /**
  * Enhanced Perligo AI Integration Service for Production Use

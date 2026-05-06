@@ -5,7 +5,8 @@
  * for vendor availability checks, matching, and performance tracking.
  */
 
-import { Vendor, Order, VendorStatus, OrderStatus } from '../types/index.js';
+import type { VendorOrder as Order } from "../types/vendor-order.types.js";
+import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 

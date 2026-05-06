@@ -1,20 +1,20 @@
 import { CosmosClient, Database, Container, ItemResponse, FeedResponse, SqlQuerySpec, PartitionKeyBuilder } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
-import { 
-  Order, 
-  Vendor, 
-  OrderFilters, 
+import {
+  Order,
+  Vendor,
+  OrderFilters,
   PropertyDetails,
   PropertyAddress,
   ApiResponse
 } from '../types/index.js';
-import { 
-  PropertySummary, 
-  CreatePropertySummaryRequest 
+import {
+  PropertySummary,
+  CreatePropertySummaryRequest
 } from '../types/property-enhanced.js';
 import { Logger } from '../utils/logger.js';
 import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
-import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
+import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
 
 /**
  * Comprehensive Azure Cosmos DB Service for Appraisal Management Platform
@@ -375,7 +375,7 @@ export class CosmosDbService {
     }
   }
 
-  async findOrderById(id: string): Promise<ApiResponse<Order | null>> {
+  async findOrderById(id: string): Promise<ApiResponse<VendorOrder | null>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -392,12 +392,12 @@ export class CosmosDbService {
         ]
       };
 
-      const { resources } = await this.ordersContainer.items.query<Order>(querySpec).fetchAll();
+      const { resources } = await this.ordersContainer.items.query<VendorOrder>(querySpec).fetchAll();
       const order = resources.length > 0 ? resources[0] : null;
 
       return {
         success: true,
-        data: order as Order | null
+        data: order as VendorOrder | null
       };
 
     } catch (error) {
@@ -413,7 +413,7 @@ export class CosmosDbService {
     }
   }
 
-  async findOrders(filters: OrderFilters, offset: number = 0, limit: number = 50): Promise<ApiResponse<Order[]>> {
+  async findOrders(filters: OrderFilters, offset: number = 0, limit: number = 50): Promise<ApiResponse<VendorOrder[]>> {
     try {
       if (!this.ordersContainer) {
         throw new Error('Orders container not initialized');
@@ -471,7 +471,7 @@ export class CosmosDbService {
       query += ` OFFSET ${offset} LIMIT ${limit}`;
 
       const querySpec = { query, parameters };
-      const { resources } = await this.ordersContainer.items.query<Order>(querySpec).fetchAll();
+      const { resources } = await this.ordersContainer.items.query<VendorOrder>(querySpec).fetchAll();
 
       // Get total count for pagination
       const countQuery = query.replace('SELECT *', 'SELECT VALUE COUNT(c)').replace(/ OFFSET \d+ LIMIT \d+/, '');

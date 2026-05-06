@@ -16,6 +16,7 @@
  * Service Bus subscription: 'axiom-auto-trigger-service'
  */
 
+import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';

@@ -3,6 +3,7 @@
  * Calculates vendor performance metrics and scoring
  */
 
+import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { 
@@ -10,7 +11,7 @@ import {
   VendorTier,
   GeographicArea 
 } from '../types/vendor-marketplace.types.js';
-import { Order, OrderStatus } from '../types';
+import { OrderStatus } from '../types';
 
 export class VendorPerformanceCalculatorService {
   private logger: Logger;
