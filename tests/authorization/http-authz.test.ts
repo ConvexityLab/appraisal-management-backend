@@ -279,14 +279,11 @@ describe('Layer 3 — Casbin DENY → 403 AUTHORIZATION_DENIED', () => {
     expect(res.body.code).toBe('AUTHORIZATION_DENIED');
   });
 
-  it('manager → GET /api/qc-workflow/queue (qc_queue:read not in manager policy) → 403', async () => {
-    const token = mintToken('manager-uid', 'manager');
-    const res = await request(app)
-      .get('/api/qc-workflow/queue')
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
-  });
+  // The previous assertion that manager → GET /api/qc-workflow/queue → 403
+  // is no longer valid. As of the Phase-1 auth refactor (PLATFORM_CAPABILITY_MATRIX),
+  // manager now has qc_queue:read. The qc_analyst → ALLOW test at line ~343
+  // covers the same route; manager's allow path is implicitly covered by the
+  // capability matrix unit tests.
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
