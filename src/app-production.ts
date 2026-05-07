@@ -8,9 +8,13 @@
 import dotenv from 'dotenv';
 dotenv.config(); // Loads from .env in current working directory (project root)
 
-// Now safe to import modules that need env vars
-import { AppraisalManagementAPIServer } from './api/api-server.js';
+// loadAppConfig must run BEFORE any module that triggers controller imports —
+// the controllers do `const x = new SomeService()` at module-top-level, which
+// fires service constructors that read process.env at construct time.
+// api-server.js (which transitively imports all controllers) is therefore
+// imported dynamically inside the IIFE, after loadAppConfig completes.
 import { loadAppConfig } from './config/appConfigLoader.js';
+import type { AppraisalManagementAPIServer as AppraisalManagementAPIServerType } from './api/api-server.js';
 
 // Environment validation
 // In production ALL of these are required; in dev/test we warn only so local
@@ -88,12 +92,20 @@ void (async () => {
     console.log(`☁️  Azure App Service: ${process.env.WEBSITE_SITE_NAME}`);
   }
 
-  // Load service-discovery URLs from Azure App Configuration BEFORE constructing
-  // the server so that services (e.g. AxiomService) pick up AXIOM_API_BASE_URL.
+  // Load service-discovery URLs from Azure App Configuration FIRST. Many
+  // controllers do `const x = new SomeService()` at module-top-level — those
+  // service constructors read process.env at construct time, so we must populate
+  // process.env BEFORE the api-server module (which transitively imports them)
+  // is imported.
   await loadAppConfig();
 
+  // Dynamic import — runs after loadAppConfig has populated process.env.
+  // Static `import { AppraisalManagementAPIServer } from './api/api-server.js'`
+  // would fire all controller side effects at parse time, BEFORE this point.
+  const { AppraisalManagementAPIServer } = await import('./api/api-server.js');
+
   // Construct and start the server
-  const server = new AppraisalManagementAPIServer(config.port);
+  const server: AppraisalManagementAPIServerType = new AppraisalManagementAPIServer(config.port);
 
   // Graceful shutdown
   const gracefulShutdown = (signal: string) => {
