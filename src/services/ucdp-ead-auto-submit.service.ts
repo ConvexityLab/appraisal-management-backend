@@ -22,6 +22,10 @@ import { BlobStorageService } from './blob-storage.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { FinalReportService } from './final-report.service.js';
 import { UCDPEADSubmissionService } from './ucdp-ead-submission.service.js';
+import {
+  OrderContextLoader,
+  getLoanInformation,
+} from './order-context-loader.service.js';
 import type { SubmissionPortal } from './ucdp-ead-submission.service.js';
 import type { BaseEvent, EventHandler, OrderDeliveredEvent } from '../types/events.js';
 
@@ -42,6 +46,7 @@ export class UcdpEadAutoSubmitService {
   private readonly submissionService: UCDPEADSubmissionService;
   private readonly blobService: BlobStorageService;
   private readonly dbService: CosmosDbService;
+  private readonly contextLoader: OrderContextLoader;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
@@ -49,6 +54,7 @@ export class UcdpEadAutoSubmitService {
     this.blobService = new BlobStorageService();
     this.finalReportService = new FinalReportService(this.dbService);
     this.submissionService = new UCDPEADSubmissionService(this.dbService);
+    this.contextLoader = new OrderContextLoader(this.dbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -89,14 +95,19 @@ export class UcdpEadAutoSubmitService {
       tenantId,
     });
 
-    // Load order to check loan type
-    const orderResult = await this.loadOrderData(orderId, tenantId);
-    if (!orderResult) {
+    // Load order context (joined VendorOrder + parent ClientOrder) so loan
+    // info resolves from its proper home post Phase 4. Phase 7 of the
+    // Order-relocation refactor.
+    let ctx;
+    try {
+      ctx = await this.contextLoader.loadByVendorOrderId(orderId);
+    } catch {
       this.logger.warn('UcdpEadAutoSubmit: order not found — skipping', { orderId });
       return;
     }
-
-    const loanType = (orderResult.loanInformation?.loanType ?? '').toLowerCase();
+    const orderResult = ctx.vendorOrder as any;
+    const loanInfo = getLoanInformation(ctx);
+    const loanType = (loanInfo?.loanType ?? '').toLowerCase();
     const portal = GSE_LOAN_TYPES[loanType];
 
     if (!portal) {
@@ -126,7 +137,7 @@ export class UcdpEadAutoSubmitService {
       return;
     }
 
-    const loanNumber  = orderResult.loanInformation?.loanNumber ?? orderId;
+    const loanNumber  = (loanInfo as { loanNumber?: string } | undefined)?.loanNumber ?? orderId;
     const lenderId    = orderResult.clientId ?? '';
 
     try {
@@ -191,6 +202,11 @@ export class UcdpEadAutoSubmitService {
     });
   }
 
+  /**
+   * @deprecated Replaced by OrderContextLoader.loadByVendorOrderId in Phase 7
+   *   of the Order-relocation refactor. Kept as a private method so the type
+   *   shape is documented for future maintenance, but no longer called.
+   */
   private async loadOrderData(orderId: string, _tenantId: string): Promise<{
     id: string;
     tenantId: string;

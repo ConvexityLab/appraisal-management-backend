@@ -70,6 +70,11 @@ const SUBSCRIBED_VENDOR_EVENTS: VendorEventType[] = [
   'vendor.fha_case_number.updated',
 ];
 
+// TODO(Phase 8 of Order-relocation): when VendorOrder no longer carries
+//   propertyAddress, the OrderSnapshot consumed here needs to come from a
+//   joined view (OrderContextLoader) so display formatting still works for
+//   engagement-flow orders. Today the field is still present on the row
+//   via the placeClientOrder fan-out spread, so this formatter works as-is.
 function formatPropertyAddress(order: OrderSnapshot): string {
   const propertyAddress = order.propertyAddress;
   if (typeof propertyAddress === 'string') {
@@ -296,6 +301,13 @@ export class VendorIntegrationEventConsumerService {
         await this.createRevisionArtifact(event, event.data.payload as VendorRevisionRequestedPayload);
         await this.updateOrderStatus(event, OrderStatus.REVISION_REQUESTED);
         return;
+      // TODO(Phase 8 of Order-relocation): these vendor-driven updates write
+      //   loanInformation onto the VendorOrder document. After Phase 8
+      //   loanInformation lives on ClientOrder; the vendor-loan-number /
+      //   FHA-case-number flows need an architectural decision — either
+      //   (a) update the parent ClientOrder, or (b) keep a vendor-side
+      //   override on VendorOrder. Today the writes still go onto the
+      //   VendorOrder copy (which is still present pre-strip).
       case 'vendor.loan_number.updated':
         await this.updateOrderFields(event, (order) => ({
           loanInformation: {
