@@ -31,9 +31,13 @@ const KEY_TO_ENV: Record<string, string> = {
   'services.storage.sftp-account-name': 'SFTP_STORAGE_ACCOUNT_NAME',
   'services.storage.container.documents': 'STORAGE_CONTAINER_DOCUMENTS',
   'services.storage.container.bulk-upload': 'STORAGE_CONTAINER_BULK_UPLOAD',
-  // Cosmos
-  'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
-  'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
+  // Cosmos — NOT migrated. Three controllers (criteria, results, reviews)
+  // instantiate QC*Controller → CosmosDbService at module-top-level, which
+  // runs before loadAppConfig(). Until those controllers are refactored to
+  // lazy-instantiate, AZURE_COSMOS_ENDPOINT and AZURE_COSMOS_DATABASE_NAME
+  // must come from bicep env-block. See project memory.
+  // 'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
+  // 'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
   // Service Bus / Web PubSub / Fluid Relay
   'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
   'services.web-pubsub.endpoint': 'AZURE_WEB_PUBSUB_ENDPOINT',

@@ -188,6 +188,18 @@ var containerApps = [
         name: 'ENVIRONMENT'
         value: environment
       }
+      // AZURE_COSMOS_ENDPOINT / AZURE_COSMOS_DATABASE_NAME are read at
+      // module-import time by criteria.controller.ts:912, results.controller.ts:1624,
+      // and reviews.controller.ts:1653 — all before app-production.ts can call
+      // loadAppConfig(). Keep these in bicep until those controllers lazy-instantiate.
+      {
+        name: 'AZURE_COSMOS_ENDPOINT'
+        value: cosmosEndpoint
+      }
+      {
+        name: 'AZURE_COSMOS_DATABASE_NAME'
+        value: cosmosDatabaseName
+      }
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
         value: applicationInsightsConnectionString
