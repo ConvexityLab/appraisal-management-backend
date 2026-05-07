@@ -38,8 +38,12 @@ const KEY_TO_ENV: Record<string, string> = {
   // must come from bicep env-block. See project memory.
   // 'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
   // 'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
-  // Service Bus / Web PubSub / Fluid Relay
-  'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
+  // Service Bus / Web PubSub / Fluid Relay — partial. Service Bus is read by
+  // ServiceBusEventPublisher constructor, which is called from AxiomService
+  // constructor, which is in the module-top-level cascade. Until AxiomService
+  // (or its consumers) lazy-instantiate, AZURE_SERVICE_BUS_NAMESPACE and
+  // USE_MOCK_SERVICE_BUS must come from bicep.
+  // 'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
   'services.web-pubsub.endpoint': 'AZURE_WEB_PUBSUB_ENDPOINT',
   'services.fluid-relay.endpoint': 'AZURE_FLUID_RELAY_ENDPOINT',
   'services.fluid-relay.tenant-id': 'AZURE_FLUID_RELAY_TENANT_ID',
@@ -53,7 +57,9 @@ const KEY_TO_ENV: Record<string, string> = {
   // Feature flags (using regular App Config string keys; App Config's
   // dedicated feature-flag API is a separate migration if/when needed)
   'features.bulk-ingestion-criteria-stage': 'BULK_INGESTION_ENABLE_CRITERIA_STAGE',
-  'features.use-mock-service-bus': 'USE_MOCK_SERVICE_BUS',
+  // USE_MOCK_SERVICE_BUS is read at module-top-level (same cascade as
+  // AZURE_SERVICE_BUS_NAMESPACE) — must stay in bicep for now.
+  // 'features.use-mock-service-bus': 'USE_MOCK_SERVICE_BUS',
   // When MOP connectivity is resolved (see APP_CONFIG_SERVICE_DISCOVERY.md §2):
   // 'services.mop-api.internal-url': 'MOP_API_BASE_URL',
 };

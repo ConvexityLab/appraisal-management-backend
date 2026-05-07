@@ -26,11 +26,13 @@ param batchDataApiKey string = ''
 param keyVaultUrl string = ''
 param azureTenantId string = ''
 param azureClientId string = ''
-// azureCommunicationEndpoint, azureCommunicationEmailDomain, serviceBusNamespace,
-// webPubSubEndpoint, fluidRelayTenantId, fluidRelayEndpoint, azureOpenAiEndpoint,
-// azureOpenAiDeployment, sambanovaEndpoint, certoEndpoint are non-secret
-// service-discovery values — sourced at runtime from App Configuration via
-// appConfigLoader.ts. Intentionally NOT bicep params.
+// AZURE_SERVICE_BUS_NAMESPACE is read at module-top-level (cascade through
+// AxiomService → ServiceBusEventPublisher) — must stay in bicep until lazy-init.
+param serviceBusNamespace string
+// azureCommunicationEndpoint, azureCommunicationEmailDomain, webPubSubEndpoint,
+// fluidRelayTenantId, fluidRelayEndpoint, azureOpenAiEndpoint, azureOpenAiDeployment,
+// sambanovaEndpoint, certoEndpoint are non-secret service-discovery values —
+// sourced at runtime from App Configuration via appConfigLoader.ts.
 
 // Statebridge SFTP integration
 param sftpStorageAccountName string = ''
@@ -199,6 +201,18 @@ var containerApps = [
       {
         name: 'AZURE_COSMOS_DATABASE_NAME'
         value: cosmosDatabaseName
+      }
+      // AZURE_SERVICE_BUS_NAMESPACE and USE_MOCK_SERVICE_BUS are read by
+      // ServiceBusEventPublisher constructor → called from AxiomService
+      // constructor → in the module-top-level cascade with the QC controllers.
+      // Stay in bicep until that's refactored.
+      {
+        name: 'AZURE_SERVICE_BUS_NAMESPACE'
+        value: serviceBusNamespace
+      }
+      {
+        name: 'USE_MOCK_SERVICE_BUS'
+        value: environment == 'dev' ? 'true' : 'false'
       }
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
