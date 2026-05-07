@@ -126,3 +126,231 @@ export interface AxiomExecutionRecord {
   completedAt?: string;          // ISO Date
 }
 
+// ─── Axiom v2 Contract Types ─────────────────────────────────────────────────
+//
+// Mirrors the v2 wire contract documented in
+// l1-valuation-platform-ui/docs/AXIOM_PROXY_CONTRACT_2026-05-07.md and
+// the Axiom integration guide
+// (axiom/docs/INTEGRATION_GUIDE_2026-05-06.md).
+//
+// These types describe the proxy surface the FE consumes; this backend
+// translates them to/from Axiom's internal v2 endpoints
+// (`/api/criterion/scopes/...` and `/api/criterion/loans/.../evaluate`).
+//
+// Required fields are guaranteed by the v2 contract — receipt of a
+// response missing any of them is a contract violation and should throw
+// (long-term-correct posture: no silent fallbacks).
+
+/** v2 five-value verdict enum.  Replaces v1 `'pass' | 'fail' | 'warning' | 'info'`. */
+export type AxiomCriterionStatus =
+  | 'pass'
+  | 'fail'
+  | 'needs_review'
+  | 'cannot_evaluate'
+  | 'not_applicable';
+
+/** Run-level status.  `'timed_out'` is terminal and distinct from `'failed'`. */
+export type AxiomEvaluationRunStatus =
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'timed_out';
+
+/** Identity of the actor that produced a verdict. */
+export type AxiomEvaluatedBy =
+  | 'underwriter-actor'
+  | 'pipeline-evaluator'
+  | 'api-service'
+  | 'human-override';
+
+/**
+ * Snapshot of the criterion definition the verdict was rendered against.
+ * Required on every v2 result doc.
+ */
+export interface AxiomCriterionSnapshot {
+  id: string;
+  title: string;
+  description: string;
+  dataRequirements?: Array<{
+    path: string;
+    required?: boolean;
+    sourceAcceptance?: string[];
+  }>;
+  documentRequirements?: Array<{
+    documentType: string;
+    required?: boolean;
+  }>;
+}
+
+/** Path-keyed slice of the envelope the AI consulted. */
+export type AxiomDataConsultedSlice = Record<string, unknown>;
+
+/** Structured "what's missing" report attached to `cannot_evaluate` verdicts. */
+export interface AxiomCannotEvaluateDetails {
+  missingData?: string[];
+  missingDocuments?: string[];
+  actionableMessage?: string;
+}
+
+/**
+ * v2 result doc — one entry per `(scopeId, criterionId, runId)` in Axiom's
+ * append-only `evaluation-results` container, plus normalised denormalised
+ * fields for proxy consumers.
+ */
+export interface AxiomEvaluationResultDoc {
+  // Identity
+  resultId: string;             // `${scopeId}:${criterionId}:${runId}`
+  evaluationRunId: string;
+  scopeId: string;
+  criterionId: string;
+  criterionName: string;
+
+  // Verdict
+  evaluation: AxiomCriterionStatus;
+  confidence: number;
+  reasoning: string;
+  remediation?: string;
+
+  // Provenance
+  evaluatedBy: AxiomEvaluatedBy;
+  evaluatedAt: string;
+  manualOverride: boolean;
+  supersedes?: string;
+  overriddenBy?: string;
+  overrideReason?: string;
+  conditions?: string[];
+
+  // Transparency (v2-required)
+  criterionSnapshot: AxiomCriterionSnapshot;
+  dataConsulted: AxiomDataConsultedSlice;
+
+  // Cannot-evaluate detail
+  cannotEvaluate?: AxiomCannotEvaluateDetails;
+
+  // Source citations
+  documentReferences: Array<{
+    page: number;
+    section?: string;
+    quote: string;
+    coordinates?: { x: number; y: number; width: number; height: number };
+    documentId?: string;
+    documentName?: string;
+    blobUrl?: string;
+    sourceFieldPaths?: string[];
+  }>;
+  dataUsed?: Array<Record<string, unknown>>;
+
+  // Program identity (denormalised)
+  programId?: string;
+  programVersion?: string;
+}
+
+/**
+ * Response shape of `POST /api/criterion/loans/:loanId/programs/:programId/evaluate`
+ * + `GET /api/criterion/scopes/:scopeId/runs/:runId`.
+ */
+export interface AxiomEvaluationRunResponse {
+  evaluationRunId: string;
+  scopeId: string;
+  programId: string;
+  programVersion: string;
+  status: AxiomEvaluationRunStatus;
+  evaluatedAt: string;
+  pipelineJobId?: string;
+  schemaId?: string;
+  error?: string;
+  results: AxiomEvaluationResultDoc[];
+  // Counts (Axiom returns these on the evaluate-summary response)
+  totalCriteria?: number;
+  passed?: number;
+  failed?: number;
+  needsReview?: number;
+  cannotEvaluate?: number;
+  notApplicable?: number;
+  // Denormalised
+  loanId?: string;
+  orderId?: string;
+}
+
+/**
+ * Response shape of `GET /api/criterion/scopes/:scopeId/results?programId=...`.
+ *
+ * "Latest verdict per criterion" — NOT a single run.
+ */
+export interface AxiomLatestResultsResponse {
+  scopeId: string;
+  programId: string;
+  count: number;
+  results: AxiomEvaluationResultDoc[];
+  asOf?: string;
+}
+
+/**
+ * Response shape of `GET /api/criterion/scopes/:scopeId/criteria/:criterionId/history`.
+ * Newest-first.
+ */
+export interface AxiomCriterionHistoryResponse {
+  scopeId: string;
+  criterionId: string;
+  count: number;
+  history: AxiomEvaluationResultDoc[];
+}
+
+/**
+ * Request payload for the v2 override endpoint.
+ *
+ * Backend writes the Axiom append-only override doc AND the platform
+ * engagement audit event atomically — either both land or neither.
+ */
+export interface AxiomOverrideVerdictRequest {
+  supersedes: string;
+  verdict: 'pass' | 'fail' | 'needs_review';
+  reasoning: string;
+  overriddenBy: string;
+  overrideReason?: string;
+  engagementId: string;
+  confidence?: number;
+  conditions?: string[];
+}
+
+/**
+ * v2 verdict-enum validator.  Throws if input is the legacy `'warning'`/`'info'`
+ * or any other unrecognised value — used at every Axiom→backend boundary so
+ * legacy values never escape into proxy responses.
+ */
+const VALID_V2_VERDICTS = new Set<AxiomCriterionStatus>([
+  'pass',
+  'fail',
+  'needs_review',
+  'cannot_evaluate',
+  'not_applicable',
+]);
+
+export function assertV2Verdict(value: unknown, locator?: string): AxiomCriterionStatus {
+  if (typeof value !== 'string' || !VALID_V2_VERDICTS.has(value as AxiomCriterionStatus)) {
+    const ctx = locator ? ` at ${locator}` : '';
+    throw new Error(
+      `Axiom v2 contract violation${ctx}: expected verdict ∈ {pass, fail, needs_review, cannot_evaluate, not_applicable}, received ${JSON.stringify(value)}. ` +
+        `(Legacy 'warning' and 'info' are removed in v2 — backend must emit 'needs_review' instead.)`,
+    );
+  }
+  return value as AxiomCriterionStatus;
+}
+
+const VALID_V2_RUN_STATUSES = new Set<AxiomEvaluationRunStatus>([
+  'processing',
+  'completed',
+  'failed',
+  'timed_out',
+]);
+
+export function assertV2RunStatus(value: unknown, locator?: string): AxiomEvaluationRunStatus {
+  if (typeof value !== 'string' || !VALID_V2_RUN_STATUSES.has(value as AxiomEvaluationRunStatus)) {
+    const ctx = locator ? ` at ${locator}` : '';
+    throw new Error(
+      `Axiom v2 contract violation${ctx}: expected status ∈ {processing, completed, failed, timed_out}, received ${JSON.stringify(value)}.`,
+    );
+  }
+  return value as AxiomEvaluationRunStatus;
+}
+

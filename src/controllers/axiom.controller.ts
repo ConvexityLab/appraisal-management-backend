@@ -1191,6 +1191,376 @@ export class AxiomController {
     }
   };
 
+  // ─── Axiom v2 endpoints ───────────────────────────────────────────────────
+  //
+  // These mirror Axiom's `/api/criterion/...` surface and replace the v1
+  // proxy endpoints (analyze, criteria/evaluate, evaluations/...).  Each
+  // handler is a thin wrapper around `axiomService.evaluateScope` /
+  // `getEvaluationRun` / `getLatestResults` / `getCriterionHistory` /
+  // `overrideVerdict` — the heavy lifting (verdict-enum validation,
+  // EvaluationResultDoc normalisation) lives in the service layer.
+  //
+  // Per the v2 contract (docs/AXIOM_PROXY_CONTRACT_2026-05-07.md), responses
+  // are `{ success: true, data: <v2 shape> }` so existing FE unwrap logic
+  // works without conditional branches.
+
+  /**
+   * POST /api/axiom/scopes/:scopeId/evaluate
+   *
+   * Replaces v1 `/api/axiom/analyze` and `/api/axiom/criteria/evaluate`.
+   * Body: { programId, programVersion, schemaId? }
+   */
+  evaluateScopeV2 = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { scopeId } = req.params;
+      if (!scopeId) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'scopeId parameter is required' },
+        });
+        return;
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const programId = typeof body.programId === 'string' ? body.programId : undefined;
+      const programVersion =
+        typeof body.programVersion === 'string' ? body.programVersion : undefined;
+      const schemaId = typeof body.schemaId === 'string' ? body.schemaId : undefined;
+
+      if (!programId || !programVersion) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'programId and programVersion are required in the request body',
+          },
+        });
+        return;
+      }
+
+      const evaluateInput: Parameters<typeof this.axiomService.evaluateScope>[0] = {
+        scopeId,
+        programId,
+        programVersion,
+      };
+      if (schemaId !== undefined) evaluateInput.schemaId = schemaId;
+      const summary = await this.axiomService.evaluateScope(evaluateInput);
+
+      res.status(200).json({ success: true, data: summary });
+    } catch (error) {
+      this.logger.error('v2 evaluateScope failed', {
+        scopeId: req.params['scopeId'],
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'EVALUATION_FAILED', message },
+      });
+    }
+  };
+
+  /**
+   * GET /api/axiom/scopes/:scopeId/runs/:runId
+   *
+   * Replaces v1 `/api/axiom/evaluations/:evaluationId`.  Used by the FE to
+   * poll an in-flight run until it terminates.
+   */
+  getEvaluationRunV2 = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { scopeId, runId } = req.params;
+      if (!scopeId || !runId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'scopeId and runId parameters are required',
+          },
+        });
+        return;
+      }
+
+      const run = await this.axiomService.getEvaluationRun({ scopeId, runId });
+      res.status(200).json({ success: true, data: run });
+    } catch (error) {
+      this.logger.error('v2 getEvaluationRun failed', {
+        scopeId: req.params['scopeId'],
+        runId: req.params['runId'],
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message },
+      });
+    }
+  };
+
+  /**
+   * GET /api/axiom/scopes/:scopeId/results?programId=...
+   *
+   * Replaces v1 `/api/axiom/evaluations/order/:orderId`.  Returns the
+   * latest verdict per criterion within the program.
+   */
+  getLatestResultsV2 = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { scopeId } = req.params;
+      const programId =
+        typeof req.query['programId'] === 'string' ? req.query['programId'] : undefined;
+
+      if (!scopeId) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'scopeId parameter is required' },
+        });
+        return;
+      }
+      if (!programId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'programId query parameter is required for the latest-per-criterion view',
+          },
+        });
+        return;
+      }
+
+      const latest = await this.axiomService.getLatestResults({ scopeId, programId });
+      res.status(200).json({ success: true, data: latest });
+    } catch (error) {
+      this.logger.error('v2 getLatestResults failed', {
+        scopeId: req.params['scopeId'],
+        programId: req.query['programId'],
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message },
+      });
+    }
+  };
+
+  /**
+   * GET /api/axiom/scopes/:scopeId/criteria/:criterionId/history
+   *
+   * NEW in v2.  Per-criterion audit trail; powers the FE's
+   * CriterionHistoryDrawer.
+   */
+  getCriterionHistoryV2 = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { scopeId, criterionId } = req.params;
+      if (!scopeId || !criterionId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'scopeId and criterionId parameters are required',
+          },
+        });
+        return;
+      }
+
+      const history = await this.axiomService.getCriterionHistory({ scopeId, criterionId });
+      res.status(200).json({ success: true, data: history });
+    } catch (error) {
+      this.logger.error('v2 getCriterionHistory failed', {
+        scopeId: req.params['scopeId'],
+        criterionId: req.params['criterionId'],
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message },
+      });
+    }
+  };
+
+  /**
+   * POST /api/axiom/scopes/:scopeId/criteria/:criterionId/override
+   *
+   * NEW in v2.  Atomic verdict override:
+   *   1. Write override doc to Axiom (Axiom append-only store)
+   *   2. Publish `qc.verdict.overridden` event to Service Bus (platform audit)
+   *
+   * Both writes succeed or neither does.  If the Axiom write succeeds but the
+   * audit publish fails, we surface 500 to the caller without rolling back the
+   * Axiom doc — the override is still recorded in Axiom's audit chain (which
+   * is the source of truth for evaluation history).  An out-of-band reconciler
+   * job will catch the missing audit event later.
+   *
+   * Body: { supersedes, verdict, reasoning, overriddenBy, overrideReason?,
+   *         engagementId, confidence?, conditions? }
+   */
+  overrideVerdictV2 = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { scopeId, criterionId } = req.params;
+      if (!scopeId || !criterionId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'scopeId and criterionId parameters are required',
+          },
+        });
+        return;
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const supersedes = typeof body.supersedes === 'string' ? body.supersedes : undefined;
+      const verdict = typeof body.verdict === 'string' ? body.verdict : undefined;
+      const reasoning = typeof body.reasoning === 'string' ? body.reasoning : undefined;
+      const overriddenBy =
+        typeof body.overriddenBy === 'string' ? body.overriddenBy : undefined;
+      const overrideReason =
+        typeof body.overrideReason === 'string' ? body.overrideReason : undefined;
+      const engagementId =
+        typeof body.engagementId === 'string' ? body.engagementId : undefined;
+      const confidence = typeof body.confidence === 'number' ? body.confidence : undefined;
+      const conditions = Array.isArray(body.conditions)
+        ? (body.conditions as unknown[]).filter((x): x is string => typeof x === 'string')
+        : undefined;
+
+      // Validate required fields up-front so a malformed request fails fast
+      // before we touch Axiom or the audit log.
+      const missing: string[] = [];
+      if (!supersedes) missing.push('supersedes');
+      if (!verdict) missing.push('verdict');
+      if (!reasoning) missing.push('reasoning');
+      if (!overriddenBy) missing.push('overriddenBy');
+      if (!engagementId) missing.push('engagementId');
+      if (missing.length > 0) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `Missing required field(s): ${missing.join(', ')}`,
+          },
+        });
+        return;
+      }
+
+      // Restrict verdict to the user-overridable subset.  System verdicts
+      // (cannot_evaluate, not_applicable) can't be set by a human reviewer.
+      const validVerdicts = new Set(['pass', 'fail', 'needs_review']);
+      if (!validVerdicts.has(verdict!)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `verdict must be one of pass | fail | needs_review (received "${verdict}")`,
+          },
+        });
+        return;
+      }
+
+      // Phase 1: Axiom write — append-only doc with manualOverride: true.
+      let axiomDoc: import('../types/axiom.types.js').AxiomEvaluationResultDoc;
+      try {
+        const overrideArgs: Parameters<typeof this.axiomService.overrideVerdict>[0] = {
+          scopeId,
+          criterionId,
+          supersedes: supersedes!,
+          verdict: verdict! as 'pass' | 'fail' | 'needs_review',
+          reasoning: reasoning!,
+          overriddenBy: overriddenBy!,
+        };
+        if (overrideReason !== undefined) overrideArgs.overrideReason = overrideReason;
+        if (confidence !== undefined) overrideArgs.confidence = confidence;
+        if (conditions !== undefined && conditions.length > 0) {
+          overrideArgs.conditions = conditions;
+        }
+        axiomDoc = await this.axiomService.overrideVerdict(overrideArgs);
+      } catch (axiomErr) {
+        // Axiom 400 — stale supersedes or criterionId mismatch.  Translate
+        // to a 400 here so the FE's refresh-and-retry copy fires.
+        const status = (axiomErr as { response?: { status?: number } })?.response?.status;
+        const detail = (axiomErr as Error).message;
+        if (status === 400) {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: 'STALE_SUPERSEDES',
+              message:
+                'The prior verdict has been superseded by another run since this override was prepared. Refresh the page and try again.',
+              details: detail,
+            },
+          });
+          return;
+        }
+        throw axiomErr;
+      }
+
+      // Phase 2: platform engagement audit event.  If this throws AFTER the
+      // Axiom write, we surface 500 — the Axiom doc is still durable (source
+      // of truth) but the platform audit is missing.  An out-of-band sweeper
+      // can backfill from Axiom history.
+      try {
+        // Mirrors the `qc.verdict.overridden` shape published by
+        // engagement-audit.controller's `publishInterventionEvent` helper.
+        // The event's strict union type doesn't yet include this dispatch path
+        // explicitly — `as any` is the established pattern here (see
+        // engagement-audit.controller.ts:48).
+        const auditEvent = {
+          id: uuidv4(),
+          type: 'qc.verdict.overridden',
+          timestamp: new Date(),
+          source: 'axiom-controller',
+          version: '1.0',
+          category: EventCategory.QC,
+          data: {
+            priority: EventPriority.NORMAL,
+            engagementId: engagementId!,
+            scopeId,
+            orderId: scopeId,
+            criterionId,
+            resultId: axiomDoc.resultId,
+            supersedes: supersedes!,
+            verdict: verdict!,
+            reasoning: reasoning!,
+            overriddenBy: overriddenBy!,
+            overrideReason: overrideReason ?? undefined,
+            confidence: confidence ?? 1,
+          },
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await this.eventPublisher.publish(auditEvent as any);
+      } catch (auditErr) {
+        this.logger.error('Override audit event publish FAILED — Axiom doc was written but platform audit is missing', {
+          scopeId,
+          criterionId,
+          resultId: axiomDoc.resultId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'AUDIT_PUBLISH_FAILED',
+            message:
+              'The Axiom override was recorded but the platform audit event failed to publish. The reviewer override IS in Axiom (source of truth). Contact ops to backfill the platform audit.',
+            details: { axiomResultId: axiomDoc.resultId },
+          },
+        });
+        return;
+      }
+
+      res.status(201).json({ success: true, data: axiomDoc });
+    } catch (error) {
+      this.logger.error('v2 overrideVerdict failed', {
+        scopeId: req.params['scopeId'],
+        criterionId: req.params['criterionId'],
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message },
+      });
+    }
+  };
+
   /**
    * Receive Axiom pipeline webhook for single-order evaluations.
    * POST /api/axiom/webhook
@@ -2091,12 +2461,20 @@ export function createAxiomRouter(dbService: CosmosDbService, axiomService?: Axi
   // Document notification (raw, used by backend-to-backend calls)
   router.post('/documents', controller.notifyDocument);
 
-  // Document analysis (frontend-friendly, looks up blob URL by documentId)
-  router.post('/analyze', controller.analyzeDocument);
-  // T2.3 — criteria-only re-evaluation against an existing fileSet (Pattern A)
-  // or caller-supplied extractedDocuments (Pattern B). Closes the gap that left
-  // `axiomDecision` empty after analyze.
-  router.post('/criteria/evaluate', controller.evaluateCriteria);
+  // ─── Legacy v1 routes RETIRED ─────────────────────────────────────────────
+  // The following endpoints were retired in the v2 migration (see
+  // AXIOM_PROXY_CONTRACT_2026-05-07.md).  Callers must use the new
+  // `/scopes/:scopeId/...` surface registered below:
+  //
+  //   POST /api/axiom/analyze            → POST /api/axiom/scopes/:scopeId/evaluate
+  //   POST /api/axiom/criteria/evaluate  → POST /api/axiom/scopes/:scopeId/evaluate
+  //   GET  /api/axiom/evaluations/:id    → GET  /api/axiom/scopes/:scopeId/runs/:runId
+  //   GET  /api/axiom/evaluations/order/:orderId
+  //                                      → GET  /api/axiom/scopes/:scopeId/results?programId=...
+  //
+  // Handler methods on the controller are retained for now (callable by
+  // tests that exercise the legacy code paths); they are simply not wired
+  // into the router.
 
   // Agent proxy
   router.post('/agent/run', controller.runAgent);
@@ -2104,10 +2482,28 @@ export function createAxiomRouter(dbService: CosmosDbService, axiomService?: Axi
   router.get('/bulk-submission/dlq', controller.getBulkSubmissionDlq);
   router.post('/bulk-submission/dlq/:eventId/replay', controller.replayBulkSubmissionDlqEvent);
 
-  // Evaluation retrieval
-  router.get('/evaluations/order/:orderId', controller.getEvaluationByOrder);
-  router.get('/evaluations/order/:orderId/stream', controller.streamOrderPipeline);
-  router.get('/evaluations/:evaluationId', controller.getEvaluationById);
+  // ─── Axiom v2 endpoints (preferred — see AXIOM_PROXY_CONTRACT_2026-05-07.md) ───
+  // FE consumes these; legacy `/analyze`, `/criteria/evaluate`, `/evaluations/...`
+  // routes below are scheduled for retirement after backend cutover.
+  router.post('/scopes/:scopeId/evaluate', controller.evaluateScopeV2);
+  router.get('/scopes/:scopeId/runs/:runId', controller.getEvaluationRunV2);
+  router.get('/scopes/:scopeId/results', controller.getLatestResultsV2);
+  router.get(
+    '/scopes/:scopeId/criteria/:criterionId/history',
+    controller.getCriterionHistoryV2,
+  );
+  router.post(
+    '/scopes/:scopeId/criteria/:criterionId/override',
+    controller.overrideVerdictV2,
+  );
+
+  // The v1 SSE stream at `/evaluations/order/:orderId/stream` was retired in
+  // the v2 migration.  The FE's AxiomProgressPanel now derives stage progress
+  // from `pipelineExecutionLog` on the polled `getEvaluationRun` response —
+  // single source of truth, no long-lived stream connection per panel.
+  // The handler method is retained on the controller for backwards-compat
+  // tests that still exercise the streaming logic directly, but the route
+  // is no longer registered.
 
   // Webhooks — HMAC verification applied before handlers
   router.post('/webhook', verifyAxiomWebhook, controller.handleWebhook);
