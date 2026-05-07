@@ -64,6 +64,17 @@ param sambanovaApiKey string = ''
 param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
 param certoEndpoint string = 'https://certo-apim-dev-eastus2.azure-api.net/tgi/v1'
 
+// iVueit inspection vendor credentials. Third-party API keys → Key Vault refs
+// flow through these params from CI. INSPECTION_PROVIDER and IVUEIT_BASE_URL
+// (non-secret service discovery) are sourced from App Config at startup, not
+// passed as bicep params.
+@secure()
+@description('iVueit API key. Stored as Container App secret "ivueit-api-key" and bound to IVUEIT_API_KEY.')
+param ivueitApiKey string = ''
+@secure()
+@description('iVueit secret. Stored as Container App secret "ivueit-secret" and bound to IVUEIT_SECRET.')
+param ivueitSecret string = ''
+
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
 var acrName = 'acrappraisal${environment}${take(suffix, 8)}'
@@ -111,6 +122,14 @@ var containerAppSecrets = useBootstrapImage ? [] : concat(
   empty(sambanovaApiKey) ? [] : [{
     name: 'sambanova-api-key'
     value: sambanovaApiKey
+  }],
+  empty(ivueitApiKey) ? [] : [{
+    name: 'ivueit-api-key'
+    value: ivueitApiKey
+  }],
+  empty(ivueitSecret) ? [] : [{
+    name: 'ivueit-secret'
+    value: ivueitSecret
   }]
 )
 
@@ -278,6 +297,18 @@ var containerApps = [
         // stored in plain text in the Container App environment variables.
         name: 'AXIOM_WEBHOOK_SECRET'
         secretRef: 'axiom-webhook-secret'
+      }
+      {
+        // iVueit inspection vendor API key. Third-party API key — required by
+        // IVueitInspectionProvider constructor. Value lives in Key Vault and is
+        // passed in via the ivueitApiKey secure param.
+        name: 'IVUEIT_API_KEY'
+        secretRef: 'ivueit-api-key'
+      }
+      {
+        // iVueit inspection vendor shared secret. Same lifecycle as IVUEIT_API_KEY.
+        name: 'IVUEIT_SECRET'
+        secretRef: 'ivueit-secret'
       }
       {
         // Platform client ID for Axiom pipeline namespace scoping.
