@@ -489,28 +489,23 @@ module appServices 'modules/app-services.bicep' = {
     cosmosDatabaseName: cosmosDb.outputs.databaseName
     batchDataEndpoint: batchDataEndpoint
     batchDataApiKey: batchDataApiKey
-    azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
-    azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
     keyVaultUrl: keyVault.outputs.keyVaultUri
     azureTenantId: azureTenantId
     azureClientId: azureClientId
-    serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
-    webPubSubEndpoint: webPubSub.outputs.webPubSubEndpoint
-    fluidRelayTenantId: fluidRelay.outputs.fluidRelayTenantId
-    fluidRelayEndpoint: fluidRelay.outputs.fluidRelayEndpoint
     sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
     statebridgeClientId: statebridgeClientId
     statebridgeClientName: statebridgeClientName
     statebridge_tenantId: statebridge_tenantId
     axiomWebhookSecret: axiomWebhookSecret
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
-    azureOpenAiApiKey: azureOpenAiApiKey
-    azureOpenAiEndpoint: azureOpenAiEndpoint
-    googleGeminiApiKey: googleGeminiApiKey
-    sambanovaApiKey: sambanovaApiKey
-    sambanovaEndpoint: 'https://api.sambanova.ai/v1'
     appImageTag: appImageTag
     functionsImageTag: functionsImageTag
+    // Removed (now resolved at runtime via App Configuration / Key Vault refs):
+    //   azureCommunicationEndpoint, azureCommunicationEmailDomain (App Config)
+    //   serviceBusNamespace, webPubSubEndpoint (App Config)
+    //   fluidRelayTenantId, fluidRelayEndpoint (App Config)
+    //   azureOpenAiApiKey, googleGeminiApiKey, sambanovaApiKey (KV refs)
+    //   azureOpenAiEndpoint, sambanovaEndpoint (App Config)
   }
 }
 
