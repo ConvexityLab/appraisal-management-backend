@@ -10,6 +10,8 @@ import { DefaultAzureCredential } from '@azure/identity';
  */
 const KEY_TO_ENV: Record<string, string> = {
   'services.axiom-api.base-url': 'AXIOM_API_BASE_URL',
+  'services.inspection.provider': 'INSPECTION_PROVIDER',
+  'services.inspection.base-url': 'IVUEIT_BASE_URL',
   // When MOP connectivity is resolved (see APP_CONFIG_SERVICE_DISCOVERY.md §2):
   // 'services.mop-api.internal-url': 'MOP_API_BASE_URL',
 };

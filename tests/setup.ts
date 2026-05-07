@@ -51,6 +51,28 @@ if (!process.env.AXIOM_AUTH_REQUIRED) {
   process.env.AXIOM_AUTH_REQUIRED = 'false';
 }
 
+// Inspection provider factory throws at startup if INSPECTION_PROVIDER is
+// missing (src/services/inspection-providers/factory.ts). The API server
+// constructor calls it via setupAuthorizationRoutes, so any test that boots
+// the server (e.g. tests/authorization/http-authz.test.ts) trips it. Prod
+// gets the value from App Config via appConfigLoader; tests don't run that
+// loader, so seed a placeholder here.
+if (!process.env.INSPECTION_PROVIDER) {
+  process.env.INSPECTION_PROVIDER = 'ivueit';
+}
+if (!process.env.IVUEIT_BASE_URL) {
+  process.env.IVUEIT_BASE_URL = 'https://test-placeholder.ivueit.local';
+}
+// IVueitInspectionProvider constructor requires API key + secret. In prod
+// these come from Key Vault via Container App secret refs; for tests we just
+// need non-empty values to satisfy the constructor — no real iVueit calls.
+if (!process.env.IVUEIT_API_KEY) {
+  process.env.IVUEIT_API_KEY = 'test-placeholder-key';
+}
+if (!process.env.IVUEIT_SECRET) {
+  process.env.IVUEIT_SECRET = 'test-placeholder-secret';
+}
+
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 
 // Global test configuration
