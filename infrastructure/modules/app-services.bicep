@@ -26,13 +26,19 @@ param batchDataApiKey string = ''
 param keyVaultUrl string = ''
 param azureTenantId string = ''
 param azureClientId string = ''
-// AZURE_SERVICE_BUS_NAMESPACE is read at module-top-level (cascade through
-// AxiomService → ServiceBusEventPublisher) — must stay in bicep until lazy-init.
+// Service-discovery values consumed by services in the module-top-level cascade
+// (read at module-import time, before app-production.ts can call loadAppConfig).
+// These must stay as bicep params until those services lazy-instantiate.
 param serviceBusNamespace string
-// azureCommunicationEndpoint, azureCommunicationEmailDomain, webPubSubEndpoint,
-// fluidRelayTenantId, fluidRelayEndpoint, azureOpenAiEndpoint, azureOpenAiDeployment,
-// sambanovaEndpoint, certoEndpoint are non-secret service-discovery values —
-// sourced at runtime from App Configuration via appConfigLoader.ts.
+param azureCommunicationEndpoint string = ''
+param azureCommunicationEmailDomain string = ''
+param webPubSubEndpoint string = ''
+param fluidRelayTenantId string = ''
+param fluidRelayEndpoint string = ''
+param azureOpenAiEndpoint string = ''
+param azureOpenAiDeployment string = 'gpt-4o-mini'
+param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
+param certoEndpoint string = 'https://certo-apim-dev-eastus2.azure-api.net/tgi/v1'
 
 // Statebridge SFTP integration
 param sftpStorageAccountName string = ''
@@ -177,6 +183,11 @@ var containerApps = [
     //     for Key Vault ref later)
     //   - Secrets via Container App secret refs (axiom-webhook-secret stays as
     //     inline-value pattern; openai/gemini/sambanova/ivueit use keyVaultUrl)
+    // Most of these stay in bicep because the QC controllers (criteria, results,
+    // reviews) instantiate at module-top-level — the cascade reads env vars BEFORE
+    // app-production.ts can call loadAppConfig(). Only AXIOM_* and INSPECTION_PROVIDER
+    // / IVUEIT_BASE_URL are App Config-sourced (their consumers are constructed
+    // post-loadAppConfig). See appConfigLoader.ts and project-memory.
     env: [
       {
         name: 'NODE_ENV'
@@ -190,10 +201,6 @@ var containerApps = [
         name: 'ENVIRONMENT'
         value: environment
       }
-      // AZURE_COSMOS_ENDPOINT / AZURE_COSMOS_DATABASE_NAME are read at
-      // module-import time by criteria.controller.ts:912, results.controller.ts:1624,
-      // and reviews.controller.ts:1653 — all before app-production.ts can call
-      // loadAppConfig(). Keep these in bicep until those controllers lazy-instantiate.
       {
         name: 'AZURE_COSMOS_ENDPOINT'
         value: cosmosEndpoint
@@ -202,10 +209,23 @@ var containerApps = [
         name: 'AZURE_COSMOS_DATABASE_NAME'
         value: cosmosDatabaseName
       }
-      // AZURE_SERVICE_BUS_NAMESPACE and USE_MOCK_SERVICE_BUS are read by
-      // ServiceBusEventPublisher constructor → called from AxiomService
-      // constructor → in the module-top-level cascade with the QC controllers.
-      // Stay in bicep until that's refactored.
+      {
+        name: 'AZURE_STORAGE_ACCOUNT_NAME'
+        value: storageAccountName
+      }
+      {
+        // BulkUploadEventListenerJob reads this for queue polling and ingestion payloads.
+        name: 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME'
+        value: storageAccountName
+      }
+      {
+        name: 'STORAGE_CONTAINER_DOCUMENTS'
+        value: 'appraisal-documents'
+      }
+      {
+        name: 'STORAGE_CONTAINER_BULK_UPLOAD'
+        value: 'bulk-upload'
+      }
       {
         name: 'AZURE_SERVICE_BUS_NAMESPACE'
         value: serviceBusNamespace
@@ -213,6 +233,50 @@ var containerApps = [
       {
         name: 'USE_MOCK_SERVICE_BUS'
         value: environment == 'dev' ? 'true' : 'false'
+      }
+      {
+        name: 'AZURE_WEB_PUBSUB_ENDPOINT'
+        value: webPubSubEndpoint
+      }
+      {
+        name: 'AZURE_FLUID_RELAY_TENANT_ID'
+        value: fluidRelayTenantId
+      }
+      {
+        name: 'AZURE_FLUID_RELAY_ENDPOINT'
+        value: fluidRelayEndpoint
+      }
+      {
+        name: 'AZURE_OPENAI_ENDPOINT'
+        value: azureOpenAiEndpoint
+      }
+      {
+        name: 'AZURE_OPENAI_DEPLOYMENT'
+        value: azureOpenAiDeployment
+      }
+      {
+        name: 'AZURE_OPENAI_MODEL_NAME'
+        value: azureOpenAiDeployment
+      }
+      {
+        name: 'SAMBANOVA_ENDPOINT'
+        value: sambanovaEndpoint
+      }
+      {
+        name: 'CERTO_ENDPOINT'
+        value: certoEndpoint
+      }
+      {
+        name: 'AZURE_COMMUNICATION_ENDPOINT'
+        value: azureCommunicationEndpoint
+      }
+      {
+        name: 'AZURE_COMMUNICATION_EMAIL_DOMAIN'
+        value: azureCommunicationEmailDomain
+      }
+      {
+        name: 'BULK_INGESTION_ENABLE_CRITERIA_STAGE'
+        value: 'true'
       }
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
