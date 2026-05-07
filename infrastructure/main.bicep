@@ -147,11 +147,11 @@ var namingPrefix = empty(organizationPrefix)
   : '${organizationPrefix}-${replace(replace(resourceNamingPattern, '{appName}', appName), '{environment}', environment)}'
 
 // Key Vault URL (construct predictably to avoid circular dependency)
-// Must match the naming pattern in modules/key-vault.bicep
-var cleanPrefix = replace(replace(replace(namingPrefix, '-', ''), 'appraisal', 'appr'), 'mgmt', 'm')
-var uniqueSuffix = uniqueString(namingPrefix, environment, location)
-var keyVaultName = 'kv${take(cleanPrefix, 8)}${take(environment, 3)}${take(uniqueSuffix, 6)}'
-var keyVaultUrl = 'https://${keyVaultName}.${az.environment().suffixes.keyvaultDns}/'
+// keyVaultUrl was previously hand-constructed via az.environment().suffixes.keyvaultDns,
+// but that suffix already includes a leading dot — double-dot URL ("kvname..vault.azure.net")
+// passed Azure validation only because no consumer parsed the URL strictly. Container App
+// keyVaultUrl secret refs DO validate, and reject malformed URLs as "different cloud".
+// Use the keyVault module's vaultUri output (line 498) as the canonical, well-formed URL.
 
 // Resource Group
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
@@ -491,7 +491,7 @@ module appServices 'modules/app-services.bicep' = {
     batchDataApiKey: batchDataApiKey
     azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
     azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
-    keyVaultUrl: keyVaultUrl
+    keyVaultUrl: keyVault.outputs.keyVaultUri
     azureTenantId: azureTenantId
     azureClientId: azureClientId
     serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
