@@ -493,6 +493,12 @@ module appServices 'modules/app-services.bicep' = {
     azureTenantId: azureTenantId
     azureClientId: azureClientId
     serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
+    azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
+    azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
+    webPubSubEndpoint: webPubSub.outputs.webPubSubEndpoint
+    fluidRelayTenantId: fluidRelay.outputs.fluidRelayTenantId
+    fluidRelayEndpoint: fluidRelay.outputs.fluidRelayEndpoint
+    azureOpenAiEndpoint: azureOpenAiEndpoint
     sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
     statebridgeClientId: statebridgeClientId
     statebridgeClientName: statebridgeClientName
@@ -501,12 +507,13 @@ module appServices 'modules/app-services.bicep' = {
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     appImageTag: appImageTag
     functionsImageTag: functionsImageTag
-    // Removed (now resolved at runtime via App Configuration / Key Vault refs):
-    //   azureCommunicationEndpoint, azureCommunicationEmailDomain (App Config)
-    //   serviceBusNamespace, webPubSubEndpoint (App Config)
-    //   fluidRelayTenantId, fluidRelayEndpoint (App Config)
-    //   azureOpenAiApiKey, googleGeminiApiKey, sambanovaApiKey (KV refs)
-    //   azureOpenAiEndpoint, sambanovaEndpoint (App Config)
+    // KV refs (kept migrated, resolved at runtime via Managed Identity):
+    //   azure-openai-api-key, google-gemini-api-key, sambanova-api-key
+    //   ivueit-api-key, ivueit-secret
+    // App Config (kept migrated, consumed post-loadAppConfig):
+    //   AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID,
+    //   AXIOM_PIPELINE_ID_SCHEMA_EXTRACT, AXIOM_AUTH_REQUIRED, AXIOM_AUTH_AUDIENCE,
+    //   INSPECTION_PROVIDER, IVUEIT_BASE_URL
   }
 }
 
