@@ -5,6 +5,8 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { CosmosClient, Database } from '@azure/cosmos';
+import { DefaultAzureCredential } from '@azure/identity';
 import { Logger } from '../utils/logger.js';
 import { QCExecutionEngine } from '../services/qc-execution.engine.js';
 import { QCChecklistManagementService } from '../services/qc-checklist-management.service.js';
@@ -62,6 +64,7 @@ export class QCExecutionController {
   private axiomService: AxiomService;
   private router: Router;
   private activeSessions: Map<string, QCExecutionSession>;
+  private cosmosDb: Database;
 
   constructor() {
     this.logger = new Logger('QCExecutionController');
@@ -70,6 +73,18 @@ export class QCExecutionController {
     this.axiomService = new AxiomService();
     this.router = Router();
     this.activeSessions = new Map();
+
+    const cosmosEndpoint = process.env['AZURE_COSMOS_ENDPOINT'];
+    if (!cosmosEndpoint) {
+      throw new Error(
+        'Required environment variable AZURE_COSMOS_ENDPOINT is not set. ' +
+        'Set it to your Cosmos DB endpoint URL (e.g. https://<account>.documents.azure.com:443/).'
+      );
+    }
+    const credential = new DefaultAzureCredential();
+    const cosmosClient = new CosmosClient({ endpoint: cosmosEndpoint, aadCredentials: credential });
+    this.cosmosDb = cosmosClient.database('appraisal-management');
+
     this.initializeRoutes();
   }
 
@@ -278,6 +293,58 @@ export class QCExecutionController {
       session.completedAt = new Date();
       session.results = result;
       this.activeSessions.set(sessionId, session);
+
+      // Persist the result to qc-reviews so GET /api/qc/results/order/:orderId can find it.
+      // The engine stores results only in this.activeSessions (in-memory); without this write
+      // the refetch immediately after execute would always return 404.
+      if (result.success && result.data) {
+        const now = new Date().toISOString();
+        // Flatten engine's categoryResults (subcategories → questions) into the flat shape
+        // the qc-results controller maps to the frontend (categoriesResults[].questions[]).
+        const categoriesResults = (result.data.categoryResults ?? []).map((catResult: any) => ({
+          categoryId: catResult.categoryId,
+          status: catResult.status,
+          score: catResult.score,
+          passed: catResult.passed,
+          questions: (catResult.subcategoryResults ?? []).flatMap((subResult: any) =>
+            (subResult.questionResults ?? []).map((qResult: any) => ({
+              questionId: qResult.questionId,
+              score: qResult.score,
+              passed: qResult.passed,
+              answer: qResult.answer,
+              verificationStatus: 'PENDING',
+            }))
+          ),
+        }));
+
+        const qcReviewDoc = {
+          id: sessionId,
+          sessionId,
+          orderId: targetId,
+          checklistId: checklist.id,
+          checklistName: (checklist as any).name,
+          checklistVersion: (checklist as any).version,
+          status: result.data.passed ? 'COMPLETED' : 'FAILED',
+          overallScore: result.data.overallScore ?? 0,
+          passFailStatus: result.data.passed ? 'PASS' : 'FAIL',
+          categoriesResults,
+          criticalIssues: result.data.criticalIssues ?? [],
+          startedAt: result.data.startedAt instanceof Date
+            ? result.data.startedAt.toISOString()
+            : result.data.startedAt,
+          completedAt: result.data.completedAt instanceof Date
+            ? result.data.completedAt.toISOString()
+            : result.data.completedAt,
+          reviewedBy: req.user?.id ?? 'system',
+          createdAt: now,
+          updatedAt: now,
+          // Raw engine output — passed through by the GET endpoint and used by mergeQcReviewDocs.
+          results: result.data,
+        };
+
+        await this.cosmosDb.container('qc-reviews').items.upsert(qcReviewDoc);
+        this.logger.info('QC review result persisted to qc-reviews', { sessionId, orderId: targetId });
+      }
 
       this.logger.info('QC review execution completed', {
         sessionId,
