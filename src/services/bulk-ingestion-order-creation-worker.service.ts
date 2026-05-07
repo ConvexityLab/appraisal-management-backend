@@ -15,6 +15,7 @@ import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority } from '../types/index.js';
 import { ANALYSIS_TYPE_TO_PRODUCT_TYPE } from '../types/bulk-portfolio.types.js';
 import { buildBulkItemSourceIdentity, extendIntakeSourceIdentity } from '../types/intake-source.types.js';
+import { AccessControlHelper } from './access-control-helper.service.js';
 import type {
   BaseEvent,
   BulkIngestionOrdersCreatedEvent,
@@ -45,6 +46,7 @@ export class BulkIngestionOrderCreationWorkerService {
   private readonly engagementService: EngagementService;
   private isStarted = false;
   public isRunning = false;
+  private readonly accessControlHelper = new AccessControlHelper();
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
@@ -246,6 +248,12 @@ export class BulkIngestionOrderCreationWorkerService {
             sourceIdentity,
           },
           createdBy: job.submittedBy,
+          accessControl: this.accessControlHelper.createAccessControl({
+            ownerId: job.submittedBy,
+            clientId: job.clientId,
+            tenantId: job.tenantId,
+            visibilityScope: 'TEAM',
+          }),
           createdAt: new Date(),
           updatedAt: new Date(),
           type: 'order',

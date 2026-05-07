@@ -21,7 +21,7 @@ import { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CollaborationService } from '../services/collaboration.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AuthorizationService } from '../services/authorization.service.js';
-import { ResourceType } from '../types/authorization.types.js';
+import { ResourceType, UserProfile } from '../types/authorization.types.js';
 import { Logger } from '../utils/logger.js';
 
 const logger = new Logger('CollaborationController');
@@ -131,13 +131,18 @@ async function authorizeContainerAccess(
   // No Cosmos UserProfile — user may be an authenticated Azure AD user whose profile
   // hasn't been seeded yet.  Fall back to the role from their JWT (set by Azure Entra
   // middleware) so that Casbin role-based policies still apply.
+  // NOTE: portalDomain and boundEntityIds are unknown without the Cosmos record — this
+  // path must only be used until all users have been seeded.  Once Cosmos is authoritative,
+  // this branch should be removed and a missing profile should result in a 403.
   if (user.role) {
-    const syntheticProfile = {
+    const syntheticProfile: UserProfile = {
       id: user.id,
       email: user.email ?? user.id,
       name: user.name ?? user.id,
       tenantId: user.tenantId,
-      role: user.role,
+      role: user.role as UserProfile['role'],
+      portalDomain: 'platform',   // conservative: over-restricts vendor/client domain users
+      boundEntityIds: [],
       accessScope: { teamIds: [], departmentIds: [] },
       isActive: true,
       createdAt: new Date(),

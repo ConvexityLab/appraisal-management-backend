@@ -138,6 +138,7 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
       try {
         const tenantId = resolveTenantId(req);
         const submittedBy = req.user?.id ?? 'unknown';
+        const submitterEmail = (req as any).userProfile?.email ?? (req.user as any)?.email;
         const service = getService(dbService);
 
         // T3.1 deprecation: ORDER_CREATION and DOCUMENT_EXTRACTION modes are superseded
@@ -154,7 +155,7 @@ export function createBulkPortfolioRouter(dbService: CosmosDbService) {
           });
         }
 
-        const job = await service.submit(req.body, submittedBy, tenantId);
+        const job = await service.submit(req.body, submittedBy, tenantId, submitterEmail);
 
         return res.status(201).json({
           job,

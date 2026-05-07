@@ -84,6 +84,8 @@ import { requestTimeoutMiddleware } from '../middleware/request-timeout.middlewa
 import { createUserProfileRouter } from '../controllers/user-profile.controller';
 import { createAccessGraphRouter } from '../controllers/access-graph.controller';
 import { createAuthorizationTestRouter } from '../controllers/authorization-test.controller';
+import { createPolicyManagementRouter } from '../controllers/policy-management.controller';
+import { createGroupRoleMappingRouter } from '../controllers/group-role-mapping.controller.js';
 
 // Import ROV controller
 import { createROVRouter } from '../controllers/rov.controller';
@@ -409,6 +411,26 @@ export class AppraisalManagementAPIServer {
     
     // Initialize database FIRST
     await this.dbService.initialize();
+
+    // Phase 2.2 — Authorization health check: verify the `users` container is
+    // reachable before registering authorization routes or accepting traffic.
+    // A missing or misconfigured `users` container would silently fail
+    // authorization for every request (users load returns null → 403).
+    // Fail fast here so operators see a clear startup error.
+    try {
+      const usersContainer = this.dbService.getContainer('users');
+      await usersContainer.items.query('SELECT VALUE COUNT(1) FROM c').fetchAll();
+      this.logger.info('✅ Authorization health check passed: users container is reachable');
+    } catch (err) {
+      this.logger.error(
+        'FATAL: users container health check failed — authorization cannot function. ' +
+        'Ensure the Cosmos DB users container exists and the managed identity has "Cosmos DB Built-in Data Reader" role.',
+        { error: err },
+      );
+      throw new Error(
+        `Startup health check failed: Cosmos users container unreachable — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     // Initialize QC Results router with shared dbService
     this.qcResultsRouter = new QCResultsController(this.dbService).getRouter();
@@ -947,12 +969,15 @@ export class AppraisalManagementAPIServer {
     );
 
     // Axiom Criteria Programs — GET compiled criteria (cache-first) / POST force-recompile
+    // Intentionally no loadUserProfile(): these are read-only compiled rule sets (system reference
+    // data), not user-owned documents. All authenticated roles may read. No row-level filtering needed.
     this.app.use('/api/criteria',
       this.unifiedAuth.authenticate(),
       createCriteriaProgramsRouter(sharedAxiomService)
     );
 
     // MOP Criteria Programs — GET compiled MOP rule sets (cache-first) / POST force-recompile
+    // Intentionally no loadUserProfile(): same rationale as /api/criteria above.
     this.app.use('/api/mop-criteria',
       this.unifiedAuth.authenticate(),
       createMopCriteriaRouter(this.dbService)
@@ -1195,6 +1220,22 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/construction/inspections',
       this.unifiedAuth.authenticate(),
       drawInspectionController.router
+    );
+
+    // Policy management (admin only)
+    this.app.use('/api/policies',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('policy', 'manage'),
+      createPolicyManagementRouter(this.dbService)
+    );
+
+    // Entra group → role mapping admin API (admin only)
+    this.app.use('/api/admin/group-role-mappings',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('policy', 'manage'),
+      createGroupRoleMappingRouter(this.dbService)
     );
 
     this.logger.info('✅ Authorization routes registered successfully');

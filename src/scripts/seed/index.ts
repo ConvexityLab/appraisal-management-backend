@@ -27,6 +27,7 @@ import type { SeedModule, SeedModuleResult, SeedContext } from './seed-types.js'
 
 import { module as clientsModule } from './modules/clients.js';
 import { module as productsModule } from './modules/products.js';
+import { module as usersModule } from './modules/users.js';
 import { module as vendorsModule } from './modules/vendors.js';
 import { module as ordersModule } from './modules/orders.js';
 import { module as documentsModule } from './modules/documents.js';
@@ -59,6 +60,7 @@ import { module as quickbooksModule } from './modules/quickbooks.js';
 const ALL_MODULES: SeedModule[] = [
   clientsModule,        // Phase 1
   productsModule,       // Phase 2
+  usersModule,          // Phase 2b — UserProfile documents (users container)
   vendorsModule,        // Phase 3
   ordersModule,         // Phase 4
   documentsModule,      // Phase 5

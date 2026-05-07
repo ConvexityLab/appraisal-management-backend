@@ -20,6 +20,7 @@ import {
   Action
 } from '../types/authorization.types.js';
 import { CosmosDbService } from './cosmos-db.service';
+import { PolicyEvaluatorService } from './policy-evaluator.service.js';
 
 export interface AuthorizationOptions {
   checkGraph?: boolean; // Changed from checkACL
@@ -34,6 +35,7 @@ export class AuthorizationService {
   private dbService: CosmosDbService;
   private decisionCache: Map<string, { decision: PolicyDecision; timestamp: number }>;
   private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private policyEvaluator: PolicyEvaluatorService;
 
   constructor(engine?: IAuthorizationEngine, dbService?: CosmosDbService) {
     this.logger = new Logger();
@@ -41,6 +43,7 @@ export class AuthorizationService {
     this.graphService = new AccessGraphService(); // Changed from ACLService
     this.dbService = dbService || new CosmosDbService();
     this.decisionCache = new Map();
+    this.policyEvaluator = new PolicyEvaluatorService(this.dbService);
   }
 
   /**
@@ -86,10 +89,14 @@ export class AuthorizationService {
       user: {
         id: user.id,
         role: user.role,
+        portalDomain: user.portalDomain,
+        boundEntityIds: user.boundEntityIds,
+        ...(user.isInternal !== undefined && { isInternal: user.isInternal }),
         email: user.email,
         teamIds: user.accessScope.teamIds || [],
         departmentIds: user.accessScope.departmentIds || [],
         ...(user.accessScope.managedClientIds && { managedClientIds: user.accessScope.managedClientIds }),
+        ...(user.accessScope.statesCovered && { statesCovered: user.accessScope.statesCovered }),
         ...(user.accessScope.canViewAllOrders && { canViewAllOrders: user.accessScope.canViewAllOrders })
       },
       resource: {
@@ -180,13 +187,7 @@ export class AuthorizationService {
     resourceType: ResourceType,
     action: Action = 'read'
   ): Promise<QueryFilter> {
-    return await this.engine.buildQueryFilter(
-      user.id,
-      user.role,
-      user.accessScope,
-      resourceType,
-      action
-    );
+    return await this.policyEvaluator.buildQueryFilter(user.id, user, resourceType, action);
   }
 
   /**
@@ -254,6 +255,14 @@ export class AuthorizationService {
       }
 
       this.logger.info('User profile found', { userId, email: user.email });
+
+      if (!user.portalDomain) {
+        throw new Error(
+          `User profile ${userId} is missing required field 'portalDomain'. ` +
+          `Re-seed the user record with portalDomain and boundEntityIds per AUTH_IDENTITY_MODEL_FINAL.md.`
+        );
+      }
+
       return {
         id: user.id,
         email: user.email,
@@ -261,6 +270,9 @@ export class AuthorizationService {
         azureAdObjectId: user.azureAdObjectId,
         tenantId: user.tenantId,
         role: user.role,
+        portalDomain: user.portalDomain,
+        boundEntityIds: user.boundEntityIds ?? [],
+        ...(user.isInternal !== undefined && { isInternal: user.isInternal }),
         accessScope: user.accessScope || {
           teamIds: [],
           departmentIds: []
@@ -273,6 +285,63 @@ export class AuthorizationService {
       this.logger.error('Failed to get user profile', { userId, tenantId, error });
       return null;
     }
+  }
+
+  /**
+   * Auto-provision a minimal UserProfile for a first-time user.
+   * Called by AuthorizationMiddleware when a real (non-test) user authenticates
+   * but has no existing record in the `users` container.
+   *
+   * Assigns role 'user' and portalDomain 'platform' — operators can upgrade
+   * the role via PATCH /api/users/:id/role.
+   */
+  async createUserProfile(
+    userId: string,
+    tenantId: string,
+    email: string,
+    name: string,
+    azureAdObjectId?: string,
+  ): Promise<UserProfile> {
+    const now = new Date();
+    const profile: UserProfile = {
+      id: userId,
+      email,
+      name,
+      azureAdObjectId: azureAdObjectId ?? userId,
+      tenantId,
+      role: 'analyst',
+      portalDomain: 'platform',
+      boundEntityIds: [],
+      isInternal: false,
+      accessScope: { teamIds: [], departmentIds: [] },
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const doc = {
+      ...profile,
+      type: 'user-profile',
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    await this.dbService.getContainer('users').items.create(doc);
+
+    this.logger.info('Auto-provisioned user profile', { userId, tenantId, email });
+
+    // Write a discoverable audit entry so admins can see auto-provisioning events.
+    await this.dbService.upsertDocument('audit-trail', {
+      id: this.generateRequestId(),
+      orderId: 'system',
+      type: 'user-auto-provisioned',
+      userId,
+      tenantId,
+      email,
+      timestamp: now,
+    });
+
+    return profile;
   }
 
   /**
@@ -335,6 +404,7 @@ export class AuthorizationService {
         userId: context.user.id,
         userEmail: context.user.email,
         userRole: context.user.role,
+        userPortalDomain: context.user.portalDomain,
         resourceType: context.resource.type,
         resourceId: context.resource.id,
         action: context.action,

@@ -3,6 +3,7 @@ import archiver from 'archiver';
 import { PassThrough } from 'stream';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+import { AccessControlHelper } from './access-control-helper.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import type {
   BulkIngestionItemStatus,
@@ -108,6 +109,7 @@ export interface BulkIngestionJobSummary {
 export class BulkIngestionService {
   private readonly logger = new Logger('BulkIngestionService');
   private readonly eventPublisher = new ServiceBusEventPublisher();
+  private readonly accessControlHelper = new AccessControlHelper();
   private readonly stageRetryPolicy: Record<string, number> = {
     validation: 0,
     'artifact-resolution': 3,
@@ -123,6 +125,7 @@ export class BulkIngestionService {
     request: BulkIngestionSubmitRequest,
     tenantId: string,
     submittedBy: string,
+    submitterEmail?: string,
   ): Promise<BulkIngestionJob> {
     const now = new Date().toISOString();
     const jobId = `bulk-ingest-${uuidv4()}`;
@@ -167,6 +170,13 @@ export class BulkIngestionService {
       ...(request.sharedStorage !== undefined ? { sharedStorage: request.sharedStorage } : {}),
       submittedBy,
       submittedAt: now,
+      accessControl: this.accessControlHelper.createAccessControl({
+        ownerId: submittedBy,
+        ...(submitterEmail ? { ownerEmail: submitterEmail } : {}),
+        clientId: request.clientId,
+        tenantId,
+        visibilityScope: 'TEAM',
+      }),
       totalItems: items.length,
       successItems: 0,
       failedItems: 0,

@@ -238,6 +238,7 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
     try {
       const tenantId = resolveTenantId(req);
       const submittedBy = req.user?.id ?? 'unknown';
+      const submitterEmail = (req as any).userProfile?.email ?? (req.user as any)?.email;
       const ingestionService = getService(dbService);
 
       const files = (req.files || {}) as NamedMulterFiles;
@@ -360,7 +361,7 @@ export function createBulkIngestionRouter(dbService: CosmosDbService) {
         }
       }
 
-      const job = await ingestionService.submit(baseRequest, tenantId, submittedBy);
+      const job = await ingestionService.submit(baseRequest, tenantId, submittedBy, submitterEmail);
 
       return res.status(202).json({
         job,

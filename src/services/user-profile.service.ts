@@ -6,13 +6,16 @@
 
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { UserProfile, AccessScope } from '../types/authorization.types.js';
+import { UserProfile, AccessScope, Role, PortalDomain } from '../types/authorization.types.js';
 
 export interface CreateUserProfileRequest {
   email: string;
   name: string;
   azureAdObjectId: string;
-  role: string;
+  role: Role;
+  portalDomain: PortalDomain;
+  boundEntityIds: string[];
+  isInternal?: boolean;
   tenantId: string;
   accessScope?: Partial<AccessScope>;
 }
@@ -74,6 +77,9 @@ export class UserProfileService {
         azureAdObjectId: request.azureAdObjectId,
         tenantId: request.tenantId,
         role: request.role,
+        portalDomain: request.portalDomain,
+        boundEntityIds: request.boundEntityIds,
+        ...(request.isInternal !== undefined && { isInternal: request.isInternal }),
         accessScope: existing?.accessScope || { ...defaultAccessScope, ...request.accessScope },
         isActive: existing?.isActive !== false,
         createdAt: existing?.createdAt || new Date(),
@@ -382,6 +388,58 @@ export class UserProfileService {
       return profile;
     } catch (error) {
       this.logger.error('Failed to reactivate user', { userId, tenantId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update a user's role (admin only).
+   * Returns the updated profile, or null if the user was not found.
+   */
+  async updateRole(userId: string, tenantId: string, newRole: Role): Promise<UserProfile | null> {
+    try {
+      const profile = await this.dbService.getDocument<UserProfile>(this.CONTAINER_NAME, userId, tenantId);
+      if (!profile) {
+        this.logger.warn('User profile not found for role update', { userId, tenantId });
+        return null;
+      }
+
+      const updated: UserProfile = { ...profile, role: newRole, updatedAt: new Date() };
+      await this.dbService.upsertDocument(this.CONTAINER_NAME, updated);
+      this.logger.info('User role updated', { userId, tenantId, previousRole: profile.role, newRole });
+      return updated;
+    } catch (error) {
+      this.logger.error('Failed to update user role', { userId, tenantId, newRole, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update a user's access scope (admin or manager acting on own team).
+   * Returns the updated profile, or null if the user was not found.
+   */
+  async patchAccessScope(
+    userId: string,
+    tenantId: string,
+    updates: UpdateAccessScopeRequest,
+  ): Promise<UserProfile | null> {
+    try {
+      const profile = await this.dbService.getDocument<UserProfile>(this.CONTAINER_NAME, userId, tenantId);
+      if (!profile) {
+        this.logger.warn('User profile not found for access-scope update', { userId, tenantId });
+        return null;
+      }
+
+      const updated: UserProfile = {
+        ...profile,
+        accessScope: { ...profile.accessScope, ...updates },
+        updatedAt: new Date(),
+      };
+      await this.dbService.upsertDocument(this.CONTAINER_NAME, updated);
+      this.logger.info('User access scope updated', { userId, tenantId, updates });
+      return updated;
+    } catch (error) {
+      this.logger.error('Failed to update user access scope', { userId, tenantId, updates, error });
       throw error;
     }
   }

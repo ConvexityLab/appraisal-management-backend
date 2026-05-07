@@ -1,5 +1,6 @@
 import type { BulkAnalysisType } from './bulk-portfolio.types.js';
 import type { IntakeSourceIdentity } from './intake-source.types.js';
+import type { AccessControl } from './authorization.types.js';
 
 export type BulkIngestionJobStatus =
   | 'PENDING'
@@ -130,6 +131,7 @@ export interface BulkIngestionJob {
   sharedStorage?: BulkIngestionSharedStorageRef;
   submittedBy: string;
   submittedAt: string;
+  accessControl?: AccessControl;
   completedAt?: string;
   totalItems: number;
   successItems: number;

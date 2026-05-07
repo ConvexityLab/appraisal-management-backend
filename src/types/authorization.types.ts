@@ -1,8 +1,29 @@
 /**
  * Authorization Type Definitions
  * 
- * Core types for attribute-based access control (ABAC)
+ * Core types for attribute-based access control (ABAC).
+ * Identity model: role × portalDomain + attributes (see AUTH_IDENTITY_MODEL_FINAL.md)
  */
+
+/** Capability category — what kind of work a person does. Domain-independent. */
+export type Role = 'admin' | 'manager' | 'supervisor' | 'analyst' | 'appraiser' | 'reviewer';
+
+/**
+ * Trust boundary — which portal controls this user's session and which resource
+ * containers are reachable. Set at provisioning; immutable by the user.
+ */
+export type PortalDomain = 'platform' | 'vendor' | 'client';
+
+/** Semantic operator for PolicyCondition evaluation. */
+export type PolicyOperator =
+  | 'eq'              // docField === staticValue
+  | 'in'              // docField IN user[userField]  (user has an array; doc has scalar)
+  | 'contains'        // user[userField] IN docField  (doc has an array; user has scalar)
+  | 'is_owner'        // doc.accessControl.ownerId === user.id
+  | 'is_assigned'     // user.id IN doc.accessControl.assignedUserIds
+  | 'bound_entity_in' // doc.accessControl.[field] IN user.boundEntityIds (array membership)
+  | 'is_internal'     // user.isInternal === true
+  | 'any';            // unconditional (always true)
 
 export interface AccessScope {
   // Organizational hierarchy
@@ -31,16 +52,19 @@ export interface AccessControl {
   ownerId: string;
   ownerEmail?: string;
   
-  // Assignment
+  // Assignment (appraiser/reviewer userIds working this order)
   assignedUserIds: string[];
+  appraiserId?: string;     // shortcut for the primary assigned appraiser (mirrors assignedUserIds[0])
   
   // Organizational
   teamId?: string;
   departmentId?: string;
   
-  // Business relationships
+  // Business relationships — REQUIRED on VendorOrder; see assertHasAccessControl()
   clientId?: string;
-  vendorId?: string;
+  vendorId?: string;          // REQUIRED on VendorOrder
+  engagementId?: string;
+  clientOrderId?: string;     // REQUIRED on VendorOrder
   
   // Visibility
   visibilityScope: 'PUBLIC' | 'TEAM' | 'PRIVATE' | 'ASSIGNED_ONLY';
@@ -55,8 +79,38 @@ export interface UserProfile {
   name: string;
   azureAdObjectId?: string;
   tenantId: string;
-  role: string;
+
+  // ── Identity axes ─────────────────────────────────────────────────────────
+  /** Capability category. Small stable set — see Role type. */
+  role: Role;
+
+  /**
+   * Trust boundary. Determines which resource containers and policy rules apply.
+   * Set at provisioning; immutable by user.
+   */
+  portalDomain: PortalDomain;
+
+  /**
+   * Organization binding for external non-platform domain users.
+   * Array because a single appraiser may be affiliated with multiple vendor firms.
+   *
+   *   vendor domain, external  → vendorId(s) of the firm(s) this user works for
+   *   client domain            → clientId(s) of the lender(s) this user belongs to
+   *   platform domain          → [] (scope via accessScope.managedClientIds instead)
+   *   vendor domain, internal  → [] (internal staff: scope via isInternal + teamIds)
+   */
+  boundEntityIds: string[];
+
+  /**
+   * For appraiser and reviewer roles: true = internal platform staff.
+   * Internal staff bypass the bid loop and get expanded read access per policy.
+   * false / absent = external fee-panel contractor or hired reviewer firm.
+   */
+  isInternal?: boolean;
+
+  // ── Data scope within the domain ─────────────────────────────────────────
   accessScope: AccessScope;
+
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -142,23 +196,29 @@ export interface AccessPath {
 export interface AuthorizationContext {
   user: {
     id: string;
-    role: string;
+    role: Role;
+    portalDomain: PortalDomain;
+    boundEntityIds: string[];   // [] for platform domain and internal staff
+    isInternal?: boolean;
     email: string;
     teamIds: string[];
     departmentIds: string[];
     managedClientIds?: string[];
+    statesCovered?: string[];
     canViewAllOrders?: boolean;
   };
   resource: {
-    type: string;
+    type: ResourceType;
     id: string;
+    // AccessControl fields denormalized for policy evaluation:
     ownerId?: string;
     teamId?: string;
-    departmentId?: string;
     clientId?: string;
+    vendorId?: string;
     assignedUserIds?: string[];
+    visibilityScope?: string;
   };
-  action: string;
+  action: Action;
   context?: {
     ipAddress?: string;
     timestamp: Date;
@@ -172,10 +232,11 @@ export interface AuthorizationAuditLog {
   tenantId: string;
   userId: string;
   userEmail: string;
-  userRole: string;
-  resourceType: string;
+  userRole: Role;
+  userPortalDomain: PortalDomain;
+  resourceType: ResourceType;
   resourceId: string;
-  action: string;
+  action: Action;
   decision: 'allow' | 'deny';
   reason?: string;
   matchedPolicies?: string[];
@@ -202,13 +263,22 @@ export type ResourceType =
   | 'inspection'
   | 'client'
   | 'negotiation'
-  | 'esignature';
+  | 'esignature'
+  | 'policy';
 
-export type Action = 
-  | 'read' 
-  | 'create' 
-  | 'update' 
-  | 'delete' 
-  | 'execute' 
-  | 'approve' 
-  | 'reject';
+export type Action =
+  | 'read'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'execute'
+  | 'approve'
+  | 'reject'
+  /**
+   * Coarse admin-only action used for resources where every CRUD verb is
+   * gated behind the same admin-level guard (e.g. ABAC policy management,
+   * Entra group → role mappings). 'manage' satisfies authorize() for any
+   * single sub-action; the matching admin policy in default-policy-rules.ts
+   * grants 'manage' on these resource types.
+   */
+  | 'manage';

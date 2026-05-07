@@ -14,6 +14,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { AccessControlHelper } from './access-control-helper.service.js';
 import { TapeEvaluationService } from './tape-evaluation.service.js';
 import { AxiomService } from './axiom.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
@@ -89,6 +90,7 @@ const DEFAULT_TURN_TIME_DAYS: Record<BulkAnalysisType, number> = {
 export class BulkPortfolioService {
   private readonly logger: Logger;
   private readonly eventPublisher: ServiceBusEventPublisher;
+  private readonly accessControlHelper: AccessControlHelper;
   private _tapeEvaluationService: TapeEvaluationService | null = null;
   private _axiomService: AxiomService | null = null;
   private _extractionService: ReviewDocumentExtractionService | null = null;
@@ -100,6 +102,7 @@ export class BulkPortfolioService {
   constructor(private readonly dbService: CosmosDbService) {
     this.logger = new Logger();
     this.eventPublisher = new ServiceBusEventPublisher();
+    this.accessControlHelper = new AccessControlHelper();
 
     // P2-AX-01: force extraction-service configuration validation during startup
     // so missing AXIOM_API_BASE_URL is visible immediately rather than only on
@@ -174,6 +177,7 @@ export class BulkPortfolioService {
     request: BulkSubmitRequest,
     submittedBy: string,
     tenantId: string,
+    submitterEmail?: string,
   ): Promise<BulkPortfolioJob> {
     const jobId = `bulk-job-${uuidv4()}`;
     const now = new Date().toISOString();
@@ -249,10 +253,22 @@ export class BulkPortfolioService {
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + DEFAULT_TURN_TIME_DAYS[item.analysisType]);
 
+      // Stamp accessControl on every bulk-created order so that Casbin
+      // scoped-query filters (ownerId, clientId, teamId) resolve correctly.
+      // This is the fix for gap G1 in AUTH_PRODUCTION_READINESS_PLAN.md.
+      const accessControl = this.accessControlHelper.createAccessControl({
+        ownerId: submittedBy,
+        ...(submitterEmail ? { ownerEmail: submitterEmail } : {}),
+        clientId: request.clientId,
+        tenantId,
+        visibilityScope: 'TEAM',
+      });
+
       const orderPayload = {
         tenantId,
         clientId: request.clientId,
         ...(resolvedEngagementId ? { engagementId: resolvedEngagementId } : {}),
+        accessControl,
         orderNumber: this._generateOrderNumber(item),
         type: 'order' as const,
         orderType: this._inferOrderType(item),
@@ -1441,6 +1457,12 @@ export class BulkPortfolioService {
           preferredMethod: 'email' as any,
         },
         createdBy: submittedBy,
+        accessControl: this.accessControlHelper.createAccessControl({
+          ownerId: submittedBy,
+          clientId: job.clientId,
+          tenantId,
+          visibilityScope: 'TEAM',
+        }),
       };
 
       try {

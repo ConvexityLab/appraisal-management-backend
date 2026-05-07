@@ -8,7 +8,8 @@ import { Request, Response, NextFunction } from 'express';
 import { Logger } from '../utils/logger.js';
 import { AuthorizationService } from '../services/authorization.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
-import { ResourceType, Action, UserProfile, AccessControl } from '../types/authorization.types.js';
+import { EntraGroupSyncService } from '../services/entra-group-sync.service.js';
+import { ResourceType, Action, UserProfile, AccessControl, Role, PortalDomain } from '../types/authorization.types.js';
 
 /**
  * Extended Express Request with authorization context
@@ -32,19 +33,84 @@ export interface AuthorizedRequest extends Request {
 export class AuthorizationMiddleware {
   private logger: Logger;
   private authzService: AuthorizationService;
-  private readonly enforceAuthorization: boolean;
+  /**
+   * Controls how authorization decisions are applied:
+   *   'enforce' — deny requests that fail the policy check (default, required in production)
+   *   'audit'   — evaluate policies and log decisions, but never block traffic
+   *   'off'     — skip evaluation entirely; forbidden in production (startup throws)
+   *
+   * Set via ENFORCE_AUTHORIZATION env var:
+   *   (unset) or 'enforce' or 'true' → 'enforce'
+   *   'audit'                         → 'audit'
+   *   'off' or 'false'                → 'off'
+   */
+  private readonly authorizationMode: 'enforce' | 'audit' | 'off';
+  private readonly entraGroupSync: EntraGroupSyncService;
+  private readonly dbService: CosmosDbService;
+  /**
+   * When true (AUTO_PROVISION_USERS=true), a first-time authenticated user with
+   * no UserProfile in Cosmos is automatically provisioned with DEFAULT_USER_ROLE.
+   * Intended for pre-production environments where real user records don't yet exist.
+   * Never set this in production alongside ENFORCE_AUTHORIZATION=enforce.
+   */
+  private readonly autoProvisionUsers: boolean;
+  private readonly defaultUserRole: Role;
 
   constructor(authzService?: AuthorizationService, dbService?: CosmosDbService) {
     this.logger = new Logger();
-    this.authzService = authzService || new AuthorizationService(undefined, dbService);
-    // Default to ENFORCING authorization (can be disabled with ENFORCE_AUTHORIZATION=false)
-    this.enforceAuthorization = process.env.ENFORCE_AUTHORIZATION !== 'false';
-    
-    if (!this.enforceAuthorization) {
-      this.logger.warn('⚠️  Authorization in AUDIT MODE - decisions logged but not enforced');
-      this.logger.warn('Set ENFORCE_AUTHORIZATION=true (or remove variable) to enable enforcement');
+    const db = dbService || new CosmosDbService();
+    this.dbService = db;
+    this.authzService = authzService || new AuthorizationService(undefined, db);
+    this.entraGroupSync = new EntraGroupSyncService(db);
+
+    // Parse ENFORCE_AUTHORIZATION into the three-way mode enum.
+    const rawMode = process.env.ENFORCE_AUTHORIZATION ?? 'enforce';
+    if (rawMode === 'off' || rawMode === 'false') {
+      this.authorizationMode = 'off';
+    } else if (rawMode === 'audit') {
+      this.authorizationMode = 'audit';
     } else {
-      this.logger.info('✅ Authorization ENFORCEMENT ENABLED - Casbin policies will be enforced');
+      this.authorizationMode = 'enforce';
+    }
+
+    // FATAL: 'off' mode must never reach production.
+    // A misconfigured deployment would expose all protected resources.
+    // Throw at startup so the process fails before accepting any traffic.
+    if (process.env.NODE_ENV === 'production' && this.authorizationMode === 'off') {
+      throw new Error(
+        'FATAL: ENFORCE_AUTHORIZATION=off (or false) is not permitted in production. ' +
+        'Remove the variable or set it to "enforce" before deploying.',
+      );
+    }
+
+    if (this.authorizationMode === 'off') {
+      this.logger.warn('⚠️  Authorization DISABLED (ENFORCE_AUTHORIZATION=off) — all requests pass through');
+      this.logger.warn('Set ENFORCE_AUTHORIZATION=enforce (or remove variable) to enable enforcement');
+    } else if (this.authorizationMode === 'audit') {
+      this.logger.warn('⚠️  Authorization in AUDIT MODE — decisions logged but requests not blocked');
+      this.logger.warn('Set ENFORCE_AUTHORIZATION=enforce (or remove variable) to enable enforcement');
+    } else {
+      this.logger.info('✅ Authorization ENFORCEMENT ENABLED — Casbin policies will be enforced');
+    }
+
+    // ── Auto-provision config ────────────────────────────────────────────
+    this.autoProvisionUsers = process.env.AUTO_PROVISION_USERS === 'true';
+    if (this.autoProvisionUsers) {
+      const rawRole = process.env.DEFAULT_USER_ROLE;
+      const validRoles: Role[] = ['admin', 'manager', 'supervisor', 'analyst', 'appraiser', 'reviewer'];
+      if (!rawRole || !validRoles.includes(rawRole as Role)) {
+        throw new Error(
+          `AUTO_PROVISION_USERS=true requires DEFAULT_USER_ROLE to be set to one of: ${validRoles.join(', ')}. ` +
+          `Got: "${rawRole ?? '(unset)'}"`,
+        );
+      }
+      this.defaultUserRole = rawRole as Role;
+      this.logger.warn(
+        `⚠️  AUTO_PROVISION_USERS=true — first-time users will be auto-provisioned with role="${this.defaultUserRole}"`,
+      );
+    } else {
+      // Satisfies TS definite-assignment; value never used when autoProvisionUsers is false.
+      this.defaultUserRole = 'appraiser';
     }
   }
 
@@ -123,11 +189,49 @@ export class AuthorizationMiddleware {
         const userProfile = await this.authzService.getUserProfile(req.user.id, tenantId);
 
         if (!userProfile) {
-          this.logger.warn('User profile not found', { userId: req.user.id, tenantId });
-          res.status(403).json({
-            error: 'User profile not found',
-            code: 'USER_PROFILE_NOT_FOUND'
+          if (!this.autoProvisionUsers) {
+            // No silent auto-provisioning. A valid JWT for a subject with no
+            // user-profile document is a 403 — onboarding must happen via an
+            // explicit admin/sync flow (Entra group sync, manual provisioning,
+            // or POST /api/users) so we never grant access to a caller we
+            // haven't seen before. Per CLAUDE.md: silent fallbacks are a
+            // major source of bugs.
+            this.logger.warn('User profile not found', { userId: req.user.id, tenantId });
+            res.status(403).json({
+              error: 'User profile not found',
+              code: 'USER_PROFILE_NOT_FOUND',
+            });
+            return;
+          }
+
+          // AUTO_PROVISION_USERS=true: synthesize and persist a minimal profile so the
+          // platform can operate before real Entra user records are onboarded.
+          const autoProfile: UserProfile = {
+            id: req.user.id,
+            email: req.user.email ?? `${req.user.id}@auto-provisioned.local`,
+            name: (req.user as any).name ?? req.user.email ?? req.user.id,
+            azureAdObjectId: req.user.id,
+            tenantId,
+            role: this.defaultUserRole,
+            portalDomain: 'platform',
+            boundEntityIds: [],
+            accessScope: { teamIds: [], departmentIds: [] },
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          this.logger.warn('AUTO-PROVISIONING user profile (AUTO_PROVISION_USERS=true)', {
+            userId: req.user.id,
+            email: req.user.email,
+            tenantId,
+            role: this.defaultUserRole,
           });
+          // Persist synchronously so subsequent requests find the profile.
+          // Error propagates to the outer catch → 500 (not silently swallowed).
+          const usersContainer = this.dbService.getContainer('users');
+          await usersContainer.items.upsert(autoProfile);
+          req.userProfile = autoProfile;
+          next();
           return;
         }
 
@@ -140,6 +244,24 @@ export class AuthorizationMiddleware {
         }
 
         req.userProfile = userProfile;
+
+        // ── Entra group → role sync ─────────────────────────────────────────
+        // If the JWT carries group OIDs, derive the authoritative role from
+        // the Entra group→role mapping table and hot-patch the profile for
+        // this request (DB is also updated if the role actually changed).
+        const jwtGroups: string[] | undefined = (req.user as any).groups;
+        if (Array.isArray(jwtGroups) && jwtGroups.length > 0) {
+          const newRole = await this.entraGroupSync.syncGroupsToRole(
+            req.user.id,
+            tenantId,
+            userProfile.role,
+            jwtGroups,
+          );
+          if (newRole !== null) {
+            req.userProfile = { ...req.userProfile, role: newRole };
+          }
+        }
+
         next();
       } catch (error) {
         this.logger.error('Failed to load user profile', { error, userId: req.user?.id });
@@ -181,11 +303,11 @@ export class AuthorizationMiddleware {
             resourceType,
             action,
             reason: decision.reason,
-            mode: this.enforceAuthorization ? 'ENFORCED' : 'AUDIT_ONLY'
+            mode: this.authorizationMode
           });
 
-          // Audit mode: log but don't block
-          if (!this.enforceAuthorization) {
+          // Audit/off mode: log but don't block
+          if (this.authorizationMode !== 'enforce') {
             this.logger.info('🔍 AUDIT MODE: Would have blocked this request', {
               userId: req.userProfile.id,
               email: req.userProfile.email,
@@ -335,11 +457,11 @@ export class AuthorizationMiddleware {
           resourceType,
           action,
           filter: queryFilter,
-          mode: this.enforceAuthorization ? 'ENFORCED' : 'AUDIT_ONLY'
+          mode: this.authorizationMode
         });
 
-        // In audit mode, log but don't apply filter
-        if (!this.enforceAuthorization) {
+        // In audit/off mode, log but don't apply filter
+        if (this.authorizationMode !== 'enforce') {
           this.logger.info('🔍 AUDIT MODE: Would apply query filter', {
             userId: req.userProfile.id,
             email: req.userProfile.email,

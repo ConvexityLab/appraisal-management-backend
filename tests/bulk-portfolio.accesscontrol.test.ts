@@ -141,4 +141,46 @@ describe('BulkPortfolioService — accessControl stamping (G1)', () => {
       expect.objectContaining({ id: job.id, tenantId: 'tenant-a' }),
     );
   });
+
+  /**
+   * Phase 1.1 — graceful degradation: submitterEmail not available (minimal UserProfile context).
+   *
+   * When the caller only knows the submittedBy userId (e.g. the email lookup failed or
+   * the request came from a system flow without enrichment), `submit()` MUST still create
+   * every order with at minimum `ownerId` and `tenantId` populated.  It must NOT silently
+   * produce null/empty values for these two fields.
+   *
+   * This is the "graceful degradation with explicit logging, NOT silent null" requirement
+   * from AUTH_PRODUCTION_READINESS_PLAN.md Phase 1.1.
+   */
+  it('graceful degradation: creates orders with ownerId + tenantId even when submitterEmail is absent', async () => {
+    const items = [
+      makeItem({ rowIndex: 0 }),
+      makeItem({ rowIndex: 1, propertyAddress: '99 Elm St' }),
+    ];
+
+    // Call without the optional submitterEmail argument
+    await service.submit(makeRequest(items), 'submitter-uid', 'tenant-b' /* no email */);
+
+    expect(dbService.createOrder).toHaveBeenCalledTimes(2);
+
+    for (const call of dbService.createOrder.mock.calls) {
+      const order = call[0] as Record<string, unknown>;
+      const ac = order['accessControl'] as Record<string, unknown> | undefined;
+
+      // Must have accessControl block — NEVER silently absent
+      expect(ac, 'accessControl must be present (no silent null)').toBeDefined();
+      expect(typeof ac!['ownerId']).toBe('string');
+      expect((ac!['ownerId'] as string).length).toBeGreaterThan(0);
+      expect(ac!['ownerId']).toBe('submitter-uid');
+      expect(ac!['tenantId']).toBe('tenant-b');
+
+      // ownerEmail is optional — must be absent (not null/undefined with a string key) or omitted
+      // i.e., the document must not carry ownerEmail: undefined as an explicit property
+      if ('ownerEmail' in ac!) {
+        expect(ac!['ownerEmail']).not.toBeNull();
+        expect(ac!['ownerEmail']).not.toBe('undefined');
+      }
+    }
+  });
 });

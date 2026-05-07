@@ -291,6 +291,30 @@ export const STAFF_IDS = {
   COORDINATOR_1: 'seed-user-coordinator-001',
 } as const;
 
+// ─── UserProfile documents (users container) ─────────────────────────────────
+/** IDs for UserProfile documents in the `users` Cosmos container.
+ *  Mirrors portalDomain × role axes defined in AUTH_IDENTITY_MODEL_FINAL.md. */
+export const USER_IDS = {
+  // Platform domain
+  PLATFORM_ADMIN:         'seed-userprofile-platform-admin-001',
+  PLATFORM_MANAGER_OPS:   'seed-userprofile-platform-manager-001',
+  PLATFORM_QC_ANALYST:    'seed-userprofile-platform-analyst-001',
+  PLATFORM_SUPERVISOR:    'seed-userprofile-platform-supervisor-001',
+
+  // Vendor domain — internal staff (isInternal: true, boundEntityIds: [])
+  VENDOR_SARAH_CHEN:      'seed-userprofile-vendor-internal-appraiser-001',
+  VENDOR_JAMES_OKONKWO:   'seed-userprofile-vendor-internal-reviewer-001',
+  VENDOR_DIANA_MORALES:   'seed-userprofile-vendor-internal-supervisor-001',
+
+  // Vendor domain — external (boundEntityIds: [vendorId])
+  VENDOR_PREMIER_COORD:   'seed-userprofile-vendor-external-manager-001',
+  VENDOR_PREMIER_APR:     'seed-userprofile-vendor-external-appraiser-001',
+
+  // Client domain
+  CLIENT_FH_ADMIN:        'seed-userprofile-client-manager-001',
+  CLIENT_FH_READONLY:     'seed-userprofile-client-analyst-001',
+} as const;
+
 // ─── Internal Staff (vendors container, staffType='internal') ─────────────────
 export const INTERNAL_STAFF_IDS = {
   SARAH_CHEN_TX_APPRAISER: 'seed-staff-internal-appraiser-001',

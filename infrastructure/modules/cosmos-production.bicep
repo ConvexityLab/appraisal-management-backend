@@ -163,6 +163,19 @@ var containers = [
           { path: '/productType', order: 'ascending' }
           { path: '/priority', order: 'ascending' }
         ]
+        // accessControl scoping — supports role-based query filters (ABAC)
+        [
+          { path: '/accessControl/teamId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/clientId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/ownerId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
       ]
     }
   }
@@ -190,6 +203,19 @@ var containers = [
           { path: '/tenantId', order: 'ascending' }
           { path: '/licenseState', order: 'ascending' }
           { path: '/productTypes', order: 'ascending' }
+        ]
+        // accessControl scoping — supports manager/supervisor scope queries
+        [
+          { path: '/accessControl/teamId', order: 'ascending' }
+          { path: '/updatedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/clientId', order: 'ascending' }
+          { path: '/updatedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/ownerId', order: 'ascending' }
+          { path: '/updatedAt', order: 'descending' }
         ]
       ]
     }
@@ -445,6 +471,19 @@ var containers = [
           { path: '/slaBreached', order: 'ascending' }
           { path: '/priorityScore', order: 'descending' }
         ]
+        // accessControl scoping — supports analyst assignment and team-scoped QC queries
+        [
+          { path: '/accessControl/teamId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/clientId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/ownerId', order: 'ascending' }
+          { path: '/createdAt', order: 'descending' }
+        ]
       ]
     }
   }
@@ -488,6 +527,19 @@ var containers = [
           { path: '/severity', order: 'ascending' }
           { path: '/requestedAt', order: 'descending' }
         ]
+        // accessControl scoping — supports team and client-scoped revision queries
+        [
+          { path: '/accessControl/teamId', order: 'ascending' }
+          { path: '/requestedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/clientId', order: 'ascending' }
+          { path: '/requestedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/ownerId', order: 'ascending' }
+          { path: '/requestedAt', order: 'descending' }
+        ]
       ]
     }
   }
@@ -515,6 +567,19 @@ var containers = [
         [
           { path: '/assignedTo', order: 'ascending' }
           { path: '/status', order: 'ascending' }
+        ]
+        // accessControl scoping — supports supervisor and team-scoped escalation queries
+        [
+          { path: '/accessControl/teamId', order: 'ascending' }
+          { path: '/raisedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/clientId', order: 'ascending' }
+          { path: '/raisedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/ownerId', order: 'ascending' }
+          { path: '/raisedAt', order: 'descending' }
         ]
       ]
     }
@@ -770,6 +835,19 @@ var containers = [
         [
           { path: '/clientId', order: 'ascending' }
           { path: '/status', order: 'ascending' }
+        ]
+        // accessControl scoping — supports submitter and team-scoped bulk job queries
+        [
+          { path: '/accessControl/teamId', order: 'ascending' }
+          { path: '/submittedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/clientId', order: 'ascending' }
+          { path: '/submittedAt', order: 'descending' }
+        ]
+        [
+          { path: '/accessControl/ownerId', order: 'ascending' }
+          { path: '/submittedAt', order: 'descending' }
         ]
       ]
     }
@@ -1066,6 +1144,44 @@ var containers = [
           { path: '/tenantId', order: 'ascending' }
           { path: '/engagementId', order: 'ascending' }
           { path: '/createdAt', order: 'descending' }
+        ]
+      ]
+    }
+  }
+  // Authorization Policies — DB-backed ABAC policy rules + audit trail
+  // Partition key: /tenantId (each tenant owns its own policy set)
+  // Documents: PolicyRule (type='authorization-policy') and
+  //            PolicyChangeAuditEntry (type='authorization-policy-audit')
+  {
+    name: 'authorization-policies'
+    partitionKey: '/tenantId'
+    indexingPolicy: {
+      indexingMode: 'consistent'
+      automatic: true
+      includedPaths: [
+        { path: '/*' }
+      ]
+      excludedPaths: [
+        { path: '/"_etag"/?' }
+      ]
+      compositeIndexes: [
+        // Fast lookup for PolicyEvaluatorService: (tenantId, role, resourceType)
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/role', order: 'ascending' }
+          { path: '/resourceType', order: 'ascending' }
+        ]
+        // Policy management list view: ordered by priority descending
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/role', order: 'ascending' }
+          { path: '/priority', order: 'descending' }
+        ]
+        // Audit trail: ordered by timestamp descending per policy
+        [
+          { path: '/tenantId', order: 'ascending' }
+          { path: '/policyId', order: 'ascending' }
+          { path: '/timestamp', order: 'descending' }
         ]
       ]
     }

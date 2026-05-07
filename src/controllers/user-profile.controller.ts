@@ -6,8 +6,9 @@
 
 import { Router, Request, Response } from 'express';
 import { Logger } from '../utils/logger.js';
-import { UserProfileService } from '../services/user-profile.service.js';
+import { UserProfileService, UpdateAccessScopeRequest } from '../services/user-profile.service.js';
 import { AuthorizedRequest } from '../middleware/authorization.middleware.js';
+import type { Role } from '../types/authorization.types.js';
 
 export const createUserProfileRouter = (): Router => {
   const router = Router();
@@ -333,6 +334,82 @@ export const createUserProfileRouter = (): Router => {
         error: 'Failed to reactivate user',
         code: 'INTERNAL_ERROR'
       });
+    }
+  });
+
+  /**
+   * PATCH /api/users/:userId/role
+   * Update a user's role (admin only; enforced by the route guard in api-server.ts).
+   */
+  router.patch('/:userId/role', async (req: AuthorizedRequest, res: Response): Promise<any> => {
+    try {
+      const { userId } = req.params;
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+
+      const { role } = req.body as { role: Role };
+      if (!role) {
+        return res.status(400).json({ error: 'role is required', code: 'MISSING_ROLE' });
+      }
+
+      const tenantId = req.userProfile?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+      }
+
+      const updated = await userProfileService.updateRole(userId, tenantId, role);
+      if (!updated) {
+        return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+      }
+
+      logger.info('User role patched via API', {
+        actorId: req.userProfile?.id,
+        targetUserId: userId,
+        newRole: role,
+        tenantId,
+      });
+
+      return res.json({ success: true, data: updated });
+    } catch (error) {
+      logger.error('Failed to patch user role', { error, userId: req.params.userId });
+      return res.status(500).json({ error: 'Failed to update role', code: 'INTERNAL_ERROR' });
+    }
+  });
+
+  /**
+   * PATCH /api/users/:userId/access-scope
+   * Update a user's access scope (admin or manager acting on own team).
+   */
+  router.patch('/:userId/access-scope', async (req: AuthorizedRequest, res: Response): Promise<any> => {
+    try {
+      const { userId } = req.params;
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required', code: 'INVALID_REQUEST' });
+      }
+
+      const tenantId = req.userProfile?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+      }
+
+      const updates = req.body as UpdateAccessScopeRequest;
+
+      const updated = await userProfileService.patchAccessScope(userId, tenantId, updates);
+      if (!updated) {
+        return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+      }
+
+      logger.info('User access scope patched via API', {
+        actorId: req.userProfile?.id,
+        targetUserId: userId,
+        tenantId,
+      });
+
+      return res.json({ success: true, data: updated });
+    } catch (error) {
+      logger.error('Failed to patch user access scope', { error, userId: req.params.userId });
+      return res.status(500).json({ error: 'Failed to update access scope', code: 'INTERNAL_ERROR' });
     }
   });
 

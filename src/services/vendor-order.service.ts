@@ -32,6 +32,7 @@
 
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
+import { AccessControlHelper } from './access-control-helper.service.js';
 import {
     VENDOR_ORDER_DOC_TYPE,
     type VendorOrder,
@@ -67,6 +68,7 @@ export type CreateVendorOrderInput = Omit<Partial<Order>, 'id' | 'type'> & {
 
 export class VendorOrderService {
     private readonly logger = new Logger('VendorOrderService');
+    private readonly accessControlHelper = new AccessControlHelper();
 
     constructor(private readonly dbService: CosmosDbService) {}
 
@@ -78,7 +80,28 @@ export class VendorOrderService {
      * partial-fan-out error; standalone callers may retry or compensate).
      */
     async createVendorOrder(input: CreateVendorOrderInput): Promise<VendorOrder> {
-        const row = await this.dbService.createOrder(input as Omit<Order, 'id'>);
+        // Stamp accessControl if not already provided by the caller.
+        // Callers that already stamped it (e.g. BulkPortfolioService) pass it
+        // through via the spread so we only generate when genuinely missing.
+        let { accessControl } = input as any;
+        if (!accessControl?.ownerId || !accessControl?.tenantId) {
+            if (!input.createdBy) {
+                throw new Error(
+                    `VendorOrderService.createVendorOrder: cannot stamp accessControl — ` +
+                    `neither input.accessControl nor input.createdBy is present for ` +
+                    `clientOrderId="${input.clientOrderId}". Ensure the calling service ` +
+                    `threads the submitter identity through CreateVendorOrderInput.`,
+                );
+            }
+            accessControl = this.accessControlHelper.createAccessControl({
+                ownerId: input.createdBy,
+                clientId: input.clientId,
+                tenantId: input.tenantId,
+                visibilityScope: 'TEAM',
+            });
+        }
+
+        const row = await this.dbService.createOrder({ ...(input as Omit<Order, 'id'>), accessControl });
         if (!row.success || !row.data) {
             const err = row.error?.message ?? 'unknown error';
             throw new Error(

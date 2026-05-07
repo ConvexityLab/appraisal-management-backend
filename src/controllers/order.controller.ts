@@ -79,8 +79,10 @@ import { ComplianceService } from '../services/ComplianceService.js';
 import { PropertyEnrichmentService } from '../services/property-enrichment.service.js';
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { AddressServiceGeocoder } from '../services/address-service.geocoder.js';
+import { AccessControlHelper } from '../services/access-control-helper.service.js';
 
 const logger = new Logger('OrderController');
+const accessControlHelper = new AccessControlHelper();
 
 /**
  * Normalize the status field on an order read from Cosmos.
@@ -305,6 +307,13 @@ export class OrderController {
           ...requestMetadata,
           sourceIdentity,
         },
+        accessControl: accessControlHelper.createAccessControl({
+          ownerId: req.user!.id,
+          ownerEmail: (req as any).userProfile?.email ?? (req.user as any)?.email,
+          clientId: typeof requestBody.clientId === 'string' ? requestBody.clientId : undefined,
+          tenantId: req.user!.tenantId,
+          visibilityScope: 'TEAM',
+        }),
       };
 
       // Run duplicate check before creating — advisory only, never blocks.

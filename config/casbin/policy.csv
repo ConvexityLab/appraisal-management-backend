@@ -11,6 +11,7 @@ p, admin:.*, .*, delete, allow
 p, admin:.*, .*, execute, allow
 p, admin:.*, .*, approve, allow
 p, admin:.*, .*, reject, allow
+p, admin:.*, .*, manage, allow
 
 # ============================================
 # MANAGER ROLE - Broad Access

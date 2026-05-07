@@ -57,7 +57,7 @@ export const createAuthorizationTestRouter = (): Router => {
    */
   router.post('/check', async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
-      const { resourceType, resourceId, action, accessControl } = req.body;
+      const { resourceType, resourceId, action, accessControl, portalDomain, boundEntityIds } = req.body;
       const user = req.user;
 
       if (!user) {
@@ -70,7 +70,9 @@ export const createAuthorizationTestRouter = (): Router => {
         email: user.email!,
         name: user.name || '',
         ...(user.azureAdObjectId ? { azureAdObjectId: user.azureAdObjectId } : {}),
-        role: user.accessScope?.role || 'user',
+        role: (user.accessScope?.role ?? req.body.role) as UserProfile['role'],
+        portalDomain: portalDomain ?? req.body.portalDomain,
+        boundEntityIds: boundEntityIds ?? req.body.boundEntityIds ?? [],
         tenantId: user.tenantId!,
         accessScope: user.accessScope!,
         isActive: true,
@@ -127,7 +129,9 @@ export const createAuthorizationTestRouter = (): Router => {
         email: user.email!,
         name: user.name || '',
         ...(user.azureAdObjectId ? { azureAdObjectId: user.azureAdObjectId } : {}),
-        role: user.accessScope?.role || 'user',
+        role: (user.accessScope?.role ?? req.body.role) as UserProfile['role'],
+        portalDomain: req.body.portalDomain,
+        boundEntityIds: req.body.boundEntityIds ?? [],
         tenantId: user.tenantId!,
         accessScope: user.accessScope!,
         isActive: true,
