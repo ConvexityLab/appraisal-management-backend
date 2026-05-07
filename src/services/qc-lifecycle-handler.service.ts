@@ -21,6 +21,10 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { QCReviewQueueService } from './qc-review-queue.service.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+} from './order-context-loader.service.js';
 import type {
   OrderStatusChangedEvent,
   QCCompletedEvent,
@@ -33,11 +37,13 @@ export class QCLifecycleHandler {
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly dbService: CosmosDbService;
   private readonly queueService: QCReviewQueueService;
+  private readonly contextLoader: OrderContextLoader;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
     this.queueService = new QCReviewQueueService();
+    this.contextLoader = new OrderContextLoader(this.dbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -92,28 +98,31 @@ export class QCLifecycleHandler {
         return;
       }
 
-      const orderResp = (await this.dbService.getItem('orders', orderId, tenantId)) as any;
-      // `getItem` may return either `{data: T|null}` (ApiResponse shape) or the
-      // raw item — and in error/not-found cases it returns `{data: null}`. Check
-      // both without treating a nullish data as "found".
-      const order = orderResp && 'data' in orderResp ? orderResp.data : orderResp;
-      if (!order) {
+      // Phase 7 of Order-relocation: load joined OrderContext so the QC
+      // queue entry's propertyAddress comes from the parent ClientOrder
+      // when the VendorOrder doesn't carry it.
+      let ctx;
+      try {
+        ctx = await this.contextLoader.loadByVendorOrderId(orderId);
+      } catch {
         this.logger.warn('Q-01: order not found — cannot add to QC queue', { orderId });
         return;
       }
+      const order = ctx.vendorOrder as any;
+      const addr = getPropertyAddress(ctx);
 
       await this.queueService.addToQueue({
         orderId,
         orderNumber: order.orderNumber ?? orderId,
         appraisalId: order.appraisalId ?? orderId,
         propertyAddress:
-          typeof order.propertyAddress === 'string'
-            ? order.propertyAddress
+          typeof addr === 'string'
+            ? addr
             : [
-                order.propertyAddress?.streetAddress,
-                order.propertyAddress?.city,
-                order.propertyAddress?.state,
-                order.propertyAddress?.zipCode,
+                addr?.streetAddress,
+                addr?.city,
+                addr?.state,
+                addr?.zipCode,
               ]
                 .filter(Boolean)
                 .join(', '),

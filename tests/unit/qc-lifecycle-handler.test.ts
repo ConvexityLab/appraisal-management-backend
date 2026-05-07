@@ -44,11 +44,30 @@ function makeDbStub(overrides: Record<string, any> = {}) {
     },
     ...overrides,
   };
+  // Phase 7 of Order-relocation: QCLifecycleHandler now loads orders
+  // through OrderContextLoader, which calls findOrderById on the
+  // CosmosDbService. Provide it on the stub so the handler can resolve
+  // the VendorOrder + (null) ClientOrder pair.
   return {
     getItem: vi.fn(async (container: string, id: string, tenantId: string) => {
       const item = store[`${container}::${tenantId}::${id}`];
       return item ? { data: item } : { data: null };
     }),
+    findOrderById: vi.fn(async (id: string) => {
+      // Cross-partition lookup — search all tenant slots for the id.
+      for (const key of Object.keys(store)) {
+        const item = store[key];
+        if (item?.id === id) return { success: true, data: item };
+      }
+      return { success: false, data: null, error: { message: 'not found' } };
+    }),
+    getContainer: vi.fn(() => ({
+      // Stub Container.item().read() so OrderContextLoader's ClientOrder
+      // lookup returns no resource (legacy row → ClientOrder is null).
+      item: vi.fn(() => ({
+        read: vi.fn(async () => ({ resource: undefined })),
+      })),
+    })),
     queryItems: vi.fn(async (_container: string, _query: string, _params: any[]) => {
       return { data: [] };
     }),

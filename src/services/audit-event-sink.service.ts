@@ -23,6 +23,10 @@ import { recordEventPublishFailure } from '../utils/event-publish-failure-counte
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { WebPubSubService } from './web-pubsub.service.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+} from './order-context-loader.service.js';
 import type { BaseEvent, EventHandler, AppEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -179,6 +183,7 @@ export class AuditEventSinkService {
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly dbService: CosmosDbService;
   private readonly pubsub: WebPubSubService;
+  private readonly contextLoader: OrderContextLoader;
   private isStarted = false;
   /** Set to true after the first Cosmos write failure so we don't spam logs. */
   private firewallBlocked = false;
@@ -186,6 +191,7 @@ export class AuditEventSinkService {
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
     this.pubsub = new WebPubSubService();
+    this.contextLoader = new OrderContextLoader(this.dbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -381,16 +387,19 @@ export class AuditEventSinkService {
       );
     }
 
-    // Order number enrichment
+    // Order number enrichment. Phase 7 of Order-relocation: load joined
+    // OrderContext so propertyAddress resolves from the parent ClientOrder
+    // when the VendorOrder doesn't carry it.
     if (data.orderId && !data.orderNumber) {
       lookups.push(
-        this.dbService.getItem<any>('orders', data.orderId, tenantId)
-          .then(r => {
-            const order = r?.data ?? (r as any);
+        this.contextLoader.loadByVendorOrderId(data.orderId)
+          .then(ctx => {
+            const order = ctx.vendorOrder as { orderNumber?: string; productType?: string };
             if (order?.orderNumber) {
               data.orderNumber = order.orderNumber;
-              data.propertyAddress = order.propertyAddress?.street
-                ? `${order.propertyAddress.street}, ${order.propertyAddress.city ?? ''} ${order.propertyAddress.state ?? ''}`
+              const addr = getPropertyAddress(ctx);
+              data.propertyAddress = addr?.streetAddress
+                ? `${addr.streetAddress}, ${addr.city ?? ''} ${addr.state ?? ''}`
                 : undefined;
               data.productType = order.productType;
             }
