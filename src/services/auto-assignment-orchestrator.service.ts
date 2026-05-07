@@ -810,6 +810,25 @@ export class AutoAssignmentOrchestratorService {
     const expiresAt = new Date(Date.now() + BID_EXPIRY_HOURS * 60 * 60 * 1000);
     const bidId = `bid-${order.id}-${vendor.vendorId}-${Date.now()}`;
 
+    // Phase 7: load joined OrderContext so the bid invitation carries
+    // propertyAddress / dueDate / orderType from the parent ClientOrder
+    // when present. Best-effort; falls back to the bare order shape on
+    // load failure.
+    let bidCtx;
+    try {
+      bidCtx = await this.contextLoader.loadByVendorOrder(order);
+    } catch (err) {
+      this.logger.warn('sendBidToVendor: could not load OrderContext; using bare order', {
+        orderId: order.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    const bidPropertyAddress = bidCtx
+      ? getPropertyAddress(bidCtx) ?? order.propertyDetails?.fullAddress
+      : order.propertyAddress ?? order.propertyDetails?.fullAddress;
+    const bidDueDate = bidCtx ? getDueDate(bidCtx) : order.dueDate;
+    const bidOrderType = bidCtx?.clientOrder?.orderType ?? order.orderType;
+
     // Create the bid invitation document
     const bidInvitation = {
       id: bidId,
@@ -818,9 +837,9 @@ export class AutoAssignmentOrchestratorService {
       vendorId: vendor.vendorId,
       vendorName: vendor.vendorName,
       tenantId,
-      propertyAddress: order.propertyAddress ?? order.propertyDetails?.fullAddress,
-      propertyType: order.productType ?? order.orderType,
-      dueDate: order.dueDate,
+      propertyAddress: bidPropertyAddress,
+      propertyType: order.productType ?? bidOrderType,
+      dueDate: bidDueDate,
       urgency: order.priority,
       status: 'PENDING',
       invitedAt: new Date().toISOString(),
@@ -957,6 +976,24 @@ export class AutoAssignmentOrchestratorService {
     const expiresAt = new Date(Date.now() + BID_EXPIRY_HOURS * 60 * 60 * 1000);
     const broadcastBidIds: string[] = [];
 
+    // Phase 7: load joined OrderContext once for the whole broadcast batch
+    // so all bid invitations carry propertyAddress / dueDate / orderType
+    // from the parent ClientOrder.
+    let broadcastCtx;
+    try {
+      broadcastCtx = await this.contextLoader.loadByVendorOrder(order);
+    } catch (err) {
+      this.logger.warn('sendBroadcastBids: could not load OrderContext; using bare order', {
+        orderId: order.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    const broadcastPropertyAddress = broadcastCtx
+      ? getPropertyAddress(broadcastCtx) ?? order.propertyDetails?.fullAddress
+      : order.propertyAddress ?? order.propertyDetails?.fullAddress;
+    const broadcastDueDate = broadcastCtx ? getDueDate(broadcastCtx) : order.dueDate;
+    const broadcastOrderType = broadcastCtx?.clientOrder?.orderType ?? order.orderType;
+
     // Persist order state and create bid documents for every vendor in the batch
     for (const vendor of vendors) {
       if (vendor.staffType === 'internal') {
@@ -975,9 +1012,9 @@ export class AutoAssignmentOrchestratorService {
         vendorId: vendor.vendorId,
         vendorName: vendor.vendorName,
         tenantId,
-        propertyAddress: order.propertyAddress ?? order.propertyDetails?.fullAddress,
-        propertyType: order.productType ?? order.orderType,
-        dueDate: order.dueDate,
+        propertyAddress: broadcastPropertyAddress,
+        propertyType: order.productType ?? broadcastOrderType,
+        dueDate: broadcastDueDate,
         urgency: order.priority,
         status: 'PENDING',
         invitedAt: new Date().toISOString(),
