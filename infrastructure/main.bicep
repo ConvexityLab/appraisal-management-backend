@@ -492,6 +492,7 @@ module appServices 'modules/app-services.bicep' = {
     keyVaultUrl: keyVault.outputs.keyVaultUri
     azureTenantId: azureTenantId
     azureClientId: azureClientId
+    serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
     sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
     statebridgeClientId: statebridgeClientId
     statebridgeClientName: statebridgeClientName
