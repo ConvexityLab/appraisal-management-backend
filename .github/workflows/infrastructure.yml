@@ -228,8 +228,8 @@ jobs:
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
-        [ -n "$AXIOM_CLIENT_ID" ] && PARAM_ARGS+=("axiomClientId=$AXIOM_CLIENT_ID")
-        [ -n "$AXIOM_SUB_CLIENT_ID" ] && PARAM_ARGS+=("axiomSubClientId=$AXIOM_SUB_CLIENT_ID")
+        # AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID now come from App Configuration
+        # (services.axiom-api.client-id / sub-client-id) — no bicep param plumbing.
         
         az deployment sub validate \
           --name "main-${GITHUB_RUN_ID}" \
@@ -262,8 +262,8 @@ jobs:
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
-        [ -n "$AXIOM_CLIENT_ID" ] && PARAM_ARGS+=("axiomClientId=$AXIOM_CLIENT_ID")
-        [ -n "$AXIOM_SUB_CLIENT_ID" ] && PARAM_ARGS+=("axiomSubClientId=$AXIOM_SUB_CLIENT_ID")
+        # AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID now come from App Configuration
+        # (services.axiom-api.client-id / sub-client-id) — no bicep param plumbing.
         
         deployment_output=$(az deployment sub create \
           --name "main-${GITHUB_RUN_ID}" \

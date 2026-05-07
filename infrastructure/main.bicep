@@ -104,11 +104,9 @@ param statebridgeClientName string = 'Statebridge'
 @description('Tenant ID for all Statebridge Cosmos documents (partition key). Set to your Statebridge tenant GUID.')
 param statebridge_tenantId string
 
-@description('Base URL of the Axiom AI extraction API (e.g. https://axiom.internal.example.com). Used as a fallback — in deployed environments this is resolved from Azure App Configuration.')
-param axiomApiBaseUrl string = ''
-
-@description('Registered ID for the Axiom pdf-schema-extraction pipeline. Defaults to the canonical registered pipeline; override only if Axiom publishes a new pipeline version.')
-param axiomPipelineIdSchemaExtract string = 'complete-document-criteria-evaluation'
+// AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID, AXIOM_PIPELINE_ID_SCHEMA_EXTRACT
+// are non-secret service-discovery values — resolved at runtime from Azure App Configuration
+// via appConfigLoader.ts. They are intentionally NOT bicep params.
 
 @secure()
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
@@ -121,12 +119,6 @@ param ivueitApiKey string = ''
 @secure()
 @description('iVueit shared secret. Stored in Key Vault as "ivueit-secret" and forwarded to the Container App as the IVUEIT_SECRET env var.')
 param ivueitSecret string = ''
-
-@description('Platform client ID for Axiom API namespace scoping (AXIOM_CLIENT_ID). Written to Container App env var.')
-param axiomClientId string = ''
-
-@description('Platform sub-client ID for Axiom API namespace scoping (AXIOM_SUB_CLIENT_ID). Written to Container App env var.')
-param axiomSubClientId string = ''
 
 @description('Object ID of the service principal for the backend app registration. Required by the entra-extension-attributes module. Leave empty to skip the Entra extension deployment.')
 param azureServicePrincipalObjectId string = ''
@@ -513,11 +505,7 @@ module appServices 'modules/app-services.bicep' = {
     statebridgeClientId: statebridgeClientId
     statebridgeClientName: statebridgeClientName
     statebridge_tenantId: statebridge_tenantId
-    axiomApiBaseUrl: axiomApiBaseUrl
-    axiomPipelineIdSchemaExtract: axiomPipelineIdSchemaExtract
     axiomWebhookSecret: axiomWebhookSecret
-    axiomClientId: axiomClientId
-    axiomSubClientId: axiomSubClientId
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     azureOpenAiApiKey: azureOpenAiApiKey
     azureOpenAiEndpoint: azureOpenAiEndpoint

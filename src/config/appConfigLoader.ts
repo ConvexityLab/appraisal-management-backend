@@ -10,6 +10,9 @@ import { DefaultAzureCredential } from '@azure/identity';
  */
 const KEY_TO_ENV: Record<string, string> = {
   'services.axiom-api.base-url': 'AXIOM_API_BASE_URL',
+  'services.axiom-api.client-id': 'AXIOM_CLIENT_ID',
+  'services.axiom-api.sub-client-id': 'AXIOM_SUB_CLIENT_ID',
+  'services.axiom-api.pipeline-id-schema-extract': 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT',
   'services.axiom-auth.required': 'AXIOM_AUTH_REQUIRED',
   'services.axiom-auth.audience': 'AXIOM_AUTH_AUDIENCE',
   'services.inspection.provider': 'INSPECTION_PROVIDER',

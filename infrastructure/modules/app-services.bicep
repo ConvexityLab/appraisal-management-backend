@@ -37,18 +37,12 @@ param statebridgeClientName string = 'Statebridge'
 param statebridge_tenantId string = ''
 
 // Axiom AI platform integration
-// URL is populated at runtime from Azure App Configuration (key: services.axiom-api.base-url).
-// This param is a deploy-time fallback for environments not yet using App Config.
-param axiomApiBaseUrl string = ''
-@description('Registered ID for the Axiom pdf-schema-extraction pipeline. Defaults to the canonical registered pipeline; override only if Axiom publishes a new pipeline version.')
-param axiomPipelineIdSchemaExtract string = 'complete-document-criteria-evaluation'
+// AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID, AXIOM_PIPELINE_ID_SCHEMA_EXTRACT
+// are non-secret service-discovery values — loaded at runtime from Azure App Configuration
+// (see appConfigLoader.ts KEY_TO_ENV). They are intentionally NOT bicep params.
 @secure()
 @description('Shared secret used to verify HMAC-SHA256 signatures on inbound Axiom webhooks. Must match the secret configured in Axiom outbound webhook settings. Store in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
-@description('Platform client ID for Axiom pipeline namespace scoping — written to AXIOM_CLIENT_ID env var.')
-param axiomClientId string = ''
-@description('Platform sub-client ID for Axiom pipeline namespace scoping — written to AXIOM_SUB_CLIENT_ID env var.')
-param axiomSubClientId string = ''
 @description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
 param appConfigEndpoint string = ''
 
@@ -268,10 +262,6 @@ var containerApps = [
         value: environment == 'dev' ? 'true' : 'false'
       }
       {
-        name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
-        value: axiomPipelineIdSchemaExtract
-      }
-      {
         // Storage account name that owns the bulk-upload container + bulk-upload-events queue.
         // Used by BulkUploadEventListenerJob for both queue polling and SHARED_STORAGE ingestion payloads.
         name: 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME'
@@ -284,13 +274,8 @@ var containerApps = [
         name: 'BULK_INGESTION_ENABLE_CRITERIA_STAGE'
         value: 'true'
       }
-      {
-        // Deploy-time Axiom API base URL. When set, loadAppConfig() at startup sees the env
-        // var is already populated and skips the App Config lookup for this key.
-        // Empty string falls through to the App Config lookup path.
-        name: 'AXIOM_API_BASE_URL'
-        value: axiomApiBaseUrl
-      }
+      // AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID, AXIOM_PIPELINE_ID_SCHEMA_EXTRACT
+      // are populated at startup by loadAppConfig() (services.axiom-api.* in App Config).
       {
         // HMAC secret for verifying inbound Axiom webhook signatures (AXIOM_WEBHOOK_SECRET).
         // Value lives in Key Vault; passed here as a Container App secret so it is never
@@ -309,16 +294,6 @@ var containerApps = [
         // iVueit inspection vendor shared secret. Same lifecycle as IVUEIT_API_KEY.
         name: 'IVUEIT_SECRET'
         secretRef: 'ivueit-secret'
-      }
-      {
-        // Platform client ID for Axiom pipeline namespace scoping.
-        name: 'AXIOM_CLIENT_ID'
-        value: axiomClientId
-      }
-      {
-        // Platform sub-client ID for Axiom pipeline namespace scoping.
-        name: 'AXIOM_SUB_CLIENT_ID'
-        value: axiomSubClientId
       }
       {
         // Azure App Configuration endpoint — enables Managed Identity–based service discovery.
@@ -511,11 +486,8 @@ var containerApps = [
         name: 'STATEBRIDGE_TENANT_ID'
         value: statebridge_tenantId
       }
-      {
-        // Registered UUID for the pdf-schema-extraction pipeline (leave empty to use inline definition)
-        name: 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT'
-        value: axiomPipelineIdSchemaExtract
-      }
+      // AXIOM_PIPELINE_ID_SCHEMA_EXTRACT populated at startup by loadAppConfig()
+      // (services.axiom-api.pipeline-id-schema-extract in App Config).
       {
         // Cosmos Change Feed binding — identity-based connection requires
         // CosmosDbConnection__accountEndpoint pointing at the Cosmos account.
