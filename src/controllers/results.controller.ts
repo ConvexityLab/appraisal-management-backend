@@ -1620,5 +1620,7 @@ export class QCResultsController {
   }
 }
 
-// Create and export router instance
-export const qcResultsRouter = new QCResultsController().getRouter();
+// Router is instantiated by the API server in initializeDatabase() with the
+// shared dbService — never at module-import time. The previous module-top-level
+// export was dead code (api-server.ts always created its own dbService-bound
+// instance) but it would also have triggered the same env-timing issue.
