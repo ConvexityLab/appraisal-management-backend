@@ -28,6 +28,14 @@ import type { CanonicalReportDocument, CanonicalSubject, CanonicalAddress } from
 import { SCHEMA_VERSION } from '../types/canonical-schema.js';
 import { LoanPurpose } from '../types/index.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getPropertyDetails,
+  getLoanInformation,
+  getBorrowerInformation,
+  type OrderContext,
+} from './order-context-loader.service.js';
 
 const logger = new Logger('AppraisalDraftService');
 
@@ -57,10 +65,13 @@ const SECTION_FIELD_MAP: Record<DraftSectionId, ReadonlyArray<keyof CanonicalRep
 
 export class AppraisalDraftService {
   private _container: Container | null = null;
+  private readonly contextLoader: OrderContextLoader;
 
   constructor(
     private readonly dbService: CosmosDbService,
-  ) {}
+  ) {
+    this.contextLoader = new OrderContextLoader(dbService);
+  }
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
   private get container(): Container {
@@ -85,14 +96,18 @@ export class AppraisalDraftService {
     }
 
     // Load the order to auto-populate subject data
-    const order = await this.loadOrder(request.orderId);
+    // Phase 7 of Order-relocation: load joined OrderContext so the draft
+    // seed pulls propertyAddress / propertyDetails / loanInformation /
+    // borrowerInformation from the parent ClientOrder when present.
+    const orderCtx = await this.loadOrderContext(request.orderId);
+    const order = orderCtx.vendorOrder;
 
     const now = new Date().toISOString();
     const draftId = `draft-${uuidv4()}`;
     const reportId = `rpt-${uuidv4()}`;
 
     // Seed the report document from order data
-    const reportDocument = this.seedReportFromOrder(order, draftId, reportId, request.reportType);
+    const reportDocument = this.seedReportFromOrder(orderCtx, draftId, reportId, request.reportType);
 
     const draft: AppraisalDraft = {
       id: draftId,
@@ -327,6 +342,14 @@ export class AppraisalDraftService {
    * Uses a cross-partition query because orders are partitioned by /tenantId
    * and the caller may not know the tenant at this point.
    */
+  /**
+   * Phase 7 (Order-relocation): join VendorOrder with parent ClientOrder so
+   * draft seeding sees lender-side fields from their proper home.
+   */
+  private async loadOrderContext(orderId: string): Promise<OrderContext> {
+    return this.contextLoader.loadByVendorOrderId(orderId);
+  }
+
   private async loadOrder(orderId: string): Promise<VendorOrder> {
     const ordersContainer = this.dbService.getContainer('orders');
     const querySpec: SqlQuerySpec = {
@@ -347,16 +370,17 @@ export class AppraisalDraftService {
    * Pre-populates address, borrower, lender, and loan info.
    */
   private seedReportFromOrder(
-    order: VendorOrder,
+    ctx: OrderContext,
     draftId: string,
     reportId: string,
     reportType: string,
   ): CanonicalReportDocument {
     const now = new Date().toISOString();
+    const order = ctx.vendorOrder;
 
-    // Build address from order's propertyAddress.
+    // Build address from joined OrderContext.
     // Seed orders may use { street, zip } while typed orders use { streetAddress, zipCode }.
-    const pa = (order.propertyAddress ?? {}) as unknown as Record<string, unknown>;
+    const pa = (getPropertyAddress(ctx) ?? {}) as unknown as Record<string, unknown>;
     const address: CanonicalAddress = {
       streetAddress: (pa.streetAddress ?? pa.street ?? '') as string,
       unit: null,
@@ -367,7 +391,7 @@ export class AppraisalDraftService {
     };
 
     // propertyDetails may be undefined on seed orders (flat shape)
-    const pd = (order.propertyDetails ?? {}) as unknown as Record<string, unknown>;
+    const pd = (getPropertyDetails(ctx) ?? {}) as unknown as Record<string, unknown>;
     const subject: CanonicalSubject = {
       address,
       grossLivingArea: (pd.grossLivingArea as number) ?? 0,
@@ -408,7 +432,7 @@ export class AppraisalDraftService {
     };
 
     // Build borrower name — seed orders may have flat `borrowerName`
-    const bi = order.borrowerInformation;
+    const bi = getBorrowerInformation(ctx);
     const borrowerName = bi
       ? `${bi.firstName} ${bi.lastName}`.trim()
       : ((order as unknown as Record<string, unknown>).borrowerName as string) ?? null;
@@ -432,8 +456,8 @@ export class AppraisalDraftService {
         loanNumber: null,
         effectiveDate: null,
         inspectionDate: null,
-        isSubjectPurchase: order.loanInformation?.loanPurpose === LoanPurpose.PURCHASE,
-        contractPrice: order.loanInformation?.contractPrice ?? null,
+        isSubjectPurchase: getLoanInformation(ctx)?.loanPurpose === LoanPurpose.PURCHASE,
+        contractPrice: getLoanInformation(ctx)?.contractPrice ?? null,
         contractDate: null,
         subjectPriorSaleDate1: null,
         subjectPriorSalePrice1: null,
