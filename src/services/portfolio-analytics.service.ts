@@ -3,6 +3,20 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import type { SqlParameter } from '@azure/cosmos';
 import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
 
+// Phase 7 of the Order-relocation refactor — note for Phase 8 readers.
+//
+// Several queries in this file predicate on lender-side fields embedded
+// in the VendorOrder document (`c.propertyAddress.state`,
+// `c.loanInformation.loanAmount`). These keep working today because
+// VendorOrders still carry the deprecated copy of those fields via the
+// placeClientOrder fan-out spread.
+//
+// TODO(Phase 8): once VendorOrder no longer carries propertyAddress /
+//   loanInformation, these queries must move to the `client-orders`
+//   container (where the fields live) and JOIN/aggregate VendorOrders
+//   from there. Not done in this commit because portfolio analytics
+//   is read-only and the data path is unchanged for the current schema.
+
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Query parameter helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 type QParam = SqlParameter;

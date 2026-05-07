@@ -8,6 +8,7 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { OrderStatus, STATUS_CONFIG, getStatusesByCategory, getStatusLabel } from '../types/order-status.js';
+import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,8 +147,16 @@ export class WIPBoardService {
       return this.emptyBoard(tenantId);
     }
 
-    // Build query with optional filters
-    let query = `SELECT c.id, c.orderNumber, c.status, c.propertyAddress, c.clientName, c.vendorName, c.productType, c.dueDate, c.isRush, c.rush, c.updatedAt, c.createdAt FROM c WHERE c.type = 'order' AND c.tenantId = @tid`;
+    // Build query with optional filters. The discriminator predicate
+    // (VENDOR_ORDER_TYPE_PREDICATE) tolerates both 'order' (pre-slice-8f) and
+    // 'vendor-order' (post-flip) rows so the board doesn't go empty after
+    // the flip lands.
+    //
+    // TODO(Phase 8 of Order-relocation): when c.propertyAddress is removed
+    //   from VendorOrder, this SELECT has to join the parent ClientOrder
+    //   for `propertyAddress`. Today the field still lives on VendorOrder
+    //   via the placeClientOrder spread.
+    let query = `SELECT c.id, c.orderNumber, c.status, c.propertyAddress, c.clientName, c.vendorName, c.productType, c.dueDate, c.isRush, c.rush, c.updatedAt, c.createdAt FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.tenantId = @tid`;
     const params: Array<{ name: string; value: any }> = [{ name: '@tid', value: tenantId }];
 
     if (filters?.vendorId) {
