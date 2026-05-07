@@ -462,18 +462,16 @@ jobs:
           echo "Deploying new image: $NEW_IMAGE"
         fi
         
-        # Secrets must be created/updated BEFORE they are referenced in --set-env-vars.
-        # On a fresh container app the secretref would fail if the secret doesn't exist yet.
-        # iVueit secrets are managed by bicep via Container App keyVaultUrl secret refs
-        # (Managed Identity reads from Key Vault at runtime) — not set here.
-        az containerapp secret set \
-          --name ${{ steps.get-app.outputs.api-name }} \
-          --resource-group ${{ steps.get-app.outputs.resource-group }} \
-          --secrets \
-            azure-openai-api-key="${{ secrets.AZURE_OPENAI_API_KEY }}" \
-            google-gemini-api-key="${{ secrets.GOOGLE_GEMINI_API_KEY }}" \
-            sambanova-api-key="${{ secrets.SAMBANOVA_API_KEY }}"
-
+        # AI / iVueit secrets and most service-discovery env vars are now
+        # managed by bicep:
+        #   - Secrets via Container App keyVaultUrl + Managed Identity refs
+        #     (azure-openai-api-key, google-gemini-api-key, sambanova-api-key,
+        #     ivueit-api-key, ivueit-secret) — never pass through pipeline.
+        #   - Service-discovery values (AZURE_OPENAI_*, SAMBANOVA_ENDPOINT,
+        #     CERTO_ENDPOINT, AZURE_COSMOS_*, storage *, AZURE_SERVICE_BUS_*,
+        #     AZURE_WEB_PUBSUB_*, AZURE_FLUID_RELAY_*, AZURE_COMMUNICATION_*,
+        #     etc.) come from App Configuration via appConfigLoader.ts.
+        # Only deploy-time-dynamic / Functions-runtime env vars stay here.
         az containerapp update \
           --name ${{ steps.get-app.outputs.api-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
@@ -485,15 +483,6 @@ jobs:
             AZURE_API_CLIENT_ID=${{ secrets.AZURE_API_CLIENT_ID }} \
             AZURE_AUDIENCE=${{ secrets.AZURE_API_CLIENT_ID }} \
             ALLOWED_ORIGINS="${FINAL_ORIGINS}" \
-            AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
-            AZURE_OPENAI_DEPLOYMENT=${{ secrets.AZURE_OPENAI_DEPLOYMENT }} \
-            AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
-            GOOGLE_GEMINI_API_KEY=secretref:google-gemini-api-key \
-            SAMBANOVA_API_KEY=secretref:sambanova-api-key \
-            IVUEIT_API_KEY=secretref:ivueit-api-key \
-            IVUEIT_SECRET=secretref:ivueit-secret \
-            AZURE_FLUID_RELAY_TENANT_ID=${{ secrets.AZURE_FLUID_RELAY_TENANT_ID }} \
-            AZURE_FLUID_RELAY_ENDPOINT=${{ secrets.AZURE_FLUID_RELAY_ENDPOINT }} \
             AXIOM_PROGRAM_ID=${{ secrets.AXIOM_PROGRAM_ID }} \
             AXIOM_PROGRAM_VERSION=${{ secrets.AXIOM_PROGRAM_VERSION }}
           # NOTE: AZURE_CLIENT_ID is intentionally NOT set here.

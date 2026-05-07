@@ -18,17 +18,19 @@ param applicationInsightsConnectionString string
 param applicationInsightsInstrumentationKey string
 param cosmosEndpoint string
 param cosmosDatabaseName string
-param batchDataEndpoint string = ''
+// batchDataEndpoint is still consumed by the Functions container's env block
+// (Functions runtime has no loadAppConfig hook yet). Keep until Functions is
+// migrated separately.
+param batchDataEndpoint string = 'https://api.batchdata.com/api/v1/'
 param batchDataApiKey string = ''
-param azureCommunicationEndpoint string = ''
-param azureCommunicationEmailDomain string = ''
 param keyVaultUrl string = ''
 param azureTenantId string = ''
 param azureClientId string = ''
-param serviceBusNamespace string = ''
-param webPubSubEndpoint string = ''
-param fluidRelayTenantId string = ''
-param fluidRelayEndpoint string = ''
+// azureCommunicationEndpoint, azureCommunicationEmailDomain, serviceBusNamespace,
+// webPubSubEndpoint, fluidRelayTenantId, fluidRelayEndpoint, azureOpenAiEndpoint,
+// azureOpenAiDeployment, sambanovaEndpoint, certoEndpoint are non-secret
+// service-discovery values — sourced at runtime from App Configuration via
+// appConfigLoader.ts. Intentionally NOT bicep params.
 
 // Statebridge SFTP integration
 param sftpStorageAccountName string = ''
@@ -46,23 +48,12 @@ param axiomWebhookSecret string = ''
 @description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
 param appConfigEndpoint string = ''
 
-// AI provider credentials
-@secure()
-param azureOpenAiApiKey string = ''
-param azureOpenAiEndpoint string = ''
-param azureOpenAiDeployment string = 'gpt-4o-mini'
-@secure()
-param googleGeminiApiKey string = ''
-@secure()
-param sambanovaApiKey string = ''
-param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
-param certoEndpoint string = 'https://certo-apim-dev-eastus2.azure-api.net/tgi/v1'
-
-// iVueit inspection vendor credentials are sourced via Container App
-// keyVaultUrl secret refs (see API container's secrets block below). The
-// Container App's user-assigned identity has Key Vault Secrets Officer role
-// on the env's KV and resolves the values at runtime. Bicep does NOT receive
-// the values as params — Key Vault is the only source of truth.
+// AI provider credentials (azureOpenAiApiKey, googleGeminiApiKey, sambanovaApiKey)
+// and iVueit credentials are sourced via Container App keyVaultUrl secret refs
+// (see API container's secrets block below). The Container App's user-assigned
+// identity has Key Vault Secrets Officer role on the env's KV and resolves the
+// values at runtime. Bicep does NOT receive the values as params — Key Vault
+// is the only source of truth.
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -90,6 +81,11 @@ var baseContainerSecrets = [
     value: applicationInsightsInstrumentationKey
   }
 ]
+// AI provider API keys (azure-openai-api-key, google-gemini-api-key,
+// sambanova-api-key) and iVueit creds (ivueit-api-key, ivueit-secret) are
+// declared further down on the API container resource via Container App
+// keyVaultUrl secret refs — they're sourced from Key Vault at runtime via
+// Managed Identity, not passed through bicep params.
 var containerAppSecrets = useBootstrapImage ? [] : concat(
   baseContainerSecrets,
   empty(batchDataApiKey) ? [] : [{
@@ -99,18 +95,6 @@ var containerAppSecrets = useBootstrapImage ? [] : concat(
   empty(axiomWebhookSecret) ? [] : [{
     name: 'axiom-webhook-secret'
     value: axiomWebhookSecret
-  }],
-  empty(azureOpenAiApiKey) ? [] : [{
-    name: 'azure-openai-api-key'
-    value: azureOpenAiApiKey
-  }],
-  empty(googleGeminiApiKey) ? [] : [{
-    name: 'google-gemini-api-key'
-    value: googleGeminiApiKey
-  }],
-  empty(sambanovaApiKey) ? [] : [{
-    name: 'sambanova-api-key'
-    value: sambanovaApiKey
   }]
 )
 
@@ -182,7 +166,16 @@ var containerApps = [
     minReplicas: environment == 'prod' ? 2 : 1
     maxReplicas: environment == 'prod' ? 10 : 5
     targetPort: appPort
-    env: concat([
+    // Most env values now come from Azure App Configuration at runtime via
+    // appConfigLoader.ts (see KEY_TO_ENV). The entries below are the carve-outs:
+    //   - Container shape (NODE_ENV, PORT, ENVIRONMENT)
+    //   - Bootstrap chicken-and-egg (App Config endpoint, label, KV URL,
+    //     tenant ID — needed before loadAppConfig can run)
+    //   - App Insights connection string (deferred — has embedded key, candidate
+    //     for Key Vault ref later)
+    //   - Secrets via Container App secret refs (axiom-webhook-secret stays as
+    //     inline-value pattern; openai/gemini/sambanova/ivueit use keyVaultUrl)
+    env: [
       {
         name: 'NODE_ENV'
         value: environment == 'prod' ? 'production' : 'development'
@@ -196,28 +189,8 @@ var containerApps = [
         value: environment
       }
       {
-        name: 'AZURE_COSMOS_ENDPOINT'
-        value: cosmosEndpoint
-      }
-      {
-        name: 'AZURE_COSMOS_DATABASE_NAME'
-        value: cosmosDatabaseName
-      }
-      {
-        name: 'AZURE_STORAGE_ACCOUNT_NAME'
-        value: storageAccountName
-      }
-      {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
         value: applicationInsightsConnectionString
-      }
-      {
-        name: 'AZURE_COMMUNICATION_ENDPOINT'
-        value: azureCommunicationEndpoint
-      }
-      {
-        name: 'AZURE_COMMUNICATION_EMAIL_DOMAIN'
-        value: azureCommunicationEmailDomain
       }
       {
         name: 'KEY_VAULT_URL'
@@ -228,122 +201,39 @@ var containerApps = [
         value: azureTenantId
       }
       {
-        // Blob container holding uploaded appraisal documents — used by DocumentService, AxiomController, auto-trigger
-        name: 'STORAGE_CONTAINER_DOCUMENTS'
-        value: 'appraisal-documents'
-      }
-      {
-        // Blob container used as SHARED_STORAGE ingestion source for bulk package drops
-        name: 'STORAGE_CONTAINER_BULK_UPLOAD'
-        value: 'bulk-upload'
-      }
-      {
-        name: 'AZURE_SERVICE_BUS_NAMESPACE'
-        value: serviceBusNamespace
-      }
-      {
-        // Basic-tier Service Bus (dev) does not support topics/subscriptions.
-        // Route topic-based eventing through the in-memory event bus so
-        // listeners like CompCollectionListenerJob work in-process.
-        name: 'USE_MOCK_SERVICE_BUS'
-        value: environment == 'dev' ? 'true' : 'false'
-      }
-      {
-        // Storage account name that owns the bulk-upload container + bulk-upload-events queue.
-        // Used by BulkUploadEventListenerJob for both queue polling and SHARED_STORAGE ingestion payloads.
-        name: 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME'
-        value: storageAccountName
-      }
-      {
-        // Enables the per-item criteria stage after extraction completes.
-        // Keep enabled in deployed environments so bulk-ingestion jobs emit
-        // criteria decisions and the finalizer can advance jobs to completion.
-        name: 'BULK_INGESTION_ENABLE_CRITERIA_STAGE'
-        value: 'true'
-      }
-      // AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID, AXIOM_PIPELINE_ID_SCHEMA_EXTRACT
-      // are populated at startup by loadAppConfig() (services.axiom-api.* in App Config).
-      {
-        // HMAC secret for verifying inbound Axiom webhook signatures (AXIOM_WEBHOOK_SECRET).
-        // Value lives in Key Vault; passed here as a Container App secret so it is never
-        // stored in plain text in the Container App environment variables.
-        name: 'AXIOM_WEBHOOK_SECRET'
-        secretRef: 'axiom-webhook-secret'
-      }
-      {
-        // iVueit inspection vendor API key. Third-party API key — required by
-        // IVueitInspectionProvider constructor. Value lives in Key Vault and is
-        // passed in via the ivueitApiKey secure param.
-        name: 'IVUEIT_API_KEY'
-        secretRef: 'ivueit-api-key'
-      }
-      {
-        // iVueit inspection vendor shared secret. Same lifecycle as IVUEIT_API_KEY.
-        name: 'IVUEIT_SECRET'
-        secretRef: 'ivueit-secret'
-      }
-      {
-        // Azure App Configuration endpoint — enables Managed Identity–based service discovery.
-        // When set, loadAppConfig() at startup resolves AXIOM_API_BASE_URL and other service
-        // URLs from App Config (key: services.axiom-api.base-url, label: environment).
         name: 'AZURE_APP_CONFIGURATION_ENDPOINT'
         value: appConfigEndpoint
       }
       {
-        // Explicitly bind startup label to deployment environment (dev/staging/prod)
-        // so App Config lookups are deterministic.
         name: 'APP_CONFIG_LABEL'
         value: environment
       }
       {
-        name: 'AZURE_WEB_PUBSUB_ENDPOINT'
-        value: webPubSubEndpoint
-      }
-      // Fluid Relay: non-secret identifiers only.
-      // The signing key is in Key Vault under "fluid-relay-key"; CollaborationService fetches it at runtime.
-      {
-        name: 'AZURE_FLUID_RELAY_TENANT_ID'
-        value: fluidRelayTenantId
+        // HMAC secret for inbound Axiom webhook signature verification.
+        name: 'AXIOM_WEBHOOK_SECRET'
+        secretRef: 'axiom-webhook-secret'
       }
       {
-        name: 'AZURE_FLUID_RELAY_ENDPOINT'
-        value: fluidRelayEndpoint
-      }
-      // Non-secret AI config
-      {
-        name: 'AZURE_OPENAI_ENDPOINT'
-        value: azureOpenAiEndpoint
-      }
-      {
-        name: 'AZURE_OPENAI_DEPLOYMENT'
-        value: azureOpenAiDeployment
-      }
-      {
-        name: 'AZURE_OPENAI_MODEL_NAME'
-        value: azureOpenAiDeployment
-      }
-      {
-        name: 'SAMBANOVA_ENDPOINT'
-        value: sambanovaEndpoint
-      }
-      {
-        name: 'CERTO_ENDPOINT'
-        value: certoEndpoint
-      }
-    ], concat(
-      empty(azureOpenAiApiKey) ? [] : [{
         name: 'AZURE_OPENAI_API_KEY'
         secretRef: 'azure-openai-api-key'
-      }],
-      empty(googleGeminiApiKey) ? [] : [{
+      }
+      {
         name: 'GOOGLE_GEMINI_API_KEY'
         secretRef: 'google-gemini-api-key'
-      }],
-      empty(sambanovaApiKey) ? [] : [{
+      }
+      {
         name: 'SAMBANOVA_API_KEY'
         secretRef: 'sambanova-api-key'
-      }]
-    ))
+      }
+      {
+        name: 'IVUEIT_API_KEY'
+        secretRef: 'ivueit-api-key'
+      }
+      {
+        name: 'IVUEIT_SECRET'
+        secretRef: 'ivueit-secret'
+      }
+    ]
     scaleRule: {
       name: 'api-http-scaling'
       http: {
@@ -557,10 +447,26 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
           identity: containerAppIdentities[i].id
         }
       ]
-      // App-shared secrets + per-app Key Vault refs. Only API consumes the
-      // iVueit creds; the Container App's user-assigned identity reads them
-      // from Key Vault at runtime — value never passes through bicep.
+      // App-shared secrets + per-app Key Vault refs. Only the API container
+      // consumes these — the Container App's user-assigned identity reads them
+      // from Key Vault at runtime via Managed Identity, value never passes
+      // through bicep, GH Actions, or pipeline logs.
       secrets: useBootstrapImage ? containerAppSecrets : concat(containerAppSecrets, app.name == 'appraisal-api' ? [
+        {
+          name: 'azure-openai-api-key'
+          keyVaultUrl: '${keyVaultUrl}secrets/azure-openai-api-key'
+          identity: containerAppIdentities[i].id
+        }
+        {
+          name: 'google-gemini-api-key'
+          keyVaultUrl: '${keyVaultUrl}secrets/google-gemini-api-key'
+          identity: containerAppIdentities[i].id
+        }
+        {
+          name: 'sambanova-api-key'
+          keyVaultUrl: '${keyVaultUrl}secrets/sambanova-api-key'
+          identity: containerAppIdentities[i].id
+        }
         {
           name: 'ivueit-api-key'
           keyVaultUrl: '${keyVaultUrl}secrets/ivueit-api-key'

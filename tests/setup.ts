@@ -73,6 +73,48 @@ if (!process.env.IVUEIT_SECRET) {
   process.env.IVUEIT_SECRET = 'test-placeholder-secret';
 }
 
+// Additional placeholders for env vars now sourced from App Config in prod.
+// loadAppConfig() does not run in tests, so any service constructor that
+// validates these would throw. Real values are written to App Config /
+// Key Vault per environment; tests just need non-empty placeholders.
+const appConfigBackedPlaceholders: Record<string, string> = {
+  // AI providers
+  AZURE_OPENAI_ENDPOINT: 'https://test-placeholder.openai.azure.com/',
+  AZURE_OPENAI_DEPLOYMENT: 'gpt-4o-mini',
+  AZURE_OPENAI_MODEL_NAME: 'gpt-4o-mini',
+  AZURE_OPENAI_API_KEY: 'test-placeholder-openai-key',
+  GOOGLE_GEMINI_API_KEY: 'test-placeholder-gemini-key',
+  SAMBANOVA_ENDPOINT: 'https://test-placeholder.sambanova.local/v1',
+  SAMBANOVA_API_KEY: 'test-placeholder-sambanova-key',
+  CERTO_ENDPOINT: 'https://test-placeholder.certo.local/tgi/v1',
+  // Storage
+  BULK_UPLOAD_STORAGE_ACCOUNT_NAME: 'teststorageacct',
+  SFTP_STORAGE_ACCOUNT_NAME: 'testsftpacct',
+  STORAGE_CONTAINER_BULK_UPLOAD: 'bulk-upload',
+  // Cosmos
+  AZURE_COSMOS_DATABASE_NAME: 'test-database',
+  // Service Bus / Web PubSub / Fluid Relay
+  AZURE_SERVICE_BUS_NAMESPACE: 'test-placeholder.servicebus.windows.net',
+  AZURE_WEB_PUBSUB_ENDPOINT: 'https://test-placeholder.webpubsub.azure.com',
+  AZURE_FLUID_RELAY_ENDPOINT: 'https://test-placeholder.fluidrelay.local',
+  AZURE_FLUID_RELAY_TENANT_ID: 'test-fluid-relay-tenant',
+  // Communication / 3rd-party / Statebridge
+  AZURE_COMMUNICATION_ENDPOINT: 'https://test-placeholder.communication.azure.com',
+  AZURE_COMMUNICATION_EMAIL_DOMAIN: 'DoNotReply@test-placeholder.local',
+  BATCHDATA_ENDPOINT: 'https://test-placeholder.batchdata.local/api/v1/',
+  STATEBRIDGE_CLIENT_ID: 'statebridge',
+  STATEBRIDGE_CLIENT_NAME: 'Statebridge',
+  STATEBRIDGE_TENANT_ID: 'test-statebridge-tenant',
+  // Feature flags (consumed as strings from process.env)
+  BULK_INGESTION_ENABLE_CRITERIA_STAGE: 'true',
+  USE_MOCK_SERVICE_BUS: 'true',
+};
+for (const [name, value] of Object.entries(appConfigBackedPlaceholders)) {
+  if (!process.env[name]) {
+    process.env[name] = value;
+  }
+}
+
 import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 
 // Global test configuration

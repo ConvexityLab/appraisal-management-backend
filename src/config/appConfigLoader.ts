@@ -9,14 +9,47 @@ import { DefaultAzureCredential } from '@azure/identity';
  * Add entries here for every service URL this app needs from App Config.
  */
 const KEY_TO_ENV: Record<string, string> = {
+  // Axiom (migrated)
   'services.axiom-api.base-url': 'AXIOM_API_BASE_URL',
   'services.axiom-api.client-id': 'AXIOM_CLIENT_ID',
   'services.axiom-api.sub-client-id': 'AXIOM_SUB_CLIENT_ID',
   'services.axiom-api.pipeline-id-schema-extract': 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT',
   'services.axiom-auth.required': 'AXIOM_AUTH_REQUIRED',
   'services.axiom-auth.audience': 'AXIOM_AUTH_AUDIENCE',
+  // Inspection (migrated)
   'services.inspection.provider': 'INSPECTION_PROVIDER',
   'services.inspection.base-url': 'IVUEIT_BASE_URL',
+  // AI providers
+  'services.openai.endpoint': 'AZURE_OPENAI_ENDPOINT',
+  'services.openai.deployment': 'AZURE_OPENAI_DEPLOYMENT',
+  'services.openai.model-name': 'AZURE_OPENAI_MODEL_NAME',
+  'services.sambanova.endpoint': 'SAMBANOVA_ENDPOINT',
+  'services.certo.endpoint': 'CERTO_ENDPOINT',
+  // Storage
+  'services.storage.account-name': 'AZURE_STORAGE_ACCOUNT_NAME',
+  'services.storage.bulk-upload-account-name': 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME',
+  'services.storage.sftp-account-name': 'SFTP_STORAGE_ACCOUNT_NAME',
+  'services.storage.container.documents': 'STORAGE_CONTAINER_DOCUMENTS',
+  'services.storage.container.bulk-upload': 'STORAGE_CONTAINER_BULK_UPLOAD',
+  // Cosmos
+  'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
+  'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
+  // Service Bus / Web PubSub / Fluid Relay
+  'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
+  'services.web-pubsub.endpoint': 'AZURE_WEB_PUBSUB_ENDPOINT',
+  'services.fluid-relay.endpoint': 'AZURE_FLUID_RELAY_ENDPOINT',
+  'services.fluid-relay.tenant-id': 'AZURE_FLUID_RELAY_TENANT_ID',
+  // Communication / 3rd-party / Statebridge
+  'services.communication.endpoint': 'AZURE_COMMUNICATION_ENDPOINT',
+  'services.communication.email-domain': 'AZURE_COMMUNICATION_EMAIL_DOMAIN',
+  'services.batchdata.endpoint': 'BATCHDATA_ENDPOINT',
+  'services.statebridge.client-id': 'STATEBRIDGE_CLIENT_ID',
+  'services.statebridge.client-name': 'STATEBRIDGE_CLIENT_NAME',
+  'services.statebridge.tenant-id': 'STATEBRIDGE_TENANT_ID',
+  // Feature flags (using regular App Config string keys; App Config's
+  // dedicated feature-flag API is a separate migration if/when needed)
+  'features.bulk-ingestion-criteria-stage': 'BULK_INGESTION_ENABLE_CRITERIA_STAGE',
+  'features.use-mock-service-bus': 'USE_MOCK_SERVICE_BUS',
   // When MOP connectivity is resolved (see APP_CONFIG_SERVICE_DISCOVERY.md §2):
   // 'services.mop-api.internal-url': 'MOP_API_BASE_URL',
 };
