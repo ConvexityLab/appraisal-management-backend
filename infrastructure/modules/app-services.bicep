@@ -26,19 +26,10 @@ param batchDataApiKey string = ''
 param keyVaultUrl string = ''
 param azureTenantId string = ''
 param azureClientId string = ''
-// Service-discovery values consumed by services in the module-top-level cascade
-// (read at module-import time, before app-production.ts can call loadAppConfig).
-// These must stay as bicep params until those services lazy-instantiate.
-param serviceBusNamespace string
-param azureCommunicationEndpoint string = ''
-param azureCommunicationEmailDomain string = ''
-param webPubSubEndpoint string = ''
-param fluidRelayTenantId string = ''
-param fluidRelayEndpoint string = ''
-param azureOpenAiEndpoint string = ''
-param azureOpenAiDeployment string = 'gpt-4o-mini'
-param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
-param certoEndpoint string = 'https://certo-apim-dev-eastus2.azure-api.net/tgi/v1'
+// AZURE_SERVICE_BUS_NAMESPACE, AZURE_COMMUNICATION_*, AZURE_WEB_PUBSUB_ENDPOINT,
+// AZURE_FLUID_RELAY_*, AZURE_OPENAI_ENDPOINT/DEPLOYMENT, SAMBANOVA_ENDPOINT,
+// CERTO_ENDPOINT — all sourced at runtime from App Configuration via
+// appConfigLoader.ts. Intentionally NOT bicep params.
 
 // Statebridge SFTP integration
 param sftpStorageAccountName string = ''
@@ -183,11 +174,13 @@ var containerApps = [
     //     for Key Vault ref later)
     //   - Secrets via Container App secret refs (axiom-webhook-secret stays as
     //     inline-value pattern; openai/gemini/sambanova/ivueit use keyVaultUrl)
-    // Most of these stay in bicep because the QC controllers (criteria, results,
-    // reviews) instantiate at module-top-level — the cascade reads env vars BEFORE
-    // app-production.ts can call loadAppConfig(). Only AXIOM_* and INSPECTION_PROVIDER
-    // / IVUEIT_BASE_URL are App Config-sourced (their consumers are constructed
-    // post-loadAppConfig). See appConfigLoader.ts and project-memory.
+    //
+    // Everything else (Cosmos, Storage, Service Bus, Web PubSub, Fluid Relay,
+    // OpenAI/Sambanova/Certo endpoints, Communication, Batchdata endpoint,
+    // BULK_INGESTION_ENABLE_CRITERIA_STAGE, USE_MOCK_SERVICE_BUS) is sourced
+    // at runtime via appConfigLoader.ts. The QC controllers no longer
+    // instantiate at module-top-level (commit ea0b923) so loadAppConfig
+    // populates process.env before any service constructor fires.
     env: [
       {
         name: 'NODE_ENV'
@@ -200,83 +193,6 @@ var containerApps = [
       {
         name: 'ENVIRONMENT'
         value: environment
-      }
-      {
-        name: 'AZURE_COSMOS_ENDPOINT'
-        value: cosmosEndpoint
-      }
-      {
-        name: 'AZURE_COSMOS_DATABASE_NAME'
-        value: cosmosDatabaseName
-      }
-      {
-        name: 'AZURE_STORAGE_ACCOUNT_NAME'
-        value: storageAccountName
-      }
-      {
-        // BulkUploadEventListenerJob reads this for queue polling and ingestion payloads.
-        name: 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME'
-        value: storageAccountName
-      }
-      {
-        name: 'STORAGE_CONTAINER_DOCUMENTS'
-        value: 'appraisal-documents'
-      }
-      {
-        name: 'STORAGE_CONTAINER_BULK_UPLOAD'
-        value: 'bulk-upload'
-      }
-      {
-        name: 'AZURE_SERVICE_BUS_NAMESPACE'
-        value: serviceBusNamespace
-      }
-      {
-        name: 'USE_MOCK_SERVICE_BUS'
-        value: environment == 'dev' ? 'true' : 'false'
-      }
-      {
-        name: 'AZURE_WEB_PUBSUB_ENDPOINT'
-        value: webPubSubEndpoint
-      }
-      {
-        name: 'AZURE_FLUID_RELAY_TENANT_ID'
-        value: fluidRelayTenantId
-      }
-      {
-        name: 'AZURE_FLUID_RELAY_ENDPOINT'
-        value: fluidRelayEndpoint
-      }
-      {
-        name: 'AZURE_OPENAI_ENDPOINT'
-        value: azureOpenAiEndpoint
-      }
-      {
-        name: 'AZURE_OPENAI_DEPLOYMENT'
-        value: azureOpenAiDeployment
-      }
-      {
-        name: 'AZURE_OPENAI_MODEL_NAME'
-        value: azureOpenAiDeployment
-      }
-      {
-        name: 'SAMBANOVA_ENDPOINT'
-        value: sambanovaEndpoint
-      }
-      {
-        name: 'CERTO_ENDPOINT'
-        value: certoEndpoint
-      }
-      {
-        name: 'AZURE_COMMUNICATION_ENDPOINT'
-        value: azureCommunicationEndpoint
-      }
-      {
-        name: 'AZURE_COMMUNICATION_EMAIL_DOMAIN'
-        value: azureCommunicationEmailDomain
-      }
-      {
-        name: 'BULK_INGESTION_ENABLE_CRITERIA_STAGE'
-        value: 'true'
       }
       {
         name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
