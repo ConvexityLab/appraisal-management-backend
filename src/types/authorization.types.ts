@@ -79,6 +79,8 @@ export interface UserProfile {
   name: string;
   azureAdObjectId?: string;
   tenantId: string;
+  clientId?: string;
+  subClientId?: string;
 
   // ── Identity axes ─────────────────────────────────────────────────────────
   /** Capability category. Small stable set — see Role type. */
@@ -201,6 +203,8 @@ export interface AuthorizationContext {
     boundEntityIds: string[];   // [] for platform domain and internal staff
     isInternal?: boolean;
     email: string;
+    clientId?: string;
+    subClientId?: string;
     teamIds: string[];
     departmentIds: string[];
     managedClientIds?: string[];

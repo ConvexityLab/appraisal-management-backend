@@ -5,7 +5,7 @@
  * Allows swapping implementations without changing business logic
  */
 
-import { AuthorizationContext, PolicyDecision, QueryFilter } from '../types/authorization.types.js';
+import { AuthorizationContext, PolicyDecision } from '../types/authorization.types.js';
 
 export interface IAuthorizationEngine {
   /**
@@ -19,24 +19,6 @@ export interface IAuthorizationEngine {
    * @returns Policy decision with allow/deny and reason
    */
   enforce(context: AuthorizationContext): Promise<PolicyDecision>;
-  
-  /**
-   * Build a query filter for bulk data access
-   * Used to filter Cosmos DB queries based on user permissions
-   * @param userId User making the request
-   * @param role User's role
-   * @param accessScope User's access scope attributes
-   * @param resourceType Type of resource being queried
-   * @param action Action being performed
-   * @returns SQL filter clause and parameters for Cosmos DB
-   */
-  buildQueryFilter(
-    userId: string,
-    role: string,
-    accessScope: any,
-    resourceType: string,
-    action: string
-  ): Promise<QueryFilter>;
   
   /**
    * Add a policy rule dynamically

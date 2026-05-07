@@ -30,6 +30,10 @@ export interface UnifiedAuthRequest extends Request {
     appRoles?: string[];
   };
   userProfile?: any;
+  authorizationFilter?: {
+    sql: string;
+    parameters: Array<{ name: string; value: any }>;
+  };
   tenantId?: string;
 }
 

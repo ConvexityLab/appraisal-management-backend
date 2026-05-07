@@ -1,11 +1,12 @@
 /**
  * ABAC Policy Tests — Casbin Engine
  *
- * Zero mocking. Zero infrastructure. Loads the REAL policy.csv and model.conf
- * from the repository and exercises the Casbin engine directly.
+ * Zero mocking. Zero infrastructure. Loads the REAL platform capability matrix
+ * (`src/data/platform-capability-matrix.ts`) and exercises the Casbin engine
+ * directly.
  *
- * If someone edits policy.csv incorrectly these tests will catch it before
- * anything ships.
+ * If someone edits the capability matrix incorrectly these tests will catch
+ * it before anything ships.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -21,21 +22,24 @@ function ctx(
   action: string,
   resourceAttrs: Record<string, unknown> = {}
 ): AuthorizationContext {
+  const userExtra = (resourceAttrs.userExtra as Record<string, unknown> | undefined) ?? {};
   return {
     user: {
       id: userId,
-      role,
+      role: role as any,
       email: `${role}@test.example`,
+      portalDomain: 'platform',
+      boundEntityIds: [],
       teamIds: [],
       departmentIds: [],
-      ...resourceAttrs.userExtra as any,
+      ...userExtra,
     },
     resource: {
-      type: resourceType,
+      type: resourceType as AuthorizationContext['resource']['type'],
       id: 'new',
       ...resourceAttrs,
     },
-    action,
+    action: action as AuthorizationContext['action'],
     context: {
       timestamp: new Date(),
       requestId: `test-${Math.random().toString(36).slice(2)}`,
@@ -233,7 +237,7 @@ describe('privilege escalation guards', () => {
   const privilegedActions = ['delete', 'approve', 'reject', 'execute'];
   const privilegedResources = ['user', 'analytics'];
 
-  for (const role of ['appraiser', 'qc_analyst']) {
+  for (const role of ['appraiser', 'analyst']) {
     for (const resource of privilegedResources) {
       for (const action of privilegedActions) {
         it(`DENY ${role} → ${resource} → ${action}`, async () => {

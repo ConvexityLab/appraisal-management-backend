@@ -586,10 +586,15 @@ export class OrderController {
       const { status, priority, limit = 20, offset = 0 } = req.query;
 
       const filters: any = {};
+      const authorizationFilter = req.authorizationFilter;
 
       // Scope query to the authenticated user's tenant (partition-key filter).
       if (req.user?.tenantId) {
         filters.tenantId = req.user.tenantId;
+      }
+
+      if (authorizationFilter) {
+        filters.authorizationFilter = authorizationFilter;
       }
 
       // Express may give a string ("PENDING_ASSIGNMENT") or an array
@@ -1341,16 +1346,23 @@ export class OrderController {
       const safeOffset = Math.max(0, Number(offset));
 
       // Count query
-      const countSql = `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`;
-      const countResult = await this.dbService.queryDocuments<number>('orders', countSql, parameters);
+      const countSpec = this.dbService.buildOrdersQuerySpec(
+        `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`,
+        parameters,
+        req.authorizationFilter,
+      );
+      const countResult = await this.dbService.queryDocuments<number>('orders', countSpec.query, countSpec.parameters);
       const total = countResult[0] ?? 0;
 
       // Data query
-      const dataSql =
+      const dataSpec = this.dbService.buildOrdersQuerySpec(
         `SELECT * FROM c WHERE ${whereClause} ` +
         `ORDER BY c.${safeSortBy} ${safeSortOrder} ` +
-        `OFFSET ${safeOffset} LIMIT ${safeLimit}`;
-      const orders = await this.dbService.queryDocuments<Order>('orders', dataSql, parameters);
+        `OFFSET ${safeOffset} LIMIT ${safeLimit}`,
+        parameters,
+        req.authorizationFilter,
+      );
+      const orders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
 
       // Compute simple aggregations from the returned page
       const byStatus: Record<string, number> = {};
@@ -1489,7 +1501,7 @@ export class OrderController {
       const tenantId = req.user!.tenantId;
       const container = this.dbService.getContainer('orders');
 
-      const query = `
+      const querySpec = this.dbService.buildOrdersQuerySpec(`
         SELECT *
         FROM   c
         WHERE  c.tenantId = @tenantId
@@ -1503,10 +1515,10 @@ export class OrderController {
                )
         ORDER BY c.updatedAt DESC
         OFFSET 0 LIMIT 200
-      `;
+      `, [{ name: '@tenantId', value: tenantId }], req.authorizationFilter);
 
       const { resources } = await container.items
-        .query({ query, parameters: [{ name: '@tenantId', value: tenantId }] })
+        .query(querySpec)
         .fetchAll();
 
       const orders = resources.map(normalizeOrder);
@@ -1597,12 +1609,17 @@ export class OrderController {
 
   // ─── GET /dashboard ──────────────────────────────────────────────────────
 
-  private async getOrderDashboard(_req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async getOrderDashboard(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
+      const options = {
+        ...(req.user?.tenantId ? { tenantId: req.user.tenantId } : {}),
+        ...(req.authorizationFilter ? { authorizationFilter: req.authorizationFilter } : {}),
+      };
+
       const [summaryResult, metricsResult, recentOrdersResult] = await Promise.allSettled([
-        this.dbService.getOrderSummary(),
-        this.dbService.getOrderMetrics(),
-        this.dbService.getRecentOrders(10),
+        this.dbService.getOrderSummary(options),
+        this.dbService.getOrderMetrics(options),
+        this.dbService.getRecentOrders(10, options),
       ]);
 
       const summary = summaryResult.status === 'fulfilled' && summaryResult.value.success

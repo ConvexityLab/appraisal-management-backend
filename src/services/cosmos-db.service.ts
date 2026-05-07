@@ -8,6 +8,7 @@ import {
   PropertyAddress,
   ApiResponse
 } from '../types/index.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 import {
   PropertySummary,
   CreatePropertySummaryRequest
@@ -467,18 +468,21 @@ export class CosmosDbService {
         parameters.push({ name: '@createdTo', value: filters.createdTo.toISOString() });
       }
 
+      if (filters.authorizationFilter) {
+        query += ` AND (${filters.authorizationFilter.sql})`;
+        parameters.push(...filters.authorizationFilter.parameters);
+      }
+
       query += ' ORDER BY c.createdAt DESC';
       query += ` OFFSET ${offset} LIMIT ${limit}`;
 
-      const querySpec = { query, parameters };
+      const querySpec = this.buildOrdersQuerySpec(query, parameters, filters.authorizationFilter);
       const { resources } = await this.ordersContainer.items.query<VendorOrder>(querySpec).fetchAll();
 
       // Get total count for pagination
       const countQuery = query.replace('SELECT *', 'SELECT VALUE COUNT(c)').replace(/ OFFSET \d+ LIMIT \d+/, '');
-      const { resources: countResources } = await this.ordersContainer.items.query({ 
-        query: countQuery, 
-        parameters 
-      }).fetchAll();
+      const countSpec = this.buildOrdersQuerySpec(countQuery, parameters, filters.authorizationFilter);
+      const { resources: countResources } = await this.ordersContainer.items.query(countSpec).fetchAll();
       const total = countResources[0] || 0;
 
       return {
@@ -1792,7 +1796,7 @@ export class CosmosDbService {
   /**
    * Get order summary for dashboard
    */
-  async getOrderSummary(): Promise<ApiResponse<any>> {
+  async getOrderSummary(options?: { tenantId?: string; authorizationFilter?: QueryFilter }): Promise<ApiResponse<any>> {
     try {
       if (!this.isConnected) {
         throw new Error('Database not connected. Call initialize() first.');
@@ -1800,16 +1804,22 @@ export class CosmosDbService {
 
       const ordersContainer = this.database!.container('orders');
       
+      const parameters = options?.tenantId
+        ? [{ name: '@tenantId', value: options.tenantId }]
+        : [];
+      const tenantClause = options?.tenantId ? 'c.tenantId = @tenantId' : '1=1';
+
       const queries = [
-        { query: 'SELECT VALUE COUNT(1) FROM c', status: 'total' },
-        { query: 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "pending"', status: 'pending' },
-        { query: 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "in_progress"', status: 'inProgress' },
-        { query: 'SELECT VALUE COUNT(1) FROM c WHERE c.status = "completed"', status: 'completed' }
+        { query: `SELECT VALUE COUNT(1) FROM c WHERE ${tenantClause}`, status: 'total' },
+        { query: `SELECT VALUE COUNT(1) FROM c WHERE ${tenantClause} AND c.status = "pending"`, status: 'pending' },
+        { query: `SELECT VALUE COUNT(1) FROM c WHERE ${tenantClause} AND c.status = "in_progress"`, status: 'inProgress' },
+        { query: `SELECT VALUE COUNT(1) FROM c WHERE ${tenantClause} AND c.status = "completed"`, status: 'completed' }
       ];
 
       const results = await Promise.all(
         queries.map(async ({ query, status }) => {
-          const { resources } = await ordersContainer.items.query(query).fetchAll();
+          const querySpec = this.buildOrdersQuerySpec(query, parameters, options?.authorizationFilter);
+          const { resources } = await ordersContainer.items.query(querySpec).fetchAll();
           return { status, count: resources[0] || 0 };
         })
       );
@@ -1843,34 +1853,44 @@ export class CosmosDbService {
   /**
    * Get order metrics for dashboard
    */
-  async getOrderMetrics(): Promise<ApiResponse<any>> {
+  async getOrderMetrics(options?: { tenantId?: string; authorizationFilter?: QueryFilter }): Promise<ApiResponse<any>> {
     try {
       if (!this.isConnected) {
         throw new Error('Database not connected. Call initialize() first.');
       }
 
       const ordersContainer = this.database!.container('orders');
+      const parameters = options?.tenantId
+        ? [{ name: '@tenantId', value: options.tenantId }]
+        : [];
+      const tenantClause = options?.tenantId ? 'c.tenantId = @tenantId AND ' : '';
       
       // Calculate average completion time for completed orders
-      const completionQuery = {
-        query: `SELECT 
+      const completionQuery = this.buildOrdersQuerySpec(
+        `SELECT 
           AVG(DateTimeDiff('day', c.createdAt, c.completedAt)) as avgCompletionTime,
-          WHERE c.status = 'completed' AND c.completedAt != null`
-      };
+          COUNT(1) as totalCompleted
+          FROM c
+          WHERE ${tenantClause}c.status = 'completed' AND c.completedAt != null`,
+        parameters,
+        options?.authorizationFilter,
+      );
 
       const { resources: completionResults } = await ordersContainer.items.query(completionQuery).fetchAll();
       const completionData = completionResults[0] || { avgCompletionTime: 0, totalCompleted: 0 };
 
       // Calculate on-time delivery rate
-      const onTimeQuery = {
-        query: `SELECT 
+      const onTimeQuery = this.buildOrdersQuerySpec(
+        `SELECT 
           COUNT(1) as onTimeCount
           FROM c 
-          WHERE c.status = 'completed' 
+          WHERE ${tenantClause}c.status = 'completed' 
           AND c.completedAt != null 
           AND c.dueDate != null
-          AND c.completedAt <= c.dueDate`
-      };
+          AND c.completedAt <= c.dueDate`,
+        parameters,
+        options?.authorizationFilter,
+      );
 
       const { resources: onTimeResults } = await ordersContainer.items.query(onTimeQuery).fetchAll();
       const onTimeCount = onTimeResults[0]?.onTimeCount || 0;
@@ -1903,18 +1923,24 @@ export class CosmosDbService {
   /**
    * Get recent orders for dashboard
    */
-  async getRecentOrders(limit: number = 10): Promise<ApiResponse<any[]>> {
+  async getRecentOrders(limit: number = 10, options?: { tenantId?: string; authorizationFilter?: QueryFilter }): Promise<ApiResponse<any[]>> {
     try {
       if (!this.isConnected) {
         throw new Error('Database not connected. Call initialize() first.');
       }
 
       const ordersContainer = this.database!.container('orders');
+      const parameters: Array<{ name: string; value: any }> = [{ name: '@limit', value: limit }];
+      const tenantClause = options?.tenantId ? 'WHERE c.tenantId = @tenantId' : '';
+      if (options?.tenantId) {
+        parameters.push({ name: '@tenantId', value: options.tenantId });
+      }
       
-      const query = {
-        query: `SELECT TOP @limit * FROM c ORDER BY c._ts DESC`,
-        parameters: [{ name: '@limit', value: limit }]
-      };
+      const query = this.buildOrdersQuerySpec(
+        `SELECT TOP @limit * FROM c ${tenantClause} ORDER BY c._ts DESC`,
+        parameters,
+        options?.authorizationFilter,
+      );
 
       const { resources } = await ordersContainer.items.query(query).fetchAll();
       
@@ -1948,6 +1974,45 @@ export class CosmosDbService {
     }
     const { resources } = await this.ordersContainer.items.query(spec).fetchAll();
     return resources;
+  }
+
+  buildOrdersQuerySpec(
+    query: string,
+    parameters: Array<{ name: string; value: any }> = [],
+    authorizationFilter?: QueryFilter,
+  ): SqlQuerySpec {
+    if (!authorizationFilter || authorizationFilter.sql.trim() === '1=1') {
+      return { query, parameters: [...parameters] };
+    }
+
+    const normalizedQuery = query.trim();
+    const orderByMatch = normalizedQuery.match(/\sORDER\s+BY\s/i);
+
+    let composedQuery: string;
+    if (orderByMatch && typeof orderByMatch.index === 'number') {
+      const beforeOrderBy = normalizedQuery.slice(0, orderByMatch.index);
+      const orderByClause = normalizedQuery.slice(orderByMatch.index);
+      composedQuery = this.appendWhereClause(beforeOrderBy, authorizationFilter.sql) + orderByClause;
+    } else {
+      composedQuery = this.appendWhereClause(normalizedQuery, authorizationFilter.sql);
+    }
+
+    return {
+      query: composedQuery,
+      parameters: [...parameters, ...authorizationFilter.parameters],
+    };
+  }
+
+  private appendWhereClause(baseQuery: string, sqlClause: string): string {
+    if (/\sWHERE\s/i.test(baseQuery)) {
+      return `${baseQuery} AND (${sqlClause})`;
+    }
+
+    if (/\sFROM\s/i.test(baseQuery)) {
+      return `${baseQuery} WHERE (${sqlClause})`;
+    }
+
+    return `${baseQuery} WHERE (${sqlClause})`;
   }
 
   // ===============================
@@ -2280,10 +2345,22 @@ export class CosmosDbService {
         data: response.resources as T[]
       };
     } catch (error) {
-      this.logger.error('Failed to query items', { error: error instanceof Error ? error.message : 'Unknown error', containerName, query });
+      const statusCode = (error as any)?.statusCode;
+      const cosmosCode = (error as any)?.code;
+      this.logger.error('Failed to query items', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        statusCode,
+        cosmosCode,
+        containerName,
+        query
+      });
       return {
         success: false,
-        error: this.createApiError('QUERY_ITEMS_FAILED', 'Failed to query items')
+        error: this.createApiError('QUERY_ITEMS_FAILED', 'Failed to query items', {
+          statusCode,
+          cosmosCode,
+          containerName
+        })
       };
     }
   }

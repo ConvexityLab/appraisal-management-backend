@@ -82,6 +82,14 @@ export class AiFlagsService {
 			{ name: '@tenantId', value: tenantId },
 			{ name: '@userDocId', value: `${tenantId}:${userId}` },
 		]);
+		if (!result.success && this.isFlagsStoreUnavailable(result.error)) {
+			this.logger.warn('AI flags container unavailable; returning empty runtime overrides', {
+				tenantId,
+				userId,
+				error: result.error,
+			});
+			return { success: true, data: { tenant: null, user: null } };
+		}
 		if (!result.success) {
 			return result.error
 				? { success: false, error: result.error }
@@ -191,6 +199,30 @@ export class AiFlagsService {
 					};
 		}
 		return { success: true, data: stripMeta(result.data as AiFlagsDoc) };
+	}
+
+	private isFlagsStoreUnavailable(error: ApiResponse<never>['error'] | undefined): boolean {
+		const details = (error as { details?: Record<string, unknown> } | undefined)?.details;
+		const statusCode = Number(details?.['statusCode']);
+		const cosmosCode = details?.['cosmosCode'];
+		const errorCode = error?.code;
+		const message = error?.message ?? '';
+		const containerName = details?.['containerName'];
+
+		const containerMatches =
+			containerName === CONTAINER_NAME ||
+			(typeof message === 'string' && message.toLowerCase().includes(CONTAINER_NAME));
+
+		if (!containerMatches) {
+			return false;
+		}
+
+		return (
+			statusCode === 404 ||
+			cosmosCode === 'NotFound' ||
+			errorCode === 'NOT_FOUND' ||
+			(typeof message === 'string' && /not\s*found|does not exist/i.test(message))
+		);
 	}
 }
 

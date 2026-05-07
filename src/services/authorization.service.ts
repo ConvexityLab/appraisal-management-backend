@@ -39,9 +39,9 @@ export class AuthorizationService {
 
   constructor(engine?: IAuthorizationEngine, dbService?: CosmosDbService) {
     this.logger = new Logger();
+    this.dbService = dbService || new CosmosDbService();
     this.engine = engine || new CasbinAuthorizationEngine();
     this.graphService = new AccessGraphService(); // Changed from ACLService
-    this.dbService = dbService || new CosmosDbService();
     this.decisionCache = new Map();
     this.policyEvaluator = new PolicyEvaluatorService(this.dbService);
   }
@@ -93,6 +93,8 @@ export class AuthorizationService {
         boundEntityIds: user.boundEntityIds,
         ...(user.isInternal !== undefined && { isInternal: user.isInternal }),
         email: user.email,
+        ...(user.clientId && { clientId: user.clientId }),
+        ...(user.subClientId && { subClientId: user.subClientId }),
         teamIds: user.accessScope.teamIds || [],
         departmentIds: user.accessScope.departmentIds || [],
         ...(user.accessScope.managedClientIds && { managedClientIds: user.accessScope.managedClientIds }),
@@ -269,6 +271,8 @@ export class AuthorizationService {
         name: user.name,
         azureAdObjectId: user.azureAdObjectId,
         tenantId: user.tenantId,
+        ...(user.clientId && { clientId: user.clientId }),
+        ...(user.subClientId && { subClientId: user.subClientId }),
         role: user.role,
         portalDomain: user.portalDomain,
         boundEntityIds: user.boundEntityIds ?? [],

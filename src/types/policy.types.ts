@@ -78,6 +78,12 @@ export interface PolicyRule {
   /** Partition key */
   tenantId: string;
 
+  /** Optional client-specific scope. When omitted, the rule is tenant-wide. */
+  clientId?: string;
+
+  /** Optional sub-client-specific scope. When omitted, the rule is not sub-client constrained. */
+  subClientId?: string;
+
   /** Role this rule applies to */
   role: Role;
 
@@ -98,6 +104,9 @@ export interface PolicyRule {
 
   /** Whether a match allows or denies access */
   effect: 'allow' | 'deny';
+
+  /** Soft-delete / toggle without document removal. Omitted means enabled. */
+  enabled?: boolean;
 
   /**
    * Higher numbers take precedence. When a deny and an allow rule match at the

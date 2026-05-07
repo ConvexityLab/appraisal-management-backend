@@ -1,36 +1,10 @@
-/**
- * Parity tests: PolicyEvaluatorService vs CasbinAuthorizationEngine
- *
- * Verifies that `PolicyEvaluatorService.buildQueryFilter()` driven by the
- * default seed rules (`buildDefaultPolicies`) produces functionally equivalent
- * Cosmos SQL fragments to the original `CasbinAuthorizationEngine.buildQueryFilter()`.
- *
- * "Functionally equivalent" means:
- *   - Both return `{sql:'1=1'}` for unconditional allow.
- *   - Both return `{sql:'1=0'}` for deny-all cases.
- *   - Both include the same field paths and parameter values (parameter *names*
- *     may differ between the two implementations).
- *
- * KNOWN INTENTIONAL DIVERGENCES (documented, not tested):
- *   1. `accessScope.canViewAllOrders` / `canViewAllVendors` were pre-role
- *      checks in Casbin; they are not modelled in the seed rules.
- *   2. Casbin checked `role === 'qc_analyst'`; the Role union uses `'analyst'`.
- *   3. Casbin whitespace in multi-line SQL strings is not preserved by the
- *      evaluator — comparison is semantic, not textual.
- */
-
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CasbinAuthorizationEngine } from '../../src/services/casbin-engine.service';
-import { PolicyEvaluatorService } from '../../src/services/policy-evaluator.service';
-import { buildDefaultPolicies, filterRules } from '../../src/data/default-policy-rules';
-import type { UserProfile, QueryFilter, AccessScope } from '../../src/types/authorization.types';
-
-// ─── Fixtures ─────────────────────────────────────────────────────────────────
+import { describe, it, expect, vi } from 'vitest';
+import { PolicyEvaluatorService } from '../../src/services/policy-evaluator.service.js';
+import type { UserProfile, AccessScope } from '../../src/types/authorization.types.js';
+import type { PolicyRule } from '../../src/types/policy.types.js';
 
 const TENANT = 'parity-test-tenant';
-const ALL_RULES = buildDefaultPolicies(TENANT);
 
-/** Build a minimal UserProfile for a given role + accessScope. */
 function makeProfile(
   role: UserProfile['role'],
   accessScope: Partial<AccessScope> = {},
@@ -65,16 +39,61 @@ function makeProfile(
   };
 }
 
-/** Build a mock CosmosDbService that feeds seed rules for any query. */
-function makeMockDb() {
+function rule(overrides: Partial<PolicyRule>): PolicyRule {
+  return {
+    id: `rule-${Math.random().toString(36).slice(2)}`,
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'manager',
+    resourceType: 'order',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 100,
+    description: 'test rule',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: 'test',
+    ...overrides,
+  };
+}
+
+function makeMockDb(rules: PolicyRule[]) {
   const mockContainer = {
     items: {
-      query: (query: { query: string; parameters: Array<{ name: string; value: any }> }) => ({
+      query: (querySpec: { parameters: Array<{ name: string; value: any }> }) => ({
         fetchAll: async () => {
-          const params = query.parameters;
-          const role = params.find(p => p.name === '@role')?.value as string;
-          const resourceType = params.find(p => p.name === '@resourceType')?.value as string;
-          return { resources: filterRules(ALL_RULES, role, resourceType) };
+          const params = new Map(querySpec.parameters.map(p => [p.name, p.value]));
+          const role = params.get('@role');
+          const resourceType = params.get('@resourceType');
+          const portalDomain = params.get('@portalDomain');
+          const clientId = params.get('@clientId');
+          const subClientId = params.get('@subClientId');
+
+          return {
+            resources: rules.filter(candidate => {
+              if (candidate.type !== 'authorization-policy') return false;
+              if (candidate.tenantId !== params.get('@tenantId')) return false;
+              if (candidate.role !== role) return false;
+              if (candidate.resourceType !== resourceType) return false;
+              if (candidate.enabled === false) return false;
+              if (candidate.portalDomain && candidate.portalDomain !== portalDomain) return false;
+
+              if (clientId !== undefined) {
+                if (candidate.clientId && candidate.clientId !== clientId) return false;
+              } else if (candidate.clientId) {
+                return false;
+              }
+
+              if (subClientId !== undefined) {
+                if (candidate.subClientId && candidate.subClientId !== subClientId) return false;
+              } else if (candidate.subClientId) {
+                return false;
+              }
+
+              return true;
+            }),
+          };
         },
       }),
     },
@@ -85,295 +104,107 @@ function makeMockDb() {
   } as any;
 }
 
-// ─── Helper: run both engines, return pair ────────────────────────────────────
+describe('PolicyEvaluatorService', () => {
+  it('returns unconditional allow for an admin-scoped rule', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({ role: 'admin' }),
+    ]));
 
-async function runBoth(
-  profile: UserProfile,
-  resourceType: string,
-  action: string = 'read',
-): Promise<{ casbin: QueryFilter; evaluator: QueryFilter }> {
-  const casbinEngine = new CasbinAuthorizationEngine();
-  const casbinResult = await casbinEngine.buildQueryFilter(
-    profile.id,
-    profile.role,
-    profile.accessScope,
-    resourceType,
-    action,
-  );
-
-  const evaluator = new PolicyEvaluatorService(makeMockDb());
-  const evaluatorResult = await evaluator.buildQueryFilter(
-    profile.id,
-    profile,
-    resourceType,
-    action,
-  );
-
-  return { casbin: casbinResult, evaluator: evaluatorResult };
-}
-
-/** Assert that a QueryFilter contains the given parameter value somewhere. */
-function hasParamValue(filter: QueryFilter, value: any): boolean {
-  return filter.parameters.some(p =>
-    JSON.stringify(p.value) === JSON.stringify(value),
-  );
-}
-
-/** Normalise SQL for comparison (collapse whitespace). */
-function normSql(sql: string): string {
-  return sql.replace(/\s+/g, ' ').trim();
-}
-
-// ─── Tests ────────────────────────────────────────────────────────────────────
-
-describe('PolicyEvaluatorService parity with CasbinAuthorizationEngine', () => {
-  // ── Admin ──────────────────────────────────────────────────────────────────
-
-  describe('admin', () => {
-    it('order → both return 1=1', async () => {
-      const { casbin, evaluator } = await runBoth(makeProfile('admin'), 'order');
-      expect(casbin.sql).toBe('1=1');
-      expect(evaluator.sql).toBe('1=1');
-    });
-
-    it('vendor → both return 1=1', async () => {
-      const { casbin, evaluator } = await runBoth(makeProfile('admin'), 'vendor');
-      expect(casbin.sql).toBe('1=1');
-      expect(evaluator.sql).toBe('1=1');
-    });
-
-    it('qc_review → both return 1=1', async () => {
-      const { casbin, evaluator } = await runBoth(makeProfile('admin'), 'qc_review');
-      expect(casbin.sql).toBe('1=1');
-      expect(evaluator.sql).toBe('1=1');
-    });
-
-    it('policy (new resource) → evaluator returns 1=1 (admin rule seeded)', async () => {
-      const evaluator = new PolicyEvaluatorService(makeMockDb());
-      const result = await evaluator.buildQueryFilter('user-1', makeProfile('admin'), 'policy', 'read');
-      expect(result.sql).toBe('1=1');
-    });
+    const result = await evaluator.buildQueryFilter('user-1', makeProfile('admin'), 'order', 'read');
+    expect(result.sql).toBe('1=1');
+    expect(result.parameters).toEqual([]);
   });
 
-  // ── Manager: order ─────────────────────────────────────────────────────────
+  it('expands scalar membership rules into valid Cosmos equality clauses', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({
+        conditions: [{
+          attribute: 'accessControl.clientId',
+          operator: 'in',
+          userField: 'accessScope.managedClientIds',
+        }],
+      }),
+    ]));
 
-  describe('manager + order', () => {
-    it('empty accessScope → both return 1=0', async () => {
-      const { casbin, evaluator } = await runBoth(makeProfile('manager'), 'order');
-      expect(normSql(casbin.sql)).toBe('1=0');
-      expect(normSql(evaluator.sql)).toBe('1=0');
-    });
+    const result = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', { managedClientIds: ['client-a', 'client-b'] }),
+      'order',
+      'read',
+    );
 
-    it('teamIds only → both filter by teamId', async () => {
-      const profile = makeProfile('manager', { teamIds: ['team-a'] });
-      const { casbin, evaluator } = await runBoth(profile, 'order');
-
-      // Both non-deny
-      expect(casbin.sql).not.toBe('1=0');
-      expect(evaluator.sql).not.toBe('1=0');
-
-      // Both include the team-a value in parameters
-      expect(hasParamValue(casbin, ['team-a'])).toBe(true);
-      expect(hasParamValue(evaluator, ['team-a'])).toBe(true);
-
-      // Both reference the teamId field
-      expect(casbin.sql).toContain('accessControl.teamId');
-      expect(evaluator.sql).toContain('accessControl.teamId');
-    });
-
-    it('managedClientIds only → both filter by clientId', async () => {
-      const profile = makeProfile('manager', { managedClientIds: ['client-1'] });
-      const { casbin, evaluator } = await runBoth(profile, 'order');
-
-      expect(casbin.sql).not.toBe('1=0');
-      expect(evaluator.sql).not.toBe('1=0');
-      expect(hasParamValue(casbin, ['client-1'])).toBe(true);
-      expect(hasParamValue(evaluator, ['client-1'])).toBe(true);
-      expect(casbin.sql).toContain('accessControl.clientId');
-      expect(evaluator.sql).toContain('accessControl.clientId');
-    });
-
-    it('departmentIds only → both filter by departmentId', async () => {
-      const profile = makeProfile('manager', { departmentIds: ['dept-1'] });
-      const { casbin, evaluator } = await runBoth(profile, 'order');
-
-      expect(hasParamValue(casbin, ['dept-1'])).toBe(true);
-      expect(hasParamValue(evaluator, ['dept-1'])).toBe(true);
-      expect(casbin.sql).toContain('accessControl.departmentId');
-      expect(evaluator.sql).toContain('accessControl.departmentId');
-    });
-
-    it('all three arrays filled → both produce OR filter covering all three conditions', async () => {
-      const profile = makeProfile('manager', {
-        teamIds: ['t1'],
-        managedClientIds: ['c1'],
-        departmentIds: ['d1'],
-      });
-      const { casbin, evaluator } = await runBoth(profile, 'order');
-
-      // Both must contain all three field paths
-      for (const sql of [casbin.sql, evaluator.sql]) {
-        expect(sql).toContain('accessControl.teamId');
-        expect(sql).toContain('accessControl.clientId');
-        expect(sql).toContain('accessControl.departmentId');
-      }
-
-      // Both must include all three values
-      for (const filter of [casbin, evaluator]) {
-        expect(hasParamValue(filter, ['t1'])).toBe(true);
-        expect(hasParamValue(filter, ['c1'])).toBe(true);
-        expect(hasParamValue(filter, ['d1'])).toBe(true);
-      }
-    });
+    expect(result.sql).toContain('c.accessControl.clientId =');
+    expect(result.sql).toContain(' OR ');
+    expect(result.sql).not.toContain(' IN (');
+    expect(result.parameters.map(parameter => parameter.value)).toEqual(['client-a', 'client-b']);
   });
 
-  // ── Manager: vendor ─────────────────────────────────────────────────────────
+  it('expands bound-entity rules into valid Cosmos equality clauses', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({
+        role: 'appraiser',
+        conditions: [{
+          attribute: 'accessControl.vendorId',
+          operator: 'bound_entity_in',
+          userField: 'boundEntityIds',
+        }],
+      }),
+    ]));
 
-  describe('manager + vendor', () => {
-    it('empty managedVendorIds → both return 1=0', async () => {
-      const { casbin, evaluator } = await runBoth(makeProfile('manager'), 'vendor');
-      expect(normSql(casbin.sql)).toBe('1=0');
-      expect(normSql(evaluator.sql)).toBe('1=0');
-    });
+    const result = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('appraiser', {}, { boundEntityIds: ['vendor-1', 'vendor-2'] }),
+      'order',
+      'read',
+    );
 
-    it('managedVendorIds filled → both filter vendor id', async () => {
-      const profile = makeProfile('manager', { managedVendorIds: ['vendor-99'] });
-      const { casbin, evaluator } = await runBoth(profile, 'vendor');
-
-      expect(casbin.sql).not.toBe('1=0');
-      expect(evaluator.sql).not.toBe('1=0');
-
-      // Casbin checks `c.id IN (@vendorIds)` so the field path is just `id`
-      expect(casbin.sql).toContain('IN');
-      expect(evaluator.sql).toContain('IN');
-
-      expect(hasParamValue(casbin, ['vendor-99'])).toBe(true);
-      expect(hasParamValue(evaluator, ['vendor-99'])).toBe(true);
-    });
+    expect(result.sql).toContain('c.accessControl.vendorId =');
+    expect(result.sql).toContain(' OR ');
+    expect(result.parameters.map(parameter => parameter.value)).toEqual(['vendor-1', 'vendor-2']);
   });
 
-  // ── Manager: qc_review ─────────────────────────────────────────────────────
+  it('applies client-scoped allow rules only to matching clients', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({ clientId: 'client-a' }),
+    ]));
 
-  describe('manager + qc_review', () => {
-    it('teamIds filled → both filter by teamId', async () => {
-      const profile = makeProfile('manager', { teamIds: ['team-qc'] });
-      const { casbin, evaluator } = await runBoth(profile, 'qc_review');
+    const matchingClient = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', {}, { clientId: 'client-a' }),
+      'order',
+      'read',
+    );
+    const otherClient = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', {}, { clientId: 'client-b' }),
+      'order',
+      'read',
+    );
 
-      expect(casbin.sql).toContain('accessControl.teamId');
-      expect(evaluator.sql).toContain('accessControl.teamId');
-      expect(hasParamValue(casbin, ['team-qc'])).toBe(true);
-      expect(hasParamValue(evaluator, ['team-qc'])).toBe(true);
-    });
+    expect(matchingClient.sql).toBe('1=1');
+    expect(otherClient.sql).toBe('1=0');
   });
 
-  // ── Analyst (was qc_analyst) ────────────────────────────────────────────────
+  it('lets sub-client-specific deny rules override broader client-scoped allow rules', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({ clientId: 'client-a', effect: 'allow', priority: 100 }),
+      rule({ clientId: 'client-a', subClientId: 'sub-1', effect: 'deny', priority: 1000 }),
+    ]));
 
-  describe('analyst', () => {
-    const ASSIGNED_RESOURCES = ['order', 'qc_review', 'revision', 'escalation'] as const;
+    const allowed = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', {}, { clientId: 'client-a', subClientId: 'sub-2' }),
+      'order',
+      'read',
+    );
+    const denied = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', {}, { clientId: 'client-a', subClientId: 'sub-1' }),
+      'order',
+      'read',
+    );
 
-    for (const rt of ASSIGNED_RESOURCES) {
-      it(`${rt} → both filter by ARRAY_CONTAINS(assignedUserIds)`, async () => {
-        const profile = makeProfile('analyst');
-        const { casbin, evaluator } = await runBoth(profile, rt);
-
-        // Casbin checks role === 'qc_analyst' which is NOT in the Role union.
-        // The casbin engine will fall to the default deny because none of its
-        // role checks match 'analyst'.  We assert evaluator gives the correct
-        // result (assigned-user filter) and document the Casbin divergence.
-        expect(evaluator.sql).toContain('ARRAY_CONTAINS');
-        expect(evaluator.sql).toContain('assignedUserIds');
-        expect(hasParamValue(evaluator, profile.id)).toBe(true);
-
-        // Casbin: 'analyst' is not handled → falls to deny-all
-        // This IS the intentional divergence — seed data fixes the type mismatch.
-        expect(normSql(casbin.sql)).toBe('1=0'); // documents the Casbin bug
-      });
-    }
-
-    it('qc_queue → evaluator returns 1=1 (always readable)', async () => {
-      const profile = makeProfile('analyst');
-      const { evaluator } = await runBoth(profile, 'qc_queue');
-      expect(normSql(evaluator.sql)).toBe('1=1');
-    });
-
-    it('qc_queue → Casbin also returns 1=1 (qc_analyst check)', async () => {
-      // Casbin's 'qc_analyst' check obviously won't match 'analyst' either,
-      // but for qc_queue the code falls to default deny. Document it.
-      const casbinEngine = new CasbinAuthorizationEngine();
-      const result = await casbinEngine.buildQueryFilter('u1', 'qc_analyst', { teamIds: [] }, 'qc_queue', 'read');
-      expect(normSql(result.sql)).toBe('1=1');
-    });
-  });
-
-  // ── Appraiser ───────────────────────────────────────────────────────────────
-
-  describe('appraiser', () => {
-    const APPRAISER_RESOURCES = ['order', 'revision', 'qc_review', 'escalation'] as const;
-
-    for (const rt of APPRAISER_RESOURCES) {
-      it(`${rt} → both return ownerId OR assignedUserIds filter`, async () => {
-        const profile = makeProfile('appraiser');
-        const { casbin, evaluator } = await runBoth(profile, rt);
-
-        // Both: non-deny
-        expect(normSql(casbin.sql)).not.toBe('1=0');
-        expect(normSql(evaluator.sql)).not.toBe('1=0');
-
-        // Both: contain the field paths
-        for (const filter of [casbin, evaluator]) {
-          expect(filter.sql).toContain('accessControl.ownerId');
-          expect(filter.sql).toContain('assignedUserIds');
-          expect(hasParamValue(filter, profile.id)).toBe(true);
-        }
-      });
-    }
-
-    it('appraiser + analytics (unsupported resource) → both return 1=0', async () => {
-      const { casbin, evaluator } = await runBoth(makeProfile('appraiser'), 'analytics');
-      expect(normSql(casbin.sql)).toBe('1=0');
-      expect(normSql(evaluator.sql)).toBe('1=0');
-    });
-  });
-
-  // ── Unknown / unsupported roles ─────────────────────────────────────────────
-
-  describe('unrecognised roles', () => {
-    it('supervisor + order (no seed rules) → evaluator returns 1=0', async () => {
-      const evaluator = new PolicyEvaluatorService(makeMockDb());
-      const result = await evaluator.buildQueryFilter(
-        'u1',
-        makeProfile('supervisor' as any),
-        'order',
-        'read',
-      );
-      expect(normSql(result.sql)).toBe('1=0');
-    });
-
-    it('reviewer + order (no seed rules) → evaluator returns 1=0', async () => {
-      const evaluator = new PolicyEvaluatorService(makeMockDb());
-      const result = await evaluator.buildQueryFilter(
-        'u1',
-        makeProfile('reviewer'),
-        'order',
-        'read',
-      );
-      expect(normSql(result.sql)).toBe('1=0');
-    });
-  });
-
-  // ── Action filtering ────────────────────────────────────────────────────────
-
-  describe('action filtering', () => {
-    it('admin + execute action → evaluator returns 1=1 (execute is in admin rule)', async () => {
-      const evaluator = new PolicyEvaluatorService(makeMockDb());
-      const result = await evaluator.buildQueryFilter('u1', makeProfile('admin'), 'order', 'execute');
-      expect(normSql(result.sql)).toBe('1=1');
-    });
-
-    it('analyst + delete action → evaluator returns 1=0 (delete not in analyst rules)', async () => {
-      const evaluator = new PolicyEvaluatorService(makeMockDb());
-      const result = await evaluator.buildQueryFilter('u1', makeProfile('analyst'), 'order', 'delete');
-      expect(normSql(result.sql)).toBe('1=0');
-    });
+    expect(allowed.sql).toBe('1=1');
+    expect(denied.sql).toBe('1=0');
   });
 });

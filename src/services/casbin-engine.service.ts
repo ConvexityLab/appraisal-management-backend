@@ -1,14 +1,27 @@
 /**
  * Casbin Authorization Engine
- * 
- * Implementation of IAuthorizationEngine using Casbin
+ *
+ * Boolean RBAC gate: "can role X perform action Y on resource type Z?"
+ * This is a PLATFORM-LEVEL check — the answer is the same for every tenant.
+ *
+ * Policies are loaded at startup from `PLATFORM_CAPABILITY_MATRIX`, a static
+ * in-memory constant defined in `src/data/platform-capability-matrix.ts`.
+ * Zero I/O.  No CSV.  No database.
+ *
+ * Per-tenant / per-client / per-subClient row-level scoping is handled
+ * entirely by `PolicyEvaluatorService` (Cosmos `authorization-policies`).
+ *
+ * To change what a role can do: edit `platform-capability-matrix.ts`.
+ * To add per-tenant overrides of WHICH rows a role sees: seed new rules
+ *   into `authorization-policies` via `PolicyEvaluatorService`.
  */
 
 import { newEnforcer, Enforcer } from 'casbin';
 import * as path from 'path';
 import { Logger } from '../utils/logger.js';
 import { IAuthorizationEngine } from '../interfaces/authorization-engine.interface';
-import { AuthorizationContext, PolicyDecision, QueryFilter } from '../types/authorization.types.js';
+import { AuthorizationContext, PolicyDecision } from '../types/authorization.types.js';
+import { PLATFORM_CAPABILITY_MATRIX } from '../data/platform-capability-matrix.js';
 
 export class CasbinAuthorizationEngine implements IAuthorizationEngine {
   private enforcer?: Enforcer;
@@ -26,15 +39,27 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
 
     try {
       const modelPath = path.join(process.cwd(), 'config', 'casbin', 'model.conf');
-      const policyPath = path.join(process.cwd(), 'config', 'casbin', 'policy.csv');
 
-      this.logger.info('Initializing Casbin enforcer', { modelPath, policyPath });
+      // No CSV adapter — policies are loaded programmatically from the
+      // in-memory platform capability matrix below.
+      this.enforcer = await newEnforcer(modelPath);
 
-      this.enforcer = await newEnforcer(modelPath, policyPath);
+      for (const rule of PLATFORM_CAPABILITY_MATRIX) {
+        const sub = `${rule.role}:.*`;          // matches any user of that role
+        const obj = `${rule.resourceType}:.*`; // matches any instance of that type
+        const eft = rule.effect;
+        for (const act of rule.actions) {
+          await this.enforcer.addPolicy(sub, obj, act, eft);
+        }
+      }
+
       this.initialized = true;
 
       const policyCount = (await this.enforcer.getPolicy()).length;
-      this.logger.info('Casbin enforcer initialized', { policyCount });
+      this.logger.info('Casbin enforcer initialized from platform capability matrix', {
+        rulesLoaded: PLATFORM_CAPABILITY_MATRIX.length,
+        policyCount,
+      });
     } catch (error) {
       this.logger.error('Failed to initialize Casbin enforcer', { error });
       throw error;
@@ -89,122 +114,6 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
     }
   }
 
-  async buildQueryFilter(
-    userId: string,
-    role: string,
-    accessScope: any,
-    resourceType: string,
-    action: string
-  ): Promise<QueryFilter> {
-    // Admin sees everything
-    if (role === 'admin') {
-      return {
-        sql: '1=1',
-        parameters: []
-      };
-    }
-
-    // Special permission: canViewAllOrders
-    if (resourceType === 'order' && accessScope.canViewAllOrders) {
-      return {
-        sql: '1=1',
-        parameters: []
-      };
-    }
-
-    // Special permission: canViewAllVendors
-    if (resourceType === 'vendor' && accessScope.canViewAllVendors) {
-      return {
-        sql: '1=1',
-        parameters: []
-      };
-    }
-
-    // Manager: team and client-based access
-    if (role === 'manager') {
-      const conditions: string[] = [];
-      const parameters: Array<{ name: string; value: any }> = [];
-
-      if (resourceType === 'order') {
-        // Team-based access
-        if (accessScope.teamIds && accessScope.teamIds.length > 0) {
-          conditions.push('c.accessControl.teamId IN (@teamIds)');
-          parameters.push({ name: '@teamIds', value: accessScope.teamIds });
-        }
-
-        // Client-based access
-        if (accessScope.managedClientIds && accessScope.managedClientIds.length > 0) {
-          conditions.push('c.accessControl.clientId IN (@clientIds)');
-          parameters.push({ name: '@clientIds', value: accessScope.managedClientIds });
-        }
-
-        // Department-based access
-        if (accessScope.departmentIds && accessScope.departmentIds.length > 0) {
-          conditions.push('c.accessControl.departmentId IN (@deptIds)');
-          parameters.push({ name: '@deptIds', value: accessScope.departmentIds });
-        }
-      }
-
-      if (resourceType === 'vendor') {
-        if (accessScope.managedVendorIds && accessScope.managedVendorIds.length > 0) {
-          conditions.push('c.id IN (@vendorIds)');
-          parameters.push({ name: '@vendorIds', value: accessScope.managedVendorIds });
-        }
-      }
-
-      if (resourceType === 'qc_review') {
-        if (accessScope.teamIds && accessScope.teamIds.length > 0) {
-          conditions.push('c.accessControl.teamId IN (@teamIds)');
-          parameters.push({ name: '@teamIds', value: accessScope.teamIds });
-        }
-      }
-
-      if (conditions.length > 0) {
-        return {
-          sql: `(${conditions.join(' OR ')})`,
-          parameters
-        };
-      }
-    }
-
-    // QC Analyst: assigned items only
-    if (role === 'qc_analyst') {
-      if (['order', 'qc_review', 'revision', 'escalation'].includes(resourceType)) {
-        return {
-          sql: 'ARRAY_CONTAINS(c.accessControl.assignedUserIds, @userId)',
-          parameters: [{ name: '@userId', value: userId }]
-        };
-      }
-
-      // Queue is readable by all analysts
-      if (resourceType === 'qc_queue') {
-        return {
-          sql: '1=1',
-          parameters: []
-        };
-      }
-    }
-
-    // Appraiser: owned or assigned items
-    if (role === 'appraiser') {
-      if (['order', 'revision', 'qc_review', 'escalation'].includes(resourceType)) {
-        return {
-          sql: `(
-            c.accessControl.ownerId = @userId OR
-            ARRAY_CONTAINS(c.accessControl.assignedUserIds, @userId)
-          )`,
-          parameters: [{ name: '@userId', value: userId }]
-        };
-      }
-    }
-
-    // Default: deny all (no matches)
-    return {
-      sql: '1=0',
-      parameters: []
-    };
-  }
-
   async addPolicy(policy: string[]): Promise<boolean> {
     if (!this.enforcer) {
       throw new Error('Casbin enforcer not initialized');
@@ -246,7 +155,21 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
       throw new Error('Casbin enforcer not initialized');
     }
 
-    await this.enforcer.loadPolicy();
-    this.logger.info('Policies reloaded');
+    // Platform capability matrix is a code constant — "reloading" means
+    // re-reading the same values.  Useful in tests or if the process needs
+    // to reset to a clean state.
+    await this.enforcer.clearPolicy();
+
+    for (const rule of PLATFORM_CAPABILITY_MATRIX) {
+      const sub = `${rule.role}:.*`;
+      const obj = `${rule.resourceType}:.*`;
+      const eft = rule.effect;
+      for (const act of rule.actions) {
+        await this.enforcer.addPolicy(sub, obj, act, eft);
+      }
+    }
+
+    const policyCount = (await this.enforcer.getPolicy()).length;
+    this.logger.info('Casbin policies reloaded from platform capability matrix', { policyCount });
   }
 }

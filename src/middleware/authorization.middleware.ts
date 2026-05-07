@@ -9,7 +9,7 @@ import { Logger } from '../utils/logger.js';
 import { AuthorizationService } from '../services/authorization.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { EntraGroupSyncService } from '../services/entra-group-sync.service.js';
-import { ResourceType, Action, UserProfile, AccessControl, Role, PortalDomain } from '../types/authorization.types.js';
+import { ResourceType, Action, UserProfile, AccessControl, Role, PortalDomain, QueryFilter } from '../types/authorization.types.js';
 
 /**
  * Extended Express Request with authorization context
@@ -22,8 +22,11 @@ export interface AuthorizedRequest extends Request {
     permissions?: string[];
     azureAdObjectId?: string;
     tenantId?: string;
+    clientId?: string;
+    subClientId?: string;
   };
   userProfile?: UserProfile;
+  authorizationFilter?: QueryFilter;
   tenantId?: string;
 }
 
@@ -166,7 +169,11 @@ export class AuthorizationMiddleware {
             name: (req.user as any).name ?? 'E2E Test User',
             azureAdObjectId: req.user.id,
             tenantId,
+            clientId: (req.user as any).clientId,
+            subClientId: (req.user as any).subClientId,
             role: (req.user as any).role ?? 'admin',
+            portalDomain: 'platform',
+            boundEntityIds: [],
             accessScope: {
               teamIds: [],
               departmentIds: [],
@@ -212,6 +219,8 @@ export class AuthorizationMiddleware {
             name: (req.user as any).name ?? req.user.email ?? req.user.id,
             azureAdObjectId: req.user.id,
             tenantId,
+            ...(req.user.clientId ? { clientId: req.user.clientId } : {}),
+            ...(req.user.subClientId ? { subClientId: req.user.subClientId } : {}),
             role: this.defaultUserRole,
             portalDomain: 'platform',
             boundEntityIds: [],
@@ -243,7 +252,15 @@ export class AuthorizationMiddleware {
           return;
         }
 
-        req.userProfile = userProfile;
+        req.userProfile = {
+          ...userProfile,
+          ...(req.user.clientId ?? userProfile.clientId
+            ? { clientId: req.user.clientId ?? userProfile.clientId }
+            : {}),
+          ...(req.user.subClientId ?? userProfile.subClientId
+            ? { subClientId: req.user.subClientId ?? userProfile.subClientId }
+            : {}),
+        };
 
         // ── Entra group → role sync ─────────────────────────────────────────
         // If the JWT carries group OIDs, derive the authoritative role from
@@ -257,7 +274,7 @@ export class AuthorizationMiddleware {
             userProfile.role,
             jwtGroups,
           );
-          if (newRole !== null) {
+          if (newRole !== null && req.userProfile) {
             req.userProfile = { ...req.userProfile, role: newRole };
           }
         }

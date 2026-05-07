@@ -33,6 +33,7 @@ export * from './feasibility-report.types.js';
 export * from './construction-status-report.types.js';
 import { OrderStatus } from './order-status.js';
 import { FinalReport } from './final-report.types.js';
+import type { QueryFilter } from './authorization.types.js';
 
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIAL';
 
@@ -928,6 +929,7 @@ export interface AgentConfig {
 export interface OrderFilters {
   tenantId?: string;
   clientId?: string;
+  authorizationFilter?: QueryFilter;
   status?: OrderStatus[];
   productType?: ProductType[];
   priority?: Priority[];

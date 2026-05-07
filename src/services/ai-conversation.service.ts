@@ -71,10 +71,21 @@ export class AiConversationService {
 		const query = `SELECT TOP ${MAX_CONVERSATIONS_PER_USER} * FROM c
 			WHERE c.tenantId = @tenantId AND c.userId = @userId
 			ORDER BY c.updatedAt DESC`;
-		return this.cosmos.queryItems<AiConversationDoc>(CONTAINER_NAME, query, [
+		const result = await this.cosmos.queryItems<AiConversationDoc>(CONTAINER_NAME, query, [
 			{ name: '@tenantId', value: tenantId },
 			{ name: '@userId', value: userId },
 		]);
+
+		if (!result.success && this.isConversationStoreUnavailable(result.error)) {
+			this.logger.warn('AI conversation container unavailable; returning empty conversation list', {
+				tenantId,
+				userId,
+				error: result.error,
+			});
+			return { success: true, data: [] };
+		}
+
+		return result;
 	}
 
 	/** Fetch one conversation by id (and verify ownership). */
@@ -306,5 +317,29 @@ export class AiConversationService {
 		}
 		this.logger.info('AI conversation wipe complete', { tenantId, userId, deleted });
 		return { success: true, data: { deleted } };
+	}
+
+	private isConversationStoreUnavailable(error: ApiResponse<never>['error'] | undefined): boolean {
+		const details = (error as { details?: Record<string, unknown> } | undefined)?.details;
+		const statusCode = Number(details?.['statusCode']);
+		const cosmosCode = details?.['cosmosCode'];
+		const errorCode = error?.code;
+		const message = error?.message ?? '';
+		const containerName = details?.['containerName'];
+
+		const containerMatches =
+			containerName === CONTAINER_NAME ||
+			(typeof message === 'string' && message.toLowerCase().includes(CONTAINER_NAME));
+
+		if (!containerMatches) {
+			return false;
+		}
+
+		return (
+			statusCode === 404 ||
+			cosmosCode === 'NotFound' ||
+			errorCode === 'NOT_FOUND' ||
+			(typeof message === 'string' && /not\s*found|does not exist/i.test(message))
+		);
 	}
 }
