@@ -58,16 +58,11 @@ param sambanovaApiKey string = ''
 param sambanovaEndpoint string = 'https://api.sambanova.ai/v1'
 param certoEndpoint string = 'https://certo-apim-dev-eastus2.azure-api.net/tgi/v1'
 
-// iVueit inspection vendor credentials. Third-party API keys → Key Vault refs
-// flow through these params from CI. INSPECTION_PROVIDER and IVUEIT_BASE_URL
-// (non-secret service discovery) are sourced from App Config at startup, not
-// passed as bicep params.
-@secure()
-@description('iVueit API key. Stored as Container App secret "ivueit-api-key" and bound to IVUEIT_API_KEY.')
-param ivueitApiKey string = ''
-@secure()
-@description('iVueit secret. Stored as Container App secret "ivueit-secret" and bound to IVUEIT_SECRET.')
-param ivueitSecret string = ''
+// iVueit inspection vendor credentials are sourced via Container App
+// keyVaultUrl secret refs (see API container's secrets block below). The
+// Container App's user-assigned identity has Key Vault Secrets Officer role
+// on the env's KV and resolves the values at runtime. Bicep does NOT receive
+// the values as params — Key Vault is the only source of truth.
 
 // Variables
 var containerAppEnvironmentName = 'cae-appraisal-${environment}-${suffix}'
@@ -116,14 +111,6 @@ var containerAppSecrets = useBootstrapImage ? [] : concat(
   empty(sambanovaApiKey) ? [] : [{
     name: 'sambanova-api-key'
     value: sambanovaApiKey
-  }],
-  empty(ivueitApiKey) ? [] : [{
-    name: 'ivueit-api-key'
-    value: ivueitApiKey
-  }],
-  empty(ivueitSecret) ? [] : [{
-    name: 'ivueit-secret'
-    value: ivueitSecret
   }]
 )
 
@@ -570,7 +557,21 @@ resource containerAppInstances 'Microsoft.App/containerApps@2023-05-01' = [for (
           identity: containerAppIdentities[i].id
         }
       ]
-      secrets: containerAppSecrets
+      // App-shared secrets + per-app Key Vault refs. Only API consumes the
+      // iVueit creds; the Container App's user-assigned identity reads them
+      // from Key Vault at runtime — value never passes through bicep.
+      secrets: useBootstrapImage ? containerAppSecrets : concat(containerAppSecrets, app.name == 'appraisal-api' ? [
+        {
+          name: 'ivueit-api-key'
+          keyVaultUrl: '${keyVaultUrl}secrets/ivueit-api-key'
+          identity: containerAppIdentities[i].id
+        }
+        {
+          name: 'ivueit-secret'
+          keyVaultUrl: '${keyVaultUrl}secrets/ivueit-secret'
+          identity: containerAppIdentities[i].id
+        }
+      ] : [])
     }
     template: {
       containers: [

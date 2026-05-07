@@ -112,13 +112,10 @@ param statebridge_tenantId string
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
 
-@secure()
-@description('iVueit API key. Stored in Key Vault as "ivueit-api-key" and forwarded to the Container App as the IVUEIT_API_KEY env var.')
-param ivueitApiKey string = ''
-
-@secure()
-@description('iVueit shared secret. Stored in Key Vault as "ivueit-secret" and forwarded to the Container App as the IVUEIT_SECRET env var.')
-param ivueitSecret string = ''
+// IVUEIT_API_KEY and IVUEIT_SECRET are sourced via Container App keyVaultUrl
+// secret refs — Managed Identity reads them from Key Vault at runtime. Bicep
+// does NOT receive them as params. The KV secrets must exist before the
+// Container App starts; populate via `az keyvault secret set` per env.
 
 @description('Object ID of the service principal for the backend app registration. Required by the entra-extension-attributes module. Leave empty to skip the Entra extension deployment.')
 param azureServicePrincipalObjectId string = ''
@@ -512,8 +509,6 @@ module appServices 'modules/app-services.bicep' = {
     googleGeminiApiKey: googleGeminiApiKey
     sambanovaApiKey: sambanovaApiKey
     sambanovaEndpoint: 'https://api.sambanova.ai/v1'
-    ivueitApiKey: ivueitApiKey
-    ivueitSecret: ivueitSecret
     appImageTag: appImageTag
     functionsImageTag: functionsImageTag
   }
