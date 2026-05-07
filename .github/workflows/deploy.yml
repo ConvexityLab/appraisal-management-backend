@@ -464,24 +464,15 @@ jobs:
         
         # Secrets must be created/updated BEFORE they are referenced in --set-env-vars.
         # On a fresh container app the secretref would fail if the secret doesn't exist yet.
-        # iVueit secrets read from Key Vault directly (managed identity, no GH secret round-trip)
-        # so the values never pass through workflow logs.
-        KV_NAME=$(az keyvault list -g "${{ steps.get-app.outputs.resource-group }}" --query '[0].name' -o tsv)
-        IVUEIT_API_KEY_VALUE=$(az keyvault secret show --vault-name "$KV_NAME" --name ivueit-api-key --query value -o tsv 2>/dev/null || echo "")
-        IVUEIT_SECRET_VALUE=$(az keyvault secret show --vault-name "$KV_NAME" --name ivueit-secret --query value -o tsv 2>/dev/null || echo "")
-        if [[ -z "$IVUEIT_API_KEY_VALUE" || -z "$IVUEIT_SECRET_VALUE" ]]; then
-          echo "::error::iVueit secrets missing in Key Vault $KV_NAME (ivueit-api-key/ivueit-secret). Set via 'az keyvault secret set' before deploying."
-          exit 1
-        fi
+        # iVueit secrets are managed by bicep via Container App keyVaultUrl secret refs
+        # (Managed Identity reads from Key Vault at runtime) — not set here.
         az containerapp secret set \
           --name ${{ steps.get-app.outputs.api-name }} \
           --resource-group ${{ steps.get-app.outputs.resource-group }} \
           --secrets \
             azure-openai-api-key="${{ secrets.AZURE_OPENAI_API_KEY }}" \
             google-gemini-api-key="${{ secrets.GOOGLE_GEMINI_API_KEY }}" \
-            sambanova-api-key="${{ secrets.SAMBANOVA_API_KEY }}" \
-            ivueit-api-key="$IVUEIT_API_KEY_VALUE" \
-            ivueit-secret="$IVUEIT_SECRET_VALUE"
+            sambanova-api-key="${{ secrets.SAMBANOVA_API_KEY }}"
 
         az containerapp update \
           --name ${{ steps.get-app.outputs.api-name }} \
