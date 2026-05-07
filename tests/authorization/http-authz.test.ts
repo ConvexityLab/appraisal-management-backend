@@ -33,6 +33,13 @@ process.env.ENFORCE_AUTHORIZATION = 'true';
 process.env.AXIOM_CLIENT_ID = 'test-client-id';
 process.env.AXIOM_SUB_CLIENT_ID = 'test-sub-client-id';
 // COSMOS_ENDPOINT already set by tests/setup.ts to a placeholder URL.
+// Inspection-provider env is also seeded by setup.ts, but in some CI worker
+// configurations the test file's beforeAll runs before setup.ts has populated
+// process.env. Setting them here too makes the test self-contained.
+process.env.INSPECTION_PROVIDER = process.env.INSPECTION_PROVIDER ?? 'ivueit';
+process.env.IVUEIT_API_KEY = process.env.IVUEIT_API_KEY || 'test-placeholder-key';
+process.env.IVUEIT_SECRET = process.env.IVUEIT_SECRET || 'test-placeholder-secret';
+process.env.IVUEIT_BASE_URL = process.env.IVUEIT_BASE_URL ?? 'https://test-placeholder.ivueit.local';
 
 // ─── Mock CosmosDbService ────────────────────────────────────────────────────
 // Must be hoisted before any module that imports CosmosDbService.
