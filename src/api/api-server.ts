@@ -30,9 +30,11 @@ import { createUnifiedAuth, UnifiedAuthRequest } from '../middleware/unified-aut
 // Import Authorization middleware
 import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
 
-// Import QC controllers and middleware
-import { qcChecklistRouter } from '../controllers/criteria.controller';
-import { qcExecutionRouter } from '../controllers/reviews.controller';
+// Import QC controllers and middleware. Each controller is instantiated in
+// initializeDatabase() (post-loadAppConfig) — never at module-import time —
+// so service constructors in the cascade see fully-populated process.env.
+import { QCChecklistController } from '../controllers/criteria.controller';
+import { QCExecutionController } from '../controllers/reviews.controller';
 import { QCResultsController } from '../controllers/results.controller';
 
 // Import Places API (New) controller
@@ -395,13 +397,13 @@ export class AppraisalManagementAPIServer {
 
     // Initialize Unified Authentication (Azure AD + Test Tokens)
     this.unifiedAuth = createUnifiedAuth();
-    
-    // Initialize QC routers (except results, which needs dbService)
-    this.qcChecklistRouter = qcChecklistRouter;
-    this.qcExecutionRouter = qcExecutionRouter;
-    // qcResultsRouter will be initialized after database is ready
-    this.qcResultsRouter = null as any; // Placeholder
-    
+
+    // QC routers are instantiated in initializeDatabase() (post-loadAppConfig)
+    // so service constructors in their dependency tree see fully-populated env.
+    this.qcChecklistRouter = null as any;
+    this.qcExecutionRouter = null as any;
+    this.qcResultsRouter = null as any;
+
     this.setupMiddleware();
     this.setupRoutes();
     // NOTE: Error handling moved to after authorization routes are registered
@@ -432,9 +434,27 @@ export class AppraisalManagementAPIServer {
       );
     }
 
-    // Initialize QC Results router with shared dbService
+    // Initialize QC routers now that env (loadAppConfig + bicep) and Cosmos are ready.
+    // Construction triggers CosmosDbService / AxiomService / etc. which read env vars.
+    this.qcChecklistRouter = new QCChecklistController().getRouter();
+    this.qcExecutionRouter = new QCExecutionController().getRouter();
     this.qcResultsRouter = new QCResultsController(this.dbService).getRouter();
-    this.logger.info('QC Results controller initialized with shared database service');
+    this.logger.info('QC controllers initialized after database/env readiness');
+
+    // QC route registrations (deferred from setupRoutes() because the routers
+    // above weren't ready then). Mount paths and middleware preserved.
+    // qcChecklistRouter has sub-paths like /checklists and /assignments, so it
+    // must be mounted at /api/qc (not /api/qc/checklists) to avoid path doubling.
+    this.app.use('/api/qc',
+      this.unifiedAuth.authenticate(),
+      this.qcChecklistRouter
+    );
+    this.app.use('/api/qc/execution',
+      this.unifiedAuth.authenticate(),
+      ...this.loadUserProfileIfAvailable(),
+      this.authorize('order', 'qc_execute'),
+      this.qcExecutionRouter
+    );
     
     // Initialize authorization middleware after database is ready - pass dbService
     this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
@@ -619,6 +639,28 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('Registering authorization routes...');
+
+    // Current user profile — any authenticated user with a loaded profile may
+    // read their own record. This must remain outside the broader
+    // `/api/users` manage gate so standard sign-in role hydration works for
+    // non-admin users.
+    this.app.get('/api/users/profile',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      (req: AuthenticatedRequest, res: express.Response) => {
+        if (!req.userProfile) {
+          return res.status(401).json({
+            error: 'User profile not loaded',
+            code: 'USER_PROFILE_REQUIRED'
+          });
+        }
+
+        return res.json({
+          success: true,
+          data: req.userProfile
+        });
+      }
+    );
 
     // User profile management (admin/manager only)
     this.app.use('/api/users',
@@ -1793,23 +1835,10 @@ export class AppraisalManagementAPIServer {
       this.aiServicesController.getUsageStats
     );
 
-    // QC Management routes - comprehensive quality control system
-    // NOTE: qcChecklistRouter has sub-paths like /checklists and /assignments,
-    // so it must be mounted at /api/qc (not /api/qc/checklists) to avoid path doubling.
-    this.app.use('/api/qc',
-      this.unifiedAuth.authenticate(),
-      this.qcChecklistRouter
-    );
-
-    this.app.use('/api/qc/execution', 
-      this.unifiedAuth.authenticate(),
-      ...this.loadUserProfileIfAvailable(),
-      this.authorize('order', 'qc_execute'),
-      this.qcExecutionRouter
-    );
-    
-    // QC Results routes registered in initializeDatabase() after dbService is ready
-    // this.app.use('/api/qc/results', ...)
+    // QC Management / Execution / Results routes are registered in
+    // initializeDatabase() — the routers themselves construct services
+    // (CosmosDbService, AxiomService, etc.) whose constructors read env vars,
+    // and that env is only fully populated after loadAppConfig() runs.
 
     // QC Workflow and QC Rules moved to setupAuthorizationRoutes() where authzMiddleware is available.
 

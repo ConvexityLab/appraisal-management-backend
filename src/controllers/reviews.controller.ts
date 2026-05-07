@@ -1649,5 +1649,6 @@ export class QCExecutionController {
   }
 }
 
-// Create and export router instance
-export const qcExecutionRouter = new QCExecutionController().getRouter();
+// Router is instantiated by the API server in initializeDatabase() — never
+// at module-import time — so service constructors in the cascade see
+// fully-populated env (loadAppConfig + bicep).

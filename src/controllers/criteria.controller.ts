@@ -908,5 +908,6 @@ export class QCChecklistController {
   }
 }
 
-// Create and export router instance
-export const qcChecklistRouter = new QCChecklistController().getRouter();
+// Router is instantiated by the API server in initializeDatabase() — never
+// at module-import time — so service constructors in the cascade (CosmosDbService,
+// AxiomService, etc.) see fully-populated env (loadAppConfig + bicep).
