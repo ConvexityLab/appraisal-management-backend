@@ -2862,6 +2862,433 @@ export class AxiomService {
     }
   }
 
+  // ─── Axiom v2 Criterion API proxies ───────────────────────────────────────
+  //
+  // Thin pass-through to Axiom's v2 endpoints under `/api/criterion/...`.
+  // Axiom's evaluator handles all internal data assembly (legacy
+  // LoanDataRepository read OR new EvaluationDataEnvelope construction —
+  // the platform backend currently lets Axiom resolve from its own loan
+  // store; switching to inline-envelope submission is a follow-up that
+  // doesn't change the backend ↔ FE contract).
+  //
+  // All methods validate v2 verdict + status enums on response so a
+  // contract violation surfaces as a typed error instead of leaking a
+  // legacy `'warning'` value through to the FE (which would also throw).
+
+  /**
+   * Trigger a v2 evaluation run for a scope.
+   *
+   * Calls Axiom's `POST /api/criterion/loans/:loanId/programs/:programId/evaluate`.
+   * `scopeId` and `loanId` are 1:1 in the loan-scope use case today.
+   *
+   * Returns the synchronous `EvaluationSummary` (one run, multiple
+   * `EvaluationResultDoc`s as side-effects).
+   */
+  async evaluateScope(input: {
+    scopeId: string;
+    programId: string;
+    programVersion: string;
+    schemaId?: string;
+  }): Promise<import('../types/axiom.types.js').AxiomEvaluationRunResponse> {
+    if (!this.enabled) {
+      throw new Error('Axiom not configured — cannot evaluate scope');
+    }
+    const { scopeId, programId, programVersion, schemaId } = input;
+    const url = `/api/criterion/loans/${encodeURIComponent(scopeId)}/programs/${encodeURIComponent(programId)}/evaluate`;
+    const response = await this.client.post<unknown>(url, {
+      schemaId: schemaId ?? programId,
+    });
+    return this.normalizeEvaluationRunResponse(response.data, {
+      scopeId,
+      programId,
+      programVersion,
+    });
+  }
+
+  /**
+   * Fetch a single v2 evaluation run.
+   * Calls Axiom's `GET /api/criterion/scopes/:scopeId/runs/:runId`.
+   */
+  async getEvaluationRun(input: {
+    scopeId: string;
+    runId: string;
+  }): Promise<import('../types/axiom.types.js').AxiomEvaluationRunResponse> {
+    if (!this.enabled) {
+      throw new Error('Axiom not configured — cannot fetch evaluation run');
+    }
+    const { scopeId, runId } = input;
+    const url = `/api/criterion/scopes/${encodeURIComponent(scopeId)}/runs/${encodeURIComponent(runId)}`;
+    const response = await this.client.get<unknown>(url);
+    return this.normalizeEvaluationRunResponse(response.data, { scopeId });
+  }
+
+  /**
+   * Fetch latest verdict per criterion for a scope, scoped to a program.
+   * Calls Axiom's `GET /api/criterion/scopes/:scopeId/results?programId=...`.
+   */
+  async getLatestResults(input: {
+    scopeId: string;
+    programId: string;
+  }): Promise<import('../types/axiom.types.js').AxiomLatestResultsResponse> {
+    if (!this.enabled) {
+      throw new Error('Axiom not configured — cannot fetch latest results');
+    }
+    const { scopeId, programId } = input;
+    const url = `/api/criterion/scopes/${encodeURIComponent(scopeId)}/results?programId=${encodeURIComponent(programId)}`;
+    const response = await this.client.get<{
+      scopeId?: string;
+      programId?: string;
+      count?: number;
+      results?: unknown[];
+    }>(url);
+    const raw = response.data ?? {};
+    const results = Array.isArray(raw.results) ? raw.results : [];
+    const latestOut: import('../types/axiom.types.js').AxiomLatestResultsResponse = {
+      scopeId: typeof raw.scopeId === 'string' ? raw.scopeId : scopeId,
+      programId: typeof raw.programId === 'string' ? raw.programId : programId,
+      count: typeof raw.count === 'number' ? raw.count : results.length,
+      results: results.map((r, i) =>
+        this.normalizeResultDoc(r, `latestResults.results[${i}]`),
+      ),
+      asOf: new Date().toISOString(),
+    };
+    return latestOut;
+  }
+
+  /**
+   * Fetch full audit-trail history for one criterion at a scope.
+   * Calls Axiom's `GET /api/criterion/scopes/:scopeId/criteria/:criterionId/history`.
+   */
+  async getCriterionHistory(input: {
+    scopeId: string;
+    criterionId: string;
+  }): Promise<import('../types/axiom.types.js').AxiomCriterionHistoryResponse> {
+    if (!this.enabled) {
+      throw new Error('Axiom not configured — cannot fetch criterion history');
+    }
+    const { scopeId, criterionId } = input;
+    const url = `/api/criterion/scopes/${encodeURIComponent(scopeId)}/criteria/${encodeURIComponent(criterionId)}/history`;
+    const response = await this.client.get<{
+      scopeId?: string;
+      criterionId?: string;
+      count?: number;
+      history?: unknown[];
+    }>(url);
+    const raw = response.data ?? {};
+    const history = Array.isArray(raw.history) ? raw.history : [];
+    return {
+      scopeId: typeof raw.scopeId === 'string' ? raw.scopeId : scopeId,
+      criterionId: typeof raw.criterionId === 'string' ? raw.criterionId : criterionId,
+      count: typeof raw.count === 'number' ? raw.count : history.length,
+      history: history.map((r, i) =>
+        this.normalizeResultDoc(r, `criterionHistory.history[${i}]`),
+      ),
+    };
+  }
+
+  /**
+   * Write a manual verdict override.
+   *
+   * Calls Axiom's `POST /api/criterion/scopes/:scopeId/criteria/:criterionId/override`.
+   * Returns the newly-created override doc.
+   *
+   * NOTE: Axiom's API is not transactional with the platform's engagement
+   * audit log.  The atomic flow (Axiom write + Service Bus event) is
+   * implemented in the controller — this method only does the Axiom write.
+   */
+  async overrideVerdict(input: {
+    scopeId: string;
+    criterionId: string;
+    supersedes: string;
+    verdict: 'pass' | 'fail' | 'needs_review';
+    reasoning: string;
+    overriddenBy: string;
+    overrideReason?: string;
+    confidence?: number;
+    conditions?: string[];
+  }): Promise<import('../types/axiom.types.js').AxiomEvaluationResultDoc> {
+    if (!this.enabled) {
+      throw new Error('Axiom not configured — cannot record override');
+    }
+    const { scopeId, criterionId, ...body } = input;
+    const url = `/api/criterion/scopes/${encodeURIComponent(scopeId)}/criteria/${encodeURIComponent(criterionId)}/override`;
+    const response = await this.client.post<unknown>(url, body);
+    return this.normalizeResultDoc(response.data, 'overrideVerdict.response');
+  }
+
+  /**
+   * Normalise a raw v2 result doc from Axiom, validating verdict + provenance
+   * fields.  Throws on contract violations (legacy `'warning'`, missing
+   * required fields).
+   */
+  private normalizeResultDoc(
+    raw: unknown,
+    locator: string,
+  ): import('../types/axiom.types.js').AxiomEvaluationResultDoc {
+    if (raw == null || typeof raw !== 'object') {
+      throw new Error(
+        `Axiom v2 contract violation at ${locator}: expected EvaluationResultDoc object, received ${typeof raw}`,
+      );
+    }
+    const r = raw as Record<string, unknown>;
+
+    const requireString = (value: unknown, field: string): string => {
+      if (typeof value !== 'string' || value.length === 0) {
+        throw new Error(
+          `Axiom v2 contract violation at ${locator}.${field}: expected non-empty string, received ${JSON.stringify(value)}`,
+        );
+      }
+      return value;
+    };
+
+    const requireBool = (value: unknown, field: string): boolean => {
+      if (typeof value !== 'boolean') {
+        throw new Error(
+          `Axiom v2 contract violation at ${locator}.${field}: expected boolean, received ${JSON.stringify(value)}`,
+        );
+      }
+      return value;
+    };
+
+    const requireNumber = (value: unknown, field: string): number => {
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        throw new Error(
+          `Axiom v2 contract violation at ${locator}.${field}: expected number, received ${JSON.stringify(value)}`,
+        );
+      }
+      return value;
+    };
+
+    // Lazy import to avoid circular type imports.
+    const {
+      assertV2Verdict,
+    } = require('../types/axiom.types.js') as typeof import('../types/axiom.types.js');
+
+    const validEvaluatedBy = new Set([
+      'underwriter-actor',
+      'pipeline-evaluator',
+      'api-service',
+      'human-override',
+    ]);
+
+    const evaluatedBy = (() => {
+      const v = r.evaluatedBy;
+      if (typeof v !== 'string' || !validEvaluatedBy.has(v)) {
+        throw new Error(
+          `Axiom v2 contract violation at ${locator}.evaluatedBy: expected one of ${Array.from(validEvaluatedBy).join(' | ')}, received ${JSON.stringify(v)}`,
+        );
+      }
+      return v as import('../types/axiom.types.js').AxiomEvaluatedBy;
+    })();
+
+    const snap = (() => {
+      const s = r.criterionSnapshot;
+      if (s == null || typeof s !== 'object') {
+        throw new Error(
+          `Axiom v2 contract violation at ${locator}.criterionSnapshot: expected object`,
+        );
+      }
+      const so = s as Record<string, unknown>;
+      const out: import('../types/axiom.types.js').AxiomCriterionSnapshot = {
+        id: requireString(so.id, 'criterionSnapshot.id'),
+        title: requireString(so.title, 'criterionSnapshot.title'),
+        description: requireString(so.description, 'criterionSnapshot.description'),
+      };
+      if (Array.isArray(so.dataRequirements)) {
+        out.dataRequirements = so.dataRequirements as NonNullable<
+          import('../types/axiom.types.js').AxiomCriterionSnapshot['dataRequirements']
+        >;
+      }
+      if (Array.isArray(so.documentRequirements)) {
+        out.documentRequirements = so.documentRequirements as NonNullable<
+          import('../types/axiom.types.js').AxiomCriterionSnapshot['documentRequirements']
+        >;
+      }
+      return out;
+    })();
+
+    const consulted = (() => {
+      const c = r.dataConsulted;
+      if (c == null || typeof c !== 'object' || Array.isArray(c)) {
+        throw new Error(
+          `Axiom v2 contract violation at ${locator}.dataConsulted: expected path-keyed object`,
+        );
+      }
+      return c as Record<string, unknown>;
+    })();
+
+    const documentReferences: import('../types/axiom.types.js').AxiomEvaluationResultDoc['documentReferences'] =
+      Array.isArray(r.documentReferences)
+        ? (r.documentReferences as unknown[]).map((d) => {
+            const dr = (d ?? {}) as Record<string, unknown>;
+            const ref: import('../types/axiom.types.js').AxiomEvaluationResultDoc['documentReferences'][number] = {
+              page: typeof dr.page === 'number' ? dr.page : 0,
+              quote: typeof dr.quote === 'string' ? dr.quote : '',
+            };
+            if (typeof dr.section === 'string') ref.section = dr.section;
+            if (dr.coordinates && typeof dr.coordinates === 'object') {
+              ref.coordinates = dr.coordinates as {
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+              };
+            }
+            if (typeof dr.documentId === 'string') ref.documentId = dr.documentId;
+            if (typeof dr.documentName === 'string') ref.documentName = dr.documentName;
+            if (typeof dr.blobUrl === 'string') ref.blobUrl = dr.blobUrl;
+            if (Array.isArray(dr.sourceFieldPaths))
+              ref.sourceFieldPaths = dr.sourceFieldPaths as string[];
+            return ref;
+          })
+        : [];
+
+    const out: import('../types/axiom.types.js').AxiomEvaluationResultDoc = {
+      resultId: requireString(r.resultId ?? r.id, 'resultId'),
+      evaluationRunId: requireString(r.evaluationRunId, 'evaluationRunId'),
+      scopeId: requireString(r.scopeId, 'scopeId'),
+      criterionId: requireString(r.criterionId, 'criterionId'),
+      criterionName:
+        typeof r.criterionName === 'string' && r.criterionName.length > 0
+          ? r.criterionName
+          : (r.criterionId as string),
+      evaluation: assertV2Verdict(r.evaluation ?? r.verdict, `${locator}.evaluation`),
+      confidence: requireNumber(r.confidence, 'confidence'),
+      reasoning: typeof r.reasoning === 'string' ? r.reasoning : '',
+      evaluatedBy,
+      evaluatedAt: requireString(r.evaluatedAt, 'evaluatedAt'),
+      manualOverride: requireBool(r.manualOverride, 'manualOverride'),
+      criterionSnapshot: snap,
+      dataConsulted: consulted,
+      documentReferences,
+    };
+
+    if (typeof r.remediation === 'string') out.remediation = r.remediation;
+    if (typeof r.supersedes === 'string') out.supersedes = r.supersedes;
+    if (typeof r.overriddenBy === 'string') out.overriddenBy = r.overriddenBy;
+    if (typeof r.overrideReason === 'string') out.overrideReason = r.overrideReason;
+    if (Array.isArray(r.conditions)) {
+      const conditions = (r.conditions as unknown[]).filter(
+        (x): x is string => typeof x === 'string',
+      );
+      if (conditions.length > 0) out.conditions = conditions;
+    }
+    if (Array.isArray(r.dataUsed)) {
+      out.dataUsed = r.dataUsed as Array<Record<string, unknown>>;
+    }
+    if (typeof r.programId === 'string') out.programId = r.programId;
+    if (typeof r.programVersion === 'string') out.programVersion = r.programVersion;
+
+    // cannotEvaluate — only set when at least one field is populated.
+    const ce = r.cannotEvaluate;
+    if (ce != null && typeof ce === 'object') {
+      const ceo = ce as Record<string, unknown>;
+      const ceOut: import('../types/axiom.types.js').AxiomCannotEvaluateDetails = {};
+      if (Array.isArray(ceo.missingData)) {
+        ceOut.missingData = (ceo.missingData as unknown[]).filter(
+          (x): x is string => typeof x === 'string',
+        );
+      }
+      if (Array.isArray(ceo.missingDocuments)) {
+        ceOut.missingDocuments = (ceo.missingDocuments as unknown[]).filter(
+          (x): x is string => typeof x === 'string',
+        );
+      }
+      if (typeof ceo.actionableMessage === 'string') {
+        ceOut.actionableMessage = ceo.actionableMessage;
+      }
+      if (Object.keys(ceOut).length > 0) out.cannotEvaluate = ceOut;
+    }
+
+    return out;
+  }
+
+  /**
+   * Normalise a raw v2 evaluation-run response from Axiom.  Validates run
+   * status enum + each result doc.  Throws on contract violations.
+   */
+  private normalizeEvaluationRunResponse(
+    raw: unknown,
+    fallback: { scopeId: string; programId?: string; programVersion?: string },
+  ): import('../types/axiom.types.js').AxiomEvaluationRunResponse {
+    if (raw == null || typeof raw !== 'object') {
+      throw new Error(
+        `Axiom v2 contract violation: expected run-response object, received ${typeof raw}`,
+      );
+    }
+    const r = raw as Record<string, unknown>;
+
+    const {
+      assertV2RunStatus,
+    } = require('../types/axiom.types.js') as typeof import('../types/axiom.types.js');
+
+    // The evaluate-summary response uses `scopeId`/`loanId` semi-interchangeably;
+    // the run-fetch response uses `scopeId` consistently.  Accept either.
+    const scopeId =
+      typeof r.scopeId === 'string'
+        ? r.scopeId
+        : typeof r.loanId === 'string'
+          ? r.loanId
+          : fallback.scopeId;
+
+    const evaluationRunId = (() => {
+      if (typeof r.evaluationRunId === 'string') return r.evaluationRunId;
+      throw new Error(
+        `Axiom v2 contract violation at run-response.evaluationRunId: expected string, received ${JSON.stringify(r.evaluationRunId)}`,
+      );
+    })();
+
+    const programId =
+      typeof r.programId === 'string'
+        ? r.programId
+        : fallback.programId ?? '';
+    const programVersion =
+      typeof r.programVersion === 'string'
+        ? r.programVersion
+        : fallback.programVersion ?? '1.0.0';
+
+    const status = (() => {
+      // Axiom's evaluate-summary endpoint doesn't always return a status field
+      // (the evaluation completed synchronously).  Default to 'completed' in
+      // that case; otherwise validate strictly.
+      if (r.status === undefined) return 'completed' as const;
+      return assertV2RunStatus(r.status, 'run-response.status');
+    })();
+
+    const results = Array.isArray(r.results)
+      ? (r.results as unknown[]).map((d, i) =>
+          this.normalizeResultDoc(d, `run-response.results[${i}]`),
+        )
+      : [];
+
+    const evaluatedAt =
+      typeof r.evaluatedAt === 'string'
+        ? r.evaluatedAt
+        : new Date().toISOString();
+
+    const out: import('../types/axiom.types.js').AxiomEvaluationRunResponse = {
+      evaluationRunId,
+      scopeId,
+      programId,
+      programVersion,
+      status,
+      evaluatedAt,
+      results,
+      orderId: typeof r.orderId === 'string' ? r.orderId : scopeId,
+    };
+    if (typeof r.pipelineJobId === 'string') out.pipelineJobId = r.pipelineJobId;
+    if (typeof r.schemaId === 'string') out.schemaId = r.schemaId;
+    if (typeof r.error === 'string') out.error = r.error;
+    if (typeof r.totalCriteria === 'number') out.totalCriteria = r.totalCriteria;
+    if (typeof r.passed === 'number') out.passed = r.passed;
+    if (typeof r.failed === 'number') out.failed = r.failed;
+    if (typeof r.needsReview === 'number') out.needsReview = r.needsReview;
+    if (typeof r.cannotEvaluate === 'number') out.cannotEvaluate = r.cannotEvaluate;
+    if (typeof r.notApplicable === 'number') out.notApplicable = r.notApplicable;
+    if (typeof r.loanId === 'string') out.loanId = r.loanId;
+    return out;
+  }
+
   // ── Admin API proxies ────────────────────────────────────────────────────────
 
   async getQueueStats(): Promise<Record<string, unknown> | null> {

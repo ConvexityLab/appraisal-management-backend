@@ -10,26 +10,53 @@ import { DefaultAzureCredential } from '@azure/identity';
  */
 // IMPORTANT: this loader runs from app-production.ts:93 — AFTER all module
 // imports complete, BEFORE the server is constructed. Any env var consumed
-// at module-top-level (e.g. `export const x = new SomeService()` patterns
-// in src/controllers/{criteria,results,reviews}.controller.ts) is read
-// before this runs and CANNOT be migrated to App Config until the offending
-// service tree is refactored to lazy-instantiate.
+// at module-top-level (e.g. `export const x = new SomeService()` patterns)
+// is read before this runs and CANNOT be migrated to App Config until the
+// offending service tree is refactored to lazy-instantiate.
 //
-// Verified-safe migrations below. Other candidates (storage, openai endpoint,
-// service bus, web pubsub, fluid relay, communication, statebridge, batchdata
-// endpoint, cosmos) all fall in the module-top-level cascade and stay in bicep.
+// As of commit ea0b923 the QC controllers (criteria/results/reviews) defer
+// their instantiation to api-server.ts:initializeDatabase() — which means
+// the previously-blocked Cosmos / Service Bus / Storage / AI / Web PubSub /
+// Fluid Relay / Communication / Batchdata cascades are now safe to migrate.
 const KEY_TO_ENV: Record<string, string> = {
-  // Axiom — read by AxiomService constructor which uses fallbacks (no throw at startup)
+  // Axiom
   'services.axiom-api.base-url': 'AXIOM_API_BASE_URL',
   'services.axiom-api.client-id': 'AXIOM_CLIENT_ID',
   'services.axiom-api.sub-client-id': 'AXIOM_SUB_CLIENT_ID',
   'services.axiom-api.pipeline-id-schema-extract': 'AXIOM_PIPELINE_ID_SCHEMA_EXTRACT',
   'services.axiom-auth.required': 'AXIOM_AUTH_REQUIRED',
   'services.axiom-auth.audience': 'AXIOM_AUTH_AUDIENCE',
-  // Inspection — read by IVueitInspectionProvider, instantiated via
-  // setupAuthorizationRoutes which runs from server.start() (post-loadAppConfig)
+  // Inspection
   'services.inspection.provider': 'INSPECTION_PROVIDER',
   'services.inspection.base-url': 'IVUEIT_BASE_URL',
+  // AI providers (endpoints / deployment ids — secrets stay as keyVaultUrl refs)
+  'services.openai.endpoint': 'AZURE_OPENAI_ENDPOINT',
+  'services.openai.deployment': 'AZURE_OPENAI_DEPLOYMENT',
+  'services.openai.model-name': 'AZURE_OPENAI_MODEL_NAME',
+  'services.sambanova.endpoint': 'SAMBANOVA_ENDPOINT',
+  'services.certo.endpoint': 'CERTO_ENDPOINT',
+  // Storage (account names + logical container names; SAS keys stay in KV)
+  'services.storage.account-name': 'AZURE_STORAGE_ACCOUNT_NAME',
+  'services.storage.bulk-upload-account-name': 'BULK_UPLOAD_STORAGE_ACCOUNT_NAME',
+  'services.storage.container.documents': 'STORAGE_CONTAINER_DOCUMENTS',
+  'services.storage.container.bulk-upload': 'STORAGE_CONTAINER_BULK_UPLOAD',
+  // Cosmos
+  'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
+  'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
+  // Service Bus / Web PubSub / Fluid Relay
+  'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
+  'services.web-pubsub.endpoint': 'AZURE_WEB_PUBSUB_ENDPOINT',
+  'services.fluid-relay.endpoint': 'AZURE_FLUID_RELAY_ENDPOINT',
+  'services.fluid-relay.tenant-id': 'AZURE_FLUID_RELAY_TENANT_ID',
+  // Communication
+  'services.communication.endpoint': 'AZURE_COMMUNICATION_ENDPOINT',
+  'services.communication.email-domain': 'AZURE_COMMUNICATION_EMAIL_DOMAIN',
+  // 3rd-party
+  'services.batchdata.endpoint': 'BATCHDATA_ENDPOINT',
+  // Feature flags (stored as plain App Config string keys; the dedicated
+  // feature-flag API is a separate migration if/when needed).
+  'features.bulk-ingestion-criteria-stage': 'BULK_INGESTION_ENABLE_CRITERIA_STAGE',
+  'features.use-mock-service-bus': 'USE_MOCK_SERVICE_BUS',
   // When MOP connectivity is resolved (see APP_CONFIG_SERVICE_DISCOVERY.md §2):
   // 'services.mop-api.internal-url': 'MOP_API_BASE_URL',
 };

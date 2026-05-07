@@ -492,13 +492,6 @@ module appServices 'modules/app-services.bicep' = {
     keyVaultUrl: keyVault.outputs.keyVaultUri
     azureTenantId: azureTenantId
     azureClientId: azureClientId
-    serviceBusNamespace: '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
-    azureCommunicationEndpoint: 'https://${communicationServices.outputs.communicationServicesEndpoint}'
-    azureCommunicationEmailDomain: communicationServices.outputs.emailDomain
-    webPubSubEndpoint: webPubSub.outputs.webPubSubEndpoint
-    fluidRelayTenantId: fluidRelay.outputs.fluidRelayTenantId
-    fluidRelayEndpoint: fluidRelay.outputs.fluidRelayEndpoint
-    azureOpenAiEndpoint: azureOpenAiEndpoint
     sftpStorageAccountName: sftpStorage.outputs.sftpStorageAccountName
     statebridgeClientId: statebridgeClientId
     statebridgeClientName: statebridgeClientName
@@ -507,13 +500,19 @@ module appServices 'modules/app-services.bicep' = {
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     appImageTag: appImageTag
     functionsImageTag: functionsImageTag
-    // KV refs (kept migrated, resolved at runtime via Managed Identity):
-    //   azure-openai-api-key, google-gemini-api-key, sambanova-api-key
+    // KV refs (resolved at runtime via Managed Identity):
+    //   azure-openai-api-key, google-gemini-api-key, sambanova-api-key,
     //   ivueit-api-key, ivueit-secret
-    // App Config (kept migrated, consumed post-loadAppConfig):
-    //   AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID,
-    //   AXIOM_PIPELINE_ID_SCHEMA_EXTRACT, AXIOM_AUTH_REQUIRED, AXIOM_AUTH_AUDIENCE,
-    //   INSPECTION_PROVIDER, IVUEIT_BASE_URL
+    // App Config (consumed post-loadAppConfig at api-server startup):
+    //   AXIOM_*, INSPECTION_PROVIDER, IVUEIT_BASE_URL,
+    //   AZURE_OPENAI_ENDPOINT/DEPLOYMENT/MODEL_NAME, SAMBANOVA_ENDPOINT, CERTO_ENDPOINT,
+    //   AZURE_STORAGE_ACCOUNT_NAME, BULK_UPLOAD_STORAGE_ACCOUNT_NAME,
+    //   STORAGE_CONTAINER_DOCUMENTS, STORAGE_CONTAINER_BULK_UPLOAD,
+    //   AZURE_COSMOS_ENDPOINT, AZURE_COSMOS_DATABASE_NAME,
+    //   AZURE_SERVICE_BUS_NAMESPACE, USE_MOCK_SERVICE_BUS,
+    //   AZURE_WEB_PUBSUB_ENDPOINT, AZURE_FLUID_RELAY_ENDPOINT/TENANT_ID,
+    //   AZURE_COMMUNICATION_ENDPOINT/EMAIL_DOMAIN,
+    //   BATCHDATA_ENDPOINT, BULK_INGESTION_ENABLE_CRITERIA_STAGE
   }
 }
 
