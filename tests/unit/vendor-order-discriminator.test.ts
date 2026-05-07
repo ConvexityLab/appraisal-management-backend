@@ -65,6 +65,9 @@ describe('VendorOrderService write path (slice 8f flip)', () => {
       clientId:        'client-test',
       propertyId:      'prop-test',
       vendorWorkType:  ProductType.FULL_APPRAISAL,
+      // Required by the auth refactor — VendorOrderService stamps
+      // accessControl from createdBy when no explicit value is supplied.
+      createdBy:       'test-user',
     });
 
     expect(out.type).toBe('vendor-order');

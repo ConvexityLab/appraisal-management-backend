@@ -48,6 +48,13 @@ import {
 import { QCReviewQueueService } from './qc-review-queue.service.js';
 import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
 import { SupervisoryReviewService } from './supervisory-review.service.js';
+import {
+  OrderContextLoader,
+  getPropertyAddress,
+  getLoanInformation,
+  getDueDate,
+  type OrderContext,
+} from './order-context-loader.service.js';
 import type { VendorMatchResult } from '../types/vendor-marketplace.types.js';
 import type {
   AppEvent,
@@ -184,10 +191,12 @@ export class AutoAssignmentOrchestratorService {
   private readonly qcQueueService: QCReviewQueueService;
   private readonly tenantConfigService: TenantAutomationConfigService;
   private readonly supervisoryReviewService: SupervisoryReviewService;
+  private readonly contextLoader: OrderContextLoader;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
+    this.contextLoader = new OrderContextLoader(this.dbService);
     this.publisher = new ServiceBusEventPublisher();
     // Use a dedicated subscription so we don't compete with the notification service
     this.subscriber = new ServiceBusEventSubscriber(
@@ -1258,6 +1267,27 @@ export class AutoAssignmentOrchestratorService {
       return;
     }
 
+    // Phase 7: load joined OrderContext so propertyAddress resolves from
+    // the parent ClientOrder when present (engagement-flow rows don't
+    // carry it on the VendorOrder). Best-effort — falls back to legacy
+    // reads on the bare order shape.
+    let qcCtx: OrderContext | null = null;
+    try {
+      qcCtx = await this.contextLoader.loadByVendorOrder(order);
+    } catch (err) {
+      this.logger.warn('Could not load OrderContext for QC queue entry; using bare order', {
+        orderId: order.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    const qcAddr = qcCtx ? getPropertyAddress(qcCtx) : undefined;
+    const qcAddrString =
+      (qcAddr as { fullAddress?: string } | undefined)?.fullAddress ??
+      qcAddr?.streetAddress ??
+      order.propertyAddress?.fullAddress ??
+      order.propertyAddress?.streetAddress ??
+      (typeof order.propertyAddress === 'string' ? order.propertyAddress : '');
+
     // Add to QC queue
     let qcReviewId: string;
     try {
@@ -1265,11 +1295,7 @@ export class AutoAssignmentOrchestratorService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         appraisalId: order.appraisalId ?? order.id,
-        propertyAddress:
-          order.propertyAddress?.fullAddress ??
-          order.propertyAddress?.streetAddress ??
-          order.propertyAddress ??
-          '',
+        propertyAddress: qcAddrString,
         appraisedValue: order.appraisedValue ?? order.estimatedValue ?? 0,
         orderPriority: order.priority ?? 'STANDARD',
         clientId: order.clientId ?? '',
@@ -1584,13 +1610,26 @@ export class AutoAssignmentOrchestratorService {
     }
 
     try {
+      // Phase 7: load joined OrderContext so the order details we POST to
+      // Axiom carry the right propertyAddress / dueDate / orderType
+      // (lender-side fields live on the parent ClientOrder post Phase 4).
+      // Best-effort: if the load fails we still send the bare order shape.
+      let ctx: OrderContext | undefined;
+      try {
+        ctx = await this.contextLoader.loadByVendorOrder(order);
+      } catch (loadErr) {
+        this.logger.warn('Could not load OrderContext for AI vendor-bid scoring; falling back to bare order', {
+          orderId: order.id,
+          error: loadErr instanceof Error ? loadErr.message : String(loadErr),
+        });
+      }
       const analysis = await this.axiomService.analyzeVendorBid({
         entityId: order.id,
         entityType: 'order',
         subClientId: tenantId,
         sentinelApiBase: this.getVendorBidSentinelApiBase(),
         vendorCandidates: this.buildVendorBidCandidates(matchResults),
-        orderDetails: this.buildVendorBidOrderDetails(order),
+        orderDetails: this.buildVendorBidOrderDetails(order, ctx),
         timeoutMs: 25_000,
       });
 
@@ -1704,24 +1743,33 @@ export class AutoAssignmentOrchestratorService {
     }));
   }
 
-  private buildVendorBidOrderDetails(order: any): AxiomVendorBidOrderDetails {
+  private buildVendorBidOrderDetails(order: any, ctx?: OrderContext): AxiomVendorBidOrderDetails {
+    // Phase 7: when an OrderContext is available, prefer accessors (which
+    // pull from the parent ClientOrder when present and fall back to the
+    // deprecated VendorOrder copy). When no context is provided, fall back
+    // to the legacy any-typed reads.
+    const addrFromCtx = ctx ? getPropertyAddress(ctx) : undefined;
+    const addrSource = addrFromCtx ?? order.propertyAddress;
     const propertyAddress =
-      typeof order.propertyAddress === 'string'
-        ? order.propertyAddress
+      typeof addrSource === 'string'
+        ? addrSource
         : [
-            order.propertyAddress?.streetAddress ?? order.propertyAddress?.street ?? '',
-            order.propertyAddress?.city ?? '',
-            order.propertyAddress?.state ?? '',
-            order.propertyAddress?.zipCode ?? order.propertyAddress?.zip ?? '',
+            addrSource?.streetAddress ?? addrSource?.street ?? '',
+            addrSource?.city ?? '',
+            addrSource?.state ?? '',
+            addrSource?.zipCode ?? addrSource?.zip ?? '',
           ]
             .filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
             .join(', ');
 
+    const dueDateValue = ctx ? getDueDate(ctx) : order.dueDate;
+    const orderTypeValue = ctx?.clientOrder?.orderType ?? order.orderType;
+
     return {
-      productType: order.productType ?? order.orderType ?? 'UNKNOWN',
+      productType: order.productType ?? orderTypeValue ?? 'UNKNOWN',
       propertyAddress,
       priority: order.priority ?? 'STANDARD',
-      dueDate: order.dueDate ?? new Date().toISOString(),
+      dueDate: dueDateValue ?? new Date().toISOString(),
     };
   }
 

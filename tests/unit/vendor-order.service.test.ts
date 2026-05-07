@@ -47,6 +47,11 @@ function makeInput(overrides: Partial<CreateVendorOrderInput> = {}): CreateVendo
     clientId:        'client-test',
     propertyId:      'prop-test',
     vendorWorkType:  ProductType.FULL_APPRAISAL,
+    // The parallel auth refactor stamps accessControl onto every VendorOrder
+    // write. VendorOrderService throws when it can't resolve an owner for the
+    // stamp (no caller-supplied accessControl AND no createdBy). Supply a
+    // test user so each createVendorOrder call has a stamping path.
+    createdBy:       'test-user',
     ...overrides,
   };
 }

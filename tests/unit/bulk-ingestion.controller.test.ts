@@ -128,12 +128,15 @@ describe('BulkIngestionController retry routes', () => {
       });
 
     expect(res.status).toBe(202);
+    // Auth refactor added a 4th arg (submitterEmail) to submit(). Tests
+    // that don't set the email header pass `undefined` for that slot.
     expect(mockSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         engagementGranularity: 'PER_LOAN',
       }),
       'tenant-123',
       'unknown',
+      undefined,
     );
   });
 
@@ -174,6 +177,7 @@ describe('BulkIngestionController retry routes', () => {
       }),
       'tenant-123',
       'unknown',
+      undefined,
     );
   });
 

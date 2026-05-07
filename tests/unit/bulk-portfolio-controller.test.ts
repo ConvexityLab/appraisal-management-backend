@@ -87,12 +87,14 @@ describe('BulkPortfolioController submit validation', () => {
       });
 
     expect(res.status).toBe(201);
+    // Auth refactor added a 4th arg (submitterEmail) to submit().
     expect(mockSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         engagementGranularity: 'PER_BATCH',
       }),
       'unknown',
       'tenant-123',
+      undefined,
     );
   });
 });

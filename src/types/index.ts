@@ -140,6 +140,14 @@ export interface Order {
   complianceStatus?: 'PENDING' | 'PASSED' | 'WARNINGS' | 'HARD_STOP';
   /** Detailed violations from the most recent compliance evaluation. */
   complianceViolations?: Array<{ code: string; reason: string; severity: 'WARNING' | 'STOP' }>;
+  // ── Authorization (parallel auth refactor) ───────────────────────────────
+  /**
+   * Access-control envelope stamped by the auth pipeline at write time
+   * (VendorOrderService.createVendorOrder + bulk-portfolio worker). Optional
+   * here to keep legacy reads valid until every writer stamps it; the
+   * authorization middleware enforces presence at the boundaries it gates.
+   */
+  accessControl?: import('./authorization.types.js').AccessControl;
 }
 
 export interface PropertyAddress {
