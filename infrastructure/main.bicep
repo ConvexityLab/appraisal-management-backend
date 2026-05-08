@@ -137,6 +137,14 @@ param appImageTag string = 'latest'
 @description('Image tag for the appraisal-functions container. Same semantics as appImageTag.')
 param functionsImageTag string = 'latest'
 
+// App Configuration values (env-static).
+// Container apps read these from App Config at startup via appConfigLoader.ts.
+// Per-env overrides come from infrastructure/parameters/<env>.parameters.json.
+// Computed-at-deploy values (cosmos endpoint, storage account name, etc.) are
+// merged into this object inside main.bicep before being written to App Config.
+@description('App Configuration key/value pairs that vary per environment but are static within the bicep template (e.g. axiom URLs, statebridge tenant, openai deployment id). Merged with computed values from other modules at deploy time.')
+param appConfigValues object = {}
+
 // Variables - all derived from parameters, no hardcoded values
 var resourceGroupName = empty(customResourceGroupName) 
   ? replace(replace(replace(resourceGroupNamingPattern, '{appName}', appName), '{environment}', environment), '{location}', location)
@@ -652,6 +660,37 @@ module appConfigReaderRole 'modules/appconfig-reader-role.bicep' = {
   params: {
     appConfigName: appConfig.outputs.appConfigName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
+// Computed App Configuration values — sourced from other module outputs that
+// already provision the underlying resources. Merged with the env-static
+// `appConfigValues` param (from parameters file) before writing to the store.
+var computedAppConfigValues = {
+  'services.cosmos.endpoint': cosmosDb.outputs.cosmosEndpoint
+  'services.cosmos.database-name': cosmosDb.outputs.databaseName
+  'services.storage.account-name': storage.outputs.storageAccountName
+  'services.storage.bulk-upload-account-name': storage.outputs.storageAccountName
+  'services.storage.sftp-account-name': sftpStorage.outputs.sftpStorageAccountName
+  'services.service-bus.namespace': '${serviceBus.outputs.namespaceName}.servicebus.windows.net'
+  'services.web-pubsub.endpoint': webPubSub.outputs.webPubSubEndpoint
+  'services.fluid-relay.endpoint': fluidRelay.outputs.fluidRelayEndpoint
+  'services.fluid-relay.tenant-id': fluidRelay.outputs.fluidRelayTenantId
+  'services.communication.endpoint': 'https://${communicationServices.outputs.communicationServicesEndpoint}'
+  'services.communication.email-domain': communicationServices.outputs.emailDomain
+}
+
+// Write all App Config keys declaratively. `union(a, b)` merges with second
+// arg winning on key collision, so any computed value (b) overrides a static
+// param value (a) of the same key — the safer default given module outputs
+// reflect the actual deployed resource.
+module appConfigValuesWriter 'modules/app-config-values.bicep' = {
+  name: 'app-config-values-deployment'
+  scope: resourceGroup
+  params: {
+    appConfigName: appConfig.outputs.appConfigName
+    label: environment
+    keyValues: union(appConfigValues, computedAppConfigValues)
   }
 }
 

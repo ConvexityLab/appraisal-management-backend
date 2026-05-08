@@ -50,6 +50,31 @@
         "69.140.197.104",
         "72.66.11.53"
       ]
+    },
+    "appConfigValues": {
+      "value": {
+        "services.axiom-api.base-url": "https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io",
+        "services.axiom-api.client-id": "vision",
+        "services.axiom-api.sub-client-id": "platform",
+        "services.axiom-api.pipeline-id-schema-extract": "complete-document-criteria-evaluation",
+        "services.axiom-auth.required": "false",
+        "services.axiom-auth.audience": "api://3bc96929-593c-4f35-8997-e341a7e09a69",
+        "services.inspection.provider": "ivueit",
+        "services.inspection.base-url": "https://api.ivueit.com",
+        "services.openai.endpoint": "https://certo-open-ai.openai.azure.com/",
+        "services.openai.deployment": "gpt-4o-mini",
+        "services.openai.model-name": "gpt-4o-mini",
+        "services.sambanova.endpoint": "https://api.sambanova.ai/v1",
+        "services.certo.endpoint": "https://certo-apim-dev-eastus2.azure-api.net/tgi/v1",
+        "services.batchdata.endpoint": "https://api.batchdata.com/api/v1/",
+        "services.statebridge.client-id": "statebridge",
+        "services.statebridge.client-name": "Statebridge",
+        "services.statebridge.tenant-id": "885097ba-35ea-48db-be7a-a0aa7ff451bd",
+        "services.storage.container.documents": "appraisal-documents",
+        "services.storage.container.bulk-upload": "bulk-upload",
+        "features.bulk-ingestion-criteria-stage": "true",
+        "features.use-mock-service-bus": "false"
+      }
     }
   }
 }
