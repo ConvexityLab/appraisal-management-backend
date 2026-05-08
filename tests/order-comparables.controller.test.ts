@@ -34,6 +34,7 @@ import {
   VENDOR_ORDER_DOC_TYPE,
   LEGACY_VENDOR_ORDER_DOC_TYPE,
 } from '../src/types/vendor-order.types';
+import type { AuthorizationMiddleware } from '../src/middleware/authorization.middleware';
 
 interface AnyDoc {
   id: string;
@@ -108,7 +109,7 @@ function makeMockDb(stores: {
   return { db };
 }
 
-function makeApp(db: unknown) {
+function makeApp(db: unknown, authzMiddleware?: Partial<AuthorizationMiddleware>) {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: Response, next: NextFunction) => {
@@ -121,10 +122,29 @@ function makeApp(db: unknown) {
     next();
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctrl = new OrderComparablesController(db as any);
+  const ctrl = new OrderComparablesController(db as any, authzMiddleware as AuthorizationMiddleware | undefined);
   app.use('/api/orders/:orderId/comparables', ctrl.routerByClientOrder);
   app.use('/api/vendor-orders/:vendorOrderId/comparables', ctrl.routerByVendorOrder);
   return app;
+}
+
+function makeAuthzStub(overrides?: {
+  authorizeResource?: (resourceType: string, action: string, options?: any) => any;
+}) {
+  return {
+    loadUserProfile: () => (req: any, _res: Response, next: NextFunction) => {
+      req.userProfile = {
+        id: req.user.id,
+        email: req.user.email,
+        role: 'manager',
+        tenantId: req.user.tenantId,
+      };
+      next();
+    },
+    authorizeResource:
+      overrides?.authorizeResource ??
+      (() => (_req: any, _res: Response, next: NextFunction) => next()),
+  } satisfies Partial<AuthorizationMiddleware>;
 }
 
 function makeCandidate(vendorRef: string): CollectedCompCandidate {
@@ -434,5 +454,19 @@ describe('GET /api/vendor-orders/:vendorOrderId/comparables', () => {
     expect(res.status).toBe(200);
     expect(res.body.subject).toBeDefined();
     expect(res.body.subject).not.toHaveProperty('photos');
+  });
+
+  it('blocks vendor-order comparable reads when authorizeResource denies access', async () => {
+    const { db } = makeMockDb({ comparables: [], vendorOrders: [] });
+    const authz = makeAuthzStub({
+      authorizeResource: () => (_req: any, res: Response) => {
+        res.status(403).json({ code: 'AUTHORIZATION_DENIED' });
+      },
+    });
+    const app = makeApp(db, authz);
+
+    const res = await request(app).get('/api/vendor-orders/vo-9/comparables');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
   });
 });

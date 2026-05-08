@@ -419,13 +419,30 @@ jobs:
         echo "📋 Importing API swagger spec into APIM (spec exceeds Bicep 128 KB limit)..."
         RG="${{ steps.deploy.outputs.resourceGroupName }}"
         SERVICE_URL="${{ steps.deploy.outputs.appServiceUrl }}"
+        SOURCE_SPEC="infrastructure/api-swagger.json"
+        NORMALIZED_SPEC="$RUNNER_TEMP/api-swagger.apim.json"
+
+        if [[ ! -f "$SOURCE_SPEC" ]]; then
+          echo "❌ APIM swagger import failed: spec file not found at $SOURCE_SPEC"
+          exit 1
+        fi
+
+        echo "🧭 Normalizing OpenAPI paths for APIM import..."
+        jq -e '
+          .paths as $paths
+          | if (($paths | keys | all(test("^/api(/|$)"))) | not) then
+              error("api-swagger.json contains non-/api paths; refusing to import into APIM path prefix \"api\".")
+            else
+              .paths |= with_entries(.key |= sub("^/api"; ""))
+            end
+        ' "$SOURCE_SPEC" > "$NORMALIZED_SPEC"
 
         az apim api import \
           --resource-group "$RG" \
           --service-name "$APIM_NAME" \
-          --path '' \
+          --path 'api' \
           --specification-format OpenApiJson \
-          --specification-path infrastructure/api-swagger.json \
+          --specification-path "$NORMALIZED_SPEC" \
           --api-id appraisal-management-api \
           --display-name 'Appraisal Management API' \
           --protocols https \

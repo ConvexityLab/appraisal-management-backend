@@ -12,7 +12,7 @@ export interface TestUserProfile {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'manager' | 'qc_analyst' | 'appraiser';
+  role: 'admin' | 'manager' | 'supervisor' | 'analyst' | 'appraiser' | 'reviewer' | 'qc_analyst';
   tenantId: string;
   /** Platform client ID aligned with Axiom (defaults to AXIOM_CLIENT_ID env var). */
   clientId?: string;
@@ -155,12 +155,38 @@ export class TestTokenGenerator {
           canOverrideQC: false
         };
 
+      case 'supervisor':
+        return {
+          teamIds: ['team-supervisors'],
+          departmentIds: ['dept-operations'],
+          managedClientIds: ['client-1', 'client-2'],
+          managedVendorIds: ['vendor-1'],
+          managedUserIds: ['user-1', 'user-2'],
+          regionIds: ['region-west'],
+          statesCovered: ['CA', 'NV'],
+          canViewAllOrders: false,
+          canViewAllVendors: false,
+          canOverrideQC: true
+        };
+
+      case 'analyst':
       case 'qc_analyst':
         return {
           teamIds: ['team-qc'],
           departmentIds: ['dept-quality'],
           regionIds: ['region-west'],
           statesCovered: ['CA', 'NV'],
+          canViewAllOrders: false,
+          canViewAllVendors: false,
+          canOverrideQC: false
+        };
+
+      case 'reviewer':
+        return {
+          teamIds: ['team-reviewers'],
+          departmentIds: ['dept-quality'],
+          regionIds: ['region-west'],
+          statesCovered: ['CA'],
           canViewAllOrders: false,
           canViewAllVendors: false,
           canOverrideQC: false
@@ -210,6 +236,19 @@ export class TestTokenGenerator {
           'report_generate'
         ];
 
+      case 'supervisor':
+        return [
+          'order_manage',
+          'order_view',
+          'order_update',
+          'vendor_manage',
+          'analytics_view',
+          'qc_metrics',
+          'qc_validate',
+          'user_view'
+        ];
+
+      case 'analyst':
       case 'qc_analyst':
         return [
           'qc_validate',
@@ -227,6 +266,9 @@ export class TestTokenGenerator {
           'revision_create',
           'escalation_create'
         ];
+
+      case 'reviewer':
+        return ['order_view'];
 
       default:
         return [];

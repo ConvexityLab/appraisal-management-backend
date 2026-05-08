@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { PolicyEvaluatorService } from '../services/policy-evaluator.service.js';
+import { AuthorizationService } from '../services/authorization.service.js';
 import { AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import type { PolicyRule, PolicyChangeAuditEntry } from '../types/policy.types.js';
 
@@ -28,6 +29,7 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
   const router = Router();
   const logger = new Logger();
   const policyEvaluator = new PolicyEvaluatorService(dbService);
+  const authorizationService = new AuthorizationService(undefined, dbService);
 
   // ── GET / ─────────────────────────────────────────────────────────────────
   router.get('/', async (req: AuthorizedRequest, res: Response): Promise<any> => {
@@ -50,6 +52,33 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
     } catch (error) {
       logger.error('Failed to list policies', { error });
       res.status(500).json({ error: 'Failed to list policies', code: 'INTERNAL_ERROR' });
+    }
+  });
+
+  // ── GET /audit ───────────────────────────────────────────────────────────
+  router.get('/audit', async (req: AuthorizedRequest, res: Response): Promise<any> => {
+    try {
+      const tenantId = req.userProfile?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+      }
+
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), 200) : 100;
+
+      const container = dbService.getContainer(CONTAINER);
+      const { resources } = await container.items.query<PolicyChangeAuditEntry>({
+        query: `SELECT TOP ${limit} * FROM c
+                WHERE c.type = 'authorization-policy-audit'
+                  AND c.tenantId = @tenantId
+                ORDER BY c.timestamp DESC`,
+        parameters: [{ name: '@tenantId', value: tenantId }],
+      }).fetchAll();
+
+      return res.json({ success: true, data: resources, count: resources.length });
+    } catch (error) {
+      logger.error('Failed to list policy audit entries', { error });
+      return res.status(500).json({ error: 'Failed to list policy audit entries', code: 'INTERNAL_ERROR' });
     }
   });
 
@@ -89,7 +118,7 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
       };
       await container.items.create(audit);
 
-      policyEvaluator.invalidateCache(tenantId, policy.role, policy.resourceType);
+      policyEvaluator.invalidateCacheForPolicyChange(undefined, policy);
 
       res.status(201).json({ success: true, data: policy });
     } catch (error) {
@@ -149,7 +178,7 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
       };
       await container.items.create(audit);
 
-      policyEvaluator.invalidateCache(tenantId, updated.role, updated.resourceType);
+      policyEvaluator.invalidateCacheForPolicyChange(existing, updated);
 
       res.json({ success: true, data: updated });
     } catch (error) {
@@ -196,7 +225,7 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
       };
       await container.items.create(audit);
 
-      policyEvaluator.invalidateCache(tenantId, existing.role, existing.resourceType);
+      policyEvaluator.invalidateCacheForPolicyChange(existing, undefined);
 
       res.json({ success: true });
     } catch (error) {
@@ -249,7 +278,7 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
    * loaded (guaranteed by loadUserProfile() middleware upstream).
    *
    * Body: { targetUserId?: string, resourceType: string, action?: string }
-   * (defaults to the caller's own profile if targetUserId is omitted)
+   * Defaults to the caller's own profile if `targetUserId` is omitted.
    */
   router.post('/evaluate', async (req: AuthorizedRequest, res: Response): Promise<any> => {
     try {
@@ -257,19 +286,36 @@ export const createPolicyManagementRouter = (dbService: CosmosDbService): Router
         return res.status(401).json({ error: 'User profile required', code: 'USER_PROFILE_REQUIRED' });
       }
 
-      const { resourceType, action = 'read' } = req.body as { resourceType: string; action?: string };
+      const { resourceType, action = 'read', targetUserId } = req.body as {
+        resourceType: string;
+        action?: string;
+        targetUserId?: string;
+      };
       if (!resourceType) {
         return res.status(400).json({ error: 'resourceType is required', code: 'MISSING_RESOURCE_TYPE' });
       }
 
+      let effectiveProfile = req.userProfile;
+      if (targetUserId && targetUserId !== req.userProfile.id) {
+        const targetProfile = await authorizationService.getUserProfile(targetUserId, req.userProfile.tenantId);
+        if (!targetProfile) {
+          return res.status(404).json({ error: 'Target user not found', code: 'TARGET_USER_NOT_FOUND' });
+        }
+        effectiveProfile = targetProfile;
+      }
+
       const filter = await policyEvaluator.buildQueryFilter(
-        req.userProfile.id,
-        req.userProfile,
+        effectiveProfile.id,
+        effectiveProfile,
         resourceType,
         action,
       );
 
-      res.json({ success: true, data: filter });
+      res.json({
+        success: true,
+        data: filter,
+        evaluatedUserId: effectiveProfile.id,
+      });
     } catch (error) {
       logger.error('Failed to evaluate policy', { error });
       res.status(500).json({ error: 'Failed to evaluate policy', code: 'INTERNAL_ERROR' });

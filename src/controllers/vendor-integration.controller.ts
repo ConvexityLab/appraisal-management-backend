@@ -2,10 +2,12 @@ import express, { type Request, type Response, type Router } from 'express';
 import { Logger } from '../utils/logger.js';
 import { VendorIntegrationService } from '../services/vendor-integrations/VendorIntegrationService.js';
 import type { VendorType } from '../types/vendor-integration.types.js';
+import { VendorConnectionConfigurationError } from '../services/vendor-integrations/VendorIntegrationErrors.js';
 
 const logger = new Logger('VendorIntegrationController');
 
-function statusForError(message: string): number {
+function statusForError(error: unknown, message: string): number {
+  if (error instanceof VendorConnectionConfigurationError) return 503;
   if (message.includes('authentication failed') || message.includes('mismatch')) return 401;
   if (message.includes('not found') || message.includes('could not resolve')) return 404;
   if (
@@ -16,6 +18,13 @@ function statusForError(message: string): number {
     return 400;
   }
   return 500;
+}
+
+function codeForError(error: unknown): string {
+  if (error instanceof VendorConnectionConfigurationError) {
+    return 'VENDOR_INTEGRATION_CONFIGURATION_ERROR';
+  }
+  return 'VENDOR_INTEGRATION_INBOUND_FAILED';
 }
 
 function sendInbound(
@@ -42,10 +51,10 @@ function sendInbound(
         headers: req.headers,
       });
 
-      res.status(statusForError(message)).json({
+      res.status(statusForError(error, message)).json({
         success: false,
         error: {
-          code: 'VENDOR_INTEGRATION_INBOUND_FAILED',
+          code: codeForError(error),
           message,
         },
       });

@@ -9,6 +9,7 @@ Use it when running:
 - `pnpm axiom:livefire:document-flow`
 - `pnpm axiom:livefire:analyze-webhook`
 - `pnpm axiom:livefire:bulk-submit`
+- `pnpm axiom:livefire:authz-profile`
 - `pnpm axiom:livefire:ui-parity -- --mode <extraction|criteria|full>`
 - `pnpm axiom:livefire:remote-suite`
 
@@ -92,6 +93,23 @@ pnpm axiom:livefire:preflight
 ```
 
 Then run target scripts.
+
+## Seeded User Profile Verification
+
+After device-code auth is working, verify the staging seeded-user profile path explicitly:
+
+```powershell
+$env:AXIOM_LIVE_ENVIRONMENT='staging'
+pnpm axiom:livefire:authz-profile
+```
+
+Expected result:
+
+- HTTP `200` from `/api/authz-test/profile`
+- `user.id` matches the delegated token `oid`
+- `user.email` matches the delegated token UPN/email
+- `user.role` matches the seeded profile role
+- `interpretation.can_view_all` is `true` for the seeded admin users in `seed-staging-users.ts`
 
 ## Backend-Only UI Parity (Deterministic Isolation)
 

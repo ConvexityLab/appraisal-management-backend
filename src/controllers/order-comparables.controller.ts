@@ -50,6 +50,7 @@ import {
 import type { PropertyRecord } from '../types/property-record.types.js';
 import type { PropertyPhoto } from '../types/canonical-schema.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Logger } from '../utils/logger.js';
 
 const logger = new Logger('OrderComparablesController');
@@ -148,17 +149,34 @@ export class OrderComparablesController {
   /** Mount under `/api/vendor-orders/:vendorOrderId/comparables` */
   public routerByVendorOrder: Router;
 
-  constructor(private readonly dbService: CosmosDbService) {
+  constructor(
+    private readonly dbService: CosmosDbService,
+    authzMiddleware?: AuthorizationMiddleware,
+  ) {
     this.routerByClientOrder = Router({ mergeParams: true });
-    this.routerByClientOrder.get('/', this.handleByClientOrder.bind(this));
+    const clientOrderRead = authzMiddleware
+      ? [
+          authzMiddleware.loadUserProfile(),
+          authzMiddleware.authorizeResource('client_order', 'read', { resourceIdParam: 'orderId' }),
+        ]
+      : [];
+    this.routerByClientOrder.get('/', ...clientOrderRead, this.handleByClientOrder.bind(this));
 
     this.routerByVendorOrder = Router({ mergeParams: true });
-    this.routerByVendorOrder.get('/', this.handleByVendorOrder.bind(this));
+    const vendorOrderRead = authzMiddleware
+      ? [
+          authzMiddleware.loadUserProfile(),
+          authzMiddleware.authorizeResource('vendor_order', 'read', {
+            resourceIdParam: 'vendorOrderId',
+          }),
+        ]
+      : [];
+    this.routerByVendorOrder.get('/', ...vendorOrderRead, this.handleByVendorOrder.bind(this));
   }
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 
-  private async handleByClientOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async handleByClientOrder(req: AuthorizedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required', code: 'UNAUTHENTICATED' });
       return;
@@ -168,9 +186,14 @@ export class OrderComparablesController {
       res.status(400).json({ error: 'orderId is required', code: 'VALIDATION_ERROR' });
       return;
     }
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+      return;
+    }
 
     try {
-      const payload = await this.loadComparables(clientOrderId, req.user.tenantId);
+      const payload = await this.loadComparables(clientOrderId, tenantId);
       res.json(payload);
     } catch (err) {
       logger.error('handleByClientOrder failed', { error: err, clientOrderId });
@@ -182,7 +205,7 @@ export class OrderComparablesController {
     }
   }
 
-  private async handleByVendorOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async handleByVendorOrder(req: AuthorizedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required', code: 'UNAUTHENTICATED' });
       return;
@@ -192,9 +215,14 @@ export class OrderComparablesController {
       res.status(400).json({ error: 'vendorOrderId is required', code: 'VALIDATION_ERROR' });
       return;
     }
+    const tenantId = req.user.tenantId;
+    if (!tenantId) {
+      res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+      return;
+    }
 
     try {
-      const vo = await this.readVendorOrder(vendorOrderId, req.user.tenantId);
+      const vo = await this.readVendorOrder(vendorOrderId, tenantId);
       if (!vo) {
         res.status(404).json({ error: 'VendorOrder not found', code: 'NOT_FOUND' });
         return;
@@ -208,7 +236,7 @@ export class OrderComparablesController {
         return;
       }
       const [payload, subject] = await Promise.all([
-        this.loadComparables(clientOrderId, req.user.tenantId),
+        this.loadComparables(clientOrderId, tenantId),
         this.readSubjectFromPropertyRecord(vo.propertyId, vo.tenantId),
       ]);
       const response: OrderComparablesResponse = { ...payload, vendorOrderId };

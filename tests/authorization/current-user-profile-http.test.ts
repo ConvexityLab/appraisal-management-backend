@@ -14,10 +14,26 @@ process.env.IVUEIT_BASE_URL = process.env.IVUEIT_BASE_URL ?? 'https://test-place
 vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
 	const mod = await importOriginal<typeof import('../../src/services/cosmos-db.service.js')>();
 	const OriginalClass = mod.CosmosDbService;
+	const capabilityMod = await import('../../src/data/platform-capability-matrix.js');
+	const capabilityDocs = capabilityMod.materializeAuthorizationCapabilityDocuments(
+		capabilityMod.AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+		'test',
+	);
 
 	const fakeContainer = {
 		items: {
-			query: () => ({ fetchAll: async () => ({ resources: [] }) }),
+			query: (querySpec?: { query?: string; parameters?: Array<{ name: string; value: unknown }> }) => ({
+				fetchAll: async () => {
+					if (querySpec?.query?.includes("c.type = 'authorization-capability'")) {
+						const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+						return {
+							resources: capabilityDocs.filter((doc) => doc.tenantId === tenantId),
+						};
+					}
+
+					return { resources: [] };
+				},
+			}),
 			create: async () => ({ resource: null }),
 			upsert: async () => ({ resource: null }),
 			readAll: () => ({ fetchAll: async () => ({ resources: [] }) }),

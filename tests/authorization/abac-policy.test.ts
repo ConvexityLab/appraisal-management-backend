@@ -1,17 +1,17 @@
 /**
  * ABAC Policy Tests — Casbin Engine
  *
- * Zero mocking. Zero infrastructure. Loads the REAL platform capability matrix
- * (`src/data/platform-capability-matrix.ts`) and exercises the Casbin engine
- * directly.
- *
- * If someone edits the capability matrix incorrectly these tests will catch
- * it before anything ships.
+ * Exercises the Casbin engine against the default authorization-capability
+ * materialization shape using an in-memory Cosmos mock.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { CasbinAuthorizationEngine } from '../../src/services/casbin-engine.service.js';
 import type { AuthorizationContext } from '../../src/types/authorization.types.js';
+import {
+  materializeAuthorizationCapabilityDocuments,
+  AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+} from '../../src/data/platform-capability-matrix.js';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -51,8 +51,30 @@ function ctx(
 
 let engine: CasbinAuthorizationEngine;
 
+function makeMockDb() {
+  const capabilityDocs = materializeAuthorizationCapabilityDocuments(
+    AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+    'test',
+  );
+
+  return {
+    getContainer: vi.fn(() => ({
+      items: {
+        query: (querySpec: { parameters?: Array<{ name: string; value: unknown }> }) => ({
+          fetchAll: async () => {
+            const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+            return {
+              resources: capabilityDocs.filter((doc) => doc.tenantId === tenantId && doc.enabled !== false),
+            };
+          },
+        }),
+      },
+    })),
+  } as any;
+}
+
 beforeAll(async () => {
-  engine = new CasbinAuthorizationEngine();
+  engine = new CasbinAuthorizationEngine(makeMockDb());
   await engine.initialize();
 }, 15_000);
 
@@ -134,51 +156,51 @@ describe('manager role', () => {
   it('ALLOW manager → esignature → delete', async () => expect(await allowed('manager', 'esignature', 'delete')).toBe(true));
 });
 
-// ─── QC ANALYST ────────────────────────────────────────────────────────────
+// ─── ANALYST ───────────────────────────────────────────────────────────────
 
-describe('qc_analyst role', () => {
-  it('ALLOW qc_analyst → order → read',   async () => expect(await allowed('qc_analyst', 'order', 'read')).toBe(true));
-  it('DENY  qc_analyst → order → create', async () => expect(await allowed('qc_analyst', 'order', 'create')).toBe(false));
-  it('DENY  qc_analyst → order → delete', async () => expect(await allowed('qc_analyst', 'order', 'delete')).toBe(false));
+describe('analyst role', () => {
+  it('ALLOW analyst → order → read',   async () => expect(await allowed('analyst', 'order', 'read')).toBe(true));
+  it('DENY  analyst → order → create', async () => expect(await allowed('analyst', 'order', 'create')).toBe(false));
+  it('DENY  analyst → order → delete', async () => expect(await allowed('analyst', 'order', 'delete')).toBe(false));
 
-  it('ALLOW qc_analyst → qc_review → read',    async () => expect(await allowed('qc_analyst', 'qc_review', 'read')).toBe(true));
-  it('ALLOW qc_analyst → qc_review → create',  async () => expect(await allowed('qc_analyst', 'qc_review', 'create')).toBe(true));
-  it('ALLOW qc_analyst → qc_review → update',  async () => expect(await allowed('qc_analyst', 'qc_review', 'update')).toBe(true));
-  it('ALLOW qc_analyst → qc_review → execute', async () => expect(await allowed('qc_analyst', 'qc_review', 'execute')).toBe(true));
-  it('ALLOW qc_analyst → qc_review → approve', async () => expect(await allowed('qc_analyst', 'qc_review', 'approve')).toBe(true));
-  it('ALLOW qc_analyst → qc_review → reject',  async () => expect(await allowed('qc_analyst', 'qc_review', 'reject')).toBe(true));
-  it('DENY  qc_analyst → qc_review → delete',  async () => expect(await allowed('qc_analyst', 'qc_review', 'delete')).toBe(false));
+  it('ALLOW analyst → qc_review → read',    async () => expect(await allowed('analyst', 'qc_review', 'read')).toBe(true));
+  it('ALLOW analyst → qc_review → create',  async () => expect(await allowed('analyst', 'qc_review', 'create')).toBe(true));
+  it('ALLOW analyst → qc_review → update',  async () => expect(await allowed('analyst', 'qc_review', 'update')).toBe(true));
+  it('ALLOW analyst → qc_review → execute', async () => expect(await allowed('analyst', 'qc_review', 'execute')).toBe(true));
+  it('ALLOW analyst → qc_review → approve', async () => expect(await allowed('analyst', 'qc_review', 'approve')).toBe(true));
+  it('ALLOW analyst → qc_review → reject',  async () => expect(await allowed('analyst', 'qc_review', 'reject')).toBe(true));
+  it('DENY  analyst → qc_review → delete',  async () => expect(await allowed('analyst', 'qc_review', 'delete')).toBe(false));
 
-  it('ALLOW qc_analyst → qc_queue → read',   async () => expect(await allowed('qc_analyst', 'qc_queue', 'read')).toBe(true));
-  it('DENY  qc_analyst → qc_queue → create', async () => expect(await allowed('qc_analyst', 'qc_queue', 'create')).toBe(false));
+  it('ALLOW analyst → qc_queue → read',   async () => expect(await allowed('analyst', 'qc_queue', 'read')).toBe(true));
+  it('DENY  analyst → qc_queue → create', async () => expect(await allowed('analyst', 'qc_queue', 'create')).toBe(false));
 
-  it('ALLOW qc_analyst → document → read',   async () => expect(await allowed('qc_analyst', 'document', 'read')).toBe(true));
-  it('ALLOW qc_analyst → document → create', async () => expect(await allowed('qc_analyst', 'document', 'create')).toBe(true));
-  it('DENY  qc_analyst → document → delete', async () => expect(await allowed('qc_analyst', 'document', 'delete')).toBe(false));
+  it('ALLOW analyst → document → read',   async () => expect(await allowed('analyst', 'document', 'read')).toBe(true));
+  it('ALLOW analyst → document → create', async () => expect(await allowed('analyst', 'document', 'create')).toBe(true));
+  it('DENY  analyst → document → delete', async () => expect(await allowed('analyst', 'document', 'delete')).toBe(false));
 
-  it('DENY  qc_analyst → vendor → create', async () => expect(await allowed('qc_analyst', 'vendor', 'create')).toBe(false));
-  it('DENY  qc_analyst → vendor → delete', async () => expect(await allowed('qc_analyst', 'vendor', 'delete')).toBe(false));
+  it('DENY  analyst → vendor → create', async () => expect(await allowed('analyst', 'vendor', 'create')).toBe(false));
+  it('DENY  analyst → vendor → delete', async () => expect(await allowed('analyst', 'vendor', 'delete')).toBe(false));
 
-  it('ALLOW qc_analyst → engagement → read',   async () => expect(await allowed('qc_analyst', 'engagement', 'read')).toBe(true));
-  it('DENY  qc_analyst → engagement → create', async () => expect(await allowed('qc_analyst', 'engagement', 'create')).toBe(false));
+  it('ALLOW analyst → engagement → read',   async () => expect(await allowed('analyst', 'engagement', 'read')).toBe(true));
+  it('DENY  analyst → engagement → create', async () => expect(await allowed('analyst', 'engagement', 'create')).toBe(false));
 
-  it('ALLOW qc_analyst → appraiser → read',   async () => expect(await allowed('qc_analyst', 'appraiser', 'read')).toBe(true));
-  it('DENY  qc_analyst → appraiser → create', async () => expect(await allowed('qc_analyst', 'appraiser', 'create')).toBe(false));
+  it('ALLOW analyst → appraiser → read',   async () => expect(await allowed('analyst', 'appraiser', 'read')).toBe(true));
+  it('DENY  analyst → appraiser → create', async () => expect(await allowed('analyst', 'appraiser', 'create')).toBe(false));
 
-  it('ALLOW qc_analyst → inspection → read',   async () => expect(await allowed('qc_analyst', 'inspection', 'read')).toBe(true));
-  it('DENY  qc_analyst → inspection → create', async () => expect(await allowed('qc_analyst', 'inspection', 'create')).toBe(false));
+  it('ALLOW analyst → inspection → read',   async () => expect(await allowed('analyst', 'inspection', 'read')).toBe(true));
+  it('DENY  analyst → inspection → create', async () => expect(await allowed('analyst', 'inspection', 'create')).toBe(false));
 
-  it('ALLOW qc_analyst → client → read',   async () => expect(await allowed('qc_analyst', 'client', 'read')).toBe(true));
-  it('DENY  qc_analyst → client → create', async () => expect(await allowed('qc_analyst', 'client', 'create')).toBe(false));
+  it('ALLOW analyst → client → read',   async () => expect(await allowed('analyst', 'client', 'read')).toBe(true));
+  it('DENY  analyst → client → create', async () => expect(await allowed('analyst', 'client', 'create')).toBe(false));
 
-  it('ALLOW qc_analyst → negotiation → read',   async () => expect(await allowed('qc_analyst', 'negotiation', 'read')).toBe(true));
-  it('DENY  qc_analyst → negotiation → create', async () => expect(await allowed('qc_analyst', 'negotiation', 'create')).toBe(false));
+  it('ALLOW analyst → negotiation → read',   async () => expect(await allowed('analyst', 'negotiation', 'read')).toBe(true));
+  it('DENY  analyst → negotiation → create', async () => expect(await allowed('analyst', 'negotiation', 'create')).toBe(false));
 
-  it('ALLOW qc_analyst → esignature → read',   async () => expect(await allowed('qc_analyst', 'esignature', 'read')).toBe(true));
-  it('DENY  qc_analyst → esignature → create', async () => expect(await allowed('qc_analyst', 'esignature', 'create')).toBe(false));
+  it('ALLOW analyst → esignature → read',   async () => expect(await allowed('analyst', 'esignature', 'read')).toBe(true));
+  it('DENY  analyst → esignature → create', async () => expect(await allowed('analyst', 'esignature', 'create')).toBe(false));
 
-  it('DENY  qc_analyst → analytics → create', async () => expect(await allowed('qc_analyst', 'analytics', 'create')).toBe(false));
-  it('DENY  qc_analyst → user → create',      async () => expect(await allowed('qc_analyst', 'user', 'create')).toBe(false));
+  it('DENY  analyst → analytics → create', async () => expect(await allowed('analyst', 'analytics', 'create')).toBe(false));
+  it('DENY  analyst → user → create',      async () => expect(await allowed('analyst', 'user', 'create')).toBe(false));
 });
 
 // ─── APPRAISER ─────────────────────────────────────────────────────────────

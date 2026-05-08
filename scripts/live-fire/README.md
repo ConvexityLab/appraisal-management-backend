@@ -38,6 +38,12 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
   - Finds first order/document pair where document has `id` and `blobPath/blobUrl`
   - Prints ready-to-run export commands for `AXIOM_LIVE_ORDER_ID`, `AXIOM_LIVE_DOCUMENT_ID`, `AXIOM_LIVE_CLIENT_ID`
 
+- `verify-authz-test-profile.ts`  ← **pnpm axiom:livefire:authz-profile**
+  - `GET /api/authz-test/profile`
+  - Requires a real delegated token for a seeded staging/prod user
+  - Verifies token subject matches `scripts/user-identities.json` and, for staging, `seed-staging-users.ts`
+  - Asserts response `user.id`, `user.email`, `user.role`, and `interpretation.can_view_all`
+
 - `axiom-live-fire-ui-parity.ts`
   - Mode `extraction`: `POST /api/runs/extraction` + `POST /api/runs/:runId/refresh-status` + `GET /api/runs/:runId/snapshot`
   - Mode `criteria`: `POST /api/runs/criteria` + run/step polling + `GET /api/runs/:stepRunId/step-input`
@@ -215,6 +221,18 @@ Optional poll tuning for all scripts:
 
 - `AXIOM_LIVE_POLL_ATTEMPTS` (default `20`)
 - `AXIOM_LIVE_POLL_INTERVAL_MS` (default `3000`)
+
+### Authz profile verification
+
+- `AXIOM_LIVE_ENVIRONMENT` (`staging` or `prod`)
+- Uses the standard shared auth env documented above
+
+Example:
+
+```powershell
+$env:AXIOM_LIVE_ENVIRONMENT='staging'
+pnpm axiom:livefire:authz-profile
+```
 
 Optional preflight tuning:
 

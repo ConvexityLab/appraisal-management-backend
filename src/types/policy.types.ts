@@ -122,6 +122,37 @@ export interface PolicyRule {
   createdBy: string;
 }
 
+// ─── Capability materialization ────────────────────────────────────────────
+
+/**
+ * Coarse capability tuples materialized for Casbin into the same
+ * `authorization-policies` container.
+ *
+ * Unlike `PolicyRule`, these documents answer only the boolean question
+ * "can role X perform action Y on resource Z at all?" They do not carry
+ * row-scope conditions.
+ */
+export interface AuthorizationCapabilityDocument {
+  /** Cosmos document id */
+  id: string;
+
+  /** Cosmos document type discriminator */
+  type: 'authorization-capability';
+
+  /** Partition key for the capability materialization partition. */
+  tenantId: string;
+
+  role: Role;
+  resourceType: ResourceType;
+  actions: Action[];
+  effect: 'allow' | 'deny';
+  enabled?: boolean;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
 // ─── Audit trail ─────────────────────────────────────────────────────────────
 
 /**

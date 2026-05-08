@@ -22,9 +22,15 @@
  *   - UserProfileService.updateRole / patchAccessScope (returns stub profiles)
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import type { Express } from 'express';
+import type { Application } from 'express';
+
+const auditWrites: Array<Record<string, unknown>> = [];
+
+function getUserAdminMutationAudits(): Array<Record<string, unknown>> {
+  return auditWrites.filter((entry) => entry.type === 'user-admin-mutation');
+}
 
 // ─── Env bootstrap (must precede any module import) ─────────────────────────
 // Defensive: tests/setup.ts also seeds these, but in some CI worker
@@ -43,10 +49,38 @@ process.env.IVUEIT_BASE_URL = process.env.IVUEIT_BASE_URL ?? 'https://test-place
 vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/services/cosmos-db.service.js')>();
   const OriginalClass = mod.CosmosDbService;
+  const capabilityMod = await import('../../src/data/platform-capability-matrix.js');
+  const capabilityDocs = capabilityMod.materializeAuthorizationCapabilityDocuments(
+    capabilityMod.AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+    'test',
+  );
 
   const fakeContainer = {
     items: {
-      query: () => ({ fetchAll: async () => ({ resources: [] }) }),
+      query: (querySpec?: { query?: string; parameters?: Array<{ name: string; value: unknown }> }) => ({
+        fetchAll: async () => {
+          if (querySpec?.query?.includes("c.type = 'authorization-capability'")) {
+            const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+            return {
+              resources: capabilityDocs.filter((doc) => doc.tenantId === tenantId),
+            };
+          }
+
+          if (querySpec?.query?.includes("c.type = 'user-admin-mutation'")) {
+            const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+            const targetUserId = querySpec.parameters?.find((parameter) => parameter.name === '@targetUserId')?.value;
+            return {
+              resources: auditWrites.filter((entry) => {
+                if (entry.tenantId !== tenantId) return false;
+                if (targetUserId && entry.targetUserId !== targetUserId) return false;
+                return entry.type === 'user-admin-mutation';
+              }),
+            };
+          }
+
+          return { resources: [] };
+        },
+      }),
       create: async () => ({ resource: null }),
       upsert: async () => ({ resource: null }),
       readAll: () => ({ fetchAll: async () => ({ resources: [] }) }),
@@ -61,6 +95,10 @@ vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
   class MockedCosmosDbService extends OriginalClass {
     override async initialize(): Promise<void> { /* no-op */ }
     override getContainer(_name: string) { return fakeContainer as any; }
+    override async upsertDocument<T>(_containerName: string, document: T): Promise<T> {
+      auditWrites.push(document as Record<string, unknown>);
+      return document;
+    }
   }
 
   return { ...mod, CosmosDbService: MockedCosmosDbService };
@@ -75,6 +113,27 @@ vi.mock('../../src/services/user-profile.service.js', async (importOriginal) => 
   type UserProfile = import('../../src/types/authorization.types.js').UserProfile;
 
   class MockedUserProfileService extends OriginalClass {
+    override async syncUserProfile(request: any): Promise<UserProfile> {
+      return {
+        id: 'user_new_user_tenant_a_dev',
+        email: request.email,
+        name: request.name,
+        azureAdObjectId: request.azureAdObjectId,
+        tenantId: request.tenantId,
+        role: request.role,
+        portalDomain: request.portalDomain,
+        boundEntityIds: request.boundEntityIds ?? [],
+        isInternal: request.isInternal ?? false,
+        accessScope: {
+          teamIds: request.accessScope?.teamIds ?? [],
+          departmentIds: request.accessScope?.departmentIds ?? [],
+        },
+        isActive: true,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date(),
+      };
+    }
+
     override async updateRole(userId: string, tenantId: string, _newRole: any): Promise<UserProfile | null> {
       // Simulate cross-tenant isolation: only find users in tenant-A
       if (tenantId !== 'tenant-a') return null;
@@ -85,6 +144,8 @@ vi.mock('../../src/services/user-profile.service.js', async (importOriginal) => 
         name: 'Target User',
         tenantId: 'tenant-a',
         role: _newRole,
+        portalDomain: 'platform',
+        boundEntityIds: [],
         accessScope: { teamIds: [], departmentIds: [] },
         isActive: true,
         createdAt: new Date('2024-01-01'),
@@ -101,8 +162,82 @@ vi.mock('../../src/services/user-profile.service.js', async (importOriginal) => 
         name: 'Target User',
         tenantId: 'tenant-a',
         role: 'appraiser',
+        portalDomain: 'platform',
+        boundEntityIds: [],
         accessScope: { teamIds: _updates.teamIds ?? [], departmentIds: [] },
         isActive: true,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date(),
+      };
+    }
+
+    override async getUserProfile(userId: string, tenantId: string): Promise<UserProfile | null> {
+      if (tenantId !== 'tenant-a') return null;
+      if (userId !== 'user-in-tenant-a') return null;
+      return {
+        id: userId,
+        email: 'target@tenant-a.dev',
+        name: 'Target User',
+        tenantId: 'tenant-a',
+        role: 'appraiser',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+        accessScope: { teamIds: [], departmentIds: [] },
+        isActive: true,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      };
+    }
+
+    override async deactivateUser(userId: string, tenantId: string): Promise<UserProfile | null> {
+      if (tenantId !== 'tenant-a') return null;
+      if (userId !== 'user-in-tenant-a') return null;
+      return {
+        id: userId,
+        email: 'target@tenant-a.dev',
+        name: 'Target User',
+        tenantId: 'tenant-a',
+        role: 'appraiser',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+        accessScope: { teamIds: [], departmentIds: [] },
+        isActive: false,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date(),
+      };
+    }
+
+    override async reactivateUser(userId: string, tenantId: string): Promise<UserProfile | null> {
+      if (tenantId !== 'tenant-a') return null;
+      if (userId !== 'user-in-tenant-a') return null;
+      return {
+        id: userId,
+        email: 'target@tenant-a.dev',
+        name: 'Target User',
+        tenantId: 'tenant-a',
+        role: 'appraiser',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+        accessScope: { teamIds: [], departmentIds: [] },
+        isActive: true,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date(),
+      };
+    }
+
+    override async updateActiveStatus(userId: string, tenantId: string, status: 'active' | 'inactive'): Promise<UserProfile | null> {
+      if (tenantId !== 'tenant-a') return null;
+      if (userId !== 'user-in-tenant-a') return null;
+      return {
+        id: userId,
+        email: 'target@tenant-a.dev',
+        name: 'Target User',
+        tenantId: 'tenant-a',
+        role: 'appraiser',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+        accessScope: { teamIds: [], departmentIds: [] },
+        isActive: status === 'active',
         createdAt: new Date('2024-01-01'),
         updatedAt: new Date(),
       };
@@ -130,6 +265,8 @@ function makeProfile(id: string, role: UserProfile['role'], tenantId: string = T
     name: `Test ${role}`,
     tenantId,
     role,
+    portalDomain: 'platform',
+    boundEntityIds: [],
     accessScope: { teamIds: [], departmentIds: [] },
     isActive: true,
     createdAt: new Date('2024-01-01'),
@@ -142,12 +279,12 @@ function makeProfile(id: string, role: UserProfile['role'], tenantId: string = T
 const TEST_USERS: Record<string, UserProfile> = {
   'up-admin-a-uid':   makeProfile('up-admin-a-uid', 'admin', TENANT_A),
   'up-manager-a-uid': makeProfile('up-manager-a-uid', 'manager', TENANT_A),
-  'up-analyst-a-uid': makeProfile('up-analyst-a-uid', 'qc_analyst', TENANT_A),
+  'up-analyst-a-uid': makeProfile('up-analyst-a-uid', 'analyst', TENANT_A),
   'up-admin-b-uid':   makeProfile('up-admin-b-uid', 'admin', TENANT_B),
 };
 
 let tokenGen: TestTokenGenerator;
-let getUserProfileSpy: ReturnType<typeof vi.spyOn>;
+let getUserProfileSpy: any;
 
 function mintToken(userId: string): string {
   const profile = TEST_USERS[userId];
@@ -164,7 +301,7 @@ function mintToken(userId: string): string {
 
 // ─── Server lifecycle ─────────────────────────────────────────────────────────
 
-let app: Express;
+let app: Application;
 let server: AppraisalManagementAPIServer;
 
 beforeAll(async () => {
@@ -181,6 +318,10 @@ beforeAll(async () => {
 
 afterAll(() => {
   getUserProfileSpy.mockRestore();
+});
+
+beforeEach(() => {
+  auditWrites.length = 0;
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -254,6 +395,28 @@ describe('PATCH /api/users/:userId/role', () => {
 
       infoSpy.mockRestore();
     });
+
+    it('writes a durable audit-trail mutation entry on success', async () => {
+      const res = await request(app)
+        .patch('/api/users/user-in-tenant-a/role')
+        .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`)
+        .send({ role: 'manager' });
+
+      expect(res.status).toBe(200);
+      const mutationAudits = getUserAdminMutationAudits();
+      expect(mutationAudits).toHaveLength(1);
+      expect(mutationAudits[0]).toMatchObject({
+        type: 'user-admin-mutation',
+        action: 'user-profile.role-patched',
+        tenantId: TENANT_A,
+        actorUserId: 'up-admin-a-uid',
+        targetUserId: 'user-in-tenant-a',
+        metadata: {
+          previousRole: 'appraiser',
+          newRole: 'manager',
+        },
+      });
+    });
   });
 
   describe('cross-tenant isolation', () => {
@@ -269,6 +432,113 @@ describe('PATCH /api/users/:userId/role', () => {
       expect(res.status).not.toBe(403);
       expect([404, 500]).toContain(res.status);
     });
+  });
+});
+
+describe('POST /api/users', () => {
+  it('no token → 401', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .send({
+        email: 'new.user@tenant-a.dev',
+        name: 'New User',
+        azureAdObjectId: 'entra-new-user',
+        role: 'manager',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+      });
+    expect(res.status).toBe(401);
+  });
+
+  it('manager → 403', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${mintToken('up-manager-a-uid')}`)
+      .send({
+        email: 'new.user@tenant-a.dev',
+        name: 'New User',
+        azureAdObjectId: 'entra-new-user',
+        role: 'manager',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+      });
+    expect(res.status).toBe(403);
+  });
+
+  it('admin provisions a user profile → 201', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`)
+      .send({
+        email: 'new.user@tenant-a.dev',
+        name: 'New User',
+        azureAdObjectId: 'entra-new-user',
+        role: 'manager',
+        portalDomain: 'platform',
+        boundEntityIds: [],
+        accessScope: { teamIds: ['team-a'], departmentIds: ['dept-a'] },
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({
+      email: 'new.user@tenant-a.dev',
+      tenantId: TENANT_A,
+      role: 'manager',
+      portalDomain: 'platform',
+      accessScope: { teamIds: ['team-a'], departmentIds: ['dept-a'] },
+    });
+
+    const mutationAudits = getUserAdminMutationAudits();
+    expect(mutationAudits).toHaveLength(1);
+    expect(mutationAudits[0]).toMatchObject({
+      type: 'user-admin-mutation',
+      action: 'user-profile.provisioned',
+      tenantId: TENANT_A,
+      actorUserId: 'up-admin-a-uid',
+      targetUserId: 'user_new_user_tenant_a_dev',
+    });
+  });
+
+  it('admin missing portalDomain → 400', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`)
+      .send({
+        email: 'new.user@tenant-a.dev',
+        name: 'New User',
+        azureAdObjectId: 'entra-new-user',
+        role: 'manager',
+        boundEntityIds: [],
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('MISSING_PORTAL_DOMAIN');
+  });
+});
+
+describe('GET /api/users/audit', () => {
+  it('no token → 401', async () => {
+    const res = await request(app).get('/api/users/audit');
+    expect(res.status).toBe(401);
+  });
+
+  it('manager → 403', async () => {
+    const res = await request(app)
+      .get('/api/users/audit')
+      .set('Authorization', `Bearer ${mintToken('up-manager-a-uid')}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('admin lists user admin mutation audits for the tenant', async () => {
+    const res = await request(app)
+      .get('/api/users/audit')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
   });
 });
 
@@ -333,6 +603,29 @@ describe('PATCH /api/users/:userId/access-scope', () => {
 
       infoSpy.mockRestore();
     });
+
+    it('writes a durable audit-trail mutation entry on success', async () => {
+      const res = await request(app)
+        .patch('/api/users/user-in-tenant-a/access-scope')
+        .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`)
+        .send({ teamIds: ['t1'] });
+
+      expect(res.status).toBe(200);
+      const mutationAudits = getUserAdminMutationAudits();
+      expect(mutationAudits).toHaveLength(1);
+      expect(mutationAudits[0]).toMatchObject({
+        type: 'user-admin-mutation',
+        action: 'user-profile.access-scope-patched',
+        tenantId: TENANT_A,
+        actorUserId: 'up-admin-a-uid',
+        targetUserId: 'user-in-tenant-a',
+        metadata: {
+          updates: {
+            teamIds: ['t1'],
+          },
+        },
+      });
+    });
   });
 
   describe('cross-tenant isolation', () => {
@@ -345,6 +638,141 @@ describe('PATCH /api/users/:userId/access-scope', () => {
       expect(res.status).not.toBe(401);
       expect(res.status).not.toBe(403);
       expect([404, 500]).toContain(res.status);
+    });
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/users/:userId/deactivate
+// POST /api/users/:userId/reactivate
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/users/:userId/deactivate', () => {
+  it('no token → 401', async () => {
+    const res = await request(app).post('/api/users/user-in-tenant-a/deactivate');
+    expect(res.status).toBe(401);
+  });
+
+  it('manager → 403', async () => {
+    const res = await request(app)
+      .post('/api/users/user-in-tenant-a/deactivate')
+      .set('Authorization', `Bearer ${mintToken('up-manager-a-uid')}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('admin deactivates a user and writes a durable audit-trail mutation entry', async () => {
+    const res = await request(app)
+      .post('/api/users/user-in-tenant-a/deactivate')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({
+      id: 'user-in-tenant-a',
+      isActive: false,
+    });
+
+    const mutationAudits = getUserAdminMutationAudits();
+    expect(mutationAudits).toHaveLength(1);
+    expect(mutationAudits[0]).toMatchObject({
+      type: 'user-admin-mutation',
+      action: 'user-profile.deactivated',
+      tenantId: TENANT_A,
+      actorUserId: 'up-admin-a-uid',
+      targetUserId: 'user-in-tenant-a',
+    });
+  });
+});
+
+describe('POST /api/users/:userId/reactivate', () => {
+  it('no token → 401', async () => {
+    const res = await request(app).post('/api/users/user-in-tenant-a/reactivate');
+    expect(res.status).toBe(401);
+  });
+
+  it('manager → 403', async () => {
+    const res = await request(app)
+      .post('/api/users/user-in-tenant-a/reactivate')
+      .set('Authorization', `Bearer ${mintToken('up-manager-a-uid')}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('admin reactivates a user and writes a durable audit-trail mutation entry', async () => {
+    const res = await request(app)
+      .post('/api/users/user-in-tenant-a/reactivate')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({
+      id: 'user-in-tenant-a',
+      isActive: true,
+    });
+
+    const mutationAudits = getUserAdminMutationAudits();
+    expect(mutationAudits).toHaveLength(1);
+    expect(mutationAudits[0]).toMatchObject({
+      type: 'user-admin-mutation',
+      action: 'user-profile.reactivated',
+      tenantId: TENANT_A,
+      actorUserId: 'up-admin-a-uid',
+      targetUserId: 'user-in-tenant-a',
+    });
+  });
+});
+
+describe('PATCH /api/users/:userId/status', () => {
+  it('no token → 401', async () => {
+    const res = await request(app)
+      .patch('/api/users/user-in-tenant-a/status')
+      .send({ status: 'inactive' });
+    expect(res.status).toBe(401);
+  });
+
+  it('manager → 403', async () => {
+    const res = await request(app)
+      .patch('/api/users/user-in-tenant-a/status')
+      .set('Authorization', `Bearer ${mintToken('up-manager-a-uid')}`)
+      .send({ status: 'inactive' });
+    expect(res.status).toBe(403);
+  });
+
+  it('invalid status → 400 with explicit error', async () => {
+    const res = await request(app)
+      .patch('/api/users/user-in-tenant-a/status')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`)
+      .send({ status: 'paused' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_STATUS');
+    expect(String(res.body.error)).toContain('paused');
+  });
+
+  it('admin updates user status and writes a durable audit-trail mutation entry', async () => {
+    const res = await request(app)
+      .patch('/api/users/user-in-tenant-a/status')
+      .set('Authorization', `Bearer ${mintToken('up-admin-a-uid')}`)
+      .send({ status: 'inactive' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toMatchObject({
+      id: 'user-in-tenant-a',
+      isActive: false,
+    });
+
+    const mutationAudits = getUserAdminMutationAudits();
+    expect(mutationAudits).toHaveLength(1);
+    expect(mutationAudits[0]).toMatchObject({
+      type: 'user-admin-mutation',
+      action: 'user-profile.status-patched',
+      tenantId: TENANT_A,
+      actorUserId: 'up-admin-a-uid',
+      targetUserId: 'user-in-tenant-a',
+      metadata: {
+        previousStatus: 'active',
+        newStatus: 'inactive',
+      },
     });
   });
 });

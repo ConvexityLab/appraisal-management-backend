@@ -13,6 +13,7 @@ import {
   VENDOR_ORDER_DOC_TYPE,
   LEGACY_VENDOR_ORDER_DOC_TYPE,
 } from '../src/types/vendor-order.types';
+import type { AuthorizationMiddleware } from '../src/middleware/authorization.middleware';
 
 interface VOStored {
   id: string;
@@ -68,10 +69,10 @@ function makeMockDb() {
     }),
   } as any;
 
-  return { db, store };
+  return { db, store, container };
 }
 
-function makeApp(db: any) {
+function makeApp(db: any, authzMiddleware?: Partial<AuthorizationMiddleware>) {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: Response, next: NextFunction) => {
@@ -83,9 +84,31 @@ function makeApp(db: any) {
     };
     next();
   });
-  const ctrl = new VendorOrderController(db);
+  const ctrl = new VendorOrderController(db, authzMiddleware as AuthorizationMiddleware | undefined);
   app.use('/api/vendor-orders', ctrl.router);
   return app;
+}
+
+function makeAuthzStub() {
+  return {
+    loadUserProfile: () => (req: any, _res: Response, next: NextFunction) => {
+      req.userProfile = {
+        id: req.user.id,
+        email: req.user.email,
+        role: 'manager',
+        tenantId: req.user.tenantId,
+      };
+      next();
+    },
+    authorizeQuery: () => (req: any, _res: Response, next: NextFunction) => {
+      req.authorizationFilter = {
+        sql: 'c.ownerId = @ownerId',
+        parameters: [{ name: '@ownerId', value: 'user-1' }],
+      };
+      next();
+    },
+    authorizeResource: () => (_req: any, _res: Response, next: NextFunction) => next(),
+  } satisfies Partial<AuthorizationMiddleware>;
 }
 
 describe('GET /api/vendor-orders', () => {
@@ -182,5 +205,22 @@ describe('GET /api/vendor-orders/:id', () => {
     const res = await request(app).get('/api/vendor-orders/weird-1');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('VendorOrderController authorization', () => {
+  it('appends authorizationFilter SQL and parameters for list queries', async () => {
+    const { db, container } = makeMockDb();
+    const app = makeApp(db, makeAuthzStub());
+
+    const res = await request(app).get('/api/vendor-orders').query({ clientOrderId: 'co-1' });
+
+    expect(res.status).toBe(200);
+    expect(container.items.query).toHaveBeenCalledTimes(1);
+    const querySpec = container.items.query.mock.calls[0][0];
+    expect(querySpec.query).toContain('AND (c.ownerId = @ownerId)');
+    expect(querySpec.parameters).toEqual(
+      expect.arrayContaining([{ name: '@ownerId', value: 'user-1' }]),
+    );
   });
 });

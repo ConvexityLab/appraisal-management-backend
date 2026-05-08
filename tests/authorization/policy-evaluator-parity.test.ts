@@ -207,4 +207,88 @@ describe('PolicyEvaluatorService', () => {
     expect(allowed.sql).toBe('1=1');
     expect(denied.sql).toBe('1=0');
   });
+
+  it('wraps unconditional allows with NOT clauses when a higher-priority scoped deny is conditional', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({ effect: 'allow', priority: 100, conditions: [] }),
+      rule({
+        effect: 'deny',
+        priority: 200,
+        clientId: 'client-a',
+        conditions: [{
+          attribute: 'accessControl.teamId',
+          operator: 'in',
+          userField: 'accessScope.teamIds',
+        }],
+      }),
+    ]));
+
+    const result = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', { teamIds: ['team-a'] }, { clientId: 'client-a' }),
+      'order',
+      'read',
+    );
+
+    expect(result.sql).toContain('NOT (');
+    expect(result.sql).toContain('c.accessControl.teamId =');
+    expect(result.parameters.map((parameter) => parameter.value)).toContain('team-a');
+  });
+
+  it('prefers sub-client-specific allow rules over broader scoped rules when generating SQL', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({
+        clientId: 'client-a',
+        conditions: [{
+          attribute: 'accessControl.clientId',
+          operator: 'eq',
+          staticValue: 'client-a',
+        }],
+      }),
+      rule({
+        clientId: 'client-a',
+        subClientId: 'sub-1',
+        priority: 300,
+        conditions: [{
+          attribute: 'accessControl.subClientId',
+          operator: 'eq',
+          staticValue: 'sub-1',
+        }],
+      }),
+    ]));
+
+    const result = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', {}, { clientId: 'client-a', subClientId: 'sub-1' }),
+      'order',
+      'read',
+    );
+
+    expect(result.sql).toContain('c.accessControl.subClientId =');
+    expect(result.sql).toContain(' OR ');
+    expect(result.parameters.map((parameter) => parameter.value)).toContain('sub-1');
+  });
+
+  it('expands array contains rules into ARRAY_CONTAINS OR clauses', async () => {
+    const evaluator = new PolicyEvaluatorService(makeMockDb([
+      rule({
+        conditions: [{
+          attribute: 'accessControl.assignedUserIds',
+          operator: 'contains',
+          userField: 'accessScope.managedUserIds',
+        }],
+      }),
+    ]));
+
+    const result = await evaluator.buildQueryFilter(
+      'user-1',
+      makeProfile('manager', { managedUserIds: ['user-a', 'user-b'] }),
+      'order',
+      'read',
+    );
+
+    expect(result.sql).toContain('ARRAY_CONTAINS');
+    expect(result.sql).toContain(' OR ');
+    expect(result.parameters.map((parameter) => parameter.value)).toEqual(['user-a', 'user-b']);
+  });
 });

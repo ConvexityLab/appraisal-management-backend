@@ -65,6 +65,25 @@ For outbound traffic:
 
 This means the connection is not hardcoded in request handlers; it is determined from the active vendor-connection configuration.
 
+### Connection management surface
+
+Vendor connections are managed through the authenticated admin API:
+
+- `GET /api/vendor-integrations/connections`
+- `POST /api/vendor-integrations/connections`
+- `GET /api/vendor-integrations/connections/:id`
+- `PUT /api/vendor-integrations/connections/:id`
+- `DELETE /api/vendor-integrations/connections/:id` (deactivates the connection)
+
+For AIM-Port, each connection must explicitly define:
+- `inboundIdentifier`
+- `credentials.inboundApiKeySecretName`
+- `credentials.outboundApiKeySecretName`
+- `credentials.outboundClientId`
+- `outboundEndpointUrl`
+
+If no active connection is configured, inbound requests now fail as a configuration error instead of being reported as a route-level 404.
+
 ---
 
 ## Where Requests Are Initiated

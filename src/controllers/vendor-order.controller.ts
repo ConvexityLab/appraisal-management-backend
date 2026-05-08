@@ -28,11 +28,13 @@ import { Router, Response } from 'express';
 import type { CosmosDbService } from '../services/cosmos-db.service.js';
 import {
   VENDOR_ORDERS_CONTAINER,
+  VENDOR_ORDER_TYPE_PREDICATE,
   VENDOR_ORDER_DOC_TYPE,
   LEGACY_VENDOR_ORDER_DOC_TYPE,
   type VendorOrder,
 } from '../types/vendor-order.types.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Logger } from '../utils/logger.js';
 
 const logger = new Logger('VendorOrderController');
@@ -42,25 +44,38 @@ const logger = new Logger('VendorOrderController');
  * values. Phase 4 simplifies this to `c.type = @t` once the migration
  * is complete.
  */
-const TYPE_PREDICATE =
-  `(c.type = '${VENDOR_ORDER_DOC_TYPE}' OR c.type = '${LEGACY_VENDOR_ORDER_DOC_TYPE}')`;
-
 export class VendorOrderController {
   public router: Router;
 
-  constructor(private readonly dbService: CosmosDbService) {
+  constructor(
+    private readonly dbService: CosmosDbService,
+    authzMiddleware?: AuthorizationMiddleware,
+  ) {
     this.router = Router();
-    this.setupRoutes();
+    this.setupRoutes(authzMiddleware);
   }
 
-  private setupRoutes(): void {
-    this.router.get('/', this.listVendorOrders.bind(this));
-    this.router.get('/:vendorOrderId', this.getVendorOrder.bind(this));
+  private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+    const readQuery = authzMiddleware
+      ? [...loadProfile, authzMiddleware.authorizeQuery('vendor_order', 'read')]
+      : [];
+    const readResource = authzMiddleware
+      ? [
+          ...loadProfile,
+          authzMiddleware.authorizeResource('vendor_order', 'read', {
+            resourceIdParam: 'vendorOrderId',
+          }),
+        ]
+      : [];
+
+    this.router.get('/', ...readQuery, this.listVendorOrders.bind(this));
+    this.router.get('/:vendorOrderId', ...readResource, this.getVendorOrder.bind(this));
   }
 
   // ─── GET / ───────────────────────────────────────────────────────────────
 
-  public async listVendorOrders(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  public async listVendorOrders(req: AuthorizedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required', code: 'UNAUTHENTICATED' });
       return;
@@ -77,14 +92,18 @@ export class VendorOrderController {
 
     try {
       const container = this.dbService.getContainer(VENDOR_ORDERS_CONTAINER);
+      const query = this.appendAuthorizationClause(
+        `SELECT * FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} ` +
+          'AND c.tenantId = @tenantId AND c.clientOrderId = @clientOrderId',
+        req.authorizationFilter,
+      );
       const { resources } = await container.items
         .query<VendorOrder>({
-          query:
-            `SELECT * FROM c WHERE ${TYPE_PREDICATE} ` +
-            'AND c.tenantId = @tenantId AND c.clientOrderId = @clientOrderId',
+          query,
           parameters: [
             { name: '@tenantId', value: req.user.tenantId },
             { name: '@clientOrderId', value: clientOrderId },
+            ...(req.authorizationFilter?.parameters ?? []),
           ],
         })
         .fetchAll();
@@ -101,7 +120,7 @@ export class VendorOrderController {
 
   // ─── GET /:vendorOrderId ─────────────────────────────────────────────────
 
-  public async getVendorOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  public async getVendorOrder(req: AuthorizedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required', code: 'UNAUTHENTICATED' });
       return;
@@ -138,5 +157,16 @@ export class VendorOrderController {
         details: err instanceof Error ? err.message : 'Unknown error',
       });
     }
+  }
+
+  private appendAuthorizationClause(
+    baseQuery: string,
+    authorizationFilter?: AuthorizedRequest['authorizationFilter'],
+  ): string {
+    if (!authorizationFilter || authorizationFilter.sql.trim() === '1=1') {
+      return baseQuery;
+    }
+
+    return `${baseQuery} AND (${authorizationFilter.sql})`;
   }
 }

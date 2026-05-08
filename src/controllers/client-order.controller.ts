@@ -44,6 +44,7 @@ import {
 import type { ProductType } from '../types/product-catalog.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Logger } from '../utils/logger.js';
 
 const logger = new Logger('ClientOrderController');
@@ -53,19 +54,46 @@ export class ClientOrderController {
   private readonly service: ClientOrderService;
   private readonly decomposer: OrderDecompositionService;
 
-  constructor(private readonly dbService: CosmosDbService) {
+  constructor(
+    private readonly dbService: CosmosDbService,
+    authzMiddleware?: AuthorizationMiddleware,
+  ) {
     this.router = Router();
     this.service = new ClientOrderService(dbService);
     this.decomposer = new OrderDecompositionService(dbService);
-    this.setupRoutes();
+    this.setupRoutes(authzMiddleware);
   }
 
-  private setupRoutes(): void {
+  private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
+    const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+    const read = authzMiddleware
+      ? [...loadProfile, authzMiddleware.authorize('client_order', 'read')]
+      : [];
+    const create = authzMiddleware
+      ? [...loadProfile, authzMiddleware.authorize('client_order', 'create')]
+      : [];
+    const readResource = authzMiddleware
+      ? [
+          ...loadProfile,
+          authzMiddleware.authorizeResource('client_order', 'read', {
+            resourceIdParam: 'clientOrderId',
+          }),
+        ]
+      : [];
+    const updateResource = authzMiddleware
+      ? [
+          ...loadProfile,
+          authzMiddleware.authorizeResource('client_order', 'update', {
+            resourceIdParam: 'clientOrderId',
+          }),
+        ]
+      : [];
+
     // Specific routes first, parameterized last.
-    this.router.get('/suggestions', this.getSuggestions.bind(this));
-    this.router.post('/', this.placeClientOrder.bind(this));
-    this.router.get('/:clientOrderId', this.getClientOrder.bind(this));
-    this.router.post('/:clientOrderId/vendor-orders', this.addVendorOrders.bind(this));
+    this.router.get('/suggestions', ...read, this.getSuggestions.bind(this));
+    this.router.post('/', ...create, this.placeClientOrder.bind(this));
+    this.router.get('/:clientOrderId', ...readResource, this.getClientOrder.bind(this));
+    this.router.post('/:clientOrderId/vendor-orders', ...updateResource, this.addVendorOrders.bind(this));
   }
 
   // ─── POST / ──────────────────────────────────────────────────────────────
@@ -168,7 +196,7 @@ export class ClientOrderController {
 
   // ─── GET /:clientOrderId ─────────────────────────────────────────────────
 
-  public async getClientOrder(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  public async getClientOrder(req: AuthorizedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required', code: 'UNAUTHENTICATED' });
       return;
@@ -206,7 +234,7 @@ export class ClientOrderController {
 
   // ─── POST /:clientOrderId/vendor-orders ──────────────────────────────────
 
-  public async addVendorOrders(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  public async addVendorOrders(req: AuthorizedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required', code: 'UNAUTHENTICATED' });
       return;
@@ -244,9 +272,15 @@ export class ClientOrderController {
     }
 
     try {
+      const tenantId = req.user.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
+        return;
+      }
+
       const created = await this.service.addVendorOrders(
         clientOrderId,
-        req.user.tenantId,
+        tenantId,
         specs,
         inherited,
       );

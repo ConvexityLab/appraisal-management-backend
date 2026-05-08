@@ -18,6 +18,7 @@
  *
  * Covered routes:
  *   GET    /api/policies
+ *   GET    /audit
  *   POST   /api/policies
  *   PUT    /api/policies/:id
  *   DELETE /api/policies/:id
@@ -27,7 +28,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
-import type { Express } from 'express';
+import type { Application } from 'express';
 
 // ─── Env bootstrap (must precede any module import) ─────────────────────────
 // Defensive: tests/setup.ts also seeds these, but in some CI worker
@@ -46,10 +47,26 @@ process.env.IVUEIT_BASE_URL = process.env.IVUEIT_BASE_URL ?? 'https://test-place
 vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/services/cosmos-db.service.js')>();
   const OriginalClass = mod.CosmosDbService;
+  const capabilityMod = await import('../../src/data/platform-capability-matrix.js');
+  const capabilityDocs = capabilityMod.materializeAuthorizationCapabilityDocuments(
+    capabilityMod.AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+    'test',
+  );
 
   const fakeContainer = {
     items: {
-      query: () => ({ fetchAll: async () => ({ resources: [] }) }),
+      query: (querySpec?: { query?: string; parameters?: Array<{ name: string; value: unknown }> }) => ({
+        fetchAll: async () => {
+          if (querySpec?.query?.includes("c.type = 'authorization-capability'")) {
+            const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+            return {
+              resources: capabilityDocs.filter((doc) => doc.tenantId === tenantId),
+            };
+          }
+
+          return { resources: [] };
+        },
+      }),
       create: async () => ({ resource: null }),
       upsert: async () => ({ resource: null }),
       readAll: () => ({ fetchAll: async () => ({ resources: [] }) }),
@@ -116,10 +133,10 @@ const TEST_USERS: Record<string, UserProfile> = {
 
 // ─── Server setup ────────────────────────────────────────────────────────────
 
-let app: Express;
+let app: Application;
 let server: AppraisalManagementAPIServer;
 let tokenGen: TestTokenGenerator;
-let getUserProfileSpy: ReturnType<typeof vi.spyOn>;
+let getUserProfileSpy: { mockRestore: () => void };
 
 function mintToken(userId: string): string {
   const profile = TEST_USERS[userId];
@@ -223,6 +240,31 @@ describe('GET /api/policies', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/policies
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/policies/audit', () => {
+  const path = '/api/policies/audit';
+
+  it('no token → 401', async () => { await assert401('get', path); });
+
+  for (const uid of NON_ADMIN_IDS) {
+    it(`${TEST_USERS[uid].role} → 403`, async () => {
+      await assert403('get', path, uid);
+    });
+  }
+
+  it('admin → passes auth gate and returns audit array', async () => {
+    const token = mintToken('pm-admin-uid');
+    const res = await request(app)
+      .get(path)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
+  });
+});
+
+// POST /api/policies
+// ────────────────────────────────────────────────────────────────────────────
 
 describe('POST /api/policies', () => {
   it('no token → 401', async () => { await assert401('post', '/api/policies'); });
@@ -335,6 +377,35 @@ describe('POST /api/policies/evaluate', () => {
     if (res.status === 200) {
       expect(res.body.success).toBe(true);
       expect(res.body.data).toHaveProperty('sql');
+      expect(res.body.evaluatedUserId).toBe('pm-admin-uid');
     }
+  });
+
+  it('admin can evaluate a target user profile in the same tenant', async () => {
+    const token = mintToken('pm-admin-uid');
+    const res = await request(app)
+      .post('/api/policies/evaluate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ resourceType: 'order', action: 'read', targetUserId: 'pm-manager-uid' })
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+    if (res.status === 200) {
+      expect(res.body.success).toBe(true);
+      expect(res.body.evaluatedUserId).toBe('pm-manager-uid');
+    }
+  });
+
+  it('admin gets 404 for an unknown target user', async () => {
+    const token = mintToken('pm-admin-uid');
+    const res = await request(app)
+      .post('/api/policies/evaluate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ resourceType: 'order', action: 'read', targetUserId: 'missing-user-id' })
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('TARGET_USER_NOT_FOUND');
   });
 });

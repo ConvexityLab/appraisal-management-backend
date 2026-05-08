@@ -19,11 +19,26 @@ export type OutboundTransport = 'sync-post' | 'webhook' | 'none';
 // Stored in Cosmos DB container: vendor-connections
 // Credentials are Key Vault secret NAMES — never the actual secrets.
 
+export interface VendorConnectionCredentials {
+  /** Key Vault secret name for the API key they send us (we verify inbound) */
+  inboundApiKeySecretName?: string;
+  /** Key Vault secret name for our outbound API key (we send to them) */
+  outboundApiKeySecretName?: string;
+  /** The client_id / vendor account ID we send in outbound requests */
+  outboundClientId?: string;
+  /** Key Vault secret name for webhook HMAC verification on inbound calls */
+  inboundHmacSecretName?: string;
+  /** Key Vault secret name for outbound webhook signing */
+  outboundHmacSecretName?: string;
+}
+
 export interface VendorConnection {
   /** Cosmos document id */
   id: string;
   /** Partition key */
   tenantId: string;
+  /** Optional document discriminator for operational queries */
+  type?: 'vendor-connection';
   vendorType: VendorType;
   /** Our internal lender/client this connection belongs to */
   lenderId: string;
@@ -33,23 +48,34 @@ export interface VendorConnection {
    * connection. For AIM-Port this is the `client_id` field in the request body.
    */
   inboundIdentifier: string;
-  credentials: {
-    /** Key Vault secret name for the API key they send us (we verify inbound) */
-    inboundApiKeySecretName?: string;
-    /** Key Vault secret name for our outbound API key (we send to them) */
-    outboundApiKeySecretName?: string;
-    /** The client_id / vendor account ID we send in outbound requests */
-    outboundClientId?: string;
-    /** Key Vault secret name for webhook HMAC verification on inbound calls */
-    inboundHmacSecretName?: string;
-    /** Key Vault secret name for outbound webhook signing */
-    outboundHmacSecretName?: string;
-  };
+  credentials: VendorConnectionCredentials;
   /** Their endpoint — we POST to this URL for outbound calls */
   outboundEndpointUrl: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface CreateVendorConnectionInput {
+  vendorType: VendorType;
+  lenderId: string;
+  lenderName: string;
+  inboundIdentifier: string;
+  credentials: VendorConnectionCredentials;
+  outboundEndpointUrl: string;
+  active: boolean;
+}
+
+export interface UpdateVendorConnectionInput {
+  vendorType?: VendorType;
+  lenderId?: string;
+  lenderName?: string;
+  inboundIdentifier?: string;
+  credentials?: VendorConnectionCredentials;
+  outboundEndpointUrl?: string;
+  active?: boolean;
 }
 
 // ─── Normalized Domain Events ─────────────────────────────────────────────────

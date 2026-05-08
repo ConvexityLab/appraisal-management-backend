@@ -25,25 +25,32 @@ export const createAuthorizationTestRouter = (): Router => {
   router.get('/profile', async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const user = req.user;
+      const userProfile = req.userProfile as UserProfile | undefined;
       
       if (!user) {
         res.status(401).json({ error: 'Not authenticated' });
         return;
       }
 
+      if (!userProfile) {
+        res.status(500).json({ error: 'User profile not loaded', code: 'USER_PROFILE_REQUIRED' });
+        return;
+      }
+
       res.json({
         user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          accessScope: user.accessScope,
+          id: userProfile.id,
+          email: userProfile.email,
+          name: userProfile.name,
+          role: userProfile.role,
+          accessScope: userProfile.accessScope,
           isTestUser: user.isTestUser
         },
         interpretation: {
-          can_view_all: user.accessScope?.canViewAllOrders || false,
-          teams: user.accessScope?.teamIds || [],
-          clients: user.accessScope?.managedClientIds || [],
-          states: user.accessScope?.statesCovered || []
+          can_view_all: userProfile.accessScope?.canViewAllOrders || false,
+          teams: userProfile.accessScope?.teamIds || [],
+          clients: userProfile.accessScope?.managedClientIds || [],
+          states: userProfile.accessScope?.statesCovered || []
         }
       });
     } catch (error) {
@@ -59,29 +66,21 @@ export const createAuthorizationTestRouter = (): Router => {
     try {
       const { resourceType, resourceId, action, accessControl, portalDomain, boundEntityIds } = req.body;
       const user = req.user;
+      const userProfile = req.userProfile as UserProfile | undefined;
 
-      if (!user) {
+      if (!user || !userProfile) {
         res.status(401).json({ error: 'Not authenticated' });
         return;
       }
 
-      const userProfile: UserProfile = {
-        id: user.id!,
-        email: user.email!,
-        name: user.name || '',
-        ...(user.azureAdObjectId ? { azureAdObjectId: user.azureAdObjectId } : {}),
-        role: (user.accessScope?.role ?? req.body.role) as UserProfile['role'],
+      const evaluationProfile: UserProfile = {
+        ...userProfile,
         portalDomain: portalDomain ?? req.body.portalDomain,
         boundEntityIds: boundEntityIds ?? req.body.boundEntityIds ?? [],
-        tenantId: user.tenantId!,
-        accessScope: user.accessScope!,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
       };
 
       const decision = await authzService.canAccess(
-        userProfile,
+        evaluationProfile,
         resourceType,
         resourceId || 'test-resource',
         action,
@@ -118,29 +117,21 @@ export const createAuthorizationTestRouter = (): Router => {
     try {
       const { resourceType, action } = req.body;
       const user = req.user;
+      const userProfile = req.userProfile as UserProfile | undefined;
 
-      if (!user) {
+      if (!user || !userProfile) {
         res.status(401).json({ error: 'Not authenticated' });
         return;
       }
 
-      const userProfile: UserProfile = {
-        id: user.id!,
-        email: user.email!,
-        name: user.name || '',
-        ...(user.azureAdObjectId ? { azureAdObjectId: user.azureAdObjectId } : {}),
-        role: (user.accessScope?.role ?? req.body.role) as UserProfile['role'],
+      const filterProfile: UserProfile = {
+        ...userProfile,
         portalDomain: req.body.portalDomain,
         boundEntityIds: req.body.boundEntityIds ?? [],
-        tenantId: user.tenantId!,
-        accessScope: user.accessScope!,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
       };
 
       const filter = await authzService.buildQueryFilter(
-        userProfile,
+        filterProfile,
         resourceType,
         action || 'read'
       );
@@ -169,15 +160,15 @@ export const createAuthorizationTestRouter = (): Router => {
   router.post('/grant', async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { targetUserId, objectType, objectId, actions, reason } = req.body;
-      const user = req.user;
+      const userProfile = req.userProfile as UserProfile | undefined;
 
-      if (!user) {
+      if (!userProfile) {
         res.status(401).json({ error: 'Not authenticated' });
         return;
       }
 
       // Only admins can grant access
-      if (user.accessScope?.role !== 'admin') {
+      if (userProfile.role !== 'admin') {
         res.status(403).json({ error: 'Only admins can grant access' });
         return;
       }
@@ -188,8 +179,8 @@ export const createAuthorizationTestRouter = (): Router => {
         objectType,
         objectId,
         actions: actions || ['read'],
-        grantedBy: user.id!,
-        tenantId: user.tenantId!,
+        grantedBy: userProfile.id,
+        tenantId: userProfile.tenantId,
         reason: reason || 'Test grant'
       });
 

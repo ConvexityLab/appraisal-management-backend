@@ -33,6 +33,10 @@ import { CosmosClient } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load both the backend root .env and the staging overlay so any local
 // overrides are respected.  Neither file is required — defaults are below.
@@ -41,10 +45,10 @@ dotenv.config({ path: path.resolve(__dirname, '.env.staging'), override: false }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STAGING_TENANT_ID = '885097ba-35ea-48db-be7a-a0aa7ff451bd';
+export const STAGING_TENANT_ID = '885097ba-35ea-48db-be7a-a0aa7ff451bd';
 
 /** Staging Cosmos container that the authorization middleware reads from. */
-const USERS_CONTAINER = 'users';
+export const USERS_CONTAINER = 'users';
 
 // ─── Staging user definitions ─────────────────────────────────────────────────
 
@@ -55,7 +59,9 @@ interface StagingUser {
   readonly role: string;        // Must match backend role enum
 }
 
-const STAGING_USERS: readonly StagingUser[] = [
+export const VALID_STAGING_USER_ROLES = ['admin', 'manager', 'supervisor', 'analyst', 'appraiser', 'reviewer'] as const;
+
+export const STAGING_USERS: readonly StagingUser[] = [
   {
     oid:   'd14de96e-1d1b-43d4-8250-7086f0a386b9',
     email: 'L1Admin@l1-analytics.com',
@@ -78,7 +84,7 @@ const STAGING_USERS: readonly StagingUser[] = [
 
 // ─── Config helpers ───────────────────────────────────────────────────────────
 
-function requiredEnvWithDefault(name: string, defaultValue: string): string {
+export function requiredEnvWithDefault(name: string, defaultValue: string): string {
   const value = process.env[name];
   if (value && value.trim()) return value.trim();
   return defaultValue;
@@ -86,7 +92,7 @@ function requiredEnvWithDefault(name: string, defaultValue: string): string {
 
 // ─── Document builder ─────────────────────────────────────────────────────────
 
-function buildUserProfileDocument(user: StagingUser): Record<string, unknown> {
+export function buildUserProfileDocument(user: StagingUser): Record<string, unknown> {
   const now = new Date().toISOString();
   return {
     // Cosmos document ID = Entra OID: must match what auth middleware queries.
@@ -120,9 +126,43 @@ function buildUserProfileDocument(user: StagingUser): Record<string, unknown> {
   };
 }
 
+export function validateStagingUsers(users: readonly StagingUser[]): void {
+  const seenOids = new Set<string>();
+  const seenEmails = new Set<string>();
+
+  for (const user of users) {
+    if (!user.oid.trim()) {
+      throw new Error(`Staging user is missing oid for email "${user.email}".`);
+    }
+    if (!user.email.trim()) {
+      throw new Error(`Staging user "${user.oid}" is missing email.`);
+    }
+    if (!user.name.trim()) {
+      throw new Error(`Staging user "${user.email}" is missing display name.`);
+    }
+    if (!VALID_STAGING_USER_ROLES.includes(user.role as typeof VALID_STAGING_USER_ROLES[number])) {
+      throw new Error(
+        `Staging user "${user.email}" has unsupported role "${user.role}". ` +
+        `Expected one of: ${VALID_STAGING_USER_ROLES.join(', ')}`,
+      );
+    }
+    if (seenOids.has(user.oid)) {
+      throw new Error(`Duplicate staging user oid detected: "${user.oid}".`);
+    }
+    if (seenEmails.has(user.email.toLowerCase())) {
+      throw new Error(`Duplicate staging user email detected: "${user.email}".`);
+    }
+
+    seenOids.add(user.oid);
+    seenEmails.add(user.email.toLowerCase());
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  validateStagingUsers(STAGING_USERS);
+
   const endpoint = requiredEnvWithDefault(
     'COSMOS_ENDPOINT',
     'https://appraisal-mgmt-staging-cosmos.documents.azure.com:443/',
@@ -179,7 +219,13 @@ async function main(): Promise<void> {
   console.log('\n✅  All staging user documents upserted and verified.\n');
 }
 
-main().catch((err: unknown) => {
-  console.error('\n❌  Seed failed:', err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+const isDirectRun = process.argv[1]
+  ? import.meta.url === pathToFileURL(process.argv[1]).href
+  : false;
+
+if (isDirectRun) {
+  main().catch((err: unknown) => {
+    console.error('\n❌  Seed failed:', err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+}

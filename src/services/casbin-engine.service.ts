@@ -4,16 +4,16 @@
  * Boolean RBAC gate: "can role X perform action Y on resource type Z?"
  * This is a PLATFORM-LEVEL check — the answer is the same for every tenant.
  *
- * Policies are loaded at startup from `PLATFORM_CAPABILITY_MATRIX`, a static
- * in-memory constant defined in `src/data/platform-capability-matrix.ts`.
- * Zero I/O.  No CSV.  No database.
+ * Policies are loaded at startup from Cosmos `authorization-policies`
+ * documents of type `authorization-capability`.
  *
  * Per-tenant / per-client / per-subClient row-level scoping is handled
  * entirely by `PolicyEvaluatorService` (Cosmos `authorization-policies`).
  *
- * To change what a role can do: edit `platform-capability-matrix.ts`.
- * To add per-tenant overrides of WHICH rows a role sees: seed new rules
- *   into `authorization-policies` via `PolicyEvaluatorService`.
+ * To change what a role can do: update the materialized capability documents
+ * in Cosmos (seed/bootstrap support is currently derived from the matrix file).
+ * To add per-tenant overrides of WHICH rows a role sees: seed new rules into
+ * `authorization-policies` via `PolicyEvaluatorService`.
  */
 
 import { newEnforcer, Enforcer } from 'casbin';
@@ -21,15 +21,21 @@ import * as path from 'path';
 import { Logger } from '../utils/logger.js';
 import { IAuthorizationEngine } from '../interfaces/authorization-engine.interface';
 import { AuthorizationContext, PolicyDecision } from '../types/authorization.types.js';
-import { PLATFORM_CAPABILITY_MATRIX } from '../data/platform-capability-matrix.js';
+import { CosmosDbService } from './cosmos-db.service.js';
+import { AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID } from '../data/platform-capability-matrix.js';
+import type { AuthorizationCapabilityDocument } from '../types/policy.types.js';
+
+const CONTAINER = 'authorization-policies';
 
 export class CasbinAuthorizationEngine implements IAuthorizationEngine {
   private enforcer?: Enforcer;
   private logger: Logger;
   private initialized: boolean = false;
+  private readonly dbService: CosmosDbService;
 
-  constructor() {
+  constructor(dbService?: CosmosDbService) {
     this.logger = new Logger();
+    this.dbService = dbService ?? new CosmosDbService();
   }
 
   async initialize(): Promise<void> {
@@ -40,25 +46,19 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
     try {
       const modelPath = path.join(process.cwd(), 'config', 'casbin', 'model.conf');
 
-      // No CSV adapter — policies are loaded programmatically from the
-      // in-memory platform capability matrix below.
+      // No CSV adapter — policies are loaded programmatically from Cosmos.
       this.enforcer = await newEnforcer(modelPath);
 
-      for (const rule of PLATFORM_CAPABILITY_MATRIX) {
-        const sub = `${rule.role}:.*`;          // matches any user of that role
-        const obj = `${rule.resourceType}:.*`; // matches any instance of that type
-        const eft = rule.effect;
-        for (const act of rule.actions) {
-          await this.enforcer.addPolicy(sub, obj, act, eft);
-        }
-      }
+      const capabilityRules = await this.loadCapabilityRules();
+      await this.applyCapabilityRules(capabilityRules);
 
       this.initialized = true;
 
       const policyCount = (await this.enforcer.getPolicy()).length;
-      this.logger.info('Casbin enforcer initialized from platform capability matrix', {
-        rulesLoaded: PLATFORM_CAPABILITY_MATRIX.length,
+      this.logger.info('Casbin enforcer initialized from Cosmos capability materialization', {
+        rulesLoaded: capabilityRules.length,
         policyCount,
+        tenantId: AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
       });
     } catch (error) {
       this.logger.error('Failed to initialize Casbin enforcer', { error });
@@ -155,21 +155,54 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
       throw new Error('Casbin enforcer not initialized');
     }
 
-    // Platform capability matrix is a code constant — "reloading" means
-    // re-reading the same values.  Useful in tests or if the process needs
-    // to reset to a clean state.
     await this.enforcer.clearPolicy();
 
-    for (const rule of PLATFORM_CAPABILITY_MATRIX) {
-      const sub = `${rule.role}:.*`;
-      const obj = `${rule.resourceType}:.*`;
-      const eft = rule.effect;
-      for (const act of rule.actions) {
-        await this.enforcer.addPolicy(sub, obj, act, eft);
-      }
-    }
+    const capabilityRules = await this.loadCapabilityRules();
+    await this.applyCapabilityRules(capabilityRules);
 
     const policyCount = (await this.enforcer.getPolicy()).length;
-    this.logger.info('Casbin policies reloaded from platform capability matrix', { policyCount });
+    this.logger.info('Casbin policies reloaded from Cosmos capability materialization', {
+      policyCount,
+      rulesLoaded: capabilityRules.length,
+      tenantId: AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
+    });
+  }
+
+  private async loadCapabilityRules(): Promise<AuthorizationCapabilityDocument[]> {
+    const container = this.dbService.getContainer(CONTAINER);
+    const { resources } = await container.items.query<AuthorizationCapabilityDocument>({
+      query: `SELECT * FROM c
+              WHERE c.type = 'authorization-capability'
+                AND c.tenantId = @tenantId
+                AND (NOT IS_DEFINED(c.enabled) OR c.enabled = true)
+              ORDER BY c.role, c.resourceType`,
+      parameters: [
+        { name: '@tenantId', value: AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID },
+      ],
+    }).fetchAll();
+
+    if (resources.length === 0) {
+      throw new Error(
+        'No Casbin capability materialization documents were found in Cosmos. ' +
+        `Seed ${CONTAINER} with type="authorization-capability" for tenantId="${AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID}" ` +
+        'before starting the API.',
+      );
+    }
+
+    return resources;
+  }
+
+  private async applyCapabilityRules(rules: AuthorizationCapabilityDocument[]): Promise<void> {
+    if (!this.enforcer) {
+      throw new Error('Casbin enforcer not initialized');
+    }
+
+    for (const rule of rules) {
+      const sub = `${rule.role}:.*`;
+      const obj = `${rule.resourceType}:.*`;
+      for (const act of rule.actions) {
+        await this.enforcer.addPolicy(sub, obj, act, rule.effect);
+      }
+    }
   }
 }

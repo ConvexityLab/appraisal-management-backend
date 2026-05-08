@@ -72,39 +72,67 @@ export class PolicyEvaluatorService {
       return { sql: '1=0', parameters: [] };
     }
 
-    // Separate deny and allow rules; deny rules at equal or higher priority win.
-    const sorted = [...matchingRules].sort((a, b) => b.priority - a.priority);
-
-    // Check for an unconditional deny (effect=deny, no conditions or conditions that always hold)
-    for (const rule of sorted.filter(r => r.effect === 'deny')) {
-      const fragment = this.buildRuleFragment(rule, userProfile, userId);
-      if (fragment === null) continue; // conditions not evaluable (no user data)
-      if (fragment.sql === '1=1') {
-        // Unconditional deny
-        return { sql: '1=0', parameters: [] };
-      }
-    }
-
-    // Build allow fragments (OR-joined)
-    const allowFragments: Array<{ sql: string; parameters: Array<{ name: string; value: any }> }> = [];
     const paramCounter = { n: 0 };
 
-    for (const rule of sorted.filter(r => r.effect === 'allow')) {
-      const fragment = this.buildRuleFragment(rule, userProfile, userId, paramCounter);
-      if (fragment === null) continue;
-      if (fragment.sql === '1=1') {
-        // Unconditional allow — short-circuit
+    const evaluableRules = matchingRules
+      .map((rule) => ({
+        rule,
+        fragment: this.buildRuleFragment(rule, userProfile, userId, paramCounter),
+      }))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          rule: PolicyRule;
+          fragment: { sql: string; parameters: Array<{ name: string; value: any }> };
+        } => entry.fragment !== null,
+      );
+
+    if (evaluableRules.length === 0) {
+      return { sql: '1=0', parameters: [] };
+    }
+
+    const denyRules = evaluableRules.filter((entry) => entry.rule.effect === 'deny');
+    const allowRules = evaluableRules.filter((entry) => entry.rule.effect === 'allow');
+
+    const allowFragments: Array<{ sql: string; parameters: Array<{ name: string; value: any }> }> = [];
+
+    for (const allowEntry of allowRules) {
+      const blockingDenies = denyRules.filter(({ rule }) => rule.priority >= allowEntry.rule.priority);
+
+      if (blockingDenies.some(({ fragment }) => fragment.sql === '1=1')) {
+        continue;
+      }
+
+      const blockingSql = blockingDenies
+        .map(({ fragment }) => fragment)
+        .filter((fragment) => fragment.sql !== '1=1');
+
+      if (allowEntry.fragment.sql === '1=1' && blockingSql.length === 0) {
         return { sql: '1=1', parameters: [] };
       }
-      allowFragments.push(fragment);
+
+      let sql = allowEntry.fragment.sql;
+      const parameters = [...allowEntry.fragment.parameters];
+
+      if (blockingSql.length > 0) {
+        const denySql = blockingSql.length === 1
+          ? blockingSql[0]!.sql
+          : `(${blockingSql.map((fragment) => fragment.sql).join(' OR ')})`;
+        sql = allowEntry.fragment.sql === '1=1'
+          ? `NOT (${denySql})`
+          : `(${allowEntry.fragment.sql} AND NOT (${denySql}))`;
+        parameters.push(...blockingSql.flatMap((fragment) => fragment.parameters));
+      }
+
+      allowFragments.push({ sql, parameters });
     }
 
     if (allowFragments.length === 0) {
       return { sql: '1=0', parameters: [] };
     }
 
-    // Merge parameters (already de-duplicated by paramCounter suffix)
-    const allParams = allowFragments.flatMap(f => f.parameters);
+    const allParams = this.deduplicateParameters(allowFragments.flatMap(f => f.parameters));
     const sql = allowFragments.length === 1
       ? allowFragments[0]!.sql
       : `(${allowFragments.map(f => f.sql).join(' OR ')})`;
@@ -124,6 +152,34 @@ export class PolicyEvaluatorService {
       }
     }
     this.logger.debug('PolicyEvaluatorService: cache invalidated', { tenantId, role, resourceType });
+  }
+
+  /**
+   * Invalidate all cached rule sets touched by a policy mutation.
+   *
+   * This must cover both the prior and updated scope triples because a policy
+   * update can move a rule from one `(role, resourceType)` bucket to another.
+   */
+  invalidateCacheForPolicyChange(
+    before?: Pick<PolicyRule, 'tenantId' | 'role' | 'resourceType'>,
+    after?: Pick<PolicyRule, 'tenantId' | 'role' | 'resourceType'>,
+  ): void {
+    const keys = new Set<string>();
+
+    for (const rule of [before, after]) {
+      if (!rule) {
+        continue;
+      }
+      keys.add(`${rule.tenantId}:${rule.role}:${rule.resourceType}`);
+    }
+
+    for (const key of keys) {
+      const [tenantId, role, resourceType] = key.split(':');
+      if (!tenantId || !role || !resourceType) {
+        continue;
+      }
+      this.invalidateCache(tenantId, role, resourceType);
+    }
   }
 
   // ── Rule loading ───────────────────────────────────────────────────────────
@@ -394,6 +450,18 @@ export class PolicyEvaluatorService {
     if (rule.clientId) specificity += 2;
     if (rule.subClientId) specificity += 4;
     return specificity;
+  }
+
+  private deduplicateParameters(
+    parameters: Array<{ name: string; value: any }>,
+  ): Array<{ name: string; value: any }> {
+    const seen = new Map<string, { name: string; value: any }>();
+    for (const parameter of parameters) {
+      if (!seen.has(parameter.name)) {
+        seen.set(parameter.name, parameter);
+      }
+    }
+    return [...seen.values()];
   }
 
   private cacheKey(userProfile: UserProfile, resourceType: string): string {

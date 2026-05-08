@@ -40,7 +40,7 @@ export class AuthorizationService {
   constructor(engine?: IAuthorizationEngine, dbService?: CosmosDbService) {
     this.logger = new Logger();
     this.dbService = dbService || new CosmosDbService();
-    this.engine = engine || new CasbinAuthorizationEngine();
+    this.engine = engine || new CasbinAuthorizationEngine(this.dbService);
     this.graphService = new AccessGraphService(); // Changed from ACLService
     this.decisionCache = new Map();
     this.policyEvaluator = new PolicyEvaluatorService(this.dbService);

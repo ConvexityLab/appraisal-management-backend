@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createVendorIntegrationRouter } from '../../src/controllers/vendor-integration.controller.js';
+import { VendorConnectionConfigurationError } from '../../src/services/vendor-integrations/VendorIntegrationErrors.js';
 
 interface FakeService {
   processInbound: ReturnType<typeof vi.fn>;
@@ -124,10 +125,12 @@ describe('vendor-integration.controller', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 404 when the connection cannot be resolved', async () => {
+  it('returns 503 when the connection configuration is missing', async () => {
     const service: FakeService = {
       processInbound: vi.fn().mockRejectedValue(
-        new Error('Active vendor connection not found for vendorType=aim-port inboundIdentifier=999'),
+        new VendorConnectionConfigurationError(
+          'No active vendor connection is configured for vendorType=aim-port inboundIdentifier=999. Create or activate a vendor connection before enabling this inbound integration.',
+        ),
       ),
     };
 
@@ -135,7 +138,8 @@ describe('vendor-integration.controller', () => {
       .post('/api/v1/integrations/aim-port/inbound')
       .send(aimPortBody);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('VENDOR_INTEGRATION_CONFIGURATION_ERROR');
   });
 
   it('returns 404 for the legacy /inbound URL (route deleted)', async () => {

@@ -129,6 +129,7 @@ import { createVendorCertificationRouter } from '../controllers/vendor-certifica
 import { createPaymentRouter } from '../controllers/payment.controller';
 import { createVendorOnboardingRouter } from '../controllers/vendor-onboarding.controller';
 import { createVendorAnalyticsRouter } from '../controllers/vendor-analytics.controller';
+import { createVendorConnectionAdminRouter } from '../controllers/vendor-connection.controller.js';
 
 // Import Exclusionary List controller
 import { createExclusionListRouter } from '../controllers/exclusion-list.controller';
@@ -681,6 +682,7 @@ export class AppraisalManagementAPIServer {
     // Authorization testing endpoint (authenticated users only)
     this.app.use('/api/authz-test',
       this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
       createAuthorizationTestRouter()
     );
 
@@ -1050,6 +1052,14 @@ export class AppraisalManagementAPIServer {
       createVendorOnboardingRouter()
     );
 
+    // Vendor Integration Connections - tenant-scoped credentials and endpoints for external vendor integrations.
+    this.app.use('/api/vendor-integrations/connections',
+      this.unifiedAuth.authenticate(),
+      this.authzMiddleware.loadUserProfile(),
+      this.authorize('vendor', 'update'),
+      createVendorConnectionAdminRouter(this.dbService)
+    );
+
     // Vendor Analytics - Performance dashboards, trends, comparative analytics (authenticated users)
     this.app.use('/api/vendor-analytics',
       this.unifiedAuth.authenticate(),
@@ -1252,6 +1262,35 @@ export class AppraisalManagementAPIServer {
       clientController.router
     );
 
+    // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
+    // Mounted here so controller-level authorization middleware is active.
+    const clientOrderController = new ClientOrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/client-orders',
+      this.unifiedAuth.authenticate(),
+      clientOrderController.router
+    );
+
+    // VendorOrder reads — children of a parent ClientOrder. Read-only:
+    // writes go through ClientOrderController or legacy OrderController.
+    const vendorOrderController = new VendorOrderController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/vendor-orders',
+      this.unifiedAuth.authenticate(),
+      vendorOrderController.router
+    );
+
+    // Order comparables (read-only) — exposes the `order-comparables`
+    // Cosmos container to the UI's Comp Workspace. Mounted here so parent
+    // client/vendor order authorization runs before reads.
+    const orderComparablesController = new OrderComparablesController(this.dbService, this.authzMiddleware);
+    this.app.use('/api/orders/:orderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByClientOrder
+    );
+    this.app.use('/api/vendor-orders/:vendorOrderId/comparables',
+      this.unifiedAuth.authenticate(),
+      orderComparablesController.routerByVendorOrder
+    );
+
     // Construction Finance Module — Draw inspections (per-route ABAC)
     const drawInspectionController = new DrawInspectionController(this.dbService, this.authzMiddleware);
     this.app.use('/api/construction/draw-inspections',
@@ -1351,44 +1390,8 @@ export class AppraisalManagementAPIServer {
     // OrderController is created and mounted in setupAuthorizationRoutes() after authzMiddleware
     // is initialized, so that per-route ABAC guards are always active.
 
-    // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
-    // Additive: legacy /api/orders is unchanged. Frontends opt in by
-    // posting to /api/client-orders. See controllers/client-order.controller.ts.
-    const clientOrderController = new ClientOrderController(this.dbService);
-    this.app.use('/api/client-orders',
-      this.unifiedAuth.authenticate(),
-      clientOrderController.router
-    );
-
-    // VendorOrder reads — children of a parent ClientOrder. Read-only:
-    // writes go through ClientOrderController or legacy OrderController.
-    const vendorOrderController = new VendorOrderController(this.dbService);
-    this.app.use('/api/vendor-orders',
-      this.unifiedAuth.authenticate(),
-      vendorOrderController.router
-    );
-
-    // Order comparables (read-only) — exposes the `order-comparables`
-    // Cosmos container to the UI's Comp Workspace. Mounted under both
-    // /api/orders/:orderId/comparables (orderId === clientOrderId) and
-    // /api/vendor-orders/:vendorOrderId/comparables (resolves the parent
-    // ClientOrder first). See controllers/order-comparables.controller.ts.
-    const orderComparablesController = new OrderComparablesController(this.dbService);
-    this.app.use('/api/orders/:orderId/comparables',
-      this.unifiedAuth.authenticate(),
-      orderComparablesController.routerByClientOrder
-    );
-    this.app.use('/api/vendor-orders/:vendorOrderId/comparables',
-      this.unifiedAuth.authenticate(),
-      orderComparablesController.routerByVendorOrder
-    );
-
-    // Client (Lender / AMC / Broker) management — G10
-    const clientController = new ClientController(this.dbService);
-    this.app.use('/api/clients',
-      this.unifiedAuth.authenticate(),
-      clientController.router
-    );
+    // Client, client-order, vendor-order, and comparable routes are mounted in
+    // setupAuthorizationRoutes() so authorization middleware is always active.
 
     // Construction Finance Module — Loan management
     const constructionLoanController = new ConstructionLoanController(this.dbService);
