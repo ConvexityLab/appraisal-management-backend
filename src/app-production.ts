@@ -24,11 +24,19 @@ const requiredEnvVars: string[] = [
   'AZURE_COSMOS_ENDPOINT',       // Used by all services and controllers
   'AZURE_STORAGE_ACCOUNT_NAME',  // Used by blob storage service
 ];
-const axiomOptionalVars = [
-  'AXIOM_WEBHOOK_SECRET', 'AXIOM_API_URL', 'AXIOM_API_KEY', 'AXIOM_API_BASE_URL',
-  'AXIOM_TENANT_ID', 'AXIOM_CLIENT_ID',
-  'AXIOM_PIPELINE_ID_RISK_EVAL', 'AXIOM_PIPELINE_ID_DOC_EXTRACT', 'AXIOM_PIPELINE_ID_BULK_EVAL',
-  'AXIOM_REQUIRED_DOCUMENT_TYPES',  // comma-separated doc type IDs, e.g. "appraisal-report,credit-report"; defaults to "appraisal-report"
+// Axiom mock-vs-live mode is decided in AxiomService by `AXIOM_API_BASE_URL`
+// alone (see services/axiom.service.ts: `this.enabled = !!baseURL && !forceMock`).
+// Other AXIOM_* vars below are only relevant for specific code paths
+// (webhooks, static-bearer auth, pipeline IDs) — missing them does NOT put
+// Axiom in mock mode.
+const axiomLiveModeVar = 'AXIOM_API_BASE_URL';
+const axiomFeatureVars: Array<{ name: string; purpose: string }> = [
+  { name: 'AXIOM_WEBHOOK_SECRET',           purpose: 'webhook signature verification' },
+  { name: 'AXIOM_API_KEY',                  purpose: 'static-bearer auth (skip when using managed identity)' },
+  { name: 'AXIOM_PIPELINE_ID_RISK_EVAL',    purpose: 'risk-eval pipeline submissions (has a default)' },
+  { name: 'AXIOM_PIPELINE_ID_DOC_EXTRACT',  purpose: 'doc-extraction pipeline submissions (has a default)' },
+  { name: 'AXIOM_PIPELINE_ID_BULK_EVAL',    purpose: 'bulk-eval pipeline submissions (has a default)' },
+  { name: 'AXIOM_REQUIRED_DOCUMENT_TYPES',  purpose: 'required-doc validation (defaults to "appraisal-report")' },
 ];
 
 function validateEnvOrExit(): void {
@@ -49,9 +57,24 @@ function validateEnvOrExit(): void {
       );
     }
   }
-  const missingAxiom = axiomOptionalVars.filter(v => !process.env[v]);
-  if (missingAxiom.length > 0) {
-    console.warn(`⚠️  Axiom integration env vars not set (mock/dev mode will be used): ${missingAxiom.join(', ')}`);
+
+  // Axiom live-vs-mock decision: only AXIOM_API_BASE_URL controls this.
+  if (!process.env[axiomLiveModeVar]) {
+    console.warn(
+      `⚠️  Axiom is in mock/dev mode — ${axiomLiveModeVar} not set.\n` +
+      `   Set it in .env (or App Configuration) to point at a live Axiom deployment.`,
+    );
+  }
+
+  // Per-feature notices — these gate specific code paths but don't trigger
+  // global mock mode. Surfaced as a single info line so they're discoverable
+  // without spamming the startup log.
+  const missingFeatures = axiomFeatureVars.filter((v) => !process.env[v.name]);
+  if (missingFeatures.length > 0) {
+    console.info(
+      `ℹ️  Optional Axiom env vars not set (specific features only — Axiom itself is live):\n` +
+        missingFeatures.map((v) => `   • ${v.name} — ${v.purpose}`).join('\n'),
+    );
   }
 }
 
