@@ -147,15 +147,17 @@ resource apiAllOps 'Microsoft.ApiManagement/service/apis/operations@2023-05-01-p
   }
 }
 
-// API Policy: No rewrite needed - APIM forwards the incoming /api/* request
-// path to the backend while the imported operation templates are rooted below
-// the API path.
+// API Policy: Explicitly rewrite to the full incoming /api/* backend path.
+// The API container app mounts routes under /api/*, while APIM operation
+// templates for this API are rooted below the API path ('api'). Without this
+// rewrite, APIM can forward /v1/... to the backend, which the Express app does
+// not serve. Preserve the original /api-prefixed path when proxying.
 resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
   parent: api
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><set-backend-service backend-id="${apiBackendName}" /><rewrite-uri template="@{ return &quot;/api&quot; + context.Request.Url.Path; }" copy-unmatched-params="true" /><cors allow-credentials="true"><allowed-origins>${join(map(allowedOrigins, origin => '<origin>${origin}</origin>'), '')}</allowed-origins><allowed-methods><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>PATCH</method><method>OPTIONS</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
