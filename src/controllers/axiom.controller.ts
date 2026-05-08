@@ -1210,7 +1210,7 @@ export class AxiomController {
    * Replaces v1 `/api/axiom/analyze` and `/api/axiom/criteria/evaluate`.
    * Body: { programId, programVersion, schemaId? }
    */
-  evaluateScopeV2 = async (req: Request, res: Response): Promise<void> => {
+  evaluateScopeV2 = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
     try {
       const { scopeId } = req.params;
       if (!scopeId) {
@@ -1238,10 +1238,33 @@ export class AxiomController {
         return;
       }
 
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        // Authenticated request without a resolved tenantId is a chain-of-trust
+        // bug — auth middleware should have set req.user.tenantId. Refuse
+        // rather than fall back to an unscoped query.
+        res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'User tenant not resolved — authentication required',
+          },
+        });
+        return;
+      }
+
+      const actor = {
+        tenantId,
+        initiatedBy: req.user?.id ?? req.user?.azureAdObjectId ?? 'unknown-user',
+        correlationId: this.createHeaderOrGeneratedValue(req, 'X-Correlation-Id', 'axiom-evaluate-correlation'),
+        idempotencyKey: this.createHeaderOrGeneratedValue(req, 'Idempotency-Key', 'axiom-evaluate-idempotency'),
+      };
+
       const evaluateInput: Parameters<typeof this.axiomService.evaluateScope>[0] = {
         scopeId,
         programId,
         programVersion,
+        actor,
       };
       if (schemaId !== undefined) evaluateInput.schemaId = schemaId;
       const summary = await this.axiomService.evaluateScope(evaluateInput);

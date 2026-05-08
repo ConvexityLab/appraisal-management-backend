@@ -25,6 +25,7 @@ import { WebPubSubService } from './web-pubsub.service';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { EvaluationEnvelopeAssembler } from './axiom/evaluation-envelope-assembler.js';
 import { EventPriority, EventCategory } from '../types/events.js';
 import type { QCIssueDetectedEvent } from '../types/events.js';
 import { computeVerdictCounts } from '../utils/verdict-counts.js';
@@ -2889,14 +2890,43 @@ export class AxiomService {
     programId: string;
     programVersion: string;
     schemaId?: string;
+    /**
+     * Identity for envelope assembly + audit. The assembler hands this
+     * to ReviewContextAssemblyService, which uses it for tenant scoping
+     * (documents, snapshots, runs are all queried under actor.tenantId)
+     * and audit attribution (`assembledBy`, `correlationId`).
+     */
+    actor: import('../types/analysis-submission.types.js').AnalysisSubmissionActorContext;
   }): Promise<import('../types/axiom.types.js').AxiomEvaluationRunResponse> {
     if (!this.enabled) {
       throw new Error('Axiom not configured — cannot evaluate scope');
     }
-    const { scopeId, programId, programVersion, schemaId } = input;
+    const { scopeId, programId, programVersion, schemaId, actor } = input;
+    const resolvedSchemaId = schemaId ?? programId;
+
+    // Phase 5: assemble an EvaluationDataEnvelope from the canonical
+    // ReviewContext (canonical snapshot + documents + order metadata)
+    // and send it inline. Axiom v2 evaluates against the inline envelope
+    // and skips the LoanDataRepository lookup entirely (per integration
+    // guide §1 + EvaluateLoanInput.envelope).
+    //
+    // Failure to assemble (missing order, db error, etc.) is a hard fail —
+    // we don't want to silently fall back to the legacy LoanDataRepository
+    // path which would produce confusing "LoanDataObject not found" errors.
+    const assembler = new EvaluationEnvelopeAssembler(this.dbService);
+    const envelope = await assembler.assemble({
+      scopeId,
+      programId,
+      programVersion,
+      schemaId: resolvedSchemaId,
+      actor,
+    });
+
     const url = `/api/criterion/loans/${encodeURIComponent(scopeId)}/programs/${encodeURIComponent(programId)}/evaluate`;
     const response = await this.client.post<unknown>(url, {
-      schemaId: schemaId ?? programId,
+      schemaId: resolvedSchemaId,
+      programVersion,
+      envelope,
     });
     return this.normalizeEvaluationRunResponse(response.data, {
       scopeId,
