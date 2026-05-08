@@ -8,7 +8,7 @@
  *   4. Error cases — job not found, wrong processing mode, loan not found
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { BulkPortfolioService } from '../../src/services/bulk-portfolio.service.js';
 import type { BulkPortfolioJob } from '../../src/types/bulk-portfolio.types.js';
 import type { ReviewTapeResult } from '../../src/types/review-tape.types.js';
@@ -91,6 +91,11 @@ function makeDbService(initialJobs: BulkPortfolioJob[]): {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('BulkPortfolioService.patchReviewResult()', () => {
+  beforeEach(() => {
+    process.env.AXIOM_API_BASE_URL = 'https://axiom.example';
+    process.env.AXIOM_AUTH_AUDIENCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
+  });
+
   function makeService(jobs: BulkPortfolioJob[]) {
     const { db, store } = makeDbService(jobs);
     return { service: new BulkPortfolioService(db), store };

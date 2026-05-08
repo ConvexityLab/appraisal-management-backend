@@ -3,6 +3,14 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+
+// ReviewDocumentExtractionService requires AXIOM_API_BASE_URL at construction time
+// (P2-AX-01 startup validation). This test does not exercise document extraction,
+// so we stub the class to prevent the startup guard from throwing.
+vi.mock('../../src/services/review-document-extraction.service.js', () => ({
+  ReviewDocumentExtractionService: vi.fn().mockImplementation(() => ({})),
+}));
+
 import { BulkPortfolioService } from '../../src/services/bulk-portfolio.service.js';
 import type { BulkPortfolioJob, BulkPortfolioItem, BulkSubmitRequest } from '../../src/types/bulk-portfolio.types.js';
 import type { CosmosDbService } from '../../src/services/cosmos-db.service.js';

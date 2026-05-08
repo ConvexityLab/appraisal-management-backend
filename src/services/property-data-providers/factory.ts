@@ -20,9 +20,11 @@
  *   const provider = createPropertyDataProvider(initializedCosmosDbService);
  *   const result = await provider.lookupByAddress({ street, city, state, zipCode });
  *
- * Note: `cosmos` is required when COSMOS_ENDPOINT or AZURE_COSMOS_ENDPOINT is set.
- * Pass the already-initialized CosmosDbService instance — do not let the factory
+ * Note: `cosmos` is required when COSMOS_ENDPOINT, AZURE_COSMOS_ENDPOINT, or ATTOM_API_KEY
+ * is set. Pass the already-initialized CosmosDbService instance — do not let the factory
  * create its own, as the new instance would never have initialize() called on it.
+ *
+ * ATTOM requires cosmos for its property-data cache even when LocalAttom is not enabled.
  */
 
 import type { PropertyDataProvider } from '../../types/property-data.types.js';

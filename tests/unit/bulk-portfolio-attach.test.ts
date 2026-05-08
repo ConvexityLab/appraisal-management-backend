@@ -116,6 +116,8 @@ describe('BulkPortfolioService.attachDocumentsToJob()', () => {
   }
 
   beforeEach(() => {
+    process.env.AXIOM_API_BASE_URL = 'https://axiom.example';
+    process.env.AXIOM_AUTH_AUDIENCE = 'api://3bc96929-593c-4f35-8997-e341a7e09a69';
     mockUploadDocument.mockReset();
     mockUploadDocument.mockResolvedValue({ success: true, data: { id: 'doc-001' } });
   });

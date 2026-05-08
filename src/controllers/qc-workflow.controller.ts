@@ -160,6 +160,58 @@ router.get(
 );
 
 /**
+ * POST /api/qc-workflow/queue
+ * Manually add an order to the QC review queue.
+ * Used when the automatic SUBMITTED→queue path failed or was never triggered.
+ */
+router.post(
+  '/queue',
+  ...qcQueueUpdate,
+  [
+    body('orderId').notEmpty().withMessage('orderId is required'),
+    body('orderNumber').notEmpty().withMessage('orderNumber is required'),
+    body('appraisalId').notEmpty().withMessage('appraisalId is required'),
+    body('propertyAddress').optional().isString(),
+    body('appraisedValue').optional().isNumeric(),
+    body('orderPriority').optional().isString(),
+    body('clientId').optional().isString(),
+    body('clientName').optional().isString(),
+    body('vendorId').optional().isString(),
+    body('vendorName').optional().isString(),
+  ],
+  handleValidationErrors,
+  async (req: Request, res: Response) => {
+    try {
+      const queueItem = await qcQueueService.addToQueue({
+        orderId: req.body.orderId,
+        orderNumber: req.body.orderNumber,
+        appraisalId: req.body.appraisalId,
+        propertyAddress: req.body.propertyAddress ?? '',
+        appraisedValue: req.body.appraisedValue ?? 0,
+        orderPriority: req.body.orderPriority ?? 'STANDARD',
+        clientId: req.body.clientId ?? '',
+        clientName: req.body.clientName ?? '',
+        vendorId: req.body.vendorId ?? '',
+        vendorName: req.body.vendorName ?? '',
+        submittedAt: new Date(),
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: queueItem,
+        message: 'Order added to QC review queue',
+      });
+    } catch (error) {
+      logger.error('Failed to add order to QC queue', { error });
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add order to QC queue',
+      });
+    }
+  }
+);
+
+/**
  * GET /api/qc-workflow/queue/statistics
  * Get queue statistics
  */

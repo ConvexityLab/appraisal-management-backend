@@ -43,19 +43,27 @@ export interface CriterionDocumentRequirementGroup {
 export interface CompiledCriterion {
   // Identity
   id: string;
-  code: string;
+  /** Semantic identifier for this criterion (new Axiom API). Preferred over code. */
+  concept?: string;
+  /** Legacy identity field. Use concept when available. */
+  code?: string;
+  nodeId?: string;
 
   // Categorization
-  category: string;
+  category?: string;
   subcategory?: string;
+  taxonomyCategory?: string;
 
   // Display
-  statement: string;
-  description: string;
+  /** Human-readable label (new Axiom API). Preferred over statement. */
+  title?: string;
+  /** Legacy display field. Use title when available. */
+  statement?: string;
+  description?: string;
   notes?: string;
 
   // Severity
-  severity: CriterionSeverity;
+  severity?: CriterionSeverity;
 
   // Data + evidence
   dataRequirements: CriterionDataRequirement[];
@@ -63,9 +71,11 @@ export interface CompiledCriterion {
   documentRequirements: CriterionDocumentRequirementGroup[];
 
   // Evaluation descriptor (engine-internal logic surfaced for transparency)
-  evaluation: {
-    type: string;
-    parameters: Record<string, unknown>;
+  evaluation?: {
+    type?: string;
+    /** New Axiom API evaluation mode (e.g. 'manual', 'automatic'). */
+    mode?: string;
+    parameters?: Record<string, unknown>;
   };
 }
 

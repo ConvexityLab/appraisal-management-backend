@@ -32,6 +32,7 @@ process.env.NODE_ENV = 'test';
 process.env.ENFORCE_AUTHORIZATION = 'true';
 process.env.AXIOM_CLIENT_ID = 'test-client-id';
 process.env.AXIOM_SUB_CLIENT_ID = 'test-sub-client-id';
+process.env.AXIOM_API_BASE_URL = 'https://axiom-stub.test';
 // COSMOS_ENDPOINT already set by tests/setup.ts to a placeholder URL.
 // Inspection-provider env is also seeded by setup.ts, but in some CI worker
 // configurations the test file's beforeAll runs before setup.ts has populated
@@ -51,6 +52,12 @@ process.env.IVUEIT_BASE_URL = process.env.IVUEIT_BASE_URL ?? 'https://test-place
 //     mocked initialize(). We return a minimal fake Container so constructors
 //     succeed. Any request that gets past the auth gate will receive an empty
 //     result or 500 from the fake, which is fine — beyond auth is out of scope.
+// Mock the inspection provider factory so no real vendor client is instantiated
+// (IVueitInspectionProvider validates IVUEIT_API_KEY at construction time).
+vi.mock('../../src/services/inspection-providers/factory.js', () => ({
+  createInspectionProvider: () => ({ name: 'stub-provider' }),
+}));
+
 vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../src/services/cosmos-db.service.js')>();
   const OriginalClass = mod.CosmosDbService;

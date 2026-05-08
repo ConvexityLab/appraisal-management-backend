@@ -182,7 +182,7 @@ describe('LocalAttomPropertyDataProvider', () => {
       expect(call[0]).toBe('attom-data');
       expect(call[1]).toContain("c.address.state = @state");
       expect(call[1]).toContain('c.address.zip = @zip');
-      expect(call[1]).toContain('ORDER BY c.sourcedAt DESC');
+      expect(call[1]).not.toContain('ORDER BY');
       expect(call[2]).toEqual([
         { name: '@state', value: 'TX' },
         { name: '@zip', value: '75201' },

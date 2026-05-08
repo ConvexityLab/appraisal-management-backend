@@ -1348,15 +1348,8 @@ export class AppraisalManagementAPIServer {
     }
 
     // NOTE: Authorization routes registered separately after authzMiddleware initialization
-
-    // Order Management - CRUD, status lifecycle, dashboard (Phase 0.2)
-    // Registered here (not in setupAuthorizationRoutes) so it works even when authzMiddleware is absent.
-    // OrderController handles its own authz internally via optional authzMiddleware param.
-    this.orderController = new OrderController(this.dbService, this.authzMiddleware);
-    this.app.use('/api/orders',
-      this.unifiedAuth.authenticate(),
-      this.orderController.router
-    );
+    // OrderController is created and mounted in setupAuthorizationRoutes() after authzMiddleware
+    // is initialized, so that per-route ABAC guards are always active.
 
     // ClientOrder management — new ClientOrder/VendorOrder split (Phase 1).
     // Additive: legacy /api/orders is unchanged. Frontends opt in by

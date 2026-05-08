@@ -33,6 +33,7 @@
  *   POST   /:orderId/acknowledge-attention → acknowledgeAttention   (authorizeResource update)
  *   GET    /:orderId/property-enrichment   → getOrderPropertyEnrichment (authorizeResource read)
  *   POST   /:orderId/property-enrichment/refresh → refreshOrderPropertyEnrichment (authorizeResource execute)
+ *   GET    /:orderId/property-record        → getOrderPropertyRecord (authorizeResource read)
  */
 
 import { Router, Response } from 'express';
@@ -251,6 +252,7 @@ export class OrderController {
     this.router.post('/:orderId/acknowledge-attention',     ...updateRes,  this.acknowledgeAttention.bind(this));
     this.router.get('/:orderId/property-enrichment',        ...readRes,    this.getOrderPropertyEnrichment.bind(this));
     this.router.post('/:orderId/property-enrichment/refresh', ...execRes,  this.refreshOrderPropertyEnrichment.bind(this));
+    this.router.get('/:orderId/property-record',             ...readRes,    this.getOrderPropertyRecord.bind(this));
   }
 
   // ─── POST / ──────────────────────────────────────────────────────────────
@@ -2399,6 +2401,58 @@ export class OrderController {
         error: err instanceof Error ? err.message : String(err),
       });
       res.status(500).json({ error: 'Failed to refresh property enrichment data' });
+    }
+  }
+
+  // ─── GET /:orderId/property-record ────────────────────────────────────────
+
+  /**
+   * Returns the PropertyRecord from the `property-records` container for the
+   * property linked to this order via the order's `propertyId` FK.
+   * 404 when the order has no `propertyId` yet or when no record exists.
+   *
+   * GET /api/v1/orders/:orderId/property-record
+   */
+  public async getOrderPropertyRecord(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const { orderId } = req.params;
+      if (!orderId) {
+        res.status(400).json({ error: 'orderId is required' });
+        return;
+      }
+
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        res.status(401).json({ error: 'Authenticated tenant context is required' });
+        return;
+      }
+
+      const orderResult = await this.dbService.findOrderById(orderId);
+      if (!orderResult.success || !orderResult.data) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      const propertyId: string | undefined = (orderResult.data as any).propertyId;
+      if (!propertyId) {
+        res.status(404).json({ error: 'Order has no linked property record' });
+        return;
+      }
+
+      const container = this.dbService.getContainer('property-records');
+      const { resource } = await container.item(propertyId, tenantId).read();
+      if (!resource) {
+        res.status(404).json({ error: `Property record ${propertyId} not found` });
+        return;
+      }
+
+      res.json(resource);
+    } catch (err) {
+      logger.error('getOrderPropertyRecord failed', {
+        orderId: req.params.orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ error: 'Failed to retrieve property record' });
     }
   }
 }

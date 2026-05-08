@@ -580,6 +580,9 @@ export class PropertyEnrichmentService {
     loanId: string,
     tenantId: string,
     address: { street: string; city: string; state: string; zipCode: string },
+    // resolvedPropertyId is accepted for API compatibility but not yet used;
+    // enrichOrder performs its own resolveOrCreate call.
+    _resolvedPropertyId?: string,
   ): Promise<EnrichmentResult> {
     if (!engagementId) {
       throw new Error('PropertyEnrichmentService.enrichEngagement: engagementId is required');

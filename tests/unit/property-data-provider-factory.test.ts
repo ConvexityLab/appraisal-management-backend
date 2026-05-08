@@ -114,7 +114,8 @@ describe('createPropertyDataProvider', () => {
   it('returns Attom alone when only ATTOM_API_KEY is set', () => {
     process.env.ATTOM_API_KEY = 'attom-key';
 
-    const provider = createPropertyDataProvider() as { __kind?: string };
+    // ATTOM requires a CosmosDbService instance for its property-data cache.
+    const provider = createPropertyDataProvider({} as never) as { __kind?: string };
 
     expect(provider).not.toBeInstanceOf(ChainedPropertyDataProvider);
     expect(provider.__kind).toBe('attom');
@@ -153,7 +154,9 @@ describe('createPropertyDataProvider', () => {
     process.env.BRIDGE_SERVER_TOKEN = 'bridge-token';
     process.env.ATTOM_API_KEY = 'attom-key';
 
-    const provider = createPropertyDataProvider();
+    // ATTOM always requires a CosmosDbService instance for its property-data cache.
+    // COSMOS_ENDPOINT is not set, so LocalAttom is excluded from the chain.
+    const provider = createPropertyDataProvider({} as never);
 
     expect(provider).toBeInstanceOf(ChainedPropertyDataProvider);
     const inner = (provider as unknown as {
