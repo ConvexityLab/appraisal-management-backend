@@ -67,6 +67,23 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
   - Purpose: legacy analyze path with concurrent SSE, order-list polling, full response logging, and webhook round-trip
   - Extra env: `AXIOM_LIVE_SSE_TIMEOUT_MS` (default `120000`)
 
+- `axiom-live-fire-v2-flow.ts`  ← **pnpm axiom:livefire:v2-flow**
+  - `POST   /api/axiom/scopes/:scopeId/evaluate` — kicks off v2 evaluation run
+  - `GET    /api/axiom/scopes/:scopeId/runs/:runId` — polls until terminal status
+  - `GET    /api/axiom/scopes/:scopeId/results?programId=…` — latest verdicts
+  - `GET    /api/axiom/scopes/:scopeId/criteria/:criterionId/history` — audit trail
+  - `POST   /api/axiom/scopes/:scopeId/criteria/:criterionId/override` — atomic override (gated by `AXIOM_LIVE_V2_RUN_OVERRIDE=true`)
+  - Purpose: end-to-end validation of the Axiom v2 proxy surface used by the FE
+    after the 2026-05-07 migration. Asserts response shape matches the strict
+    contract the FE's `normalizeEvaluationResponse` enforces (v2 verdict enum,
+    required `evaluationRunId`/`scopeId`/`criterionSnapshot`/`dataConsulted`,
+    no legacy `'warning'`/`'info'` verdicts).
+  - Extra env: `AXIOM_LIVE_V2_PROGRAM_ID` (else fetched from order's
+    `axiomProgramId`), `AXIOM_LIVE_V2_PROGRAM_VERSION`, `AXIOM_LIVE_V2_SCHEMA_ID`
+    (default = programId), `AXIOM_LIVE_V2_RUN_OVERRIDE` (default `false`),
+    `AXIOM_LIVE_V2_OVERRIDE_VERDICT` (default `pass`, must be one of
+    pass/fail/needs_review).
+
 ## Required environment
 
 Set these for all scripts:
