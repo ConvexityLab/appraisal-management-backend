@@ -176,6 +176,49 @@ export function buildDefaultPolicies(tenantId: string): PolicyRule[] {
     description: 'analyst: qc_queue always readable',
   }));
 
+  // ── Manager: engagement ─────────────────────────────────────────────────────
+  // Rule 1 of 3: team-based access
+  rules.push(rule(tenantId, {
+    role: 'manager',
+    resourceType: 'engagement',
+    actions: ['read', 'create', 'update', 'approve', 'reject'],
+    conditions: [{ attribute: 'accessControl.teamId', operator: 'in', userField: 'accessScope.teamIds' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'manager: engagement access by teamId',
+  }));
+  // Rule 2 of 3: client-based access
+  rules.push(rule(tenantId, {
+    role: 'manager',
+    resourceType: 'engagement',
+    actions: ['read', 'create', 'update', 'approve', 'reject'],
+    conditions: [{ attribute: 'accessControl.clientId', operator: 'in', userField: 'accessScope.managedClientIds' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'manager: engagement access by clientId',
+  }));
+  // Rule 3 of 3: department-based access
+  rules.push(rule(tenantId, {
+    role: 'manager',
+    resourceType: 'engagement',
+    actions: ['read', 'create', 'update', 'approve', 'reject'],
+    conditions: [{ attribute: 'accessControl.departmentId', operator: 'in', userField: 'accessScope.departmentIds' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'manager: engagement access by departmentId',
+  }));
+
+  // ── Analyst: engagement (assigned only) ─────────────────────────────────────
+  rules.push(rule(tenantId, {
+    role: 'analyst',
+    resourceType: 'engagement',
+    actions: ['read', 'update'],
+    conditions: [{ attribute: 'accessControl.assignedUserIds', operator: 'is_assigned' }],
+    effect: 'allow',
+    priority: 100,
+    description: 'analyst: engagement access when assigned',
+  }));
+
   // ── Appraiser: owned or assigned ────────────────────────────────────────────
   const appraiserResources: ResourceType[] = ['order', 'revision', 'qc_review', 'escalation'];
   for (const rt of appraiserResources) {

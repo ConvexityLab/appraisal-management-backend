@@ -5,12 +5,15 @@
  * objects. These documents conform to SCHEMA_VERSION '1.0.0' and use URAR/UAD 3.6
  * aligned field names.
  *
- * Creates 2 report documents:
- *   - seed-report-001: Completed full 1004, 6 selected comps (3 sold + 3 list)
- *   - seed-report-003: In-progress full 1004, 3 sold comps selected + 12 candidates
+ * Creates 3 report documents:
+ *   - seed-report-001: Completed full 1004, Dallas TX, 6 selected comps (3 sold + 3 list)
+ *   - seed-report-003: In-progress full 1004, Dallas TX, 3 sold comps selected + 12 candidates
+ *   - seed-report-009: Completed full 1004, Fort Worth TX, 6 selected comps; backs
+ *                      legacy seed-order-009 so that FinalReportPanel preview works
+ *                      without requiring a manual workspace save first.
  *
- * Both reports provide a realistic candidate pool so the comp-workspace swap UI
- * has unassigned comps to work with.
+ * Reports 001 and 003 provide a realistic candidate pool so the comp-workspace swap
+ * UI has unassigned comps to work with.
  */
 
 import {
@@ -34,6 +37,10 @@ import {
 } from '../seed-types.js';
 
 import { REPORT_IDS, ORDER_IDS } from '../seed-ids.js';
+
+// Legacy order ID for seed-order-009 (pre-SEED-VO migration format, protected by
+// cleanup-orphan-orders.ts). New-format equivalent is ORDER_IDS.SUBMITTED_009.
+const LEGACY_ORDER_009_ID = 'seed-order-009';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED DIMENSIONS
@@ -434,6 +441,217 @@ function buildReport003(now: string): CanonicalReportDocument {
   };
 }
 
+// ─── Fort Worth TX subject and comps for seed-order-009 ──────────────────────
+
+const SUBJECT_1500_COMMERCE: CanonicalSubject = {
+  address: {
+    streetAddress: '1500 Commerce St',
+    unit: null,
+    city: 'Fort Worth',
+    state: 'TX',
+    zipCode: '76102',
+    county: 'Tarrant',
+  },
+  grossLivingArea: 1920,
+  totalRooms: 6,
+  bedrooms: 3,
+  bathrooms: 2,
+  stories: 1,
+  lotSizeSqFt: 6500,
+  propertyType: 'SFR',
+  condition: 'C3',
+  quality: 'Q3',
+  design: 'Traditional',
+  yearBuilt: 1988,
+  foundationType: 'Slab',
+  exteriorWalls: 'Brick',
+  roofSurface: 'Composition Shingle',
+  basement: 'None',
+  basementFinishedSqFt: null,
+  heating: 'FWA',
+  cooling: 'Central',
+  fireplaces: 1,
+  garageType: 'Attached',
+  garageSpaces: 2,
+  porchPatioDeck: 'Covered Porch',
+  pool: false,
+  attic: 'None',
+  view: 'Residential',
+  locationRating: 'Neutral',
+  latitude: 32.7555,
+  longitude: -97.3308,
+  parcelNumber: '01-2345-6789-0000',
+  censusTract: '1029.00',
+  mapReference: 'Tarrant Co Map 32-C',
+  currentOwner: 'David & Maria Hernandez',
+  occupant: 'Owner',
+  legalDescription: 'LOT 8, BLK 2, RIVERSIDE HEIGHTS, TARRANT CO TX',
+  zoning: 'A-5',
+  zoningCompliance: 'Legal',
+  highestAndBestUse: 'Present',
+  floodZone: 'X',
+  floodMapNumber: '48439C0215K',
+  floodMapDate: '2014-04-18',
+  utilities: DALLAS_UTILITIES,
+  neighborhood: {
+    locationType: 'Suburban',
+    builtUp: '75%',
+    growth: 'Stable',
+    propertyValues: 'Stable',
+    demandSupply: 'In Balance',
+    marketingTime: '3-6 months',
+    predominantOccupancy: 'Owner',
+    singleFamilyPriceRange: { low: 260000, high: 520000 },
+    predominantAge: '25-40 years',
+    presentLandUse: { singleFamily: 65, multifamily: 20, commercial: 12, other: 3 },
+    boundaryDescription: 'Trinity River to I-30, Main St to Henderson St',
+    neighborhoodDescription: 'Established suburban neighborhood near downtown Fort Worth with steady owner-occupied demand.',
+    marketConditionsNotes: 'Stable values, typical DOM 45-90 days. Market supported by proximity to employment centers.',
+  },
+  contractInfo: null,
+  hpiTrend: 'Stable',
+};
+
+function baseFwComp(
+  id: string,
+  street: string,
+  gla: number,
+  bed: number,
+  bath: number,
+  salePrice: number,
+  saleDate: string,
+  dom: number,
+  distMi: number,
+  selected: boolean,
+  slotIndex: number | null,
+  adjOverrides: Parameters<typeof makeAdjustments>[1] = {},
+): CanonicalComp {
+  return {
+    compId: id,
+    address: { streetAddress: street, unit: null, city: 'Fort Worth', state: 'TX', zipCode: '76102', county: 'Tarrant' },
+    grossLivingArea: gla,
+    totalRooms: bed + 3,
+    bedrooms: bed,
+    bathrooms: bath,
+    stories: 1,
+    lotSizeSqFt: 6200,
+    propertyType: 'SFR',
+    condition: 'C3',
+    quality: 'Q3',
+    design: 'Traditional',
+    yearBuilt: 1986,
+    foundationType: 'Slab',
+    exteriorWalls: 'Brick',
+    roofSurface: 'Composition Shingle',
+    basement: 'None',
+    basementFinishedSqFt: null,
+    heating: 'FWA',
+    cooling: 'Central',
+    fireplaces: 1,
+    garageType: 'Attached',
+    garageSpaces: 2,
+    porchPatioDeck: 'Covered Porch',
+    pool: false,
+    attic: 'None',
+    view: 'Residential',
+    locationRating: 'Neutral',
+    latitude: 32.755 + (Math.random() * 0.01 - 0.005),
+    longitude: -97.330 + (Math.random() * 0.01 - 0.005),
+    salePrice,
+    saleDate,
+    priorSalePrice: null,
+    priorSaleDate: null,
+    listPrice: salePrice + 3000,
+    financingType: 'Conventional',
+    saleType: 'ArmLength',
+    concessionsAmount: null,
+    dataSource: 'avm',
+    vendorId: 'batch_data',
+    vendorRecordRef: `seed-raw-${id}`,
+    distanceFromSubjectMiles: distMi,
+    proximityScore: Math.round((1 - distMi / 2) * 100),
+    selected,
+    slotIndex,
+    adjustments: selected ? makeAdjustments(salePrice, {
+      grossLivingAreaAdj: (1920 - gla) * 60, // $60/sqft GLA adjustment
+      aboveGradeBedroom: (3 - bed) * 5000,
+      aboveGradeBathroom: (2 - bath) * 2500,
+      ...adjOverrides,
+    }) : null,
+    mlsData: makeMls({
+      mlsNumber: `NTREIS-FW-${id.replace('seed-comp-fw-', '')}`,
+      listingStatus: 'Sold',
+      soldDate: saleDate,
+      daysOnMarket: dom,
+    }),
+    publicRecordData: null,
+  };
+}
+
+const FW_COMPS_009: CanonicalComp[] = [
+  baseFwComp('seed-comp-fw-s1', '1418 Summit Ave',       1880, 3, 2, 395000, daysAgo(38),  14, 0.3, true, 1),
+  baseFwComp('seed-comp-fw-s2', '1632 Weatherford St',   2010, 3, 2, 420000, daysAgo(55),   9, 0.5, true, 2),
+  baseFwComp('seed-comp-fw-s3', '1345 Pennsylvania Ave', 1850, 3, 2, 385000, daysAgo(27),  21, 0.4, true, 3),
+  baseFwComp('seed-comp-fw-c1', '1710 Hemphill St',      2050, 4, 2, 435000, daysAgo(12),  30, 0.6, true, 4, { aboveGradeBedroom: -5000 }),
+  baseFwComp('seed-comp-fw-c2', '1225 8th Ave',          1960, 3, 2, 410000, daysAgo(19),   7, 0.7, true, 5),
+  baseFwComp('seed-comp-fw-c3', '1580 Alston Ave',       1790, 3, 2, 375000, daysAgo(33),  25, 0.8, true, 6),
+  baseFwComp('seed-comp-fw-u1', '1455 College Ave',      1930, 3, 2, 402000, daysAgo(80),  17, 0.9, false, null),
+  baseFwComp('seed-comp-fw-u2', '1320 Fairmount Ave',    2080, 3, 3, 445000, daysAgo(65),  11, 1.1, false, null),
+  baseFwComp('seed-comp-fw-u3', '1640 Rogers Ave',       1860, 3, 2, 388000, daysAgo(48),  22, 1.0, false, null),
+];
+
+function buildReport009(_now: string): CanonicalReportDocument {
+  return {
+    id: REPORT_IDS.FULL_1004_ORDER_009,
+    reportId: REPORT_IDS.FULL_1004_ORDER_009,
+    orderId: LEGACY_ORDER_009_ID,
+    reportType: '1004',
+    status: 'completed',
+    schemaVersion: SCHEMA_VERSION,
+    metadata: {
+      orderId: LEGACY_ORDER_009_ID,
+      orderNumber: 'SEED-2026-00109',
+      borrowerName: 'David & Maria Hernandez',
+      ownerOfPublicRecord: 'David & Maria Hernandez',
+      clientName: 'Clearpath AMC',
+      clientCompanyName: 'Clearpath AMC',
+      clientAddress: '500 Commerce St Ste 400, Fort Worth, TX 76102',
+      clientEmail: 'orders@clearpathamc.example',
+      loanNumber: 'LN-2026-00109',
+      effectiveDate: daysAgo(10),
+      inspectionDate: daysAgo(12),
+      isSubjectPurchase: false,
+      contractPrice: null,
+      contractDate: null,
+      subjectPriorSaleDate1: daysAgo(365 * 5),
+      subjectPriorSalePrice1: 310000,
+      subjectPriorSaleDate2: null,
+      subjectPriorSalePrice2: null,
+      appraisalGrade: 'B',
+    },
+    subject: SUBJECT_1500_COMMERCE,
+    comps: FW_COMPS_009,
+    valuation: {
+      estimatedValue: 405000,
+      lowerBound: 385000,
+      upperBound: 425000,
+      confidenceScore: 84,
+      effectiveDate: daysAgo(10),
+      reconciliationNotes:
+        'Value reconciled from 6 comparables in the Fort Worth Riverside Heights / Near Southside ' +
+        'submarket. Sales comparison approach given full weight. Adjusted value range $385k–$425k; ' +
+        'point estimate $405k reflects market conditions and comp grid quality.',
+      approachesUsed: ['sales_comparison'],
+      avmProvider: 'batch_data',
+      avmModelVersion: null,
+    },
+    createdAt: daysAgo(15),
+    updatedAt: daysAgo(10),
+    createdBy: 'seed',
+    updatedBy: 'seed',
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SEED MODULE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -452,6 +670,7 @@ export const module: SeedModule = {
     const docs: CanonicalReportDocument[] = [
       buildReport001(ctx.now),
       buildReport003(ctx.now),
+      buildReport009(ctx.now),
     ];
 
     for (const doc of docs) {

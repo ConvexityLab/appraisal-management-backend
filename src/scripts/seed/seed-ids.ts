@@ -374,6 +374,8 @@ export const REPORT_IDS = {
   FULL_1004_ORDER_001: 'seed-report-001',
   /** Full 1004 — in progress, 3 sold + 2 candidates */
   FULL_1004_ORDER_003: 'seed-report-003',
+  /** Full 1004 — submitted/completed, Fort Worth TX; backs legacy seed-order-009 */
+  FULL_1004_ORDER_009: 'seed-report-009',
 } as const;
 
 // ─── Inspections (InspectionAppointment docs in 'orders' container) ────────────
