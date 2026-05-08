@@ -23,7 +23,7 @@ var sku = environment == 'prod' || environment == 'staging' ? 'Standard' : 'Free
 // 'appcfg-' (7) + take(namingPrefix, 24) (≤24) + '-' + take(unique, 6) (6) = ≤38 chars.
 var appConfigName = 'appcfg-${take(namingPrefix, 24)}-${take(uniqueString(resourceGroup().id, 'appconfig'), 6)}'
 
-resource appConfig 'Microsoft.AppConfiguration/configurationStores@2023-03-01' = {
+resource appConfig 'Microsoft.AppConfiguration/configurationStores@2024-05-01' = {
   name: appConfigName
   location: location
   tags: tags
@@ -34,6 +34,17 @@ resource appConfig 'Microsoft.AppConfiguration/configurationStores@2023-03-01' =
     // Managed Identity resolves access — disable local auth (key-based access)
     // to enforce Managed Identity usage per platform policy.
     disableLocalAuth: true
+    // dataPlaneProxy.authenticationMode = 'Pass-through' lets ARM (bicep)
+    // operations like Microsoft.AppConfiguration/configurationStores/keyValues
+    // use the deploying principal's Azure RBAC identity instead of the store's
+    // local access keys. Required when disableLocalAuth=true and we want bicep
+    // to manage keyValues declaratively (see app-config-values.bicep). The
+    // deploying principal must hold "App Configuration Data Owner" role on the
+    // store — granted by appConfigDataOwnerRole module in main.bicep.
+    dataPlaneProxy: {
+      authenticationMode: 'Pass-through'
+      privateLinkDelegation: 'Disabled'
+    }
     // Soft-delete: enabled on Standard only (not available on Free)
     enablePurgeProtection: sku == 'Standard'
     softDeleteRetentionInDays: sku == 'Standard' ? 7 : null

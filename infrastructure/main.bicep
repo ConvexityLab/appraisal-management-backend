@@ -663,6 +663,18 @@ module appConfigReaderRole 'modules/appconfig-reader-role.bicep' = {
   }
 }
 
+// App Configuration Data Owner role for the GitHub Actions deploy SP — required
+// to write keyValues declaratively from bicep when the store has
+// disableLocalAuth=true + dataPlaneProxy=Pass-through.
+module appConfigDataOwnerRole 'modules/appconfig-data-owner-role.bicep' = if (!empty(ciServicePrincipalId)) {
+  name: 'appconfig-data-owner-role-deployment'
+  scope: resourceGroup
+  params: {
+    appConfigName: appConfig.outputs.appConfigName
+    principalId: ciServicePrincipalId
+  }
+}
+
 // Computed App Configuration values — sourced from other module outputs that
 // already provision the underlying resources. Merged with the env-static
 // `appConfigValues` param (from parameters file) before writing to the store.
@@ -692,6 +704,12 @@ module appConfigValuesWriter 'modules/app-config-values.bicep' = {
     label: environment
     keyValues: union(appConfigValues, computedAppConfigValues)
   }
+  // Pass-through auth requires the deploy SP to have Data Owner role on the
+  // store. Force the role assignment to land first so keyValues operations
+  // can authenticate.
+  dependsOn: [
+    appConfigDataOwnerRole
+  ]
 }
 
 // Key Vault Role Assignments for Container Apps + CI/CD service principal
