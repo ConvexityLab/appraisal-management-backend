@@ -271,6 +271,16 @@ module cosmosEngagementsContainer 'modules/cosmos-engagements-container.bicep' =
   }
 }
 
+// Cosmos DB Authorization Policies Container (DB-backed ABAC policy rules)
+module cosmosAuthorizationPoliciesContainer 'modules/cosmos-authorization-policies-container.bicep' = {
+  name: 'cosmos-authorization-policies-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Appraisal Drafts Container (UAD 3.6 Phase 1 — in-progress appraisals)
 module cosmosAppraisalDraftsContainer 'modules/cosmos-appraisal-drafts-container.bicep' = {
   name: 'cosmos-appraisal-drafts-container-deployment'
