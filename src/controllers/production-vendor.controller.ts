@@ -12,7 +12,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
 
 export class VendorController {
@@ -36,22 +36,30 @@ export class VendorController {
     // loadUserProfile() followed by action-specific authorize().
     // If authzMiddleware is absent, arrays are empty (auth-only mode).
     const lp = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
-    const read     = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'read')]   : [];
+    const readQuery = authzMiddleware ? [...lp, authzMiddleware.authorizeQuery('vendor', 'read')] : [];
+    const readResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('vendor', 'read', { resourceIdParam: 'vendorId' })]
+      : [];
     const create   = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'create')] : [];
-    const update   = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'update')] : [];
-    const del      = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor',    'delete')] : [];
+    const update = authzMiddleware ? [...lp, authzMiddleware.authorize('vendor', 'update')] : [];
+    const updateResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('vendor', 'update', { resourceIdParam: 'vendorId' })]
+      : [];
+    const deleteResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('vendor', 'delete', { resourceIdParam: 'vendorId' })]
+      : [];
     const analytics = authzMiddleware ? [...lp, authzMiddleware.authorize('analytics', 'read')]   : [];
 
     // Order matters: specific paths before parameterized paths
     this.router.get('/performance/:vendorId', ...analytics,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
     this.router.post('/assign/:orderId',       ...update,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
 
-    this.router.get('/',                       ...read,    this.getVendors.bind(this));
-    this.router.get('/:vendorId',              ...read,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));
+    this.router.get('/',                       ...readQuery,    this.getVendors.bind(this));
+    this.router.get('/:vendorId',              ...readResource,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));
     this.router.post('/',                      ...create,  ...this.validateVendorCreation(), this.createVendor.bind(this));
-    this.router.patch('/:vendorId/availability', ...update, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
-    this.router.put('/:vendorId',              ...update,  ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
-    this.router.delete('/:vendorId',           ...del,     ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
+    this.router.patch('/:vendorId/availability', ...updateResource, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
+    this.router.put('/:vendorId',              ...updateResource,  ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
+    this.router.delete('/:vendorId',           ...deleteResource,     ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
   }
 
   // ---------------------------------------------------------------------------
@@ -126,7 +134,7 @@ export class VendorController {
    * List vendors with optional status/specialty filters.
    * Returns VendorProfile[] (unwrapped array) for frontend compatibility.
    */
-  private async getVendors(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async getVendors(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       // Phase 8 / A5: optional full-text search via ?q=X.  When the
       // query param is present and non-trivial, route through the
@@ -134,10 +142,13 @@ export class VendorController {
       // original findAllVendors behaviour so existing callers are
       // unaffected.
       const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const authzOptions = req.authorizationFilter
+        ? { authorizationFilter: req.authorizationFilter }
+        : undefined;
       const result =
         rawQ.length > 0
-          ? await this.dbService.searchVendors(rawQ.slice(0, 100))
-          : await this.dbService.findAllVendors();
+          ? await this.dbService.searchVendors(rawQ.slice(0, 100), 50, authzOptions)
+          : await this.dbService.findAllVendors(authzOptions);
 
       if (result.success && result.data) {
         const vendorProfiles = result.data.map(v => this.transformVendorToProfile(v));

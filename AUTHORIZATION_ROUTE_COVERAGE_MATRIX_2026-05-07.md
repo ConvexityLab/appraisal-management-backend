@@ -46,6 +46,7 @@ This is a **prefix-level matrix** based on the routes currently mounted by the a
 | `/api/client-orders` | Yes | Yes — create gate + `authorizeResource('client_order', ...)` on resource routes | Complete | Mounted after authz initialization in `src/api/api-server.ts`; `src/controllers/client-order.controller.ts` now uses canonical create/read/update authorization wiring. |
 | `/api/vendor-orders` | Yes | Yes — `authorizeQuery('vendor_order', 'read')` and `authorizeResource('vendor_order', 'read')` | Complete | Mounted after authz initialization in `src/api/api-server.ts`; `src/controllers/vendor-order.controller.ts` appends `authorizationFilter` to live list queries and uses `authorizeResource` for detail reads. |
 | `/api/orders/:orderId/comparables` and `/api/vendor-orders/:vendorOrderId/comparables` | Yes | Yes — `authorizeResource(...)` on parent client/vendor order | Complete | Mounted after authz initialization in `src/api/api-server.ts`; `src/controllers/order-comparables.controller.ts` now requires resource-level auth before comparable reads. |
+| `/api/clients` | Yes — controller-level `authorize('client', 'create')`, `authorizeQuery('client', 'read')`, and `authorizeResource('client', ...)` | Yes — list queries append `req.authorizationFilter.sql`; detail/update/delete routes use `authorizeResource(...)` | Complete | `src/controllers/client.controller.ts`, `src/services/cosmos-db.service.ts`, and `src/middleware/authorization.middleware.ts` now enforce canonical query/resource authorization for the mounted client routes. |
 
 ## B. Confirmed partial
 
@@ -56,7 +57,7 @@ This is a **prefix-level matrix** based on the routes currently mounted by the a
 | `/api/qc/results` | Yes — top-level `authorize('qc_review', 'read')` | No confirmed row/resource scoping | Partial | Prefix gate exists in `src/api/api-server.ts`, but no evidence in this audit of `authorizeQuery` or `authorizeResource` for order-scoped result access. |
 | `/api/vendor-performance` | Yes — top-level `authorize('analytics', 'read')` | No row-scope filter verified | Partial | App-level capability gate exists; deeper row-scope enforcement was not confirmed in this pass. |
 | `/api/appraisers` | Yes — controller-level `authorize('appraiser', ...)` | No confirmed `authorizeQuery` / `authorizeResource` | Partial | `src/controllers/appraiser.controller.ts` uses capability gates only; collection and detail endpoints do not use canonical query/resource ABAC. |
-| `/api/vendors` | Yes — controller-level `authorize('vendor', ...)` | No confirmed `authorizeQuery` / `authorizeResource` | Partial | `src/controllers/production-vendor.controller.ts` uses capability gates only. |
+| `/api/vendors` | Yes — controller-level `authorizeQuery('vendor', 'read')`, `authorizeResource('vendor', ...)`, and capability gates for create/analytics/assign | Partial row/resource coverage | Partial | `src/controllers/production-vendor.controller.ts` now uses canonical query auth for list/search and resource auth for detail/update/delete/availability, but `/performance/:vendorId` remains capability-gated and `/assign/:orderId` is still not on canonical order/resource authorization. |
 | `/api/documents` | Yes — controller-level `authorize('document', ...)` | No confirmed `authorizeQuery` / `authorizeResource` | Partial | `src/controllers/document.controller.ts` uses capability gates only for list/detail/mutation endpoints. |
 | `/api/engagements` | Yes — controller-level `authorize('engagement', ...)` | No confirmed `authorizeQuery` / `authorizeResource` | Partial | `src/controllers/engagement.controller.ts` gates by capability but list/detail endpoints are not wired through canonical query/resource auth. |
 | `/api/engagements/:id/audit` and `/api/engagements/:id/timeline` | Yes — controller-level `authorize('engagement', ...)` | No confirmed resource-level ABAC | Partial | `src/controllers/engagement-audit.controller.ts` uses capability gates, but not `authorizeResource('engagement', ...)`. |
@@ -64,7 +65,6 @@ This is a **prefix-level matrix** based on the routes currently mounted by the a
 | `/api/admin/events/:eventId/replay` | Manual admin check | N/A | Partial | `src/controllers/admin-events.controller.ts` performs inline role checks instead of policy-driven authorization middleware. |
 | `/api/qc-workflow` | Yes — controller-level `authorize(...)` by resource family | No confirmed `authorizeQuery` / `authorizeResource` | Partial | `src/controllers/qc-workflow.controller.ts` has per-route capability gates only. |
 | `/api/qc-rules` | Yes — controller-level `authorize('qc_review', ...)` | No confirmed row/resource scoping | Partial | Controller has capability gates, but canonical row/resource enforcement was not confirmed. |
-| `/api/clients` | Yes — controller-level `authorize('client', ...)` | No confirmed `authorizeQuery` / `authorizeResource` | Partial | The earlier auth-only shadow mount has been removed; current controller wiring is capability-gated, but list/detail routes still do not use canonical query/resource auth. |
 | `/api/construction/draw-inspections` and `/api/construction/inspections` | Yes — controller-level `authorize('inspection', ...)` | No confirmed `authorizeQuery` / `authorizeResource` | Partial | `src/controllers/draw-inspection.controller.ts` uses capability gates only. |
 | `/api/vendor-certifications` | Yes — top-level `authorize('vendor', 'update')` | No deeper route audit completed | Partial | Prefix is gated in `src/api/api-server.ts`, but route-level scoping has not been verified. |
 | `/api/vendor-onboarding` | Yes — top-level `authorize('vendor', 'create')` | No deeper route audit completed | Partial | Prefix is gated in `src/api/api-server.ts`, but route-level scoping has not been verified. |
@@ -167,12 +167,11 @@ These route groups are mounted with authentication only, with no verified capabi
    because they use top-level capability gates and tenant-scoped Cosmos queries.
 3. **A large part of the backend is still only authenticated, not policy-authorized.**
 4. **Several routers are capability-gated but still not on the canonical row/resource-scope path.**
-5. **`/api/clients` still needs a second pass** because it is capability-gated now, but its list/detail routes still are not on `authorizeQuery(...)` / `authorizeResource(...)`.
+5. **`/api/clients` is now on the canonical model** with `authorizeQuery(...)` on list reads, `authorizeResource(...)` on detail/update/delete, and real Cosmos filter composition for list queries.
 
 ## Next implementation queue implied by this matrix
 
-1. Upgrade `/api/clients` from capability-only gating to `authorizeQuery(...)` / `authorizeResource(...)`.
-2. Upgrade other high-value authenticated-only routers to explicit capability gates.
-3. For list/search endpoints, replace manual tenant filtering with `authorizeQuery(...)` + real filter composition.
-4. For resource detail/mutation endpoints, replace broad capability-only gates with `authorizeResource(...)` where the resource is user-owned or scope-owned.
-5. Re-run this matrix after each router family is upgraded.
+1. Upgrade other high-value authenticated-only routers to explicit capability gates.
+2. For list/search endpoints, replace manual tenant filtering with `authorizeQuery(...)` + real filter composition.
+3. For resource detail/mutation endpoints, replace broad capability-only gates with `authorizeResource(...)` where the resource is user-owned or scope-owned.
+4. Re-run this matrix after each router family is upgraded.

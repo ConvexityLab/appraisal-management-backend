@@ -691,13 +691,21 @@ export class CosmosDbService {
     return { success: true, data: resource as unknown as import('../types/index.js').Client };
   }
 
-  async findClients(tenantId: string, status?: string): Promise<ApiResponse<import('../types/index.js').Client[]>> {
+  async findClients(
+    tenantId: string,
+    status?: string,
+    authorizationFilter?: import('../types/authorization.types.js').QueryFilter,
+  ): Promise<ApiResponse<import('../types/index.js').Client[]>> {
     if (!this.clientsContainer) throw new Error('Clients container not initialized');
     let query = 'SELECT * FROM c WHERE c.tenantId = @tenantId';
-    const params: { name: string; value: string }[] = [{ name: '@tenantId', value: tenantId }];
+    const params: NonNullable<SqlQuerySpec['parameters']> = [{ name: '@tenantId', value: tenantId }];
     if (status) {
       query += ' AND c.status = @status';
       params.push({ name: '@status', value: status });
+    }
+    if (authorizationFilter) {
+      query += ` AND (${authorizationFilter.sql})`;
+      params.push(...authorizationFilter.parameters);
     }
     query += ' ORDER BY c.clientName ASC';
     const { resources } = await this.clientsContainer.items
@@ -1508,15 +1516,26 @@ export class CosmosDbService {
   // Enhanced Vendor Operations
   // ===============================
 
-  async findAllVendors(): Promise<ApiResponse<Vendor[]>> {
+  async findAllVendors(options?: { authorizationFilter?: QueryFilter }): Promise<ApiResponse<Vendor[]>> {
     try {
       if (!this.vendorsContainer) {
         throw new Error('Vendors container not initialized');
       }
 
       // Exclude appraiser records that share the same container
-      const querySpec = {
-        query: 'SELECT * FROM c WHERE NOT IS_DEFINED(c.type) OR c.type != \'appraiser\' ORDER BY c.onboardingDate DESC'
+      let query = 'SELECT * FROM c WHERE NOT IS_DEFINED(c.type) OR c.type != \'appraiser\'';
+      const parameters: NonNullable<SqlQuerySpec['parameters']> = [];
+
+      if (options?.authorizationFilter) {
+        query += ` AND (${options.authorizationFilter.sql})`;
+        parameters.push(...options.authorizationFilter.parameters);
+      }
+
+      query += ' ORDER BY c.onboardingDate DESC';
+
+      const querySpec: SqlQuerySpec = {
+        query,
+        parameters,
       };
 
       const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();
@@ -1546,14 +1565,17 @@ export class CosmosDbService {
    * parameterised to avoid injection; callers should still trim and
    * length-cap input at the controller.
    */
-  async searchVendors(q: string, limit: number = 50): Promise<ApiResponse<Vendor[]>> {
+  async searchVendors(
+    q: string,
+    limit: number = 50,
+    options?: { authorizationFilter?: QueryFilter },
+  ): Promise<ApiResponse<Vendor[]>> {
     try {
       if (!this.vendorsContainer) {
         throw new Error('Vendors container not initialized');
       }
       const safeLimit = Math.min(Math.max(limit, 1), 200);
-      const querySpec = {
-        query: `SELECT TOP ${safeLimit} * FROM c
+      let query = `SELECT TOP ${safeLimit} * FROM c
           WHERE (NOT IS_DEFINED(c.type) OR c.type != 'appraiser')
           AND (
             CONTAINS(c.businessName, @q, true)
@@ -1561,9 +1583,19 @@ export class CosmosDbService {
             OR CONTAINS(c.primaryContactName, @q, true)
             OR CONTAINS(c.email, @q, true)
             OR CONTAINS(c.phone, @q, true)
-          )
-          ORDER BY c.onboardingDate DESC`,
-        parameters: [{ name: '@q', value: q }],
+          )`;
+      const parameters: NonNullable<SqlQuerySpec['parameters']> = [{ name: '@q', value: q }];
+
+      if (options?.authorizationFilter) {
+        query += ` AND (${options.authorizationFilter.sql})`;
+        parameters.push(...options.authorizationFilter.parameters);
+      }
+
+      query += ' ORDER BY c.onboardingDate DESC';
+
+      const querySpec: SqlQuerySpec = {
+        query,
+        parameters,
       };
 
       const { resources } = await this.vendorsContainer.items.query<Vendor>(querySpec).fetchAll();

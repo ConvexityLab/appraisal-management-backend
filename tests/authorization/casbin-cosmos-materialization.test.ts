@@ -26,6 +26,30 @@ function makeMockDb(capabilityDocs: AuthorizationCapabilityDocument[]) {
   } as any;
 }
 
+function makeInspectableMockDb(capabilityDocs: AuthorizationCapabilityDocument[]) {
+  const querySpy = vi.fn((querySpec: { parameters?: Array<{ name: string; value: unknown }>; query: string }) => ({
+    fetchAll: async () => {
+      const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+      return {
+        resources: capabilityDocs.filter(
+          (doc) => doc.tenantId === tenantId && doc.enabled !== false,
+        ),
+      };
+    },
+  }));
+
+  return {
+    db: {
+      getContainer: vi.fn(() => ({
+        items: {
+          query: querySpy,
+        },
+      })),
+    } as any,
+    querySpy,
+  };
+}
+
 function makeContext(role: AuthorizationContext['user']['role'], resourceType: AuthorizationContext['resource']['type'], action: AuthorizationContext['action']): AuthorizationContext {
   return {
     user: {
@@ -93,5 +117,20 @@ describe('CasbinAuthorizationEngine Cosmos materialization', () => {
     const engine = new CasbinAuthorizationEngine(makeMockDb([]));
 
     await expect(engine.initialize()).rejects.toThrow(/No Casbin capability materialization documents were found/i);
+  });
+
+  it('loads capability tuples without relying on Cosmos ORDER BY composite indexes', async () => {
+    const docs = materializeAuthorizationCapabilityDocuments(AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID, 'test').reverse();
+    const { db, querySpy } = makeInspectableMockDb(docs);
+    const engine = new CasbinAuthorizationEngine(db);
+
+    await engine.initialize();
+
+    expect(querySpy).toHaveBeenCalledTimes(1);
+    const [querySpec] = querySpy.mock.calls[0] as [{ query: string }];
+    expect(querySpec.query).not.toMatch(/ORDER BY/i);
+
+    const policies = await engine.getAllPolicies();
+    expect(policies.length).toBeGreaterThan(0);
   });
 });

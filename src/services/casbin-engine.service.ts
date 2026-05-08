@@ -174,8 +174,7 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
       query: `SELECT * FROM c
               WHERE c.type = 'authorization-capability'
                 AND c.tenantId = @tenantId
-                AND (NOT IS_DEFINED(c.enabled) OR c.enabled = true)
-              ORDER BY c.role, c.resourceType`,
+                AND (NOT IS_DEFINED(c.enabled) OR c.enabled = true)`,
       parameters: [
         { name: '@tenantId', value: AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID },
       ],
@@ -189,7 +188,14 @@ export class CasbinAuthorizationEngine implements IAuthorizationEngine {
       );
     }
 
-    return resources;
+    return [...resources].sort((left, right) => {
+      const roleCompare = left.role.localeCompare(right.role);
+      if (roleCompare !== 0) {
+        return roleCompare;
+      }
+
+      return left.resourceType.localeCompare(right.resourceType);
+    });
   }
 
   private async applyCapabilityRules(rules: AuthorizationCapabilityDocument[]): Promise<void> {

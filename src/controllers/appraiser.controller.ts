@@ -8,7 +8,7 @@ import { AppraiserService } from '../services/appraiser.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 
 export class AppraiserController {
   public router: Router;
@@ -24,34 +24,41 @@ export class AppraiserController {
   }
 
   private initializeRoutes(authzMiddleware?: AuthorizationMiddleware): void {
-    const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('appraiser', 'read')]   : [];
+    const readQuery = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeQuery('appraiser', 'read')]
+      : [];
+    const readResource = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('appraiser', 'read', { resourceIdParam: 'id' })]
+      : [];
     const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('appraiser', 'create')] : [];
-    const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('appraiser', 'update')] : [];
+    const updateResource = authzMiddleware
+      ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorizeResource('appraiser', 'update', { resourceIdParam: 'id' })]
+      : [];
 
-    this.router.get('/', ...read, this.getAllAppraisers.bind(this));
-    this.router.get('/available', ...read, this.getAvailableAppraisers.bind(this));
-    this.router.get('/:id', ...read, this.getAppraiser.bind(this));
+    this.router.get('/', ...readQuery, this.getAllAppraisers.bind(this));
+    this.router.get('/available', ...readQuery, this.getAvailableAppraisers.bind(this));
+    this.router.get('/:id', ...readResource, this.getAppraiser.bind(this));
     this.router.post('/', ...create, this.createAppraiser.bind(this));
-    this.router.put('/:id', ...update, this.updateAppraiser.bind(this));
-    this.router.post('/:id/assign', ...update, this.assignAppraiser.bind(this));
-    this.router.get('/:id/conflicts', ...read, this.checkConflicts.bind(this));
-    this.router.get('/:id/licenses/expiring', ...read, this.checkLicenseExpiration.bind(this));
+    this.router.put('/:id', ...updateResource, this.updateAppraiser.bind(this));
+    this.router.post('/:id/assign', ...updateResource, this.assignAppraiser.bind(this));
+    this.router.get('/:id/conflicts', ...readResource, this.checkConflicts.bind(this));
+    this.router.get('/:id/licenses/expiring', ...readResource, this.checkLicenseExpiration.bind(this));
 
     // Assignment acceptance workflow
-    this.router.get('/:id/assignments/pending', ...read, this.getPendingAssignments.bind(this));
-    this.router.post('/:id/assignments/:assignmentId/accept', ...update, this.acceptAssignment.bind(this));
-    this.router.post('/:id/assignments/:assignmentId/reject', ...update, this.rejectAssignment.bind(this));
+    this.router.get('/:id/assignments/pending', ...readResource, this.getPendingAssignments.bind(this));
+    this.router.post('/:id/assignments/:assignmentId/accept', ...updateResource, this.acceptAssignment.bind(this));
+    this.router.post('/:id/assignments/:assignmentId/reject', ...updateResource, this.rejectAssignment.bind(this));
   }
 
   /**
    * GET /api/appraisers
    * Get all appraisers
    */
-  private async getAllAppraisers(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async getAllAppraisers(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       const tenantId = req.user?.tenantId;
       if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
-      const appraisers = await this.appraiserService.getAllAppraisers(tenantId);
+      const appraisers = await this.appraiserService.getAllAppraisers(tenantId, req.authorizationFilter);
       
       res.json({
         success: true,
@@ -75,13 +82,13 @@ export class AppraiserController {
    * GET /api/appraisers/available?specialty=residential
    * Get available appraisers (with capacity)
    */
-  private async getAvailableAppraisers(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async getAvailableAppraisers(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       const tenantId = req.user?.tenantId;
       if (!tenantId) { res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'User tenant not resolved — authentication required' } }); return; }
       const specialty = req.query.specialty as string | undefined;
       
-      const appraisers = await this.appraiserService.getAvailableAppraisers(tenantId, specialty);
+      const appraisers = await this.appraiserService.getAvailableAppraisers(tenantId, specialty, req.authorizationFilter);
       
       res.json({
         success: true,

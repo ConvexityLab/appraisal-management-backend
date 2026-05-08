@@ -11,6 +11,7 @@ import { AuditTrailService } from './audit-trail.service.js';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus } from '../types/order-status.js';
 import type { Appraiser, AppraiserAssignment, ConflictCheckResult, License } from '../types/appraiser.types.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 
 export class AppraiserService {
   private cosmosService: CosmosDbService;
@@ -30,15 +31,23 @@ export class AppraiserService {
   /**
    * Get all appraisers
    */
-  async getAllAppraisers(tenantId: string): Promise<Appraiser[]> {
+  async getAllAppraisers(tenantId: string, authorizationFilter?: QueryFilter): Promise<Appraiser[]> {
     this.logger.info('getAllAppraisers called', { tenantId });
     const container = this.cosmosService.getContainer('vendors'); // Appraisers are vendors
+    let sql = 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId';
+    const parameters: Array<{ name: string; value: any }> = [
+      { name: '@type', value: 'appraiser' },
+      { name: '@tenantId', value: tenantId }
+    ];
+
+    if (authorizationFilter) {
+      sql += ` AND (${authorizationFilter.sql})`;
+      parameters.push(...authorizationFilter.parameters);
+    }
+
     const query = {
-      query: 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId',
-      parameters: [
-        { name: '@type', value: 'appraiser' },
-        { name: '@tenantId', value: tenantId }
-      ]
+      query: sql,
+      parameters,
     };
 
     this.logger.info('Executing appraiser query', { query: query.query, parameters: query.parameters });
@@ -313,8 +322,8 @@ Appraisal Management Team`.trim();
   /**
    * Get available appraisers (capacity check)
    */
-  async getAvailableAppraisers(tenantId: string, specialty?: string): Promise<Appraiser[]> {
-    const allAppraisers = await this.getAllAppraisers(tenantId);
+  async getAvailableAppraisers(tenantId: string, specialty?: string, authorizationFilter?: QueryFilter): Promise<Appraiser[]> {
+    const allAppraisers = await this.getAllAppraisers(tenantId, authorizationFilter);
     
     return allAppraisers.filter(appraiser => {
       // Must be active and available
