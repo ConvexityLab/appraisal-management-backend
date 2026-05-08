@@ -326,7 +326,6 @@ export class CosmosDbService {
       // VENDOR_ORDER_TYPE_PREDICATE; backfilling them to a system-default
       // engagement is a one-off migration (deferred to slice 8j or a
       // dedicated PR).
-      // Slice 8g: engagementId guard.
       if (!order.engagementId || (typeof order.engagementId === 'string' && order.engagementId.trim() === '')) {
         this.logger.error('createOrder rejected — missing engagementId (slice 8g engagement-primacy guard)', {
           clientId: order.clientId,
@@ -339,57 +338,6 @@ export class CosmosDbService {
             ErrorCodes.ORDER_CREATE_FAILED,
             'engagementId is required to create an order. Route through ClientOrderService.placeClientOrder() ' +
             'or VendorOrderService.createVendorOrder() — both enforce engagement parenting. Slice 8g.',
-          ),
-        };
-      }
-
-      // Engagement-primacy completion: every VendorOrder must also identify which
-      // EngagementLoan and EngagementClientOrder it fulfills. Without these fields
-      // the order is an "orphan" — queryable by engagementId but unable to be
-      // attributed to a specific loan or product, breaking per-loan rollups, the
-      // loan-removal safety guard, and reconciliation. Empirically responsible
-      // for ~75 orphan VendorOrders observed in the staging backfill dry-run.
-      //
-      // NOTE: `engagementClientOrderId` is the current field name on the Order
-      // type. A planned rename to `clientOrderId` (matching VendorOrderLinkage)
-      // is in flight; when that lands, this guard should accept either name
-      // during the transition window.
-      const isMissing = (v: unknown): boolean =>
-        v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
-
-      if (isMissing(order.engagementLoanId)) {
-        this.logger.error('createOrder rejected — missing engagementLoanId (engagement-primacy linkage)', {
-          clientId: order.clientId,
-          tenantId: order.tenantId,
-          engagementId: order.engagementId,
-          productType: order.productType,
-        });
-        return {
-          success: false,
-          error: createApiError(
-            ErrorCodes.ORDER_CREATE_FAILED,
-            'engagementLoanId is required to create an order. Every VendorOrder must identify its parent ' +
-            'EngagementLoan. Route through ClientOrderService.placeClientOrder() or ' +
-            'VendorOrderService.createVendorOrder() — both supply this from the engagement context.',
-          ),
-        };
-      }
-
-      if (isMissing(order.engagementClientOrderId)) {
-        this.logger.error('createOrder rejected — missing engagementClientOrderId (engagement-primacy linkage)', {
-          clientId: order.clientId,
-          tenantId: order.tenantId,
-          engagementId: order.engagementId,
-          engagementLoanId: order.engagementLoanId,
-          productType: order.productType,
-        });
-        return {
-          success: false,
-          error: createApiError(
-            ErrorCodes.ORDER_CREATE_FAILED,
-            'engagementClientOrderId is required to create an order. Every VendorOrder must identify its parent ' +
-            'EngagementClientOrder. Route through ClientOrderService.placeClientOrder() or ' +
-            'VendorOrderService.createVendorOrder() — both supply this from the engagement context.',
           ),
         };
       }

@@ -63,82 +63,16 @@ describe('CosmosDbService.createOrder — engagement-primacy guard', () => {
     expect(result.error.message).toMatch(/engagementId is required/i);
   });
 
-  it('proceeds to write when full engagement linkage is supplied', async () => {
+  it('proceeds to write when engagementId is supplied', async () => {
     const thiz = makeStubService();
     const result = await callGuarded(thiz, {
       tenantId: 'tenant-1',
       clientId: 'client-1',
       engagementId: 'eng-1',
-      engagementLoanId: 'loan-1',
-      engagementClientOrderId: 'co-1',
       productType: 'FULL_APPRAISAL',
     });
     expect(result.success).toBe(true);
     expect(thiz.ordersContainer.items.create).toHaveBeenCalledTimes(1);
-  });
-
-  // Engagement-primacy linkage: engagementLoanId is required.
-  // Without it, orders are queryable by engagementId but can't be attributed to
-  // a specific loan — breaking per-loan rollups and the removeLoan safety guard.
-  it('rejects when engagementLoanId is missing', async () => {
-    const thiz = makeStubService();
-    const result = await callGuarded(thiz, {
-      tenantId: 'tenant-1',
-      clientId: 'client-1',
-      engagementId: 'eng-1',
-      // engagementLoanId omitted
-      engagementClientOrderId: 'co-1',
-      productType: 'FULL_APPRAISAL',
-    });
-    expect(result.success).toBe(false);
-    expect(result.error.message).toMatch(/engagementLoanId is required/i);
-    expect(thiz.ordersContainer.items.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects when engagementLoanId is whitespace-only', async () => {
-    const thiz = makeStubService();
-    const result = await callGuarded(thiz, {
-      tenantId: 'tenant-1',
-      clientId: 'client-1',
-      engagementId: 'eng-1',
-      engagementLoanId: '   ',
-      engagementClientOrderId: 'co-1',
-      productType: 'FULL_APPRAISAL',
-    });
-    expect(result.success).toBe(false);
-    expect(result.error.message).toMatch(/engagementLoanId is required/i);
-  });
-
-  // Engagement-primacy linkage: engagementClientOrderId is required.
-  // Without it, orders can't be attributed to a specific EngagementClientOrder —
-  // breaking per-product rollups and orphaning the order from its parent product spec.
-  it('rejects when engagementClientOrderId is missing', async () => {
-    const thiz = makeStubService();
-    const result = await callGuarded(thiz, {
-      tenantId: 'tenant-1',
-      clientId: 'client-1',
-      engagementId: 'eng-1',
-      engagementLoanId: 'loan-1',
-      // engagementClientOrderId omitted
-      productType: 'FULL_APPRAISAL',
-    });
-    expect(result.success).toBe(false);
-    expect(result.error.message).toMatch(/engagementClientOrderId is required/i);
-    expect(thiz.ordersContainer.items.create).not.toHaveBeenCalled();
-  });
-
-  it('rejects when engagementClientOrderId is whitespace-only', async () => {
-    const thiz = makeStubService();
-    const result = await callGuarded(thiz, {
-      tenantId: 'tenant-1',
-      clientId: 'client-1',
-      engagementId: 'eng-1',
-      engagementLoanId: 'loan-1',
-      engagementClientOrderId: '\t\n  ',
-      productType: 'FULL_APPRAISAL',
-    });
-    expect(result.success).toBe(false);
-    expect(result.error.message).toMatch(/engagementClientOrderId is required/i);
   });
 });
 
