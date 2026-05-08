@@ -703,8 +703,25 @@ export class EngagementService {
       );
     }
 
-    const loan = engagement.properties[loanIndex] as EngagementLoan;
-    const hasLinkedOrders = loan.clientOrders.some((co) => co.vendorOrderIds.length > 0);
+    // Source of truth for "is this loan linked?" is the `orders` container, not the
+    // embedded EngagementClientOrder.vendorOrderIds array. The embedded array is an
+    // eventually-consistent denormalized cache that can drift on partial-failure writes
+    // (see client-order.service.ts: "placeClientOrder is NOT atomic"). VendorOrder docs
+    // are required to carry engagementId + engagementLoanId per the engagement-primacy
+    // guard, so this query is reliable.
+    const linkedOrdersResult = await this.dbService.queryItems<{ id: string }>(
+      'orders',
+      'SELECT c.id FROM c WHERE c.engagementId = @engagementId AND c.tenantId = @tenantId AND c.engagementLoanId = @loanId',
+      [
+        { name: '@engagementId', value: engagementId },
+        { name: '@tenantId', value: tenantId },
+        { name: '@loanId', value: loanId },
+      ],
+    );
+    if (!linkedOrdersResult.success) {
+      throw new Error(`Failed to verify vendor-order linkage for loan ${loanId}; refusing to delete.`);
+    }
+    const hasLinkedOrders = (linkedOrdersResult.data?.length ?? 0) > 0;
     if (hasLinkedOrders) {
       throw new Error(
         `Cannot remove loan loanId=${loanId}: one or more client orders have linked vendor orders. ` +
@@ -904,6 +921,11 @@ export class EngagementService {
       parameters.push({ name: '@search', value: request.searchText });
     }
 
+    if (request.authorizationFilter) {
+      conditions.push(`(${request.authorizationFilter.sql})`);
+      parameters.push(...request.authorizationFilter.parameters);
+    }
+
     const ALLOWED_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'engagementNumber', 'status', 'priority', 'receivedAt', 'clientDueDate', 'internalDueDate']);
     const requestedSort = request.sortBy ?? 'createdAt';
     if (!ALLOWED_SORT_FIELDS.has(requestedSort)) {
@@ -1029,15 +1051,16 @@ export class EngagementService {
       throw new Error(`Failed to query documents for engagement ${engagementId}`);
     }
 
-    // 2. Collect all vendor order IDs from the engagement hierarchy
+    // 2. Collect all vendor order IDs by querying the `orders` container directly.
+    // VendorOrder docs are the source of truth (engagement-primacy guard ensures
+    // they carry engagementId); the embedded EngagementClientOrder.vendorOrderIds
+    // array is a denormalized cache that can drift.
     let orderIds: string[] = [];
     try {
-      const engagement = await this.getEngagement(engagementId, tenantId);
-      orderIds = engagement.properties.flatMap((loan) =>
-        loan.clientOrders.flatMap((clientOrder) => clientOrder.vendorOrderIds ?? []),
-      );
+      const vendorOrders = await this.getVendorOrders<{ id: string }>(engagementId, tenantId);
+      orderIds = vendorOrders.map((vo) => vo.id);
     } catch {
-      // If engagement lookup fails, return only engagement-level docs
+      // If the orders query fails, return only engagement-level docs.
       return engResult.data;
     }
 
@@ -1079,17 +1102,18 @@ export class EngagementService {
 
     let orderCondition = '';
     try {
-      const engagement = await this.getEngagement(engagementId, tenantId);
-      const orderIds = engagement.properties.flatMap((loan) =>
-        loan.clientOrders.flatMap((clientOrder) => clientOrder.vendorOrderIds ?? []),
-      );
+      // Source of truth for linked vendor orders: the `orders` container queried by
+      // engagementId. The embedded EngagementClientOrder.vendorOrderIds array is a
+      // denormalized cache that can drift; do not consult it here.
+      const vendorOrders = await this.getVendorOrders<{ id: string }>(engagementId, tenantId);
+      const orderIds = vendorOrders.map((vo) => vo.id);
       if (orderIds.length > 0) {
         const paramNames = orderIds.map((_, i) => `@oid${i}`).join(', ');
         orderIds.forEach((id, i) => params.push({ name: `@oid${i}`, value: id }));
         orderCondition = ` OR (c.primaryEntity.type = 'order' AND c.primaryEntity.id IN (${paramNames}))`;
       }
     } catch {
-      // Engagement lookup failed — fall back to engagement-level comms only
+      // Orders query failed — fall back to engagement-level comms only.
     }
 
     const query = `
