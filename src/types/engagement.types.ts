@@ -32,7 +32,6 @@
 
 import { OrderPriority, PropertyDetails } from './order-management.js';
 import type { ProductType } from './product-catalog.js';
-import type { QueryFilter } from './authorization.types.js';
 
 // ── Re-exports for consumers who only import from engagement.types ────────────
 export { OrderPriority } from './order-management.js';
@@ -166,25 +165,7 @@ export interface EngagementClientOrder {
   fee?: number | undefined;
   /** Lender-facing due date for this client order */
   dueDate?: string | undefined; // ISO date
-  /**
-   * @deprecated Eventually-consistent denormalized cache. NOT a source of truth.
-   *
-   * Source of truth for "which VendorOrders fulfill this client order" is the
-   * `orders` container, queried by engagementId (+ optionally engagementLoanId
-   * / clientOrderId). The engagement-primacy guard enforces those linkage
-   * fields on every VendorOrder write.
-   *
-   * This embedded array can drift on partial-failure writes (see
-   * client-order.service.ts: "placeClientOrder is NOT atomic"). All authoritative
-   * backend reads (removeLoan guard, getDocuments, getCommunications,
-   * engagement-lifecycle auto-close) now query the orders container directly.
-   * Reconciliation of historical drift is performed by
-   * src/scripts/backfill-engagement-vendor-order-ids.ts.
-   *
-   * The field is retained on the schema for backwards compat until every
-   * remaining writer (frontend CreateVendorOrderDialog.linkOrder, backend
-   * addVendorOrderToClientOrder) has been removed.
-   */
+  /** VendorOrder IDs that contribute to fulfilling this client order (0-N) */
   vendorOrderIds: string[];
 }
 
@@ -389,7 +370,6 @@ export interface EngagementListRequest {
   pageSize?: number | undefined;
   sortBy?: keyof Engagement | undefined;
   sortDirection?: 'ASC' | 'DESC' | undefined;
-  authorizationFilter?: QueryFilter | undefined;
 }
 
 export interface EngagementListResponse {

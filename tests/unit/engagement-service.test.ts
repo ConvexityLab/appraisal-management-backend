@@ -85,26 +85,9 @@ function makeMockContainer(storedDoc: Engagement) {
   };
 }
 
-/**
- * `onQueryItems` lets a test stub `dbService.queryItems(containerName, query, params)`.
- * Used by the VendorOrder-query-based read paths (removeLoan guard, getDocuments,
- * getCommunications) which now consult the `orders` container instead of the embedded
- * `EngagementClientOrder.vendorOrderIds` array.
- *
- * Default behavior (no callback): returns `{ success: true, data: [] }` — i.e. the
- * engagement has no linked vendor orders. Tests that need linked orders provide a
- * callback that returns rows for the right (containerName, params) combination.
- */
-function makeDbService(
-  container: ReturnType<typeof makeMockContainer>,
-  onQueryItems?: (containerName: string, query: string, params?: { name: string; value: unknown }[]) => unknown[],
-): CosmosDbService {
+function makeDbService(container: ReturnType<typeof makeMockContainer>): CosmosDbService {
   return {
     getEngagementsContainer: vi.fn().mockReturnValue(container),
-    queryItems: vi.fn().mockImplementation(async (containerName: string, query: string, params?: { name: string; value: unknown }[]) => {
-      const data = onQueryItems ? onQueryItems(containerName, query, params) : [];
-      return { success: true, data };
-    }),
   } as unknown as CosmosDbService;
 }
 
@@ -519,18 +502,17 @@ describe('removeLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
     });
-    // No vendor orders in the orders container for this loan.
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     const result = await svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user');
     expect(result.properties).toHaveLength(1);
     expect(result.properties[0]!.id).toBe('loan-002');
   });
 
-  it('throws when loan has linked vendor orders (queried from the orders container)', async () => {
+  it('throws when loan has linked vendor orders', async () => {
     const loanWithOrders = makeLoan({
       id: 'loan-001',
       clientOrders: [
-        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
+        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ord-123'] },
       ],
     });
     const doc = makeEngagement({ properties: [loanWithOrders] });
@@ -539,140 +521,10 @@ describe('removeLoan', () => {
       read:    vi.fn().mockResolvedValue({ resource: doc }),
       replace: vi.fn(),
     });
-    const dbService = makeDbService(container, (containerName, _q, params) => {
-      if (containerName !== 'orders') return [];
-      const loanIdParam = params?.find((p) => p.name === '@loanId')?.value;
-      return loanIdParam === 'loan-001' ? [{ id: 'vo-1' }] : [];
-    });
-    const svc = new EngagementService(dbService, makePropertyRecordService());
-    await expect(
-      svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user'),
-    ).rejects.toThrow(/Cannot remove loan/);
-  });
-
-  // Drift case A: VendorOrder docs say there ARE linked orders, but the embedded
-  // EngagementClientOrder.vendorOrderIds array is stale/empty (e.g. partial-failure on
-  // placeClientOrder, legacy data). The guard MUST trust the orders container, not the
-  // embedded array — otherwise dangerous deletes go through.
-  it('blocks removal when VendorOrder query returns rows even if embedded array is empty (drift)', async () => {
-    const loan = makeLoan({
-      id: 'loan-001',
-      clientOrders: [
-        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
-      ],
-    });
-    const doc = makeEngagement({ properties: [loan] });
-    const container = makeMockContainer(doc);
-    container.item = vi.fn().mockReturnValue({
-      read:    vi.fn().mockResolvedValue({ resource: doc }),
-      replace: vi.fn(),
-    });
-    const dbService = makeDbService(container, (containerName) =>
-      containerName === 'orders' ? [{ id: 'vo-orphaned-by-drift' }] : [],
-    );
-    const svc = new EngagementService(dbService, makePropertyRecordService());
-    await expect(
-      svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user'),
-    ).rejects.toThrow(/Cannot remove loan/);
-  });
-
-  // Drift case B: the embedded array claims there are linked orders, but the orders
-  // container has none for this loan (e.g. they were deleted/cancelled in another flow,
-  // or the embedded array was never cleaned up). The orders container is the source of
-  // truth — removal should be permitted.
-  it('permits removal when embedded array shows linkage but orders container has none (drift)', async () => {
-    const loan = makeLoan({
-      id: 'loan-001',
-      clientOrders: [
-        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: ['ghost-vo-1', 'ghost-vo-2'] },
-      ],
-    });
-    const doc = makeEngagement({ properties: [loan, makeLoan({ id: 'loan-002', loanNumber: 'LN-002' })] });
-    const container = makeMockContainer(doc);
-    container.item = vi.fn().mockReturnValue({
-      read:    vi.fn().mockResolvedValue({ resource: doc }),
-      replace: vi.fn().mockImplementation(async (d: Engagement) => ({ resource: d })),
-    });
-    // No orders for this loan in the orders container — the embedded array is stale.
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
-    const result = await svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user');
-    expect(result.properties).toHaveLength(1);
-    expect(result.properties[0]!.id).toBe('loan-002');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 7b. getDocuments / getCommunications — order-id collection from VendorOrders
-// ---------------------------------------------------------------------------
-//
-// These methods aggregate sub-resources (documents / communications) from all
-// vendor orders linked to the engagement. The order-id collection step now goes
-// through getVendorOrders() (which queries the orders container by engagementId)
-// rather than walking the embedded EngagementClientOrder.vendorOrderIds arrays.
-// These tests prove the source of truth shifted by exercising drift cases.
-
-describe('getDocuments — order-id source', () => {
-  it('queries the orders container, not the embedded vendorOrderIds, when collecting linked-doc IDs (drift)', async () => {
-    // Embedded array is empty; VendorOrder query returns one. The doc query that
-    // follows MUST include vo-1 in its IN-clause params.
-    const loan = makeLoan({
-      id: 'loan-001',
-      clientOrders: [
-        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
-      ],
-    });
-    const doc = makeEngagement({ properties: [loan] });
-    const container = makeMockContainer(doc);
-
-    let orderDocsQueryParams: { name: string; value: unknown }[] | undefined;
-    const dbService = makeDbService(container, (containerName, _query, params) => {
-      if (containerName === 'orders') {
-        return [{ id: 'vo-1' }];
-      }
-      if (containerName === 'documents') {
-        // Capture the second documents query (the linked-orders one) — it includes @oid* params.
-        if (params?.some((p) => p.name.startsWith('@oid'))) {
-          orderDocsQueryParams = params;
-          return [{ id: 'doc-from-vo-1' }];
-        }
-        return [{ id: 'doc-engagement-level' }];
-      }
-      return [];
-    });
-    const svc = new EngagementService(dbService, makePropertyRecordService());
-    const result = await svc.getDocuments<{ id: string }>('eng-test-001', 'tenant-001');
-    expect(result.map((d) => d.id)).toEqual(expect.arrayContaining(['doc-engagement-level', 'doc-from-vo-1']));
-    expect(orderDocsQueryParams).toBeDefined();
-    expect(orderDocsQueryParams!.find((p) => p.name === '@oid0')?.value).toBe('vo-1');
-  });
-});
-
-describe('getCommunications — order-id source', () => {
-  it('queries the orders container, not the embedded vendorOrderIds, when collecting linked-comm IDs (drift)', async () => {
-    const loan = makeLoan({
-      id: 'loan-001',
-      clientOrders: [
-        { id: 'p1', productType: EngagementProductType.FULL_APPRAISAL, status: EngagementClientOrderStatus.ASSIGNED, vendorOrderIds: [] },
-      ],
-    });
-    const doc = makeEngagement({ properties: [loan] });
-    const container = makeMockContainer(doc);
-
-    let commsQueryParams: { name: string; value: unknown }[] | undefined;
-    const dbService = makeDbService(container, (containerName, _query, params) => {
-      if (containerName === 'orders') return [{ id: 'vo-7' }];
-      if (containerName === 'communications') {
-        commsQueryParams = params;
-        return [];
-      }
-      return [];
-    });
-    const svc = new EngagementService(dbService, makePropertyRecordService());
-    await svc.getCommunications('eng-test-001', 'tenant-001');
-    expect(commsQueryParams).toBeDefined();
-    // The IN-clause should reference vo-7 from the orders container, NOT the
-    // empty embedded array on the engagement doc.
-    expect(commsQueryParams!.find((p) => p.name === '@oid0')?.value).toBe('vo-7');
+    await expect(
+      svc.removeLoan('eng-test-001', 'tenant-001', 'loan-001', 'user'),
+    ).rejects.toThrow(/Cannot remove loan/);
   });
 });
 

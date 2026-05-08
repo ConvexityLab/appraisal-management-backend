@@ -119,17 +119,11 @@ export class EngagementLifecycleService {
       return;
     }
 
-    // Gather all vendor order IDs by querying the `orders` container directly.
-    // VendorOrder docs are the source of truth (engagement-primacy guard ensures
-    // every order carries engagementId). The embedded EngagementClientOrder
-    // .vendorOrderIds array on the engagement doc is a denormalized cache that
-    // can drift on partial-failure writes — using it here would let the auto-close
-    // fire prematurely (or never fire) on drifted engagements.
-    const vendorOrders = await this.engagementService.getVendorOrders<{ id: string }>(
-      engagementId,
-      tenantId,
+    // Gather all vendorOrderIds across every loan/clientOrder in the engagement.
+    const allOrderIds: string[] = (engagement.loans ?? []).flatMap(
+      (loan: any) =>
+        (loan.clientOrders ?? []).flatMap((co: any) => co.vendorOrderIds ?? []),
     );
-    const allOrderIds: string[] = vendorOrders.map((vo) => vo.id);
 
     if (allOrderIds.length === 0) {
       this.logger.info('Engagement has no child orders — skipping auto-close', { engagementId });
