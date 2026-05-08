@@ -16,43 +16,43 @@ dotenv.config(); // Loads from .env in current working directory (project root)
 import { loadAppConfig } from './config/appConfigLoader.js';
 import type { AppraisalManagementAPIServer as AppraisalManagementAPIServerType } from './api/api-server.js';
 
-// Environment validation
-// In production ALL of these are required; in dev/test we warn only so local
-// mock/azurite setups can start without a full cloud config.
+// Env validation moved into the async IIFE below — many of these env vars are
+// now sourced from App Configuration via loadAppConfig(), which can only run
+// after process startup. Validating at module-top-level fired BEFORE the IIFE
+// could populate them and exited the process with a false-positive failure.
 const requiredEnvVars: string[] = [
-  'AZURE_COSMOS_ENDPOINT',       // Used by all services and controllers (was COSMOS_DB_ENDPOINT — wrong name)
+  'AZURE_COSMOS_ENDPOINT',       // Used by all services and controllers
   'AZURE_STORAGE_ACCOUNT_NAME',  // Used by blob storage service
 ];
-const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-const isProduction = process.env['NODE_ENV'] === 'production';
-
-if (missingVars.length > 0) {
-  if (isProduction) {
-    console.error(
-      `❌ Missing required environment variable(s): ${missingVars.join(', ')}\n` +
-      `   Each must be set via Azure App Service config, Key Vault reference, or a local .env file.\n` +
-      `   Server cannot start without them.`
-    );
-    process.exit(1);
-  } else {
-    console.warn(
-      `⚠️  Missing env var(s) for cloud services: ${missingVars.join(', ')}\n` +
-      `   Running in dev/mock mode — cloud features that depend on these will be unavailable.`
-    );
-  }
-}
-
-// Warn about Axiom integration vars — optional but logged so ops teams notice
-// AXIOM_TENANT_ID + AXIOM_CLIENT_ID + AXIOM_PIPELINE_ID_* are required when AXIOM_API_BASE_URL is set (live mode).
 const axiomOptionalVars = [
   'AXIOM_WEBHOOK_SECRET', 'AXIOM_API_URL', 'AXIOM_API_KEY', 'AXIOM_API_BASE_URL',
   'AXIOM_TENANT_ID', 'AXIOM_CLIENT_ID',
   'AXIOM_PIPELINE_ID_RISK_EVAL', 'AXIOM_PIPELINE_ID_DOC_EXTRACT', 'AXIOM_PIPELINE_ID_BULK_EVAL',
   'AXIOM_REQUIRED_DOCUMENT_TYPES',  // comma-separated doc type IDs, e.g. "appraisal-report,credit-report"; defaults to "appraisal-report"
 ];
-const missingAxiom = axiomOptionalVars.filter(v => !process.env[v]);
-if (missingAxiom.length > 0) {
-  console.warn(`⚠️  Axiom integration env vars not set (mock/dev mode will be used): ${missingAxiom.join(', ')}`);
+
+function validateEnvOrExit(): void {
+  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  const isProduction = process.env['NODE_ENV'] === 'production';
+  if (missingVars.length > 0) {
+    if (isProduction) {
+      console.error(
+        `❌ Missing required environment variable(s): ${missingVars.join(', ')}\n` +
+        `   Each must be set via App Configuration, Key Vault reference, or a local .env file.\n` +
+        `   Server cannot start without them.`
+      );
+      process.exit(1);
+    } else {
+      console.warn(
+        `⚠️  Missing env var(s) for cloud services: ${missingVars.join(', ')}\n` +
+        `   Running in dev/mock mode — cloud features that depend on these will be unavailable.`
+      );
+    }
+  }
+  const missingAxiom = axiomOptionalVars.filter(v => !process.env[v]);
+  if (missingAxiom.length > 0) {
+    console.warn(`⚠️  Axiom integration env vars not set (mock/dev mode will be used): ${missingAxiom.join(', ')}`);
+  }
 }
 
 // Server configuration
@@ -98,6 +98,10 @@ void (async () => {
   // process.env BEFORE the api-server module (which transitively imports them)
   // is imported.
   await loadAppConfig();
+
+  // Validate env AFTER loadAppConfig has populated values from App Config.
+  // (Validating at module-top-level would fire BEFORE this and false-positive.)
+  validateEnvOrExit();
 
   // Dynamic import — runs after loadAppConfig has populated process.env.
   // Static `import { AppraisalManagementAPIServer } from './api/api-server.js'`
