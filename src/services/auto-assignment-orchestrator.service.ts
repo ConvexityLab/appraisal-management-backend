@@ -56,6 +56,8 @@ import {
   type OrderContext,
 } from './order-context-loader.service.js';
 import type { VendorMatchResult, MatchExplanation, DeniedVendorEntry } from '../types/vendor-marketplace.types.js';
+import { AssignmentTraceRecorder } from './assignment-trace-recorder.service.js';
+import type { AssignmentTraceDocument } from '../types/assignment-trace.types.js';
 import type {
   AppEvent,
   BaseEvent,
@@ -202,11 +204,13 @@ export class AutoAssignmentOrchestratorService {
   private readonly tenantConfigService: TenantAutomationConfigService;
   private readonly supervisoryReviewService: SupervisoryReviewService;
   private readonly contextLoader: OrderContextLoader;
+  private readonly traceRecorder: AssignmentTraceRecorder;
   private isStarted = false;
 
   constructor(dbService?: CosmosDbService) {
     this.dbService = dbService ?? new CosmosDbService();
     this.contextLoader = new OrderContextLoader(this.dbService);
+    this.traceRecorder = new AssignmentTraceRecorder(this.dbService);
     this.publisher = new ServiceBusEventPublisher();
     // Use a dedicated subscription so we don't compete with the notification service
     this.subscriber = new ServiceBusEventSubscriber(
@@ -362,6 +366,10 @@ export class AutoAssignmentOrchestratorService {
     const { orderId, orderNumber, tenantId, propertyAddress, productType, dueDate, priority, clientId,
       productId, requiredCapabilities } = event.data;
 
+    // Phase 5 T37: capture wall-clock for the trace's rankingLatencyMs.
+    const triggerStart = Date.now();
+    const initiatedAt = new Date(triggerStart).toISOString();
+
     this.logger.info('Processing engagement.order.created', { orderId, orderNumber });
 
     // --- Guard: don't re-initiate if already in progress ---
@@ -430,6 +438,17 @@ export class AutoAssignmentOrchestratorService {
     if (rankedVendors.length === 0) {
       // No vendors at all — immediately escalate to human
       this.logger.warn('No matching vendors found — escalating immediately', { orderId });
+      await this.recordAssignmentTrace({
+        tenantId, orderId, initiatedAt, triggerStart,
+        propertyAddress, productType, productId, requiredCapabilities,
+        dueDate: dueDate as unknown as Date,
+        priority,
+        rankedVendors: [],
+        deniedVendors,
+        matchResults: [],
+        outcome: 'escalated',
+        selectedVendorId: null,
+      });
       await this.escalateVendorAssignment(order, tenantId, []);
       return;
     }
@@ -472,6 +491,30 @@ export class AutoAssignmentOrchestratorService {
         ...(deniedVendors.length > 0 ? { deniedVendors } : {}),
       };
       await this.sendBidToVendor(orderForDispatch, state, tenantId, priority);
+    }
+
+    // Phase 5 T37: persist the per-assignment trace. Best-effort; recorder
+    // logs + swallows on failure so an assignment never fails because we
+    // couldn't write a trace.
+    {
+      const top = rankedVendors[0];
+      const isInternal = top?.staffType === 'internal';
+      const outcome: AssignmentTraceDocument['outcome'] = broadcastMode
+        ? 'broadcast'
+        : isInternal
+          ? 'assigned_internal'
+          : 'pending_bid';
+      await this.recordAssignmentTrace({
+        tenantId, orderId, initiatedAt, triggerStart,
+        propertyAddress, productType, productId, requiredCapabilities,
+        dueDate: dueDate as unknown as Date,
+        priority,
+        rankedVendors,
+        deniedVendors,
+        matchResults,
+        outcome,
+        selectedVendorId: top?.vendorId ?? null,
+      });
     }
 
     // --- Post-assignment: trigger supervisory review if tenant policy requires it ---
@@ -1153,6 +1196,79 @@ export class AutoAssignmentOrchestratorService {
       winningVendorId,
       cancelledCount: bidIdsToCancel.length,
     });
+  }
+
+  /**
+   * Phase 5 T37 — build + persist a per-assignment trace document.
+   * Best-effort: AssignmentTraceRecorder logs + swallows on storage failure.
+   *
+   * Co-locates everything an operator (or replay/sandbox in Phase 6) needs to
+   * answer "why this vendor / why not vendor X / how long did it take" from
+   * the order detail page without joining against the order itself.
+   */
+  private async recordAssignmentTrace(args: {
+    tenantId: string;
+    orderId: string;
+    initiatedAt: string;
+    triggerStart: number;
+    propertyAddress: string;
+    productType: string;
+    productId?: string;
+    requiredCapabilities?: string[];
+    dueDate: Date;
+    priority: EventPriority | 'STANDARD' | 'RUSH' | 'EMERGENCY';
+    rankedVendors: RankedVendorEntry[];
+    deniedVendors: DeniedVendorEntry[];
+    matchResults: VendorMatchResult[];
+    outcome: AssignmentTraceDocument['outcome'];
+    selectedVendorId: string | null;
+  }): Promise<void> {
+    // Pull the rules provider name off the engine when available — gives the
+    // trace UI a way to indicate whether the eval ran on MOP or homegrown.
+    const providerName =
+      (this.matchingEngine as any)?.rulesProvider?.name ?? 'unknown';
+
+    // Build ranked entries with the explanation off matchResults (rankedVendors
+    // also carries explanation but we double-source for resilience against
+    // ordering shifts from the AI rerank).
+    const explanationByVendorId = new Map<string, MatchExplanation | undefined>();
+    for (const r of args.matchResults) explanationByVendorId.set(r.vendorId, r.explanation);
+
+    const trace: AssignmentTraceDocument = {
+      id: AssignmentTraceRecorder.composeId(args.tenantId, args.orderId, args.initiatedAt),
+      type: 'assignment-trace',
+      tenantId: args.tenantId,
+      orderId: args.orderId,
+      initiatedAt: args.initiatedAt,
+      rulesProviderName: providerName,
+      matchRequest: {
+        propertyAddress: args.propertyAddress,
+        propertyType: args.productType,
+        ...(args.productId ? { productId: args.productId } : {}),
+        ...(args.requiredCapabilities?.length ? { requiredCapabilities: args.requiredCapabilities } : {}),
+        dueDate: args.dueDate.toISOString(),
+        urgency:
+          args.priority === EventPriority.CRITICAL ? 'SUPER_RUSH'
+          : args.priority === EventPriority.HIGH ? 'RUSH'
+          : 'STANDARD',
+      },
+      rankedVendors: args.rankedVendors.map(v => ({
+        vendorId: v.vendorId,
+        vendorName: v.vendorName,
+        score: v.score,
+        ...(v.staffType ? { staffType: v.staffType } : {}),
+        ...(v.staffRole ? { staffRole: v.staffRole } : {}),
+        ...((v.explanation ?? explanationByVendorId.get(v.vendorId))
+          ? { explanation: v.explanation ?? explanationByVendorId.get(v.vendorId)! }
+          : {}),
+      })),
+      deniedVendors: args.deniedVendors,
+      outcome: args.outcome,
+      selectedVendorId: args.selectedVendorId,
+      rankingLatencyMs: Date.now() - args.triggerStart,
+    };
+
+    await this.traceRecorder.record(trace);
   }
 
   /**

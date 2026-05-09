@@ -54,6 +54,7 @@ import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.c
 import { VendorMatchingRulePackService } from '../services/vendor-matching-rule-pack.service.js';
 import { VendorMatchingRulePacksController } from '../controllers/vendor-matching-rule-packs.controller.js';
 import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
+import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { createEngagementRouter } from '../controllers/engagement.controller.js';
@@ -1562,6 +1563,15 @@ export class AppraisalManagementAPIServer {
         new VendorMatchingRulePacksController(packs, pusher).router,
       );
     }
+
+    // Assignment Traces — Phase 5 of AUTO_ASSIGNMENT_REVIEW.md §13.6.
+    // Per-order evaluation traces written by the orchestrator after each
+    // triggerVendorAssignment. Powers the order-detail "why this vendor"
+    // timeline + (eventually) the live feed page.
+    this.app.use('/api/auto-assignment/traces',
+      this.unifiedAuth.authenticate(),
+      new AssignmentTracesController(this.dbService).router,
+    );
 
     // RFB — Request-for-Bid lifecycle (order-scoped endpoints)
     this.app.use('/api/orders/:orderId/rfb',
