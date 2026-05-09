@@ -787,36 +787,41 @@ export class EngagementService {
 
     const result = await this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
 
-    // Fire-and-forget standalone ClientOrder placement for the new order.
+    // Standalone ClientOrder placement for the new order.
     // Mirrors the createEngagement path: placeClientOrder writes the
     // `client-orders` doc and publishes `client-order.created`, which the
-    // CompCollectionListener consumes to drive Phase 1 + Phase 2. The loan
-    // already has a propertyId from initial engagement creation, so we pass
-    // it through; the listener will handle missing coordinates by writing a
-    // SKIPPED audit doc.
-    this.clientOrderService.placeClientOrder({
-      tenantId,
-      createdBy: updatedBy,
-      engagementId,
-      engagementPropertyId: loanId,
-      clientId: engagement.client.clientId,
-      productType: newClientOrder.productType,
-      // See enrichAndPlaceClientOrders for why this cast is safe.
-      propertyDetails: loan.property as unknown as ClientOrderPropertyDetails,
-      clientOrderId: newClientOrder.id,
-      ...(loan.propertyId !== undefined && { propertyId: loan.propertyId }),
-      ...(newClientOrder.fee !== undefined && { clientFee: newClientOrder.fee }),
-      ...(newClientOrder.dueDate !== undefined && { dueDate: new Date(newClientOrder.dueDate) }),
-      ...(newClientOrder.instructions !== undefined && { instructions: newClientOrder.instructions }),
-    }).catch((err) => {
-      logger.warn('Failed to place ClientOrder for added engagement client order (non-fatal)', {
+    // CompCollectionListener consumes to drive Phase 1 + Phase 2.
+    //
+    // AWAITED + propagating: previous fire-and-forget swallowed errors,
+    // leaving callers to think the clientOrder was placed when it actually
+    // failed. Bulk paths and downstream addVendorOrders depend on the
+    // ClientOrder existing — silent failure here was a real bug.
+    try {
+      await this.clientOrderService.placeClientOrder({
+        tenantId,
+        createdBy: updatedBy,
+        engagementId,
+        engagementPropertyId: loanId,
+        clientId: engagement.client.clientId,
+        productType: newClientOrder.productType,
+        // See enrichAndPlaceClientOrders for why this cast is safe.
+        propertyDetails: loan.property as unknown as ClientOrderPropertyDetails,
+        clientOrderId: newClientOrder.id,
+        ...(loan.propertyId !== undefined && { propertyId: loan.propertyId }),
+        ...(newClientOrder.fee !== undefined && { clientFee: newClientOrder.fee }),
+        ...(newClientOrder.dueDate !== undefined && { dueDate: new Date(newClientOrder.dueDate) }),
+        ...(newClientOrder.instructions !== undefined && { instructions: newClientOrder.instructions }),
+      });
+    } catch (err) {
+      logger.error('Failed to place ClientOrder for added engagement client order', {
         engagementId,
         loanId,
         clientOrderId: newClientOrder.id,
         productType: newClientOrder.productType,
         error: err instanceof Error ? err.message : String(err),
       });
-    });
+      throw err;
+    }
 
     return result;
   }
