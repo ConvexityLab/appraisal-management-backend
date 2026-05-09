@@ -13,6 +13,7 @@ import { Logger } from '../utils/logger.js';
 import { EngagementService } from './engagement.service.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { AutoAssignmentOrchestratorService } from './auto-assignment-orchestrator.service.js';
+import { ClientOrderService } from './client-order.service.js';
 import type { OrderFilters } from '../types/index.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import {
@@ -223,6 +224,7 @@ export class AiActionDispatcherService {
   private readonly engagementService: Pick<EngagementService, 'createEngagement'>;
   private readonly autoAssignmentOrchestrator: Pick<AutoAssignmentOrchestratorService, 'triggerVendorAssignment'>;
   private readonly contextLoader: OrderContextLoader;
+  private readonly clientOrderService: ClientOrderService;
 
   constructor(
     private readonly dbService: CosmosDbService,
@@ -234,40 +236,71 @@ export class AiActionDispatcherService {
     this.autoAssignmentOrchestrator = dependencies.autoAssignmentOrchestrator ??
       new AutoAssignmentOrchestratorService(dbService);
     this.contextLoader = new OrderContextLoader(dbService);
+    this.clientOrderService = new ClientOrderService(dbService);
   }
 
   async handleCreateOrder(payload: unknown, context: AiActionExecutionContext): Promise<AiActionDispatchResult> {
     try {
       const requestPayload = asRecord(payload, 'CREATE_ORDER');
-      // Slice 8g: AI-driven order creation must carry engagementId in the
-      // payload. The AI tool's contract requires the model to first call
-      // CREATE_ENGAGEMENT (or look up an existing engagement) and pass its
-      // id in here. getString throws AiActionDispatchError when missing.
-      const orderData = {
+      // Phase B step 7: AI-driven order creation must carry the full engagement
+      // hierarchy: engagementId + engagementPropertyId + clientOrderId. The AI
+      // tool's contract requires the model to first call CREATE_ENGAGEMENT
+      // (or look up an existing engagement), then choose which embedded
+      // clientOrder this VendorOrder fulfills. getString throws
+      // AiActionDispatchError when a required field is missing — that bubbles
+      // up as a structured 400 to the AI runtime, giving the model a clear
+      // correction signal.
+      //
+      // (Note: AI tool schema must be updated in lockstep — the prompt should
+      // expose engagementPropertyId + clientOrderId on the CREATE_ORDER tool.)
+      const tenantId = context.tenantId;
+      const engagementId = getString(requestPayload.engagementId, 'engagementId');
+      const clientOrderId = getString(
+        requestPayload.clientOrderId ?? requestPayload.engagementClientOrderId,
+        'clientOrderId',
+      );
+      const inheritedFields = {
         ...requestPayload,
         propertyAddress: normalizePropertyAddress(requestPayload),
         clientId: getString(requestPayload.clientId, 'clientId'),
-        engagementId: getString(requestPayload.engagementId, 'engagementId'),
+        engagementId,
+        engagementPropertyId: getString(requestPayload.engagementPropertyId, 'engagementPropertyId'),
+        engagementClientOrderId: clientOrderId,
         orderType: getString(requestPayload.orderType, 'orderType'),
         productType: getString(requestPayload.productType, 'productType'),
         dueDate: getDate(requestPayload.dueDate, 'dueDate'),
-        tenantId: context.tenantId,
+        tenantId,
         createdBy: context.userId,
       };
 
-      const result = await this.orderService.createOrder(
-        orderData as unknown as Parameters<typeof this.orderService.createOrder>[0],
-      );
-      if (!result.success || !result.data) {
-        throw new AiActionDispatchError(result.error?.message ?? 'Failed to create order.', 500);
+      const vendorOrderSpec = {
+        vendorWorkType: inheritedFields.productType as never,
+      };
+
+      let createdVendorOrders;
+      try {
+        createdVendorOrders = await this.clientOrderService.addVendorOrders(
+          clientOrderId,
+          tenantId,
+          [vendorOrderSpec],
+          inheritedFields as never,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'addVendorOrders failed';
+        throw new AiActionDispatchError(`Failed to create order: ${msg}`, 500);
       }
 
+      if (createdVendorOrders.length === 0) {
+        throw new AiActionDispatchError('addVendorOrders returned no rows.', 500);
+      }
+      const created = createdVendorOrders[0]!;
+
       return {
-        message: `Order ${result.data.orderNumber} created successfully.`,
+        message: `Order ${created.orderNumber} created successfully.`,
         data: {
-          orderId: result.data.id,
-          orderNumber: result.data.orderNumber,
-          status: result.data.status,
+          orderId: created.id,
+          orderNumber: created.orderNumber,
+          status: created.status,
         },
       };
     } catch (error) {
