@@ -318,6 +318,7 @@ jobs:
       AXIOM_WEBHOOK_SECRET: ${{ secrets.AXIOM_WEBHOOK_SECRET }}
       AXIOM_CLIENT_ID: ${{ secrets.AXIOM_CLIENT_ID }}
       AXIOM_SUB_CLIENT_ID: ${{ secrets.AXIOM_SUB_CLIENT_ID }}
+      MOP_SERVICE_AUTH_TOKEN: ${{ secrets.MOP_SERVICE_AUTH_TOKEN }}
 
   # Runs after infrastructure so App Roles and extension properties are guaranteed
   # to exist before we try to stamp user attributes and assign roles.

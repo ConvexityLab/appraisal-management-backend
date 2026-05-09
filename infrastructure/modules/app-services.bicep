@@ -44,6 +44,10 @@ param statebridge_tenantId string = ''
 @secure()
 @description('Shared secret used to verify HMAC-SHA256 signatures on inbound Axiom webhooks. Must match the secret configured in Axiom outbound webhook settings. Store in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
+
+@secure()
+@description('Service-to-service auth token AMS sends to MOP as the X-Service-Auth header for vendor-matching evaluation. Mirror of sentinel KV secret "sentinel-mop-webhook-secret". Surfaced on the appraisal-api Container App as inline secret "mop-rules-service-auth-token" + env var MOP_RULES_SERVICE_AUTH_TOKEN consumed by MopVendorMatchingRulesProvider. Empty value disables MOP auth — pair with RULES_PROVIDER=homegrown.')
+param mopServiceAuthToken string = ''
 @description('Azure App Configuration endpoint (e.g. https://appconfig-certo-dev.azconfig.io). When set, service-discovery URLs including AXIOM_API_BASE_URL are loaded from App Config at startup via Managed Identity.')
 param appConfigEndpoint string = ''
 
@@ -94,6 +98,10 @@ var containerAppSecrets = useBootstrapImage ? [] : concat(
   empty(axiomWebhookSecret) ? [] : [{
     name: 'axiom-webhook-secret'
     value: axiomWebhookSecret
+  }],
+  empty(mopServiceAuthToken) ? [] : [{
+    name: 'mop-rules-service-auth-token'
+    value: mopServiceAuthToken
   }]
 )
 
@@ -238,6 +246,17 @@ var containerApps = [
       {
         name: 'IVUEIT_SECRET'
         secretRef: 'ivueit-secret'
+      }
+      // Vendor-matching rules provider — when both vars are set, the BE
+      // sends X-Service-Auth on every MOP eval request. The provider is
+      // selected by RULES_PROVIDER (set via App Config or directly on the
+      // container app); MOP_RULES_BASE_URL comes from App Config key
+      // services.mop-api.external-url. See:
+      //   src/services/vendor-matching-rules/factory.ts
+      //   docs/AUTO_ASSIGNMENT_REVIEW.md §12
+      {
+        name: 'MOP_RULES_SERVICE_AUTH_TOKEN'
+        secretRef: 'mop-rules-service-auth-token'
       }
     ]
     scaleRule: {

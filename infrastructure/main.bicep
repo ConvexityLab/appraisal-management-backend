@@ -112,6 +112,10 @@ param statebridge_tenantId string
 @description('Shared HMAC-SHA256 secret for verifying inbound Axiom webhook signatures. Must match the secret set in the Axiom outbound webhook configuration. Stored in Key Vault as "axiom-webhook-secret".')
 param axiomWebhookSecret string = ''
 
+@secure()
+@description('Service-to-service auth token AMS sends to MOP as the X-Service-Auth header for vendor-matching evaluation. Mirror of sentinel KV secret "sentinel-mop-webhook-secret". CI populates from a deploy-time secret; bicep wires it to the appraisal-api Container App as both an inline secret (mop-rules-service-auth-token) and an env var (MOP_RULES_SERVICE_AUTH_TOKEN). Empty value disables MOP auth for AMS — set RULES_PROVIDER=homegrown in that case.')
+param mopServiceAuthToken string = ''
+
 // IVUEIT_API_KEY and IVUEIT_SECRET are sourced via Container App keyVaultUrl
 // secret refs — Managed Identity reads them from Key Vault at runtime. Bicep
 // does NOT receive them as params. The KV secrets must exist before the
@@ -505,6 +509,7 @@ module appServices 'modules/app-services.bicep' = {
     statebridgeClientName: statebridgeClientName
     statebridge_tenantId: statebridge_tenantId
     axiomWebhookSecret: axiomWebhookSecret
+    mopServiceAuthToken: mopServiceAuthToken
     appConfigEndpoint: appConfig.outputs.appConfigEndpoint
     appImageTag: appImageTag
     functionsImageTag: functionsImageTag
@@ -638,6 +643,7 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     azureClientSecret: azureClientSecret
     fluidRelayTenantKey: fluidRelay.outputs.fluidRelayPrimaryKey
     axiomWebhookSecret: axiomWebhookSecret
+    mopServiceAuthToken: mopServiceAuthToken
   }
 }
 
