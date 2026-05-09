@@ -1220,6 +1220,8 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
       { ipAddressOrRange: '0.0.0.0' }
       // hiroh dev access
       { ipAddressOrRange: '72.66.11.53' }
+      // george dev access
+      { ipAddressOrRange: '69.140.197.104' }
     ]
     isVirtualNetworkFilterEnabled: false
     enableAnalyticalStorage: true
