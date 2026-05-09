@@ -140,6 +140,24 @@ export class InspectionService {
       throw new Error('Appraiser not found');
     }
 
+    // Phase B step 9: inherit engagement linkage from the parent VendorOrder
+    // and validate before write. The Inspection appointment shares the
+    // `orders` container with VendorOrders but uses its own discriminator
+    // (`type: 'inspection'`); a follow-up should unify under
+    // VendorOrder(role='INSPECTION') per ORDER-DOMAIN-REDESIGN.md §2.1.
+    // For now, stamping the linkage prevents orphan creation through this
+    // path — same gap class fixed by the SFTP linkage guard (step 8).
+    const parentOrder = order as { engagementId?: string; engagementPropertyId?: string; engagementClientOrderId?: string; orderNumber?: string; propertyAddress?: unknown; propertyType?: string };
+    const linkageErrors: string[] = [];
+    if (!parentOrder.engagementId) linkageErrors.push('missing engagementId');
+    if (!parentOrder.engagementPropertyId) linkageErrors.push('missing engagementPropertyId');
+    if (!parentOrder.engagementClientOrderId) linkageErrors.push('missing engagementClientOrderId');
+    if (linkageErrors.length > 0) {
+      throw new Error(
+        `Engagement-primacy: cannot schedule inspection — parent order ${request.orderId} ${linkageErrors.join(', ')}`,
+      );
+    }
+
     const now = new Date().toISOString();
     const inspection: InspectionAppointment = {
       id: `inspection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -148,6 +166,10 @@ export class InspectionService {
       tenantId,
       orderId: request.orderId,
       orderNumber: order.orderNumber,
+      // Engagement linkage (inherited from parent VendorOrder)
+      engagementId: parentOrder.engagementId!,
+      engagementPropertyId: parentOrder.engagementPropertyId!,
+      engagementClientOrderId: parentOrder.engagementClientOrderId!,
       appraiserId: request.appraiserId,
       appraiserName: `${appraiser.firstName} ${appraiser.lastName}`,
       appraiserPhone: appraiser.phone,
@@ -162,7 +184,7 @@ export class InspectionService {
       createdAt: now,
       updatedAt: now,
       createdBy: userId
-    };
+    } as InspectionAppointment;
 
     await ordersContainer.items.create(inspection);
     this.logger.info('Inspection scheduled', { inspectionId: inspection.id, orderId: request.orderId });
