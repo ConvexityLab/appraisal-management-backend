@@ -403,6 +403,7 @@ export class PropertyRecordService {
     source: PropertyVersionEntry['source'],
     changedBy: string,
     sourceProvider?: string,
+    sourceArtifactId?: string,
   ): Promise<PropertyRecord> {
     if (!reason || !reason.trim()) {
       throw new Error('PropertyRecordService.createVersion: reason is required');
@@ -428,12 +429,16 @@ export class PropertyRecordService {
     }
 
     const previousValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+    
     for (const field of changedFields) {
       if (field.startsWith('building.')) {
         const bKey = field.slice('building.'.length);
         previousValues[field] = (existing.building as Record<string, unknown>)[bKey];
+        newValues[field] = (changes.building as Record<string, unknown>)[bKey];
       } else {
         previousValues[field] = (existing as unknown as Record<string, unknown>)[field];
+        newValues[field] = (changes as Record<string, unknown>)[field];
       }
     }
 
@@ -444,8 +449,10 @@ export class PropertyRecordService {
       reason,
       source,
       ...(sourceProvider ? { sourceProvider } : {}),
+      ...(sourceArtifactId ? { sourceArtifactId } : {}),
       changedFields,
       previousValues,
+      newValues,
     };
 
     const updated: PropertyRecord = {
@@ -503,6 +510,7 @@ export class PropertyRecordService {
       source: input.dataSource === 'MANUAL_ENTRY' ? 'MANUAL_CORRECTION' : 'PUBLIC_RECORDS_API',
       changedFields: [],
       previousValues: {},
+      newValues: {},
     };
 
     const record: PropertyRecord = {

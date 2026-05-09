@@ -432,6 +432,24 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           estimatedTurnaround: (bid as any).proposedTurnaround,
           estimatedFee: (bid as any).proposedFee,
           matchReasons: [],
+          explanation: {
+            vendorId: vendorId,
+            scoreComponents: {
+              performance: 0,
+              availability: 0,
+              proximity: 0,
+              experience: 0,
+              cost: 0
+            },
+            ruleResult: {
+              appliedRuleIds: [],
+              denyReasons: [],
+              scoreAdjustment: 0
+            },
+            baseScore: 0,
+            finalScore: 0,
+            weightsVersion: '1.0.0'
+          },
           vendor: {
             id: vendorId,
             name: (bid as any).vendorName,
