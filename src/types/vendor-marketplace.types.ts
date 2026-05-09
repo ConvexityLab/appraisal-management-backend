@@ -189,7 +189,7 @@ export interface VendorMatchResult {
   vendorId: string;
   matchScore: number;              // 0-100
   recentOrders?: number;           // recent completed orders used by AI bid analysis
-  
+
   // Score Breakdown
   scoreBreakdown: {
     performance: number;           // 30%
@@ -198,15 +198,15 @@ export interface VendorMatchResult {
     experience: number;            // 15%
     cost: number;                  // 10%
   };
-  
+
   // Predictions
   estimatedFee: number | null;
   estimatedTurnaround: number;      // hours
   completionProbability?: number;   // %
-  
+
   // Geographic
   distance: number | null;          // miles
-  
+
   // Vendor Details
   vendor: {
     id: string;
@@ -214,10 +214,56 @@ export interface VendorMatchResult {
     tier: VendorTier;
     overallScore: number;
   };
-  
+
   // Reasoning
   matchReasons: string[];           // Why this vendor was selected
   warnings?: string[];              // Potential concerns
+
+  /**
+   * Full deterministic explanation of how this match was scored — surfaced
+   * to operators in the FE and persisted on the order for audit (T6/F9).
+   * Always populated by VendorMatchingEngine.scoreVendor.
+   */
+  explanation: MatchExplanation;
+}
+
+/**
+ * Audit-grade record of how a vendor was scored for an assignment decision.
+ * Persisted onto the order in autoVendorAssignment so disputes ("why was vendor
+ * B picked over vendor A?") are answerable from the order document alone.
+ */
+export interface MatchExplanation {
+  vendorId: string;
+  scoreComponents: {
+    performance: number;
+    availability: number;
+    proximity: number;
+    experience: number;
+    cost: number;
+  };
+  ruleResult: {
+    appliedRuleIds: string[];
+    denyReasons: string[];
+    scoreAdjustment: number;
+  };
+  baseScore: number;     // weighted sum before rule adjustment
+  finalScore: number;    // post-adjustment, clamped to [0,100]
+  /**
+   * Tag identifying the scoring weights/bands version used. Bumped when scoring
+   * becomes data-driven in Phase 3 so historical decisions are replayable.
+   */
+  weightsVersion: string;
+}
+
+/**
+ * A vendor that was considered but excluded by a deny rule. Surfaced in the
+ * FSM state so operators can answer "why didn't vendor X get considered?"
+ */
+export interface DeniedVendorEntry {
+  vendorId: string;
+  vendorName: string;
+  denyReasons: string[];
+  appliedRuleIds: string[];
 }
 
 export interface VendorMatchCriteria {

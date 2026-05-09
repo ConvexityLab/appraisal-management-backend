@@ -40,6 +40,7 @@ vi.mock('../src/services/service-bus-subscriber.js', () => ({
 vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
   VendorMatchingEngine: vi.fn().mockImplementation(() => ({
     findMatchingVendors: vi.fn(),
+    findMatchingVendorsAndDenied: vi.fn(),
   })),
 }));
 
@@ -227,8 +228,11 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
 
-    // Default: matching engine returns 3 ranked vendors
-    getMatchingEngine().findMatchingVendors.mockResolvedValue(makeVendorResults());
+    // Default: matching engine returns 3 ranked vendors (T6: also denied=[])
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: makeVendorResults(),
+      denied: [],
+    });
   });
 
   // ── 1. Happy path: order created → bid sent to top vendor ──────────────────
@@ -612,7 +616,7 @@ describe('AutoAssignmentOrchestratorService — Vendor Assignment FSM', () => {
   // ── 6. Immediate escalation when no vendors found ─────────────────────────
 
   it('immediately escalates when matching engine returns no vendors', async () => {
-    getMatchingEngine().findMatchingVendors.mockResolvedValue([]);
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({ matches: [], denied: [] });
 
     const order = makeOrder();
     db._orders.set(order.id, order);
@@ -649,7 +653,10 @@ describe('AutoAssignmentOrchestratorService — Internal Staff Assignment', () =
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
     // Default: matching engine returns 3 ranked vendors (external by default)
-    getMatchingEngine().findMatchingVendors.mockResolvedValue(makeVendorResults());
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: makeVendorResults(),
+      denied: [],
+    });
   });
 
   // ── 1. Happy path: top vendor is internal → direct assignment ─────────────
@@ -1037,10 +1044,13 @@ describe('AutoAssignmentOrchestratorService — Full End-to-End Flow', () => {
     orchestrator = new AutoAssignmentOrchestratorService(db as any);
     publisher = getPublisher();
 
-    getMatchingEngine().findMatchingVendors.mockResolvedValue([
-      { vendorId: 'v1', vendor: { name: 'Vendor One' }, matchScore: 95 },
-      { vendorId: 'v2', vendor: { name: 'Vendor Two' }, matchScore: 80 },
-    ]);
+    getMatchingEngine().findMatchingVendorsAndDenied.mockResolvedValue({
+      matches: [
+        { vendorId: 'v1', vendor: { name: 'Vendor One' }, matchScore: 95 },
+        { vendorId: 'v2', vendor: { name: 'Vendor Two' }, matchScore: 80 },
+      ],
+      denied: [],
+    });
     getQcQueue().addToQueue.mockResolvedValue({ id: 'qcr-e2e' });
     getQcQueue().assignReview.mockResolvedValue(undefined);
     getQcQueue().getAllAnalystWorkloads.mockResolvedValue([

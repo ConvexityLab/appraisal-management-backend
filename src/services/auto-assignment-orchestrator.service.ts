@@ -55,7 +55,7 @@ import {
   getDueDate,
   type OrderContext,
 } from './order-context-loader.service.js';
-import type { VendorMatchResult } from '../types/vendor-marketplace.types.js';
+import type { VendorMatchResult, MatchExplanation, DeniedVendorEntry } from '../types/vendor-marketplace.types.js';
 import type {
   AppEvent,
   BaseEvent,
@@ -107,6 +107,11 @@ export interface RankedVendorEntry {
    * Role of the internal staff member — only set when staffType === 'internal'.
    */
   staffRole?: 'appraiser_internal' | 'inspector_internal' | 'reviewer' | 'supervisor';
+  /**
+   * T6/F9 audit: full deterministic match explanation for this vendor.
+   * Optional for backwards compatibility with FSM states written before T6.
+   */
+  explanation?: MatchExplanation;
 }
 
 export interface AutoVendorAssignmentState {
@@ -127,6 +132,11 @@ export interface AutoVendorAssignmentState {
   broadcastMode?: boolean;
   broadcastBidIds?: string[];
   broadcastRound?: number;
+  /**
+   * T6/F9 audit: vendors filtered out by deny rules. Surfaced to operators
+   * so they can answer "why didn't vendor X get considered?".
+   */
+  deniedVendors?: DeniedVendorEntry[];
 }
 
 export interface RankedReviewerEntry {
@@ -377,11 +387,12 @@ export class AutoAssignmentOrchestratorService {
 
     const maxAttempts = tenantConfig.maxVendorAttempts;
 
-    // --- Rank vendors ---
+    // --- Rank vendors (T6: also collect denied vendors for FSM audit trail) ---
     let rankedVendors: RankedVendorEntry[] = [];
     let matchResults: VendorMatchResult[] = [];
+    let deniedVendors: DeniedVendorEntry[] = [];
     try {
-      matchResults = await this.matchingEngine.findMatchingVendors(
+      const result = await this.matchingEngine.findMatchingVendorsAndDenied(
         {
           orderId,
           tenantId,
@@ -403,11 +414,14 @@ export class AutoAssignmentOrchestratorService {
         },
         maxAttempts,
       );
+      matchResults = result.matches;
+      deniedVendors = result.denied;
 
       rankedVendors = matchResults.map((r) => ({
         vendorId: r.vendorId,
         vendorName: r.vendor.name,
         score: r.matchScore,
+        explanation: r.explanation,
       }));
     } catch (err) {
       this.logger.error('Vendor matching failed for order', { orderId, error: err });
@@ -444,6 +458,7 @@ export class AutoAssignmentOrchestratorService {
         broadcastMode: true,
         broadcastBidIds: [],
         broadcastRound: 1,
+        ...(deniedVendors.length > 0 ? { deniedVendors } : {}),
       };
       await this.sendBroadcastBids(orderForDispatch, state, tenantId, priority, tenantConfig.broadcastCount);
     } else {
@@ -454,6 +469,7 @@ export class AutoAssignmentOrchestratorService {
         currentBidId: null,
         currentBidExpiresAt: null,
         initiatedAt: new Date().toISOString(),
+        ...(deniedVendors.length > 0 ? { deniedVendors } : {}),
       };
       await this.sendBidToVendor(orderForDispatch, state, tenantId, priority);
     }

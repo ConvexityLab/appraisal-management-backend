@@ -25,8 +25,16 @@ import {
   VendorMatchCriteria,
   VendorAvailability,
   VendorPerformanceMetrics,
+  MatchExplanation,
+  DeniedVendorEntry,
   GeographicArea
 } from '../types/vendor-marketplace.types.js';
+
+/**
+ * Tag identifying the scoring profile used (T6 audit). Bump when weights or
+ * band thresholds change so historical match explanations remain replayable.
+ */
+const WEIGHTS_VERSION = 'v1-30/25/20/15/10';
 
 interface GeoCoordinates {
   latitude: number;
@@ -88,7 +96,7 @@ export class VendorMatchingEngine {
       // docs/AUTO_ASSIGNMENT_REVIEW.md). Distance is computed once here so it is
       // available to both the rules engine (T4, max_distance_miles rule) and the
       // proximity scorer without recomputation.
-      const eligibleVendors = await this.getEligibleVendors(request, propertyCoords);
+      const { eligible: eligibleVendors } = await this.getEligibleVendors(request, propertyCoords);
       this.logger.info(`Found ${eligibleVendors.length} eligible vendors`);
 
       if (eligibleVendors.length === 0) {
@@ -118,6 +126,35 @@ export class VendorMatchingEngine {
       this.logger.error('Failed to find matching vendors', error);
       throw error;
     }
+  }
+
+  /**
+   * Like findMatchingVendors but also returns the list of vendors filtered out
+   * by deny rules (with reasons). Used by the orchestrator to persist the full
+   * audit trail (denied + ranked) onto the order — see T6/F9.
+   */
+  async findMatchingVendorsAndDenied(
+    request: VendorMatchRequest,
+    topN: number = 10
+  ): Promise<{ matches: VendorMatchResult[]; denied: DeniedVendorEntry[] }> {
+    const propertyCoords = await this.geocodeAddress(request.propertyAddress);
+    const { eligible, denied } = await this.getEligibleVendors(request, propertyCoords);
+
+    if (eligible.length === 0) {
+      return { matches: [], denied };
+    }
+
+    const scoredVendors = await Promise.all(
+      eligible.map(({ vendor, distance, ruleResult }) =>
+        this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult)
+      )
+    );
+
+    const matches = scoredVendors
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, topN);
+
+    return { matches, denied };
   }
 
   /**
@@ -247,10 +284,11 @@ export class VendorMatchingEngine {
       const vendorCaps: string[] = vendor.capabilities ?? [];
       const missing = request.requiredCapabilities.filter(c => !vendorCaps.includes(c));
       if (missing.length > 0) {
+        const zeroComponents = { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 };
         return {
           vendorId: vendor.id,
           matchScore: 0,
-          scoreBreakdown: { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 },
+          scoreBreakdown: zeroComponents,
           distance: null,
           estimatedTurnaround: 0,
           estimatedFee: null,
@@ -260,6 +298,14 @@ export class VendorMatchingEngine {
             name: vendor.name || vendor.businessName,
             tier: 'BRONZE' as const,
             overallScore: 0
+          },
+          explanation: {
+            vendorId: vendor.id,
+            scoreComponents: zeroComponents,
+            ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: [], scoreAdjustment: 0 },
+            baseScore: 0,
+            finalScore: 0,
+            weightsVersion: WEIGHTS_VERSION,
           }
         };
       }
@@ -318,17 +364,19 @@ export class VendorMatchingEngine {
     // data-driven in Phase 3 and admins may want unbounded scores for tuning.
     const matchScore = this.applyScoreAdjustment(baseScore, ruleResult?.scoreAdjustment ?? 0);
 
+    const scoreComponents = {
+      performance: performanceScore,
+      availability: availabilityScore,
+      proximity: proximityScore.score,
+      experience: experienceScore,
+      cost: costScore,
+    };
+
     return {
       vendorId: vendor.id,
       matchScore,
       recentOrders: performance?.ordersLast30Days ?? performance?.totalOrdersCompleted ?? 0,
-      scoreBreakdown: {
-        performance: performanceScore,
-        availability: availabilityScore,
-        proximity: proximityScore.score,
-        experience: experienceScore,
-        cost: costScore
-      },
+      scoreBreakdown: scoreComponents,
       distance: proximityScore.distance,
       estimatedTurnaround: this.estimateTurnaround(performance, effectiveAvailability),
       estimatedFee: vendor.typicalFees?.[request.propertyType] || null,
@@ -338,6 +386,14 @@ export class VendorMatchingEngine {
         name: vendor.name || vendor.businessName,
         tier: performance?.tier || 'BRONZE',
         overallScore: performance?.overallScore || 0
+      },
+      explanation: {
+        vendorId: vendor.id,
+        scoreComponents,
+        ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: [], scoreAdjustment: 0 },
+        baseScore,
+        finalScore: matchScore,
+        weightsVersion: WEIGHTS_VERSION,
       }
     };
   }
@@ -609,7 +665,10 @@ export class VendorMatchingEngine {
   private async getEligibleVendors(
     request: VendorMatchRequest,
     propertyCoords?: GeoCoordinates | null
-  ): Promise<Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }>> {
+  ): Promise<{
+    eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }>;
+    denied: DeniedVendorEntry[];
+  }> {
     const query = `
       SELECT * FROM c
       WHERE c.tenantId = @tenantId
@@ -649,7 +708,8 @@ export class VendorMatchingEngine {
       this.logger.error('Failed to load vendor matching rules; continuing without rules', err as Record<string, any>);
     }
 
-    const eligibleWithRules: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }> = [];
+    const eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }> = [];
+    const denied: DeniedVendorEntry[] = [];
 
     for (const vendor of vendors) {
       const distance = this.computeVendorDistance(vendor, propertyCoords ?? null);
@@ -683,13 +743,19 @@ export class VendorMatchingEngine {
           denyReasons: ruleResult.denyReasons,
           appliedRuleIds: ruleResult.appliedRuleIds,
         });
+        denied.push({
+          vendorId: vendor.id,
+          vendorName: vendor.name || vendor.businessName || vendor.id,
+          denyReasons: ruleResult.denyReasons,
+          appliedRuleIds: ruleResult.appliedRuleIds,
+        });
         continue;
       }
 
-      eligibleWithRules.push({ vendor, distance, ruleResult });
+      eligible.push({ vendor, distance, ruleResult });
     }
 
-    return eligibleWithRules;
+    return { eligible, denied };
   }
 
   /**
