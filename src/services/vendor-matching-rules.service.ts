@@ -235,11 +235,13 @@ export class VendorMatchingRulesService {
       }
     }
 
-    // Eligible if no deny reasons remain after allow overrides
-    const effectiveDenies = denyReasons.filter((_, i) => {
-      const denyId = [...deniedRuleIds][i];
-      return !allowOverrideIds.has(denyId ?? '');
-    });
+    // Whitelist semantics: any matching whitelist rule overrides all denies for
+    // this vendor (the standard "whitelist beats blacklist" pattern). The previously
+    // shipped filter compared allow-rule IDs against deny-rule IDs, which never
+    // matched — making the override silently non-functional. See the
+    // 'whitelist (allow) overrides deny' tests in vendor-matching-rules.service.test.ts.
+    void deniedRuleIds; // kept available if per-deny override semantics are added later
+    const effectiveDenies = allowOverrideIds.size > 0 ? [] : denyReasons;
 
     return {
       eligible: effectiveDenies.length === 0,
