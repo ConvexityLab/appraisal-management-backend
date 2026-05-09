@@ -110,6 +110,8 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const start = Date.now();
+    let httpStatus: number | null = null;
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -122,6 +124,7 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      httpStatus = response.status;
 
       if (!response.ok) {
         throw new Error(`MOP eval returned ${response.status} ${response.statusText}`);
@@ -137,9 +140,33 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
         );
       }
 
-      return data.results.map(r => this.normalizeResult(r));
+      const results = data.results.map(r => this.normalizeResult(r));
+
+      // Observability: structured per-request log so we can graph latency,
+      // denial rate, fallback rate, and shape regressions over time.
+      const denied = results.filter(r => !r.eligible).length;
+      const adjusted = results.filter(r => r.scoreAdjustment !== 0).length;
+      this.logger.info('mop.eval.success', {
+        tenantId,
+        vendorCount: contexts.length,
+        deniedCount: denied,
+        adjustedCount: adjusted,
+        latencyMs: Date.now() - start,
+        httpStatus,
+      });
+
+      return results;
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
+      const isTimeout = err?.name === 'AbortError';
+      this.logger.error('mop.eval.failure', {
+        tenantId,
+        vendorCount: contexts.length,
+        latencyMs: Date.now() - start,
+        httpStatus,
+        kind: isTimeout ? 'timeout' : err?.constructor?.name ?? 'Error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+      if (isTimeout) {
         throw new Error(`MOP eval timed out after ${this.timeoutMs}ms`);
       }
       // Re-throw so the FallbackRulesProvider can degrade. Single-vendor failures
