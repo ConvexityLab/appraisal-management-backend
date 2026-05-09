@@ -25,6 +25,11 @@ import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { EngagementService } from './engagement.service.js';
 import {
+  ClientOrderService,
+  ClientOrderNotFoundError,
+  type VendorOrderSpec,
+} from './client-order.service.js';
+import {
   ANALYSIS_TYPE_TO_PRODUCT_TYPE,
   BulkAnalysisType,
   BulkEngagementGranularity,
@@ -33,7 +38,7 @@ import {
   BulkPortfolioJob,
   BulkSubmitRequest,
 } from '../types/bulk-portfolio.types.js';
-import type { CreateEngagementLoanRequest } from '../types/engagement.types.js';
+import type { CreateEngagementLoanRequest, Engagement } from '../types/engagement.types.js';
 import type {
   RiskTapeItem,
   ReviewTapeResult,
@@ -98,6 +103,7 @@ export class BulkPortfolioService {
   private _propertyRecordService: PropertyRecordService | null = null;
   private _propertyEnrichmentService: PropertyEnrichmentService | null = null;
   private _engagementService: EngagementService | null = null;
+  private _clientOrderService: ClientOrderService | null = null;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.logger = new Logger();
@@ -164,6 +170,31 @@ export class BulkPortfolioService {
     return this._engagementService;
   }
 
+  private get clientOrderService(): ClientOrderService {
+    if (!this._clientOrderService) {
+      this._clientOrderService = new ClientOrderService(this.dbService);
+    }
+    return this._clientOrderService;
+  }
+
+  /**
+   * Find the embedded EngagementClientOrder ids for a given item by matching
+   * the item's loanNumber against the engagement's properties. Returns
+   * `[primaryClientOrderId, ...additionalClientOrderIds]` matching the item's
+   * `[primary product, ...additionalProducts]` order. The build-input function
+   * ensures the same order, so [0] is primary and [1+i] is additionalProducts[i].
+   */
+  private _findClientOrderIdsForItem(
+    engagement: Engagement,
+    item: BulkPortfolioItem,
+    jobId: string,
+  ): string[] | null {
+    const expectedLoanNumber = item.loanNumber ?? `bulk-${jobId}-${item.rowIndex}`;
+    const property = engagement.properties.find((p) => p.loanNumber === expectedLoanNumber);
+    if (!property) return null;
+    return property.clientOrders.map((co) => co.id);
+  }
+
   // ─── submit ────────────────────────────────────────────────────────────────
 
   /**
@@ -219,10 +250,13 @@ export class BulkPortfolioService {
       }
     }
 
-    const batchEngagementId =
+    // Phase B step 5: helpers now return the full Engagement so we can read
+    // each property's clientOrder ids — required to call addVendorOrders.
+    const batchEngagement: Engagement | undefined =
       !request.engagementId && engagementGranularity === 'PER_BATCH' && validOrderItems.length > 0
         ? await this._createBatchEngagement(validOrderItems, request.clientId, tenantId, submittedBy, jobId)
         : undefined;
+    const batchEngagementId = batchEngagement?.id;
 
     const results: BulkPortfolioItem[] = [];
     let successCount = 0;
@@ -238,15 +272,40 @@ export class BulkPortfolioService {
         continue;
       }
 
+      let resolvedEngagement: Engagement | undefined = batchEngagement;
       let resolvedEngagementId = request.engagementId ?? batchEngagementId;
       if (!resolvedEngagementId && engagementGranularity === 'PER_LOAN') {
-        resolvedEngagementId = await this._createLoanEngagement(
+        resolvedEngagement = await this._createLoanEngagement(
           item,
           request.clientId,
           tenantId,
           submittedBy,
           jobId,
         );
+        resolvedEngagementId = resolvedEngagement.id;
+      }
+
+      // Locate the embedded clientOrder ids for this item so we can attach
+      // VendorOrders to the existing ClientOrder docs (created by
+      // engagement.service.enrichAndPlaceClientOrders during createEngagement).
+      // If the caller supplied an existing request.engagementId, we can't
+      // resolve the mapping locally — that flow is currently unsupported by
+      // the addVendorOrders pattern (would need a separate engagement-fetch).
+      const clientOrderIds = resolvedEngagement
+        ? this._findClientOrderIdsForItem(resolvedEngagement, item, jobId)
+        : null;
+      if (!clientOrderIds || clientOrderIds.length === 0) {
+        const errMsg = request.engagementId
+          ? 'Bulk submission against an existing engagementId is not yet supported by the Phase B addVendorOrders path.'
+          : `Could not resolve embedded clientOrder ids for item rowIndex=${item.rowIndex} loanNumber=${item.loanNumber}.`;
+        results.push({
+          ...item,
+          ...(resolvedEngagementId ? { engagementId: resolvedEngagementId } : {}),
+          status: 'FAILED',
+          errorMessage: errMsg,
+        });
+        failCount++;
+        continue;
       }
 
       // Build Order shape
@@ -319,7 +378,23 @@ export class BulkPortfolioService {
       };
 
       try {
-        const result = await this.dbService.createOrder(orderPayload as any);
+        // Phase B: attach the primary VendorOrder to clientOrderIds[0]
+        // (the matching embedded ClientOrder). Each addl product gets a
+        // separate VendorOrder on its own clientOrder (clientOrderIds[1+i]).
+        const primaryClientOrderId = clientOrderIds[0]!;
+        const vendorOrderSpec: VendorOrderSpec = {
+          vendorWorkType: orderPayload.productType,
+          ...(orderPayload.specialInstructions ? { instructions: orderPayload.specialInstructions } : {}),
+        };
+        const createdPrimary = await this.clientOrderService.addVendorOrders(
+          primaryClientOrderId,
+          tenantId,
+          [vendorOrderSpec],
+          orderPayload as any,
+        );
+        const result = createdPrimary.length > 0
+          ? { success: true as const, data: createdPrimary[0] }
+          : { success: false as const, error: { message: 'addVendorOrders returned no rows' } };
 
         if (result.success && result.data) {
           const resultItem: BulkPortfolioItem = {
@@ -356,7 +431,18 @@ export class BulkPortfolioService {
           // ── Additional products (product_2 through product_5) ─────────────
           if (item.additionalProducts && item.additionalProducts.length > 0) {
             const additionalResults: import('../types/bulk-portfolio.types.js').AdditionalProduct[] = [];
-            for (const addlProduct of item.additionalProducts) {
+            for (let i = 0; i < item.additionalProducts.length; i += 1) {
+              const addlProduct = item.additionalProducts[i]!;
+              const addlClientOrderId = clientOrderIds[i + 1]; // [0] was the primary
+              if (!addlClientOrderId) {
+                additionalResults.push({
+                  ...addlProduct,
+                  status: 'FAILED',
+                  errorMessage: `No matching embedded clientOrder for additionalProducts[${i}].`,
+                });
+                failCount++;
+                continue;
+              }
               const addlDueDate = new Date();
               addlDueDate.setDate(addlDueDate.getDate() + (DEFAULT_TURN_TIME_DAYS[addlProduct.analysisType] ?? 5));
               const addlPayload = {
@@ -367,7 +453,19 @@ export class BulkPortfolioService {
                 metadata: { ...orderPayload.metadata, analysisType: addlProduct.analysisType },
               };
               try {
-                const addlResult = await this.dbService.createOrder(addlPayload as any);
+                const addlSpec: VendorOrderSpec = {
+                  vendorWorkType: addlPayload.productType,
+                  ...(addlPayload.specialInstructions ? { instructions: addlPayload.specialInstructions } : {}),
+                };
+                const addlCreated = await this.clientOrderService.addVendorOrders(
+                  addlClientOrderId,
+                  tenantId,
+                  [addlSpec],
+                  addlPayload as any,
+                );
+                const addlResult = addlCreated.length > 0
+                  ? { success: true as const, data: addlCreated[0] }
+                  : { success: false as const, error: { message: 'addVendorOrders returned no rows' } };
                 if (addlResult.success && addlResult.data) {
                   additionalResults.push({
                     ...addlProduct,
@@ -1466,6 +1564,10 @@ export class BulkPortfolioService {
       };
 
       try {
+        // TODO Phase B follow-up: this createOrdersFromResults flow still uses
+        // the legacy dbService.createOrder path. Migrate to addVendorOrders
+        // alongside the second-pass refactor — needs the same loanNumber→
+        // clientOrderId resolution as the primary submit flow.
         const orderResult = await this.dbService.createOrder(orderPayload as any);
         if (orderResult.success && orderResult.data) {
           tapeResults[idx] = {
@@ -1697,14 +1799,21 @@ export class BulkPortfolioService {
     return OrderType.REFINANCE; // safe default for review-type bulk orders
   }
 
+  /**
+   * Create a single engagement holding all valid items as embedded properties,
+   * returning the full Engagement so the caller can read each property's
+   * clientOrder ids — required by the addVendorOrders pattern (Phase B
+   * step 5).  Each property's clientOrders[0] is the primary product;
+   * clientOrders[1..N] are the additionalProducts in order.
+   */
   private async _createBatchEngagement(
     items: BulkPortfolioItem[],
     clientId: string,
     tenantId: string,
     submittedBy: string,
     jobId: string,
-  ): Promise<string> {
-    const engagement = await this.engagementService.createEngagement({
+  ): Promise<Engagement> {
+    return this.engagementService.createEngagement({
       tenantId,
       createdBy: submittedBy,
       client: {
@@ -1713,8 +1822,6 @@ export class BulkPortfolioService {
       },
       properties: items.map((item) => this._buildEngagementLoanInput(item, jobId)),
     });
-
-    return engagement.id;
   }
 
   private async _createLoanEngagement(
@@ -1723,8 +1830,8 @@ export class BulkPortfolioService {
     tenantId: string,
     submittedBy: string,
     jobId: string,
-  ): Promise<string> {
-    const engagement = await this.engagementService.createEngagement({
+  ): Promise<Engagement> {
+    return this.engagementService.createEngagement({
       tenantId,
       createdBy: submittedBy,
       client: {
@@ -1733,8 +1840,6 @@ export class BulkPortfolioService {
       },
       properties: [this._buildEngagementLoanInput(item, jobId)],
     });
-
-    return engagement.id;
   }
 
   private _buildEngagementLoanInput(
