@@ -10,6 +10,11 @@ import {
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { EngagementService } from './engagement.service.js';
+import {
+  ClientOrderService,
+  ClientOrderNotFoundError,
+  type VendorOrderSpec,
+} from './client-order.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority } from '../types/index.js';
@@ -44,6 +49,7 @@ export class BulkIngestionOrderCreationWorkerService {
   private readonly propertyRecordService: PropertyRecordService;
   private readonly enrichmentService: PropertyEnrichmentService;
   private readonly engagementService: EngagementService;
+  private readonly clientOrderService: ClientOrderService;
   private isStarted = false;
   public isRunning = false;
   private readonly accessControlHelper = new AccessControlHelper();
@@ -57,6 +63,7 @@ export class BulkIngestionOrderCreationWorkerService {
     // and directly here (order-level records keyed by orderId).
     this.enrichmentService = new PropertyEnrichmentService(this.dbService, this.propertyRecordService);
     this.engagementService = new EngagementService(this.dbService, this.propertyRecordService, this.enrichmentService);
+    this.clientOrderService = new ClientOrderService(this.dbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -180,11 +187,26 @@ export class BulkIngestionOrderCreationWorkerService {
           : engagementContextsByItemId.get(item.id);
         const engagement = engagementContext?.engagement;
         const engagementLoan = engagementContext?.loan;
-        const engagementProductId = engagementContext?.productId;
+        const engagementClientOrderId = engagementContext?.productId;
 
         if (!engagement) {
           throw new Error(
             `No engagement context resolved for job='${job.id}', item='${item.id}', engagementGranularity='${engagementGranularity}'`,
+          );
+        }
+        // Phase B step 6: addVendorOrders requires the parent ClientOrder id.
+        // The engagement-context's `productId` IS the embedded clientOrder.id
+        // (createPerLoanEngagementContext / createBatchEngagementContexts at
+        // line 486+ set it from `loan.clientOrders[0].id`). Bail loudly if
+        // missing — better than orphan-creating a vendor order.
+        if (!engagementLoan?.id) {
+          throw new Error(
+            `Engagement context missing loan.id (job='${job.id}', item='${item.id}'). Cannot attach VendorOrder.`,
+          );
+        }
+        if (!engagementClientOrderId) {
+          throw new Error(
+            `Engagement context missing clientOrder id (job='${job.id}', item='${item.id}'). Cannot attach VendorOrder.`,
           );
         }
 
@@ -200,14 +222,14 @@ export class BulkIngestionOrderCreationWorkerService {
             engagementId: engagement.id,
           });
 
-        const createResult = await this.dbService.createOrder({
+        // Phase B step 6: route through ClientOrderService.addVendorOrders.
+        // The engagement-context's clientOrder (engagementClientOrderId) was
+        // created during engagement.service.createEngagement /
+        // enrichAndPlaceClientOrders — we just attach a VendorOrder to it.
+        const orderProductType = ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType];
+        const inheritedFields = {
           orderNumber,
-          tenantId: job.tenantId,
-          clientId: job.clientId,
           subClientId: job.subClientId ?? '',
-          engagementId: engagement.id,
-          engagementPropertyId: engagementLoan?.id,
-          engagementProductId,
           orderType: OrderType.PURCHASE,
           orderStatus: OrderStatus.SUBMITTED,
           priority: Priority.NORMAL,
@@ -230,7 +252,6 @@ export class BulkIngestionOrderCreationWorkerService {
             occupancyType: item.source.occupancyType ?? 'owner_occupied',
             purpose: item.source.loanPurpose ?? 'purchase',
           },
-          productType: ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType],
           serviceLevel: 'standard',
           dueDate,
           fee: 0,
@@ -254,14 +275,26 @@ export class BulkIngestionOrderCreationWorkerService {
             tenantId: job.tenantId,
             visibilityScope: 'TEAM',
           }),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          type: 'order',
-        } as any);
-
-        if (!createResult.success || !createResult.data) {
-          throw new Error(createResult.error?.message ?? 'createOrder returned no data');
+        };
+        const vendorOrderSpec: VendorOrderSpec = { vendorWorkType: orderProductType };
+        let createdVendorOrders;
+        try {
+          createdVendorOrders = await this.clientOrderService.addVendorOrders(
+            engagementClientOrderId,
+            job.tenantId,
+            [vendorOrderSpec],
+            inheritedFields as any,
+          );
+        } catch (err) {
+          if (err instanceof ClientOrderNotFoundError) {
+            throw new Error(`ClientOrder ${engagementClientOrderId} not found for job=${job.id} item=${item.id}: ${err.message}`);
+          }
+          throw err;
         }
+        if (createdVendorOrders.length === 0) {
+          throw new Error('addVendorOrders returned no rows');
+        }
+        const createResult = { success: true as const, data: createdVendorOrders[0]! };
 
         createdOrderCount++;
 
@@ -344,7 +377,7 @@ export class BulkIngestionOrderCreationWorkerService {
           orderNumber: createResult.data.orderNumber,
           engagementId: engagement.id,
           engagementPropertyId: engagementLoan?.id,
-          engagementProductId,
+          engagementClientOrderId,
           orderCreatedAt: new Date().toISOString(),
           orderCreationStatus: 'CREATED',
         };
@@ -356,7 +389,7 @@ export class BulkIngestionOrderCreationWorkerService {
           orderNumber: createResult.data.orderNumber,
           engagementId: engagement.id,
           engagementPropertyId: engagementLoan?.id,
-          engagementProductId,
+          engagementClientOrderId,
           orderCreatedAt: new Date().toISOString(),
           orderCreationStatus: 'CREATED',
           sourceIdentity: resolvedSourceIdentity,
