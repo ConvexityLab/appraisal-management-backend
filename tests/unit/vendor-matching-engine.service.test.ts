@@ -255,6 +255,46 @@ describe('VendorMatchingEngine.calculateProximityScore', () => {
     });
   });
 
+  describe('precomputedDistance (T3 hoist)', () => {
+    const nyc = { latitude: 40.7128, longitude: -74.006 };
+
+    it('uses precomputed distance instead of recomputing when supplied as a number', async () => {
+      // Vendor coords would yield ~0 miles, but we override with 200 → remote band
+      const vendor = { location: nyc };
+      const result = await e.calculateProximityScore(vendor, nyc, undefined, 200);
+      expect(result.distance).toBe(200);
+      expect(result.score).toBe(40);
+    });
+
+    it('returns score=50 when precomputedDistance is null (vendor lacks coords)', async () => {
+      const vendor = { /* no location */ };
+      const result = await e.calculateProximityScore(vendor, nyc, undefined, null);
+      expect(result).toEqual({ score: 50, distance: null });
+    });
+
+    it('falls back to inline computation when precomputedDistance is undefined', async () => {
+      const vendor = { location: nyc };
+      const result = await e.calculateProximityScore(vendor, nyc, undefined, undefined);
+      expect(result.distance).toBe(0);
+      expect(result.score).toBe(100);
+    });
+
+    it('still applies preferred-state bonus on precomputed distance', async () => {
+      const vendor = {
+        location: nyc,
+        geographicCoverage: { preferred: { states: ['NY'] } },
+      };
+      const result = await e.calculateProximityScore(vendor, nyc, 'NY', 100); // band 60
+      expect(result.score).toBe(70); // 60 + 10
+    });
+
+    it('ignores precomputedDistance when propertyCoords is null (state fallback wins)', async () => {
+      const vendor = { serviceAreas: [{ state: 'FL' }] };
+      const result = await e.calculateProximityScore(vendor, null, 'FL', 100);
+      expect(result).toEqual({ score: 70, distance: null });
+    });
+  });
+
   describe('preferred state bonus', () => {
     const nyc = { latitude: 40.7128, longitude: -74.006 };
 

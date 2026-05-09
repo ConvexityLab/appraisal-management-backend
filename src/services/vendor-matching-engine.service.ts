@@ -64,17 +64,20 @@ export class VendorMatchingEngine {
     topN: number = 10
   ): Promise<VendorMatchResult[]> {
     try {
-      this.logger.info('Finding matching vendors', { 
+      this.logger.info('Finding matching vendors', {
         propertyAddress: request.propertyAddress,
         propertyType: request.propertyType,
-        topN 
+        topN
       });
 
       // Get property coordinates
       const propertyCoords = await this.geocodeAddress(request.propertyAddress);
 
-      // Get eligible vendors
-      const eligibleVendors = await this.getEligibleVendors(request);
+      // Get eligible vendors (with precomputed per-vendor distance — see T3 in
+      // docs/AUTO_ASSIGNMENT_REVIEW.md). Distance is computed once here so it is
+      // available to both the rules engine (T4, max_distance_miles rule) and the
+      // proximity scorer without recomputation.
+      const eligibleVendors = await this.getEligibleVendors(request, propertyCoords);
       this.logger.info(`Found ${eligibleVendors.length} eligible vendors`);
 
       if (eligibleVendors.length === 0) {
@@ -83,7 +86,9 @@ export class VendorMatchingEngine {
 
       // Score each vendor
       const scoredVendors = await Promise.all(
-        eligibleVendors.map(vendor => this.scoreVendor(vendor, request, propertyCoords))
+        eligibleVendors.map(({ vendor, distance }) =>
+          this.scoreVendor(vendor, request, propertyCoords, distance)
+        )
       );
 
       // Sort by match score (descending) and return top N
@@ -222,7 +227,8 @@ export class VendorMatchingEngine {
   private async scoreVendor(
     vendor: any,
     request: VendorMatchRequest,
-    propertyCoords: GeoCoordinates | null
+    propertyCoords: GeoCoordinates | null,
+    precomputedDistance?: number | null
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
@@ -273,7 +279,7 @@ export class VendorMatchingEngine {
     // Calculate individual scores
     const performanceScore = this.calculatePerformanceScore(performance);
     const availabilityScore = this.calculateAvailabilityScore(effectiveAvailability, request.dueDate);
-    const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState);
+    const proximityScore = await this.calculateProximityScore(vendor, propertyCoords, propertyState, precomputedDistance);
     const experienceScore = this.calculateExperienceScore(
       vendor,
       request.propertyType,
@@ -373,7 +379,8 @@ export class VendorMatchingEngine {
   private async calculateProximityScore(
     vendor: any,
     propertyCoords: GeoCoordinates | null,
-    propertyState?: string
+    propertyState?: string,
+    precomputedDistance?: number | null
   ): Promise<{ score: number; distance: number | null }> {
     try {
       if (!propertyCoords) {
@@ -385,19 +392,29 @@ export class VendorMatchingEngine {
         return { score: 40, distance: null }; // No state match, lower score
       }
 
-      // Get vendor location
-      const vendorCoords = vendor.location || vendor.businessLocation;
-      if (!vendorCoords?.latitude || !vendorCoords?.longitude) {
-        return { score: 50, distance: null }; // Unknown location, medium score
+      // Use precomputed distance when supplied (T3: hoisted into getEligibleVendors).
+      // A null value here means "vendor has no usable coordinates" — the same case
+      // the inline-compute branch returns 50 for, preserving prior behavior.
+      let distance: number;
+      if (precomputedDistance !== undefined) {
+        if (precomputedDistance === null) {
+          return { score: 50, distance: null };
+        }
+        distance = precomputedDistance;
+      } else {
+        // Fallback: compute inline (preserves backward compatibility for any
+        // direct callers / tests that don't pre-compute).
+        const vendorCoords = vendor.location || vendor.businessLocation;
+        if (!vendorCoords?.latitude || !vendorCoords?.longitude) {
+          return { score: 50, distance: null };
+        }
+        distance = this.calculateDistance(
+          propertyCoords.latitude,
+          propertyCoords.longitude,
+          vendorCoords.latitude,
+          vendorCoords.longitude
+        );
       }
-
-      // Calculate distance
-      const distance = this.calculateDistance(
-        propertyCoords.latitude,
-        propertyCoords.longitude,
-        vendorCoords.latitude,
-        vendorCoords.longitude
-      );
 
       // Score based on distance thresholds
       let score = 0;
@@ -545,9 +562,19 @@ export class VendorMatchingEngine {
   }
 
   /**
-   * Get eligible vendors for the order
+   * Get eligible vendors for the order, with per-vendor precomputed distance.
+   *
+   * Distance is precomputed here (T3) so it is available to:
+   *   - the rules engine (T4: max_distance_miles deny rule)
+   *   - the proximity scorer (without recomputing)
+   *
+   * `distance` is null when either propertyCoords is null (no geocoding) or
+   * the vendor has no usable coordinates.
    */
-  private async getEligibleVendors(request: VendorMatchRequest): Promise<any[]> {
+  private async getEligibleVendors(
+    request: VendorMatchRequest,
+    propertyCoords?: GeoCoordinates | null
+  ): Promise<Array<{ vendor: any; distance: number | null }>> {
     const query = `
       SELECT * FROM c
       WHERE c.tenantId = @tenantId
@@ -577,7 +604,26 @@ export class VendorMatchingEngine {
       );
     }
 
-    return vendors;
+    return vendors.map(vendor => ({
+      vendor,
+      distance: this.computeVendorDistance(vendor, propertyCoords ?? null)
+    }));
+  }
+
+  /**
+   * Compute vendor-to-property distance when both ends have coordinates.
+   * Returns null if propertyCoords or vendor location is missing.
+   */
+  private computeVendorDistance(vendor: any, propertyCoords: GeoCoordinates | null): number | null {
+    if (!propertyCoords) return null;
+    const vendorCoords = vendor.location || vendor.businessLocation;
+    if (!vendorCoords?.latitude || !vendorCoords?.longitude) return null;
+    return this.calculateDistance(
+      propertyCoords.latitude,
+      propertyCoords.longitude,
+      vendorCoords.latitude,
+      vendorCoords.longitude
+    );
   }
 
   /**
