@@ -461,6 +461,45 @@ describe('VendorMatchingEngine.calculateCostScore', () => {
   });
 });
 
+describe('VendorMatchingEngine.applyScoreAdjustment (T5)', () => {
+  it('returns base score unchanged when adjustment is 0', () => {
+    expect(e.applyScoreAdjustment(75, 0)).toBe(75);
+  });
+
+  it('adds positive adjustment (boost)', () => {
+    expect(e.applyScoreAdjustment(60, 15)).toBe(75);
+  });
+
+  it('subtracts when adjustment is negative (reduce)', () => {
+    expect(e.applyScoreAdjustment(60, -20)).toBe(40);
+  });
+
+  it('clamps to 100 when boost would exceed', () => {
+    expect(e.applyScoreAdjustment(95, 20)).toBe(100);
+  });
+
+  it('clamps to 100 at exact boundary', () => {
+    expect(e.applyScoreAdjustment(100, 0)).toBe(100);
+    expect(e.applyScoreAdjustment(95, 5)).toBe(100);
+  });
+
+  it('clamps to 0 when reduce would go below', () => {
+    expect(e.applyScoreAdjustment(10, -50)).toBe(0);
+  });
+
+  it('clamps to 0 at exact boundary', () => {
+    expect(e.applyScoreAdjustment(0, 0)).toBe(0);
+    expect(e.applyScoreAdjustment(5, -5)).toBe(0);
+  });
+
+  it('handles base score already out of range (defensive)', () => {
+    // Should not happen in practice (weighted sum of [0,100] factors with weights summing to 1
+    // is bounded to [0,100]), but the clamp handles it gracefully.
+    expect(e.applyScoreAdjustment(150, 0)).toBe(100);
+    expect(e.applyScoreAdjustment(-10, 0)).toBe(0);
+  });
+});
+
 describe('VendorMatchingEngine.calculateDistance (Haversine)', () => {
   it('returns 0 for identical coordinates', () => {
     expect(e.calculateDistance(40, -74, 40, -74)).toBe(0);

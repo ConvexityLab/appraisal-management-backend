@@ -240,7 +240,7 @@ export class VendorMatchingEngine {
     request: VendorMatchRequest,
     propertyCoords: GeoCoordinates | null,
     precomputedDistance?: number | null,
-    _ruleResult?: RuleEvaluationResult  // T4: collected; consumed in T5 for scoreAdjustment
+    ruleResult?: RuleEvaluationResult
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
@@ -305,13 +305,18 @@ export class VendorMatchingEngine {
     );
 
     // Weighted overall score
-    const matchScore = Math.round(
+    const baseScore = Math.round(
       performanceScore * this.WEIGHTS.performance +
       availabilityScore * this.WEIGHTS.availability +
       proximityScore.score * this.WEIGHTS.proximity +
       experienceScore * this.WEIGHTS.experience +
       costScore * this.WEIGHTS.cost
     );
+
+    // T5: apply rules-engine score adjustments (boost / reduce), clamped to [0, 100].
+    // Clamp is documented (D6 in the review doc); revisit when scoring becomes
+    // data-driven in Phase 3 and admins may want unbounded scores for tuning.
+    const matchScore = this.applyScoreAdjustment(baseScore, ruleResult?.scoreAdjustment ?? 0);
 
     return {
       vendorId: vendor.id,
@@ -685,6 +690,14 @@ export class VendorMatchingEngine {
     }
 
     return eligibleWithRules;
+  }
+
+  /**
+   * Apply a rules-engine score adjustment to a base score, clamped to [0, 100].
+   * Extracted for direct unit testing; called from scoreVendor.
+   */
+  private applyScoreAdjustment(baseScore: number, adjustment: number): number {
+    return Math.max(0, Math.min(100, baseScore + adjustment));
   }
 
   /**
