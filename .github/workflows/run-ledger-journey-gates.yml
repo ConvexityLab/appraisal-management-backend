@@ -51,7 +51,7 @@ jobs:
         run: pnpm run build
 
       - name: Run focused run-ledger controller tests
-        run: pnpm run test -- tests/unit/runs.controller.test.ts
+        run: pnpm exec vitest run tests/unit/runs.controller.test.ts
 
   deployed-canary:
     name: Deployed Journey Canary
