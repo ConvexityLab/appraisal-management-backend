@@ -258,12 +258,12 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     expect(capturedCreateEngagement).toHaveBeenCalledTimes(2);
     expect(db.createOrder.mock.calls[0]?.[0]).toMatchObject({
       engagementId: 'eng-loan-1',
-      engagementLoanId: 'loan-loan-1',
+      engagementPropertyId: 'loan-loan-1',
       engagementProductId: 'prod-loan-1',
     });
     expect(db.createOrder.mock.calls[1]?.[0]).toMatchObject({
       engagementId: 'eng-loan-2',
-      engagementLoanId: 'loan-loan-2',
+      engagementPropertyId: 'loan-loan-2',
       engagementProductId: 'prod-loan-2',
     });
   });

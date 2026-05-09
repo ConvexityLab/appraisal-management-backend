@@ -5,7 +5,7 @@
  *
  * Hierarchy:
  *   LenderEngagement (1)
- *     └── EngagementLoan (1..MAX_EMBEDDED_LOANS) — embedded in document
+ *     └── EngagementProperty (1..MAX_EMBEDDED_LOANS) — embedded in document
  *           └── EngagementClientOrder (1..N per loan)
  *                 └── vendorOrderIds (0..N)
  *
@@ -24,7 +24,7 @@ import { Logger } from '../utils/logger.js';
 import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
   Engagement,
-  EngagementLoan,
+  EngagementProperty,
   EngagementClientOrder,
   CreateEngagementRequest,
   CreateEngagementLoanRequest,
@@ -36,7 +36,7 @@ import type {
 } from '../types/engagement.types.js';
 import {
   EngagementStatus,
-  EngagementLoanStatus,
+  EngagementPropertyStatus,
   EngagementClientOrderStatus,
   EngagementType,
 } from '../types/engagement.types.js';
@@ -127,7 +127,7 @@ function buildPrimaryLoanReference(l: CreateEngagementLoanRequest): LoanReferenc
 }
 
 /** Build a fully-initialized EngagementProperty from the create-request shape. */
-function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
+function buildLoan(l: CreateEngagementLoanRequest): EngagementProperty {
   // Slice 8d: keep top-level loanNumber/loanType/fhaCase in sync with
   // loanReferences[0] (the primary loan) so legacy readers continue to work
   // while new code reads from loanReferences[]. Either source on the request
@@ -151,7 +151,7 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementLoan {
     ...(primary.fhaCase !== undefined && { fhaCase: primary.fhaCase }),
     loanReferences,
     property: l.property,
-    status: EngagementLoanStatus.PENDING,
+    status: EngagementPropertyStatus.PENDING,
     clientOrders: l.clientOrders.map(buildClientOrder),
   };
 }
@@ -211,7 +211,7 @@ export class EngagementService {
       throw new Error('client.clientId is required to create an Engagement');
     }
     if (!request.properties || request.properties.length === 0) {
-      throw new Error('At least one EngagementLoan is required');
+      throw new Error('At least one EngagementProperty is required');
     }
     if (request.properties.length > MAX_EMBEDDED_LOANS) {
       throw new Error(
@@ -345,7 +345,7 @@ export class EngagementService {
     clientId: string,
     createdBy: string,
     address: { street: string; city: string; state: string; zipCode: string },
-    loanProperty: EngagementLoan['property'],
+    loanProperty: EngagementProperty['property'],
     propertyId: string | undefined,
     clientOrders: EngagementClientOrder[],
   ): Promise<void> {
@@ -367,10 +367,10 @@ export class EngagementService {
           tenantId,
           createdBy,
           engagementId,
-          engagementLoanId: loanId,
+          engagementPropertyId: loanId,
           clientId,
           productType: clientOrder.productType,
-          // EngagementLoan.property (order-management.PropertyDetails) and
+          // EngagementProperty.property (order-management.PropertyDetails) and
           // ClientOrder.propertyDetails (index.PropertyDetails) are different
           // structural shapes that share the same name. The ClientOrder doc
           // stores propertyDetails opaquely — the engagement-flow listener
@@ -490,15 +490,15 @@ export class EngagementService {
   // ── Loan management ───────────────────────────────────────────────────────
 
   /**
-   * Valid lifecycle transitions for a single EngagementLoan.
+   * Valid lifecycle transitions for a single EngagementProperty.
    * Terminal states: DELIVERED, CANCELLED.
    */
-  private static readonly ALLOWED_LOAN_TRANSITIONS: Readonly<Record<EngagementLoanStatus, readonly EngagementLoanStatus[]>> = {
-    [EngagementLoanStatus.PENDING]:     [EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.IN_PROGRESS]: [EngagementLoanStatus.QC,          EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.QC]:          [EngagementLoanStatus.DELIVERED,   EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.DELIVERED]:   [],
-    [EngagementLoanStatus.CANCELLED]:   [],
+  private static readonly ALLOWED_LOAN_TRANSITIONS: Readonly<Record<EngagementPropertyStatus, readonly EngagementPropertyStatus[]>> = {
+    [EngagementPropertyStatus.PENDING]:     [EngagementPropertyStatus.IN_PROGRESS, EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.IN_PROGRESS]: [EngagementPropertyStatus.QC,          EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.QC]:          [EngagementPropertyStatus.DELIVERED,   EngagementPropertyStatus.IN_PROGRESS, EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.DELIVERED]:   [],
+    [EngagementPropertyStatus.CANCELLED]:   [],
   };
 
   /**
@@ -506,7 +506,7 @@ export class EngagementService {
    * Currently always reads from the embedded document.
    * When loansStoredExternally=true (future), this method will query the external container.
    */
-  async getLoans(engagementId: string, tenantId: string): Promise<EngagementLoan[]> {
+  async getLoans(engagementId: string, tenantId: string): Promise<EngagementProperty[]> {
     const engagement = await this.getEngagement(engagementId, tenantId);
     // NOTE: loansStoredExternally=true path is not yet implemented.
     // When needed, add: if (engagement.propertiesStoredExternally) { return this.queryExternalLoans(...); }
@@ -601,12 +601,12 @@ export class EngagementService {
     const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
-        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+        `EngagementProperty not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const existing = engagement.properties[loanIndex] as EngagementLoan;
-    const updatedLoan: EngagementLoan = {
+    const existing = engagement.properties[loanIndex] as EngagementProperty;
+    const updatedLoan: EngagementProperty = {
       ...existing,
       ...(updates.loanNumber !== undefined && { loanNumber: updates.loanNumber }),
       ...(updates.borrowerName !== undefined && { borrowerName: updates.borrowerName }),
@@ -699,7 +699,7 @@ export class EngagementService {
     const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
-        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+        `EngagementProperty not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
@@ -707,11 +707,11 @@ export class EngagementService {
     // embedded EngagementClientOrder.vendorOrderIds array. The embedded array is an
     // eventually-consistent denormalized cache that can drift on partial-failure writes
     // (see client-order.service.ts: "placeClientOrder is NOT atomic"). VendorOrder docs
-    // are required to carry engagementId + engagementLoanId per the engagement-primacy
+    // are required to carry engagementId + engagementPropertyId per the engagement-primacy
     // guard, so this query is reliable.
     const linkedOrdersResult = await this.dbService.queryItems<{ id: string }>(
       'orders',
-      'SELECT c.id FROM c WHERE c.engagementId = @engagementId AND c.tenantId = @tenantId AND c.engagementLoanId = @loanId',
+      'SELECT c.id FROM c WHERE c.engagementId = @engagementId AND c.tenantId = @tenantId AND c.engagementPropertyId = @loanId',
       [
         { name: '@engagementId', value: engagementId },
         { name: '@tenantId', value: tenantId },
@@ -738,18 +738,18 @@ export class EngagementService {
     engagementId: string,
     tenantId: string,
     loanId: string,
-    newStatus: EngagementLoanStatus,
+    newStatus: EngagementPropertyStatus,
     updatedBy: string,
   ): Promise<Engagement> {
     const engagement = await this.getEngagement(engagementId, tenantId);
     const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
-        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+        `EngagementProperty not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.properties[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementProperty;
     const allowed = EngagementService.ALLOWED_LOAN_TRANSITIONS[loan.status];
     if (!allowed.includes(newStatus)) {
       throw new Error(
@@ -776,11 +776,11 @@ export class EngagementService {
     const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
-        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+        `EngagementProperty not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.properties[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementProperty;
     const newClientOrder = buildClientOrder(clientOrderData);
     const updatedLoans = [...engagement.properties];
     updatedLoans[loanIndex] = { ...loan, clientOrders: [...loan.clientOrders, newClientOrder] };
@@ -798,7 +798,7 @@ export class EngagementService {
       tenantId,
       createdBy: updatedBy,
       engagementId,
-      engagementLoanId: loanId,
+      engagementPropertyId: loanId,
       clientId: engagement.client.clientId,
       productType: newClientOrder.productType,
       // See enrichAndPlaceClientOrders for why this cast is safe.
@@ -839,11 +839,11 @@ export class EngagementService {
     const loanIndex = engagement.properties.findIndex((l) => l.id === loanId);
     if (loanIndex === -1) {
       throw new Error(
-        `EngagementLoan not found: engagementId=${engagementId} loanId=${loanId}`,
+        `EngagementProperty not found: engagementId=${engagementId} loanId=${loanId}`,
       );
     }
 
-    const loan = engagement.properties[loanIndex] as EngagementLoan;
+    const loan = engagement.properties[loanIndex] as EngagementProperty;
     const clientOrder = loan.clientOrders.find((co) => co.id === clientOrderId);
     if (!clientOrder) {
       throw new Error(
@@ -863,7 +863,7 @@ export class EngagementService {
     try {
       await this.dbService.updateOrder(vendorOrderId, {
         engagementId,
-        engagementLoanId: loanId,
+        engagementPropertyId: loanId,
         engagementClientOrderId: clientOrderId,
       });
     } catch (err) {

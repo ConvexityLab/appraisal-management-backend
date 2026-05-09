@@ -3,7 +3,7 @@
  *
  * Hierarchy:
  *   Engagement
- *     └── EngagementLoan (many)
+ *     └── EngagementProperty (many)
  *           └── ClientOrder (many; this file)
  *                 └── VendorOrder (many; see vendor-order.types.ts)
  *
@@ -76,8 +76,8 @@ export interface ClientOrder {
   // ── Engagement linkage (REQUIRED) ────────────────────────────────────────
   /** FK to the parent Engagement. */
   engagementId: string;
-  /** FK to the specific EngagementLoan within the engagement. */
-  engagementLoanId: string;
+  /** FK to the specific EngagementProperty within the engagement. */
+  engagementPropertyId: string;
   /** FK to the client (lender/AMC) that placed the order. */
   clientId: string;
 
@@ -85,7 +85,14 @@ export interface ClientOrder {
   productType: ProductType;
   /** Loan purpose (purchase / refinance / equity_line / construction / other). */
   orderType?: OrderType;
-  /** FK to the canonical PropertyRecord. Optional during Phase 0/1; required once enrichment is wired. */
+  /**
+   * FK to the canonical PropertyRecord.
+   *
+   * Optional today during construction: callers may supply propertyDetails
+   * and let the service resolve propertyId asynchronously. A follow-up
+   * refactor will require propertyId on every placement (resolve at call
+   * site or controller boundary) so this can flip to required.
+   */
   propertyId?: string;
   /** Display cache of the property until propertyId joins are universal. */
   propertyDetails: PropertyDetails;

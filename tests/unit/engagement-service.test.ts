@@ -25,15 +25,15 @@ import {
   EngagementClientOrderStatus,
   EngagementProductType,
   EngagementType,
-  EngagementLoanStatus,
+  EngagementPropertyStatus,
 } from '../../src/types/engagement.types.js';
-import type { Engagement, EngagementLoan } from '../../src/types/engagement.types.js';
+import type { Engagement, EngagementProperty } from '../../src/types/engagement.types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeLoan(overrides: Partial<EngagementLoan> = {}): EngagementLoan {
+function makeLoan(overrides: Partial<EngagementProperty> = {}): EngagementProperty {
   return {
     id:           'loan-001',
     loanNumber:   'LN-001',
@@ -43,7 +43,7 @@ function makeLoan(overrides: Partial<EngagementLoan> = {}): EngagementLoan {
       state:   'CO',
       zipCode: '80203',
     },
-    status:   EngagementLoanStatus.PENDING,
+    status:   EngagementPropertyStatus.PENDING,
     clientOrders: [],
     ...overrides,
   };
@@ -200,7 +200,7 @@ describe('createEngagement', () => {
     expect(capturedDoc!.properties[0]!.loanNumber).toBe('LN-001');
     expect(capturedDoc!.properties[0]!.borrowerName).toBe('Borrower');
     expect(capturedDoc!.properties[0]!.property.address).toBe('1 Main');
-    expect(capturedDoc!.properties[0]!.status).toBe(EngagementLoanStatus.PENDING);
+    expect(capturedDoc!.properties[0]!.status).toBe(EngagementPropertyStatus.PENDING);
     expect(capturedDoc!.properties[0]!.clientOrders).toHaveLength(1);
     expect(capturedDoc!.properties[0]!.clientOrders[0]!.productType).toBe(EngagementProductType.FULL_APPRAISAL);
   });
@@ -243,7 +243,7 @@ describe('createEngagement', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.createEngagement({ ...makeCreateRequest(), properties: [] }),
-    ).rejects.toThrow(/At least one EngagementLoan is required/);
+    ).rejects.toThrow(/At least one EngagementProperty is required/);
   });
 });
 
@@ -450,7 +450,7 @@ describe('addLoanToEngagement', () => {
 
     expect(result.properties).toHaveLength(2);
     expect(result.properties[1]!.loanNumber).toBe('LN-NEW');
-    expect(result.properties[1]!.status).toBe(EngagementLoanStatus.PENDING);
+    expect(result.properties[1]!.status).toBe(EngagementPropertyStatus.PENDING);
     expect(result.engagementType).toBe(EngagementType.PORTFOLIO);
   });
 
@@ -501,7 +501,7 @@ describe('updateLoan', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.updateLoan('eng-test-001', 'tenant-001', 'loan-nonexistent', {}, 'user'),
-    ).rejects.toThrow(/EngagementLoan not found/);
+    ).rejects.toThrow(/EngagementProperty not found/);
   });
 });
 
@@ -681,21 +681,21 @@ describe('getCommunications — order-id source', () => {
 // ---------------------------------------------------------------------------
 
 describe('changeLoanStatus', () => {
-  const VALID_LOAN_TRANSITIONS: Array<[EngagementLoanStatus, EngagementLoanStatus]> = [
-    [EngagementLoanStatus.PENDING,     EngagementLoanStatus.IN_PROGRESS],
-    [EngagementLoanStatus.PENDING,     EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.QC],
-    [EngagementLoanStatus.IN_PROGRESS, EngagementLoanStatus.CANCELLED],
-    [EngagementLoanStatus.QC,          EngagementLoanStatus.DELIVERED],
-    [EngagementLoanStatus.QC,          EngagementLoanStatus.IN_PROGRESS],
-    [EngagementLoanStatus.QC,          EngagementLoanStatus.CANCELLED],
+  const VALID_LOAN_TRANSITIONS: Array<[EngagementPropertyStatus, EngagementPropertyStatus]> = [
+    [EngagementPropertyStatus.PENDING,     EngagementPropertyStatus.IN_PROGRESS],
+    [EngagementPropertyStatus.PENDING,     EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.IN_PROGRESS, EngagementPropertyStatus.QC],
+    [EngagementPropertyStatus.IN_PROGRESS, EngagementPropertyStatus.CANCELLED],
+    [EngagementPropertyStatus.QC,          EngagementPropertyStatus.DELIVERED],
+    [EngagementPropertyStatus.QC,          EngagementPropertyStatus.IN_PROGRESS],
+    [EngagementPropertyStatus.QC,          EngagementPropertyStatus.CANCELLED],
   ];
 
-  const INVALID_LOAN_TRANSITIONS: Array<[EngagementLoanStatus, EngagementLoanStatus]> = [
-    [EngagementLoanStatus.PENDING,   EngagementLoanStatus.QC],
-    [EngagementLoanStatus.PENDING,   EngagementLoanStatus.DELIVERED],
-    [EngagementLoanStatus.DELIVERED, EngagementLoanStatus.PENDING],
-    [EngagementLoanStatus.CANCELLED, EngagementLoanStatus.IN_PROGRESS],
+  const INVALID_LOAN_TRANSITIONS: Array<[EngagementPropertyStatus, EngagementPropertyStatus]> = [
+    [EngagementPropertyStatus.PENDING,   EngagementPropertyStatus.QC],
+    [EngagementPropertyStatus.PENDING,   EngagementPropertyStatus.DELIVERED],
+    [EngagementPropertyStatus.DELIVERED, EngagementPropertyStatus.PENDING],
+    [EngagementPropertyStatus.CANCELLED, EngagementPropertyStatus.IN_PROGRESS],
   ];
 
   for (const [from, to] of VALID_LOAN_TRANSITIONS) {
@@ -791,7 +791,7 @@ describe('addVendorOrderToClientOrder', () => {
     const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
     await expect(
       svc.addVendorOrderToClientOrder('eng-test-001', 'tenant-001', 'loan-nonexistent', 'prod-001', 'ord-xyz', 'user'),
-    ).rejects.toThrow(/EngagementLoan not found/);
+    ).rejects.toThrow(/EngagementProperty not found/);
   });
 
   it('throws a clear error when productId does not exist within the loan', async () => {
@@ -978,7 +978,7 @@ describe('createEngagement - ClientOrderService bridge', () => {
     expect(typeof calls[0].engagementId).toBe('string');
     expect(calls[0].engagementId.length).toBeGreaterThan(0);
     expect(calls[1].engagementId).toBe(calls[0].engagementId);
-    expect(calls[0].engagementLoanId).toBe('loan-a');
+    expect(calls[0].engagementPropertyId).toBe('loan-a');
     expect(calls[0].clientId).toBe('c-001');
     expect(calls[0].tenantId).toBe('tenant-001');
     expect(calls[0].propertyId).toBe('prop-test-001');

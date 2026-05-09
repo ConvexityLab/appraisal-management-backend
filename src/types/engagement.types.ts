@@ -19,9 +19,9 @@
  *                 └── vendorOrderIds (0..N)       — what we ordered from vendors
  *
  * Legacy naming retained for back-compat:
- *   `EngagementLoan` is now a deprecated type alias of `EngagementProperty`.
+ *   `EngagementProperty` is now a deprecated type alias of `EngagementProperty`.
  *   `Engagement.loans` is a deprecated read-alias of `Engagement.properties`.
- *   `EngagementLoanStatus` is a deprecated enum alias of `EngagementPropertyStatus`.
+ *   `EngagementPropertyStatus` is a deprecated enum alias of `EngagementPropertyStatus`.
  *   These will be removed in slice 8k once all consumers have migrated.
  *
  * Lifecycles:
@@ -79,14 +79,6 @@ export enum EngagementPropertyStatus {
   DELIVERED   = 'DELIVERED',    // Deliverable sent to lender
   CANCELLED   = 'CANCELLED',    // Property removed from engagement
 }
-
-/**
- * @deprecated Use `EngagementPropertyStatus`. The old name was
- * loan-anchored; the entity is property-anchored. Will be removed in slice 8k.
- */
-export const EngagementLoanStatus = EngagementPropertyStatus;
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export type EngagementLoanStatus = EngagementPropertyStatus;
 
 /**
  * The status of a single client order within an engagement property.
@@ -170,7 +162,7 @@ export interface EngagementClientOrder {
    * @deprecated Eventually-consistent denormalized cache. NOT a source of truth.
    *
    * Source of truth for "which VendorOrders fulfill this client order" is the
-   * `orders` container, queried by engagementId (+ optionally engagementLoanId
+   * `orders` container, queried by engagementId (+ optionally engagementPropertyId
    * / clientOrderId). The engagement-primacy guard enforces those linkage
    * fields on every VendorOrder write.
    *
@@ -213,7 +205,14 @@ export interface EngagementProperty {
   id: string;
 
   // ── Property identity (load-bearing) ────────────────────────────────────
-  /** FK → PropertyRecord.id — the canonical property record for this collateral. */
+  /**
+   * FK → PropertyRecord.id — the canonical property record for this collateral.
+   *
+   * Optional only during the construction window inside createEngagement —
+   * buildLoan() returns before enrichment resolves propertyId. A follow-up
+   * refactor will resolve propertyId BEFORE construction so this can flip
+   * to required everywhere.
+   */
   propertyId?: string;
   /**
    * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
@@ -252,11 +251,6 @@ export interface EngagementProperty {
   clientOrders: EngagementClientOrder[];
 }
 
-/**
- * @deprecated Use `EngagementProperty`. The old name was loan-anchored; the
- * entity is property-anchored. Will be removed in slice 8k.
- */
-export type EngagementLoan = EngagementProperty;
 
 /**
  * Engagement — the aggregate root for all valuation work.

@@ -61,7 +61,7 @@ describe('VendorOrderService write path (slice 8f flip)', () => {
       tenantId:        'tenant-test',
       clientOrderId:   'co-test',
       engagementId:    'eng-test',
-      engagementLoanId: 'loan-test',
+      engagementPropertyId: 'loan-test',
       clientId:        'client-test',
       propertyId:      'prop-test',
       vendorWorkType:  ProductType.FULL_APPRAISAL,

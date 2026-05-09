@@ -31,10 +31,10 @@ import { EngagementService } from '../services/engagement.service.js';
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import {
   EngagementStatus,
-  EngagementLoanStatus,
+  EngagementPropertyStatus,
   ProductType,
 } from '../types/engagement.types.js';
 import type {
@@ -73,7 +73,7 @@ function resolveUserId(req: UnifiedAuthRequest): string {
 
 const PRODUCT_TYPES = Object.values(ProductType);
 const STATUSES = Object.values(EngagementStatus);
-const LOAN_STATUSES = Object.values(EngagementLoanStatus);
+const LOAN_STATUSES = Object.values(EngagementPropertyStatus);
 const PRIORITIES = Object.values(OrderPriority);
 
 const validateCreate = [
@@ -158,17 +158,25 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   const router = express.Router();
   const service = new EngagementService(dbService, new PropertyRecordService(dbService));
 
-  const read   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'read')]   : [];
+  const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+  const readQuery = authzMiddleware ? [...loadProfile, authzMiddleware.authorizeQuery('engagement', 'read')] : [];
+  const readResource = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorizeResource('engagement', 'read', { resourceIdParam: 'id' })]
+    : [];
   const create = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'create')] : [];
-  const update = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'update')] : [];
-  const del    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('engagement', 'delete')] : [];
+  const updateResource = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorizeResource('engagement', 'update', { resourceIdParam: 'id' })]
+    : [];
+  const deleteResource = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorizeResource('engagement', 'delete', { resourceIdParam: 'id' })]
+    : [];
 
   // ── GET /  (list) ──────────────────────────────────────────────────────────
   router.get(
     '/',
-    ...read,
+    ...readQuery,
     ...validateList,
-    async (req: UnifiedAuthRequest, res: Response) => {
+    async (req: UnifiedAuthRequest & AuthorizedRequest, res: Response) => {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ success: false, errors: errors.array() });
@@ -191,6 +199,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
           ...(q.status && {
             status: (q.status as string).split(',') as EngagementStatus[],
           }),
+          ...(req.authorizationFilter && { authorizationFilter: req.authorizationFilter }),
         };
 
         const result = await service.listEngagements(listRequest);
@@ -240,7 +249,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── GET /:id  (get one) ────────────────────────────────────────────────────
   router.get(
-    '/:id',    ...read,    param('id').isString().notEmpty(),
+    '/:id',    ...readResource,    param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -264,7 +273,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── PUT /:id  (update) ─────────────────────────────────────────────────────
   router.put(
-    '/:id',    ...update,    ...validateUpdate,
+    '/:id',    ...updateResource,    ...validateUpdate,
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -295,7 +304,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── PATCH /:id/status  (change status) ────────────────────────────────────
   router.patch(
-    '/:id/status',    ...update,    ...validateStatusPatch,
+    '/:id/status',    ...updateResource,    ...validateStatusPatch,
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -339,7 +348,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── DELETE /:id ────────────────────────────────────────────────────────────
   router.delete(
-    '/:id',    ...del,    param('id').isString().notEmpty(),
+    '/:id',    ...deleteResource,    param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -365,7 +374,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── GET /:id/vendor-orders ─────────────────────────────────────────────────
   router.get(
     '/:id/vendor-orders',
-    ...read,
+    ...readResource,
     param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -382,7 +391,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── GET /:id/arv ───────────────────────────────────────────────────────────
   router.get(
     '/:id/arv',
-    ...read,
+    ...readResource,
     param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -399,7 +408,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── GET /:id/qc ────────────────────────────────────────────────────────────
   router.get(
     '/:id/qc',
-    ...read,
+    ...readResource,
     param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -416,7 +425,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── GET /:id/documents ─────────────────────────────────────────────────────
   router.get(
     '/:id/documents',
-    ...read,
+    ...readResource,
     param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -433,7 +442,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── GET /:id/communications ────────────────────────────────────────────────
   router.get(
     '/:id/communications',
-    ...read,
+    ...readResource,
     param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -464,7 +473,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── GET /:id/loans ─────────────────────────────────────────────────────────
   router.get(
     '/:id/loans',
-    ...read,
+    ...readResource,
     param('id').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -485,7 +494,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── POST /:id/loans ────────────────────────────────────────────────────────
   router.post(
     '/:id/loans',
-    ...create,
+    ...updateResource,
     ...validateAddLoan,
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
@@ -514,7 +523,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── GET /:id/loans/:loanId ─────────────────────────────────────────────────
   router.get(
-    '/:id/loans/:loanId',    ...read,    param('id').isString().notEmpty(),
+    '/:id/loans/:loanId',    ...readResource,    param('id').isString().notEmpty(),
     param('loanId').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -536,7 +545,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── PUT /:id/loans/:loanId ─────────────────────────────────────────────────
   router.put(
-    '/:id/loans/:loanId',    ...update,    param('id').isString().notEmpty(),
+    '/:id/loans/:loanId',    ...updateResource,    param('id').isString().notEmpty(),
     param('loanId').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -561,7 +570,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── PATCH /:id/loans/:loanId/status ───────────────────────────────────────
   router.patch(
-    '/:id/loans/:loanId/status',    ...update,    ...validateLoanStatusPatch,
+    '/:id/loans/:loanId/status',    ...updateResource,    ...validateLoanStatusPatch,
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -574,7 +583,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
           req.params['id'] as string,
           tenantId,
           req.params['loanId'] as string,
-          req.body.status as EngagementLoanStatus,
+          req.body.status as EngagementPropertyStatus,
           updatedBy,
         );
         return res.json({ success: true, data: engagement });
@@ -590,7 +599,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
 
   // ── DELETE /:id/loans/:loanId ─────────────────────────────────────────────
   router.delete(
-    '/:id/loans/:loanId',    ...del,    param('id').isString().notEmpty(),
+    '/:id/loans/:loanId',    ...deleteResource,    param('id').isString().notEmpty(),
     param('loanId').isString().notEmpty(),
     async (req: UnifiedAuthRequest, res: Response) => {
       try {
@@ -616,6 +625,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── POST /:id/loans/:loanId/client-orders ─────────────────────────────────
   router.post(
     '/:id/loans/:loanId/client-orders',
+    ...updateResource,
     param('id').isString().notEmpty(),
     param('loanId').isString().notEmpty(),
     body('productType').isIn(PRODUCT_TYPES).withMessage(`productType must be one of: ${PRODUCT_TYPES.join(', ')}`),
@@ -647,6 +657,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // ── POST /:id/loans/:loanId/client-orders/:clientOrderId/vendor-orders ────
   router.post(
     '/:id/loans/:loanId/client-orders/:clientOrderId/vendor-orders',
+    ...updateResource,
     ...validateAddVendorOrder,
     async (req: UnifiedAuthRequest, res: Response) => {
       const errors = validationResult(req);
@@ -681,7 +692,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
   // POST /:id/automation/pause  — pause all automation on engagement + child orders
   // POST /:id/automation/resume — resume automation
 
-  router.post('/:id/automation/pause', ...update, async (req: UnifiedAuthRequest, res: Response) => {
+  router.post('/:id/automation/pause', ...updateResource, async (req: UnifiedAuthRequest, res: Response) => {
     try {
       const tenantId = resolveTenantId(req);
       const userId = resolveUserId(req);
@@ -716,7 +727,7 @@ export function createEngagementRouter(dbService: CosmosDbService, authzMiddlewa
     }
   });
 
-  router.post('/:id/automation/resume', ...update, async (req: UnifiedAuthRequest, res: Response) => {
+  router.post('/:id/automation/resume', ...updateResource, async (req: UnifiedAuthRequest, res: Response) => {
     try {
       const tenantId = resolveTenantId(req);
       const userId = resolveUserId(req);

@@ -54,7 +54,7 @@ export type CreateVendorOrderInput = Omit<Partial<Order>, 'id' | 'type'> & {
     tenantId: string;
     clientOrderId: string;
     engagementId: string;
-    engagementLoanId: string;
+    engagementPropertyId: string;
     clientId: string;
     propertyId: string;
     vendorWorkType: VendorWorkType;
@@ -123,7 +123,7 @@ export class VendorOrderService {
             tenantId: input.tenantId,
             clientOrderId: input.clientOrderId,
             engagementId: input.engagementId,
-            engagementLoanId: input.engagementLoanId,
+            engagementPropertyId: input.engagementPropertyId,
             clientId: input.clientId,
             productType: input.productType ?? input.vendorWorkType,
             propertyId: input.propertyId,

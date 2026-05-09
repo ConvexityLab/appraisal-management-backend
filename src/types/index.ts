@@ -121,8 +121,8 @@ export interface Order {
   // â”€â”€ Engagement FK fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the parent Engagement document */
   engagementId?: string;
-  /** FK to the specific EngagementLoan within the engagement */
-  engagementLoanId?: string;
+  /** FK to the specific EngagementProperty within the engagement */
+  engagementPropertyId?: string;
   /** FK to the specific EngagementClientOrder within the loan */
   engagementClientOrderId?: string;
   // â”€â”€ Report linkage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

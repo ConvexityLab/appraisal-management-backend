@@ -35,8 +35,8 @@ describe('reconcile', () => {
       ],
     });
     const vendorOrders = [
-      { id: 'vo-1', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
-      { id: 'vo-2', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-1', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-2', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toEqual([]);
@@ -50,7 +50,7 @@ describe('reconcile', () => {
       ],
     });
     const vendorOrders = [
-      { id: 'vo-new', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-new', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toHaveLength(1);
@@ -69,7 +69,7 @@ describe('reconcile', () => {
         { id: 'loan-1', clientOrders: [{ id: 'co-1', vendorOrderIds: ['ghost-1', 'ghost-2'] }] },
       ],
     });
-    const vendorOrders: { id: string; engagementLoanId?: string; clientOrderId?: string }[] = [];
+    const vendorOrders: { id: string; engagementPropertyId?: string; clientOrderId?: string }[] = [];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toHaveLength(1);
     expect(result.changes[0]!.removed.sort()).toEqual(['ghost-1', 'ghost-2']);
@@ -84,8 +84,8 @@ describe('reconcile', () => {
       ],
     });
     const vendorOrders = [
-      { id: 'shared', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
-      { id: 'fresh', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'shared', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'fresh', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toHaveLength(1);
@@ -94,10 +94,10 @@ describe('reconcile', () => {
     expect(result.changes[0]!.next.sort()).toEqual(['fresh', 'shared']);
   });
 
-  it('flags vendor orders with missing engagementLoanId as orphans', () => {
+  it('flags vendor orders with missing engagementPropertyId as orphans', () => {
     const eng = makeEngagement();
     const vendorOrders = [
-      { id: 'vo-1', engagementLoanId: undefined, clientOrderId: 'co-1' },
+      { id: 'vo-1', engagementPropertyId: undefined, clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toEqual([]);
@@ -110,7 +110,7 @@ describe('reconcile', () => {
       loans: [{ id: 'loan-1', clientOrders: [{ id: 'co-1', vendorOrderIds: [] }] }],
     });
     const vendorOrders = [
-      { id: 'vo-stranded', engagementLoanId: 'loan-NEVER-EXISTED', clientOrderId: 'co-1' },
+      { id: 'vo-stranded', engagementPropertyId: 'loan-NEVER-EXISTED', clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toEqual([]);
@@ -122,7 +122,7 @@ describe('reconcile', () => {
       loans: [{ id: 'loan-1', clientOrders: [{ id: 'co-1', vendorOrderIds: [] }] }],
     });
     const vendorOrders = [
-      { id: 'vo-stranded', engagementLoanId: 'loan-1', clientOrderId: 'co-NEVER-EXISTED' },
+      { id: 'vo-stranded', engagementPropertyId: 'loan-1', clientOrderId: 'co-NEVER-EXISTED' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toEqual([]);
@@ -138,7 +138,7 @@ describe('reconcile', () => {
       ],
     };
     const vendorOrders = [
-      { id: 'vo-1', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-1', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toHaveLength(1);
@@ -158,10 +158,10 @@ describe('reconcile', () => {
       ],
     });
     const vendorOrders = [
-      { id: 'vo-A', engagementLoanId: 'loan-1', clientOrderId: 'co-1a' },
-      { id: 'vo-B', engagementLoanId: 'loan-1', clientOrderId: 'co-1b' },
-      { id: 'vo-C', engagementLoanId: 'loan-2', clientOrderId: 'co-2a' },
-      { id: 'vo-D', engagementLoanId: 'loan-2', clientOrderId: 'co-2a' },
+      { id: 'vo-A', engagementPropertyId: 'loan-1', clientOrderId: 'co-1a' },
+      { id: 'vo-B', engagementPropertyId: 'loan-1', clientOrderId: 'co-1b' },
+      { id: 'vo-C', engagementPropertyId: 'loan-2', clientOrderId: 'co-2a' },
+      { id: 'vo-D', engagementPropertyId: 'loan-2', clientOrderId: 'co-2a' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes).toHaveLength(3);
@@ -176,9 +176,9 @@ describe('reconcile', () => {
       loans: [{ id: 'loan-1', clientOrders: [{ id: 'co-1', vendorOrderIds: [] }] }],
     });
     const vendorOrders = [
-      { id: 'vo-c', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
-      { id: 'vo-a', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
-      { id: 'vo-b', engagementLoanId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-c', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-a', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
+      { id: 'vo-b', engagementPropertyId: 'loan-1', clientOrderId: 'co-1' },
     ];
     const result = reconcile(eng, vendorOrders);
     expect(result.changes[0]!.next).toEqual(['vo-a', 'vo-b', 'vo-c']);

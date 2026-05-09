@@ -3,7 +3,7 @@
  *
  * Hierarchy:
  *   Engagement
- *     └── EngagementLoan
+ *     └── EngagementProperty
  *           └── ClientOrder (see client-order.types.ts)
  *                 └── VendorOrder (this file; many)
  *
@@ -60,12 +60,12 @@ export type VendorWorkType = ProductType;
 export const VENDOR_ORDER_DOC_TYPE = 'vendor-order' as const;
 
 /**
- * Legacy discriminator written by `CosmosDbService.createOrder()` today.
- * Phases 1–3 keep writing this value so all existing read queries
- * (`WHERE c.type = 'order'`) keep working unchanged. Phase 4 migration
- * rewrites every row to `VENDOR_ORDER_DOC_TYPE` and updates the read queries
- * in the same PR. Once that lands, this constant — and the union below —
- * are removed.
+ * @deprecated Pre-rewrite legacy discriminator value. Retained only as a
+ * compile-time constant so existing code that compares `resource.type !==
+ * LEGACY_VENDOR_ORDER_DOC_TYPE` continues to typecheck. New writes use
+ * `VENDOR_ORDER_DOC_TYPE`; reads (`VENDOR_ORDER_TYPE_PREDICATE`) no longer
+ * match the legacy value. Pure-dev cleanup will retire this constant once
+ * every comparison site has been updated.
  */
 export const LEGACY_VENDOR_ORDER_DOC_TYPE = 'order' as const;
 
@@ -73,23 +73,16 @@ export const LEGACY_VENDOR_ORDER_DOC_TYPE = 'order' as const;
 export const VENDOR_ORDERS_CONTAINER = 'orders' as const;
 
 /**
- * SQL predicate fragment that matches BOTH the new VendorOrder discriminator
- * AND the legacy `'order'` value. Use this in any WHERE clause that needs to
- * find VendorOrder rows.
+ * SQL predicate fragment that matches the VendorOrder discriminator.
  *
- * Phase A (today): writes use VENDOR_ORDER_DOC_TYPE. Reads tolerate both so
- * pre-migration rows (`type: 'order'`) remain queryable until they're
- * backfilled. Slice 8j+ retires the legacy half once all rows have been
- * migrated.
+ * Pure-dev cleanup (slice 8j retirement): legacy `type: 'order'` rows have
+ * been retired with the staging re-seed; only `VENDOR_ORDER_DOC_TYPE` is
+ * written and read going forward.
  *
  * Use as: `WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.id = @id`
- *
- * The predicate is hardcoded (not parameterized) because Cosmos query plans
- * cache better with literal predicates than with parameters in IN-style
- * matches, and the values are compile-time constants.
  */
 export const VENDOR_ORDER_TYPE_PREDICATE =
-    `(c.type = '${VENDOR_ORDER_DOC_TYPE}' OR c.type = '${LEGACY_VENDOR_ORDER_DOC_TYPE}')` as const;
+    `c.type = '${VENDOR_ORDER_DOC_TYPE}'` as const;
 
 // ─── Linkage fields (NEW, added by Phase 1 / Phase 4 migration) ─────────────
 
@@ -99,27 +92,23 @@ export const VENDOR_ORDER_TYPE_PREDICATE =
  * Phase 4 backfills them on historical rows.
  *
  * - clientOrderId         FK to the parent ClientOrder (REQUIRED)
- * - denormalized ancestry: engagementId / engagementLoanId / clientId /
+ * - denormalized ancestry: engagementId / engagementPropertyId / clientId /
  *                          productType / propertyId — set once at client-order
  *                          time, never updated independently of the ClientOrder.
  * - vendorWorkType        what kind of work this VendorOrder represents
  *                          (= productType today).
  *
- * `engagementId`, `engagementLoanId`, and `propertyId` already exist on
+ * `engagementId`, `engagementPropertyId`, and `propertyId` already exist on
  * Order as optional. They become REQUIRED on VendorOrder.
  */
 export interface VendorOrderLinkage {
-  /**
-   * Discriminator. Target value is `'vendor-order'`; today's writes still
-   * persist `'order'` (see LEGACY_VENDOR_ORDER_DOC_TYPE). Union narrows to
-   * `'vendor-order'` in Phase 4.
-   */
-  type: typeof VENDOR_ORDER_DOC_TYPE | typeof LEGACY_VENDOR_ORDER_DOC_TYPE;
+  /** Discriminator: always `'vendor-order'` (legacy `'order'` retired in slice 8j). */
+  type: typeof VENDOR_ORDER_DOC_TYPE;
   /** Partition key — REQUIRED on VendorOrder (optional on Order for legacy reasons). */
   tenantId: string;
   clientOrderId: string;
   engagementId: string;
-  engagementLoanId: string;
+  engagementPropertyId: string;
   clientId: string;
   productType: ProductType;
   propertyId: string;

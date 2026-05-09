@@ -159,7 +159,7 @@ function makeAuthzStub(overrides?: {
 
 const validBody = () => ({
   engagementId: 'eng-1',
-  engagementLoanId: 'loan-1',
+  engagementPropertyId: 'loan-1',
   clientId: 'client-1',
   productType: ProductType.FULL_APPRAISAL,
   propertyDetails: {

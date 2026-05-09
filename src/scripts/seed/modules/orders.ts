@@ -38,7 +38,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       reportId: REPORT_IDS.FULL_1004_ORDER_001,
       qcStatus: 'PASSED', qcScore: 94,
       engagementId: ENGAGEMENT_IDS.SINGLE_DELIVERED_004,
-      engagementLoanId: 'seed-loan-eng004-001',
+      engagementPropertyId: 'seed-loan-eng004-001',
       engagementClientOrderId: 'seed-co-eng004-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -124,7 +124,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       appraiserFee: 500,
       reportId: REPORT_IDS.FULL_1004_ORDER_003,
       engagementId: ENGAGEMENT_IDS.SINGLE_FULL_APPRAISAL_001,
-      engagementLoanId: 'seed-loan-eng001-001',
+      engagementPropertyId: 'seed-loan-eng001-001',
       engagementClientOrderId: 'seed-co-eng001-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -263,7 +263,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       dueDate: daysAgo(-8), fee: 525, paidAmount: 0,
       appraiserFee: 390,
       engagementId: ENGAGEMENT_IDS.SINGLE_BPO_002,
-      engagementLoanId: 'seed-loan-eng002-001',
+      engagementPropertyId: 'seed-loan-eng002-001',
       engagementClientOrderId: 'seed-co-eng002-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',
@@ -295,7 +295,7 @@ function buildOrders(tenantId: string, clientId: string, now: string): Record<st
       dueDate: daysAgo(-3), fee: 800, paidAmount: 0,
       appraiserFee: 600, appraisedValue: 720000,
       engagementId: ENGAGEMENT_IDS.SINGLE_HYBRID_005,
-      engagementLoanId: 'seed-loan-eng005-001',
+      engagementPropertyId: 'seed-loan-eng005-001',
       engagementClientOrderId: 'seed-co-eng005-001',
       autoVendorAssignment: {
         status: 'ACCEPTED',

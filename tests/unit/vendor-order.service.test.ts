@@ -5,7 +5,7 @@
  *   - createVendorOrder routes through dbService.createOrder
  *   - The persisted row gets the legacy discriminator (`type: 'order'`) per
  *     Phase A; the discriminator flip is slice 8f.
- *   - Linkage fields (clientOrderId, engagementId, engagementLoanId,
+ *   - Linkage fields (clientOrderId, engagementId, engagementPropertyId,
  *     clientId, propertyId, vendorWorkType) are stamped on the result.
  *   - Persistence failures throw with a contextual message.
  */
@@ -43,7 +43,7 @@ function makeInput(overrides: Partial<CreateVendorOrderInput> = {}): CreateVendo
     tenantId:        'tenant-test',
     clientOrderId:   'co-test',
     engagementId:    'eng-test',
-    engagementLoanId: 'loan-test',
+    engagementPropertyId: 'loan-test',
     clientId:        'client-test',
     propertyId:      'prop-test',
     vendorWorkType:  ProductType.FULL_APPRAISAL,
@@ -81,7 +81,7 @@ describe('VendorOrderService.createVendorOrder', () => {
     const out = await svc.createVendorOrder(makeInput({
       clientOrderId:    'co-007',
       engagementId:     'eng-007',
-      engagementLoanId: 'loan-007',
+      engagementPropertyId: 'loan-007',
       clientId:         'client-007',
       propertyId:       'prop-007',
       vendorWorkType:   ProductType.AVM,
@@ -90,7 +90,7 @@ describe('VendorOrderService.createVendorOrder', () => {
       id:               'vorder-007',
       clientOrderId:    'co-007',
       engagementId:     'eng-007',
-      engagementLoanId: 'loan-007',
+      engagementPropertyId: 'loan-007',
       clientId:         'client-007',
       propertyId:       'prop-007',
       vendorWorkType:   ProductType.AVM,

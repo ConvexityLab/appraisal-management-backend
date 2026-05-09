@@ -62,7 +62,7 @@ export type PlaceClientOrderInput = Partial<Order> & {
   tenantId: string;
   createdBy: string;
   engagementId: string;
-  engagementLoanId: string;
+  engagementPropertyId: string;
   clientId: string;
   productType: ProductType;
   propertyDetails: PropertyDetails;
@@ -147,7 +147,7 @@ const REQUIRED_FIELDS: Array<keyof PlaceClientOrderInput> = [
   'tenantId',
   'createdBy',
   'engagementId',
-  'engagementLoanId',
+  'engagementPropertyId',
   'clientId',
   'productType',
   'propertyDetails',
@@ -211,7 +211,7 @@ export class ClientOrderService {
       clientOrderNumber,
 
       engagementId: input.engagementId,
-      engagementLoanId: input.engagementLoanId,
+      engagementPropertyId: input.engagementPropertyId,
       clientId: input.clientId,
 
       productType: input.productType,
@@ -389,7 +389,7 @@ export class ClientOrderService {
       tenantId: parent.tenantId,
       createdBy: parent.createdBy,
       engagementId: parent.engagementId,
-      engagementLoanId: parent.engagementLoanId,
+      engagementPropertyId: parent.engagementPropertyId,
       clientId: parent.clientId,
       productType: parent.productType,
       propertyDetails: parent.propertyDetails,
@@ -480,7 +480,7 @@ export class ClientOrderService {
         tenantId: clientOrder.tenantId,
         clientOrderId: clientOrder.id,
         engagementId: clientOrder.engagementId,
-        engagementLoanId: clientOrder.engagementLoanId,
+        engagementPropertyId: clientOrder.engagementPropertyId,
         clientId: clientOrder.clientId,
         propertyId: clientOrder.propertyId ?? '',
         vendorWorkType: spec.vendorWorkType,

@@ -9,7 +9,7 @@
  *
  * Source of truth for "which vendor orders belong to this engagement" is the
  * `orders` container (engagement-primacy guard ensures every VendorOrder doc
- * carries engagementId / engagementLoanId / clientOrderId).
+ * carries engagementId / engagementPropertyId / clientOrderId).
  *
  * This script reconciles every engagement's embedded array against the orders
  * container, in place, with ETag-aware updates.
@@ -35,7 +35,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 
 interface VendorOrderRef {
   id: string;
-  engagementLoanId?: string;
+  engagementPropertyId?: string;
   clientOrderId?: string;
 }
 
@@ -70,7 +70,7 @@ export interface ReconcileChange {
 
 export interface ReconcileResult {
   changes: ReconcileChange[];
-  /** Vendor orders that could not be attributed (missing/unknown engagementLoanId or clientOrderId). */
+  /** Vendor orders that could not be attributed (missing/unknown engagementPropertyId or clientOrderId). */
   orphaned: VendorOrderRef[];
 }
 
@@ -90,11 +90,11 @@ export function reconcile(
   const byClientOrder = new Map<string, Set<string>>();
   const orphaned: VendorOrderRef[] = [];
   for (const vo of vendorOrders) {
-    if (!vo.engagementLoanId || !vo.clientOrderId) {
+    if (!vo.engagementPropertyId || !vo.clientOrderId) {
       orphaned.push(vo);
       continue;
     }
-    const loan = loansById.get(vo.engagementLoanId);
+    const loan = loansById.get(vo.engagementPropertyId);
     if (!loan) {
       orphaned.push(vo);
       continue;
@@ -104,7 +104,7 @@ export function reconcile(
       orphaned.push(vo);
       continue;
     }
-    const key = `${vo.engagementLoanId}::${vo.clientOrderId}`;
+    const key = `${vo.engagementPropertyId}::${vo.clientOrderId}`;
     if (!byClientOrder.has(key)) byClientOrder.set(key, new Set());
     byClientOrder.get(key)!.add(vo.id);
   }
@@ -199,7 +199,7 @@ async function fetchVendorOrders(
   const { resources } = await ordersContainer.items
     .query<VendorOrderRef>({
       query:
-        'SELECT c.id, c.engagementLoanId, c.clientOrderId FROM c WHERE c.engagementId = @engagementId AND c.tenantId = @tenantId',
+        'SELECT c.id, c.engagementPropertyId, c.clientOrderId FROM c WHERE c.engagementId = @engagementId AND c.tenantId = @tenantId',
       parameters: [
         { name: '@engagementId', value: engagementId },
         { name: '@tenantId', value: tenantId },
@@ -226,7 +226,7 @@ async function processEngagement(
   if (result.orphaned.length > 0) {
     console.warn(
       `⚠️  Engagement ${engagement.id}: ${result.orphaned.length} vendor order(s) ` +
-        `cannot be attributed (missing/unknown engagementLoanId or clientOrderId): ` +
+        `cannot be attributed (missing/unknown engagementPropertyId or clientOrderId): ` +
         `${result.orphaned.map((o) => o.id).join(', ')}`,
     );
   }
