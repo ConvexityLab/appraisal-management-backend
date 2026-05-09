@@ -19,7 +19,7 @@ This section is the **live tracker** — update statuses, add commit/PR refs, an
 
 | Phase | Goal | Status | Started | Completed | Notes / PRs |
 |---|---|---|---|---|---|
-| Phase 1 | Make the rules engine real (F1 + F7 + F9) | 🟡 | 2026-05-08 | — | T1–T5 ✅ on master (25f3a2d, d691bbc, c86b2a3, c749676, 1568fa6); T6–T8 pending |
+| Phase 1 | Make the rules engine real (F1 + F7 + F9) | ✅ | 2026-05-08 | 2026-05-08 | All tasks ✅. BE master: 25f3a2d, d691bbc, c86b2a3, c749676, 1568fa6, 10477ac, 4e45871 (+ doc commits). FE main: T7 (MatchExplanation + DeniedVendor components). 151 tests added (43 rules + 77 engine + 17 orchestrator → 20 + 14 FE). |
 | Phase 2 | Make rules engine the backbone (F2 + F8) | ⬜ | — | — | Blocked on Phase 1 |
 | Phase 3 | Express scoring + vendor data as rules (F3 + F4 + F5 + F6 + F11) | ⬜ | — | — | Blocked on Phase 2 |
 | Phase 4 | Close the loop + cleanup (F10 + F12 + versioning) | ⬜ | — | — | Blocked on Phase 3 |
@@ -48,9 +48,9 @@ The auto-assignment system is **functional but architecturally fragmented**. Thr
 | F4 | Vendor "what products can this vendor do" is represented in **three** non-canonical fields: `productTypes` (legacy), `eligibleProductIds` (new hard-gate), `productGrades` (per-product grade). They can drift. **Subsumed by F2 consolidation: product eligibility becomes a `required_capability` rule (e.g. `product_xyz_certified`); grade becomes a `boost` rule.** | **P1** | ⬜ | 3 |
 | F5 | Geographic coverage lives in **three** places: `vendor.serviceAreas`, `vendor.geographicCoverage` (3-zone), `vendor-availability.serviceAreas`. The engine reads one, rules read another, availability reads a third. **Subsumed by F2 consolidation: coverage becomes `state_restriction` + `max_distance_miles` rules.** | **P1** | ⬜ | 3 |
 | F6 | `VendorCapability` is a hardcoded string union of 16 values (`fha_approved`, `uad36_compliant`, etc.). Adding a capability requires a code change in the FE *and* BE. **Subsumed by F2 consolidation: capabilities become catalog data the rules reference.** | **P2** | ⬜ | 3 |
-| F7 | The matching engine has zero direct unit tests. Orchestrator tests mock the engine entirely. | **P1** | 🟡 (T1+T2 ✅; T8 pending) | 1 |
+| F7 | The matching engine has zero direct unit tests. Orchestrator tests mock the engine entirely. | **P1** | ✅ (T1+T2+T8) | 1 |
 | F8 | No FE admin UI exists for `vendor-matching-rules` (BE controller + endpoints exist; FE has none). Operators cannot manage rules through the product. **Resolved naturally by F2: existing `/matching-criteria` page gets repurposed/extended into the unified rules admin.** | **P1** | ⬜ | 2 |
-| F9 | Audit trail for "why this vendor was picked over the others" is incomplete — score components, rule denials, and tiebreaks are not persisted per assignment decision. **Mostly free from F1: `RuleEvaluationResult` already returns `appliedRuleIds` + `denyReasons`; just persist them.** | **P1** | ⬜ | 1 |
+| F9 | Audit trail for "why this vendor was picked over the others" is incomplete — score components, rule denials, and tiebreaks are not persisted per assignment decision. **Mostly free from F1: `RuleEvaluationResult` already returns `appliedRuleIds` + `denyReasons`; just persist them.** | **P1** | ✅ (T6+T7) | 1 |
 | F10 | Decline/timeout outcomes do not feed back into vendor performance metrics; no closed loop. | **P2** | ⬜ | 4 |
 | F11 | Internal-staff direct-assignment branch bypasses the bid loop but still relies on the same scoring model that was designed around external bid behavior (cost score, blackout dates). | **P2** | ⬜ | 3 |
 | F12 | Four assignment endpoints (`/suggest`, `/find-matches`, `/assign`, `/broadcast`) plus `/orders/:id/auto-assignment/trigger` and `/orders/:id/rfb` overlap in capability with no documented decision tree for when to use which. | **P2** | ⬜ | 4 |
