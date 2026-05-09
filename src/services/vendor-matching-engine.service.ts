@@ -14,6 +14,12 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { VendorPerformanceCalculatorService } from './vendor-performance-calculator.service';
 import {
+  VendorMatchingRulesService,
+  type RuleEvaluationContext,
+  type RuleEvaluationResult,
+  type VendorMatchingRule,
+} from './vendor-matching-rules.service.js';
+import {
   VendorMatchRequest,
   VendorMatchResult,
   VendorMatchCriteria,
@@ -31,6 +37,7 @@ export class VendorMatchingEngine {
   private logger: Logger;
   private dbService: CosmosDbService;
   private performanceService: VendorPerformanceCalculatorService;
+  private rulesService: VendorMatchingRulesService;
 
   // Scoring weights (must sum to 1.0)
   private readonly WEIGHTS = {
@@ -50,10 +57,14 @@ export class VendorMatchingEngine {
     // > 300 miles: 0 points
   };
 
-  constructor() {
+  constructor(rulesService?: VendorMatchingRulesService) {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
     this.performanceService = new VendorPerformanceCalculatorService();
+    // T4: rules service is injected (preferred) or self-constructed. Tenants with
+    // no rules see zero behavior change — applyRules returns eligible:true with
+    // no adjustments when no rules apply.
+    this.rulesService = rulesService ?? new VendorMatchingRulesService(this.dbService);
   }
 
   /**
@@ -84,10 +95,10 @@ export class VendorMatchingEngine {
         return [];
       }
 
-      // Score each vendor
+      // Score each vendor (T4: ruleResult collected here, applied to score in T5)
       const scoredVendors = await Promise.all(
-        eligibleVendors.map(({ vendor, distance }) =>
-          this.scoreVendor(vendor, request, propertyCoords, distance)
+        eligibleVendors.map(({ vendor, distance, ruleResult }) =>
+          this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult)
         )
       );
 
@@ -228,7 +239,8 @@ export class VendorMatchingEngine {
     vendor: any,
     request: VendorMatchRequest,
     propertyCoords: GeoCoordinates | null,
-    precomputedDistance?: number | null
+    precomputedDistance?: number | null,
+    _ruleResult?: RuleEvaluationResult  // T4: collected; consumed in T5 for scoreAdjustment
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
@@ -562,19 +574,37 @@ export class VendorMatchingEngine {
   }
 
   /**
-   * Get eligible vendors for the order, with per-vendor precomputed distance.
+   * Get eligible vendors for the order, with per-vendor precomputed distance
+   * and rules-engine evaluation result.
    *
-   * Distance is precomputed here (T3) so it is available to:
-   *   - the rules engine (T4: max_distance_miles deny rule)
-   *   - the proximity scorer (without recomputing)
+   * Pipeline (per T3 + T4 in docs/AUTO_ASSIGNMENT_REVIEW.md):
+   *   1. Cosmos query: tenant + active + state-area filter
+   *   2. Hard gate: productId / eligibleProductIds (legacy field, F4 retires this)
+   *   3. Compute per-vendor distance (T3)
+   *   4. Load active rules for tenant once (T4)
+   *   5. Per vendor: build RuleEvaluationContext, call applyRules, drop denied
+   *   6. Return [{vendor, distance, ruleResult}] for the scoring step
    *
-   * `distance` is null when either propertyCoords is null (no geocoding) or
-   * the vendor has no usable coordinates.
+   * Tenants with zero rules see zero behavior change — applyRules returns
+   * eligible:true with empty appliedRuleIds and zero scoreAdjustment.
+   *
+   * Known semantic gaps in the rule context (acceptable for Phase 1):
+   *   - vendor.licenseType: not derivable from current vendor schema
+   *     (license_required rules will no-op until vendor.licenseType is exposed)
+   *   - vendor.performanceScore: not loaded until scoreVendor; passed as
+   *     undefined here, so min_performance_score rules treat it as 0 (deny).
+   *     This is conservative; real fix is loading perf in the eligibility step
+   *     or moving rules eval to post-scoring (deferred).
+   *   - order.productType: VendorMatchRequest has productId, not productType;
+   *     productId is passed as a proxy. Rules scoped to productType strings
+   *     should be migrated to productId when this path is used.
+   *   - order.orderValueUsd: VendorMatchRequest.budget is a fee budget, not
+   *     order value; passed as undefined, so max_order_value rules no-op.
    */
   private async getEligibleVendors(
     request: VendorMatchRequest,
     propertyCoords?: GeoCoordinates | null
-  ): Promise<Array<{ vendor: any; distance: number | null }>> {
+  ): Promise<Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }>> {
     const query = `
       SELECT * FROM c
       WHERE c.tenantId = @tenantId
@@ -584,14 +614,14 @@ export class VendorMatchingEngine {
     `;
 
     // Extract state from address (simplified)
-    const state = this.extractStateFromAddress(request.propertyAddress);
+    const propertyState = this.extractStateFromAddress(request.propertyAddress);
 
     const result = await this.dbService.queryItems(
       'vendors',
       query,
       [
         { name: '@tenantId', value: request.tenantId },
-        { name: '@state', value: state }
+        { name: '@state', value: propertyState }
       ]
     ) as any;
 
@@ -604,10 +634,57 @@ export class VendorMatchingEngine {
       );
     }
 
-    return vendors.map(vendor => ({
-      vendor,
-      distance: this.computeVendorDistance(vendor, propertyCoords ?? null)
-    }));
+    // T4: load active rules once for the tenant (rules are scoped per tenant).
+    let activeRules: VendorMatchingRule[] = [];
+    try {
+      activeRules = await this.rulesService.listRules(request.tenantId, true);
+    } catch (err) {
+      // Fail open: if the rules store is unavailable, do not block assignment.
+      // The rules engine is additive — its absence preserves prior behavior.
+      this.logger.error('Failed to load vendor matching rules; continuing without rules', err as Record<string, any>);
+    }
+
+    const eligibleWithRules: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }> = [];
+
+    for (const vendor of vendors) {
+      const distance = this.computeVendorDistance(vendor, propertyCoords ?? null);
+
+      // Build context omitting fields that are not derivable from the current
+      // VendorMatchRequest / Vendor schemas (see gap notes above). Omitting
+      // (rather than passing undefined) is required by exactOptionalPropertyTypes
+      // and lets each rule's eval helper apply its own missing-data semantics.
+      const ctx: RuleEvaluationContext = {
+        vendor: {
+          id: vendor.id,
+          capabilities: vendor.capabilities ?? [],
+          states: (vendor.serviceAreas ?? []).map((sa: any) => sa.state).filter(Boolean),
+          distance,
+          ...(vendor.licenseType !== undefined ? { licenseType: vendor.licenseType } : {}),
+        },
+        order: {
+          ...(request.productId !== undefined ? { productType: request.productId } : {}),
+          ...(propertyState !== undefined ? { propertyState } : {}),
+        },
+      };
+
+      const ruleResult = activeRules.length > 0
+        ? this.rulesService.applyRules(activeRules, ctx)
+        : { eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] };
+
+      if (!ruleResult.eligible) {
+        this.logger.info('Vendor denied by rules engine', {
+          vendorId: vendor.id,
+          tenantId: request.tenantId,
+          denyReasons: ruleResult.denyReasons,
+          appliedRuleIds: ruleResult.appliedRuleIds,
+        });
+        continue;
+      }
+
+      eligibleWithRules.push({ vendor, distance, ruleResult });
+    }
+
+    return eligibleWithRules;
   }
 
   /**
