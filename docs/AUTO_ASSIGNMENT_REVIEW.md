@@ -9,6 +9,7 @@
 - 2026-05-08 (rev 1) — F2/recommendations corrected after re-reading `VendorMatchingRulesService` properly. Original draft mistakenly recommended retiring the rules engine in favor of `MatchingCriteriaSet`; the corrected position is the opposite (see §7 F2).
 - 2026-05-08 (rev 2) — Added Progress Snapshot (§0) for live tracking; status columns added to findings table and recommendations.
 - 2026-05-09 (rev 3) — **Major direction change.** Original review failed to survey sibling repos and missed that we own a production-grade rules engine: **Prio** (RETE-based, in `c:\source\prio`), wrapped by **MOP** (`c:\source\mortgage-origination-platform`) which already exposes HTTP eval. Phase 2-4 plans rewritten around MOP/Prio. Phase 2 starting work: a `VendorMatchingRulesProvider` interface that lets the engine call homegrown OR MOP, with circuit-breaker fallback. See §12 for the new Phase 2 plan.
+- 2026-05-09 (rev 4) — **Phase 2 complete in dev** + **end-state vision (§13)**. MOP serves vendor-matching live in Azure dev. AMS dev configured for `mop-with-fallback`. Hardening landed (CI smoke tests, schema validator, wire-contract fixture, structured eval logs, AMS bicep wiring, RBAC follow-up runbook entry). New §13 lays out Phases 3-8 as the path from "MOP works" to "operators can see + do EVERYTHING with rules" — full CRUD UI, per-order trace, sandbox/replay, ops dashboard, prod cutover, homegrown retirement.
 
 ---
 
@@ -21,9 +22,13 @@ This section is the **live tracker** — update statuses, add commit/PR refs, an
 | Phase | Goal | Status | Started | Completed | Notes / PRs |
 |---|---|---|---|---|---|
 | Phase 1 | Make the rules engine real (F1 + F7 + F9) | ✅ | 2026-05-08 | 2026-05-08 | All tasks ✅. BE master: 25f3a2d, d691bbc, c86b2a3, c749676, 1568fa6, 10477ac, 4e45871 (+ doc commits). FE main: T7 (MatchExplanation + DeniedVendor components). 151 tests added (43 rules + 77 engine + 17 orchestrator → 20 + 14 FE). |
-| Phase 2 | **MOP/Prio integration (was: extend homegrown engine)** — F2 + F8. See §12. | 🟡 | 2026-05-09 | — | T10 ✅ (provider abstraction landed). T11–T18 pending; biggest piece is MOP-side reasoner + HTTP route. |
-| Phase 3 | Express scoring + vendor data as MOP rules (F3 + F4 + F5 + F6 + F11) | ⬜ | — | — | Blocked on Phase 2 |
-| Phase 4 | Close the loop + cleanup (F10 + F12 + versioning) | ⬜ | — | — | Blocked on Phase 3 |
+| Phase 2 | **MOP/Prio integration** — F2 + F8. See §12. | ✅ | 2026-05-09 | 2026-05-09 | All BE + MOP-side work landed. MOP eval live in dev: external FQDN, auth-proxy + X-Service-Auth, vendor-matching reasoner + route serving 200s. AMS dev configured `RULES_PROVIDER=mop-with-fallback`. CI smoke tests on every deploy. Schema validator + wire-contract tests both sides. Live-trace script for end-to-end smoke. |
+| Phase 3 | **Rules CRUD + Live Reload (MOP foundation for UI)** — see §13.4 | ⬜ | — | — | Foundation for Phases 4-7. Per-tenant rule packs in Cosmos, CRUD API, hot-reload via change feed, audit trail. ~2w. |
+| Phase 4 | **Rules Authoring Workspace (FE)** — see §13.5 | ⬜ | — | — | Full operator UI for rule CRUD with visual condition builder, sandbox preview, diff/version. ~3w. Blocked on Phase 3. |
+| Phase 5 | **Per-Order Trace + Live Feed (visibility)** — see §13.6 | ⬜ | — | — | Per-assignment evaluation trace persisted; FE order-detail "why this vendor" timeline; live feed page. ~2.5w. Parallel with Phase 4 after Phase 3. |
+| Phase 6 | **Sandbox + Replay (safety)** — see §13.7 | ⬜ | — | — | What-if eval against historical orders; replay any past assignment with proposed rules. ~2w. Parallel with Phase 4/5. |
+| Phase 7 | **Operations + Tenant Controls** — see §13.8 | ⬜ | — | — | Live dashboard, alerts, per-tenant kill switch. ~2w. Parallel after Phase 5. |
+| Phase 8 | **Production cutover + retire homegrown** — see §13.9 | ⬜ | — | — | Promote MOP to staging then prod, soak, then delete `VendorMatchingRulesService`. ~1.5w. Final phase. |
 
 **Per-finding status** — see Status column in §1 table.
 
@@ -1042,6 +1047,206 @@ Done 2026-05-09. Interface, three providers (homegrown/mop/fallback), factory, 4
 - [ ] T17 retirement of homegrown done OR formally deferred
 - [ ] §0 Progress Snapshot updated (T18)
 - [ ] PR descriptions reference findings F2 (and F8 if FE landed) by ID
+
+---
+
+## 13. End-state vision & Phase 3-8 plan
+
+**Goal (verbatim from product):** "fully automatic rules-based system for assignment with FULL UI/UX visibility and observability and CRUD for rules as well as their assignment and execution — we need to be able to see and do EVERYTHING with these rules."
+
+This section breaks that goal into a concrete, executable plan from where we are today (Phase 2 complete in dev) to the end state.
+
+### 13.1 Current state (post-Phase 2 in dev, 2026-05-09)
+
+**Working end-to-end in dev:**
+- MOP `ca-mop-dev` serves `POST /api/v1/vendor-matching/evaluate` via Prio's RETE engine. Returns `{eligible, scoreAdjustment, appliedRuleIds, denyReasons}` per vendor in input order.
+- AMS `MopVendorMatchingRulesProvider` calls MOP with `X-Service-Auth`. Circuit-breaker + homegrown fallback in place.
+- `RULES_PROVIDER=mop-with-fallback` set on `ca-appraisalapi-dev-7iqx`. Engine routes through MOP for every assignment.
+- Per-vendor `MatchExplanation` (score components, applied rule IDs, deny reasons) persisted on the order document. AMS FE renders score breakdown + denied vendor list.
+- CI: post-deploy smoke tests probe `/health`, `/api/v1/quote` regression, and `/api/v1/vendor-matching/evaluate` shape on every MOP deploy. C++ schema validator catches malformed rule files at build time AND server startup. Wire-contract fixture asserts both sides of the BE↔MOP shape.
+
+**Constraints today:**
+- Rules live as a single `config/rules/vendor-matching.json` file baked into the MOP image. Editing a rule requires a code commit + image rebuild + container redeploy. No live reload, no per-tenant rules, no admin UI.
+- No way for an operator to see "what rules fire for this order" — the data is in the persisted `MatchExplanation` but no FE surface exposes it directly (the existing `AutoAssignmentStatusPanel` shows score breakdown + denial reasons but doesn't link back to rule definitions).
+- No analytics on rule effectiveness (how often does each rule fire? what's its average impact on assignments?).
+- No replay / what-if (can't simulate "if I added this rule yesterday, how would last week's assignments have changed").
+- No tenant-level isolation of rules (one global rule pack).
+- No audit trail of who edited which rule.
+- Production traffic still on `RULES_PROVIDER=homegrown` (only dev is on `mop-with-fallback`).
+
+**The remaining gap:** everything between "MOP works in dev" and "operators can see + do EVERYTHING with rules" is what Phases 3-8 deliver.
+
+### 13.2 End-state surfaces (the user-visible deliverables)
+
+1. **Rules workspace** — full CRUD with visual condition builder, validation, preview, diff, audit log, version history.
+2. **Rule assignment** — bind rule packs to tenants, products, geographies, time windows. Roll a rule out to one tenant, observe, expand.
+3. **Per-order trace** — for any assignment (live or historical): the inputs (order facts), the candidates (each vendor's facts), the evaluation (which rules fired, in priority order, with their effect), the outcome (final ranking + chosen vendor), and the latency.
+4. **Live evaluation feed** — real-time stream of assignments being made; click any to drill into the trace.
+5. **Sandbox** — clone a tenant's rule pack, edit freely, evaluate against historical orders OR synthetic ones, see the diff in outcomes.
+6. **Replay** — pick a past assignment, re-evaluate with current (or proposed) rules, show how it would change.
+7. **Rule analytics** — per-rule fire count, average score impact, denial contribution, and outcome influence (did this rule change which vendor got picked?).
+8. **Operations dashboard** — MOP throughput, P50/P95/P99 latency, breaker state, fallback rate, error budget burn. Per-tenant slice.
+9. **Alerts** — breaker open >Xs, fallback rate >Y%, MOP error rate >Z%, rule-fire-rate anomaly.
+10. **Tenant-level kill switch** — turn rules engine off for a tenant if it misbehaves; falls back to legacy assignment behavior.
+
+### 13.3 Architecture additions to support the end state
+
+| Concern | Today | End state | Phase |
+|---|---|---|---|
+| Rule storage | Single JSON file in MOP image | Per-tenant collections in MOP-fronted Cosmos (or sentinel KV-backed); versioned with immutable rule packs | 3 |
+| Rule loading | Read at startup, never reread | Watch for changes; hot-reload reasoners; A/B between versions | 3 |
+| Rule eval audit | `MatchExplanation` per assignment in AMS Cosmos | Full evaluation trace persisted in a dedicated `assignment-traces` container with rule-version stamping | 5 |
+| Rule CRUD API | None on MOP; AMS has a homegrown CRUD | MOP exposes `POST/GET/PUT/DELETE /api/v1/vendor-matching/rules` (per-tenant); AMS proxies for FE | 3 |
+| FE rule UI | None | Full workspace under `/auto-assignment/rules` (laid out in §11.4) | 4 |
+| FE order trace | Score breakdown + denied list | Full evaluation trace with rule chain visualization, latency, candidate diff | 5 |
+| Real-time visibility | Logs only | WebSocket-driven feed in FE; backed by Service Bus topic `assignment.evaluation.completed` | 5 |
+| Sandbox / what-if | None | Standalone evaluation endpoint that takes `{tenantId, ruleOverrides[], order, vendorPool}` and returns the trace without persisting | 6 |
+| Analytics | Logs only | Persisted aggregates in Cosmos: per-rule-version fire count, avg adjustment, hit rate; dashboards in FE | 5/7 |
+| Operations dashboards | None | Live in FE; backed by Application Insights metrics | 7 |
+| Tenant kill switch | `RULES_PROVIDER` env var (process-wide) | Per-tenant in App Configuration; AMS reads the tenant's flag at request time | 7 |
+
+### 13.4 Phase 3 — Rules CRUD + Live Reload (MOP foundation for everything FE-side)
+
+**Status:** ⬜ Not started · **Target:** unblocks Phase 4 (rules UI) and Phase 5 (per-order trace).
+
+**Goal:** Rules become data, not deploys. MOP exposes a CRUD API; vendors can be added/removed/edited at runtime; reasoners hot-reload on change; every change is versioned and audited.
+
+#### 13.4.1 Design decisions (locked up front)
+
+- **D1.** Per-tenant rule storage. Default rule pack still ships in `config/rules/vendor-matching.json` (seeds new tenants); each tenant's edits live in MOP-backed Cosmos under `vendor-matching-rules` partitioned by `/tenantId`. Schema is the same JSON shape the file uses today.
+- **D2.** Immutable rule packs. Editing a rule creates a new version; the previous version stays around for replay. A `vendor-matching-rule-pack` document with `{tenantId, packId, version, createdAt, createdBy, parentVersion}` is the unit of versioning.
+- **D3.** Hot reload via Cosmos change feed. MOP's `VendorMatchingHost` subscribes to the `vendor-matching-rules` change feed; on a rule pack version bump, it loads the new pack into a fresh `Reasoner` and atomically swaps the active reference. Old reasoner reaches end-of-life when in-flight evaluations complete.
+- **D4.** Tenant resolution comes from the request body's `tenantId` (already in the wire contract). MOP holds one reasoner per tenant; defaults to the seed pack if no tenant rules exist.
+- **D5.** API on MOP, mirror on AMS. The authoritative CRUD is `POST/GET/PUT/DELETE /api/v1/vendor-matching/rules` on MOP, gated by `X-Service-Auth`. AMS exposes a thin proxy at `/api/auto-assignment/rules` so the FE can call AMS auth and AMS forwards to MOP — keeps Aegis policy enforcement at one layer.
+- **D6.** Audit trail in MOP Cosmos: every CRUD writes to `vendor-matching-rule-audit` with `{tenantId, packId, oldVersion, newVersion, diff, actor, timestamp}`. Append-only, never mutated.
+
+#### 13.4.2 Tasks
+
+| # | Task | Repo | Touch points |
+|---|---|---|---|
+| T19 | Rule pack data model + Cosmos container | MOP | `src/vendor_matching/RulePackStore.{cpp,hpp}`; `infrastructure/main.bicep` (container) |
+| T20 | Per-tenant `Reasoner` registry inside `VendorMatchingHost` | MOP | `VendorMatchingHost`, `VendorMatchingService` (constructor takes a single rule pack, not a path) |
+| T21 | CRUD endpoints `/api/v1/vendor-matching/rules` (list, get, create-version, deactivate) | MOP | `VendorMatchingRoutes.cpp` |
+| T22 | Cosmos change-feed listener; atomic reasoner swap on version bump | MOP | New `RulePackChangeFeedListener`; integrates with `VendorMatchingHost` |
+| T23 | Audit-log writes on every CRUD; `vendor-matching-rule-audit` container | MOP | `RulePackStore` |
+| T24 | AMS proxy endpoints `/api/auto-assignment/rules/*` → MOP | AMS | New `vendor-matching-rules-proxy.controller.ts` |
+| T25 | Update `MopVendorMatchingRulesProvider.evaluateForVendors` to send `tenantId` so MOP routes to the right per-tenant reasoner | AMS | `mop.provider.ts` (already sends it; verify wire contract still holds) |
+| T26 | Catch2 tests: per-tenant isolation, hot-reload, version rollback, audit-trail correctness | MOP | `tests/unit/test_vendor_matching_rules_crud.cpp` |
+| T27 | Vitest tests: AMS proxy parity (request/response equality with direct MOP) | AMS | New `tests/integration/rules-crud-proxy.test.ts` |
+| T28 | Migration: read existing seed `vendor-matching.json`, write per-tenant copies for any tenant currently using it (initially: zero tenants) | MOP | One-shot script in `scripts/seed-tenant-rules.cpp` |
+| T29 | Runbook update: how to author + ship a rule via API instead of file edit | MOP | `docs/VENDOR_MATCHING_INTEGRATION.md` |
+
+**Definition of done:**
+- An operator can `POST /api/v1/vendor-matching/rules` with a new rule, see it return version 2, and have the next `POST /api/v1/vendor-matching/evaluate` for that tenant fire the new rule — no restart, no deploy.
+- Multiple tenants run distinct rule packs; an evaluation for tenant A is not affected by tenant B's rules.
+- The audit log records the change with diff and actor.
+
+### 13.5 Phase 4 — Rules Authoring Workspace (FE)
+
+**Goal:** the operator UI laid out in §11.4 — rule list, drag-to-reorder priority, visual condition builder with live validation, sandbox preview before save, diff view for changes.
+
+**Tasks (high level — full FE plan per §11.4):**
+| T30 | RTK Query slice for the AMS proxy endpoints | AMS-FE | `src/store/api/vendorMatchingRulesApi.ts` |
+| T31 | `/auto-assignment/rules` page — list view with drag-to-reorder priority + status toggle | AMS-FE | New page + `RulesList` component |
+| T32 | Rule builder dialog — condition builder, action selector, scope filters; uses the C++ schema validator's error format for inline feedback | AMS-FE | `RuleBuilder`, `ConditionRow` (already exists) |
+| T33 | Live preview pane — calls a new MOP endpoint `POST /api/v1/vendor-matching/preview` that runs an unsaved rule against fixture vendors | AMS-FE + MOP | `RulePreviewPanel` + MOP route |
+| T34 | Sandbox — pick a recent order, eval with proposed rule, show Δ vs current | AMS-FE + AMS-BE | `RuleSandbox` + AMS endpoint that loads a historical order's facts and forwards to `/preview` |
+| T35 | Diff view + version history per rule — reads from `vendor-matching-rule-audit` via AMS proxy | AMS-FE | `RuleHistoryDrawer` |
+| T36 | E2E tests covering create → preview → save → see in eval | AMS-FE | Playwright or vitest+RTL |
+
+**DoD:** an operator can author a new rule end-to-end in the FE — no curl, no JSON editing — and watch their tenant's next assignment honor it.
+
+### 13.6 Phase 5 — Per-Order Trace + Live Feed
+
+**Goal:** for any assignment, see the full evaluation; for any moment, see assignments happening live.
+
+**Tasks:**
+| T37 | Persist full evaluation trace per assignment in `assignment-traces` Cosmos container — every candidate vendor, every rule that fired with its effect, scoring breakdown, latency, rule-pack version, model version | AMS-BE | `auto-assignment-orchestrator.service.ts`; new `AssignmentTraceRecorder` |
+| T38 | `GET /api/auto-assignment/traces/:orderId` — returns the full trace; FE renders it | AMS-BE + AMS-FE | New controller + page |
+| T39 | Order-detail page enhancement: "Why this vendor" expandable section on the assignment panel showing the chained-rule trace, rule definitions, vendor facts that mattered | AMS-FE | Extends `AutoAssignmentStatusPanel`; new `EvaluationTraceTimeline` component |
+| T40 | Service Bus topic `assignment.evaluation.completed` published by orchestrator after each evaluation | AMS-BE | `orchestrator.service.ts` |
+| T41 | WebSocket from FE to AMS BE relaying that topic; FE renders a live feed page | AMS-FE + AMS-BE | New `/auto-assignment/live` page; uses existing collaboration WebSocket infra |
+| T42 | Per-rule analytics: aggregate fire counts + impact persisted by a daily job | AMS-BE | New `vendor-matching-analytics.job.ts` |
+| T43 | Analytics page in FE — per-rule fire rate, average score impact, change in assignment outcome attribution | AMS-FE | New page under `/auto-assignment/analytics` |
+
+**DoD:** for any order assigned in the last 90 days, the FE shows the full per-vendor evaluation in <1s. The live feed updates within 2s of an assignment occurring.
+
+### 13.7 Phase 6 — Sandbox + Replay
+
+**Goal:** safe experimentation. Edit rules without affecting production; rerun history with proposed rules.
+
+**Tasks:**
+| T44 | MOP `/preview` endpoint — accepts unsaved rule pack + facts, returns trace, persists nothing | MOP | `VendorMatchingRoutes.cpp` |
+| T45 | AMS `/api/auto-assignment/replay/:orderId` — reads original order facts + vendor pool snapshot, calls MOP `/preview` with proposed rule pack, returns side-by-side trace | AMS-BE | New controller |
+| T46 | AMS `/api/auto-assignment/backtest` — runs a proposed rule pack against the last N days of historical orders; aggregates outcome diff (which orders would have gone to a different vendor, average score swing per outcome class) | AMS-BE | New controller; uses `assignment-traces` from Phase 5 |
+| T47 | FE sandbox surface (per §11.5) — weight sliders + rule-pack editor + backtest result table | AMS-FE | `/auto-assignment/sandbox` page |
+| T48 | Replay surface on order detail — "what if I changed rule X today" button on any past order | AMS-FE | Extends `AutoAssignmentStatusPanel` |
+
+**DoD:** an operator can take last week's order #ABC, propose a new rule, and within 3s see "with this rule, vendor X would have gotten the order instead of vendor Y, with these score deltas." Backtest against 30 days of orders runs in <2 minutes.
+
+### 13.8 Phase 7 — Operations + Tenant Controls
+
+**Goal:** prod-grade observability and per-tenant safety.
+
+**Tasks:**
+| T49 | App Insights custom metrics for MOP eval (latency, fallback rate, breaker state, per-tenant request rate) | AMS-BE | Wire `MopVendorMatchingRulesProvider`'s structured logs to App Insights metric channel |
+| T50 | FE operations dashboard `/auto-assignment/dashboard` — KPI strip + recent decisions feed + breaker state + per-tenant slice | AMS-FE | New page (per §11.7) |
+| T51 | Per-tenant `RULES_PROVIDER` setting in App Configuration (`tenants.<tid>.rules-provider = mop-with-fallback | mop | homegrown`); AMS reads at request time | AMS-BE | Extend `tenant-automation-config.service.ts`; per-request override in factory |
+| T52 | Alerts: Application Insights alert rules for breaker open >5min, fallback rate >5%, MOP P95 >2s, rule-fire anomaly | infra (Bicep) | New module |
+| T53 | Per-tenant kill switch on the FE dashboard — operator can flip a tenant to `homegrown` mid-incident with one click; logged + audited | AMS-FE + AMS-BE | New control + audit-log entry |
+
+**DoD:** a single dashboard shows MOP health for every tenant; an oncall can flip a misbehaving tenant to fallback in <10s.
+
+### 13.9 Phase 8 — Production Cutover + Retire Homegrown
+
+**Goal:** prod traffic on MOP; homegrown rules engine deleted.
+
+**Tasks:**
+| T54 | Promote: `RULES_PROVIDER=mop-with-fallback` in staging; soak period with shadow comparison (Phase 2 §12.5 T15) | AMS infra |
+| T55 | Promote to prod; observe breaker stability for N days |
+| T56 | Migrate any in-Cosmos `vendor-matching-rules` documents (homegrown CRUD format) into MOP rule packs (Phase 3 storage) |
+| T57 | Delete `vendor-matching-rules.service.ts` + controller + Cosmos container + homegrown provider; factory simplifies to MOP-only |
+| T58 | Update review doc: archive Phases 1-2 details; mark migration complete |
+
+**DoD:** zero references to `VendorMatchingRulesService` in the AMS codebase; production traffic 100% on MOP; old Cosmos container empty and removed.
+
+### 13.10 Sequencing rationale
+
+```
+Phase 3 (rules CRUD + live reload)
+   │  unblocks
+   ├──► Phase 4 (rule authoring UI) ──┐
+   │                                  │
+   ├──► Phase 5 (trace + live feed) ──┤
+   │                                  │  feeds into
+   ├──► Phase 6 (sandbox + replay) ──┤
+   │                                  │
+   └──► Phase 7 (ops dashboard) ──────┘
+                                      │
+                                      ▼
+                                  Phase 8 (prod cutover + retire homegrown)
+```
+
+Phases 4-7 can run in parallel after Phase 3 lands. The narrowest critical path is Phase 3 → Phase 8 (everything else is FE/observability that adds value without gating).
+
+### 13.11 Estimated effort (calibration, not commitments)
+
+| Phase | BE | FE | Infra | Total |
+|---|---|---|---|---|
+| 3 — Rules CRUD + live reload (MOP) | 1.5w | — | 1d | ~2w |
+| 4 — Rules workspace (FE) | 0.5w | 2-3w | — | ~3w |
+| 5 — Trace + live feed | 1w | 1.5w | — | ~2.5w |
+| 6 — Sandbox + replay | 1w | 1w | — | ~2w |
+| 7 — Ops + tenant controls | 0.5w | 1w | 0.5w | ~2w |
+| 8 — Prod cutover | 0.5w | — | 1w obs | ~1.5w |
+
+Total: ~12-13 weeks of dev work, 8-10 weeks calendar with two engineers in parallel.
+
+### 13.12 What I recommend tackling next
+
+**Phase 3.** It's the foundation for everything visible: there's nothing meaningful for the FE to CRUD until MOP exposes a CRUD API and supports per-tenant rules + hot-reload. The C++ work is well-scoped (extend `VendorMatchingHost`, add a Cosmos store, plumb a change-feed listener). After Phase 3 lands, Phases 4-7 can run truly in parallel.
+
+The alternative — start FE work first against the homegrown rules engine — would create throwaway code, since the homegrown engine retires in Phase 8. Better to build the FE once against the right backend.
 
 ---
 
