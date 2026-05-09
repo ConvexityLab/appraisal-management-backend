@@ -959,6 +959,53 @@ export class BulkPortfolioService {
     }
     extractionItem.dataQualityIssues = dataQualityIssues;
 
+    // ── Update Canonical PropertyRecord from AI Extraction ─────────────────
+    if (job.engagementId) {
+      try {
+        const engagement = await this.engagementService.getEngagement(job.engagementId, job.tenantId);
+        const property = engagement?.properties?.find(p => p.loanNumber === loanNumber);
+
+        if (property && property.propertyId && (mappedItem as any).propertyAddress) {
+          const mItem = mappedItem as any;
+          // Ensure we merge existing so we don't wipe out unmapped fields
+          const baseRec = await this.propertyRecordService.getById(property.propertyId, job.tenantId);
+          await this.propertyRecordService.createVersion(
+            property.propertyId,
+            job.tenantId,
+            {
+              address: {
+                ...baseRec.address,
+                ...(mItem.propertyAddress && { streetAddress: mItem.propertyAddress }),
+                ...(mItem.city && { city: mItem.city }),
+                ...(mItem.state && { state: mItem.state }),
+                ...(mItem.zip && { zipCode: mItem.zip }),
+              },
+              building: {
+                ...baseRec.building,
+                ...(mItem.gla && { gla: Number(mItem.gla) }),
+                ...(mItem.yearBuilt && { yearBuilt: Number(mItem.yearBuilt) }),
+                ...(mItem.bedrooms && { bedrooms: Number(mItem.bedrooms) }),
+                ...((mItem.bathsFull || mItem.bathrooms) && { bathrooms: Number(mItem.bathsFull || mItem.bathrooms) }),
+              },
+              ...(mItem.lotSize && { lotSizeSqFt: Number(mItem.lotSize) }),
+              ...(mItem.propertyType && { propertyType: mItem.propertyType }),
+            },
+            'Data extracted from appraisal document',
+            'DOCUMENT_EXTRACTION',
+            'SYSTEM:axiom-webhook',
+            'Axiom',
+            evaluationId
+          );
+        }
+      } catch (err) {
+        this.logger.warn('Failed to update canonical PropertyRecord from extraction', {
+          error: err instanceof Error ? err.message : String(err),
+          jobId,
+          loanNumber,
+        });
+      }
+    }
+
     // ── Run tape evaluation ────────────────────────────────────────────────
     let result: ReviewTapeResult;
     try {
@@ -1451,6 +1498,15 @@ export class BulkPortfolioService {
         `Job '${jobId}' has status '${job.status}' — orders can only be created from COMPLETED or PARTIAL jobs`,
       );
     }
+    // Phase B step 5b: createOrdersFromResults converts tape-evaluation
+    // results into orders, but tape rows don't carry engagement context
+    // (engagementId / engagementPropertyId / engagementClientOrderId). The
+    // strict engagement-primacy guard restored in Phase B step 10 will
+    // reject every dbService.createOrder() call below at runtime.
+    //
+    // FOLLOW-UP: thread an engagement context into this method's signature,
+    // or auto-create engagements per tape row. Until then, callers should
+    // use submit() with the tape items restructured as BulkPortfolioItems.
 
     const tapeResults = job.items as ReviewTapeResult[];
     let created = 0;
@@ -1564,10 +1620,6 @@ export class BulkPortfolioService {
       };
 
       try {
-        // TODO Phase B follow-up: this createOrdersFromResults flow still uses
-        // the legacy dbService.createOrder path. Migrate to addVendorOrders
-        // alongside the second-pass refactor — needs the same loanNumber→
-        // clientOrderId resolution as the primary submit flow.
         const orderResult = await this.dbService.createOrder(orderPayload as any);
         if (orderResult.success && orderResult.data) {
           tapeResults[idx] = {
