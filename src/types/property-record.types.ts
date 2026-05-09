@@ -77,7 +77,10 @@ export interface PropertyVersionEntry {
     | 'REHAB_COMPLETE'
     | 'PUBLIC_RECORDS_API'
     | 'APPRAISER_INSPECTION'
-    | 'CANONICAL_SNAPSHOT';
+    | 'CANONICAL_SNAPSHOT'
+    | 'DOCUMENT_EXTRACTION'
+    | 'BULK_IMPORT'
+    | 'AI_AGENT';
   /**
    * Granular provider/source identifier when `source` is a generic bucket.
    * Free-form string supplied by the caller — for `PUBLIC_RECORDS_API` versions
@@ -87,10 +90,14 @@ export interface PropertyVersionEntry {
    * existing version entries.
    */
   sourceProvider?: string;
+  /** Pointer to any underlying artifacts responsible for this version. For extracted text, this is the document ID. For bulk imports, the job ID. */
+  sourceArtifactId?: string;
   /** Top-level field paths that changed, e.g. ["building.bedrooms", "zoning"]. */
   changedFields: string[];
   /** Snapshot of the changed values BEFORE this version. Useful for diffs. */
   previousValues: Record<string, unknown>;
+  /** Snapshot of the changed values AFTER this version. Makes field-level provenance tracking fast and deterministic. */
+  newValues?: Record<string, unknown>;
 }
 
 // ─── Tax Assessment Record ────────────────────────────────────────────────────
