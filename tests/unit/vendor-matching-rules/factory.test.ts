@@ -77,4 +77,19 @@ describe('createVendorMatchingRulesProvider', () => {
     });
     expect(provider.name).toBe('mop');
   });
+
+  it('passes MOP_RULES_SERVICE_AUTH_TOKEN through to the MOP provider', () => {
+    // Smoke test: factory-built provider with a service auth token doesn't throw
+    // and surfaces as the right provider class. Wire-level header behavior is
+    // covered by mop.provider.test.ts.
+    const provider = createVendorMatchingRulesProvider({
+      rulesService: stubRulesService,
+      env: {
+        RULES_PROVIDER: 'mop',
+        MOP_RULES_BASE_URL: 'http://mop.test:8090',
+        MOP_RULES_SERVICE_AUTH_TOKEN: 'shared-secret-from-keyvault',
+      },
+    });
+    expect(provider).toBeInstanceOf(MopVendorMatchingRulesProvider);
+  });
 });

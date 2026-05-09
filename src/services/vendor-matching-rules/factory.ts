@@ -5,9 +5,12 @@
  *   RULES_PROVIDER=mop                (MOP only; fail closed if MOP is down)
  *   RULES_PROVIDER=mop-with-fallback  (MOP primary, homegrown fallback)
  *
- *   MOP_RULES_BASE_URL=https://mop.internal       (required when mop is in play)
+ *   MOP_RULES_BASE_URL=https://mop.example         (required when mop is in play)
  *   MOP_RULES_TIMEOUT_MS=2000
- *   MOP_RULES_AUTH_HEADER=                        (optional, e.g. "Bearer xyz")
+ *   MOP_RULES_AUTH_HEADER=                          (optional, e.g. "Bearer xyz")
+ *   MOP_RULES_SERVICE_AUTH_TOKEN=                   (optional; sent as X-Service-Auth.
+ *                                                   Recommended for AMS → MOP today;
+ *                                                   pull from KV `sentinel-mop-webhook-secret`.)
  *   MOP_RULES_BREAKER_FAILURES=3
  *   MOP_RULES_BREAKER_WINDOW_MS=30000
  *   MOP_RULES_BREAKER_COOLDOWN_MS=60000
@@ -58,6 +61,7 @@ export function createVendorMatchingRulesProvider(deps: FactoryDeps = {}): Vendo
       baseUrl,
       timeoutMs,
       ...(env.MOP_RULES_AUTH_HEADER ? { authHeader: env.MOP_RULES_AUTH_HEADER } : {}),
+      ...(env.MOP_RULES_SERVICE_AUTH_TOKEN ? { serviceAuthToken: env.MOP_RULES_SERVICE_AUTH_TOKEN } : {}),
     });
   };
 

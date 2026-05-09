@@ -79,6 +79,34 @@ describe('MopVendorMatchingRulesProvider', () => {
       expect(init.headers['Authorization']).toBe('Bearer xyz');
     });
 
+    it('attaches X-Service-Auth header when serviceAuthToken is configured', async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: [{ eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] }] }),
+      });
+      const provider = new MopVendorMatchingRulesProvider({ baseUrl: BASE_URL, serviceAuthToken: 'shared-secret-123' });
+      await provider.evaluateForVendors('t1', [ctx('a')]);
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init.headers['X-Service-Auth']).toBe('shared-secret-123');
+      expect(init.headers['Authorization']).toBeUndefined();
+    });
+
+    it('attaches both Authorization and X-Service-Auth when both configured', async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: [{ eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] }] }),
+      });
+      const provider = new MopVendorMatchingRulesProvider({
+        baseUrl: BASE_URL,
+        authHeader: 'Bearer xyz',
+        serviceAuthToken: 'shared-secret-123',
+      });
+      await provider.evaluateForVendors('t1', [ctx('a')]);
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init.headers['Authorization']).toBe('Bearer xyz');
+      expect(init.headers['X-Service-Auth']).toBe('shared-secret-123');
+    });
+
     it('parses results array preserving order and length', async () => {
       fetchMock.mockResolvedValue({
         ok: true,

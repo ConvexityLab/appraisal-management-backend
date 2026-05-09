@@ -59,6 +59,16 @@ const KEY_TO_ENV: Record<string, string> = {
   'features.use-mock-service-bus': 'USE_MOCK_SERVICE_BUS',
   // When MOP connectivity is resolved (see APP_CONFIG_SERVICE_DISCOVERY.md §2):
   // 'services.mop-api.internal-url': 'MOP_API_BASE_URL',
+
+  // MOP vendor-matching evaluator (Phase 2 of AUTO_ASSIGNMENT_REVIEW.md).
+  // Reachable via MOP's external Container App ingress (auth-proxy on :3001).
+  // Per-consumer service auth: AMS sends `X-Service-Auth: <token>` where the
+  // token comes from KV secret `sentinel-mop-webhook-secret`; AMS bicep must
+  // reference that secret and surface it as MOP_RULES_SERVICE_AUTH_TOKEN.
+  // The App Config key `services.mop-api.external-url` should hold the
+  // external (no `.internal.`) FQDN, e.g.
+  //   https://ca-mop-dev.delightfulbush-a7c589f7.eastus2.azurecontainerapps.io
+  'services.mop-api.external-url': 'MOP_RULES_BASE_URL',
 };
 
 /**

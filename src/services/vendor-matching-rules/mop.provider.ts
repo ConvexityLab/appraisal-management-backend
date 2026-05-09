@@ -57,8 +57,19 @@ export interface MopProviderConfig {
   baseUrl: string;
   /** Per-request timeout in ms. Default 2000. */
   timeoutMs?: number;
-  /** Optional auth header value (e.g. bearer token). */
+  /**
+   * Optional value for the standard `Authorization` header (e.g.
+   * `Bearer <jwt>`). Use when MOP's auth-proxy is configured to validate JWTs.
+   */
   authHeader?: string;
+  /**
+   * Optional value for MOP's `X-Service-Auth` header — the documented
+   * service-to-service token that bypasses JWT/Aegis at the auth-proxy.
+   * Pulled from Key Vault secret `sentinel-mop-webhook-secret` (see
+   * mortgage-origination-platform/infrastructure/main.bicep). This is the
+   * recommended path for AMS → MOP calls until per-consumer JWT auth lands.
+   */
+  serviceAuthToken?: string;
 }
 
 export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvider {
@@ -67,6 +78,7 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly authHeader: string | null;
+  private readonly serviceAuthToken: string | null;
 
   /** Path on MOP for vendor-matching evaluation (when MOP supports it). */
   private static readonly EVAL_PATH = '/api/v1/vendor-matching/evaluate';
@@ -80,6 +92,7 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.timeoutMs = config.timeoutMs ?? 2000;
     this.authHeader = config.authHeader ?? null;
+    this.serviceAuthToken = config.serviceAuthToken ?? null;
   }
 
   async evaluateForVendors(
@@ -101,6 +114,7 @@ export class MopVendorMatchingRulesProvider implements VendorMatchingRulesProvid
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (this.authHeader) headers['Authorization'] = this.authHeader;
+      if (this.serviceAuthToken) headers['X-Service-Auth'] = this.serviceAuthToken;
 
       const response = await fetch(url, {
         method: 'POST',
