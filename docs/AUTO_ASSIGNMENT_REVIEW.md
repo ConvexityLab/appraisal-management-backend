@@ -8,6 +8,7 @@
 - 2026-05-08 (initial) — End-to-end review.
 - 2026-05-08 (rev 1) — F2/recommendations corrected after re-reading `VendorMatchingRulesService` properly. Original draft mistakenly recommended retiring the rules engine in favor of `MatchingCriteriaSet`; the corrected position is the opposite (see §7 F2).
 - 2026-05-08 (rev 2) — Added Progress Snapshot (§0) for live tracking; status columns added to findings table and recommendations.
+- 2026-05-09 (rev 3) — **Major direction change.** Original review failed to survey sibling repos and missed that we own a production-grade rules engine: **Prio** (RETE-based, in `c:\source\prio`), wrapped by **MOP** (`c:\source\mortgage-origination-platform`) which already exposes HTTP eval. Phase 2-4 plans rewritten around MOP/Prio. Phase 2 starting work: a `VendorMatchingRulesProvider` interface that lets the engine call homegrown OR MOP, with circuit-breaker fallback. See §12 for the new Phase 2 plan.
 
 ---
 
@@ -20,8 +21,8 @@ This section is the **live tracker** — update statuses, add commit/PR refs, an
 | Phase | Goal | Status | Started | Completed | Notes / PRs |
 |---|---|---|---|---|---|
 | Phase 1 | Make the rules engine real (F1 + F7 + F9) | ✅ | 2026-05-08 | 2026-05-08 | All tasks ✅. BE master: 25f3a2d, d691bbc, c86b2a3, c749676, 1568fa6, 10477ac, 4e45871 (+ doc commits). FE main: T7 (MatchExplanation + DeniedVendor components). 151 tests added (43 rules + 77 engine + 17 orchestrator → 20 + 14 FE). |
-| Phase 2 | Make rules engine the backbone (F2 + F8) | ⬜ | — | — | Blocked on Phase 1 |
-| Phase 3 | Express scoring + vendor data as rules (F3 + F4 + F5 + F6 + F11) | ⬜ | — | — | Blocked on Phase 2 |
+| Phase 2 | **MOP/Prio integration (was: extend homegrown engine)** — F2 + F8. See §12. | 🟡 | 2026-05-09 | — | T10 ✅ (provider abstraction landed). T11–T18 pending; biggest piece is MOP-side reasoner + HTTP route. |
+| Phase 3 | Express scoring + vendor data as MOP rules (F3 + F4 + F5 + F6 + F11) | ⬜ | — | — | Blocked on Phase 2 |
 | Phase 4 | Close the loop + cleanup (F10 + F12 + versioning) | ⬜ | — | — | Blocked on Phase 3 |
 
 **Per-finding status** — see Status column in §1 table.
@@ -43,13 +44,13 @@ The auto-assignment system is **functional but architecturally fragmented**. Thr
 | # | Finding | Severity | Status | Phase |
 |---|---|---|---|---|
 | F1 | `VendorMatchingRulesService` exists, has CRUD + evaluate endpoints, and a documented contract that says it filters ineligible vendors before scoring — **but it is never called by `VendorMatchingEngine`**. The rules engine is dead code in the production path. | **P0** | ✅ (T4+T5+T1) | 1 |
-| F2 | `MatchingCriteriaSet` (RFB criteria) and `VendorMatchingRules` (engine rules) are two separate rule systems with two separate stores, two separate UIs, and two separate semantic models. The rules engine is structurally richer (priority, actions, overrides, deny reasons); criteria sets are a flat predicate list. Recommend consolidating onto the rules engine by adding a `field_predicate` rule type. | **P1** | ⬜ | 2 |
-| F3 | Scoring weights (30/25/20/15/10) and all band thresholds (distance, capacity, fee ratio, experience tiers) are `private readonly` in code with no tenant override. Tuning requires a deploy. **Subsumed by F2 consolidation: weights become `boost`/`reduce` rules; bands become rule thresholds.** | **P1** | ⬜ | 3 |
-| F4 | Vendor "what products can this vendor do" is represented in **three** non-canonical fields: `productTypes` (legacy), `eligibleProductIds` (new hard-gate), `productGrades` (per-product grade). They can drift. **Subsumed by F2 consolidation: product eligibility becomes a `required_capability` rule (e.g. `product_xyz_certified`); grade becomes a `boost` rule.** | **P1** | ⬜ | 3 |
-| F5 | Geographic coverage lives in **three** places: `vendor.serviceAreas`, `vendor.geographicCoverage` (3-zone), `vendor-availability.serviceAreas`. The engine reads one, rules read another, availability reads a third. **Subsumed by F2 consolidation: coverage becomes `state_restriction` + `max_distance_miles` rules.** | **P1** | ⬜ | 3 |
-| F6 | `VendorCapability` is a hardcoded string union of 16 values (`fha_approved`, `uad36_compliant`, etc.). Adding a capability requires a code change in the FE *and* BE. **Subsumed by F2 consolidation: capabilities become catalog data the rules reference.** | **P2** | ⬜ | 3 |
+| F2 | THREE rule systems coexist: `MatchingCriteriaSet` (RFB criteria, in BE), `VendorMatchingRules` (homegrown engine, in BE), and **MOP/Prio** (production RETE engine, in sibling repo, owned by us). The original review missed MOP/Prio entirely. Recommend MOP becomes the eval backbone for vendor matching; the homegrown service stays as a fallback during transition. Both BE-side rule systems eventually retire. | **P1** | 🟡 (provider interface ✅; MOP-side evaluator + cutover pending) | 2 |
+| F3 | Scoring weights (30/25/20/15/10) and all band thresholds (distance, capacity, fee ratio, experience tiers) are `private readonly` in code with no tenant override. Tuning requires a deploy. **Solved by F2 in MOP: weights/bands live in Prio's JSON DSL.** | **P1** | ⬜ | 3 |
+| F4 | Vendor "what products can this vendor do" is represented in **three** non-canonical fields: `productTypes` (legacy), `eligibleProductIds` (new hard-gate), `productGrades` (per-product grade). They can drift. **Solved by F2 in MOP: product eligibility + grade are facts asserted to Prio; rules reference them.** | **P1** | ⬜ | 3 |
+| F5 | Geographic coverage lives in **three** places: `vendor.serviceAreas`, `vendor.geographicCoverage` (3-zone), `vendor-availability.serviceAreas`. The engine reads one, rules read another, availability reads a third. **Solved by F2 in MOP: coverage becomes facts + Prio rules.** | **P1** | ⬜ | 3 |
+| F6 | `VendorCapability` is a hardcoded string union of 16 values (`fha_approved`, `uad36_compliant`, etc.). Adding a capability requires a code change in the FE *and* BE. **Solved by F2 in MOP: capabilities become free-form fact strings referenced by Prio rules; FE picker reads from a catalog.** | **P2** | ⬜ | 3 |
 | F7 | The matching engine has zero direct unit tests. Orchestrator tests mock the engine entirely. | **P1** | ✅ (T1+T2+T8) | 1 |
-| F8 | No FE admin UI exists for `vendor-matching-rules` (BE controller + endpoints exist; FE has none). Operators cannot manage rules through the product. **Resolved naturally by F2: existing `/matching-criteria` page gets repurposed/extended into the unified rules admin.** | **P1** | ⬜ | 2 |
+| F8 | No FE admin UI exists for `vendor-matching-rules` (BE controller + endpoints exist; FE has none). Operators cannot manage rules through the product. **F2 (MOP) shifts the question: long-term, rules admin lives wherever MOP exposes its rule CRUD; short-term, the existing `/matching-criteria` page can be repurposed for managing the homegrown fallback rules.** | **P1** | ⬜ | 2 |
 | F9 | Audit trail for "why this vendor was picked over the others" is incomplete — score components, rule denials, and tiebreaks are not persisted per assignment decision. **Mostly free from F1: `RuleEvaluationResult` already returns `appliedRuleIds` + `denyReasons`; just persist them.** | **P1** | ✅ (T6+T7) | 1 |
 | F10 | Decline/timeout outcomes do not feed back into vendor performance metrics; no closed loop. | **P2** | ⬜ | 4 |
 | F11 | Internal-staff direct-assignment branch bypasses the bid loop but still relies on the same scoring model that was designed around external bid behavior (cost score, blackout dates). | **P2** | ⬜ | 3 |
@@ -239,62 +240,65 @@ Seven surfaces. Three of them are code.
 **Impact:** Every rule an operator creates (blacklists, whitelists, license requirements, score boosts, distance caps, max order value, property-type restrictions) has **no effect** on real auto-assignment. Operators may believe the system is configurable when it is not.
 **Fix:** Inject `VendorMatchingRulesService` into `VendorMatchingEngine`. In `getEligibleVendors`, call `evaluateRules(tenantId, ctx)` for each candidate; drop those returned as denied; apply the net `adjustmentPoints` to `matchScore` after the weighted sum. Persist applied rule IDs and denial reasons on the assignment record (feeds F9).
 
-### F2 — Two parallel rule systems; consolidate onto the rules engine · **P1**
-**Evidence:** Two systems with overlapping concerns:
+### F2 — Three rule systems; MOP/Prio is the one we should be using · **P1**
+**Evidence:** Three systems with overlapping concerns, only the third of which is production-grade:
 
-- **`VendorMatchingRulesService`** (`vendor-matching-rules.service.ts`) — a real rules engine: priority ordering, four action semantics (`deny` / `allow` / `boost` / `reduce`), whitelist-overrides-deny logic, per-rule scope filters (`productTypes`, `states`), captured deny reasons, pure synchronous `applyRules()` for bulk evaluation. Currently 11 rule types via switch in `evalDenyRule`.
-- **`MatchingCriteriaSet`** (`matching.types.ts`, `rfb.service.ts`) — a flat list of `field/operator/value` predicates joined by ONE combinator (AND or OR), producing match/no-match plus a count. No priority. No actions. No score adjustments. No overrides. No deny reasons. It is a query DSL, not a rules engine.
+- **`VendorMatchingRulesService`** (BE, `vendor-matching-rules.service.ts`) — a homegrown, in-process rules engine. Priority ordering, four action semantics (`deny` / `allow` / `boost` / `reduce`), whitelist-overrides-deny logic, per-rule scope filters, captured deny reasons. 11 hardcoded rule types via switch in `evalDenyRule`.
+- **`MatchingCriteriaSet`** (BE, `matching.types.ts`, `rfb.service.ts`) — a flat list of `field/operator/value` predicates joined by ONE combinator (AND or OR). No priority, no actions, no score adjustments, no overrides, no deny reasons. A query DSL, not a rules engine.
+- **MOP/Prio** (sibling repo, owned by us, currently unused by this BE) — production RETE engine with JSON DSL, alpha/beta networks, working memory, aggregation, native explanation/audit, multi-program support, HTTP/gRPC/WASM surfaces, ~1330 LOC of HTTP server alone. MOP wraps it for loan use cases today; vendor-matching is a natural next consumer.
 
-They overlap on: state restriction, capability requirement, performance threshold, distance cap.
+The original review missed MOP/Prio entirely (didn't survey sibling repos). Both BE-side rule systems are reinventing capabilities that MOP/Prio already provides.
 
-**Impact:** Operator confusion; double-maintenance; ambiguity about which rule "wins" when both exist; two FE/BE surfaces to keep in sync.
+**Impact:** Three rule systems instead of one. Two of the three are homegrown reimplementations of less than 5% of what Prio already does. Tuning, audit, RETE optimization, and explanation are all DIY in the homegrown engine; MOP/Prio gives them for free.
 
-**Fix — consolidate onto the rules engine.** The asymmetry of work makes the direction obvious:
+**Fix — MOP becomes the eval backbone, with the homegrown service as a fallback during transition.**
 
-| Direction | What it takes | Verdict |
-|---|---|---|
-| Port criteria-set capabilities into the rules engine | Add **one** new rule type — `field_predicate` with `{field, operator, value}` payload. Add geo operators (`within_radius_miles`, `within_polygon`, `within_bbox`) as either operator extensions on that rule type or dedicated rule types. Roughly 50 LOC plus tests. | **Extension.** |
-| Port rules-engine capabilities into criteria sets | Add priority on every set/criterion. Add an action enum (deny/allow/boost/reduce). Add score-adjustment fields. Add override semantics across sets. Add deny-reason capture. Add per-criterion scope filters. Then redesign the FE to expose all of it. | **Redesign.** |
+A `VendorMatchingRulesProvider` interface (Phase 2 ✅ landed) lets the engine call either backend. Three providers ship:
+- `HomegrownVendorMatchingRulesProvider` — wraps the existing service.
+- `MopVendorMatchingRulesProvider` — calls MOP's HTTP eval contract.
+- `FallbackVendorMatchingRulesProvider` — circuit-breaker decorator: MOP primary, homegrown fallback.
 
-The rule-type "enum" is not a constraint — it is the engine's extensibility surface. Adding a rule type is a switch case in `evalDenyRule` (~6 LOC). The semantic richness (priority, actions, overrides, audit) is the part that would be expensive to recreate elsewhere.
+Selected at startup via `RULES_PROVIDER` env var. Default stays `homegrown` until MOP exposes the vendor-matching evaluator + we're confident in cutover.
 
-**Migration path:**
-1. Add `field_predicate` rule type to `RuleType` and a corresponding case in `evalDenyRule` / `evalAllowRule` (and `boost`/`reduce` if predicate-driven score adjustments are wanted).
-2. Write a one-shot migration that converts each `MatchingCriteriaSet` + its `criteria[]` into N `VendorMatchingRule` documents (one per criterion, sharing a `name`/`description`/scope, priority assigned by combinator semantics).
-3. Update RFB flow to call `evaluateRules` instead of the criteria-set evaluator.
-4. Repurpose the existing `/matching-criteria` FE page (resolves F8) into a unified rules admin.
-5. Delete the criteria-set service, controller, types, and Cosmos container.
+**Migration path (now §12 — Phase 2):**
+1. Provider interface + factory ✅ (committed: see §0 Progress Snapshot).
+2. Add a vendor-matching reasoner to MOP — register a Prio program, define vendor-matching rules in JSON DSL, expose `POST /api/v1/vendor-matching/evaluate`.
+3. Migrate any active `vendor-matching-rules` Cosmos documents into Prio JSON rule files.
+4. Smoke test in dev: `RULES_PROVIDER=mop-with-fallback`, observe traffic, validate parity with homegrown via shadow comparison.
+5. Promote to staging, then production.
+6. After a stable period, retire the homegrown rules service, the `vendor-matching-rules` Cosmos container, and the homegrown CRUD endpoints (rules admin moves to whatever MOP exposes).
+7. RFB flow's criteria-set path also moves to MOP eval; `MatchingCriteriaSet` retires.
 
 ### F3 — Scoring weights and thresholds are hardcoded · **P1**
 **Evidence:** `vendor-matching-engine.service.ts:36-51` — `private readonly WEIGHTS` and `private readonly DISTANCE_THRESHOLDS`. Capacity bands (1/3/5), experience bands (5/20/50), fee bands (0.8/1.0/1.1/1.2), grade points (0/5/10/15) all inline in `scoreVendor`.
 **Impact:** A tenant who values turnaround over price cannot say so. A tenant in a high-density urban market cannot tighten distance bands. Tuning requires a deploy.
-**Fix (subsumed by F2 consolidation):** Once the rules engine is the backbone, scoring weights and bands become rules:
-- "performance ≥ 90 → +30 points" is a `boost` rule keyed on a `min_performance_score` predicate.
-- "distance ≤ 25 miles → +20 points" becomes a `boost` rule keyed on a `max_distance_miles` predicate (with banded variants at 75/150/300).
-- Tenant tunes by editing rules (or adopting a tenant-default rule pack), not by deploying.
-- The deterministic "factor × weight" arithmetic in `scoreVendor` survives only as the **default rule pack**; tenants override individual rules without touching the engine.
+**Fix (Phase 3, on top of F2/MOP):** Once MOP owns rule evaluation, scoring weights and bands become Prio JSON rules:
+- "performance ≥ 90 → boost score by 30" is a `boost` rule with a `min_performance_score` antecedent.
+- Distance bands become rules at 25/75/150/300mi thresholds with the corresponding boost values.
+- Per-tenant rule packs override the default.
+- The deterministic 5-factor sum in `scoreVendor` survives only as the **default rule pack** seeded for new tenants; the math moves into Prio and out of TypeScript.
 
 ### F4 — Vendor-product eligibility represented in three competing fields · **P1**
 **Evidence:** `Vendor.productTypes` (legacy enum), `Vendor.eligibleProductIds` (hard-gate), `Vendor.productGrades` (per-product grade for experience bonus). Engine reads `eligibleProductIds` for the gate and `productGrades` for the bonus; `productTypes` is ignored.
 **Impact:** Operators editing one field assume the others follow. Drift produces silent matching errors.
-**Fix (subsumed by F2 consolidation):** Eligibility and grade both express through rules:
-- Eligibility → `required_capability` rule referencing a capability the vendor must have (e.g. `product_xyz_certified`). Vendor record carries the capability; rule checks it.
-- Grade → `boost` rules per grade tier (`product_xyz_expert` → +10, `product_xyz_lead` → +15).
-- Migration: walk every vendor, emit capability strings derived from `eligibleProductIds` ∪ `productGrades`. Delete `productTypes` and `eligibleProductIds` on the Vendor model. Grade lives on the vendor as part of the capability string OR as separate metadata that rules read — either is consistent.
-- Net effect: one source of truth (vendor capabilities), one mechanism (rules), no drift.
+**Fix (Phase 3, on top of F2/MOP):** Eligibility and grade become facts asserted to Prio's working memory; rules reference them.
+- The vendor's product capabilities (set of strings like `va_loan_certified`, `jumbo_eligible`) are asserted as facts; Prio rules say "deny if `va_loan_certified` not in vendor.capabilities".
+- Grade is a separate fact (per-product); a `score_boost` rule fires when grade matches.
+- Migration: walk every vendor, emit derived facts from `eligibleProductIds` ∪ `productGrades`. Delete `productTypes` and `eligibleProductIds` on the Vendor model.
+- Net effect: one source of truth (vendor capabilities + grades), one mechanism (Prio rules), no drift.
 
 ### F5 — Geographic coverage represented in three places · **P1**
 **Evidence:** `Vendor.serviceAreas` (legacy), `Vendor.geographicCoverage` (3-zone licensed/preferred/extended), `VendorAvailability.serviceAreas` (zips/counties/radius). Engine uses `geographicCoverage.preferred.states` for the proximity bonus and `licenseState` for the gate; the other two are inert in the matching path.
-**Fix (subsumed by F2 consolidation):** Coverage expresses through rules:
-- "Vendor not licensed in property state" → `state_restriction` deny rule per vendor (or per tenant referencing vendor's `licenseState`).
-- "Beyond X miles" → `max_distance_miles` deny rule.
-- "Preferred state bonus" → `boost` rule.
-- One coverage source on the vendor (`geographicCoverage` is the most expressive — keep it). Rules read it; the duplicate `serviceAreas` fields go away. One coverage editor on the vendor detail page.
+**Fix (Phase 3, on top of F2/MOP):** Coverage facts get asserted to Prio; rules consume them.
+- "Vendor not licensed in property state" → Prio rule with antecedent `vendor.licensedStates not contains order.propertyState`.
+- "Beyond X miles" → Prio rule on `vendor.distance > 200`.
+- "Preferred state bonus" → Prio score_boost rule.
+- Pick `geographicCoverage` as the canonical source on the Vendor model; the BE asserts its three zones to Prio as facts. The duplicate `serviceAreas` fields are deleted. One coverage editor on the vendor detail page.
 
 ### F6 — `VendorCapability` is a hardcoded string union · **P2**
 **Evidence:** 16 capability strings are baked into both BE types and FE forms.
 **Impact:** Adding `as_is_inspection_certified` (or whatever is next) requires a coordinated FE+BE deploy.
-**Fix (subsumed by F2 consolidation):** In a rules-engine world, capabilities are just strings the rules reference. Move the catalog into a `capability-catalog` Cosmos container with `{id, label, category, description}`. Both the rules admin UI and vendor edit form read from it. New capabilities are data, not deploys. Especially natural after F4 lands, since product eligibility starts producing capability strings programmatically.
+**Fix (Phase 3, on top of F2/MOP):** Prio doesn't care about a fixed enum — capabilities become free-form strings asserted as facts. Move the catalog into a `capability-catalog` Cosmos container with `{id, label, category, description}`. The FE picker reads from it; the BE asserts whatever strings the vendor record carries. New capabilities are data: add one to the catalog, write a Prio rule referencing it, no BE/FE deploy.
 
 ### F7 — Matching engine has no direct tests · **P1**
 **Evidence:** `tests/auto-assignment-orchestrator.test.ts` (1196 lines) mocks `VendorMatchingEngine` entirely. No `vendor-matching-engine.test.ts` exists. Same for `vendor-matching-rules.service.ts`.
@@ -339,31 +343,33 @@ The single most important deliverable. Today the engine exists but isn't on the 
 
 Exit criteria: an operator-created rule actually changes assignment behavior; the order record shows why each candidate was picked or denied.
 
-### Phase 2 — make the rules engine the backbone (2-3 weeks)
-Add the one rule type that lets the rules engine express what criteria sets express today.
+### Phase 2 — MOP/Prio integration (rev 3 rewrite — was "make rules engine the backbone") (3-4 weeks)
+Stand up MOP as the rules eval backbone. Provider abstraction in the BE lets us flip via env var. Detailed plan in §12.
 
-4. **F2 (part 1)** — Add `field_predicate` rule type (`{field, operator, value}` payload) and corresponding cases in `evalDenyRule` / `evalAllowRule` (and boost/reduce variants if predicate-driven score adjustments are wanted). Add geo operators (`within_radius_miles`, `within_polygon`, `within_bbox`).
-5. **F2 (part 2)** — Migrate existing `MatchingCriteriaSet` data into `VendorMatchingRule` documents. Repoint RFB flow (`rfb.service.ts`) at `evaluateRules`.
-6. **F8** — Repurpose the existing `/matching-criteria` FE page into the unified rules admin: add UI for priority, action, score adjustment, scope filters. Repoint `matchingApi.ts` RTK Query slice at `/api/vendor-matching-rules`.
-7. **F2 (part 3)** — Once nothing reads criteria sets, delete `matching-criteria.controller.ts`, `MatchingCriteriaSet` types, and the `matching-criteria-sets` Cosmos container.
+4. **Provider interface in the BE** ✅ (committed 2026-05-09; see §0 Progress Snapshot). `VendorMatchingRulesProvider` with `homegrown` / `mop` / `mop-with-fallback` selectable via `RULES_PROVIDER` env var.
+5. **MOP-side: vendor-matching evaluator.** Register a Prio program `vendor-matching` with seed JSON rules. Add HTTP route `POST /api/v1/vendor-matching/evaluate` matching the contract in `mop.provider.ts`. Includes audit/explanation surface from Prio's working memory.
+6. **Migration tooling.** One-shot script that reads `vendor-matching-rules` Cosmos documents and emits Prio JSON rule files. (Skip if no tenant has any rules — see PF2 in §10.4.)
+7. **Shadow comparison + cutover.** In dev: `RULES_PROVIDER=mop-with-fallback`; capture both engine outputs side-by-side via temporary instrumentation; verify parity before promoting to staging. Then production with the breaker tuned conservatively.
+8. **Retire the homegrown rules engine** after a stable observation period (defined ahead of cutover). Delete `vendor-matching-rules.service.ts`, the controller, Cosmos container, and CRUD endpoints. Rules admin moves to whatever MOP exposes (or a thin BE wrapper around MOP rule CRUD if we want to keep ours).
+9. **F8** — FE rules admin: pointed at the MOP-backed CRUD (not the homegrown one). The existing `/matching-criteria` page can serve as the starting point for the UI.
 
-Exit criteria: one rule system, one admin UI, one Cosmos container for rules.
+Exit criteria: production traffic evaluating vendor-matching rules through MOP; homegrown rules engine retired or kept only as the fallback layer of `mop-with-fallback`.
 
-### Phase 3 — express scoring and vendor data as rules (3-4 weeks)
-With the backbone in place, retire the hardcoded weights and the duplicate vendor fields.
+### Phase 3 — express scoring + vendor data as MOP rules (3-4 weeks)
+With MOP as the backbone, retire the hardcoded weights and the duplicate vendor fields.
 
-8. **F3** — Replace `private readonly WEIGHTS` and `DISTANCE_THRESHOLDS` with a default rule pack (seeded per tenant on creation). Engine becomes the executor; rules carry the policy. Optionally keep the deterministic 5-factor sum as the *default* rule pack so behavior is unchanged out of the box.
-9. **F4** — Migrate vendor product eligibility / grade to capability strings + rules. Drop `productTypes` and `eligibleProductIds` from the Vendor model.
-10. **F5** — Make `geographicCoverage` the sole coverage source. Rules read from it. Drop `Vendor.serviceAreas` and `VendorAvailability.serviceAreas`.
-11. **F6** — Move capability catalog into a `capability-catalog` Cosmos container. Rules and FE pickers read from it. Add capabilities without deploys.
-12. **F11** — Add an internal-staff rule pack (or per-staffType rule overrides) so internal assignment doesn't reuse the cost/blackout logic designed for external bids.
+10. **F3** — Move `WEIGHTS` and `DISTANCE_THRESHOLDS` into Prio JSON rules (default rule pack seeded per tenant). Engine continues to compute the 5-factor weighted sum, OR — preferable long-term — the math itself moves into Prio rules and the engine becomes a pure orchestrator.
+11. **F4** — Migrate vendor product eligibility / grade to facts + Prio rules. Drop `productTypes` and `eligibleProductIds`.
+12. **F5** — `geographicCoverage` becomes the sole coverage source on Vendor; the BE asserts coverage facts; Prio rules consume them. Drop the duplicate `serviceAreas` fields.
+13. **F6** — Capability catalog → `capability-catalog` Cosmos container. Prio rules reference catalog IDs; new capabilities are data not deploys.
+14. **F11** — Internal-staff rule pack in MOP (different scoring/exclusions than external vendors).
 
-Exit criteria: zero scoring logic in code outside the engine itself; one source of truth for every vendor attribute; no hardcoded enums.
+Exit criteria: scoring policy lives in MOP rules; one source of truth for every vendor attribute; no hardcoded enums.
 
 ### Phase 4 — close the loop and clean up endpoints (ongoing)
-13. **F10** — Decline/timeout feedback. Either include `declineRate` in the performance scorecard, or expose it as a rule predicate (`min_acceptance_rate`) so tenants tune the penalty.
-14. **F12** — Endpoint deprecation pass. Document a decision tree (`/suggest` vs `/find-matches` vs `/preview-rfb`), retire the duplicates, collapse the FE API slices.
-15. **(new)** Rules versioning + audit log — `vendor-matching-rules` is mutable in place today. Add change history (who/when/before/after) so rule edits are accountable. Especially important once rules carry scoring policy (Phase 3).
+15. **F10** — Decline/timeout feedback. Acceptance/decline rate becomes a fact asserted to MOP for use by score-boost/reduce rules.
+16. **F12** — Endpoint deprecation pass. Document a decision tree (`/suggest` vs `/find-matches` vs `/preview-rfb`), retire the duplicates, collapse the FE API slices.
+17. **(new)** Rules versioning + audit log on the MOP side. (Prio likely already has this; verify and surface in the BE/FE if so.)
 
 ---
 
@@ -915,6 +921,127 @@ For each phase before code:
 6. **Responsive breakpoints** — admin pages targeted at desktop but should degrade gracefully to tablet
 
 These should be produced and reviewed before each phase's BE work starts, so FE and BE work in parallel.
+
+---
+
+## 12. Phase 2 — Detailed Implementation Plan (MOP/Prio integration)
+
+**Status:** 🟡 In progress · **Owner:** TBD · **Target:** F2 (consolidation onto MOP), prerequisite for F3-F6 in Phase 3
+
+### 12.1 Goal
+
+Make MOP the production rules-evaluation backbone for vendor matching. The BE engine sends per-vendor facts; MOP runs Prio inference; results come back with eligibility, score adjustments, and applied rule IDs. The homegrown rules service stays in place as a fallback layer until MOP is proven, then retires.
+
+**Exit criterion:** Production tenants evaluate vendor-matching rules via MOP. The breaker stays closed under normal load. Per-vendor `MatchExplanation` records carry the MOP-side rule audit data unchanged from Phase 1's persistence pipeline.
+
+### 12.2 Out of scope (deferred)
+- Migrating `MatchingCriteriaSet` (RFB criteria) — Phase 2.5 or Phase 3.
+- Moving scoring weights into Prio rules — Phase 3.
+- Vendor data consolidation (F4, F5) — Phase 3.
+- Capability catalog data store — Phase 3.
+- Decline/timeout feedback — Phase 4.
+
+### 12.3 Design decisions
+
+**D1 — Provider abstraction over rule evaluation, not over rule storage.** CRUD on rules stays homegrown (Cosmos + existing controller) for now. Only evaluation goes through the provider interface. Reason: rule storage migration is independent and can happen later without disturbing eval cutover.
+
+**D2 — Three providers ship together.** `homegrown` (default), `mop` (fail-closed), `mop-with-fallback` (recommended once MOP is live). Selected at startup via `RULES_PROVIDER`. Misconfiguration throws — no silent degrades.
+
+**D3 — Batch eval per request.** The provider interface takes an array of contexts and returns an array of results in input order. Both implementations are naturally batch: homegrown loads rules once + loops; MOP makes one HTTP call per request regardless of vendor count.
+
+**D4 — Circuit breaker is a sliding window.** 3 failures in 30 seconds opens; 60-second cooldown to half-open trial. Tunable via env. Open breaker skips primary entirely.
+
+**D5 — MOP wire format is OUR contract.** We own MOP. The contract documented in `mop.provider.ts` is what MOP needs to implement, not what we accommodate. If MOP's existing endpoints don't fit, the answer is "extend MOP", not "bend the BE provider around the wrong shape."
+
+**D6 — Migration of existing rules is data-driven.** A one-shot script reads `vendor-matching-rules` Cosmos documents per tenant and emits Prio JSON rule files. Skipped if PF2 (the prod query in §10.4) shows no tenant has rules.
+
+**D7 — Cutover is observable, not a flag flip.** Shadow comparison runs both providers in parallel during a soak period; results compared. Promotion to MOP-primary happens only when shadow agreement is at expected levels.
+
+### 12.4 Pre-flight checks (Phase 2)
+
+| ID | Check | Method | Action |
+|---|---|---|---|
+| PF4 | Does MOP's deployment already accept arbitrary new programs / endpoints, or does it require a release pipeline? | Ask the MOP team / read MOP's deploy docs | Plan the MOP-side release accordingly |
+| PF5 | Does MOP/Prio have a pre-existing vendor-matching reasoner or anything close? | Search `mortgage-origination-platform` for vendor-related rules | If yes, build on it; if no, register fresh |
+| PF6 | Auth model between BE and MOP — does the existing `MopApiClient` use a token, mTLS, internal network, etc.? | Read `MopApiClient.ts` and any deploy config | Mirror in `MopVendorMatchingRulesProvider` |
+
+### 12.5 Task breakdown
+
+**T10 — `VendorMatchingRulesProvider` interface in BE** ✅
+Done 2026-05-09. Interface, three providers (homegrown/mop/fallback), factory, 40 new unit tests, engine refactor to use the provider. See commit log on `master`.
+
+**T11 — Add vendor-matching reasoner to MOP**
+- Register a new Prio program `vendor-matching` in MOP's reasoner setup.
+- Define seed JSON rules covering the 11 rule types currently in the homegrown engine (deny: license_required, state_restriction, min_performance_score, blacklist, required_capability, max_order_value, max_distance_miles, property_type_restriction; allow: whitelist; adjust: score_boost, score_reduce). Whitelist-overrides-deny semantics are native to RETE.
+- Decide pattern_id naming for vendor + order facts (analogous to `loan_application` / `loan_profile` for the loan domain).
+
+**T12 — Add HTTP route `POST /api/v1/vendor-matching/evaluate` in MOP**
+- Route handler in MOP's HTTP server (likely `multi_program_server.cpp` or a new file).
+- Accepts the contract format: `{tenantId, program: "vendor-matching", evaluations: [{vendor, order}, ...]}`.
+- For each evaluation: clear working memory → assert vendor + order facts → run inference → collect `(eligible, scoreAdjustment, appliedRuleIds, denyReasons)` from working memory.
+- Returns `{results: [...]}`.
+- Health endpoint `/health` already exists.
+
+**T13 — MOP-side tests**
+- C++ unit/integration tests using GoogleTest (per CLAUDE.md default test command for C++).
+- Cover each rule type at band edges, whitelist override, score adjustment accumulation. Mirrors what `vendor-matching-rules.service.test.ts` does on the BE.
+- Smoke-test the HTTP route with a known good fixture.
+
+**T14 — Migration script (BE)**
+- Reads `vendor-matching-rules` Cosmos container per tenant.
+- Emits a Prio JSON rule file per tenant (or one file with tenant-scoped rules).
+- Idempotent + dry-run by default.
+- Skip if PF2 shows no tenant has rules.
+
+**T15 — Shadow comparison instrumentation (BE, behind a flag)**
+- Temporary instrumentation: when `RULES_PROVIDER=homegrown` and `RULES_PROVIDER_SHADOW=mop` is set, fire-and-forget a duplicate eval to MOP for each request, log diffs.
+- Used in dev/staging soak only; removed before retiring homegrown.
+
+**T16 — Cutover sequence**
+1. Dev: `RULES_PROVIDER_SHADOW=mop` for soak; resolve any diffs.
+2. Staging: `RULES_PROVIDER=mop-with-fallback` (MOP primary, homegrown fallback).
+3. Production: same. Watch breaker metrics.
+4. After N days of zero unexpected breaker trips: announce homegrown retirement window.
+
+**T17 — Retire homegrown rules engine**
+- Delete `vendor-matching-rules.service.ts`.
+- Delete `vendor-matching-rules.controller.ts` (or repoint at MOP).
+- Drop the `vendor-matching-rules` Cosmos container.
+- Delete the homegrown provider; factory simplifies to `mop` only.
+- (Optional) Repoint FE `/matching-criteria` page at the MOP-backed rules surface.
+
+**T18 — Update Progress Snapshot in this doc**
+- Mark Phase 2 complete; F2 → ✅; F8 → ✅ if FE work landed.
+
+### 12.6 Test plan summary
+
+| Suite | Coverage |
+|---|---|
+| `tests/unit/vendor-matching-rules/*.test.ts` | Provider interface (40 tests, ✅ landed) |
+| `tests/auto-assignment-orchestrator.test.ts` | Existing E2E continues to pass with provider injected |
+| MOP-side GoogleTest (T13) | Vendor-matching rule evaluation in Prio + HTTP route smoke |
+| Shadow soak (T15) | Statistical agreement between homegrown and MOP eval over real traffic |
+
+### 12.7 Risk register (Phase 2)
+
+| ID | Risk | Mitigation |
+|---|---|---|
+| R6 | MOP HTTP latency under load is much higher than in-process homegrown | Tune `MOP_RULES_TIMEOUT_MS`; measure; consider co-locating MOP or caching idempotent evals |
+| R7 | Subtle semantic differences between homegrown switch-based eval and Prio RETE (esp. priority interactions, allow/deny precedence) | Shadow comparison (T15) catches these before cutover |
+| R8 | MOP becomes a single point of failure for the assignment pipeline | `mop-with-fallback` provider chain + breaker; homegrown stays available until retired |
+| R9 | Migration script (T14) misencodes a rule, silently changing tenant behavior | Dry-run output reviewed before apply; rules version-controlled in Prio JSON; rollback = re-point provider to homegrown |
+
+### 12.8 Definition of done
+
+- [ ] T10 ✅
+- [ ] PF4, PF5, PF6 results recorded
+- [ ] T11 + T12 + T13 merged in MOP repo, tests green
+- [ ] T14 dry-run output reviewed and applied
+- [ ] T15 shadow soak shows expected agreement in dev + staging
+- [ ] Production running on `RULES_PROVIDER=mop-with-fallback` for ≥ N days with no unexpected breaker trips
+- [ ] T17 retirement of homegrown done OR formally deferred
+- [ ] §0 Progress Snapshot updated (T18)
+- [ ] PR descriptions reference findings F2 (and F8 if FE landed) by ID
 
 ---
 
