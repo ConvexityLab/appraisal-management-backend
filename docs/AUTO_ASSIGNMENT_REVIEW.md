@@ -10,6 +10,7 @@
 - 2026-05-08 (rev 2) — Added Progress Snapshot (§0) for live tracking; status columns added to findings table and recommendations.
 - 2026-05-09 (rev 3) — **Major direction change.** Original review failed to survey sibling repos and missed that we own a production-grade rules engine: **Prio** (RETE-based, in `c:\source\prio`), wrapped by **MOP** (`c:\source\mortgage-origination-platform`) which already exposes HTTP eval. Phase 2-4 plans rewritten around MOP/Prio. Phase 2 starting work: a `VendorMatchingRulesProvider` interface that lets the engine call homegrown OR MOP, with circuit-breaker fallback. See §12 for the new Phase 2 plan.
 - 2026-05-09 (rev 4) — **Phase 2 complete in dev** + **end-state vision (§13)**. MOP serves vendor-matching live in Azure dev. AMS dev configured for `mop-with-fallback`. Hardening landed (CI smoke tests, schema validator, wire-contract fixture, structured eval logs, AMS bicep wiring, RBAC follow-up runbook entry). New §13 lays out Phases 3-8 as the path from "MOP works" to "operators can see + do EVERYTHING with rules" — full CRUD UI, per-order trace, sandbox/replay, ops dashboard, prod cutover, homegrown retirement.
+- 2026-05-09 (rev 5) — **Phase 3 complete in dev** + **Option E pivot**. Original §13.4 D1-D3 assumed MOP had Cosmos integration; turns out MOP has no DB (RateLockManager is in-memory) and adding the Cosmos C++ SDK was multi-week. Pivoted to "Option E": AMS owns rule storage in its existing Cosmos; MOP caches compiled reasoners per tenant; AMS pushes new packs to MOP via PUT on every CRUD. Same end-state visibility for operators, much smaller MOP-side change. Verified live in Azure: PUT custom rules → tenant-specific eval → DELETE drops cleanly. §13.4 design decisions D1-D3 updated below to reflect the shipped architecture.
 
 ---
 
@@ -23,7 +24,7 @@ This section is the **live tracker** — update statuses, add commit/PR refs, an
 |---|---|---|---|---|---|
 | Phase 1 | Make the rules engine real (F1 + F7 + F9) | ✅ | 2026-05-08 | 2026-05-08 | All tasks ✅. BE master: 25f3a2d, d691bbc, c86b2a3, c749676, 1568fa6, 10477ac, 4e45871 (+ doc commits). FE main: T7 (MatchExplanation + DeniedVendor components). 151 tests added (43 rules + 77 engine + 17 orchestrator → 20 + 14 FE). |
 | Phase 2 | **MOP/Prio integration** — F2 + F8. See §12. | ✅ | 2026-05-09 | 2026-05-09 | All BE + MOP-side work landed. MOP eval live in dev: external FQDN, auth-proxy + X-Service-Auth, vendor-matching reasoner + route serving 200s. AMS dev configured `RULES_PROVIDER=mop-with-fallback`. CI smoke tests on every deploy. Schema validator + wire-contract tests both sides. Live-trace script for end-to-end smoke. |
-| Phase 3 | **Rules CRUD + Live Reload (MOP foundation for UI)** — see §13.4 | ⬜ | — | — | Foundation for Phases 4-7. Per-tenant rule packs in Cosmos, CRUD API, hot-reload via change feed, audit trail. ~2w. |
+| Phase 3 | **Rules CRUD + Live Reload (MOP foundation for UI)** — see §13.4 | ✅ | 2026-05-09 | 2026-05-09 | Pivoted to "Option E" (AMS owns storage; MOP caches per-tenant reasoners via push) since MOP has no Cosmos integration today and adding the C++ SDK was multi-week. T19-T27 landed: storage + audit + AMS CRUD + MOP per-tenant registry + push hook + 25 BE tests + 7 MOP Catch2 tests. **Verified live**: PUT a custom rule pack for tenant 'smoke-test' → eval routes to it; unknown tenants fall back to default seed; DELETE drops cleanly. |
 | Phase 4 | **Rules Authoring Workspace (FE)** — see §13.5 | ⬜ | — | — | Full operator UI for rule CRUD with visual condition builder, sandbox preview, diff/version. ~3w. Blocked on Phase 3. |
 | Phase 5 | **Per-Order Trace + Live Feed (visibility)** — see §13.6 | ⬜ | — | — | Per-assignment evaluation trace persisted; FE order-detail "why this vendor" timeline; live feed page. ~2.5w. Parallel with Phase 4 after Phase 3. |
 | Phase 6 | **Sandbox + Replay (safety)** — see §13.7 | ⬜ | — | — | What-if eval against historical orders; replay any past assignment with proposed rules. ~2w. Parallel with Phase 4/5. |
@@ -1111,14 +1112,25 @@ This section breaks that goal into a concrete, executable plan from where we are
 
 **Goal:** Rules become data, not deploys. MOP exposes a CRUD API; vendors can be added/removed/edited at runtime; reasoners hot-reload on change; every change is versioned and audited.
 
-#### 13.4.1 Design decisions (locked up front)
+#### 13.4.1 Design decisions (rev 5 — reflects what shipped)
 
-- **D1.** Per-tenant rule storage. Default rule pack still ships in `config/rules/vendor-matching.json` (seeds new tenants); each tenant's edits live in MOP-backed Cosmos under `vendor-matching-rules` partitioned by `/tenantId`. Schema is the same JSON shape the file uses today.
-- **D2.** Immutable rule packs. Editing a rule creates a new version; the previous version stays around for replay. A `vendor-matching-rule-pack` document with `{tenantId, packId, version, createdAt, createdBy, parentVersion}` is the unit of versioning.
-- **D3.** Hot reload via Cosmos change feed. MOP's `VendorMatchingHost` subscribes to the `vendor-matching-rules` change feed; on a rule pack version bump, it loads the new pack into a fresh `Reasoner` and atomically swaps the active reference. Old reasoner reaches end-of-life when in-flight evaluations complete.
-- **D4.** Tenant resolution comes from the request body's `tenantId` (already in the wire contract). MOP holds one reasoner per tenant; defaults to the seed pack if no tenant rules exist.
-- **D5.** API on MOP, mirror on AMS. The authoritative CRUD is `POST/GET/PUT/DELETE /api/v1/vendor-matching/rules` on MOP, gated by `X-Service-Auth`. AMS exposes a thin proxy at `/api/auto-assignment/rules` so the FE can call AMS auth and AMS forwards to MOP — keeps Aegis policy enforcement at one layer.
-- **D6.** Audit trail in MOP Cosmos: every CRUD writes to `vendor-matching-rule-audit` with `{tenantId, packId, oldVersion, newVersion, diff, actor, timestamp}`. Append-only, never mutated.
+The locked design at rev-4 assumed MOP could persist rules in its own Cosmos
+container. Investigation showed MOP has no DB integration today
+(RateLockManager is in-memory; the bicep passes cosmosEndpoint but the C++
+binary doesn't consume it). Adding the Azure Cosmos C++ SDK is multi-week
+work. We picked **Option E**: AMS owns storage; MOP stays a stateless
+inference engine that caches per-tenant compiled reasoners.
+
+- **D1 (revised).** Storage lives in **AMS** Cosmos (already provisioned with auth + APIs), in two new containers partitioned by `/tenantId`:
+  - `vendor-matching-rule-packs` — immutable, versioned per-tenant rule packs.
+  - `vendor-matching-rule-audit` — append-only audit log.
+  Default rule pack still ships in `mortgage-origination-platform/config/rules/vendor-matching.json` and is loaded by MOP as the seed for tenants without an override.
+- **D2 (unchanged).** Immutable, versioned. `RulePackDocument` carries `{id, tenantId, packId, version, parentVersion, status: 'active'|'inactive'|'archived', rules, metadata, createdAt, createdBy}`. Synthetic id `${tenantId}__${packId}__v${version}` enables fast point-reads.
+- **D3 (revised).** Hot reload by **push, not change feed**. AMS's `VendorMatchingRulePackService.onNewActivePack` hook fires on every successful CRUD; the wired hook calls MOP's `PUT /api/v1/vendor-matching/tenants/:tenantId/rules`, which compiles a fresh `VendorMatchingService` and atomically swaps it in MOP's `TenantReasonerRegistry`. In-flight evaluations holding a `shared_ptr` to the prior reasoner finish cleanly; the old service destructs when the last handler thread releases its ref.
+- **D4 (unchanged).** Tenant resolution from request body's `tenantId`. MOP routes per-tenant via the registry; falls back to the seed pack when no override exists.
+- **D5 (revised).** **AMS owns the authoritative CRUD** at `/api/auto-assignment/rules` (NOT a thin proxy — AMS is the source of truth). MOP exposes a small "set/drop tenant rules" surface at `/api/v1/vendor-matching/tenants/:tenantId/rules` (PUT + DELETE) that AMS calls; this is reload, not storage. Keeps Aegis/auth at the AMS layer where it already lives; MOP-side endpoints are gated by `X-Service-Auth` (the existing service-to-service path).
+- **D6 (unchanged).** Append-only audit in `vendor-matching-rule-audit` with name-level diff (added/removed/modified rule names). Service writes the row inside `createVersion` after the pack is persisted.
+- **D7 (new).** Push is **best-effort**: a MOP push failure does NOT roll back the AMS storage write. AMS storage is the source of truth; MOP self-heals on the next call (subsequent PUT for that tenant) or via the startup re-seeder (T22b — currently a manual operator step; future automation tracked separately).
 
 #### 13.4.2 Tasks
 
