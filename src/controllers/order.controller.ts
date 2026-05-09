@@ -171,7 +171,7 @@ export class OrderController {
       new AddressServiceGeocoder(),
     );
     this.eventService = new OrderEventService(this.enrichmentService);
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(dbService);
     this.slaService = new SLATrackingService();
     this.qcQueueService = new QCReviewQueueService();
     this.axiomService = new AxiomService(dbService);

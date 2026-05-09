@@ -25,7 +25,7 @@ export class AppraiserService {
     this.cosmosService = cosmosService || new CosmosDbService();
     this.communicationService = new AzureCommunicationService();
     this.eventService = new OrderEventService();
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(this.cosmosService);
     this.logger = new Logger('AppraiserService');
   }
 

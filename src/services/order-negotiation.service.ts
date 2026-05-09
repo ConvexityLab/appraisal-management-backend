@@ -48,7 +48,7 @@ export class OrderNegotiationService {
     this.dbService = new CosmosDbService();
     this.slaTrackingService = new SLATrackingService();
     this.eventService = new OrderEventService();
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(this.dbService);
   }
 
   private dbInitialized = false;

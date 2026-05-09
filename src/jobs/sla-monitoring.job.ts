@@ -57,7 +57,7 @@ export class SLAMonitoringJob {
   constructor(dbService?: CosmosDbService) {
     this.logger = new Logger('SLAMonitoringJob');
     this.cosmosService = dbService || new CosmosDbService();
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(this.cosmosService);
     this.eventService = new OrderEventService();
   }
 

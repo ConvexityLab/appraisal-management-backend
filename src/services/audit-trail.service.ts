@@ -39,9 +39,17 @@ export class AuditTrailService {
   private dbService: CosmosDbService;
   private readonly containerName = 'audit-trail';
 
-  constructor() {
+  /**
+   * Takes an already-initialised `CosmosDbService` from the caller. Earlier
+   * versions of this service constructed a fresh `new CosmosDbService()`
+   * inline, which the runtime never `connect()`-ed — so every `log()` call
+   * failed silently with `Database not initialized` (the catch block below
+   * logs the error but doesn't throw, so the symptom was an empty
+   * audit-trail container, not a request failure).
+   */
+  constructor(dbService: CosmosDbService) {
     this.logger = new Logger();
-    this.dbService = new CosmosDbService();
+    this.dbService = dbService;
   }
 
   /**

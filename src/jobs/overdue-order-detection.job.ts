@@ -36,7 +36,7 @@ export class OverdueOrderDetectionJob {
   constructor(dbService?: CosmosDbService) {
     this.logger = new Logger('OverdueOrderDetection');
     this.cosmosService = dbService || new CosmosDbService();
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(this.cosmosService);
     this.publisher = new ServiceBusEventPublisher();
   }
 

@@ -196,8 +196,8 @@ export class AxiomController {
           {
             ...(document.orderId ? { orderId: document.orderId } : {}),
             ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-            ...(typeof order['engagementLoanId'] === 'string'
-              ? { loanPropertyContextId: order['engagementLoanId'] }
+            ...(typeof order['engagementPropertyId'] === 'string'
+              ? { loanPropertyContextId: order['engagementPropertyId'] }
               : document.orderId
                 ? { loanPropertyContextId: document.orderId }
                 : {}),
@@ -221,8 +221,8 @@ export class AxiomController {
       runReason: 'AUTO_DOCUMENT_EXTRACTION_WEBHOOK',
       engineTarget: 'AXIOM',
       ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-      loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
-        ? order['engagementLoanId']
+      loanPropertyContextId: typeof order['engagementPropertyId'] === 'string'
+        ? order['engagementPropertyId']
         : document.orderId,
       ...(extractionSourceIdentity ? { sourceIdentity: extractionSourceIdentity } : {}),
     });
@@ -270,8 +270,8 @@ export class AxiomController {
       ? extendIntakeSourceIdentity(snapshot.sourceIdentity, {
           ...(document.orderId ? { orderId: document.orderId } : {}),
           ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-          ...(typeof order['engagementLoanId'] === 'string'
-            ? { loanPropertyContextId: order['engagementLoanId'] }
+          ...(typeof order['engagementPropertyId'] === 'string'
+            ? { loanPropertyContextId: order['engagementPropertyId'] }
             : document.orderId
               ? { loanPropertyContextId: document.orderId }
               : {}),
@@ -294,8 +294,8 @@ export class AxiomController {
       runMode: 'FULL',
       engineTarget: 'AXIOM',
       ...(typeof order['engagementId'] === 'string' ? { engagementId: order['engagementId'] } : {}),
-      loanPropertyContextId: typeof order['engagementLoanId'] === 'string'
-        ? order['engagementLoanId']
+      loanPropertyContextId: typeof order['engagementPropertyId'] === 'string'
+        ? order['engagementPropertyId']
         : document.orderId,
       ...(criteriaSourceIdentity ? { sourceIdentity: criteriaSourceIdentity } : {}),
     });
@@ -385,7 +385,7 @@ export class AxiomController {
     this.criteriaStepInputService = new CriteriaStepInputService(dbService);
     this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
     this.contextLoader = new OrderContextLoader(dbService);
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(dbService);
   }
 
   /**
