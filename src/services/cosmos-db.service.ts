@@ -302,9 +302,10 @@ export class CosmosDbService {
    *
    * This method remains as a low-level Cosmos helper used internally by
    * VendorOrderService. Direct callers (`order.controller`,
-   * `production-order.controller`, `bulk-portfolio.service`,
-   * `bulk-ingestion-order-creation-worker`, `ai-action-dispatcher.service`)
-   * are scheduled to migrate in slices 8e–8g per ORDER-DOMAIN-REDESIGN.md §4.
+   * `bulk-portfolio.service`, `bulk-ingestion-order-creation-worker`,
+   * `ai-action-dispatcher.service`) are scheduled to migrate in slices 8e–8g
+   * per ORDER-DOMAIN-REDESIGN.md §4 (the `production-order.controller` direct
+   * caller was deleted in Phase B step B2 — never mounted, no live consumers).
    *
    * Slice 8f (`feat/discriminator-flip`) will additionally rename `type: 'order'`
    * → `type: 'vendor-order'` here in lockstep with all read queries.
