@@ -39,9 +39,11 @@ describe('VendorOrder discriminator constants (slice 8f)', () => {
     expect(LEGACY_VENDOR_ORDER_DOC_TYPE).toBe('order');
   });
 
-  it('VENDOR_ORDER_TYPE_PREDICATE matches both values via OR', () => {
-    // Slice 8j+ collapses this to a single-value predicate after backfill.
-    expect(VENDOR_ORDER_TYPE_PREDICATE).toBe(`(c.type = 'vendor-order' OR c.type = 'order')`);
+  it('VENDOR_ORDER_TYPE_PREDICATE matches only the new vendor-order discriminator (slice 8j retired)', () => {
+    // Phase B: legacy 'order' rows retired with the staging re-seed; the
+    // predicate is now a single-value match. LEGACY_VENDOR_ORDER_DOC_TYPE
+    // remains exported only for compile-time comparison sites pending cleanup.
+    expect(VENDOR_ORDER_TYPE_PREDICATE).toBe(`c.type = 'vendor-order'`);
   });
 });
 
