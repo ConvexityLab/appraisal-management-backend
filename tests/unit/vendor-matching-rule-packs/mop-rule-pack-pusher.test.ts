@@ -141,6 +141,71 @@ describe('MopRulePackPusher.push — wire format', () => {
   });
 });
 
+describe('MopRulePackPusher.preview', () => {
+  const samplePreviewInput = {
+    rulePack: {
+      program: { name: 'P', programId: 'vendor-matching', version: 'preview', description: 'd' },
+      rules: [{ name: 'R1', pattern_id: 'vendor_evaluation', salience: 100, conditions: {}, actions: [] }] as unknown[],
+    },
+    evaluations: [{ vendor: { id: 'v1', capabilities: [], states: [] }, order: {} }],
+  };
+
+  it('POSTs to /api/v1/vendor-matching/preview with the input body', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({ results: [{ eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] }] }),
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL });
+    const result = await pusher.preview(samplePreviewInput);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`${BASE_URL}/api/v1/vendor-matching/preview`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(samplePreviewInput);
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]!.eligible).toBe(true);
+  });
+
+  it('attaches X-Service-Auth when configured', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({ results: [] }),
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL, serviceAuthToken: 'shh' });
+    await pusher.preview({ ...samplePreviewInput, evaluations: [] });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init.headers['X-Service-Auth']).toBe('shh');
+  });
+
+  it('bubbles MOP 400 message verbatim (validator output)', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false, status: 400, statusText: 'Bad Request',
+      text: async () => '{"error":"rules[0].name missing or not a non-empty string"}',
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL });
+    await expect(pusher.preview(samplePreviewInput)).rejects.toThrow(/400.*name missing/);
+  });
+
+  it('throws when MOP returns non-JSON', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => 'not json',
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL });
+    await expect(pusher.preview(samplePreviewInput)).rejects.toThrow(/non-JSON/);
+  });
+
+  it('throws when MOP response is missing results[]', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => '{"data":[]}',
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL });
+    await expect(pusher.preview(samplePreviewInput)).rejects.toThrow(/results/);
+  });
+});
+
 describe('MopRulePackPusher.drop', () => {
   it('DELETEs the tenant route', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });

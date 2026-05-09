@@ -37,6 +37,10 @@ export class VendorMatchingRulePacksController {
   }
 
   private initRoutes(): void {
+    // NOTE: route order matters. Express matches in registration order, so
+    // /preview must come before /:packId or it would be captured by the
+    // packId param.
+    this.router.post('/preview',                   this.preview.bind(this));
     this.router.post('/',                          this.createVersion.bind(this));
     this.router.get('/:packId',                    this.getActive.bind(this));
     this.router.get('/:packId/versions',           this.listVersions.bind(this));
@@ -143,6 +147,57 @@ export class VendorMatchingRulePacksController {
     const packId = req.params.packId!;
     const entries = await this.packs.listAudit(tenantId, packId);
     res.json({ success: true, data: entries, count: entries.length });
+  }
+
+  // ── POST /preview — stateless rule-pack test against sample vendors ─────
+  // Forwards to MOP's /api/v1/vendor-matching/preview. Wraps the FE's
+  // {rules, evaluations} body into the shape MOP expects ({rulePack, evaluations}).
+  // Returns MOP's response unchanged on success; bubbles MOP's validation
+  // errors verbatim on 400 so the FE shows the same messages the operator
+  // would see on save.
+  private async preview(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    if (!this.pusher) {
+      res.status(503).json({ success: false, error: 'MOP push not configured (no pusher)' });
+      return;
+    }
+
+    const body = req.body as {
+      rules?: unknown[];
+      evaluations?: Array<Record<string, unknown>>;
+      packId?: string;
+    };
+    if (!Array.isArray(body.rules)) {
+      res.status(400).json({ success: false, error: '`rules` (array) is required' });
+      return;
+    }
+    if (!Array.isArray(body.evaluations) || body.evaluations.length === 0) {
+      res.status(400).json({ success: false, error: '`evaluations` (non-empty array) is required' });
+      return;
+    }
+
+    try {
+      const result = await this.pusher.preview({
+        rulePack: {
+          program: {
+            name: `Preview for tenant ${tenantId}`,
+            programId: 'vendor-matching',
+            version: 'preview',
+            description: `Preview from FE rules workspace (pack=${body.packId ?? 'default'})`,
+          },
+          rules: body.rules,
+        },
+        evaluations: body.evaluations,
+      });
+      res.json({ success: true, data: result });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // MOP returns the validator's error list inside the message; surface as 400
+      // so the FE can render it inline alongside the editor.
+      const status = /^MOP preview returned 400/.test(msg) ? 400 : 502;
+      res.status(status).json({ success: false, error: msg });
+    }
   }
 
   // ── DELETE /:packId — drop tenant pack on MOP ────────────────────────────

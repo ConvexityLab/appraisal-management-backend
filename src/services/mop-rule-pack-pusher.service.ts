@@ -116,6 +116,86 @@ export class MopRulePackPusher {
   }
 
   /**
+   * Stateless rule-pack preview. Forwards to MOP's
+   * POST /api/v1/vendor-matching/preview which compiles a transient
+   * VendorMatchingService from the request body, evaluates, returns
+   * results — no persistence, no registry mutation. Used by the FE
+   * rules workspace to test an unsaved rule pack against sample vendors.
+   *
+   * Throws on non-2xx (bubbles MOP's validation errors up to the caller
+   * verbatim so the operator sees the C++ validator's error list).
+   */
+  async preview(input: {
+    rulePack: { program: Record<string, unknown>; rules: unknown[] };
+    evaluations: Array<Record<string, unknown>>;
+  }): Promise<{ results: Array<{
+    eligible: boolean;
+    scoreAdjustment: number;
+    appliedRuleIds: string[];
+    denyReasons: string[];
+  }> }> {
+    const url = `${this.baseUrl}/api/v1/vendor-matching/preview`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const start = Date.now();
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.authHeader) headers['Authorization'] = this.authHeader;
+      if (this.serviceAuthToken) headers['X-Service-Auth'] = this.serviceAuthToken;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+
+      const text = await response.text();
+
+      if (!response.ok) {
+        // Bubble the MOP validator's error message so the FE can show it
+        // exactly as the operator would see on save.
+        throw new Error(
+          `MOP preview returned ${response.status} ${response.statusText}: ${text.slice(0, 1000)}`
+        );
+      }
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(text);
+      } catch (err) {
+        throw new Error(`MOP preview returned non-JSON body: ${text.slice(0, 200)}`);
+      }
+      if (!parsed || !Array.isArray(parsed.results)) {
+        throw new Error(`MOP preview response missing results[]; got: ${text.slice(0, 200)}`);
+      }
+
+      this.logger.info('mop.rules.preview.success', {
+        evaluations: input.evaluations.length,
+        ruleCount: input.rulePack.rules.length,
+        latencyMs: Date.now() - start,
+      });
+      return parsed;
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError';
+      this.logger.error('mop.rules.preview.failure', {
+        evaluations: input.evaluations.length,
+        latencyMs: Date.now() - start,
+        kind: isTimeout ? 'timeout' : err?.constructor?.name ?? 'Error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+      if (isTimeout) {
+        throw new Error(`MOP preview timed out after ${this.timeoutMs}ms`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Drop a tenant's rules from MOP (DELETE). Used when a tenant disables
    * their custom pack and wants to fall back to the default seed.
    */
