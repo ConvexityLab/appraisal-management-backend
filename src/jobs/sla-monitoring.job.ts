@@ -16,6 +16,7 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { OrderEventService } from '../services/order-event.service.js';
 
 interface SLATrackingRecord {
@@ -233,7 +234,7 @@ export class SLAMonitoringJob {
     try {
       await this.auditService.log({
         actor: { userId: 'system', role: 'system' },
-        action: newStatus === 'BREACHED' ? 'SLA_BREACHED' : 'SLA_AT_RISK',
+        action: newStatus === 'BREACHED' ? AuditEventType.SLA_BREACHED : AuditEventType.SLA_AT_RISK,
         resource: { type: 'order', id: record.orderId, name: record.orderNumber },
         metadata: {
           slaId: record.id,

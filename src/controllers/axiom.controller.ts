@@ -16,6 +16,8 @@ import { AxiomExecutionService } from '../services/axiom-execution.service';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import { CosmosDbService } from '../services/cosmos-db.service';
 import { BulkPortfolioService } from '../services/bulk-portfolio.service';
+import { AuditTrailService } from '../services/audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { verifyAxiomWebhook } from '../middleware/verify-axiom-webhook.middleware.js';
 import type { TapeExtractionWebhookPayload } from '../types/review-tape.types.js';
@@ -74,6 +76,7 @@ export class AxiomController {
   private readonly criteriaStepInputService: CriteriaStepInputService;
   private readonly analysisSubmissionService: AnalysisSubmissionService;
   private readonly contextLoader: OrderContextLoader;
+  private readonly auditService: AuditTrailService;
   private readonly logger = new Logger('AxiomController');
 
   private createHeaderOrGeneratedValue(req: UnifiedAuthRequest, headerName: string, prefix: string): string {
@@ -382,6 +385,7 @@ export class AxiomController {
     this.criteriaStepInputService = new CriteriaStepInputService(dbService);
     this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
     this.contextLoader = new OrderContextLoader(dbService);
+    this.auditService = new AuditTrailService();
   }
 
   /**
@@ -1269,6 +1273,59 @@ export class AxiomController {
       if (schemaId !== undefined) evaluateInput.schemaId = schemaId;
       const summary = await this.axiomService.evaluateScope(evaluateInput);
 
+      // Stamp order + write lifecycle event so the FE timeline + order
+      // header reflect Axiom completion. The legacy webhook path does this
+      // for pipeline-style runs; the v2 path is synchronous, so the
+      // controller is the right place to mirror that behaviour.
+      // Failures here are logged but do NOT propagate — the caller already
+      // got the run summary, and orphan-stamping is recoverable separately.
+      const v2RunStatus = summary.status; // 'processing' | 'completed' | 'failed' | 'timed_out'
+      const orderAxiomStatus: 'processing' | 'completed' | 'failed' =
+        v2RunStatus === 'completed' ? 'completed'
+        : v2RunStatus === 'processing' ? 'processing'
+        : 'failed'; // 'failed' and 'timed_out' both map here — Order schema has no 'timed_out' value
+      try {
+        const orderUpdate: Partial<{
+          axiomStatus: 'processing' | 'completed' | 'failed';
+          axiomCompletedAt: string;
+        }> = { axiomStatus: orderAxiomStatus };
+        if (orderAxiomStatus === 'completed' || orderAxiomStatus === 'failed') {
+          orderUpdate.axiomCompletedAt = new Date().toISOString();
+        }
+        await this.dbService.updateOrder(scopeId, orderUpdate);
+      } catch (stampErr) {
+        this.logger.warn('v2 evaluateScope: failed to stamp axiom status on order', {
+          scopeId,
+          error: stampErr instanceof Error ? stampErr.message : String(stampErr),
+        });
+      }
+
+      try {
+        await this.auditService.log({
+          actor: { userId: actor.initiatedBy, role: req.user?.role ?? 'system' },
+          action: AuditEventType.AXIOM_COMPLETED,
+          resource: { type: 'order', id: scopeId },
+          metadata: {
+            entryPoint: 'v2-evaluate',
+            evaluationRunId: summary.evaluationRunId,
+            programId,
+            programVersion,
+            status: v2RunStatus,
+            ...(typeof summary.totalCriteria === 'number' ? { totalCriteria: summary.totalCriteria } : {}),
+            ...(typeof summary.passed === 'number' ? { passed: summary.passed } : {}),
+            ...(typeof summary.failed === 'number' ? { failed: summary.failed } : {}),
+            ...(typeof summary.needsReview === 'number' ? { needsReview: summary.needsReview } : {}),
+            ...(typeof summary.cannotEvaluate === 'number' ? { cannotEvaluate: summary.cannotEvaluate } : {}),
+            ...(typeof summary.notApplicable === 'number' ? { notApplicable: summary.notApplicable } : {}),
+          },
+        });
+      } catch (auditErr) {
+        this.logger.warn('v2 evaluateScope: failed to write AXIOM_COMPLETED audit event', {
+          scopeId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+      }
+
       res.status(200).json({ success: true, data: summary });
     } catch (error) {
       this.logger.error('v2 evaluateScope failed', {
@@ -2022,6 +2079,24 @@ export class AxiomController {
         if (!orderUpdateResult.success) {
           throw new Error(`Failed to stamp order from webhook for orderId=${correlationId}: ${orderUpdateResult.error ?? 'unknown error'}`);
         }
+
+        // Lifecycle event: register the Axiom completion in audit-trail so the
+        // FE order timeline can render it. Without this, the order quietly
+        // updates its axiomStatus/axiomRiskScore/axiomDecision but the user
+        // sees no trace of "Axiom finished" in the activity panel.
+        await this.auditService.log({
+          actor: { userId: 'axiom-webhook', role: 'system' },
+          action: AuditEventType.AXIOM_COMPLETED,
+          resource: { type: 'order', id: correlationId },
+          metadata: {
+            entryPoint: 'webhook',
+            status,
+            ...(pipelineJobId ? { pipelineJobId } : {}),
+            ...(typeof updateData.axiomRiskScore === 'number' ? { axiomRiskScore: updateData.axiomRiskScore } : {}),
+            ...(updateData.axiomDecision ? { axiomDecision: updateData.axiomDecision } : {}),
+            ...(updateData.axiomFlags ? { axiomFlags: updateData.axiomFlags } : {}),
+          },
+        });
 
         // For completed pipelines, fetch full criteria results and store them in aiInsights.
         // This is the authoritative path — it fires even when the SSE stream was not open

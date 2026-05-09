@@ -14,6 +14,7 @@
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import type { OrderOverdueEvent } from '../types/events.js';
@@ -148,7 +149,7 @@ export class OverdueOrderDetectionJob {
           try {
             await this.auditService.log({
               actor: { userId: 'system', role: 'system' },
-              action: 'ORDER_OVERDUE',
+              action: AuditEventType.ORDER_OVERDUE,
               resource: {
                 type: 'order',
                 id: order.id,

@@ -41,6 +41,7 @@ import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { QuickBooksService } from '../services/quickbooks.service.js';
 import { OrderEventService } from '../services/order-event.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { SLATrackingService } from '../services/sla-tracking.service.js';
 import { QCReviewQueueService } from '../services/qc-review-queue.service.js';
 import { AxiomService } from '../services/axiom.service.js';
@@ -437,7 +438,7 @@ export class OrderController {
         }
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.created',
+          action: AuditEventType.ORDER_CREATED,
           resource: { type: 'order', id: created?.id || 'unknown' },
           after: { status: OrderStatus.NEW, priority: orderData.priority },
         }).catch((err) =>
@@ -560,7 +561,7 @@ export class OrderController {
       if (result.success && result.data) {
         this.auditService.log({
           actor: { userId: req.user?.id ?? 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.updated',
+          action: AuditEventType.ORDER_UPDATED,
           resource: { type: 'order', id: orderId },
           after: patch,
         }).catch((err) => logger.error('Audit log failed for order.updated', { error: err }));
@@ -756,7 +757,7 @@ export class OrderController {
         );
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.status_changed',
+          action: AuditEventType.STATUS_CHANGED,
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },
           after: { status: newStatus },
@@ -918,7 +919,7 @@ export class OrderController {
         );
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.delivered',
+          action: AuditEventType.ORDER_DELIVERED,
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },
           after: { status: OrderStatus.DELIVERED, reportUrl, deliveryNotes },
@@ -1009,7 +1010,7 @@ export class OrderController {
         );
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.assigned',
+          action: AuditEventType.VENDOR_ASSIGNED,
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },
           after: { status: OrderStatus.ASSIGNED, vendorId, vendorName },
@@ -1081,7 +1082,7 @@ export class OrderController {
         );
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.unassigned',
+          action: AuditEventType.VENDOR_UNASSIGNED,
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus, vendorId: previousVendorId },
           after: { status: OrderStatus.PENDING_ASSIGNMENT },
@@ -1144,7 +1145,7 @@ export class OrderController {
       if (result.success && result.data) {
         this.auditService.log({
           actor: { userId: req.user?.id ?? 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.payment.updated',
+          action: AuditEventType.PAYMENT_UPDATED,
           resource: { type: 'order', id: orderId },
           after: { paymentStatus, paidAt: patch['paidAt'] },
         }).catch((err) => logger.error('Audit log failed for order.payment.updated', { error: err }));
@@ -1213,7 +1214,7 @@ export class OrderController {
         );
         this.auditService.log({
           actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.cancelled',
+          action: AuditEventType.ORDER_CANCELLED,
           resource: { type: 'order', id: orderId },
           before: { status: currentStatus },
           after: { status: OrderStatus.CANCELLED },
@@ -1450,7 +1451,7 @@ export class OrderController {
             );
             this.auditService.log({
               actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
-              action: 'order.status_changed',
+              action: AuditEventType.STATUS_CHANGED,
               resource: { type: 'order', id: orderId },
               before: { status: currentStatus },
               after: { status: newStatus },
@@ -1593,7 +1594,7 @@ export class OrderController {
 
       this.auditService.log({
         actor: { userId, ...(req.user?.email != null && { email: req.user.email }) },
-        action: 'order.attention_acknowledged',
+        action: AuditEventType.ATTENTION_ACKNOWLEDGED,
         resource: { type: 'order', id: orderId },
         after: { attentionAcknowledgedAt: new Date().toISOString() },
       }).catch((err) => logger.error('Audit log failed for attention_acknowledged', { error: err }));
@@ -1753,7 +1754,7 @@ export class OrderController {
 
       this.auditService.log({
         actor: { userId: req.user?.id || 'system', email: req.user?.email || 'system' },
-        action: 'order.compliance_evaluated',
+        action: AuditEventType.COMPLIANCE_EVALUATED,
         resource: { type: 'order', id: orderId },
         metadata: {
           message: 'Compliance evaluation submitted to Axiom pipeline.',
@@ -1904,7 +1905,7 @@ export class OrderController {
             );
             this.auditService.log({
               actor: { userId: req.user?.id || 'unknown', ...(req.user?.email != null && { email: req.user.email }) },
-              action: 'order.assigned',
+              action: AuditEventType.VENDOR_ASSIGNED,
               resource: { type: 'order', id: orderId },
               before: { status: currentStatus },
               after: { status: OrderStatus.ASSIGNED, vendorId, vendorName },

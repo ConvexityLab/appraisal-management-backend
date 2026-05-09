@@ -8,6 +8,7 @@ import { AzureCommunicationService } from './azure-communication.service.js';
 import { SLATrackingService } from './sla-tracking.service.js';
 import { OrderEventService } from './order-event.service.js';
 import { AuditTrailService } from './audit-trail.service.js';
+import { AuditEventType } from '../types/audit-events.js';
 import { Logger } from '../utils/logger.js';
 import { OrderStatus, normalizeOrderStatus } from '../types/order-status.js';
 import type { Appraiser, AppraiserAssignment, ConflictCheckResult, License } from '../types/appraiser.types.js';
@@ -467,7 +468,7 @@ Appraisal Management Team`.trim();
         );
         this.auditService.log({
           actor: { userId: appraiserId, role: 'appraiser' },
-          action: 'order.status_changed',
+          action: AuditEventType.STATUS_CHANGED,
           resource: { type: 'order', id: assignment.orderId },
           before: { status: previousStatus },
           after: { status: 'ACCEPTED' },

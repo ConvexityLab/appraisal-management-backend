@@ -120,7 +120,7 @@ describe('OrderController.createOrder', () => {
     );
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: 'order.created',
+        action: 'ORDER_CREATED',
         resource: { type: 'order', id: 'order-789' },
       }),
     );
