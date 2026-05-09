@@ -327,8 +327,16 @@ export class CosmosDbService {
       // VENDOR_ORDER_TYPE_PREDICATE; backfilling them to a system-default
       // engagement is a one-off migration (deferred to slice 8j or a
       // dedicated PR).
-      if (!order.engagementId || (typeof order.engagementId === 'string' && order.engagementId.trim() === '')) {
-        this.logger.error('createOrder rejected — missing engagementId (slice 8g engagement-primacy guard)', {
+      // Phase B step 10: full strict engagement-primacy. After all Phase B
+      // caller migrations (steps 4-9), every legitimate write path supplies
+      // engagementId + engagementPropertyId + engagementClientOrderId. Anything
+      // missing them is a bug — reject loudly here instead of silently
+      // creating an orphan VendorOrder.
+      const isLinkageMissing = (v: unknown): boolean =>
+        v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+
+      if (isLinkageMissing(order.engagementId)) {
+        this.logger.error('createOrder rejected — missing engagementId (engagement-primacy guard)', {
           clientId: order.clientId,
           tenantId: order.tenantId,
           productType: order.productType,
@@ -338,7 +346,40 @@ export class CosmosDbService {
           error: createApiError(
             ErrorCodes.ORDER_CREATE_FAILED,
             'engagementId is required to create an order. Route through ClientOrderService.placeClientOrder() ' +
-            'or VendorOrderService.createVendorOrder() — both enforce engagement parenting. Slice 8g.',
+            'or ClientOrderService.addVendorOrders() — both enforce full engagement parenting.',
+          ),
+        };
+      }
+      if (isLinkageMissing(order.engagementPropertyId)) {
+        this.logger.error('createOrder rejected — missing engagementPropertyId (engagement-primacy guard)', {
+          clientId: order.clientId,
+          tenantId: order.tenantId,
+          engagementId: order.engagementId,
+          productType: order.productType,
+        });
+        return {
+          success: false,
+          error: createApiError(
+            ErrorCodes.ORDER_CREATE_FAILED,
+            'engagementPropertyId is required. Every VendorOrder must identify its parent ' +
+            'EngagementProperty. Route through addVendorOrders() / placeClientOrder().',
+          ),
+        };
+      }
+      if (isLinkageMissing(order.engagementClientOrderId)) {
+        this.logger.error('createOrder rejected — missing engagementClientOrderId (engagement-primacy guard)', {
+          clientId: order.clientId,
+          tenantId: order.tenantId,
+          engagementId: order.engagementId,
+          engagementPropertyId: order.engagementPropertyId,
+          productType: order.productType,
+        });
+        return {
+          success: false,
+          error: createApiError(
+            ErrorCodes.ORDER_CREATE_FAILED,
+            'engagementClientOrderId is required. Every VendorOrder must identify its parent ' +
+            'EngagementClientOrder. Route through addVendorOrders() / placeClientOrder().',
           ),
         };
       }

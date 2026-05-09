@@ -63,16 +63,49 @@ describe('CosmosDbService.createOrder — engagement-primacy guard', () => {
     expect(result.error.message).toMatch(/engagementId is required/i);
   });
 
-  it('proceeds to write when engagementId is supplied', async () => {
+  it('proceeds to write when full engagement linkage is supplied', async () => {
     const thiz = makeStubService();
     const result = await callGuarded(thiz, {
       tenantId: 'tenant-1',
       clientId: 'client-1',
       engagementId: 'eng-1',
+      engagementPropertyId: 'prop-1',
+      engagementClientOrderId: 'co-1',
       productType: 'FULL_APPRAISAL',
     });
     expect(result.success).toBe(true);
     expect(thiz.ordersContainer.items.create).toHaveBeenCalledTimes(1);
+  });
+
+  // Phase B step 10: strict mode rejects partial linkage.
+  it('rejects when engagementPropertyId is missing', async () => {
+    const thiz = makeStubService();
+    const result = await callGuarded(thiz, {
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      engagementId: 'eng-1',
+      // engagementPropertyId omitted
+      engagementClientOrderId: 'co-1',
+      productType: 'FULL_APPRAISAL',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.message).toMatch(/engagementPropertyId is required/i);
+    expect(thiz.ordersContainer.items.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects when engagementClientOrderId is missing', async () => {
+    const thiz = makeStubService();
+    const result = await callGuarded(thiz, {
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      engagementId: 'eng-1',
+      engagementPropertyId: 'prop-1',
+      // engagementClientOrderId omitted
+      productType: 'FULL_APPRAISAL',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error.message).toMatch(/engagementClientOrderId is required/i);
+    expect(thiz.ordersContainer.items.create).not.toHaveBeenCalled();
   });
 });
 
