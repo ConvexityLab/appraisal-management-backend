@@ -29,6 +29,7 @@ import { createUnifiedAuth, UnifiedAuthRequest } from '../middleware/unified-aut
 
 // Import Authorization middleware
 import { createAuthorizationMiddleware, AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { Role, UserProfile } from '../types/authorization.types.js';
 
 // Import QC controllers and middleware. Each controller is instantiated in
 // initializeDatabase() (post-loadAppConfig) — never at module-import time —
@@ -50,6 +51,9 @@ import { createBulkIngestionRouter } from '../controllers/bulk-ingestion.control
 import { createBulkAdapterDefinitionsRouter } from '../controllers/bulk-adapter-definitions.controller.js';
 import { createReviewProgramsRouter } from '../controllers/review-programs.controller.js';
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
+import { VendorMatchingRulePackService } from '../services/vendor-matching-rule-pack.service.js';
+import { VendorMatchingRulePacksController } from '../controllers/vendor-matching-rule-packs.controller.js';
+import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { createEngagementRouter } from '../controllers/engagement.controller.js';
@@ -123,6 +127,8 @@ import { createCriteriaProgramsRouter } from '../controllers/criteria-programs.c
 import { createMopCriteriaRouter } from '../controllers/mop-criteria.controller.js';
 import { AxiomService } from '../services/axiom.service.js';
 import { createCollaborationRouter } from '../controllers/collaboration.controller.js';
+import { createPropertyRecordRouter } from '../controllers/property-record.controller.js';
+import { PropertyRecordService } from '../services/property-record.service.js';
 
 // Import Item 3: Enhanced Vendor Management controllers
 import { createVendorCertificationRouter } from '../controllers/vendor-certification.controller';
@@ -207,7 +213,6 @@ import { BulkIngestionOrderCreationWorkerService } from '../services/bulk-ingest
 import { BulkUploadEventListenerJob } from '../jobs/bulk-upload-event-listener.job.js';
 import { CompCollectionListenerJob } from '../jobs/comp-collection-listener.job.js';
 import { OrderCompCollectionService } from '../services/order-comp-collection.service.js';
-import { PropertyRecordService } from '../services/property-record.service.js';
 import { AttomDataCompSearchService } from '../services/attom-data-comp-search.service.js';
 import { CompSelectionStrategyRegistry } from '../services/comp-selection/registry.js';
 import { CompSelectionPromptLoader } from '../services/comp-selection/prompt-loader.js';
@@ -241,6 +246,14 @@ import { createAutomationMetricsRouter } from '../controllers/automation-metrics
 import { createQCIssuesOrderScopedRouter, createQCIssuesRouter } from '../controllers/qc-issues.controller.js';
 import { createVendorOutboxMonitorRouter } from '../controllers/vendor-outbox-monitor.controller.js';
 import { createVendorBidAnalysisRouter } from '../controllers/vendor-bid-analysis.controller.js';
+import type { Action, ResourceType } from '../types/authorization.types.js';
+import {
+  CANONICAL_ROLES,
+  CANONICAL_ROLE_PERMISSION_BUNDLES,
+  normalizeRoleAlias,
+} from '../utils/auth-normalization.js';
+
+const VALID_USER_ROLES: readonly Role[] = CANONICAL_ROLES;
 
 // Import Review Assignment Timeout Job
 import { ReviewAssignmentTimeoutJob } from '../jobs/review-assignment-timeout.job';
@@ -435,6 +448,12 @@ export class AppraisalManagementAPIServer {
       );
     }
 
+    // Initialize authorization middleware after database is ready - pass dbService.
+    // This must happen before any authz-protected routes are registered so the
+    // route stack never captures a fail-open placeholder.
+    this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
+    this.logger.info('Authorization middleware initialized');
+
     // Initialize QC routers now that env (loadAppConfig + bicep) and Cosmos are ready.
     // Construction triggers CosmosDbService / AxiomService / etc. which read env vars.
     this.qcChecklistRouter = new QCChecklistController().getRouter();
@@ -453,13 +472,9 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/qc/execution',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('order', 'qc_execute'),
+      this.authorize('qc_review', 'execute'),
       this.qcExecutionRouter
     );
-    
-    // Initialize authorization middleware after database is ready - pass dbService
-    this.authzMiddleware = await createAuthorizationMiddleware(undefined, this.dbService);
-    this.logger.info('Authorization middleware initialized');
     
     // Register QC Results routes AFTER authz middleware is ready
     this.app.use('/api/qc/results',
@@ -495,10 +510,24 @@ export class AppraisalManagementAPIServer {
   }
 
   /**
-   * Helper to return authz middleware only if initialized
+   * Request-time user-profile loader for routes registered before or after
+   * authz initialization. Fails closed if authorization middleware is missing.
    */
   private loadUserProfileIfAvailable(): express.RequestHandler[] {
-    return this.authzMiddleware ? [this.authzMiddleware.loadUserProfile()] : [];
+    return [
+      (req, res, next) => {
+        if (!this.authzMiddleware) {
+          this.logger.error('Authorization middleware not initialized - blocking request during profile load');
+          res.status(503).json({
+            error: 'Authorization middleware not initialized',
+            code: 'AUTHORIZATION_MIDDLEWARE_NOT_INITIALIZED'
+          });
+          return;
+        }
+
+        return this.authzMiddleware.loadUserProfile()(req, res, next);
+      }
+    ];
   }
 
   private setupMiddleware(): void {
@@ -671,13 +700,19 @@ export class AppraisalManagementAPIServer {
       createUserProfileRouter()
     );
 
-    // Access graph management (admin only)
-    this.app.use('/api/access-graph',
+    // Property Record / Provenance Event Stream
+    const propertyRecordService = new PropertyRecordService(this.dbService);
+    this.app.use('/api/properties',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.authorize('access_graph', 'manage'),
-      createAccessGraphRouter()
+      createPropertyRecordRouter(propertyRecordService)
     );
+
+      this.app.use('/api/v1/property-records',
+        this.unifiedAuth.authenticate(),
+        this.authzMiddleware.loadUserProfile(),
+        createPropertyRecordRouter(propertyRecordService)
+      );
 
     // Authorization testing endpoint (authenticated users only)
     this.app.use('/api/authz-test',
@@ -1008,7 +1043,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/axiom/admin',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.authorize('admin_panel', 'write'),
+      this.authorize('admin_panel', 'manage'),
       createAxiomAdminRouter(sharedAxiomService)
     );
 
@@ -1248,7 +1283,7 @@ export class AppraisalManagementAPIServer {
       createQCWorkflowRouter(this.authzMiddleware)
     );
 
-    // QC Rules Engine - automation rule configuration (admin + qc_analyst only)
+    // QC Rules Engine - automation rule configuration (admin + analyst only)
     // Per-route guards are baked into the router by createQCRulesRouter.
     this.app.use('/api/qc-rules',
       this.unifiedAuth.authenticate(),
@@ -1303,11 +1338,11 @@ export class AppraisalManagementAPIServer {
       drawInspectionController.router
     );
 
-    // Policy management (admin only)
+    // Policy management (platform admin + client admin)
     this.app.use('/api/policies',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware.loadUserProfile(),
-      this.authorize('policy', 'manage'),
+      this.authorizePolicyAdministration(),
       createPolicyManagementRouter(this.dbService)
     );
 
@@ -1497,6 +1532,37 @@ export class AppraisalManagementAPIServer {
       createMatchingCriteriaRouter(this.dbService)
     );
 
+    // Vendor Matching Rule Packs — Phase 3 of AUTO_ASSIGNMENT_REVIEW.md §13.4.
+    // Per-tenant, immutable, versioned rule packs that drive MOP's vendor-
+    // matching evaluator. Push to MOP wired via the service's
+    // onNewActivePack hook (registered below).
+    {
+      const packs = new VendorMatchingRulePackService(this.dbService);
+
+      // Build a pusher only when MOP is configured. With no pusher, AMS still
+      // accepts CRUD (storage is the source of truth) but doesn't notify MOP —
+      // the next evaluator request that reaches MOP will see whatever pack
+      // MOP last cached. Acceptable for local dev; production sets the URL.
+      const mopBaseUrl = process.env['MOP_RULES_BASE_URL'];
+      const mopAuthToken = process.env['MOP_RULES_SERVICE_AUTH_TOKEN'];
+      let pusher: MopRulePackPusher | null = null;
+      if (mopBaseUrl) {
+        pusher = new MopRulePackPusher({
+          baseUrl: mopBaseUrl,
+          ...(mopAuthToken ? { serviceAuthToken: mopAuthToken } : {}),
+        });
+        // Best-effort push on every new active pack. Failure logged inside
+        // the pusher; the service catches + does not roll back the storage write.
+        const pusherRef = pusher;
+        packs.onNewActivePack(async (pack) => { await pusherRef.push(pack); });
+      }
+
+      this.app.use('/api/auto-assignment/rules',
+        this.unifiedAuth.authenticate(),
+        new VendorMatchingRulePacksController(packs, pusher).router,
+      );
+    }
+
     // RFB — Request-for-Bid lifecycle (order-scoped endpoints)
     this.app.use('/api/orders/:orderId/rfb',
       this.unifiedAuth.authenticate(),
@@ -1556,14 +1622,14 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/analytics/overview',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.getAnalyticsOverview.bind(this)
     );
 
     this.app.get('/api/analytics/performance',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.validateAnalyticsQuery(),
       this.getPerformanceAnalytics.bind(this)
     );
@@ -1571,14 +1637,14 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/analytics/orders/trend',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.getOrderTrend.bind(this)
     );
 
     this.app.get('/api/analytics/vendors/performance',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.getVendorPerformanceSummary.bind(this)
     );
 
@@ -1730,7 +1796,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/qc/analyze',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'qc_analyze'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performQCAnalysis
     );
@@ -1738,7 +1804,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/qc/technical',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'qc_analyze'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performTechnicalQC
     );
@@ -1746,7 +1812,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/qc/compliance',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'qc_analyze'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateQCAnalysis(),
       this.aiServicesController.performComplianceQC
     );
@@ -1784,7 +1850,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/completion',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'generate'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletion
     );
@@ -1796,7 +1862,7 @@ export class AppraisalManagementAPIServer {
     this.app.post('/api/ai/completion/stream',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('ai', 'generate'),
+      this.authorize('ai', 'execute'),
       this.aiServicesController.validateCompletion(),
       this.aiServicesController.generateCompletionStream
     );
@@ -1827,7 +1893,7 @@ export class AppraisalManagementAPIServer {
     this.app.get('/api/ai/usage',
       this.unifiedAuth.authenticate(),
       ...this.loadUserProfileIfAvailable(),
-      this.authorize('analytics', 'view'),
+      this.authorize('analytics', 'read'),
       this.aiServicesController.getUsageStats
     );
 
@@ -1974,13 +2040,46 @@ export class AppraisalManagementAPIServer {
   };
 
   // Authorization middleware - now using Casbin
-  private authorize(resourceType: string, action: string) {
-    if (!this.authzMiddleware) {
-      this.logger.warn('Authorization middleware not initialized - allowing request');
-      return (req: any, res: any, next: any) => next();
-    }
-    // Cast to proper types since we know these match Casbin's ResourceType and Action
-    return this.authzMiddleware.authorize(resourceType as any, action as any);
+  private authorize(resourceType: ResourceType, action: Action) {
+    return (req: any, res: any, next: any) => {
+      if (!this.authzMiddleware) {
+        this.logger.error('Authorization middleware not initialized - blocking request');
+        res.status(503).json({
+          error: 'Authorization middleware not initialized',
+          code: 'AUTHORIZATION_MIDDLEWARE_NOT_INITIALIZED'
+        });
+        return;
+      }
+
+      // Cast to proper types since we know these match Casbin's ResourceType and Action
+      return this.authzMiddleware.authorize(resourceType, action)(req, res, next);
+    };
+  }
+
+  private authorizePolicyAdministration() {
+    return (req: UnifiedAuthRequest, res: express.Response, next: express.NextFunction): void => {
+      const userProfile = req.userProfile as UserProfile | undefined;
+      if (!userProfile) {
+        res.status(401).json({
+          error: 'User profile required',
+          code: 'USER_PROFILE_REQUIRED',
+        });
+        return;
+      }
+
+      const isPlatformAdmin = userProfile.role === 'admin' && userProfile.portalDomain === 'platform';
+      const isClientAdmin = userProfile.role === 'manager' && userProfile.portalDomain === 'client';
+
+      if (!isPlatformAdmin && !isClientAdmin) {
+        res.status(403).json({
+          error: 'Policy administration access denied',
+          code: 'POLICY_ADMIN_FORBIDDEN',
+        });
+        return;
+      }
+
+      next();
+    };
   }
 
   // Validation middleware
@@ -1998,7 +2097,7 @@ export class AppraisalManagementAPIServer {
       body('password').isLength({ min: 8 }).matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/),
       body('firstName').isLength({ min: 1 }).trim(),
       body('lastName').isLength({ min: 1 }).trim(),
-      body('role').isIn(['admin', 'manager', 'appraiser', 'qc_analyst']),
+      body('role').isIn([...VALID_USER_ROLES, 'qc_analyst']),
       this.handleValidationErrors
     ];
   }
@@ -2571,9 +2670,11 @@ export class AppraisalManagementAPIServer {
 
       // Return user without password hash
       const { passwordHash, ...userWithoutPassword } = user;
+      const normalizedRole = this.normalizeUserRole(user.role);
       return {
         ...userWithoutPassword,
-        permissions: this.getRolePermissions(user.role)
+        role: normalizedRole,
+        permissions: this.getRolePermissions(normalizedRole)
       };
     } catch (error) {
       this.logger.error('Error validating user credentials', { error: error instanceof Error ? error.message : String(error) });
@@ -2593,14 +2694,15 @@ export class AppraisalManagementAPIServer {
 
   private async createUser(userData: any): Promise<any> {
     try {
-      const permissions = this.getRolePermissions(userData.role);
+      const normalizedRole = this.normalizeUserRole(userData.role);
+      const permissions = this.getRolePermissions(normalizedRole);
       const newUser = {
         id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         email: userData.email,
         passwordHash: userData.password, // Already hashed in register method
         firstName: userData.firstName,
         lastName: userData.lastName,
-        role: userData.role,
+        role: normalizedRole,
         permissions,
         isActive: true,
         createdAt: new Date().toISOString(),
@@ -2625,20 +2727,20 @@ export class AppraisalManagementAPIServer {
     }
   }
 
+  private normalizeUserRole(role: string): Role {
+    const normalizedRole = normalizeRoleAlias(role);
+    if (normalizedRole) {
+      return normalizedRole;
+    }
+
+    throw new Error(
+      `Unsupported user role "${role}". Expected one of: ${VALID_USER_ROLES.join(', ')} or legacy alias qc_analyst.`,
+    );
+  }
+
   private getRolePermissions(role: string): string[] {
-    const rolePermissions = {
-      admin: ['*'],
-      manager: [
-        'order_manage', 'vendor_manage', 'qc_validate', 'analytics_view',
-        'qc_execute', 'qc_manage', 'qc_checklist_manage', 'qc_results_view'
-      ],
-      appraiser: ['order_view', 'order_update', 'qc_results_view'],
-      qc_analyst: [
-        'qc_validate', 'qc_metrics', 'analytics_view', 'qc_execute', 
-        'qc_manage', 'qc_checklist_manage', 'qc_results_view'
-      ]
-    };
-    return rolePermissions[role as keyof typeof rolePermissions] || [];
+    const normalizedRole = this.normalizeUserRole(role);
+    return CANONICAL_ROLE_PERMISSION_BUNDLES[normalizedRole];
   }
 
   private setupErrorHandling(): void {
