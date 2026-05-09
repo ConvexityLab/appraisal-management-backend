@@ -14,11 +14,13 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
 import { VendorPerformanceCalculatorService } from './vendor-performance-calculator.service';
 import {
-  VendorMatchingRulesService,
   type RuleEvaluationContext,
   type RuleEvaluationResult,
-  type VendorMatchingRule,
 } from './vendor-matching-rules.service.js';
+import {
+  type VendorMatchingRulesProvider,
+  createVendorMatchingRulesProvider,
+} from './vendor-matching-rules/index.js';
 import {
   VendorMatchRequest,
   VendorMatchResult,
@@ -45,7 +47,7 @@ export class VendorMatchingEngine {
   private logger: Logger;
   private dbService: CosmosDbService;
   private performanceService: VendorPerformanceCalculatorService;
-  private rulesService: VendorMatchingRulesService;
+  private rulesProvider: VendorMatchingRulesProvider;
 
   // Scoring weights (must sum to 1.0)
   private readonly WEIGHTS = {
@@ -65,14 +67,16 @@ export class VendorMatchingEngine {
     // > 300 miles: 0 points
   };
 
-  constructor(rulesService?: VendorMatchingRulesService) {
+  constructor(rulesProvider?: VendorMatchingRulesProvider) {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
     this.performanceService = new VendorPerformanceCalculatorService();
-    // T4: rules service is injected (preferred) or self-constructed. Tenants with
-    // no rules see zero behavior change — applyRules returns eligible:true with
-    // no adjustments when no rules apply.
-    this.rulesService = rulesService ?? new VendorMatchingRulesService(this.dbService);
+    // Phase 2: rules evaluation goes through a pluggable provider — homegrown
+    // (default), MOP (when enabled via env), or MOP-with-fallback. Engine no
+    // longer talks to VendorMatchingRulesService directly. See
+    // src/services/vendor-matching-rules/factory.ts for env-driven selection.
+    // Tenants with no rules see zero behavior change.
+    this.rulesProvider = rulesProvider ?? createVendorMatchingRulesProvider({ dbService: this.dbService });
   }
 
   /**
@@ -698,48 +702,65 @@ export class VendorMatchingEngine {
       );
     }
 
-    // T4: load active rules once for the tenant (rules are scoped per tenant).
-    let activeRules: VendorMatchingRule[] = [];
+    // Phase 2: build all per-vendor contexts up front, then evaluate them in
+    // a single batch via the rules provider. The provider may be homegrown
+    // (Cosmos + in-process apply), MOP (HTTP), or MOP-with-fallback.
+    // Build context omitting fields that are not derivable from the current
+    // VendorMatchRequest / Vendor schemas (see gap notes above). Omitting
+    // (rather than passing undefined) is required by exactOptionalPropertyTypes
+    // and lets each rule's eval helper apply its own missing-data semantics.
+    const distances: (number | null)[] = vendors.map(v =>
+      this.computeVendorDistance(v, propertyCoords ?? null)
+    );
+
+    const orderCtx: RuleEvaluationContext['order'] = {
+      ...(request.productId !== undefined ? { productType: request.productId } : {}),
+      ...(propertyState !== undefined ? { propertyState } : {}),
+    };
+
+    const contexts: RuleEvaluationContext[] = vendors.map((vendor, i) => ({
+      vendor: {
+        id: vendor.id,
+        capabilities: vendor.capabilities ?? [],
+        states: (vendor.serviceAreas ?? []).map((sa: any) => sa.state).filter(Boolean),
+        distance: distances[i] ?? null,
+        ...(vendor.licenseType !== undefined ? { licenseType: vendor.licenseType } : {}),
+      },
+      order: orderCtx,
+    }));
+
+    let ruleResults: RuleEvaluationResult[];
     try {
-      activeRules = await this.rulesService.listRules(request.tenantId, true);
+      ruleResults = await this.rulesProvider.evaluateForVendors(request.tenantId, contexts);
     } catch (err) {
-      // Fail open: if the rules store is unavailable, do not block assignment.
-      // The rules engine is additive — its absence preserves prior behavior.
-      this.logger.error('Failed to load vendor matching rules; continuing without rules', err as Record<string, any>);
+      // Fail open: if the provider can't be reached at all (and its own
+      // fallback chain — if any — also failed), proceed without rules. The
+      // engine's pre-rules hard gates still apply.
+      this.logger.error('Rules provider failed; continuing without rules', {
+        provider: this.rulesProvider.name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      ruleResults = contexts.map(() => ({
+        eligible: true,
+        scoreAdjustment: 0,
+        appliedRuleIds: [],
+        denyReasons: [],
+      }));
     }
 
     const eligible: Array<{ vendor: any; distance: number | null; ruleResult: RuleEvaluationResult }> = [];
     const denied: DeniedVendorEntry[] = [];
 
-    for (const vendor of vendors) {
-      const distance = this.computeVendorDistance(vendor, propertyCoords ?? null);
-
-      // Build context omitting fields that are not derivable from the current
-      // VendorMatchRequest / Vendor schemas (see gap notes above). Omitting
-      // (rather than passing undefined) is required by exactOptionalPropertyTypes
-      // and lets each rule's eval helper apply its own missing-data semantics.
-      const ctx: RuleEvaluationContext = {
-        vendor: {
-          id: vendor.id,
-          capabilities: vendor.capabilities ?? [],
-          states: (vendor.serviceAreas ?? []).map((sa: any) => sa.state).filter(Boolean),
-          distance,
-          ...(vendor.licenseType !== undefined ? { licenseType: vendor.licenseType } : {}),
-        },
-        order: {
-          ...(request.productId !== undefined ? { productType: request.productId } : {}),
-          ...(propertyState !== undefined ? { propertyState } : {}),
-        },
-      };
-
-      const ruleResult = activeRules.length > 0
-        ? this.rulesService.applyRules(activeRules, ctx)
-        : { eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] };
+    for (let i = 0; i < vendors.length; i++) {
+      const vendor = vendors[i];
+      const distance = distances[i] ?? null;
+      const ruleResult = ruleResults[i] ?? { eligible: true, scoreAdjustment: 0, appliedRuleIds: [], denyReasons: [] };
 
       if (!ruleResult.eligible) {
-        this.logger.info('Vendor denied by rules engine', {
+        this.logger.info('Vendor denied by rules provider', {
           vendorId: vendor.id,
           tenantId: request.tenantId,
+          provider: this.rulesProvider.name,
           denyReasons: ruleResult.denyReasons,
           appliedRuleIds: ruleResult.appliedRuleIds,
         });
