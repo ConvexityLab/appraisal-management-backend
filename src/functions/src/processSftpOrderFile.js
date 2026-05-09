@@ -341,7 +341,7 @@ function buildOrderDocument(fields, engagementId, loanId, productId, sourceFileN
     tenantId: statebridge_tenantId,
     // Engagement linkage
     engagementId,
-    engagementLoanId: loanId,
+    engagementPropertyId: loanId,
     engagementClientOrderId: productId,
     // Statebridge identifiers — preserved verbatim for the results file
     externalOrderId: (fields[IN.OrderID] || "").trim(),
@@ -524,6 +524,33 @@ app.storageQueue("processSftpOrderFile", {
         blobName,
         rowIndex
       );
+
+      // Phase B step 8: engagement-primacy guard at the SFTP write site.
+      // This Azure Function bypasses dbService.createOrder() (TypeScript-side)
+      // for performance reasons, so the cosmos-db.service guard does NOT
+      // apply here. Validate the linkage fields locally and refuse to write
+      // an orphan VendorOrder. Without this, malformed Statebridge rows
+      // would create rows queryable by engagementId but unattributable to
+      // a specific loan or clientOrder — which is exactly the bug class the
+      // ORDER-DOMAIN-REDESIGN Phase B refactor is closing.
+      const linkageErrors = [];
+      if (!orderDoc.engagementId || !String(orderDoc.engagementId).trim()) {
+        linkageErrors.push("missing engagementId");
+      }
+      if (!orderDoc.engagementPropertyId || !String(orderDoc.engagementPropertyId).trim()) {
+        linkageErrors.push("missing engagementPropertyId");
+      }
+      if (!orderDoc.engagementClientOrderId || !String(orderDoc.engagementClientOrderId).trim()) {
+        linkageErrors.push("missing engagementClientOrderId");
+      }
+      if (linkageErrors.length > 0) {
+        const msg = `Engagement-primacy: refusing to write orphan order — ${linkageErrors.join(", ")}`;
+        context.log(
+          `ERROR: ${msg} (externalOrderId=${orderDoc.externalOrderId} loanId=${orderDoc.loanId})`
+        );
+        errors.push({ externalOrderId: orderDoc.externalOrderId, error: msg });
+        continue;
+      }
 
       try {
         await ordersContainer.items.create(orderDoc);
