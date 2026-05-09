@@ -38,6 +38,12 @@
 
 import { Router, Response } from 'express';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import {
+  ClientOrderService,
+  ClientOrderNotFoundError,
+  ClientOrderConcurrencyError,
+  type VendorOrderSpec,
+} from '../services/client-order.service.js';
 import { QuickBooksService } from '../services/quickbooks.service.js';
 import { OrderEventService } from '../services/order-event.service.js';
 import { AuditTrailService } from '../services/audit-trail.service.js';
@@ -150,6 +156,7 @@ export class OrderController {
   private complianceService: ComplianceService;
   private enrichmentService: PropertyEnrichmentService;
   private contextLoader: OrderContextLoader;
+  private clientOrderService: ClientOrderService;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -183,6 +190,7 @@ export class OrderController {
     this.waiverScreening = new WaiverScreeningService(dbService);
       this.complianceService = new ComplianceService(dbService);
     this.contextLoader = new OrderContextLoader(dbService);
+    this.clientOrderService = new ClientOrderService(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -280,6 +288,29 @@ export class OrderController {
         return;
       }
 
+      // Phase B: every VendorOrder must attach to an existing ClientOrder. The
+      // engagement-creation flow auto-spawns ClientOrders for each embedded
+      // EngagementClientOrder. This controller adds a VendorOrder to one of
+      // those existing ClientOrders — it does NOT create a new ClientOrder.
+      // Accept either `engagementClientOrderId` (legacy intake field name) or
+      // `clientOrderId` (canonical name).
+      const requestClientOrderId =
+        (typeof req.body?.clientOrderId === 'string' && req.body.clientOrderId.trim()) ||
+        (typeof req.body?.engagementClientOrderId === 'string' && req.body.engagementClientOrderId.trim()) ||
+        undefined;
+      if (!requestClientOrderId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'CLIENT_ORDER_REQUIRED',
+            message:
+              'clientOrderId (or engagementClientOrderId) is required. Every VendorOrder must attach ' +
+              'to an existing ClientOrder created during engagement placement. Phase B refactor.',
+          },
+        });
+        return;
+      }
+
       const intakeDraftId = typeof req.body.intakeDraftId === 'string' && req.body.intakeDraftId.trim().length > 0
         ? req.body.intakeDraftId.trim()
         : undefined;
@@ -347,9 +378,54 @@ export class OrderController {
         logger.warn('Duplicate order check failed — proceeding with order creation', { error: dupErr });
       }
 
-      const result = await this.dbService.createOrder(orderData);
+      // Phase B migration: route through ClientOrderService.addVendorOrders
+      // instead of dbService.createOrder directly. The legacy orderData shape
+      // is forwarded as `inheritedFields` — addVendorOrders stamps the canonical
+      // engagement linkage from the parent ClientOrder onto each new VendorOrder.
+      const vendorOrderSpec: VendorOrderSpec = {
+        vendorWorkType: orderData.productType,
+        ...(orderData.specialInstructions ? { instructions: orderData.specialInstructions } : {}),
+      };
 
-      if (result.success) {
+      let createdVendorOrders: Order[];
+      try {
+        createdVendorOrders = await this.clientOrderService.addVendorOrders(
+          requestClientOrderId,
+          req.user!.tenantId,
+          [vendorOrderSpec],
+          orderData,
+        ) as unknown as Order[];
+      } catch (err) {
+        if (err instanceof ClientOrderNotFoundError) {
+          res.status(404).json({
+            success: false,
+            error: {
+              code: 'CLIENT_ORDER_NOT_FOUND',
+              message: err.message,
+            },
+          });
+          return;
+        }
+        if (err instanceof ClientOrderConcurrencyError) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: 'CLIENT_ORDER_CONCURRENCY_CONFLICT',
+              message: err.message,
+              createdVendorOrderIds: err.createdVendorOrderIds,
+            },
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const result = {
+        success: true as const,
+        data: createdVendorOrders[0],
+      };
+
+      if (result.success && result.data) {
         // Fire-and-forget: event bus + audit trail
         const created = result.data as Order;
 
@@ -448,12 +524,6 @@ export class OrderController {
           ? { ...result.data as object, duplicateWarning }
           : result.data,
         );
-      } else {
-        res.status(500).json({
-          error: 'Order creation failed',
-          code: 'ORDER_CREATION_ERROR',
-          details: result.error,
-        });
       }
     } catch (error) {
       res.status(500).json({
