@@ -19,13 +19,13 @@ import type {
   CategoryDefinition,
   CategoryPreviewInput,
   CategoryPreviewResult,
-  CategoryReplayDiff,
-  CategoryReplayInput,
   CategoryValidationResult,
 } from '../category-definition.js';
 import type { MopRulePackPusher } from '../../mop-rule-pack-pusher.service.js';
 import type { RulePackDocument } from '../../../types/decision-rule-pack.types.js';
 import type { VendorMatchingRuleDef } from '../../../types/vendor-matching-rule-pack.types.js';
+import { VendorMatchingReplayService } from '../replay/vendor-matching-replay.service.js';
+import type { CosmosDbService } from '../../cosmos-db.service.js';
 
 export const VENDOR_MATCHING_CATEGORY_ID = 'vendor-matching';
 
@@ -34,11 +34,17 @@ export const VENDOR_MATCHING_CATEGORY_ID = 'vendor-matching';
  * isn't configured (local dev without MOP_RULES_BASE_URL) the category
  * still validates and serves CRUD; only the push / preview / seed / drop
  * methods are absent and the controller surfaces 503 for those endpoints.
+ *
+ * The optional `db` is used by the Phase D replay service to read recent
+ * `assignment-traces` and current vendor data. Replay is only registered
+ * when both `pusher` and `db` are supplied — preview is the operative
+ * primitive replay leans on, so it requires the same upstream wiring.
  */
 export function buildVendorMatchingCategory(opts: {
   pusher: MopRulePackPusher | null;
+  db?: CosmosDbService;
 }): CategoryDefinition {
-  const { pusher } = opts;
+  const { pusher, db } = opts;
 
   const definition: CategoryDefinition = {
     id: VENDOR_MATCHING_CATEGORY_ID,
@@ -131,11 +137,14 @@ export function buildVendorMatchingCategory(opts: {
     definition.drop = async (tenantId: string): Promise<void> => {
       await pusher.drop(tenantId);
     };
-  }
 
-  // Replay deferred to Phase D. The controller surfaces 501 when this is
-  // missing, so categories opt-in by implementing it.
-  void undefined as unknown as (input: CategoryReplayInput) => Promise<CategoryReplayDiff>;
+    // Replay (Phase D) needs both pusher (for preview calls) AND a Cosmos
+    // handle (to read assignment-traces + vendors). Skipped when db is omitted.
+    if (db) {
+      const replayer = new VendorMatchingReplayService(db, pusher);
+      definition.replay = async (input) => replayer.replay(input);
+    }
+  }
 
   return definition;
 }

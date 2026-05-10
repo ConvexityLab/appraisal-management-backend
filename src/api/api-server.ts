@@ -1564,7 +1564,10 @@ export class AppraisalManagementAPIServer {
       }
 
       const registry = new CategoryRegistry();
-      registry.register(buildVendorMatchingCategory({ pusher: vendorMatchingPusher }));
+      registry.register(buildVendorMatchingCategory({
+        pusher: vendorMatchingPusher,
+        db: this.dbService,
+      }));
       // Future: registry.register(buildReviewProgramCategory({ ... }))  — Phase F
       //         registry.register(buildFiringRulesCategory({ ... }))    — Phase G
       //         registry.register(buildAxiomCriteriaCategory({ ... }))  — Phase H

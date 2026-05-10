@@ -55,19 +55,49 @@ export interface CategoryPreviewInput {
 
 /** Inputs accepted by `replay` (Phase D). */
 export interface CategoryReplayInput {
+  /** Caller's tenant — every replay is tenant-scoped. */
+  tenantId: string;
   rules: unknown[];
+  /** Look back this many days of decisions. Default 7. Capped server-side. */
   sinceDays?: number;
+  /** Optional explicit list of decision ids/orderIds to replay (overrides sinceDays). */
   ids?: string[];
+  /** 1-100, percentage of in-window traces to sub-sample. Default 100. */
   samplePercent?: number;
+  /** Caller-supplied pack id for trace/debug labelling. */
+  packId?: string;
 }
 
-/** Result shape returned by `replay`. Phase D fleshes out the diff structure. */
+/** Per-decision summary inside a replay diff. */
+export interface CategoryReplayDecision {
+  decisionId: string;
+  /** What the trace knows about — order id for vendor-matching, etc. */
+  subjectId: string;
+  initiatedAt: string;
+  /** True when the new outcome differs from the original outcome. */
+  changed: boolean;
+  /** One-line summary of the diff for the row label. */
+  summary: string;
+  /** Free-form per-category detail rendered in the expandable detail row. */
+  details?: Record<string, unknown>;
+  /** Set when this trace couldn't be replayed (missing snapshot, vendor not found, etc). */
+  skippedReason?: string;
+}
+
+/** Result shape returned by `replay`. */
 export interface CategoryReplayDiff {
+  /** Total traces in the replay window before sampling. */
+  windowSize: number;
+  /** How many traces were actually re-evaluated. */
   totalEvaluated: number;
   changedCount: number;
   unchangedCount: number;
+  skippedCount: number;
+  /** Aggregate count of newly-denied subjects across all replayed decisions. */
   newDenialsCount: number;
-  perDecision?: Array<Record<string, unknown>>;
+  /** Aggregate count of newly-allowed subjects (originally denied, now allowed). */
+  newAcceptancesCount: number;
+  perDecision: CategoryReplayDecision[];
 }
 
 /** Result of a pre-write validation. Errors block the write; warnings surface to the operator. */

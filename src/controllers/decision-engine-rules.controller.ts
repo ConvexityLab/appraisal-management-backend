@@ -48,8 +48,9 @@ export class DecisionEngineRulesController {
   private initRoutes(): void {
     this.router.use(this.requireKnownCategory.bind(this));
 
-    // Route order matters: /preview, /seed, /seed-from-default before /:packId.
+    // Route order matters: /preview, /seed, /seed-from-default, /replay before /:packId.
     this.router.post('/preview',                  this.preview.bind(this));
+    this.router.post('/replay',                   this.replay.bind(this));
     this.router.get('/seed',                      this.getSeed.bind(this));
     this.router.post('/seed-from-default',        this.seedFromDefault.bind(this));
     this.router.post('/',                         this.createVersion.bind(this));
@@ -335,6 +336,63 @@ export class DecisionEngineRulesController {
       res.json({ success: true, data: { results } });
       // suppress unused tenantId
       void tenantId;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = /^MOP preview returned 400/.test(msg) ? 400 : 502;
+      res.status(status).json({ success: false, error: msg });
+    }
+  }
+
+  // ── POST /replay — re-evaluate recent decisions with proposed rules ─────
+  // Phase D of DECISION_ENGINE_RULES_SURFACE.md. Stateless replay: no
+  // historical decisions are mutated, no rule pack version is created.
+  // Body: { rules: unknown[]; sinceDays?: number; ids?: string[];
+  //         samplePercent?: number; packId?: string }
+  // Response: CategoryReplayDiff (per-decision rows + aggregate counts).
+  private async replay(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    const category = req.params['category']!;
+    const def = this.resolveCategory(category);
+    if (!def.replay) {
+      this.notImplemented(res, category, 'replay');
+      return;
+    }
+
+    const body = req.body as {
+      rules?: unknown[];
+      sinceDays?: number;
+      ids?: string[];
+      samplePercent?: number;
+      packId?: string;
+    };
+    if (!Array.isArray(body.rules) || body.rules.length === 0) {
+      res.status(400).json({ success: false, error: '`rules` (non-empty array) is required' });
+      return;
+    }
+    if (body.sinceDays !== undefined && (typeof body.sinceDays !== 'number' || body.sinceDays <= 0)) {
+      res.status(400).json({ success: false, error: '`sinceDays` must be a positive number when supplied' });
+      return;
+    }
+    if (body.samplePercent !== undefined && (typeof body.samplePercent !== 'number' || body.samplePercent <= 0 || body.samplePercent > 100)) {
+      res.status(400).json({ success: false, error: '`samplePercent` must be between 1 and 100 when supplied' });
+      return;
+    }
+    if (body.ids !== undefined && (!Array.isArray(body.ids) || !body.ids.every(s => typeof s === 'string'))) {
+      res.status(400).json({ success: false, error: '`ids` must be an array of strings when supplied' });
+      return;
+    }
+
+    try {
+      const diff = await def.replay({
+        tenantId,
+        rules: body.rules,
+        ...(body.sinceDays !== undefined ? { sinceDays: body.sinceDays } : {}),
+        ...(body.ids ? { ids: body.ids } : {}),
+        ...(body.samplePercent !== undefined ? { samplePercent: body.samplePercent } : {}),
+        ...(body.packId ? { packId: body.packId } : {}),
+      });
+      res.json({ success: true, data: diff });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const status = /^MOP preview returned 400/.test(msg) ? 400 : 502;
