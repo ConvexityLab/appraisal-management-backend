@@ -49,6 +49,12 @@ export default defineConfig({
     
     // Setup files
     setupFiles: ['./tests/setup.ts'],
+
+    // Global teardown — runs once after the entire suite finishes.
+    // When VITEST_INTEGRATION=true, deletes documents written under
+    // tenantId='test-tenant' so successive runs don't accumulate residue.
+    // No-op for unit-test runs.
+    globalSetup: ['./tests/global-teardown.ts'],
     
     // Reporter configuration
     reporters: ['verbose', 'json', 'html'],
