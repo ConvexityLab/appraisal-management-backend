@@ -243,13 +243,20 @@ Allowed Intent Definitions:
       }
 
       systemPrompt += `\nAvailable Tools for TOOL_CALL:
-- queryLocalCache: Searches on-screen data. Args: { "toolName": "queryLocalCache", "toolArgs": { "entityType": string, "searchTerm": string } }
-- findUnassignedOrders: Searches for UNASSIGNED orders that need an appraiser. Use this when the user asks to assign open orders in a specific state. Args: { "toolName": "findUnassignedOrders", "toolArgs": { "stateFilter": string } }
-- searchBackendOrders: Searches the backend orders database. Use status=['UNASSIGNED'] and state='TX' to find open orders in Texas, etc. Use status=['UNASSIGNED'] and state='TX' to find open orders in Texas, etc. Use this if the order isn't in localCache. Args: { "toolName": "searchBackendOrders", "toolArgs": { "textQuery"?: string, "status"?: string[], "state"?: string } }
-- searchBackendVendors: Searches for appraisers/vendors in the backend. Args: { "toolName": "searchBackendVendors", "toolArgs": { "searchTerm": string } }
-- searchBackendClients: Searches for clients (lenders/AMCs) in the backend. Args: { "toolName": "searchBackendClients", "toolArgs": { "searchTerm": string } }
-- getVendorPerformance: Fetches workload and performance stats for a vendor. Useful to check if they have capacity before assigning. Args: { "toolName": "getVendorPerformance", "toolArgs": { "vendorId": string } }
-- getOrderTimeline: Fetches the chronological history and current status of an order. Args: { "toolName": "getOrderTimeline", "toolArgs": { "orderId": string } }
+- queryLocalCache: Searches on-screen data (entityMap pre-loaded from the active page). Args: { "toolName": "queryLocalCache", "toolArgs": { "entityType": string, "searchTerm": string } }
+- searchBackendOrders: Searches the orders database. Use status=['UNASSIGNED'] + state='TX' to find open orders in Texas. Use textQuery for free-text matches (order numbers like 'SEED-CO-00102', client-order IDs, addresses). PREFER this when the user names an order by number/ID — getOrderTimeline expects a VendorOrder UUID and will 404 on client-order numbers. Args: { "toolName": "searchBackendOrders", "toolArgs": { "textQuery"?: string, "status"?: string[], "state"?: string, "vendorId"?: string, "clientId"?: string, "dateFrom"?: string, "dateTo"?: string } }
+- searchBackendVendors: Searches for appraisers/vendors. Args: { "toolName": "searchBackendVendors", "toolArgs": { "searchTerm"?: string, "state"?: string, "status"?: string[], "minPerformanceScore"?: number } }
+- searchBackendClients: Searches for clients (lenders/AMCs). Args: { "toolName": "searchBackendClients", "toolArgs": { "searchTerm": string } }
+- getVendorPerformance: Workload + performance stats for a vendor. Args: { "toolName": "getVendorPerformance", "toolArgs": { "vendorId": string } }
+- getOrderTimeline: Chronological history + current status of a VendorOrder. orderId MUST be a VendorOrder UUID (resolve via searchBackendOrders first if the user gave a client-order number like 'SEED-CO-*' — those are NOT VendorOrder IDs). Args: { "toolName": "getOrderTimeline", "toolArgs": { "orderId": string } }
+- lookupEntities: Batch-fetch entities by id (orders, vendors, clients). Caps at 50 ids. Args: { "toolName": "lookupEntities", "toolArgs": { "entityType": "order"|"vendor"|"client", "ids": string[] } }
+- searchDocuments: List documents linked to an order/entity. Args: { "toolName": "searchDocuments", "toolArgs": { "orderId"?: string, "entityType"?: string, "entityId"?: string, "category"?: string, "q"?: string, "limit"?: number } }
+- getDocumentExcerpt: First N chars of an already-loaded document's extracted text. Args: { "toolName": "getDocumentExcerpt", "toolArgs": { "documentId": string, "maxChars"?: number } }
+- askAxiom: Ask the Axiom agent a question (RAG over the order's documents). Args: { "toolName": "askAxiom", "toolArgs": { "question": string, "orderId"?: string, "maxIterations"?: number } }
+- getProgramCriteria: Fetch compiled criteria nodes for a review-program version. Args: { "toolName": "getProgramCriteria", "toolArgs": { "programId": string, "programVersion": string } }
+- navigate: Navigate the user to a page. Args: { "toolName": "navigate", "toolArgs": { "routeKey": "ORDER"|"VENDOR"|"ENGAGEMENT"|"ORDERS_DASHBOARD"|"VENDORS_DIRECTORY"|"BILLING"|"ENGAGEMENTS", "entityId"?: string } }
+
+CRITICAL: only call tools listed above.  Calling an unregistered tool name (e.g. 'findUnassignedOrders' which used to exist) will return an error and waste a tool-call round; the loop hard-caps at 5 rounds.
 `;
 
       systemPrompt += `
