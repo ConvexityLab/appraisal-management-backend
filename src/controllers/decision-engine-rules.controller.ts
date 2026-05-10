@@ -48,9 +48,10 @@ export class DecisionEngineRulesController {
   private initRoutes(): void {
     this.router.use(this.requireKnownCategory.bind(this));
 
-    // Route order matters: /preview, /seed, /seed-from-default, /replay before /:packId.
+    // Route order matters: /preview, /seed, /seed-from-default, /replay, /analytics before /:packId.
     this.router.post('/preview',                  this.preview.bind(this));
     this.router.post('/replay',                   this.replay.bind(this));
+    this.router.get('/analytics',                 this.analytics.bind(this));
     this.router.get('/seed',                      this.getSeed.bind(this));
     this.router.post('/seed-from-default',        this.seedFromDefault.bind(this));
     this.router.post('/',                         this.createVersion.bind(this));
@@ -101,7 +102,7 @@ export class DecisionEngineRulesController {
   private notImplemented(
     res: Response,
     category: DecisionRuleCategory,
-    method: 'push' | 'preview' | 'getSeed' | 'drop' | 'replay',
+    method: 'push' | 'preview' | 'getSeed' | 'drop' | 'replay' | 'analytics',
   ): void {
     res.status(501).json({
       success: false,
@@ -397,6 +398,47 @@ export class DecisionEngineRulesController {
       const msg = err instanceof Error ? err.message : String(err);
       const status = /^MOP preview returned 400/.test(msg) ? 400 : 502;
       res.status(status).json({ success: false, error: msg });
+    }
+  }
+
+  // ── GET /analytics — per-rule analytics summary for the workspace's
+  //                     Analytics tab + cross-category landing page.
+  // Phase E of DECISION_ENGINE_RULES_SURFACE.md. Stateless (no Cosmos
+  // writes); reads recent decision traces and computes per-rule fire
+  // counts, denial contributions, score adjustments, and outcome counts.
+  // Query: ?days=N (default 30, capped server-side).
+  private async analytics(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    const category = req.params['category']!;
+    const def = this.resolveCategory(category);
+    if (!def.analytics) {
+      this.notImplemented(res, category, 'analytics');
+      return;
+    }
+
+    const daysQuery = req.query['days'];
+    let days: number | undefined;
+    if (daysQuery !== undefined) {
+      const parsed = Number(daysQuery);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        res.status(400).json({ success: false, error: '`days` must be a positive number' });
+        return;
+      }
+      days = parsed;
+    }
+
+    try {
+      const summary = await def.analytics({
+        tenantId,
+        ...(days !== undefined ? { days } : {}),
+      });
+      res.json({ success: true, data: summary });
+    } catch (err) {
+      res.status(502).json({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

@@ -25,6 +25,7 @@ import type { MopRulePackPusher } from '../../mop-rule-pack-pusher.service.js';
 import type { RulePackDocument } from '../../../types/decision-rule-pack.types.js';
 import type { VendorMatchingRuleDef } from '../../../types/vendor-matching-rule-pack.types.js';
 import { VendorMatchingReplayService } from '../replay/vendor-matching-replay.service.js';
+import { VendorMatchingAnalyticsService } from '../analytics/vendor-matching-analytics.service.js';
 import type { CosmosDbService } from '../../cosmos-db.service.js';
 
 export const VENDOR_MATCHING_CATEGORY_ID = 'vendor-matching';
@@ -144,6 +145,14 @@ export function buildVendorMatchingCategory(opts: {
       const replayer = new VendorMatchingReplayService(db, pusher);
       definition.replay = async (input) => replayer.replay(input);
     }
+  }
+
+  // Analytics (Phase E) only needs db — no upstream pusher dependency since
+  // counts come straight from assignment-traces. Wired even when MOP is
+  // unconfigured locally so the Analytics tab works against staging traces.
+  if (db) {
+    const analyticsSvc = new VendorMatchingAnalyticsService(db);
+    definition.analytics = async (input) => analyticsSvc.summary(input);
   }
 
   return definition;

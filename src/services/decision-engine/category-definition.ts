@@ -100,6 +100,43 @@ export interface CategoryReplayDiff {
   perDecision: CategoryReplayDecision[];
 }
 
+/** Inputs accepted by `analytics` (Phase E). */
+export interface CategoryAnalyticsInput {
+  tenantId: string;
+  /** Look back this many days. Default 30. Capped server-side. */
+  days?: number;
+}
+
+/** Per-rule analytics row inside the response. */
+export interface CategoryAnalyticsRule {
+  ruleId: string;
+  fireCount: number;
+  fireRatePercent: number;
+  /** When the rule contributed to a denial. */
+  denialContributionCount: number;
+  /** Sum of score adjustments attributed to this rule across the window. */
+  scoreAdjustmentSum: number;
+  /** One bucket per day in the window, oldest → newest. Length = `days`. */
+  daily: number[];
+}
+
+/** Aggregate analytics result for a category over a time window. */
+export interface CategoryAnalyticsSummary {
+  category: string;
+  windowDays: number;
+  /** ISO date strings (YYYY-MM-DD), oldest → newest. */
+  windowDates: string[];
+  totalDecisions: number;
+  totalEvaluations: number;
+  /** Decisions whose outcome was an escalation (no vendor / exhausted). */
+  escalationCount: number;
+  /** Free-form per-category counts (e.g., per-outcome bucket sizes). */
+  outcomeCounts: Record<string, number>;
+  perRule: CategoryAnalyticsRule[];
+  /** Generated at server-side; helps the FE display a "computed at" line. */
+  computedAt: string;
+}
+
 /** Result of a pre-write validation. Errors block the write; warnings surface to the operator. */
 export interface CategoryValidationResult {
   errors: string[];
@@ -164,6 +201,16 @@ export interface CategoryDefinition {
    * categories simply don't expose the Sandbox tab in the workspace.
    */
   replay?: (input: CategoryReplayInput) => Promise<CategoryReplayDiff>;
+
+  /**
+   * Per-rule analytics for the workspace's Analytics tab + the cross-category
+   * landing page. Phase E — left optional; non-implementing categories
+   * simply don't expose the Analytics tab.
+   *
+   * MVP-style implementations may compute on-the-fly from the category's
+   * trace store; later phases can swap in a pre-aggregated container.
+   */
+  analytics?: (input: CategoryAnalyticsInput) => Promise<CategoryAnalyticsSummary>;
 }
 
 /**
