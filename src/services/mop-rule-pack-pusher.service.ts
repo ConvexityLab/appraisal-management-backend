@@ -203,8 +203,13 @@ export class MopRulePackPusher {
    */
   async getSeed(): Promise<{ program: Record<string, unknown>; rules: unknown[] }> {
     const url = `${this.baseUrl}/api/v1/vendor-matching/seed`;
+    // Longer ceiling than push/preview — getSeed is called once on workspace
+    // page load and tolerates Container-Apps cold-start latency. push/preview
+    // are operator-driven and benefit from tighter timeouts.
+    const seedTimeoutMs = Math.max(this.timeoutMs, 15_000);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), seedTimeoutMs);
+    const start = Date.now();
     try {
       const headers: Record<string, string> = {};
       if (this.authHeader) headers['Authorization'] = this.authHeader;
@@ -219,7 +224,24 @@ export class MopRulePackPusher {
       if (!parsed?.rules || !Array.isArray(parsed.rules)) {
         throw new Error('MOP seed response missing rules[]');
       }
+      this.logger.info('mop.rules.seed.success', {
+        latencyMs: Date.now() - start,
+        ruleCount: parsed.rules.length,
+      });
       return parsed;
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError';
+      this.logger.error('mop.rules.seed.failure', {
+        latencyMs: Date.now() - start,
+        kind: isTimeout ? 'timeout' : err?.constructor?.name ?? 'Error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+      if (isTimeout) {
+        throw new Error(
+          `MOP seed timed out after ${seedTimeoutMs}ms — MOP may be cold-starting (Container Apps minReplicas=0). Refresh in a few seconds.`,
+        );
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
