@@ -9,8 +9,11 @@ on:
         description: 'Run deployed-environment canary checks'
         required: false
         default: 'false'
-  schedule:
-    - cron: '*/30 * * * *'
+  # Scheduled cron disabled 2026-05-10 — owner doesn't want auto-stuff on a clock.
+  # Re-enable here if you want a periodic deployed-canary probe (see Deployed
+  # Journey Canary job below — it's gated on schedule|workflow_dispatch w/ run_canary=true).
+  # schedule:
+  #   - cron: '*/30 * * * *'
 
 permissions:
   contents: read

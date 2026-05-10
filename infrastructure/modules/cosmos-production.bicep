@@ -4,7 +4,7 @@ param environment string = 'production'
 param cosmosAccountName string = 'appraisal-cosmos-${environment}-${uniqueString(resourceGroup().id)}'
 param databaseName string = 'appraisal-management'
 param containerAppPrincipalIds array = []
-@description('Additional public IP addresses to allow through the Cosmos DB firewall.')
+@description('Additional public IP addresses to allow through the Cosmos DB firewall (concatenated with the baseline allow-list below).')
 param allowedIpAddresses array = []
 
 var tags = {
@@ -15,15 +15,21 @@ var tags = {
   Owner: 'Platform Team'
 }
 
+// Baseline ipRules (applied to every environment) concatenated with caller-
+// supplied allowedIpAddresses. Bicep requires for-expressions at the
+// top of an expression, so the loop must be its own variable before concat.
 var allowedCosmosIpRules = [for ip in allowedIpAddresses: {
   ipAddressOrRange: ip
 }]
 
 var cosmosIpRules = concat(
   [
-    {
-      ipAddressOrRange: '0.0.0.0'
-    }
+    // Allow all Azure services (includes Container Apps)
+    { ipAddressOrRange: '0.0.0.0' }
+    // hiroh dev access
+    { ipAddressOrRange: '72.66.11.53' }
+    // george dev access
+    { ipAddressOrRange: '69.140.197.104' }
   ],
   allowedCosmosIpRules
 )
@@ -1215,14 +1221,7 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
       { name: 'EnableServerless' }
     ]
     publicNetworkAccess: 'Enabled'
-    ipRules: [
-      // Allow all Azure services (includes Container Apps)
-      { ipAddressOrRange: '0.0.0.0' }
-      // hiroh dev access
-      { ipAddressOrRange: '72.66.11.53' }
-      // george dev access
-      { ipAddressOrRange: '69.140.197.104' }
-    ]
+    ipRules: cosmosIpRules
     isVirtualNetworkFilterEnabled: false
     enableAnalyticalStorage: true
     analyticalStorageConfiguration: {
