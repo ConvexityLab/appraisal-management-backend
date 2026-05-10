@@ -3,12 +3,20 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { CosmosDbService } from '../../src/services/cosmos-db.service'
+import { EngagementService } from '../../src/services/engagement.service'
+import { PropertyRecordService } from '../../src/services/property-record.service'
+import { PropertyEnrichmentService } from '../../src/services/property-enrichment.service'
 import { OrderStatus, OrderType, ProductType, PropertyType, OccupancyType, Priority, VendorStatus } from '../../src/types'
 
 describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOINT not configured')('Cosmos DB Real Integration Tests', () => {
   let dbService: CosmosDbService
   let testOrderId: string
   let testVendorId: string
+  // Phase B engagement-primacy: dbService.createOrder rejects orders missing
+  // engagement linkage. beforeAll seeds a real Engagement.
+  let testEngagementId: string
+  let testEngagementPropertyId: string
+  let testEngagementClientOrderId: string
 
   beforeAll(async () => {
     console.log('🚀 Initializing Cosmos DB Integration Tests...')
@@ -32,9 +40,58 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     
     // Wait for containers to be ready
     await new Promise(resolve => setTimeout(resolve, 2000))
-    
+
+    // Seed an Engagement so dbService.createOrder can pass the engagement-
+    // primacy guard. Stub geocoder — PropertyEnrichmentService refuses to start
+    // without one (no silent fallback policy).
+    const propertyRecordService = new PropertyRecordService(dbService)
+    const stubGeocoder = { geocode: async () => null }
+    const propertyEnrichmentService = new PropertyEnrichmentService(
+      dbService,
+      propertyRecordService,
+      undefined,
+      stubGeocoder,
+    )
+    const engagementService = new EngagementService(dbService, propertyRecordService, propertyEnrichmentService)
+    const engagement = await engagementService.createEngagement({
+      tenantId: 'test-tenant',
+      createdBy: 'integration-test',
+      client: { clientId: `integ-client-${Date.now()}`, clientName: 'integ-client' },
+      properties: [
+        {
+          loanNumber: `LN-${Date.now()}`,
+          borrowerName: 'Integration Seed',
+          property: {
+            address: '1600 Amphitheatre Parkway',
+            city: 'Mountain View',
+            state: 'CA',
+            zipCode: '94043',
+          },
+          clientOrders: [{ productType: 'FULL_APPRAISAL' as any }],
+        },
+      ],
+    })
+    testEngagementId = engagement.id
+    testEngagementPropertyId = engagement.properties[0]!.id
+    testEngagementClientOrderId = engagement.properties[0]!.clientOrders[0]!.id
+
+    // placeClientOrder is fire-and-forget; poll until the standalone doc lands.
+    const deadline = Date.now() + 15_000
+    while (Date.now() < deadline) {
+      const probe = await dbService.queryItems(
+        'client-orders',
+        'SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @t',
+        [
+          { name: '@id', value: testEngagementClientOrderId },
+          { name: '@t', value: 'test-tenant' },
+        ],
+      )
+      if (probe.success && (probe.data as any[]).length > 0) break
+      await new Promise(r => setTimeout(r, 250))
+    }
+
     console.log('✅ Database initialization complete')
-  }, 30000) // 30 second timeout for initialization
+  }, 60000) // 60s for initialization + engagement seed
 
   afterAll(async () => {
     // Cleanup test data and disconnect
@@ -73,7 +130,10 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
 
   describe('Appraisal Order CRUD Operations', () => {
     it('should create a new appraisal order', async () => {
-      const orderData = {
+      const orderData: any = {
+        engagementId: testEngagementId,
+        engagementPropertyId: testEngagementPropertyId,
+        engagementClientOrderId: testEngagementClientOrderId,
         clientId: `test-client-${Date.now()}`,
         orderNumber: `TEST-ORDER-${Date.now()}`,
         propertyAddress: {
@@ -368,7 +428,10 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     })
   })
 
-  describe('Property Summary Operations', () => {
+  // dbService.createPropertySummary / searchPropertiesByLocation were removed
+  // when PropertyRecord became the canonical aggregate. Equivalents now live
+  // on PropertyRecordService.
+  describe.skip('Property Summary Operations (removed — see PropertyRecordService)', () => {
     it('should create a property summary', async () => {
       const propertyData = {
         address: {

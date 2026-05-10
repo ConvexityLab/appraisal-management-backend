@@ -29,6 +29,11 @@ let adminToken: string;
 let testOrderId: string;
 let testVendorId: string;
 let testClientId: string;
+// Phase B engagement-primacy: every VendorOrder must reference an existing
+// EngagementClientOrder. beforeAll places an Engagement and captures the ids.
+let testEngagementId: string;
+let testEngagementPropertyId: string;
+let testEngagementClientOrderId: string;
 
 describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATION=true to run live-infra tests')('Comprehensive Production API Integration Tests', () => {
   beforeAll(async () => {
@@ -43,6 +48,42 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATI
     adminToken = tokenRes.body.token as string;
 
     testClientId = `test-client-${Date.now()}`;
+
+    const engagementRes = await request(app)
+      .post('/api/engagements')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        client: { clientId: testClientId, clientName: testClientId },
+        loans: [
+          {
+            loanNumber: `LN-${Date.now()}`,
+            borrowerName: 'Comprehensive Test',
+            borrowerEmail: 'comprehensive@test.com',
+            property: { address: '1600 Amphitheatre Parkway', city: 'Mountain View', state: 'CA', zipCode: '94043' },
+            clientOrders: [{ productType: 'FULL_APPRAISAL' }],
+          },
+        ],
+      });
+    if (engagementRes.status !== 201) {
+      throw new Error(`Engagement seed failed: status=${engagementRes.status} body=${JSON.stringify(engagementRes.body)}`);
+    }
+    const engagement = engagementRes.body.data;
+    testEngagementId = engagement.id;
+    testEngagementPropertyId = engagement.properties[0].id;
+    testEngagementClientOrderId = engagement.properties[0].clientOrders[0].id;
+
+    // createEngagement fires placeClientOrder (creates the standalone
+    // client-orders doc) as a non-blocking background task. Poll until it
+    // lands so the order tests don't 404 on a still-pending ClientOrder.
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const probe = await request(app)
+        .get(`/api/client-orders/${testEngagementClientOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      if (probe.status === 200) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
     console.log('🚀 In-process server ready - starting comprehensive tests');
   }, 60000);
 
@@ -131,6 +172,9 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATI
   describe('Order Management Endpoints (5 endpoints)', () => {
     it('POST /api/orders - should create new appraisal order', async () => {
       const orderData = {
+        engagementId: testEngagementId,
+        engagementPropertyId: testEngagementPropertyId,
+        engagementClientOrderId: testEngagementClientOrderId,
         clientId: testClientId,
         orderNumber: `COMP-TEST-${Date.now()}`,
         propertyAddress: {
@@ -593,9 +637,14 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATI
       console.log('\n🚀 Starting comprehensive end-to-end workflow test...');
       
       // Step 1: Create a new order
+      // Reuse the engagement seeded in beforeAll — every VendorOrder must
+      // attach to an existing EngagementClientOrder (Phase B engagement-primacy).
       console.log('Step 1: Creating new order...');
       const orderData = {
-        clientId: `e2e-${Date.now()}`,
+        engagementId: testEngagementId,
+        engagementPropertyId: testEngagementPropertyId,
+        engagementClientOrderId: testEngagementClientOrderId,
+        clientId: testClientId,
         orderNumber: `E2E-WORKFLOW-${Date.now()}`,
         propertyAddress: {
           streetAddress: '1600 Amphitheatre Parkway',

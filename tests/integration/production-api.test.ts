@@ -27,6 +27,13 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
   let testOrderId: string;
   let testVendorId: string;
   let adminToken: string;
+  // Phase B engagement-primacy: every VendorOrder must reference an existing
+  // EngagementClientOrder. beforeAll places an Engagement and captures the
+  // resulting ids so the order tests below can attach to it.
+  let testClientId: string;
+  let testEngagementId: string;
+  let testEngagementPropertyId: string;
+  let testEngagementClientOrderId: string;
 
   beforeAll(async () => {
     console.log('🧪 Setting up production API integration tests...');
@@ -37,6 +44,42 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
 
     const tokenGen = new TestTokenGenerator();
     adminToken = tokenGen.generateToken({ id: 'test-admin', email: 'admin@appraisal.com', name: 'Test Admin', role: 'admin' as const, tenantId: 'test-tenant' });
+
+    testClientId = `test-client-${Date.now()}`;
+    const engagementRes = await request(app)
+      .post('/api/engagements')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        client: { clientId: testClientId, clientName: testClientId },
+        loans: [
+          {
+            loanNumber: `LN-${Date.now()}`,
+            borrowerName: 'Production Test',
+            borrowerEmail: 'production@test.com',
+            property: { address: '1600 Amphitheatre Parkway', city: 'Mountain View', state: 'CA', zipCode: '94043' },
+            clientOrders: [{ productType: 'FULL_APPRAISAL' }],
+          },
+        ],
+      });
+    if (engagementRes.status !== 201) {
+      throw new Error(`Engagement seed failed: status=${engagementRes.status} body=${JSON.stringify(engagementRes.body)}`);
+    }
+    const engagement = engagementRes.body.data;
+    testEngagementId = engagement.id;
+    testEngagementPropertyId = engagement.properties[0].id;
+    testEngagementClientOrderId = engagement.properties[0].clientOrders[0].id;
+
+    // createEngagement fires placeClientOrder (creates the standalone
+    // client-orders doc) as a non-blocking background task. Poll until it
+    // lands so the order tests don't 404 on a still-pending ClientOrder.
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const probe = await request(app)
+        .get(`/api/client-orders/${testEngagementClientOrderId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      if (probe.status === 200) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
 
     console.log('✅ Test environment ready');
   }, 60_000);
@@ -102,7 +145,10 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
   describe('Order Management Workflow', () => {
     it('should create a new appraisal order', async () => {
       const orderData = {
-        clientId: `test-client-${Date.now()}`,
+        engagementId: testEngagementId,
+        engagementPropertyId: testEngagementPropertyId,
+        engagementClientOrderId: testEngagementClientOrderId,
+        clientId: testClientId,
         orderNumber: `TEST-ORDER-${Date.now()}`,
         propertyAddress: {
           streetAddress: '1600 Amphitheatre Parkway',
