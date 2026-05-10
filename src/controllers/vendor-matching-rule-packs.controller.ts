@@ -38,10 +38,11 @@ export class VendorMatchingRulePacksController {
 
   private initRoutes(): void {
     // NOTE: route order matters. Express matches in registration order, so
-    // /preview and /seed must come before /:packId or they'd be captured by
-    // the packId param.
+    // /preview, /seed, /seed-from-default must come before /:packId or
+    // they'd be captured by the packId param.
     this.router.post('/preview',                   this.preview.bind(this));
     this.router.get('/seed',                       this.getSeed.bind(this));
+    this.router.post('/seed-from-default',         this.seedFromDefault.bind(this));
     this.router.post('/',                          this.createVersion.bind(this));
     this.router.get('/:packId',                    this.getActive.bind(this));
     this.router.get('/:packId/versions',           this.listVersions.bind(this));
@@ -169,6 +170,69 @@ export class VendorMatchingRulePacksController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(502).json({ success: false, error: msg });
+    }
+  }
+
+  // ── POST /seed-from-default — copy MOP seed into AMS as v1 ──────────────
+  // Convenience endpoint for the workspace's "Seed v1 from default" button.
+  // Reads MOP's seed pack, then creates v1 of the tenant's pack with those
+  // rules. The push hook automatically PUTs the new pack to MOP, so once
+  // this returns the tenant has its own override (still identical to the
+  // seed) and operators can edit + publish v2 from there.
+  //
+  // 409 if a pack already exists for this tenant — guards against
+  // accidentally overwriting tenant-customized rules.
+  private async seedFromDefault(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    if (!this.pusher) {
+      res.status(503).json({ success: false, error: 'MOP push not configured (no pusher)' });
+      return;
+    }
+
+    const body = (req.body ?? {}) as { packId?: string; reason?: string };
+    const packId = body.packId ?? 'default';
+
+    // Refuse to clobber an existing pack — operators must explicitly create
+    // a new version via the normal POST / path if they want to overwrite.
+    const existing = await this.packs.getActive(tenantId, packId);
+    if (existing) {
+      res.status(409).json({
+        success: false,
+        error: `Pack '${packId}' already exists for this tenant at v${existing.version}. Use POST / to create a new version, or DELETE /:packId first if you want to drop it.`,
+      });
+      return;
+    }
+
+    let seed: { program: Record<string, unknown>; rules: unknown[] };
+    try {
+      seed = await this.pusher.getSeed();
+    } catch (err) {
+      res.status(502).json({
+        success: false,
+        error: `Failed to fetch MOP seed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return;
+    }
+
+    try {
+      const pack = await this.packs.createVersion({
+        tenantId,
+        packId,
+        rules: seed.rules as any,
+        metadata: {
+          name: `Seeded from MOP default`,
+          description:
+            `Created by copying MOP's default seed pack (${seed.rules.length} rule${seed.rules.length === 1 ? '' : 's'}). ` +
+            `Edit + publish a new version to customize.`,
+        },
+        createdBy: req.user?.id ?? 'system',
+        reason: body.reason ?? 'Seeded from MOP default',
+      });
+      res.status(201).json({ success: true, data: pack });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ success: false, error: msg });
     }
   }
 
