@@ -19,6 +19,26 @@ vi.mock('../src/services/review-document-extraction.service.js', () => ({
   ReviewDocumentExtractionService: vi.fn(() => ({})),
 }));
 
+// Phase B: BulkPortfolioService no longer creates orders via dbService.createOrder.
+// It creates a batch Engagement (engagement.service) and then attaches each
+// item as a VendorOrder via clientOrderService.addVendorOrders, which is the
+// site that receives the orderPayload (with accessControl). Mock both so the
+// access-control assertions can inspect the payload that actually reaches Cosmos.
+const mockCreateEngagement = vi.fn();
+vi.mock('../src/services/engagement.service.js', () => ({
+  EngagementService: vi.fn(() => ({ createEngagement: mockCreateEngagement })),
+}));
+const mockAddVendorOrders = vi.fn();
+vi.mock('../src/services/client-order.service.js', () => ({
+  ClientOrderService: vi.fn(() => ({ addVendorOrders: mockAddVendorOrders })),
+}));
+vi.mock('../src/services/property-record.service.js', () => ({
+  PropertyRecordService: vi.fn(() => ({})),
+}));
+vi.mock('../src/services/property-enrichment.service.js', () => ({
+  PropertyEnrichmentService: vi.fn(() => ({})),
+}));
+
 import { BulkPortfolioService } from '../src/services/bulk-portfolio.service.js';
 import type { BulkPortfolioItem, BulkSubmitRequest } from '../src/types/bulk-portfolio.types.js';
 
@@ -35,10 +55,6 @@ function makeMockDb() {
     items: { upsert: vi.fn(async () => ({})) },
   };
   return {
-    createOrder: vi.fn(async (order: Record<string, unknown>) => ({
-      success: true,
-      data: { ...order, id: `order-${++orderSeq}` },
-    })),
     getBulkPortfolioJobsContainer: vi.fn(() => jobsContainer),
   };
 }
@@ -64,11 +80,18 @@ function makeRequest(
   return {
     clientId: 'client-1',
     fileName: 'test-tape.csv',
-    // Provide engagementId to skip _createBatchEngagement (which calls EngagementService)
-    engagementId: 'eng-test',
+    // No engagementId: let _createBatchEngagement run (engagementService is mocked).
     items,
     ...overrides,
   };
+}
+
+/**
+ * Returns the orderPayload (4th arg) passed to each addVendorOrders call.
+ * That payload carries the accessControl block under test.
+ */
+function payloadsFromAddVendorOrders(): Array<Record<string, unknown>> {
+  return mockAddVendorOrders.mock.calls.map((call) => call[3] as Record<string, unknown>);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -78,6 +101,29 @@ describe('BulkPortfolioService — accessControl stamping (G1)', () => {
   let service: BulkPortfolioService;
 
   beforeEach(() => {
+    orderSeq = 0;
+    mockCreateEngagement.mockReset();
+    mockAddVendorOrders.mockReset();
+
+    // _createBatchEngagement passes the items as `properties` with their
+    // synthesized loanNumbers; we need to return an Engagement whose
+    // properties[i].clientOrders[0].id is non-empty so
+    // _findClientOrderIdsForItem can resolve a target clientOrderId.
+    mockCreateEngagement.mockImplementation(async (input: any) => ({
+      id: 'eng-mock',
+      tenantId: input.tenantId,
+      properties: input.properties.map((p: any, i: number) => ({
+        loanNumber: p.loanNumber,
+        clientOrders: [{ id: `co-${i}` }],
+      })),
+    }));
+
+    // addVendorOrders returns the row(s) it was asked to attach. The 4th arg
+    // (orderPayload) carries the accessControl block under test.
+    mockAddVendorOrders.mockImplementation(async (_co, _t, _specs, orderPayload: any) => [
+      { ...orderPayload, id: `vo-${++orderSeq}` },
+    ]);
+
     dbService = makeMockDb();
     service = new BulkPortfolioService(dbService as never);
   });
@@ -91,10 +137,9 @@ describe('BulkPortfolioService — accessControl stamping (G1)', () => {
 
     await service.submit(makeRequest(items), 'manager-1', 'tenant-a');
 
-    expect(dbService.createOrder).toHaveBeenCalledTimes(3);
+    expect(mockAddVendorOrders).toHaveBeenCalledTimes(3);
 
-    for (const call of dbService.createOrder.mock.calls) {
-      const order = call[0] as Record<string, unknown>;
+    for (const order of payloadsFromAddVendorOrders()) {
       const ac = order['accessControl'] as Record<string, unknown> | undefined;
       expect(ac, 'accessControl must be present on every order').toBeDefined();
       expect(ac!['ownerId']).toBe('manager-1');
@@ -108,20 +153,20 @@ describe('BulkPortfolioService — accessControl stamping (G1)', () => {
 
     await service.submit(makeRequest(items), 'manager-1', 'tenant-a', 'manager@example.com');
 
-    expect(dbService.createOrder).toHaveBeenCalledTimes(1);
-    const order = dbService.createOrder.mock.calls[0][0] as Record<string, unknown>;
+    expect(mockAddVendorOrders).toHaveBeenCalledTimes(1);
+    const order = payloadsFromAddVendorOrders()[0]!;
     const ac = order['accessControl'] as Record<string, unknown>;
     expect(ac['ownerEmail']).toBe('manager@example.com');
   });
 
-  it('does NOT call createOrder for rows that fail validation', async () => {
+  it('does NOT call addVendorOrders for rows that fail validation', async () => {
     const validItem = makeItem({ rowIndex: 0 });
     // Missing required propertyAddress → will fail _validateItem
     const invalidItem = { rowIndex: 1, analysisType: 'AVM' } as BulkPortfolioItem;
 
     const job = await service.submit(makeRequest([validItem, invalidItem]), 'manager-1', 'tenant-a');
 
-    expect(dbService.createOrder).toHaveBeenCalledTimes(1);
+    expect(mockAddVendorOrders).toHaveBeenCalledTimes(1);
     expect(job.successCount).toBe(1);
     expect(job.skippedCount).toBe(1);
     // The invalid item must show status INVALID, not FAILED
@@ -162,10 +207,9 @@ describe('BulkPortfolioService — accessControl stamping (G1)', () => {
     // Call without the optional submitterEmail argument
     await service.submit(makeRequest(items), 'submitter-uid', 'tenant-b' /* no email */);
 
-    expect(dbService.createOrder).toHaveBeenCalledTimes(2);
+    expect(mockAddVendorOrders).toHaveBeenCalledTimes(2);
 
-    for (const call of dbService.createOrder.mock.calls) {
-      const order = call[0] as Record<string, unknown>;
+    for (const order of payloadsFromAddVendorOrders()) {
       const ac = order['accessControl'] as Record<string, unknown> | undefined;
 
       // Must have accessControl block — NEVER silently absent
