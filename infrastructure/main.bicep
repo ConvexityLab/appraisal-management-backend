@@ -265,6 +265,22 @@ module cosmosMatchingRfbArvContainers 'modules/cosmos-matching-rfb-arv-container
   }
 }
 
+// Cosmos DB Vendor-Matching Rule Pack Containers — Phases 3 + 5 of
+// docs/AUTO_ASSIGNMENT_REVIEW.md. Three containers:
+//   vendor-matching-rule-packs   — per-tenant immutable versioned rule packs
+//   vendor-matching-rule-audit   — append-only audit log of CRUD actions
+//   assignment-traces            — per-assignment evaluation traces
+// Already provisioned live on dev + staging via az on 2026-05-10; this
+// module entry keeps future deploys idempotent.
+module cosmosVendorMatchingRulePackContainers 'modules/cosmos-vendor-matching-rule-pack-containers.bicep' = {
+  name: 'cosmos-vendor-matching-rule-pack-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Engagements Container (LenderEngagement aggregate root domain)
 module cosmosEngagementsContainer 'modules/cosmos-engagements-container.bicep' = {
   name: 'cosmos-engagements-container-deployment'
