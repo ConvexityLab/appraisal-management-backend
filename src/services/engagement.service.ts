@@ -126,8 +126,13 @@ function buildPrimaryLoanReference(l: CreateEngagementLoanRequest): LoanReferenc
   };
 }
 
-/** Build a fully-initialized EngagementProperty from the create-request shape. */
-function buildLoan(l: CreateEngagementLoanRequest): EngagementProperty {
+/**
+ * Build a fully-initialized EngagementProperty from the create-request shape.
+ * Caller MUST resolve propertyId via PropertyRecordService.resolveOrCreate
+ * before calling this — propertyId is the canonical anchor and is required
+ * on EngagementProperty per the design model.
+ */
+function buildLoan(l: CreateEngagementLoanRequest, propertyId: string): EngagementProperty {
   // Slice 8d: keep top-level loanNumber/loanType/fhaCase in sync with
   // loanReferences[0] (the primary loan) so legacy readers continue to work
   // while new code reads from loanReferences[]. Either source on the request
@@ -141,6 +146,7 @@ function buildLoan(l: CreateEngagementLoanRequest): EngagementProperty {
 
   return {
     id: generateLoanId(),
+    propertyId,
     loanNumber: primary.loanNumber,
     borrowerName: l.borrowerName,
     ...(l.borrowerEmail !== undefined && { borrowerEmail: l.borrowerEmail }),
@@ -244,10 +250,7 @@ export class EngagementService {
       ),
     );
 
-    const loans = request.properties.map((l, i) => ({
-      ...buildLoan(l),
-      propertyId: resolvedPropertyIds[i]!.propertyId,
-    }));
+    const loans = request.properties.map((l, i) => buildLoan(l, resolvedPropertyIds[i]!.propertyId));
     const engagementType = loans.length === 1 ? EngagementType.SINGLE : EngagementType.PORTFOLIO;
     const engagementId = generateEngagementId();
 
@@ -532,31 +535,22 @@ export class EngagementService {
       throw new Error('Each loan must have at least one client order');
     }
 
-    const newLoan = buildLoan(loanData);
-
-    // Resolve (or lazily create) a canonical PropertyRecord for the new loan's collateral —
-    // same pattern as createEngagement. Non-fatal if it fails: loan is saved without propertyId.
-    let resolvedPropertyId: string | undefined;
-    try {
-      const resolved = await this.propertyRecordService.resolveOrCreate({
-        address: {
-          street: loanData.property.address,
-          city: loanData.property.city,
-          state: loanData.property.state,
-          zip: loanData.property.zipCode,
-        },
-        tenantId,
-        createdBy: updatedBy,
-      });
-      resolvedPropertyId = resolved.propertyId;
-      newLoan.propertyId = resolved.propertyId;
-    } catch (err) {
-      logger.warn('addLoanToEngagement: PropertyRecord resolution failed (non-fatal)', {
-        engagementId,
-        loanId: newLoan.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // Resolve canonical PropertyRecord BEFORE constructing the loan —
+    // propertyId is required on EngagementProperty per the design model.
+    // Resolution failures now propagate (no longer silently saves a loan
+    // without propertyId).
+    const resolved = await this.propertyRecordService.resolveOrCreate({
+      address: {
+        street: loanData.property.address,
+        city: loanData.property.city,
+        state: loanData.property.state,
+        zip: loanData.property.zipCode,
+      },
+      tenantId,
+      createdBy: updatedBy,
+    });
+    const resolvedPropertyId = resolved.propertyId;
+    const newLoan = buildLoan(loanData, resolvedPropertyId);
 
     const updatedLoans = [...engagement.properties, newLoan];
     const updatedType = updatedLoans.length > 1 ? EngagementType.PORTFOLIO : EngagementType.SINGLE;

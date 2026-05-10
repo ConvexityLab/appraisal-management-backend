@@ -207,13 +207,11 @@ export interface EngagementProperty {
   // ── Property identity (load-bearing) ────────────────────────────────────
   /**
    * FK → PropertyRecord.id — the canonical property record for this collateral.
-   *
-   * Optional only during the construction window inside createEngagement —
-   * buildLoan() returns before enrichment resolves propertyId. A follow-up
-   * refactor will resolve propertyId BEFORE construction so this can flip
-   * to required everywhere.
+   * REQUIRED per the design model: every EngagementProperty anchors on a
+   * PropertyRecord. Construction sites resolve propertyId via
+   * PropertyRecordService.resolveOrCreate BEFORE calling buildLoan().
    */
-  propertyId?: string;
+  propertyId: string;
   /**
    * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
    * Retained as a display cache during Phase R0–R2 migration.
@@ -316,8 +314,13 @@ export interface Engagement {
 // REQUEST / RESPONSE SHAPES
 // =============================================================================
 
-/** Shape for each property entry when creating an engagement. */
-export type CreateEngagementPropertyRequest = Omit<EngagementProperty, 'id' | 'status' | 'clientOrders'> & {
+/**
+ * Shape for each property entry when creating an engagement.
+ * Note: `propertyId` is omitted — the service resolves it via
+ * PropertyRecordService.resolveOrCreate from the property address before
+ * constructing the EngagementProperty. Callers MUST NOT supply propertyId.
+ */
+export type CreateEngagementPropertyRequest = Omit<EngagementProperty, 'id' | 'status' | 'clientOrders' | 'propertyId'> & {
   clientOrders: Omit<EngagementClientOrder, 'id' | 'status' | 'vendorOrderIds'>[];
 };
 
