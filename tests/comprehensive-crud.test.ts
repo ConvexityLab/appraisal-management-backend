@@ -5,8 +5,10 @@ import { CosmosDbService } from '../src/services/cosmos-db.service.js';
 import { OrderController } from '../src/controllers/order.controller.js';
 import { VendorController } from '../src/controllers/production-vendor.controller.js';
 import { 
+  OccupancyType,
   OrderStatus, 
   Priority, 
+  PropertyType,
   ProductType, 
   OrderType, 
   VendorStatus
@@ -240,7 +242,14 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     let createdVendorId: string;
     let createdPropertyId: string;
 
-    const sampleOrderData = {
+    // Lazily evaluated: describe.skipIf(...) doesn't prevent the describe body
+    // from running at collection time, so a top-level `const sampleOrderData`
+    // here would dereference PropertyType / ProductType / OrderType / Priority
+    // before module evaluation has fully bound them in some ESM resolution
+    // orders (seen on CI when VITEST_INTEGRATION is unset). Wrapping in a
+    // factory defers the enum reads until inside a test body / hook, by which
+    // point all imports are guaranteed to have resolved.
+    const buildSampleOrderData = () => ({
       clientId: 'test-client-001',
       orderNumber: 'TEST-ORDER-001',
       propertyAddress: {
@@ -284,7 +293,9 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       },
       priority: Priority.NORMAL,
       specialInstructions: 'Test order for API validation'
-    };
+    });
+    let sampleOrderData: ReturnType<typeof buildSampleOrderData>;
+    beforeAll(() => { sampleOrderData = buildSampleOrderData(); });
 
     beforeEach(async () => {
       // Create a vendor for order assignment tests
