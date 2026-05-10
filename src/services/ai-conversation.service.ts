@@ -111,6 +111,21 @@ export class AiConversationService {
 			{ name: '@userId', value: userId },
 			{ name: '@id', value: conversationId },
 		]);
+		// 2026-05-10 follow-up: mirror the same "container missing"
+		// fallback that listForUser uses so GET /api/ai/conversations/:id
+		// doesn't 500 when the ai-conversations Cosmos container hasn't
+		// been provisioned yet in this environment.  Returning data:null
+		// lets the controller emit a clean 404.  Per CLAUDE.md rule #3 we
+		// do NOT create the container in code — Bicep owns provisioning.
+		if (!result.success && this.isConversationStoreUnavailable(result.error)) {
+			this.logger.warn('AI conversation container unavailable; treating getOne as not-found', {
+				tenantId,
+				userId,
+				conversationId,
+				error: result.error,
+			});
+			return { success: true, data: null };
+		}
 		if (!result.success) {
 			return result.error
 				? { success: false, error: result.error }

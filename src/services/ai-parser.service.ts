@@ -13,10 +13,15 @@ const dynamicJsonSchemaCache = new Map<string, any>();
 // ── Strict Schemas for Output ────────────────────────────────────────────────
 const aiPresentationFieldSchema = z.object({
   label: z.string(),
-  value: z.string(),
+  // value accepts string|number|boolean|null because models occasionally
+  // emit a bare number for a "count" or "fee" field; coercing to string
+  // upstream would lose the type signal the UI uses to right-align.
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
   status: z.enum(['added', 'changed', 'removed', 'unchanged']),
-  warning: z.string().nullable(),
-  oldValue: z.string().nullable()
+  // Both warning and oldValue accept the same union plus undefined; the
+  // model has been observed to omit them rather than emit null.
+  warning: z.union([z.string(), z.null()]).optional(),
+  oldValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional()
 });
 
 const INTENT_DEFINITIONS: Record<string, { description: string; payloadShape: string }> = {
@@ -104,39 +109,57 @@ export class AiParserService {
       const currentPage = request.context?.currentPage || 'Unknown Context';
       const knownEnums = Array.from(new Set([...allowedIntents, 'UNKNOWN', 'INFO'])) as [string, ...string[]];
 
-      // Dynamically generate the exact schema to match the requested intents
+      // Server-side validation Zod schema — must accept the same
+      // looser shape we ask Azure OpenAI to produce (see comment block
+      // on `dynamicJsonSchemaForAiParseResult` below).  actionPayload
+      // is a passthrough object: per-intent payload validation lives
+      // in src/validators/ai-intent-payloads.validator.ts and the
+      // matching frontend Zod, both of which fire at execute time.
       const dynamicParseResultSchema = z.object({
         intent: z.enum(knownEnums),
         confidence: z.number().min(0).max(1),
-        actionPayload: z.object({
-          toolName: z.string().nullable(),
-          toolArgs: z.object({
-            textQuery: z.string().nullable(),
-            status: z.array(z.string()).nullable(),
-            state: z.string().nullable(),
-            searchTerm: z.string().nullable(),
-            entityType: z.string().nullable(),
-            stateFilter: z.string().nullable(),
-            vendorId: z.string().nullable(),
-            orderId: z.string().nullable()
-          }).nullable(),
-          orderIds: z.array(z.string()).nullable(),
-          orderId: z.string().nullable(),
-          vendorId: z.string().nullable(),
-          appraiserId: z.string().nullable(),
-          status: z.string().nullable(),
-          priority: z.string().nullable(),
-          filterValue: z.string().nullable(),
-          view: z.string().nullable()
-        }),
+        actionPayload: z.record(z.string(), z.unknown()).nullable(),
         presentationSchema: z.object({
           title: z.string(),
           summary: z.string(),
           fields: z.array(aiPresentationFieldSchema),
           actionButtonText: z.string()
-        })
+        }).passthrough()
       });
 
+      // Loose JSON-schema response_format — the model is told the
+      // OUTER shape (intent / confidence / actionPayload /
+      // presentationSchema) but actionPayload + toolArgs are
+      // free-form objects.  We DELIBERATELY do NOT use `strict:true`
+      // and DO NOT lock down property whitelists on actionPayload /
+      // toolArgs because:
+      //
+      //   1. Strict mode + `additionalProperties:false` requires every
+      //      listed property to be in `required` AND forbids extras.
+      //      The previous schema whitelisted 8 toolArgs keys
+      //      (textQuery, status, state, searchTerm, entityType,
+      //      stateFilter, vendorId, orderId) and 10 actionPayload
+      //      keys.  Every new tool we add (searchEngagements,
+      //      countEngagementsByStatus, askAxiom, navigate, …) plus
+      //      every action intent's payload (CREATE_ORDER needs
+      //      engagementId / engagementPropertyId / clientOrderId /
+      //      etc.) needs keys NOT in those whitelists.  Azure OpenAI
+      //      then rejects the response and the controller emits 500
+      //      — which is what staging hit on 2026-05-10.
+      //
+      //   2. Per-tool / per-intent argument validation lives in the
+      //      Zod schemas at:
+      //        backend  src/validators/ai-intent-payloads.validator.ts
+      //        frontend src/store/api/schemas/aiSchemas.ts
+      //      Both already validate the shape of each intent's payload
+      //      before dispatch.  Layering OpenAI's response_format on
+      //      top of those was duplicative and brittle.
+      //
+      //   3. Strict mode was originally added when the registry had
+      //      6 tools and a handful of intents; the surface has since
+      //      grown to 14 tools + 10 intents.  Maintaining a flat
+      //      whitelist of every possible argument key is no longer
+      //      tractable.
       const dynamicJsonSchemaForAiParseResult = {
         name: "ai_parse_result",
         schema: {
@@ -146,45 +169,14 @@ export class AiParserService {
               type: "string",
               enum: knownEnums
             },
-            confidence: {
-              type: "number"
-            },
+            confidence: { type: "number" },
+            // actionPayload is intentionally free-form.  TOOL_CALL
+            // responses set { toolName, toolArgs }; action intents
+            // set whatever the per-intent Zod schema expects (e.g.
+            // CREATE_ORDER's full engagement-linkage payload).
             actionPayload: {
-              type: "object",
-              properties: {
-                toolName: { type: ["string", "null"] },
-                toolArgs: {
-                  type: ["object", "null"],
-                  properties: {
-                    textQuery: { type: ["string", "null"] },
-                    status: {
-                       type: ["array", "null"],
-                       items: { type: "string" }
-                    },
-                    state: { type: ["string", "null"] },
-                    searchTerm: { type: ["string", "null"] },
-                    entityType: { type: ["string", "null"] },
-                    stateFilter: { type: ["string", "null"] },
-                    vendorId: { type: ["string", "null"] },
-                    orderId: { type: ["string", "null"] }
-                  },
-                  required: ["textQuery", "status", "state", "searchTerm", "entityType", "stateFilter", "vendorId", "orderId"],
-                  additionalProperties: false
-                },
-                orderIds: { 
-                  type: ["array", "null"],
-                   items: { type: "string" }
-                },
-                orderId: { type: ["string", "null"] },
-                vendorId: { type: ["string", "null"] },
-                appraiserId: { type: ["string", "null"] },
-                status: { type: ["string", "null"] },
-                priority: { type: ["string", "null"] },
-                filterValue: { type: ["string", "null"] },
-                view: { type: ["string", "null"] }
-              },
-              required: ["toolName", "toolArgs", "orderIds", "orderId", "vendorId", "appraiserId", "status", "priority", "filterValue", "view"],
-              additionalProperties: false
+              type: ["object", "null"],
+              additionalProperties: true,
             },
             presentationSchema: {
               type: "object",
@@ -197,25 +189,24 @@ export class AiParserService {
                     type: "object",
                     properties: {
                       label: { type: "string" },
-                      value: { type: "string" },
+                      value: { type: ["string", "number", "boolean", "null"] },
                       status: { type: "string", enum: ['added', 'changed', 'removed', 'unchanged'] },
                       warning: { type: ["string", "null"] },
-                      oldValue: { type: ["string", "null"] }
+                      oldValue: { type: ["string", "number", "boolean", "null"] }
                     },
-                    required: ["label", "value", "status", "warning", "oldValue"],
-                    additionalProperties: false
+                    required: ["label", "value", "status"],
+                    additionalProperties: true
                   }
                 },
                 actionButtonText: { type: "string" }
               },
               required: ["title", "summary", "fields", "actionButtonText"],
-              additionalProperties: false
+              additionalProperties: true
             }
           },
           required: ["intent", "confidence", "actionPayload", "presentationSchema"],
           additionalProperties: false
-        },
-        strict: true
+        }
       };
 
       let systemPrompt = `You are an expert AI parser for the L1 Valuation Platform.
