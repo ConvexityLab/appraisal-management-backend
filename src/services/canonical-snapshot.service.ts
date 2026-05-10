@@ -35,9 +35,11 @@ interface PropertyEnrichmentRecord {
   createdAt: string;
 }
 
+export const CANONICAL_SNAPSHOTS_CONTAINER = 'canonical-snapshots';
+
 export class CanonicalSnapshotService {
   private readonly logger = new Logger('CanonicalSnapshotService');
-  private readonly runContainerName = 'aiInsights';
+  private readonly runContainerName = CANONICAL_SNAPSHOTS_CONTAINER;
   private readonly documentContainerName = 'documents';
   private readonly enrichmentContainerName = 'property-enrichments';
 
