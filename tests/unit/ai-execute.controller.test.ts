@@ -19,6 +19,9 @@ function validBody(overrides?: Record<string, unknown>) {
     intent: 'CREATE_ORDER',
     confidence: 0.93,
     actionPayload: {
+      engagementId: 'eng-1',
+      engagementPropertyId: 'prop-1',
+      clientOrderId: 'co-1',
       clientId: 'client-1',
       orderNumber: 'ORD-1',
       propertyAddress: {

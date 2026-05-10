@@ -88,23 +88,35 @@ const loanInformationSchema = z.object({
   creditScore: z.number().int().nonnegative().optional(),
 });
 
-const createOrderPayloadSchema = z.object({
-  clientId: nonEmptyString,
-  orderNumber: nonEmptyString,
-  propertyAddress: propertyAddressSchema,
-  propertyDetails: propertyDetailsSchema,
-  orderType: nonEmptyString,
-  productType: nonEmptyString,
-  dueDate: isoDateString,
-  rushOrder: z.boolean(),
-  borrowerInformation: borrowerInformationSchema,
-  loanInformation: loanInformationSchema,
-  contactInformation: contactInfoSchema,
-  priority: z.nativeEnum(Priority),
-  specialInstructions: nonEmptyString.optional(),
-  tags: z.array(nonEmptyString),
-  metadata: z.record(z.string(), z.unknown()),
-});
+const createOrderPayloadSchema = z
+  .object({
+    // Engagement-primacy linkage — REQUIRED.  Phase B of the order-domain
+    // redesign forbids creating a VendorOrder that is not attached to an
+    // existing Engagement → EngagementProperty → EngagementClientOrder.
+    // The AI runtime must resolve all three IDs (via CREATE_ENGAGEMENT or
+    // a TOOL_CALL search) before emitting this intent.  See
+    // ai-action-dispatcher.service.ts:handleCreateOrder for the matching
+    // backend contract; payloads missing any of these fields are rejected
+    // up-front so the model gets a structured 400 with the missing path.
+    engagementId: nonEmptyString,
+    engagementPropertyId: nonEmptyString,
+    clientOrderId: nonEmptyString,
+    clientId: nonEmptyString,
+    orderNumber: nonEmptyString,
+    propertyAddress: propertyAddressSchema,
+    propertyDetails: propertyDetailsSchema,
+    orderType: nonEmptyString,
+    productType: nonEmptyString,
+    dueDate: isoDateString,
+    rushOrder: z.boolean(),
+    borrowerInformation: borrowerInformationSchema,
+    loanInformation: loanInformationSchema,
+    contactInformation: contactInfoSchema,
+    priority: z.nativeEnum(Priority),
+    specialInstructions: nonEmptyString.optional(),
+    tags: z.array(nonEmptyString),
+    metadata: z.record(z.string(), z.unknown()),
+  });
 
 const engagementPropertySchema = z.object({
   address: nonEmptyString,

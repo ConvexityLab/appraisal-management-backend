@@ -225,6 +225,7 @@ import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
 import { VendorOutboxWorkerService } from '../services/vendor-integrations/VendorOutboxWorkerService.js';
+import { PropertyOutboxWorkerService } from '../services/property-outbox-worker.service.js';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
 import { VendorPerformanceUpdaterService } from '../services/vendor-performance-updater.service';
@@ -374,6 +375,7 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
   private vendorOutboxWorkerService?: VendorOutboxWorkerService;
+  private propertyOutboxWorkerService?: PropertyOutboxWorkerService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
   private vendorPerformanceUpdaterService?: VendorPerformanceUpdaterService;
@@ -5381,6 +5383,20 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Property Outbox Worker Service (publishes property-domain notifications from durable outbox)
+    try {
+      this.propertyOutboxWorkerService = new PropertyOutboxWorkerService(this.dbService);
+      this.propertyOutboxWorkerService.start().catch(err => {
+        this.logger.warn('PropertyOutboxWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('PropertyOutboxWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Start Engagement Letter Auto-Send Service (sends letters on bid acceptance/staff assignment)
     try {
       this.engagementLetterAutoSendService = new EngagementLetterAutoSendService(this.dbService);
@@ -5521,7 +5537,7 @@ export class AppraisalManagementAPIServer {
     }
 
     this.logger.info('✅ Background jobs started', {
-      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'bulk-upload-event-listener', 'bulk-ingestion-processor', 'bulk-ingestion-canonical-worker', 'bulk-ingestion-order-creation-worker', 'bulk-ingestion-extraction-worker', 'bulk-ingestion-criteria-worker', 'bulk-ingestion-finalizer', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
+      jobs: ['vendor-timeout-checker', 'sla-monitoring', 'overdue-order-detection', 'axiom-timeout-watcher', 'supervision-timeout-watcher', 'event-notification-orchestrator', 'auto-assignment-orchestrator', 'review-assignment-timeout', 'ai-qc-gate', 'auto-delivery', 'engagement-lifecycle', 'communication-event-handler', 'axiom-auto-trigger', 'axiom-bulk-submission', 'bulk-upload-event-listener', 'bulk-ingestion-processor', 'bulk-ingestion-canonical-worker', 'bulk-ingestion-order-creation-worker', 'bulk-ingestion-extraction-worker', 'bulk-ingestion-criteria-worker', 'bulk-ingestion-finalizer', 'vendor-outbox-worker', 'property-outbox-worker', 'engagement-letter-autosend', 'vendor-performance-updater', 'review-sla-watcher', 'ucdp-ead-auto-submit', 'mismo-auto-generate']
     });
   }
 
@@ -5594,6 +5610,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.vendorOutboxWorkerService) {
       this.vendorOutboxWorkerService.stop().catch(() => {});
+    }
+    if (this.propertyOutboxWorkerService) {
+      this.propertyOutboxWorkerService.stop().catch(() => {});
     }
     if (this.bulkIngestionFinalizerService) {
       this.bulkIngestionFinalizerService.stop().catch(() => {});

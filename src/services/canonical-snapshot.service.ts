@@ -23,6 +23,8 @@ import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
 import { OrderContextLoader, type OrderContext } from './order-context-loader.service.js';
+import type { PropertyDomainEventType } from '../types/property-event-outbox.types.js';
+import { PropertyEventOutboxService } from './property-event-outbox.service.js';
 import { PropertyObservationService } from './property-observation.service.js';
 import { PropertyProjectorService } from './property-projector.service.js';
 
@@ -44,11 +46,13 @@ export class CanonicalSnapshotService {
   private readonly enrichmentContainerName = 'property-enrichments';
 
   private readonly contextLoader: OrderContextLoader;
+  private readonly outboxService: PropertyEventOutboxService;
   private readonly observationService: PropertyObservationService;
   private readonly projectorService: PropertyProjectorService;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.contextLoader = new OrderContextLoader(dbService);
+    this.outboxService = new PropertyEventOutboxService(dbService);
     this.observationService = new PropertyObservationService(dbService);
     this.projectorService = new PropertyProjectorService(dbService);
   }
@@ -115,6 +119,14 @@ export class CanonicalSnapshotService {
       hasExtraction: Boolean(sourceArtifacts.extractionData),
       hasEnrichment: Boolean(sourceArtifacts.enrichment),
     });
+
+    await this.enqueueSnapshotEvent(
+      'property.snapshot.created',
+      extractionRun,
+      sourceArtifacts,
+      snapshot.id,
+      now,
+    );
 
     await this.recordSnapshotObservations(
       extractionRun,
@@ -205,6 +217,14 @@ export class CanonicalSnapshotService {
       hasExtraction: Boolean(sourceArtifacts.extractionData),
       hasEnrichment: Boolean(sourceArtifacts.enrichment),
     });
+
+    await this.enqueueSnapshotEvent(
+      'property.snapshot.refreshed',
+      extractionRun,
+      sourceArtifacts,
+      existing.id,
+      now,
+    );
 
     await this.recordSnapshotObservations(
       extractionRun,
@@ -297,6 +317,78 @@ export class CanonicalSnapshotService {
       this.logger.warn('Snapshot: failed to record extraction observation — non-fatal', {
         runId: extractionRun.id,
         snapshotId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private async enqueueSnapshotEvent(
+    eventType: Extract<PropertyDomainEventType, 'property.snapshot.created' | 'property.snapshot.refreshed'>,
+    extractionRun: RunLedgerRecord,
+    artifacts: {
+      document: DocumentMetadata | null;
+      extractionData: Record<string, unknown> | null;
+      enrichment: PropertyEnrichmentRecord | null;
+      orderContext: OrderContext | null;
+      propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
+    },
+    snapshotId: string,
+    observedAt: string,
+  ): Promise<void> {
+    try {
+      const db = this.dbService as unknown as {
+        createDocument?: unknown;
+        getDocument?: unknown;
+      };
+      if (typeof db.createDocument !== 'function' || typeof db.getDocument !== 'function') {
+        return;
+      }
+
+      const propertyId = artifacts.orderContext?.vendorOrder.propertyId;
+      if (!propertyId) {
+        return;
+      }
+
+      const orderId = artifacts.orderContext?.vendorOrder.id ?? artifacts.document?.orderId ?? null;
+      const lineageRefs: Array<Record<string, unknown>> = [
+        { kind: 'snapshot', id: snapshotId },
+        { kind: 'other', id: extractionRun.id },
+      ];
+      if (artifacts.document?.id) {
+        lineageRefs.push({ kind: 'document', id: artifacts.document.id });
+      }
+      if (artifacts.enrichment?.id) {
+        lineageRefs.push({ kind: 'other', id: artifacts.enrichment.id });
+      }
+
+      await this.outboxService.createEvent({
+        tenantId: extractionRun.tenantId,
+        aggregateId: propertyId,
+        eventType,
+        occurredAt: observedAt,
+        correlationId: propertyId,
+        sourceSnapshotId: snapshotId,
+        payload: {
+          propertyId,
+          snapshotId,
+          observedAt,
+          sourceSystem: 'canonical-snapshot-service',
+          sourceProvider: 'canonical-snapshot-service',
+          orderId,
+          engagementId: extractionRun.engagementId ?? null,
+          documentId: extractionRun.documentId ?? null,
+          sourceRecordId: extractionRun.id,
+          sourceArtifactRef: { kind: 'snapshot', id: snapshotId },
+          lineageRefs,
+        },
+        createdBy: extractionRun.initiatedBy,
+      });
+    } catch (err) {
+      this.logger.warn('Snapshot persisted but outbox enqueue failed — non-fatal', {
+        snapshotId,
+        tenantId: extractionRun.tenantId,
+        runId: extractionRun.id,
+        eventType,
         error: err instanceof Error ? err.message : String(err),
       });
     }

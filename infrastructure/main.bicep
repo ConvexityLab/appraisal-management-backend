@@ -355,6 +355,28 @@ module cosmosPropertyObservationsContainer 'modules/cosmos-property-observations
   }
 }
 
+// Cosmos DB Property Event Outbox Container
+// Stores durable, non-authoritative integration notifications derived from committed property-domain writes.
+module cosmosPropertyEventOutboxContainer 'modules/cosmos-property-event-outbox-container.bicep' = {
+  name: 'cosmos-property-event-outbox-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Canonical Snapshots Container
+// Stores frozen order-scoped reproducibility documents separate from generic AI insight records.
+module cosmosCanonicalSnapshotsContainer 'modules/cosmos-canonical-snapshots-container.bicep' = {
+  name: 'cosmos-canonical-snapshots-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Property Data Cache Container
 // Persistent cache for all third-party property data (ATTOM, Bridge, etc.).
 // Pre-populated with ATTOM FL/LA CSV data; write-through on every live API call.

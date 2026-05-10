@@ -56,5 +56,13 @@ describe('PropertyProjectorService', () => {
         sourceRecordId: 'run-1',
       }),
     );
+    expect(db.createDocument).toHaveBeenCalledWith(
+      'property-event-outbox',
+      expect.objectContaining({
+        type: 'property-event-outbox',
+        eventType: 'property.currentCanonical.updated',
+        aggregateId: 'prop-1',
+      }),
+    );
   });
 });

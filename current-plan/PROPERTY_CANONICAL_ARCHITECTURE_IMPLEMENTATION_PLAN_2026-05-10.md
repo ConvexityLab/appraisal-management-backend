@@ -194,6 +194,7 @@ We should distinguish **durable data truth** from **integration notifications**.
 ### Current plan
 - Do **not** block the architecture on event bus work.
 - Do **add** eventing to the plan as a follow-on capability for cross-service reactions.
+- Keep eventing strictly behind the durable-write boundary so this work does **not** distract from the primary federation goal of authoritative parcel facts + deterministic projectors.
 
 ### Approved future event types
 - `property.observation.recorded`
@@ -303,31 +304,41 @@ Default precedence order:
 - [x] Add projection provenance refs for snapshot-driven `currentCanonical` updates via immutable observations
 
 ## Phase P4 — Snapshot Separation
-- [ ] Introduce dedicated `canonical-snapshots` container
-- [ ] Move snapshot reads/writes off generic `aiInsights`
+- [x] Introduce dedicated `canonical-snapshots` container
+- [x] Move snapshot reads/writes off generic `aiInsights`
 - [ ] Attach projector version and source refs explicitly
 
 ## Phase P5 — Read Path Cutover
-- [ ] Update property list/detail APIs to read from projected `PropertyRecord`
-- [ ] Remove mixed-source property view assembly
-- [ ] Expose provenance/observation refs via the property API
+- [x] Update property list/detail APIs to read from projected `PropertyRecord`
+- [~] Remove mixed-source property view assembly
+- [x] Expose provenance/observation refs via the property API
+
+**Current Phase P5 note:** canonical `PropertyRecord` now backs the primary `/api/v1/property-records` endpoints plus the legacy `/api/properties/summary` and `/api/properties/detailed` read paths. Remaining mixed-source work is now concentrated in older unmounted/unused legacy property services rather than the active property API surface.
 
 ## Phase P6 — Thin `PropertyRecord`
 - [ ] Stop writing deprecated root-level fact branches
 - [ ] Move remaining fact history to observations
 - [ ] Remove duplicated property truth from workflow aggregates where feasible
 
+**Current Phase P6 note:** audit work confirmed the `EnhancedPropertyController` / `EnhancedPropertyService` / `EnhancedPropertyCosmosService` stack had no runtime callers and remained only as stale mixed-source code. That unmounted stack is now retired. The remaining legacy property surface is `PropertyController`, which is retained only for skipped CRUD integration coverage and is not mounted by the production API server.
+
 ## Phase P7 — Legacy Retirement
 - [ ] Retire legacy `/api/properties` stack
 - [ ] Remove deprecated embedded property truth dependencies
 - [ ] Finalize documentation and operational runbooks
 
+**Current Phase P7 note:** the legacy `PropertyController` / `PropertyManagementService` CRUD stack has now been retired. The production `/api/properties` surface is the canonical `createPropertyRecordRouter(...)` mount, and the skipped legacy integration tests that targeted the old CRUD controller were removed with the dead code.
+
 ## Phase P8 — Integration Event Outbox
-- [ ] Add durable outbox for property-domain integration events
-- [ ] Emit `property.observation.recorded` after committed observation writes
-- [ ] Emit `property.currentCanonical.updated` after projector writes
-- [ ] Emit `property.snapshot.created` / `property.snapshot.refreshed` after snapshot writes
-- [ ] Keep event emission non-blocking and non-authoritative
+- [x] Add durable outbox for property-domain integration events
+- [x] Emit `property.observation.recorded` after committed observation writes
+- [x] Emit `property.currentCanonical.updated` after projector writes
+- [x] Emit `property.snapshot.created` / `property.snapshot.refreshed` after snapshot writes
+- [x] Keep event emission non-blocking and non-authoritative
+
+**Current outbox note:** the current slice adds snapshot outbox writes after snapshot create/refresh while keeping the publisher strictly downstream of the durable write boundary. Durable property writes in `property-observations`, `property-records`, and `canonical-snapshots` remain authoritative; publisher failures only move outbox rows through retry / dead-letter handling.
+
+**Snapshot-reader audit note:** production snapshot readers now resolve snapshots through `CanonicalSnapshotService` rather than directly querying `aiInsights`. Remaining `aiInsights` usage in the codebase is run-ledger/evaluation-oriented, plus a small number of stale test/script comments that do not represent live snapshot reads.
 
 ---
 
@@ -335,9 +346,13 @@ Default precedence order:
 
 ### Foundation
 - [x] `src/types/property-observation.types.ts`
+- [x] `src/types/property-event-outbox.types.ts`
 - [x] `src/services/property-observation.service.ts`
+- [x] `src/services/property-event-outbox.service.ts`
 - [x] `tests/property-observation.service.test.ts`
+- [x] `tests/property-event-outbox.service.test.ts`
 - [x] `infrastructure/modules/cosmos-property-observations-container.bicep`
+- [x] `infrastructure/modules/cosmos-property-event-outbox-container.bicep`
 - [x] `infrastructure/main.bicep`
 - [x] `src/services/index.ts`
 
@@ -351,7 +366,16 @@ Default precedence order:
 - [x] public-record / ATTOM import observations
 - [x] manual-correction observations
 - [x] dedicated property projector service (separate from snapshot service)
-- [ ] event outbox design and first non-blocking publisher path
+- [x] event outbox design and first non-blocking publisher path
+- [x] dedicated property outbox background publisher
+- [x] dedicated `canonical-snapshots` container cutover in `CanonicalSnapshotService`
+- [x] snapshot outbox writes after create/refresh
+- [x] downstream snapshot-reader audit for direct `aiInsights` dependency
+- [x] property list/detail endpoints hardened to require explicit tenant context
+- [x] property detail / observations endpoints now expose provenance and immutable observation refs
+- [x] legacy summary/detailed property routes now resolved from `PropertyRecord` + observations instead of mixed-source assemblers
+- [x] unmounted enhanced-property legacy controller/service stack removed after usage audit confirmed no runtime consumers
+- [x] last legacy `PropertyController` / `PropertyManagementService` test-only path removed after usage audit confirmed only skipped integration coverage depended on it
 
 ---
 
@@ -380,4 +404,4 @@ This program is complete when:
 
 ## 12. Current Status Note
 
-As of 2026-05-10, the architecture is approved and implementation is active across the observation foundation, tenant-scoped public-record/materialization observations, manual-correction observations, and the initial dedicated property projector slice.
+As of 2026-05-10, the architecture is approved and implementation is active across the observation foundation, tenant-scoped public-record/materialization observations, manual-correction observations, the dedicated property projector slice, the property outbox publisher path, projector-driven `property.currentCanonical.updated` notifications, snapshot-created/refreshed outbox writes, the initial `canonical-snapshots` container cutover, the property read-path cutover to canonical `PropertyRecord` detail/list/summary responses with explicit provenance exposure, and the retirement of both the unmounted enhanced-property stack and the final test-only `PropertyController` CRUD stack.

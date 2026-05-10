@@ -70,7 +70,7 @@ function buildQueryItemsWithSourceIdentity(sourceIdentity: IntakeSourceIdentity)
       };
     }
 
-    if (containerName === 'aiInsights' && typeParam === 'canonical-snapshot') {
+    if (containerName === 'canonical-snapshots' && typeParam === 'canonical-snapshot') {
       return {
         success: true,
         data: [
@@ -277,7 +277,7 @@ describe('ReviewContextAssemblyService', () => {
         };
       }
 
-      if (containerName === 'aiInsights' && typeParam === 'canonical-snapshot') {
+      if (containerName === 'canonical-snapshots' && typeParam === 'canonical-snapshot') {
         return {
           success: true,
           data: [

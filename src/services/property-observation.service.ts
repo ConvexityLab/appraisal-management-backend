@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+import { PropertyEventOutboxService } from './property-event-outbox.service.js';
 import type {
   CreatePropertyObservationInput,
   PropertyObservationRecord,
@@ -55,8 +56,11 @@ export function buildObservationFingerprint(input: {
 
 export class PropertyObservationService {
   private readonly logger = new Logger('PropertyObservationService');
+  private readonly outboxService: PropertyEventOutboxService;
 
-  constructor(private readonly cosmosService: CosmosDbService) {}
+  constructor(private readonly cosmosService: CosmosDbService) {
+    this.outboxService = new PropertyEventOutboxService(cosmosService);
+  }
 
   async createObservation(
     input: CreatePropertyObservationInput,
@@ -95,48 +99,82 @@ export class PropertyObservationService {
       input.tenantId,
     );
 
-    if (existing) {
-      return existing;
-    }
-
-    const record: PropertyObservationRecord = {
-      id,
-      type: 'property-observation',
-      tenantId: input.tenantId,
-      propertyId: input.propertyId,
-      observationType: input.observationType,
-      sourceSystem: input.sourceSystem,
-      sourceFingerprint,
-      observedAt: input.observedAt,
-      ingestedAt: input.ingestedAt ?? new Date().toISOString(),
-      ...(input.sourceArtifactRef ? { sourceArtifactRef: input.sourceArtifactRef } : {}),
-      ...(input.lineageRefs?.length ? { lineageRefs: input.lineageRefs } : {}),
-      ...(input.orderId ? { orderId: input.orderId } : {}),
-      ...(input.engagementId ? { engagementId: input.engagementId } : {}),
-      ...(input.documentId ? { documentId: input.documentId } : {}),
-      ...(input.snapshotId ? { snapshotId: input.snapshotId } : {}),
-      ...(input.sourceRecordId ? { sourceRecordId: input.sourceRecordId } : {}),
-      ...(input.sourceProvider ? { sourceProvider: input.sourceProvider } : {}),
-      ...(input.confidence != null ? { confidence: input.confidence } : {}),
-      ...(input.normalizedFacts ? { normalizedFacts: input.normalizedFacts } : {}),
-      ...(input.rawPayload !== undefined ? { rawPayload: input.rawPayload } : {}),
-      createdBy: input.createdBy ?? 'SYSTEM',
-    };
-
-    const created = await this.cosmosService.createDocument<PropertyObservationRecord>(
+    const created = existing ?? await this.cosmosService.createDocument<PropertyObservationRecord>(
       PROPERTY_OBSERVATIONS_CONTAINER,
-      record,
+      {
+        id,
+        type: 'property-observation',
+        tenantId: input.tenantId,
+        propertyId: input.propertyId,
+        observationType: input.observationType,
+        sourceSystem: input.sourceSystem,
+        sourceFingerprint,
+        observedAt: input.observedAt,
+        ingestedAt: input.ingestedAt ?? new Date().toISOString(),
+        ...(input.sourceArtifactRef ? { sourceArtifactRef: input.sourceArtifactRef } : {}),
+        ...(input.lineageRefs?.length ? { lineageRefs: input.lineageRefs } : {}),
+        ...(input.orderId ? { orderId: input.orderId } : {}),
+        ...(input.engagementId ? { engagementId: input.engagementId } : {}),
+        ...(input.documentId ? { documentId: input.documentId } : {}),
+        ...(input.snapshotId ? { snapshotId: input.snapshotId } : {}),
+        ...(input.sourceRecordId ? { sourceRecordId: input.sourceRecordId } : {}),
+        ...(input.sourceProvider ? { sourceProvider: input.sourceProvider } : {}),
+        ...(input.confidence != null ? { confidence: input.confidence } : {}),
+        ...(input.normalizedFacts ? { normalizedFacts: input.normalizedFacts } : {}),
+        ...(input.rawPayload !== undefined ? { rawPayload: input.rawPayload } : {}),
+        createdBy: input.createdBy ?? 'SYSTEM',
+      },
     );
 
-    this.logger.info('Property observation created', {
-      id: created.id,
-      tenantId: created.tenantId,
-      propertyId: created.propertyId,
-      observationType: created.observationType,
-      sourceSystem: created.sourceSystem,
-    });
+    if (!existing) {
+      this.logger.info('Property observation created', {
+        id: created.id,
+        tenantId: created.tenantId,
+        propertyId: created.propertyId,
+        observationType: created.observationType,
+        sourceSystem: created.sourceSystem,
+      });
+    }
+
+    await this.enqueueObservationRecordedEvent(created);
 
     return created;
+  }
+
+  private async enqueueObservationRecordedEvent(record: PropertyObservationRecord): Promise<void> {
+    try {
+      await this.outboxService.createEvent({
+        tenantId: record.tenantId,
+        aggregateId: record.propertyId,
+        eventType: 'property.observation.recorded',
+        occurredAt: record.ingestedAt,
+        correlationId: record.propertyId,
+        sourceObservationId: record.id,
+        payload: {
+          observationId: record.id,
+          ...(record.snapshotId ? { snapshotId: record.snapshotId } : {}),
+          propertyId: record.propertyId,
+          observationType: record.observationType,
+          observedAt: record.observedAt,
+          sourceSystem: record.sourceSystem,
+          sourceProvider: record.sourceProvider ?? null,
+          orderId: record.orderId ?? null,
+          engagementId: record.engagementId ?? null,
+          documentId: record.documentId ?? null,
+          sourceRecordId: record.sourceRecordId ?? null,
+          sourceArtifactRef: (record.sourceArtifactRef ?? null) as Record<string, unknown> | null,
+          lineageRefs: (record.lineageRefs ?? []) as unknown as Record<string, unknown>[],
+        },
+        createdBy: record.createdBy,
+      });
+    } catch (err) {
+      this.logger.warn('Property observation recorded but outbox enqueue failed — non-fatal', {
+        observationId: record.id,
+        tenantId: record.tenantId,
+        propertyId: record.propertyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async listByPropertyId(

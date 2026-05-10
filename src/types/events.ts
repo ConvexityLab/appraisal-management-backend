@@ -30,6 +30,7 @@ export enum EventPriority {
 // Event categories for filtering and routing
 export enum EventCategory {
   ORDER = 'order',
+  PROPERTY = 'property',
   QC = 'qc',
   VENDOR = 'vendor',
   SYSTEM = 'system',
@@ -1359,6 +1360,89 @@ export interface NegotiationRejectedEvent extends BaseEvent {
   };
 }
 
+export interface PropertyObservationRecordedEvent extends BaseEvent {
+  type: 'property.observation.recorded';
+  category: EventCategory.PROPERTY;
+  data: {
+    tenantId: string;
+    propertyId: string;
+    observationId?: string;
+    snapshotId?: string;
+    observationType?: string;
+    observedAt?: string;
+    sourceSystem?: string;
+    sourceProvider?: string | null;
+    orderId?: string | null;
+    engagementId?: string | null;
+    documentId?: string | null;
+    sourceRecordId?: string | null;
+    sourceArtifactRef?: Record<string, unknown> | null;
+    lineageRefs?: Record<string, unknown>[];
+    priority: EventPriority;
+  };
+}
+
+export interface PropertyCurrentCanonicalUpdatedEvent extends BaseEvent {
+  type: 'property.currentCanonical.updated';
+  category: EventCategory.PROPERTY;
+  data: {
+    tenantId: string;
+    propertyId: string;
+    snapshotId?: string;
+    recordVersion?: number;
+    observedAt?: string;
+    sourceSystem?: string;
+    sourceProvider?: string | null;
+    orderId?: string | null;
+    engagementId?: string | null;
+    documentId?: string | null;
+    sourceRecordId?: string | null;
+    sourceArtifactRef?: Record<string, unknown> | null;
+    lineageRefs?: Record<string, unknown>[];
+    priority: EventPriority;
+  };
+}
+
+export interface PropertySnapshotCreatedEvent extends BaseEvent {
+  type: 'property.snapshot.created';
+  category: EventCategory.PROPERTY;
+  data: {
+    tenantId: string;
+    propertyId: string;
+    snapshotId?: string;
+    observedAt?: string;
+    sourceSystem?: string;
+    sourceProvider?: string | null;
+    orderId?: string | null;
+    engagementId?: string | null;
+    documentId?: string | null;
+    sourceRecordId?: string | null;
+    sourceArtifactRef?: Record<string, unknown> | null;
+    lineageRefs?: Record<string, unknown>[];
+    priority: EventPriority;
+  };
+}
+
+export interface PropertySnapshotRefreshedEvent extends BaseEvent {
+  type: 'property.snapshot.refreshed';
+  category: EventCategory.PROPERTY;
+  data: {
+    tenantId: string;
+    propertyId: string;
+    snapshotId?: string;
+    observedAt?: string;
+    sourceSystem?: string;
+    sourceProvider?: string | null;
+    orderId?: string | null;
+    engagementId?: string | null;
+    documentId?: string | null;
+    sourceRecordId?: string | null;
+    sourceArtifactRef?: Record<string, unknown> | null;
+    lineageRefs?: Record<string, unknown>[];
+    priority: EventPriority;
+  };
+}
+
 export type AppEvent =
   | OrderCreatedEvent
   | OrderStatusChangedEvent
@@ -1447,6 +1531,11 @@ export type AppEvent =
   | NegotiationCounterOfferSubmittedEvent
   | NegotiationAcceptedEvent
   | NegotiationRejectedEvent
+  // Property events
+  | PropertyObservationRecordedEvent
+  | PropertyCurrentCanonicalUpdatedEvent
+  | PropertySnapshotCreatedEvent
+  | PropertySnapshotRefreshedEvent
   // Document events
   | DocumentUploadedEvent;
 

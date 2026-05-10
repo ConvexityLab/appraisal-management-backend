@@ -118,6 +118,15 @@ describe('CanonicalSnapshotService merge behavior', () => {
         sourceRecordId: 'ext_run_001',
       }),
     );
+    expect(createDocument).toHaveBeenCalledWith(
+      'property-event-outbox',
+      expect.objectContaining({
+        type: 'property-event-outbox',
+        eventType: 'property.snapshot.created',
+        aggregateId: 'prop-001',
+        sourceSnapshotId: expect.stringMatching(/^snapshot_/),
+      }),
+    );
   });
 
   it('builds snapshot when enrichment is missing', async () => {
@@ -187,7 +196,7 @@ describe('CanonicalSnapshotService merge behavior', () => {
     );
 
     expect(upsertItem).toHaveBeenCalledTimes(1);
-    expect(upsertItem.mock.calls[0][0]).toBe('aiInsights');
+    expect(upsertItem.mock.calls[0][0]).toBe('canonical-snapshots');
   });
 
   it('builds snapshot when extraction output is missing', async () => {
@@ -466,8 +475,16 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
 
   it('rebuilds normalizedData from the post-Axiom document and stamps refreshedAt + status=ready', async () => {
     const existing = buildExistingSnapshot();
+    vi.spyOn(OrderContextLoader.prototype, 'loadByVendorOrderId').mockResolvedValue({
+      vendorOrder: {
+        id: 'order-001',
+        tenantId: 'tenant-001',
+        propertyId: 'prop-001',
+      },
+      clientOrder: null,
+    } as any);
     const queryItems = vi.fn().mockImplementation(async (container: string, query: string) => {
-      if (container === 'aiInsights' || query.includes('canonical-snapshot')) {
+      if (container === 'canonical-snapshots' || query.includes('canonical-snapshot')) {
         // First query: getSnapshotById
         return { success: true, data: [existing] };
       }
@@ -490,8 +507,10 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
       return { success: true, data: [] };
     });
     const upsertItem = vi.fn().mockResolvedValue({ success: true });
+    const getDocument = vi.fn().mockResolvedValue(null);
+    const createDocument = vi.fn().mockImplementation(async (_container: string, doc: any) => doc);
 
-    const service = new CanonicalSnapshotService({ queryItems, upsertItem } as any);
+    const service = new CanonicalSnapshotService({ queryItems, upsertItem, getDocument, createDocument } as any);
     const before = Date.now();
     const result = await service.refreshFromExtractionRun(
       buildExtractionRun({ canonicalSnapshotId: 'snap-001' }),
@@ -514,13 +533,22 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
       id: 'snap-001',
       status: 'ready',
     });
+    expect(createDocument).toHaveBeenCalledWith(
+      'property-event-outbox',
+      expect.objectContaining({
+        type: 'property-event-outbox',
+        eventType: 'property.snapshot.refreshed',
+        aggregateId: 'prop-001',
+        sourceSnapshotId: 'snap-001',
+      }),
+    );
   });
 
   it('returns null and logs (no throw) when the upsert fails — caller in axiom.service.ts must not see a hard error', async () => {
     const existing = buildExistingSnapshot();
     const queryItems = vi.fn().mockImplementation(async (container: string) => {
-      // getSnapshotById queries the aiInsights container (runContainerName)
-      if (container === 'aiInsights') return { success: true, data: [existing] };
+      // getSnapshotById queries the canonical-snapshots container
+      if (container === 'canonical-snapshots') return { success: true, data: [existing] };
       if (container === 'documents') return { success: true, data: [{ id: 'doc-001', tenantId: 'tenant-001' }] };
       return { success: true, data: [] };
     });

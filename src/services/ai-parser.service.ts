@@ -25,8 +25,8 @@ const INTENT_DEFINITIONS: Record<string, { description: string; payloadShape: st
     payloadShape: "Should include 'poolName', 'clientId', etc."
   },
   'CREATE_ORDER': {
-    description: "Use if the user is inputting property addresses, loan numbers, or requesting a specific appraisal order/evaluation (often mentioning an engagement ID, property address, product type like 'BPO' or 'Appraisal'). If it looks like individual properties, use this.",
-    payloadShape: "Should include 'engagementId' (optional), 'propertyAddress' (street, city, state, zip), 'orderType', 'productType', etc."
+    description: "Create a single VendorOrder against an EXISTING ClientOrder inside an EXISTING Engagement. CRITICAL: a VendorOrder cannot exist on its own — it must be attached to an engagement → property → clientOrder hierarchy. If the user has not yet identified that hierarchy, you MUST first either (a) emit CREATE_ENGAGEMENT to build it, or (b) emit a TOOL_CALL (searchBackendOrders / queryLocalCache) to resolve the engagementId, engagementPropertyId, and clientOrderId. Only emit CREATE_ORDER once all three IDs are known.",
+    payloadShape: "Required: 'engagementId' (parent Engagement.id), 'engagementPropertyId' (the EngagementProperty.id this order is for), 'clientOrderId' (the EngagementClientOrder.id this VendorOrder fulfills), 'clientId', 'orderNumber', 'propertyAddress' (streetAddress|street, city, state, zipCode|zip), 'propertyDetails' (propertyType, occupancy, features[]), 'orderType', 'productType', 'dueDate' (ISO 8601), 'rushOrder' (bool), 'borrowerInformation' (firstName, lastName), 'loanInformation' (loanAmount, loanType, loanPurpose), 'contactInformation' (name, role, preferredMethod), 'priority', 'tags' (array), 'metadata' (object)."
   },
   'ASSIGN_VENDOR': {
     description: "Use if the user is assigning an appraiser or vendor.",

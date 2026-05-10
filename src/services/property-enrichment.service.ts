@@ -37,6 +37,9 @@ import type {
 } from '../types/property-data.types.js';
 import { createPropertyDataProvider } from './property-data-providers/factory.js';
 import { BridgeInteractiveService } from './bridge-interactive.service.js';
+import { PropertyObservationService } from './property-observation.service.js';
+import type { PropertyObservationNormalizedFacts } from '../types/property-observation.types.js';
+import type { PropertyObservationSourceSystem } from '../types/property-observation.types.js';
 
 // ─── Container name constant ──────────────────────────────────────────────────
 
@@ -119,6 +122,7 @@ export class PropertyEnrichmentService {
   private readonly provider: PropertyDataProvider;
   private readonly geocoder: Geocoder;
   private readonly bridge: BridgeInteractiveService;
+  private readonly observationService: PropertyObservationService;
 
   constructor(
     private readonly cosmosService: CosmosDbService,
@@ -147,6 +151,7 @@ export class PropertyEnrichmentService {
   ) {
     this.logger = new Logger('PropertyEnrichmentService');
     this.provider = provider ?? createPropertyDataProvider(cosmosService);
+    this.observationService = new PropertyObservationService(cosmosService);
     if (!geocoder) {
       throw new Error(
         'PropertyEnrichmentService: geocoder is required. Pass an implementation of `Geocoder` (e.g. `AddressServiceGeocoder`) to the constructor.',
@@ -266,8 +271,8 @@ export class PropertyEnrichmentService {
           'Geocoded subject coordinates at enrichment time',
           'PUBLIC_RECORDS_API',
           'SYSTEM:property-enrichment',
+          'geocoder',
           meta?.sourceArtifactId,
-          'geocoder'
         );
         // createVersion returns the updated record; fall back to a synthesised
         // copy if the implementation returns void in some test stubs.
@@ -378,9 +383,32 @@ export class PropertyEnrichmentService {
             : 'Public-records refresh at order creation',
           'PUBLIC_RECORDS_API',
           'SYSTEM:property-enrichment',
+          dataResult.source,
           meta?.sourceArtifactId,
-          dataResult.source
         );
+
+        await this.observationService.createObservation({
+          tenantId,
+          propertyId: resolution.propertyId,
+          observationType: 'public-record-import',
+          sourceSystem: this.mapPublicRecordObservationSourceSystem(dataResult.source),
+          observedAt: dataResult.fetchedAt,
+          orderId,
+          ...(meta?.engagementId ? { engagementId: meta.engagementId } : {}),
+          ...(meta?.sourceArtifactId
+            ? {
+                sourceArtifactRef: {
+                  kind: 'other' as const,
+                  id: meta.sourceArtifactId,
+                },
+              }
+            : {}),
+          sourceRecordId: orderId,
+          sourceProvider: dataResult.source,
+          normalizedFacts: this.buildObservationNormalizedFacts(dataResult),
+          rawPayload: dataResult as unknown as Record<string, unknown>,
+          createdBy: 'SYSTEM:property-enrichment',
+        });
       }
 
       // ── Step 6: Append tax assessment if present ─────────────────────────
@@ -393,6 +421,29 @@ export class PropertyEnrichmentService {
           workingRecord,
         );
       }
+
+      await this.observationService.createObservation({
+        tenantId,
+        propertyId: resolution.propertyId,
+        observationType: 'provider-enrichment',
+        sourceSystem: 'property-enrichment-service',
+        observedAt: dataResult.fetchedAt,
+        orderId,
+        ...(meta?.engagementId ? { engagementId: meta.engagementId } : {}),
+        ...(meta?.sourceArtifactId
+          ? {
+              sourceArtifactRef: {
+                kind: 'other' as const,
+                id: meta.sourceArtifactId,
+              },
+            }
+          : {}),
+        sourceRecordId: orderId,
+        sourceProvider: dataResult.source,
+        normalizedFacts: this.buildObservationNormalizedFacts(dataResult),
+        rawPayload: dataResult as unknown as Record<string, unknown>,
+        createdBy: 'SYSTEM:property-enrichment',
+      });
     }
 
     // ── Step 7: Persist the enrichment record for audit ────────────────────
@@ -473,14 +524,33 @@ export class PropertyEnrichmentService {
         'AVM value fetched from Bridge Interactive (Zestimate)',
         'PUBLIC_RECORDS_API',
         'SYSTEM:property-enrichment',
+        'Bridge Interactive',
         undefined,
-        'Bridge Interactive'
       );
 
       this.logger.info('PropertyEnrichmentService: AVM patched on PropertyRecord', {
         orderId,
         propertyId,
         avmValue: value,
+      });
+
+      await this.observationService.createObservation({
+        tenantId,
+        propertyId,
+        observationType: 'avm-update',
+        sourceSystem: 'bridge-interactive',
+        observedAt: new Date().toISOString(),
+        orderId,
+        sourceProvider: 'Bridge Interactive',
+        normalizedFacts: {
+          avm: {
+            value,
+            fetchedAt: new Date().toISOString(),
+            source: 'bridge-zestimate',
+          },
+        },
+        rawPayload: result as unknown as Record<string, unknown>,
+        createdBy: 'SYSTEM:property-enrichment',
       });
     } catch (err) {
       this.logger.warn(
@@ -492,6 +562,45 @@ export class PropertyEnrichmentService {
         },
       );
     }
+  }
+
+  private buildObservationNormalizedFacts(
+    dataResult: PropertyDataResult,
+  ): PropertyObservationNormalizedFacts {
+    const buildingPatch = this.buildBuildingChanges(dataResult);
+    const propertyPatch = this.buildTopLevelChanges(dataResult);
+
+    const facts: PropertyObservationNormalizedFacts = {};
+
+    if (Object.keys(buildingPatch).length > 0) {
+      facts.buildingPatch = buildingPatch;
+    }
+    if (Object.keys(propertyPatch).length > 0) {
+      facts.propertyPatch = propertyPatch as Record<string, unknown>;
+    }
+    if (dataResult.publicRecord?.taxAssessedValue != null) {
+      facts.taxAssessment = {
+        taxYear: dataResult.publicRecord.taxYear ?? new Date(dataResult.fetchedAt).getUTCFullYear(),
+        totalAssessedValue: dataResult.publicRecord.taxAssessedValue,
+        ...(dataResult.publicRecord.annualTaxAmount != null
+          ? { annualTaxAmount: dataResult.publicRecord.annualTaxAmount }
+          : {}),
+        assessedAt: dataResult.fetchedAt,
+      };
+    }
+
+    return facts;
+  }
+
+  private mapPublicRecordObservationSourceSystem(source: string): PropertyObservationSourceSystem {
+    const normalized = source.trim().toLowerCase();
+    if (normalized.includes('attom')) {
+      return normalized.includes('cache') || normalized.includes('cosmos')
+        ? 'attom-cache'
+        : 'attom-api';
+    }
+
+    return 'public-records-import';
   }
 
   /**
@@ -731,8 +840,8 @@ export class PropertyEnrichmentService {
       `Tax assessment appended for year ${taxYear}`,
       'PUBLIC_RECORDS_API',
       'SYSTEM:property-enrichment',
+      dataResult.source,
       undefined, // we don't thread sourceArtifactId down to _addTaxAssessmentRecord at the moment.
-      dataResult.source
     );
   }
 }

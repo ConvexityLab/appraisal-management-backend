@@ -4,6 +4,7 @@ import type { CanonicalReportDocument } from '../types/canonical-schema.js';
 import type { PropertyCurrentCanonicalView, PropertyRecord } from '../types/property-record.types.js';
 import { mergePropertyCanonical, pickPropertyCanonical } from '../mappers/property-canonical-projection.js';
 import { PropertyObservationService } from './property-observation.service.js';
+import { PropertyEventOutboxService } from './property-event-outbox.service.js';
 
 export interface ProjectPropertyCanonicalInput {
   tenantId: string;
@@ -21,9 +22,11 @@ export interface ProjectPropertyCanonicalInput {
 export class PropertyProjectorService {
   private readonly logger = new Logger('PropertyProjectorService');
   private readonly observationService: PropertyObservationService;
+  private readonly outboxService: PropertyEventOutboxService;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.observationService = new PropertyObservationService(dbService);
+    this.outboxService = new PropertyEventOutboxService(dbService);
   }
 
   async projectCurrentCanonicalFromSnapshot(input: ProjectPropertyCanonicalInput): Promise<void> {
@@ -119,6 +122,19 @@ export class PropertyProjectorService {
         createdBy: input.initiatedBy,
       });
 
+      await this.enqueueCurrentCanonicalUpdatedEvent({
+        tenantId: input.tenantId,
+        propertyId: input.propertyId,
+        ...(input.orderId !== undefined ? { orderId: input.orderId } : {}),
+        ...(input.engagementId !== undefined ? { engagementId: input.engagementId } : {}),
+        ...(input.documentId !== undefined ? { documentId: input.documentId } : {}),
+        sourceRunId: input.sourceRunId,
+        snapshotId: input.snapshotId,
+        snapshotAt: input.snapshotAt,
+        initiatedBy: input.initiatedBy,
+        newVersion,
+      });
+
       this.logger.info('PropertyRecord currentCanonical updated from snapshot', {
         propertyId: input.propertyId,
         tenantId: input.tenantId,
@@ -130,6 +146,56 @@ export class PropertyProjectorService {
         propertyId: input.propertyId,
         tenantId: input.tenantId,
         sourceRunId: input.sourceRunId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private async enqueueCurrentCanonicalUpdatedEvent(input: {
+    tenantId: string;
+    propertyId: string;
+    orderId?: string;
+    engagementId?: string;
+    documentId?: string;
+    sourceRunId: string;
+    snapshotId: string;
+    snapshotAt: string;
+    initiatedBy: string;
+    newVersion: number;
+  }): Promise<void> {
+    try {
+      await this.outboxService.createEvent({
+        tenantId: input.tenantId,
+        aggregateId: input.propertyId,
+        eventType: 'property.currentCanonical.updated',
+        occurredAt: input.snapshotAt,
+        correlationId: input.propertyId,
+        sourceSnapshotId: input.snapshotId,
+        payload: {
+          propertyId: input.propertyId,
+          snapshotId: input.snapshotId,
+          recordVersion: input.newVersion,
+          observedAt: input.snapshotAt,
+          sourceSystem: 'canonical-snapshot-service',
+          sourceProvider: 'canonical-snapshot-service',
+          orderId: input.orderId ?? null,
+          engagementId: input.engagementId ?? null,
+          documentId: input.documentId ?? null,
+          sourceRecordId: input.sourceRunId,
+          sourceArtifactRef: { kind: 'snapshot', id: input.snapshotId },
+          lineageRefs: [
+            { kind: 'snapshot', id: input.snapshotId },
+            ...(input.documentId ? [{ kind: 'document', id: input.documentId }] : []),
+            { kind: 'other', id: input.sourceRunId },
+          ],
+        },
+        createdBy: input.initiatedBy,
+      });
+    } catch (err) {
+      this.logger.warn('Projector: currentCanonical updated but outbox enqueue failed — non-fatal', {
+        propertyId: input.propertyId,
+        tenantId: input.tenantId,
+        snapshotId: input.snapshotId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

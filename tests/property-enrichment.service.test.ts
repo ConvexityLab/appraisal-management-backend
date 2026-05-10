@@ -24,6 +24,7 @@ import {
   PropertyEnrichmentService,
   PROPERTY_ENRICHMENTS_CONTAINER,
 } from '../src/services/property-enrichment.service';
+import { PROPERTY_OBSERVATIONS_CONTAINER } from '../src/services/property-observation.service';
 import type { PropertyEnrichmentRecord } from '../src/services/property-enrichment.service';
 import type { PropertyDataProvider, PropertyDataResult } from '../src/types/property-data.types';
 import type { PropertyRecord } from '../src/types/property-record.types';
@@ -132,6 +133,7 @@ function makePropertyRecordService(isNew: boolean = false) {
 
 function makeCosmosService(existingEnrichments: PropertyEnrichmentRecord[] = []) {
   return {
+    getDocument: vi.fn().mockResolvedValue(null),
     createDocument: vi.fn().mockImplementation(async (_container: string, doc: any) => doc),
     queryDocuments: vi.fn().mockResolvedValue(existingEnrichments),
   };
@@ -270,7 +272,7 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
-    const [, , firstCallChanges, , , , sourceArtifactId, firstCallSourceProvider] =
+    const [, , firstCallChanges, , , , firstCallSourceProvider, sourceArtifactId] =
       propSvc.createVersion.mock.calls[0] as [
         string,
         string,
@@ -284,8 +286,9 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
 
     // Top-level lastVerifiedSource is set on the PropertyRecord changes payload
     expect(firstCallChanges.lastVerifiedSource).toBe('Bridge Interactive');
-    // The 8th argument to createVersion is the per-version sourceProvider audit value
+    // The 7th argument to createVersion is the per-version sourceProvider audit value
     expect(firstCallSourceProvider).toBe('Bridge Interactive');
+    expect(sourceArtifactId).toBeUndefined();
   });
 
   it('appends tax assessment when year not already present', async () => {
@@ -353,6 +356,66 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
         tenantId: TENANT,
         propertyId: PROPERTY_ID,
         status: 'enriched',
+      }),
+    );
+  });
+
+  it('persists an immutable property observation when provider returns data', async () => {
+    const provider = makeProvider(makeFullDataResult());
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS, {
+      engagementId: 'eng-1',
+      sourceArtifactId: 'artifact-1',
+    });
+
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: PROPERTY_ID,
+        tenantId: TENANT,
+        observationType: 'provider-enrichment',
+        sourceSystem: 'property-enrichment-service',
+        orderId: ORDER_ID,
+        engagementId: 'eng-1',
+        sourceProvider: 'Bridge Interactive',
+        normalizedFacts: expect.objectContaining({
+          buildingPatch: expect.objectContaining({ gla: 2150, bedrooms: 3 }),
+          propertyPatch: expect.objectContaining({ apn: '00-1234-0056-789' }),
+        }),
+      }),
+    );
+  });
+
+  it('persists a tenant-scoped public-record import observation when public-record data is materialized', async () => {
+    const dataResult = makeFullDataResult();
+    dataResult.source = 'ATTOM Data Solutions (Cosmos cache)';
+
+    const provider = makeProvider(dataResult);
+    const propSvc = makePropertyRecordService(false);
+    const cosmos = makeCosmosService();
+
+    const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
+    await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS, {
+      sourceArtifactId: 'artifact-1',
+    });
+
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_OBSERVATIONS_CONTAINER,
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: PROPERTY_ID,
+        tenantId: TENANT,
+        observationType: 'public-record-import',
+        sourceSystem: 'attom-cache',
+        sourceProvider: 'ATTOM Data Solutions (Cosmos cache)',
+        sourceArtifactRef: expect.objectContaining({
+          kind: 'other',
+          id: 'artifact-1',
+        }),
       }),
     );
   });

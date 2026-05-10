@@ -4,7 +4,11 @@ import {
   PropertyObservationService,
   PROPERTY_OBSERVATIONS_CONTAINER,
 } from '../src/services/property-observation.service';
+import {
+  PROPERTY_EVENT_OUTBOX_CONTAINER,
+} from '../src/services/property-event-outbox.service';
 import type { PropertyObservationRecord } from '../src/types/property-observation.types';
+import type { PropertyEventOutboxRecord } from '../src/types/property-event-outbox.types';
 
 const TENANT_ID = 'tenant-1';
 const PROPERTY_ID = 'prop-1';
@@ -36,7 +40,7 @@ function makeObservation(
 }
 
 function makeCosmosService(initialRows: PropertyObservationRecord[] = []) {
-  const store = new Map<string, PropertyObservationRecord>();
+  const store = new Map<string, PropertyObservationRecord | PropertyEventOutboxRecord>();
   for (const row of initialRows) {
     store.set(row.id, row);
   }
@@ -50,7 +54,8 @@ function makeCosmosService(initialRows: PropertyObservationRecord[] = []) {
     queryDocuments: vi.fn().mockImplementation(
       async (_container: string, _query: string, params: { name: string; value: unknown }[]) => {
         const paramMap = Object.fromEntries(params.map((p) => [p.name, p.value]));
-        let rows = [...store.values()].filter(
+        let rows = [...store.values()].filter((row): row is PropertyObservationRecord => row.type === 'property-observation');
+        rows = rows.filter(
           (row) => row.tenantId === paramMap['@tenantId'] && row.propertyId === paramMap['@propertyId'],
         );
         if (paramMap['@observationType']) {
@@ -107,13 +112,26 @@ describe('PropertyObservationService.createObservation', () => {
     expect(created.id).toMatch(/^propobs-/);
     expect(created.type).toBe('property-observation');
     expect(created.sourceProvider).toBe('Bridge Interactive');
-    expect(cosmos.createDocument).toHaveBeenCalledOnce();
     expect(cosmos.createDocument).toHaveBeenCalledWith(
       PROPERTY_OBSERVATIONS_CONTAINER,
       expect.objectContaining({
         propertyId: PROPERTY_ID,
         tenantId: TENANT_ID,
         observationType: 'provider-enrichment',
+      }),
+    );
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_EVENT_OUTBOX_CONTAINER,
+      expect.objectContaining({
+        type: 'property-event-outbox',
+        aggregateId: PROPERTY_ID,
+        eventType: 'property.observation.recorded',
+        sourceObservationId: created.id,
+        payload: expect.objectContaining({
+          observationId: created.id,
+          propertyId: PROPERTY_ID,
+          observationType: 'provider-enrichment',
+        }),
       }),
     );
   });
@@ -153,7 +171,14 @@ describe('PropertyObservationService.createObservation', () => {
     });
 
     expect(result).toEqual(existing);
-    expect(cosmos.createDocument).not.toHaveBeenCalled();
+    expect(cosmos.createDocument).toHaveBeenCalledOnce();
+    expect(cosmos.createDocument).toHaveBeenCalledWith(
+      PROPERTY_EVENT_OUTBOX_CONTAINER,
+      expect.objectContaining({
+        eventType: 'property.observation.recorded',
+        sourceObservationId: existing.id,
+      }),
+    );
   });
 
   it('throws when required fields are missing', async () => {

@@ -43,7 +43,7 @@ export interface OutboundCanonicalPayload {
     subject?: Partial<CanonicalSubject>;
     loan?: CanonicalLoan;
     ratios?: CanonicalLoanRatios;
-    /** Optional snapshotId so consumers can fetch the full canonical from aiInsights. */
+    /** Optional snapshotId so consumers can fetch the full canonical from canonical-snapshots. */
     snapshotId?: string;
 }
 
