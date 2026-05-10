@@ -3,10 +3,10 @@
  * the immutable, versioned rule packs that drive every decision-engine
  * evaluator on the platform.
  *
- * Phase A of docs/DECISION_ENGINE_RULES_SURFACE.md. Replaces
- * VendorMatchingRulePacksController; mounted at
+ * Phase A of docs/DECISION_ENGINE_RULES_SURFACE.md (initial mount) +
+ * Phase B (registry-backed dispatch). Mounted at
  * `/api/decision-engine/rules/:category`. Tenant comes from auth context;
- * the category comes from the URL.
+ * category comes from the URL.
  *
  * Routes (all relative to the mount path):
  *   POST   /                       — create a new version of a pack
@@ -20,10 +20,9 @@
  *   DELETE /:packId                — drop the tenant's pack on the evaluator
  *
  * Push-on-write happens via the service's `onNewActivePack` hook (registered
- * per category at startup in api-server.ts). This controller doesn't call
- * push targets directly except for the preview / seed / drop endpoints, which
- * proxy to the per-category push client (today only `MopRulePackPusher` for
- * vendor-matching). Phase B replaces this with a CategoryDefinition lookup.
+ * per category at startup by wireRegistryHooks). This controller dispatches
+ * preview / seed / drop to the registered category's optional methods —
+ * categories that don't implement those return 501.
  */
 
 import { Router, type Response, type NextFunction } from 'express';
@@ -33,37 +32,20 @@ import type {
   CreateRulePackInput,
   DecisionRuleCategory,
 } from '../types/decision-rule-pack.types.js';
-import type { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
-
-/**
- * Per-category push client wiring. Phase B replaces this with the
- * `CategoryDefinition` registry; for Phase A we hard-wire vendor-matching →
- * MopRulePackPusher and return 501 for any other category that tries to
- * use the push-backed endpoints (preview / seed / drop).
- */
-export interface CategoryPushClients {
-  /** Vendor-matching's MOP pusher; null when MOP isn't configured. */
-  vendorMatching: MopRulePackPusher | null;
-}
-
-const KNOWN_CATEGORIES: ReadonlySet<DecisionRuleCategory> = new Set([
-  'vendor-matching',
-]);
+import type { CategoryDefinition, CategoryRegistry } from '../services/decision-engine/category-definition.js';
 
 export class DecisionEngineRulesController {
   public readonly router: Router;
 
   constructor(
     private readonly packs: DecisionRulePackService,
-    private readonly pushers: CategoryPushClients,
+    private readonly registry: CategoryRegistry,
   ) {
     this.router = Router({ mergeParams: true });
     this.initRoutes();
   }
 
   private initRoutes(): void {
-    // Validate :category once at the top of the router so every handler can
-    // assume req.params.category is registered.
     this.router.use(this.requireKnownCategory.bind(this));
 
     // Route order matters: /preview, /seed, /seed-from-default before /:packId.
@@ -98,22 +80,32 @@ export class DecisionEngineRulesController {
       res.status(400).json({ success: false, error: 'category path param is required' });
       return;
     }
-    if (!KNOWN_CATEGORIES.has(category)) {
+    if (!this.registry.has(category)) {
       res.status(404).json({
         success: false,
-        error: `Unknown decision-engine category '${category}'. Known: ${Array.from(KNOWN_CATEGORIES).join(', ')}.`,
+        error: `Unknown decision-engine category '${category}'. Known: ${this.registry.ids().join(', ')}.`,
       });
       return;
     }
     next();
   }
 
-  /** Resolve the push client for the route's category. Returns null when
-   *  the category has no push client wired (e.g. MOP not configured for
-   *  vendor-matching). */
-  private resolvePusher(category: DecisionRuleCategory): MopRulePackPusher | null {
-    if (category === 'vendor-matching') return this.pushers.vendorMatching;
-    return null;
+  /** Resolve the registered definition for the route's category. */
+  private resolveCategory(category: DecisionRuleCategory): CategoryDefinition {
+    // requireKnownCategory ran first, so this is always defined.
+    return this.registry.get(category)!;
+  }
+
+  /** Send a uniform 501 for category methods that aren't implemented. */
+  private notImplemented(
+    res: Response,
+    category: DecisionRuleCategory,
+    method: 'push' | 'preview' | 'getSeed' | 'drop' | 'replay',
+  ): void {
+    res.status(501).json({
+      success: false,
+      error: `Category '${category}' does not implement ${method}(). The corresponding endpoint is unavailable for this category.`,
+    });
   }
 
   // ── POST / — create a new version ────────────────────────────────────────
@@ -121,6 +113,7 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
+    const def = this.resolveCategory(category);
 
     const body = req.body as Partial<CreateRulePackInput<unknown>>;
     if (!body.packId || typeof body.packId !== 'string') {
@@ -129,6 +122,19 @@ export class DecisionEngineRulesController {
     }
     if (!Array.isArray(body.rules)) {
       res.status(400).json({ success: false, error: '`rules` (array) is required' });
+      return;
+    }
+
+    // Run the category's pre-write validation. Errors block the write; warnings
+    // are returned alongside the success response so the FE can surface them.
+    const validation = def.validateRules(body.rules);
+    if (validation.errors.length > 0) {
+      res.status(400).json({
+        success: false,
+        error: validation.errors[0],
+        validationErrors: validation.errors,
+        validationWarnings: validation.warnings,
+      });
       return;
     }
 
@@ -144,10 +150,15 @@ export class DecisionEngineRulesController {
 
     try {
       const pack = await this.packs.createVersion(input);
-      res.status(201).json({ success: true, data: pack });
+      const responsePayload: Record<string, unknown> = { success: true, data: pack };
+      if (validation.warnings.length > 0) {
+        responsePayload['validationWarnings'] = validation.warnings;
+      }
+      res.status(201).json(responsePayload);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Validation errors raise plain Error — 400; only true infra errors → 500.
+      // Fallback for service-level invariants the category validator doesn't cover
+      // (e.g. tenant/category empty checks deep in the service).
       if (/duplicate|required|empty|must (be|contain)/i.test(msg)) {
         res.status(400).json({ success: false, error: msg });
       } else {
@@ -214,18 +225,13 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
-    const pusher = this.resolvePusher(category);
-    if (!pusher) {
-      res.status(category === 'vendor-matching' ? 503 : 501).json({
-        success: false,
-        error: category === 'vendor-matching'
-          ? 'MOP push not configured (no pusher)'
-          : `Category '${category}' has no upstream seed source wired (will land in Phase B).`,
-      });
+    const def = this.resolveCategory(category);
+    if (!def.getSeed) {
+      this.notImplemented(res, category, 'getSeed');
       return;
     }
     try {
-      const seed = await pusher.getSeed();
+      const seed = await def.getSeed();
       res.json({ success: true, data: seed });
     } catch (err) {
       res.status(502).json({
@@ -240,14 +246,9 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
-    const pusher = this.resolvePusher(category);
-    if (!pusher) {
-      res.status(category === 'vendor-matching' ? 503 : 501).json({
-        success: false,
-        error: category === 'vendor-matching'
-          ? 'MOP push not configured (no pusher)'
-          : `Category '${category}' has no seed-from-default source wired (will land in Phase B).`,
-      });
+    const def = this.resolveCategory(category);
+    if (!def.getSeed) {
+      this.notImplemented(res, category, 'getSeed');
       return;
     }
 
@@ -265,7 +266,7 @@ export class DecisionEngineRulesController {
 
     let seed: { program: Record<string, unknown>; rules: unknown[] };
     try {
-      seed = await pusher.getSeed();
+      seed = await def.getSeed();
     } catch (err) {
       res.status(502).json({
         success: false,
@@ -283,7 +284,7 @@ export class DecisionEngineRulesController {
         metadata: {
           name: `Seeded from upstream default`,
           description:
-            `Created by copying upstream evaluator's default seed pack (${seed.rules.length} rule${seed.rules.length === 1 ? '' : 's'}). ` +
+            `Created by copying ${def.label}'s default seed pack (${seed.rules.length} rule${seed.rules.length === 1 ? '' : 's'}). ` +
             `Edit + publish a new version to customize.`,
         },
         createdBy: req.user?.id ?? 'system',
@@ -303,14 +304,9 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
-    const pusher = this.resolvePusher(category);
-    if (!pusher) {
-      res.status(category === 'vendor-matching' ? 503 : 501).json({
-        success: false,
-        error: category === 'vendor-matching'
-          ? 'MOP push not configured (no pusher)'
-          : `Category '${category}' has no preview backend wired (will land in Phase B).`,
-      });
+    const def = this.resolveCategory(category);
+    if (!def.preview) {
+      this.notImplemented(res, category, 'preview');
       return;
     }
 
@@ -329,19 +325,16 @@ export class DecisionEngineRulesController {
     }
 
     try {
-      const result = await pusher.preview({
-        rulePack: {
-          program: {
-            name: `Preview for tenant ${tenantId} (${category})`,
-            programId: 'vendor-matching',
-            version: 'preview',
-            description: `Preview from FE rules workspace (category=${category}, pack=${body.packId ?? 'default'})`,
-          },
-          rules: body.rules,
-        },
+      const results = await def.preview({
+        rules: body.rules,
         evaluations: body.evaluations,
+        ...(body.packId ? { packId: body.packId } : {}),
       });
-      res.json({ success: true, data: result });
+      // Wrap in `{ results: [...] }` to match the FE's existing shape, which
+      // the original MOP /preview response also used.
+      res.json({ success: true, data: { results } });
+      // suppress unused tenantId
+      void tenantId;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const status = /^MOP preview returned 400/.test(msg) ? 400 : 502;
@@ -354,18 +347,13 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
-    const pusher = this.resolvePusher(category);
-    if (!pusher) {
-      res.status(category === 'vendor-matching' ? 503 : 501).json({
-        success: false,
-        error: category === 'vendor-matching'
-          ? 'MOP push not configured (no pusher)'
-          : `Category '${category}' has no drop endpoint wired (will land in Phase B).`,
-      });
+    const def = this.resolveCategory(category);
+    if (!def.drop) {
+      this.notImplemented(res, category, 'drop');
       return;
     }
     try {
-      await pusher.drop(tenantId);
+      await def.drop(tenantId);
       res.json({ success: true, data: { tenantId, category, dropped: true } });
     } catch (err) {
       res.status(502).json({

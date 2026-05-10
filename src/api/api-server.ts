@@ -54,6 +54,11 @@ import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.c
 import { DecisionRulePackService } from '../services/decision-rule-pack.service.js';
 import { DecisionEngineRulesController } from '../controllers/decision-engine-rules.controller.js';
 import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
+import {
+  CategoryRegistry,
+  buildVendorMatchingCategory,
+  wireRegistryHooks,
+} from '../services/decision-engine/index.js';
 import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
@@ -1535,19 +1540,19 @@ export class AppraisalManagementAPIServer {
       createMatchingCriteriaRouter(this.dbService)
     );
 
-    // Decision Engine Rule Packs — Phase A of DECISION_ENGINE_RULES_SURFACE.md.
+    // Decision Engine Rule Packs — Phase A + B of DECISION_ENGINE_RULES_SURFACE.md.
     // Per-tenant, per-category, immutable, versioned rule packs that drive
-    // every decision-engine evaluator on the platform. Push to the upstream
-    // evaluator (MOP for vendor-matching today) is wired via per-category
-    // hooks on the service.
+    // every decision-engine evaluator on the platform. Categories register
+    // themselves with the CategoryRegistry; the controller dispatches into
+    // the registered category at request time, and push-on-write is wired
+    // via wireRegistryHooks.
     {
       const packs = new DecisionRulePackService(this.dbService);
 
-      // Build the vendor-matching pusher only when MOP is configured. With
-      // no pusher, AMS still accepts CRUD (storage is the source of truth)
-      // but doesn't notify MOP — the next evaluator request reaching MOP
-      // will see whatever pack MOP last cached. Acceptable for local dev;
-      // production sets MOP_RULES_BASE_URL.
+      // Build the vendor-matching pusher only when MOP is configured. Without
+      // it, the category still validates and serves CRUD; only push / preview
+      // / seed / drop are absent and the controller surfaces 501 for those
+      // endpoints. Acceptable for local dev; production sets MOP_RULES_BASE_URL.
       const mopBaseUrl = process.env['MOP_RULES_BASE_URL'];
       const mopAuthToken = process.env['MOP_RULES_SERVICE_AUTH_TOKEN'];
       let vendorMatchingPusher: MopRulePackPusher | null = null;
@@ -1556,15 +1561,21 @@ export class AppraisalManagementAPIServer {
           baseUrl: mopBaseUrl,
           ...(mopAuthToken ? { serviceAuthToken: mopAuthToken } : {}),
         });
-        const pusherRef = vendorMatchingPusher;
-        packs.onNewActivePack('vendor-matching', async (pack) => {
-          await pusherRef.push(pack as Parameters<MopRulePackPusher['push']>[0]);
-        });
       }
+
+      const registry = new CategoryRegistry();
+      registry.register(buildVendorMatchingCategory({ pusher: vendorMatchingPusher }));
+      // Future: registry.register(buildReviewProgramCategory({ ... }))  — Phase F
+      //         registry.register(buildFiringRulesCategory({ ... }))    — Phase G
+      //         registry.register(buildAxiomCriteriaCategory({ ... }))  — Phase H
+
+      // Register each category's `push` as an onNewActivePack hook so saves
+      // automatically notify the upstream evaluator.
+      wireRegistryHooks(registry, packs);
 
       this.app.use('/api/decision-engine/rules/:category',
         this.unifiedAuth.authenticate(),
-        new DecisionEngineRulesController(packs, { vendorMatching: vendorMatchingPusher }).router,
+        new DecisionEngineRulesController(packs, registry).router,
       );
 
       // Backward-compat: keep `/api/auto-assignment/rules/*` working as a
