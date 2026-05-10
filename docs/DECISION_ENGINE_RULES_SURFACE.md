@@ -10,6 +10,7 @@
 
 **Revisions:**
 - 2026-05-10 (rev 1) — Initial draft after Phase 5 MVP shipped (per-tenant rule packs + workspace + traces). Lays out Phases A through H to evolve from "vendor-matching workspace" to "universal rules surface".
+- 2026-05-10 (rev 2) — Phase A complete. Generalized types/service/controller/containers landed, vendor-matching shimmed to use the new generic, legacy `/api/auto-assignment/rules` 308-redirects to `/api/decision-engine/rules/vendor-matching`, migration script applied to dev + staging.
 
 ---
 
@@ -21,7 +22,7 @@ This section is the **live tracker** — update statuses, add commit/PR refs, an
 
 | Phase | Goal | Status | Started | Completed | Notes / PRs |
 |---|---|---|---|---|---|
-| A | **Generalize storage + CRUD + audit** — single `decision-rule-packs` container with `category` field; generic service/controller; backward-compat aliases for `/api/auto-assignment/rules` | ⬜ | — | — | Foundation — unblocks every other category. |
+| A | **Generalize storage + CRUD + audit** — single `decision-rule-packs` container with `category` field; generic service/controller; backward-compat aliases for `/api/auto-assignment/rules` | ✅ | 2026-05-10 | 2026-05-10 | Types/service/controller/Bicep/migration/redirect/tests all landed. Foundation in place — Phase B + C unblocked. |
 | B | **Category plugin pattern (BE)** — `CategoryDefinition` interface + registry; vendor-matching reimplemented as the first category to validate the pattern | ⬜ | — | — | Blocks C, D, E, F. |
 | C | **FE: category-aware workspace** — `/decision-engine/rules/:category`; category selector; component plugin pattern; `/auto-assignment/rules` redirects | ⬜ | — | — | Reuses the existing JSON editor / visual builder / preview / audit / runs / versions components, parameterized by category. |
 | D | **Sandbox + Replay** (was Phase 6 of `AUTO_ASSIGNMENT_REVIEW.md`) — pick a past order, propose rule changes, see the assignment diff. Generic across categories. | ⬜ | — | — | Highest-value operator surface. Can land before E/F/G if we want. |

@@ -51,8 +51,8 @@ import { createBulkIngestionRouter } from '../controllers/bulk-ingestion.control
 import { createBulkAdapterDefinitionsRouter } from '../controllers/bulk-adapter-definitions.controller.js';
 import { createReviewProgramsRouter } from '../controllers/review-programs.controller.js';
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
-import { VendorMatchingRulePackService } from '../services/vendor-matching-rule-pack.service.js';
-import { VendorMatchingRulePacksController } from '../controllers/vendor-matching-rule-packs.controller.js';
+import { DecisionRulePackService } from '../services/decision-rule-pack.service.js';
+import { DecisionEngineRulesController } from '../controllers/decision-engine-rules.controller.js';
 import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
 import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
 import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.controller.js';
@@ -1535,35 +1535,56 @@ export class AppraisalManagementAPIServer {
       createMatchingCriteriaRouter(this.dbService)
     );
 
-    // Vendor Matching Rule Packs — Phase 3 of AUTO_ASSIGNMENT_REVIEW.md §13.4.
-    // Per-tenant, immutable, versioned rule packs that drive MOP's vendor-
-    // matching evaluator. Push to MOP wired via the service's
-    // onNewActivePack hook (registered below).
+    // Decision Engine Rule Packs — Phase A of DECISION_ENGINE_RULES_SURFACE.md.
+    // Per-tenant, per-category, immutable, versioned rule packs that drive
+    // every decision-engine evaluator on the platform. Push to the upstream
+    // evaluator (MOP for vendor-matching today) is wired via per-category
+    // hooks on the service.
     {
-      const packs = new VendorMatchingRulePackService(this.dbService);
+      const packs = new DecisionRulePackService(this.dbService);
 
-      // Build a pusher only when MOP is configured. With no pusher, AMS still
-      // accepts CRUD (storage is the source of truth) but doesn't notify MOP —
-      // the next evaluator request that reaches MOP will see whatever pack
-      // MOP last cached. Acceptable for local dev; production sets the URL.
+      // Build the vendor-matching pusher only when MOP is configured. With
+      // no pusher, AMS still accepts CRUD (storage is the source of truth)
+      // but doesn't notify MOP — the next evaluator request reaching MOP
+      // will see whatever pack MOP last cached. Acceptable for local dev;
+      // production sets MOP_RULES_BASE_URL.
       const mopBaseUrl = process.env['MOP_RULES_BASE_URL'];
       const mopAuthToken = process.env['MOP_RULES_SERVICE_AUTH_TOKEN'];
-      let pusher: MopRulePackPusher | null = null;
+      let vendorMatchingPusher: MopRulePackPusher | null = null;
       if (mopBaseUrl) {
-        pusher = new MopRulePackPusher({
+        vendorMatchingPusher = new MopRulePackPusher({
           baseUrl: mopBaseUrl,
           ...(mopAuthToken ? { serviceAuthToken: mopAuthToken } : {}),
         });
-        // Best-effort push on every new active pack. Failure logged inside
-        // the pusher; the service catches + does not roll back the storage write.
-        const pusherRef = pusher;
-        packs.onNewActivePack(async (pack) => { await pusherRef.push(pack); });
+        const pusherRef = vendorMatchingPusher;
+        packs.onNewActivePack('vendor-matching', async (pack) => {
+          await pusherRef.push(pack as Parameters<MopRulePackPusher['push']>[0]);
+        });
       }
 
-      this.app.use('/api/auto-assignment/rules',
+      this.app.use('/api/decision-engine/rules/:category',
         this.unifiedAuth.authenticate(),
-        new VendorMatchingRulePacksController(packs, pusher).router,
+        new DecisionEngineRulesController(packs, { vendorMatching: vendorMatchingPusher }).router,
       );
+
+      // Backward-compat: keep `/api/auto-assignment/rules/*` working as a
+      // 308 Permanent Redirect to the new generalized path. Method + body
+      // are preserved across 308 (unlike 301/302), so POST/PUT/DELETE still
+      // hit the right handler. Phase A.6 of DECISION_ENGINE_RULES_SURFACE.md.
+      this.app.all('/api/auto-assignment/rules', (req, res) => {
+        const search = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+        res.redirect(308, `/api/decision-engine/rules/vendor-matching${search}`);
+      });
+      this.app.all('/api/auto-assignment/rules/*', (req, res) => {
+        // req.url here is everything after '/api/auto-assignment/rules' (the mount)
+        // but because we used app.all (not app.use), req.url is the full path.
+        // Strip the legacy prefix and append the rest to the new path.
+        const legacyPrefix = '/api/auto-assignment/rules';
+        const tail = req.originalUrl.startsWith(legacyPrefix)
+          ? req.originalUrl.slice(legacyPrefix.length)
+          : '';
+        res.redirect(308, `/api/decision-engine/rules/vendor-matching${tail}`);
+      });
     }
 
     // Assignment Traces — Phase 5 of AUTO_ASSIGNMENT_REVIEW.md §13.6.
