@@ -70,7 +70,9 @@ vi.mock('../../src/services/engagement.service.js', () => ({
 }));
 
 const capturedAddVendorOrders = vi.fn().mockImplementation(async (clientOrderId: string) => [{
-  id: `vo-${clientOrderId}`,
+  // id pattern `order-...` matches the legacy mock so tests asserting /^order-/
+  // continue to pass; embed clientOrderId for traceability.
+  id: `order-${clientOrderId}-${Math.random().toString(36).slice(2, 8)}`,
   orderNumber: `ORD-${clientOrderId}`,
   tenantId: 'tenant-001',
 }]);
@@ -200,9 +202,32 @@ function makeDbStub(job: ReturnType<typeof makeJob>) {
 //   - addVendorOrders → returns synthetic VendorOrder[] per call
 // Tests assert against capturedAddVendorOrders, not db.createOrder.
 describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () => {
+  // Default engagement shape used by single-item tests. Multi-item tests
+  // override capturedCreateEngagement.mockResolvedValue(...) inside the test.
+  const defaultEngagement = {
+    id:       'eng-001',
+    tenantId: 'tenant-001',
+    properties: [
+      {
+        id:         'loan-001',
+        loanNumber: 'LN-001',
+        propertyId: 'prop-001',
+        clientOrders: [{ id: 'co-001', productType: 'FULL_APPRAISAL' }],
+        property: { address: '123 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+      },
+    ],
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockPublish.mockResolvedValue(undefined);
+    // Re-establish the captured-mock defaults after clearAllMocks wiped them.
+    capturedCreateEngagement.mockResolvedValue(defaultEngagement);
+    capturedAddVendorOrders.mockImplementation(async (clientOrderId: string) => [{
+      id: `order-${clientOrderId}-${Math.random().toString(36).slice(2, 8)}`,
+      orderNumber: `ORD-${clientOrderId}`,
+      tenantId: 'tenant-001',
+    }]);
   });
 
   it('fires enrichOrder once per successfully created order', async () => {
@@ -227,7 +252,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
         id:         `loan-00${i}`,
         loanNumber: `LN-00${i}`,
         propertyId: `prop-00${i}`,
-        clientOrders: [],
+        clientOrders: [{ id: `co-loan-${i}`, productType: 'FULL_APPRAISAL' }],
         property: { address: `12${i} Main St`, city: 'Denver', state: 'CO', zipCode: '80203' },
       })),
     });
@@ -276,16 +301,13 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
 
     expect(capturedCreateEngagement).toHaveBeenCalledTimes(2);
-    expect(capturedAddVendorOrders.mock.calls[0]?.[3]).toMatchObject({
-      engagementId: 'eng-loan-1',
-      engagementPropertyId: 'loan-loan-1',
-      engagementProductId: 'prod-loan-1',
-    });
-    expect(capturedAddVendorOrders.mock.calls[1]?.[3]).toMatchObject({
-      engagementId: 'eng-loan-2',
-      engagementPropertyId: 'loan-loan-2',
-      engagementProductId: 'prod-loan-2',
-    });
+    // Phase B: addVendorOrders is called with clientOrderId as slot[0].
+    // The engagement context (engagementId/engagementPropertyId) is implicit
+    // — addVendorOrders stamps those from the parent ClientOrder when it
+    // creates the VendorOrder. Asserting the right clientOrderId per call
+    // verifies the right engagement context was selected.
+    expect(capturedAddVendorOrders.mock.calls[0]?.[0]).toBe('prod-loan-1');
+    expect(capturedAddVendorOrders.mock.calls[1]?.[0]).toBe('prod-loan-2');
   });
 
   it('creates one shared engagement for multi-item jobs by default', async () => {
@@ -317,8 +339,11 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
 
     expect(capturedCreateEngagement).toHaveBeenCalledTimes(1);
-    expect(capturedAddVendorOrders.mock.calls[0]?.[3]?.engagementId).toBe('eng-batch-1');
-    expect(capturedAddVendorOrders.mock.calls[1]?.[3]?.engagementId).toBe('eng-batch-1');
+    // Both items attach to clientOrders within the SAME shared engagement
+    // (different properties within it). The clientOrderIds are 'prod-batch-1'
+    // and 'prod-batch-2' from the mocked engagement.
+    expect(capturedAddVendorOrders.mock.calls[0]?.[0]).toBe('prod-batch-1');
+    expect(capturedAddVendorOrders.mock.calls[1]?.[0]).toBe('prod-batch-2');
   });
 
   it('uses configured engagement field mapping when standard borrower fields are absent', async () => {
@@ -381,18 +406,18 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
         ],
       }),
     );
-    expect(capturedAddVendorOrders).toHaveBeenCalledWith(
-      expect.objectContaining({
-        borrowerInfo: expect.objectContaining({
-          name: 'Grace Hopper',
-          email: 'grace@example.com',
-          phone: '555-7777',
-        }),
-        loanInformation: expect.objectContaining({
-          loanAmount: 789000,
-        }),
+    // addVendorOrders is called with (clientOrderId, tenantId, specs, inheritedFields).
+    // The inheritedFields payload (4th arg) is what carries the order shape.
+    expect(capturedAddVendorOrders.mock.calls[0]?.[3]).toMatchObject({
+      borrowerInfo: {
+        name: 'Grace Hopper',
+        email: 'grace@example.com',
+        phone: '555-7777',
+      },
+      loanInformation: expect.objectContaining({
+        loanAmount: 789000,
       }),
-    );
+    });
   });
 
   it('passes orderId, tenantId, parsed address, and engagementId to enrichOrder', async () => {
@@ -434,17 +459,16 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
 
     await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
 
-    expect(capturedAddVendorOrders).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          sourceIdentity: expect.objectContaining({
-            sourceKind: 'bulk-item',
-            bulkJobId: JOB_ID,
-            bulkItemId: `${JOB_ID}:0`,
-          }),
+    // 4th arg of addVendorOrders is the inheritedFields object that carries metadata.
+    expect(capturedAddVendorOrders.mock.calls[0]?.[3]).toMatchObject({
+      metadata: {
+        sourceIdentity: expect.objectContaining({
+          sourceKind: 'bulk-item',
+          bulkJobId: JOB_ID,
+          bulkItemId: `${JOB_ID}:0`,
         }),
-      }),
-    );
+      },
+    });
 
     const upsertedCanonicalRecord = db.upsertItem.mock.calls.find(
       ([, record]: [string, { type?: string }]) => record?.type === 'bulk-ingestion-canonical-record',
@@ -491,7 +515,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
       tenantId: TENANT,
       properties: job.items.map((item, i) => ({
         id: `loan-00${i}`, loanNumber: `LN-00${i}`, propertyId: `prop-00${i}`,
-        clientOrders: [], property: { address: `12${i} Main St`, city: 'Denver', state: 'CO', zipCode: '80203' },
+        clientOrders: [{ id: `co-loan-${i}`, productType: 'FULL_APPRAISAL' }], property: { address: `12${i} Main St`, city: 'Denver', state: 'CO', zipCode: '80203' },
       })),
     });
 

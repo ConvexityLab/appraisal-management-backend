@@ -230,6 +230,15 @@ export class BulkIngestionOrderCreationWorkerService {
         const inheritedFields = {
           orderNumber,
           subClientId: job.subClientId ?? '',
+          // Engagement linkage — exposes the parent aggregate ids on the
+          // VendorOrder doc so consumers can pivot upward without an extra
+          // ClientOrder lookup. engagementProductId mirrors
+          // engagementClientOrderId (Phase B model: a "product" IS a
+          // ClientOrder; legacy callers reference it by the older name).
+          engagementId: engagement.id,
+          engagementPropertyId: engagementLoan?.id,
+          engagementClientOrderId,
+          engagementProductId: engagementClientOrderId,
           orderType: OrderType.PURCHASE,
           orderStatus: OrderStatus.SUBMITTED,
           priority: Priority.NORMAL,
