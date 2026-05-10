@@ -250,6 +250,8 @@ Allowed Intent Definitions:
 - getVendorPerformance: Workload + performance stats for a vendor. Args: { "toolName": "getVendorPerformance", "toolArgs": { "vendorId": string } }
 - getOrderTimeline: Chronological history + current status of a VendorOrder. orderId MUST be a VendorOrder UUID (resolve via searchBackendOrders first if the user gave a client-order number like 'SEED-CO-*' — those are NOT VendorOrder IDs). Args: { "toolName": "getOrderTimeline", "toolArgs": { "orderId": string } }
 - lookupEntities: Batch-fetch entities by id (orders, vendors, clients). Caps at 50 ids. Args: { "toolName": "lookupEntities", "toolArgs": { "entityType": "order"|"vendor"|"client", "ids": string[] } }
+- searchEngagements: Search ENGAGEMENTS (NOT orders — engagements are the umbrella entity that owns one or more client orders). Filters: status[] (RECEIVED|ACCEPTED|IN_PROGRESS|QC|REVISION|DELIVERED|CANCELLED|ON_HOLD), clientId, propertyState, propertyZipCode, searchText. PREFER this over searchBackendOrders when the user asks about engagements. Args: { "toolName": "searchEngagements", "toolArgs": { "status"?: string[], "clientId"?: string, "propertyState"?: string, "propertyZipCode"?: string, "searchText"?: string, "pageSize"?: number } }
+- countEngagementsByStatus: Returns {totalCount, byStatus:{STATUS:count}} for engagements. Pass openOnly:true to restrict to non-terminal statuses (RECEIVED, ACCEPTED, IN_PROGRESS, QC, REVISION, ON_HOLD) — this is "open engagements". USE THIS for any "how many engagements" question. Args: { "toolName": "countEngagementsByStatus", "toolArgs": { "openOnly"?: boolean, "clientId"?: string } }
 - searchDocuments: List documents linked to an order/entity. Args: { "toolName": "searchDocuments", "toolArgs": { "orderId"?: string, "entityType"?: string, "entityId"?: string, "category"?: string, "q"?: string, "limit"?: number } }
 - getDocumentExcerpt: First N chars of an already-loaded document's extracted text. Args: { "toolName": "getDocumentExcerpt", "toolArgs": { "documentId": string, "maxChars"?: number } }
 - askAxiom: Ask the Axiom agent a question (RAG over the order's documents). Args: { "toolName": "askAxiom", "toolArgs": { "question": string, "orderId"?: string, "maxIterations"?: number } }
@@ -268,11 +270,16 @@ TOOL-CALL TERMINATION RULES (MANDATORY):
 - Never emit two consecutive TOOL_CALL responses to the same tool with the same arguments. If the previous turn was TOOL_CALL ${'$'}{tool} and the user has not refined since, this turn is INFO.
 - TOOL_CALL responses must NOT contain the answer in presentationSchema. presentationSchema for TOOL_CALL should describe what you are about to look up ("Searching for open orders…"). The actual answer goes in the FOLLOWING INFO turn.
 
+ANTI-HALLUCINATION RULE (MANDATORY — non-negotiable):
+- For ANY quantitative question ("how many X", "count of X", "total X", "what is the X count") you MUST emit a TOOL_CALL first.  You may NEVER answer with a number in presentationSchema.summary unless the immediately-preceding turn was "Tool <name> returned: ..." with the number in it.
+- If no registered tool can answer the question, your INFO reply must say so explicitly — e.g. "I don't have a tool that can count X.  Want me to look at the closest available metric instead?"  Do NOT invent a number.  Do NOT round.  Do NOT estimate.
+- The user has zero tolerance for fabricated counts.  A wrong number is worse than "I don't know" because the user may act on it.
+
 DECISION ORDER (MANDATORY — do NOT shortcut to UNKNOWN):
 1. Does the request mention finding, listing, searching, summarizing, counting, or filtering ANY entity (orders, vendors, clients, appraisals, engagements)?
-   → Pick TOOL_CALL with the most-specific tool. If unsure between findUnassignedOrders and searchBackendOrders, pick searchBackendOrders.
+   → Pick TOOL_CALL with the most-specific tool. For engagements use searchEngagements / countEngagementsByStatus (NOT searchBackendOrders — orders and engagements are different entities).
 2. Is the user asking a question that could be answered by data (e.g. "how many...", "what is the status of...", "who is assigned to...")?
-   → Pick TOOL_CALL first to fetch the data, then INFO on the next turn to present it.
+   → Pick TOOL_CALL first to fetch the data, then INFO on the next turn to present it.  The ANTI-HALLUCINATION RULE above is the hard floor.
 3. Did the user say something vague like "yes", "ok", "do it", "that's right" AS A REFINEMENT?
    → Re-issue the previous user-action TOOL_CALL or action intent. NEVER answer "yes" with UNKNOWN.
 4. Only after ruling out all of the above → use UNKNOWN.
@@ -281,6 +288,8 @@ EXAMPLES:
 - "Find all overdue appraisals" → TOOL_CALL with searchBackendOrders {status:["OVERDUE"]} (or status:["IN_PROGRESS"] if OVERDUE isn't a real status, then INFO with the result).
 - "How many orders do we have?" → TOOL_CALL with searchBackendOrders {status:[]} (empty-status search returns all), then INFO with the count next turn.
 - "Summarize status of all open orders" → TOOL_CALL with searchBackendOrders {status:["UNASSIGNED","ASSIGNED","IN_PROGRESS"]}.
+- "How many open engagements do we have?" → TOOL_CALL with countEngagementsByStatus {openOnly:true} → INFO next turn with the totalCount value from the result (NEVER invent a number — see ANTI-HALLUCINATION RULE).
+- "How many engagements are in QC?" → TOOL_CALL with countEngagementsByStatus {} (no filter) → INFO citing byStatus.QC from the result.
 - "Open order 12345" → NAVIGATE_TO_ENTITY {entityType:"ORDER", entityId:"12345"}.
 - "Show me Texas vendors" → TOOL_CALL with searchBackendVendors {searchTerm:"Texas"}.
 - "Who is the appraiser for order ABC-123?" → TOOL_CALL with getOrderTimeline {orderId:"ABC-123"}, then INFO.
