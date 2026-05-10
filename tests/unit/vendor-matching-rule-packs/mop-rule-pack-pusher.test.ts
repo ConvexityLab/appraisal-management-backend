@@ -206,6 +206,45 @@ describe('MopRulePackPusher.preview', () => {
   });
 });
 
+describe('MopRulePackPusher.getSeed', () => {
+  it('GETs /api/v1/vendor-matching/seed and returns the parsed pack', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({
+        program: { name: 'Seed', programId: 'vendor-matching', version: '0.1.0' },
+        rules: [{ name: 'R1', pattern_id: 'vendor_evaluation', salience: 100, conditions: {}, actions: [] }],
+      }),
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL, serviceAuthToken: 'shh' });
+    const seed = await pusher.getSeed();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`${BASE_URL}/api/v1/vendor-matching/seed`);
+    expect(init.method).toBe('GET');
+    expect(init.headers['X-Service-Auth']).toBe('shh');
+    expect(seed.program).toBeDefined();
+    expect(seed.rules).toHaveLength(1);
+  });
+
+  it('throws on non-2xx', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false, status: 404, statusText: 'Not Found',
+      text: async () => '{"error":"seed missing"}',
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL });
+    await expect(pusher.getSeed()).rejects.toThrow(/404.*Not Found.*seed missing/);
+  });
+
+  it('throws when seed response missing rules[]', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({ program: { name: 'X' } }),  // no rules
+    });
+    const pusher = new MopRulePackPusher({ baseUrl: BASE_URL });
+    await expect(pusher.getSeed()).rejects.toThrow(/rules/);
+  });
+});
+
 describe('MopRulePackPusher.drop', () => {
   it('DELETEs the tenant route', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });

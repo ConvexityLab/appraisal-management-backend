@@ -196,6 +196,36 @@ export class MopRulePackPusher {
   }
 
   /**
+   * Fetch MOP's seed rule pack (the inherited default used when no per-tenant
+   * pack exists). AMS surfaces this in the rules workspace so operators can
+   * see what's currently firing for their tenant and fork it as v1 of their
+   * own pack.
+   */
+  async getSeed(): Promise<{ program: Record<string, unknown>; rules: unknown[] }> {
+    const url = `${this.baseUrl}/api/v1/vendor-matching/seed`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers: Record<string, string> = {};
+      if (this.authHeader) headers['Authorization'] = this.authHeader;
+      if (this.serviceAuthToken) headers['X-Service-Auth'] = this.serviceAuthToken;
+
+      const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(`MOP seed returned ${response.status} ${response.statusText}: ${text.slice(0, 500)}`);
+      }
+      const parsed = JSON.parse(text);
+      if (!parsed?.rules || !Array.isArray(parsed.rules)) {
+        throw new Error('MOP seed response missing rules[]');
+      }
+      return parsed;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Drop a tenant's rules from MOP (DELETE). Used when a tenant disables
    * their custom pack and wants to fall back to the default seed.
    */

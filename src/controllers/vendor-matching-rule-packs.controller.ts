@@ -38,9 +38,10 @@ export class VendorMatchingRulePacksController {
 
   private initRoutes(): void {
     // NOTE: route order matters. Express matches in registration order, so
-    // /preview must come before /:packId or it would be captured by the
-    // packId param.
+    // /preview and /seed must come before /:packId or they'd be captured by
+    // the packId param.
     this.router.post('/preview',                   this.preview.bind(this));
+    this.router.get('/seed',                       this.getSeed.bind(this));
     this.router.post('/',                          this.createVersion.bind(this));
     this.router.get('/:packId',                    this.getActive.bind(this));
     this.router.get('/:packId/versions',           this.listVersions.bind(this));
@@ -147,6 +148,28 @@ export class VendorMatchingRulePacksController {
     const packId = req.params.packId!;
     const entries = await this.packs.listAudit(tenantId, packId);
     res.json({ success: true, data: entries, count: entries.length });
+  }
+
+  // ── GET /seed — read MOP's inherited-default rule pack ─────────────────
+  // Operators in the rules workspace see what's currently firing for their
+  // tenant when they haven't published an override yet, and use the seed as
+  // v1 starting point when forking. Tenant-agnostic — the seed is the same
+  // for every tenant — but still gated by auth so we don't leak rule
+  // structure to anonymous clients.
+  private async getSeed(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    if (!this.pusher) {
+      res.status(503).json({ success: false, error: 'MOP push not configured (no pusher)' });
+      return;
+    }
+    try {
+      const seed = await this.pusher.getSeed();
+      res.json({ success: true, data: seed });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ success: false, error: msg });
+    }
   }
 
   // ── POST /preview — stateless rule-pack test against sample vendors ─────
