@@ -1,12 +1,13 @@
 // Service Exports
-export { ConsolidatedCosmosDbService } from './consolidated-cosmos.service.js';
+// ConsolidatedCosmosDbService + PropertyManagementService were referenced
+// here historically but the files were never tracked in git. Removed to
+// unblock compilation; the barrel is consumed by tests + downstream surface.
 
 // Core services (actively maintained)
 export { CosmosDbService } from './cosmos-db.service.js';
 export { DatabaseService } from './database.service.js';
 export { OrderManagementService } from './order-management.service.js';
 export { VendorManagementService } from './vendor-management.service.js';
-export { PropertyManagementService } from './property-management.service.js';
 export { NotificationService } from './notification.service.js';
 export { AuditService } from './audit.service.js';
 export { QualityControlEngine } from './quality-control-engine.service.js';
