@@ -1498,15 +1498,11 @@ export class BulkPortfolioService {
         `Job '${jobId}' has status '${job.status}' — orders can only be created from COMPLETED or PARTIAL jobs`,
       );
     }
-    // Phase B step 5b: createOrdersFromResults converts tape-evaluation
-    // results into orders, but tape rows don't carry engagement context
-    // (engagementId / engagementPropertyId / engagementClientOrderId). The
-    // strict engagement-primacy guard restored in Phase B step 10 will
-    // reject every dbService.createOrder() call below at runtime.
-    //
-    // FOLLOW-UP: thread an engagement context into this method's signature,
-    // or auto-create engagements per tape row. Until then, callers should
-    // use submit() with the tape items restructured as BulkPortfolioItems.
+    // Phase B step 5b: createOrdersFromResults now auto-creates a per-row
+    // engagement (single property, single clientOrder) and routes the
+    // resulting VendorOrder through ClientOrderService.addVendorOrders. This
+    // satisfies the strict engagement-primacy guard restored in Phase B
+    // step 10 — every VendorOrder attaches to a real ClientOrder.
 
     const tapeResults = job.items as ReviewTapeResult[];
     let created = 0;
@@ -1620,32 +1616,46 @@ export class BulkPortfolioService {
       };
 
       try {
-        const orderResult = await this.dbService.createOrder(orderPayload as any);
-        if (orderResult.success && orderResult.data) {
-          tapeResults[idx] = {
-            ...result,
-            orderId: orderResult.data.id,
-            orderNumber: (orderResult.data as any).orderNumber,
-          };
-          created++;
-          const successEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = {
-            orderId: orderResult.data.id,
-            orderNumber: (orderResult.data as any).orderNumber,
-          };
-          if (result.loanNumber !== undefined) successEntry.loanNumber = result.loanNumber;
-          resultSummary.push(successEntry);
-        } else {
-          const msg = orderResult.error?.message ?? 'Order creation failed';
-          this.logger.warn('createOrdersFromResults: failed to create order', {
-            jobId,
-            loanNumber: result.loanNumber,
-            error: msg,
-          });
-          failed++;
-          const warnEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = { error: msg };
-          if (result.loanNumber !== undefined) warnEntry.loanNumber = result.loanNumber;
-          resultSummary.push(warnEntry);
+        // Step 1: auto-create a single-property engagement for this tape row.
+        const tapeEngagement = await this.engagementService.createEngagement({
+          tenantId,
+          createdBy: submittedBy,
+          client: { clientId: job.clientId, clientName: job.clientId },
+          properties: [this._buildEngagementLoanInput(item, jobId)],
+        });
+        const tapeProperty = tapeEngagement.properties[0];
+        const tapeClientOrder = tapeProperty?.clientOrders?.[0];
+        if (!tapeProperty?.id || !tapeClientOrder?.id) {
+          throw new Error(
+            `createOrdersFromResults: engagement for row ${result.rowIndex} returned ` +
+            'no property/clientOrder ids — cannot attach VendorOrder.',
+          );
         }
+
+        // Step 2: attach a VendorOrder to the new clientOrder.
+        const vendorOrders = await this.clientOrderService.addVendorOrders(
+          tapeClientOrder.id,
+          tenantId,
+          [{ vendorWorkType: orderPayload.productType }],
+          orderPayload as any,
+        );
+        const newOrder = vendorOrders[0];
+        if (!newOrder) {
+          throw new Error('addVendorOrders returned no rows for tape result');
+        }
+
+        tapeResults[idx] = {
+          ...result,
+          orderId: newOrder.id,
+          orderNumber: (newOrder as { orderNumber?: string }).orderNumber ?? '',
+        };
+        created++;
+        const successEntry: { loanNumber?: string; orderId?: string; orderNumber?: string; error?: string } = {
+          orderId: newOrder.id,
+          orderNumber: (newOrder as { orderNumber?: string }).orderNumber ?? '',
+        };
+        if (result.loanNumber !== undefined) successEntry.loanNumber = result.loanNumber;
+        resultSummary.push(successEntry);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
         this.logger.error('createOrdersFromResults: exception creating order', {
