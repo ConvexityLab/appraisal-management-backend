@@ -29,6 +29,8 @@ import type { CosmosDbService } from './cosmos-db.service.js';
 import type { PropertyRecordService } from './property-record.service.js';
 import type { AttomDataCompSearchService } from './attom-data-comp-search.service.js';
 import { BridgeInteractiveService } from './bridge-interactive.service.js';
+import { PropertyObservationService } from './property-observation.service.js';
+import { materializePropertyRecordHistory } from './property-record-history-materializer.service.js';
 import { encodeGeohash } from '../utils/geohash.util.js';
 import { attomToPropertyRecord } from '../mappers/attom-to-property-record.mapper.js';
 import type { ClientOrderCreatedEvent } from '../types/events.js';
@@ -98,6 +100,7 @@ export class OrderCompCollectionService {
   private readonly logger = new Logger('OrderCompCollectionService');
   private readonly bridge: BridgeInteractiveService;
   private readonly selectionDeps?: CompSelectionDeps;
+  private readonly observationService: PropertyObservationService;
 
   constructor(
     private readonly cosmos: CosmosDbService,
@@ -116,6 +119,7 @@ export class OrderCompCollectionService {
     selectionDeps?: CompSelectionDeps,
   ) {
     this.bridge = bridgeService ?? new BridgeInteractiveService();
+    this.observationService = new PropertyObservationService(cosmos);
     if (selectionDeps) this.selectionDeps = selectionDeps;
   }
 
@@ -142,11 +146,16 @@ export class OrderCompCollectionService {
       return this.writeSkipped(clientOrderId, clientOrderNumber, tenantId, productType, 'NO_PROPERTY_ID');
     }
 
-    // Load subject. `getById` throws if missing — translate that to a
-    // SKIPPED audit doc rather than failing the whole event.
+    // Load subject from the canonical property row, then overlay immutable
+    // observation-backed AVM/tax/permit state so service-side subject reads
+    // stay aligned with the canonical property API/join surfaces.
+    // `getById` throws if missing — translate that to a SKIPPED audit doc
+    // rather than failing the whole event.
     let subject;
     try {
-      subject = await this.propertyRecords.getById(propertyId, tenantId);
+      const rawSubject = await this.propertyRecords.getById(propertyId, tenantId);
+      const observations = await this.observationService.listByPropertyId(propertyId, tenantId);
+      subject = materializePropertyRecordHistory(rawSubject, observations);
     } catch (err) {
       this.logger.warn('PropertyRecord not found — writing SKIPPED collection doc', {
         clientOrderId,
@@ -331,6 +340,10 @@ export class OrderCompCollectionService {
         const bundle = result?.bundle?.[0] ?? result?.value?.[0] ?? result;
         const value: unknown = bundle?.zestimate ?? bundle?.value;
         if (value != null && typeof value === 'number') {
+          // Runtime-only projection for the current comp-selection/value run.
+          // Do NOT treat this as canonical parcel truth or persist it back onto
+          // PropertyRecord here; Phase P6 moves durable AVM history to
+          // immutable observations on the subject/property API side.
           c.propertyRecord.avm = {
             value,
             fetchedAt: new Date().toISOString(),

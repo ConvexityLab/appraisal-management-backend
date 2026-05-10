@@ -9,11 +9,13 @@
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
+import { PropertyRecordService } from './property-record.service.js';
 import {
   getPropertyAddress,
   getBorrowerInformation,
   type OrderContext,
 } from './order-context-loader.service.js';
+import type { PropertyRecord } from '../types/property-record.types.js';
 
 export interface DuplicateCheckRequest {
   /** Street address of the subject property */
@@ -49,6 +51,12 @@ export interface DuplicateCheckResult {
   hasPotentialDuplicates: boolean;
   matches: DuplicateMatch[];
   checkedAt: string;
+}
+
+interface CandidateOrderLookupResult {
+  orders: VendorOrder[];
+  lookupMode: 'canonical-property' | 'legacy-embedded-address';
+  canonicalAddress?: string;
 }
 
 /**
@@ -104,6 +112,7 @@ export function normalizeName(raw: string): string {
 export class DuplicateOrderDetectionService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  private propertyRecords: PropertyRecordService;
 
   /** Orders created within this many days of the new order are candidates */
   static readonly DATE_WINDOW_DAYS = 90;
@@ -111,6 +120,7 @@ export class DuplicateOrderDetectionService {
   constructor(dbService: CosmosDbService) {
     this.dbService = dbService;
     this.logger = new Logger('DuplicateOrderDetectionService');
+    this.propertyRecords = new PropertyRecordService(dbService);
   }
 
   /**
@@ -126,7 +136,8 @@ export class DuplicateOrderDetectionService {
         return { hasPotentialDuplicates: false, matches: [], checkedAt };
       }
 
-      const candidates = await this.queryCandidateOrders(request);
+      const candidateLookup = await this.queryCandidateOrders(request);
+      const candidates = candidateLookup.orders;
       const normalizedInput = normalizeAddress(request.propertyAddress);
       const normalizedBorrower = request.borrowerFirstName && request.borrowerLastName
         ? normalizeName(`${request.borrowerFirstName} ${request.borrowerLastName}`)
@@ -144,11 +155,12 @@ export class DuplicateOrderDetectionService {
         // cosmos read — see synthesizeContext below.
         const ctx = synthesizeContext(order);
 
-        const orderAddress = extractAddressString(ctx);
+        const orderAddress = candidateLookup.canonicalAddress ?? extractAddressString(ctx);
         if (!orderAddress) continue;
 
-        const normalizedOrderAddress = normalizeAddress(orderAddress);
-        const addressMatch = normalizedInput === normalizedOrderAddress;
+        const addressMatch = candidateLookup.lookupMode === 'canonical-property'
+          ? true
+          : normalizedInput === normalizeAddress(orderAddress);
 
         if (!addressMatch) continue;
 
@@ -211,9 +223,69 @@ export class DuplicateOrderDetectionService {
    * Uses the propertyAddress.state + propertyAddress.zipCode for initial filtering
    * to reduce the candidate set before in-memory address normalization.
    */
-  private async queryCandidateOrders(request: DuplicateCheckRequest): Promise<VendorOrder[]> {
+  private async queryCandidateOrders(request: DuplicateCheckRequest): Promise<CandidateOrderLookupResult> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - DuplicateOrderDetectionService.DATE_WINDOW_DAYS);
+
+    const matchedProperty = await this.resolveCanonicalProperty(request);
+    if (matchedProperty) {
+      return {
+        orders: await this.queryCandidateVendorOrdersByPropertyId(request, cutoffDate, matchedProperty.id),
+        lookupMode: 'canonical-property',
+        canonicalAddress: formatPropertyRecordAddress(matchedProperty),
+      };
+    }
+
+    return {
+      orders: await this.queryLegacyCandidateOrdersByEmbeddedAddress(request, cutoffDate),
+      lookupMode: 'legacy-embedded-address',
+    };
+  }
+
+  private async resolveCanonicalProperty(
+    request: DuplicateCheckRequest,
+  ): Promise<PropertyRecord | null> {
+    if (!request.propertyAddress || !request.city || !request.state || !request.zipCode) {
+      return null;
+    }
+
+    return this.propertyRecords.findByNormalizedAddress(
+      {
+        street: request.propertyAddress,
+        city: request.city,
+        state: request.state,
+        zip: request.zipCode,
+      },
+      request.tenantId,
+    );
+  }
+
+  private async queryCandidateVendorOrdersByPropertyId(
+    request: DuplicateCheckRequest,
+    cutoffDate: Date,
+    propertyId: string,
+  ): Promise<VendorOrder[]> {
+    const container = (this.dbService as any).ordersContainer;
+    if (!container) {
+      throw new Error('Orders container not initialized');
+    }
+
+    const { resources } = await container.items.query({
+      query: `SELECT * FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.tenantId = @tenantId AND c.createdAt >= @cutoff AND c.propertyId = @propertyId`,
+      parameters: [
+        { name: '@tenantId', value: request.tenantId },
+        { name: '@cutoff', value: cutoffDate.toISOString() },
+        { name: '@propertyId', value: propertyId },
+      ],
+    }).fetchAll();
+
+    return resources as VendorOrder[];
+  }
+
+  private async queryLegacyCandidateOrdersByEmbeddedAddress(
+    request: DuplicateCheckRequest,
+    cutoffDate: Date,
+  ): Promise<VendorOrder[]> {
 
     const container = (this.dbService as any).ordersContainer;
     if (!container) {
@@ -226,20 +298,11 @@ export class DuplicateOrderDetectionService {
       { name: '@cutoff', value: cutoffDate.toISOString() },
     ];
 
-    // Narrow by state / zip if provided. These predicates are against the
-    // VendorOrder document fields. Phase 4 of the Order-relocation refactor
-    // moved propertyAddress onto ClientOrder, but VendorOrders still receive
-    // a copy via the placeClientOrder fan-out spread — so the predicate
-    // matches both legacy and engagement-flow rows today.
-    //
-    // TODO(Phase 8): once VendorOrder no longer carries propertyAddress, this
-    //   query has to change. Two options:
-    //     (a) query the `client-orders` container by propertyAddress.state/zip,
-    //         then resolve the VendorOrders for those ClientOrders;
-    //     (b) query `property-records` by address fields, then VendorOrders
-    //         by propertyId.
-    //   (b) is preferred because it deduplicates orders against the same
-    //   physical property correctly.
+    // Compatibility path only: this branch remains for requests that cannot
+    // yet resolve a canonical propertyId (for example, older callers that do
+    // not send city/state/zip alongside the street line). The primary path now
+    // queries VendorOrders by canonical propertyId instead of relying on these
+    // deprecated embedded VendorOrder address fields.
     if (request.state) {
       query += ' AND c.propertyAddress.state = @state';
       parameters.push({ name: '@state', value: request.state.toUpperCase() });
@@ -258,6 +321,17 @@ export class DuplicateOrderDetectionService {
     return resources as VendorOrder[];
   }
 
+}
+
+function formatPropertyRecordAddress(property: PropertyRecord): string {
+  const parts = [
+    property.address?.street,
+    property.address?.city,
+    property.address?.state,
+    property.address?.zip,
+  ].filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
+
+  return parts.join(', ');
 }
 
 /**

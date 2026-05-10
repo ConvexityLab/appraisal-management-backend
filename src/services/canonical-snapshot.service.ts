@@ -17,6 +17,7 @@ import { mapPropertyEnrichmentToCanonical } from '../mappers/property-enrichment
 import {
   mergePropertyCanonical,
   pickPropertyCanonical,
+  PROPERTY_CANONICAL_PROJECTOR_VERSION,
 } from '../mappers/property-canonical-projection.js';
 import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
@@ -93,11 +94,23 @@ export class CanonicalSnapshotService {
       id: `snapshot_${Date.now()}_${randomUUID().slice(0, 8)}`,
       type: 'canonical-snapshot',
       tenantId: extractionRun.tenantId,
+      ...(sourceArtifacts.orderContext?.vendorOrder.propertyId
+        ? { propertyId: sourceArtifacts.orderContext.vendorOrder.propertyId }
+        : {}),
+      ...(sourceArtifacts.orderContext?.vendorOrder.id
+        ? { orderId: sourceArtifacts.orderContext.vendorOrder.id }
+        : sourceArtifacts.document?.orderId
+          ? { orderId: sourceArtifacts.document.orderId }
+          : {}),
+      ...(sourceArtifacts.document?.id ? { documentId: sourceArtifacts.document.id } : {}),
+      sourceRunId: extractionRun.id,
       createdAt: now,
       createdBy: extractionRun.initiatedBy,
       status: 'ready',
       ...(extractionRun.engagementId ? { engagementId: extractionRun.engagementId } : {}),
       ...(extractionRun.loanPropertyContextId ? { loanPropertyContextId: extractionRun.loanPropertyContextId } : {}),
+      projectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+      ...(extractionRun.schemaKey?.version ? { sourceSchemaVersion: extractionRun.schemaKey.version } : {}),
       ...(sourceIdentity ? { sourceIdentity } : {}),
       sourceRefs,
       normalizedDataRef: `canonical://${extractionRun.tenantId}/${extractionRun.id}/normalized-data`,
@@ -186,6 +199,19 @@ export class CanonicalSnapshotService {
     const now = new Date().toISOString();
     const sourceArtifacts = await this.loadSourceArtifacts(extractionRun);
     const normalizedData = this.buildNormalizedData(extractionRun, sourceArtifacts);
+    const sourceRefs: CanonicalSnapshotRecord['sourceRefs'] = [
+      {
+        sourceType: 'document-extraction',
+        sourceId: extractionRun.documentId ?? extractionRun.id,
+        sourceRunId: extractionRun.id,
+      },
+    ];
+    if (sourceArtifacts.enrichment?.id) {
+      sourceRefs.push({
+        sourceType: 'property-enrichment',
+        sourceId: sourceArtifacts.enrichment.id,
+      });
+    }
     const sourceIdentity = extendIntakeSourceIdentity(
       extractionRun.sourceIdentity ?? sourceArtifacts.document?.sourceIdentity ?? existing.sourceIdentity,
       {
@@ -197,6 +223,20 @@ export class CanonicalSnapshotService {
     const refreshed: CanonicalSnapshotRecord = {
       ...existing,
       status: 'ready',
+      ...(sourceArtifacts.orderContext?.vendorOrder.propertyId
+        ? { propertyId: sourceArtifacts.orderContext.vendorOrder.propertyId }
+        : {}),
+      ...(sourceArtifacts.orderContext?.vendorOrder.id
+        ? { orderId: sourceArtifacts.orderContext.vendorOrder.id }
+        : sourceArtifacts.document?.orderId
+          ? { orderId: sourceArtifacts.document.orderId }
+          : {}),
+      ...(sourceArtifacts.document?.id ? { documentId: sourceArtifacts.document.id } : {}),
+      sourceRunId: extractionRun.id,
+      projectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+      ...(extractionRun.schemaKey?.version ? { sourceSchemaVersion: extractionRun.schemaKey.version } : {}),
+      sourceRefs,
+      createdByRunIds: Array.from(new Set([...(existing.createdByRunIds ?? []), extractionRun.id])),
       ...(normalizedData ? { normalizedData } : {}),
       refreshedAt: now,
       ...(sourceIdentity ? { sourceIdentity } : {}),
@@ -488,7 +528,7 @@ export class CanonicalSnapshotService {
     // still builds from extraction + enrichment, just without
     // order-intake values.
     try {
-      return await this.contextLoader.loadByVendorOrderId(orderId);
+      return await this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
     } catch (err) {
       this.logger.warn('Snapshot: failed to load order context for canonical projection — continuing', {
         orderId,
@@ -758,7 +798,11 @@ export class CanonicalSnapshotService {
       extraction: artifacts.extractionData ?? {},
       canonical,
       provenance: {
+        snapshotProjectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+        sourceSchemaVersion: extractionRun.schemaKey?.version,
         extractionRunId: extractionRun.id,
+        propertyId: artifacts.orderContext?.vendorOrder.propertyId,
+        snapshotOrderId: artifacts.orderContext?.vendorOrder.id ?? artifacts.document?.orderId,
         documentId: artifacts.document?.id,
         orderId: artifacts.document?.orderId,
         enrichmentId: artifacts.enrichment?.id,
@@ -800,6 +844,7 @@ export class CanonicalSnapshotService {
       sourceRunId: extractionRun.id,
       snapshotId,
       snapshotAt,
+      ...(extractionRun.schemaKey?.version ? { sourceSchemaVersion: extractionRun.schemaKey.version } : {}),
       initiatedBy: extractionRun.initiatedBy ?? 'SYSTEM:canonical-snapshot',
       canonical: canonical as Partial<CanonicalReportDocument> | null,
     });

@@ -8,6 +8,7 @@
 import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
 import { CosmosDbService } from './cosmos-db.service.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import { Logger } from '../utils/logger.js';
 
 export interface VendorSearchResult {
@@ -20,11 +21,13 @@ export interface VendorSearchResult {
 export class VendorManagementService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  private orderContextLoader: OrderContextLoader;
 
   constructor(dbService?: CosmosDbService) {
     this.logger = new Logger('VendorManagementService');
     // Accept injected instance or create one (for backward compat with `new VendorManagementService()`)
     this.dbService = dbService || new CosmosDbService();
+    this.orderContextLoader = new OrderContextLoader(this.dbService);
   }
 
   /**
@@ -32,6 +35,7 @@ export class VendorManagementService {
    */
   async findAvailableVendors(order: Order): Promise<Vendor[]> {
     try {
+      const orderState = await this.resolveOrderState(order);
       const result = await this.dbService.findAllVendors();
       if (!result.success || !result.data) {
         this.logger.warn('Failed to fetch vendors from Cosmos', { error: result.error });
@@ -43,7 +47,6 @@ export class VendorManagementService {
           return false;
         }
 
-        const orderState = order.propertyAddress?.state;
         if (orderState && vendor.serviceAreas && !vendor.serviceAreas.some(area => area.state === orderState)) {
           return false;
         }
@@ -60,6 +63,19 @@ export class VendorManagementService {
     } catch (error) {
       this.logger.error('Error finding available vendors', { error, orderId: order.id });
       return [];
+    }
+  }
+
+  private async resolveOrderState(order: Order): Promise<string | undefined> {
+    try {
+      const ctx = await this.orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
+      return getPropertyAddress(ctx)?.state ?? order.propertyAddress?.state;
+    } catch (error) {
+      this.logger.warn('VendorManagementService could not resolve canonical property state; using embedded order state', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return order.propertyAddress?.state;
     }
   }
 

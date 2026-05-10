@@ -745,7 +745,7 @@ export class AxiomController {
       // Axiom pipeline payload sees lender-side fields from their proper home.
       let ctx: OrderContext;
       try {
-        ctx = await this.contextLoader.loadByVendorOrderId(notification.orderId);
+        ctx = await this.contextLoader.loadByVendorOrderId(notification.orderId, { includeProperty: true });
       } catch {
         res.status(404).json({
           success: false,

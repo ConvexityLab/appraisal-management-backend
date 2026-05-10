@@ -57,6 +57,9 @@ import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
 import {
   CategoryRegistry,
   buildVendorMatchingCategory,
+  buildReviewProgramCategory,
+  buildFiringRulesCategory,
+  buildAxiomCriteriaCategory,
   wireRegistryHooks,
 } from '../services/decision-engine/index.js';
 import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
@@ -1568,9 +1571,15 @@ export class AppraisalManagementAPIServer {
         pusher: vendorMatchingPusher,
         db: this.dbService,
       }));
-      // Future: registry.register(buildReviewProgramCategory({ ... }))  — Phase F
-      //         registry.register(buildFiringRulesCategory({ ... }))    — Phase G
-      //         registry.register(buildAxiomCriteriaCategory({ ... }))  — Phase H
+      // Phase F/G/H: storage is wired via the generic surface (each registers
+      // a `validateRules` so creates land in `decision-rule-packs`). Push /
+      // preview / replay / analytics are deferred to per-category polish PRs
+      // — until then the controller surfaces 501 for those endpoints and
+      // the FE renders an empty state explaining the upstream evaluator is
+      // pending.
+      registry.register(buildReviewProgramCategory());
+      registry.register(buildFiringRulesCategory());
+      registry.register(buildAxiomCriteriaCategory());
 
       // Register each category's `push` as an onNewActivePack hook so saves
       // automatically notify the upstream evaluator.

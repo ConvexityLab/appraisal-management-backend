@@ -94,8 +94,13 @@ export interface ClientOrder {
    * site or controller boundary) so this can flip to required.
    */
   propertyId?: string;
-  /** Display cache of the property until propertyId joins are universal. */
-  propertyDetails: PropertyDetails;
+  /**
+   * Optional display cache of the property.
+   * Prefer `propertyId` → `PropertyRecord` whenever possible; this cache exists
+   * only for transition/back-compat reads and should be omitted when the
+   * caller already has a canonical `propertyId`.
+   */
+  propertyDetails?: PropertyDetails;
   /**
    * Structured property address (street, city, state, zip, county, etc.).
    * Carried alongside `propertyDetails` because legacy /api/orders payloads

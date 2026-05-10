@@ -23,6 +23,21 @@ export {
   VENDOR_MATCHING_CATEGORY_ID,
 } from './categories/vendor-matching.category.js';
 
+export {
+  buildReviewProgramCategory,
+  REVIEW_PROGRAM_CATEGORY_ID,
+} from './categories/review-program.category.js';
+
+export {
+  buildFiringRulesCategory,
+  FIRING_RULES_CATEGORY_ID,
+} from './categories/firing-rules.category.js';
+
+export {
+  buildAxiomCriteriaCategory,
+  AXIOM_CRITERIA_CATEGORY_ID,
+} from './categories/axiom-criteria.category.js';
+
 /**
  * Wire each registered category's `push` method into the
  * DecisionRulePackService as a per-category onNewActivePack hook.

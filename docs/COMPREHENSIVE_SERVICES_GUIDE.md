@@ -63,11 +63,14 @@ Our platform provides an end-to-end solution for property appraisal management, 
 *Comprehensive property data orchestration*
 
 **Key Features:**
-- **Property Profiling** - Automated data collection from multiple sources
-- **Historical Tracking** - Property value trends and transaction history
-- **Document Management** - Centralized storage for property documents
+- **Canonical Parcel Record** - Single `PropertyRecord` read model for active property APIs
+- **Immutable Provenance** - `property-observations` log for source traceability and replay
+- **Snapshot Reproducibility** - `canonical-snapshots` for frozen order-scoped views
 - **Comparable Analysis** - AI-powered selection of relevant comparables
 - **Risk Assessment** - Automated identification of valuation risks
+
+**Current architecture note:**
+Legacy summary/detail controller stacks and old property summary infrastructure have been retired from the live backend path. The platform now serves property reads from canonical parcel data, with back-compat summary/detail views projected from the same source of truth.
 
 ---
 

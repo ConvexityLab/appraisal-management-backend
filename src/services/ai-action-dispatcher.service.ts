@@ -255,22 +255,31 @@ export class AiActionDispatcherService {
       // expose engagementPropertyId + clientOrderId on the CREATE_ORDER tool.)
       const tenantId = context.tenantId;
       const engagementId = getString(requestPayload.engagementId, 'engagementId');
+      const canonicalPropertyId = getString(
+        requestPayload.propertyId ?? requestPayload.engagementPropertyId,
+        'propertyId',
+      );
       const clientOrderId = getString(
         requestPayload.clientOrderId ?? requestPayload.engagementClientOrderId,
         'clientOrderId',
       );
+      const { propertyAddress: _propertyAddress, ...requestPayloadWithoutAddress } = requestPayload;
       const inheritedFields = {
-        ...requestPayload,
-        propertyAddress: normalizePropertyAddress(requestPayload),
+        ...requestPayloadWithoutAddress,
+        propertyId: canonicalPropertyId,
         clientId: getString(requestPayload.clientId, 'clientId'),
         engagementId,
         engagementPropertyId: getString(requestPayload.engagementPropertyId, 'engagementPropertyId'),
         engagementClientOrderId: clientOrderId,
+        clientOrderId,
         orderType: getString(requestPayload.orderType, 'orderType'),
         productType: getString(requestPayload.productType, 'productType'),
         dueDate: getDate(requestPayload.dueDate, 'dueDate'),
         tenantId,
         createdBy: context.userId,
+        ...(requestPayload.propertyAddress != null && !requestPayload.propertyId
+          ? { propertyAddress: normalizePropertyAddress(requestPayload) }
+          : {}),
       };
 
       const vendorOrderSpec = {
@@ -359,7 +368,7 @@ export class AiActionDispatcherService {
         // Phase 7: load joined OrderContext so propertyAddress / loanAmount
         // / dueDate / orderType resolve from the parent ClientOrder when
         // present (engagement-flow rows don't carry them on the VendorOrder).
-        const ctx = await this.contextLoader.loadByVendorOrder(order);
+        const ctx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
         await this.autoAssignmentOrchestrator.triggerVendorAssignment({
           orderId: order.id,
           orderNumber: order.orderNumber ?? '',

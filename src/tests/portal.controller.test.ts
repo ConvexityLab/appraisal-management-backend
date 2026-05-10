@@ -43,6 +43,9 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 
 const mockFetchAll = jest.fn<() => Promise<any>>();
 const mockUpsert   = jest.fn<() => Promise<any>>();
+const mockFindOrderById = jest.fn<() => Promise<any>>();
+const mockLoadByVendorOrder = jest.fn<() => Promise<any>>();
+const mockGetPropertyAddress = jest.fn<() => any>();
 
 // Container created fresh per getContainer call — reuse the same mock fns
 const mockContainer = {
@@ -57,7 +60,15 @@ const mockGetContainer = jest.fn(() => mockContainer);
 jest.mock('../services/cosmos-db.service', () => ({
   CosmosDbService: jest.fn().mockImplementation(() => ({
     getContainer: mockGetContainer,
+    findOrderById: mockFindOrderById,
   })),
+}));
+
+jest.mock('../services/order-context-loader.service', () => ({
+  OrderContextLoader: jest.fn().mockImplementation(() => ({
+    loadByVendorOrder: mockLoadByVendorOrder,
+  })),
+  getPropertyAddress: mockGetPropertyAddress,
 }));
 
 // ─── Auth stub ─────────────────────────────────────────────────────────────────
@@ -94,9 +105,16 @@ function buildApp() {
 
 const MOCK_ORDER = {
   id: 'order-001',
+  tenantId: 'test-tenant',
   status: 'Completed',
   orderType: 'Full',
-  propertyAddress: '123 Main St, Springfield IL 62701',
+  propertyAddress: {
+    streetAddress: 'Legacy 123 Main St',
+    city: 'Springfield',
+    state: 'IL',
+    zipCode: '62701',
+    county: 'Sangamon',
+  },
   effectiveDueDate: '2026-02-01',
   submittedAt: '2026-01-01T00:00:00Z',
   completedAt: '2026-01-15T00:00:00Z',
@@ -136,17 +154,26 @@ describe('GET /api/portal/orders/:orderId', () => {
     jest.clearAllMocks();
     app = buildApp();
     mockContainer.items.query.mockReturnValue({ fetchAll: mockFetchAll });
+    mockFindOrderById.mockResolvedValue({ success: true, data: MOCK_ORDER });
+    mockLoadByVendorOrder.mockResolvedValue({ vendorOrder: MOCK_ORDER, clientOrder: null, property: {} });
+    mockGetPropertyAddress.mockReturnValue({
+      streetAddress: '123 Canonical Main St',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78701',
+      county: 'Travis',
+    });
   });
 
   it('returns 401 when no user', async () => {
     const res = await request(app).get('/api/portal/orders/order-001');
 
     expect(res.status).toBe(401);
-    expect(mockFetchAll).not.toHaveBeenCalled();
+    expect(mockFindOrderById).not.toHaveBeenCalled();
   });
 
   it('returns 404 when Cosmos returns no results', async () => {
-    mockFetchAll.mockResolvedValue({ resources: [] });
+    mockFindOrderById.mockResolvedValue({ success: true, data: null });
 
     const res = await request(app)
       .get('/api/portal/orders/order-999')
@@ -157,8 +184,6 @@ describe('GET /api/portal/orders/:orderId', () => {
   });
 
   it('returns 200 with portal-safe fields only', async () => {
-    mockFetchAll.mockResolvedValue({ resources: [MOCK_ORDER] });
-
     const res = await request(app)
       .get('/api/portal/orders/order-001')
       .set('x-test-user-id', 'u-1');
@@ -171,6 +196,17 @@ describe('GET /api/portal/orders/:orderId', () => {
     expect(data.status).toBe('Completed');
     expect(data.borrowerName).toBe('Alice Appleton');
     expect(data.loanNumber).toBe('LN-001');
+    expect(data.propertyAddress).toEqual({
+      streetAddress: '123 Canonical Main St',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78701',
+      county: 'Travis',
+    });
+    expect(mockLoadByVendorOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'order-001' }),
+      { includeProperty: true },
+    );
 
     // Internal fields must NOT appear in the portal response
     expect(data.internalNotes).toBeUndefined();
@@ -178,7 +214,10 @@ describe('GET /api/portal/orders/:orderId', () => {
   });
 
   it('returns 500 on Cosmos error', async () => {
-    mockFetchAll.mockRejectedValue(new Error('Cosmos query failed'));
+    mockFindOrderById.mockResolvedValue({
+      success: false,
+      error: { message: 'Cosmos query failed' },
+    });
 
     const res = await request(app)
       .get('/api/portal/orders/order-001')

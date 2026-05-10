@@ -64,6 +64,10 @@ export type CreateVendorOrderInput = Omit<Partial<Order>, 'id' | 'type'> & {
     instructions?: string;
 };
 
+function hasCanonicalPropertyId(propertyId: string | undefined): propertyId is string {
+    return typeof propertyId === 'string' && propertyId.trim().length > 0;
+}
+
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 export class VendorOrderService {
@@ -101,7 +105,17 @@ export class VendorOrderService {
             });
         }
 
-        const row = await this.dbService.createOrder({ ...(input as Omit<Order, 'id'>), accessControl });
+        const rawRowInput = input as Omit<Order, 'id'>;
+        const rowInput: Omit<Order, 'id'> = (() => {
+            if (!hasCanonicalPropertyId(input.propertyId)) {
+                return { ...rawRowInput, accessControl };
+            }
+
+            const { propertyDetails: _propertyDetails, ...withoutPropertyDetails } = rawRowInput;
+            return { ...withoutPropertyDetails, accessControl };
+        })();
+
+        const row = await this.dbService.createOrder(rowInput);
         if (!row.success || !row.data) {
             const err = row.error?.message ?? 'unknown error';
             throw new Error(

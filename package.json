@@ -40,6 +40,8 @@
     "axiom:livefire:ui-parity": "tsx scripts/live-fire/axiom-live-fire-ui-parity.ts",
     "axiom:livefire:remote-suite": "tsx scripts/live-fire/axiom-live-fire-remote-suite.ts",
     "axiom:livefire:verify-local-remote": "tsx scripts/live-fire/axiom-live-fire-verify-local-remote.ts",
+    "axiom:livefire:canonical-suite": "tsx scripts/live-fire/axiom-live-fire-canonical-suite.ts",
+    "axiom:livefire:review-program-suite": "tsx scripts/live-fire/axiom-live-fire-review-program-suite.ts",
     "axiom:livefire:sse-round-trip": "tsx scripts/live-fire/axiom-live-fire-sse-full-round-trip.ts",
     "axiom:livefire:analyze-with-sse": "tsx scripts/live-fire/axiom-live-fire-analyze-with-sse.ts",
     "axiom:livefire:v2-flow": "tsx scripts/live-fire/axiom-live-fire-v2-flow.ts",

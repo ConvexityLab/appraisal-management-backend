@@ -120,13 +120,21 @@ function toPercentValue(raw: number | null | undefined): number | null {
 
 function buildAddress(ctx: OrderContext): CanonicalAddress | null {
     const a = getPropertyAddress(ctx);
-    if (!a) return null;
+    const propertyAddress = a ?? (ctx.property ? {
+        streetAddress: ctx.property.address.street,
+        city: ctx.property.address.city,
+        state: ctx.property.address.state,
+        zipCode: ctx.property.address.zip,
+        county: ctx.property.address.county,
+        apn: ctx.property.apn,
+    } : null);
+    if (!propertyAddress) return null;
 
-    const street = trimOrNull(a.streetAddress);
-    const city = trimOrNull(a.city);
-    const state = trimOrNull(a.state);
-    const zip = trimOrNull(a.zipCode);
-    const county = trimOrNull(a.county);
+    const street = trimOrNull(propertyAddress.streetAddress);
+    const city = trimOrNull(propertyAddress.city);
+    const state = trimOrNull(propertyAddress.state);
+    const zip = trimOrNull(propertyAddress.zipCode);
+    const county = trimOrNull(propertyAddress.county);
 
     if (!street && !city && !state && !zip && !county) return null;
 
@@ -147,10 +155,10 @@ function buildSubject(ctx: OrderContext): Partial<CanonicalSubject> | null {
     if (address) out.address = address;
 
     const propertyAddress = getPropertyAddress(ctx);
-    const apn = trimOrNull(propertyAddress?.apn);
+    const apn = trimOrNull(propertyAddress?.apn ?? ctx.property?.apn);
     if (apn) out.parcelNumber = apn;
 
-    const legal = trimOrNull(propertyAddress?.legalDescription);
+    const legal = trimOrNull(propertyAddress?.legalDescription ?? ctx.property?.legalDescription);
     if (legal) out.legalDescription = legal;
 
     const coords = propertyAddress?.coordinates;
@@ -189,6 +197,30 @@ function buildSubject(ctx: OrderContext): Partial<CanonicalSubject> | null {
 
         const occupant = mapOccupancyToOccupant(details.occupancy as unknown as string);
         if (occupant) out.occupant = occupant;
+    } else if (ctx.property) {
+        const propertyType = trimOrNull(ctx.property.propertyType as unknown as string);
+        if (propertyType) out.propertyType = propertyType;
+
+        const yearBuilt = finiteOrNull(ctx.property.building?.yearBuilt);
+        if (yearBuilt != null) out.yearBuilt = yearBuilt;
+
+        const gla = finiteOrNull(ctx.property.building?.gla);
+        if (gla != null) out.grossLivingArea = gla;
+
+        const lot = finiteOrNull(ctx.property.lotSizeSqFt);
+        if (lot != null) out.lotSizeSqFt = lot;
+
+        const beds = finiteOrNull(ctx.property.building?.bedrooms);
+        if (beds != null) out.bedrooms = beds;
+
+        const baths = finiteOrNull(ctx.property.building?.bathrooms);
+        if (baths != null) out.bathrooms = baths;
+
+        const stories = finiteOrNull(ctx.property.building?.stories);
+        if (stories != null) out.stories = stories;
+
+        const condition = trimOrNull(ctx.property.building?.condition as unknown as string);
+        if (condition) out.condition = condition;
     }
 
     return Object.keys(out).length > 0 ? out : null;

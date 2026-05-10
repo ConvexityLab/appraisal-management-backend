@@ -347,7 +347,7 @@ export class AppraisalDraftService {
    * draft seeding sees lender-side fields from their proper home.
    */
   private async loadOrderContext(orderId: string): Promise<OrderContext> {
-    return this.contextLoader.loadByVendorOrderId(orderId);
+    return this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
   }
 
   private async loadOrder(orderId: string): Promise<VendorOrder> {

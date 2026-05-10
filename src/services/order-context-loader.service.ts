@@ -30,6 +30,14 @@
  * reference avoids the first read. PropertyRecord is loaded only when
  * `loadByVendorOrder({ includeProperty: true })` is requested.
  *
+ * Phase P6 boundary:
+ * ─────────────────
+ * This loader returns the canonical `PropertyRecord` row with observation-
+ * derived AVM/tax/permit history overlaid for callers that opt into
+ * `includeProperty: true`. That keeps canonical joins consistent with the
+ * property API/read-model surface. Comp-selection/value-estimation flows still
+ * keep their separate runtime AVM projections assembled for the current run.
+ *
  * Concurrency / staleness
  * ───────────────────────
  * No caching. Each call re-reads. Callers that need a stable view
@@ -39,6 +47,8 @@
 
 import { Logger } from '../utils/logger.js';
 import type { CosmosDbService } from './cosmos-db.service.js';
+import { PropertyObservationService } from './property-observation.service.js';
+import { materializePropertyRecordHistory } from './property-record-history-materializer.service.js';
 import type { VendorOrder } from '../types/vendor-order.types.js';
 import type {
   ClientOrder,
@@ -51,6 +61,10 @@ import type {
   OrderType,
   PropertyAddress,
   PropertyDetails,
+} from '../types/index.js';
+import {
+  OccupancyType,
+  PropertyType,
 } from '../types/index.js';
 import type { PropertyRecord } from '../types/property-record.types.js';
 
@@ -77,19 +91,142 @@ export interface LoadOptions {
   includeProperty?: boolean;
 }
 
+function mergeDefined<T extends object>(...parts: Array<Partial<T> | undefined>): T | undefined {
+  const merged: Record<string, unknown> = {};
+
+  for (const part of parts) {
+    if (!part) {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(part)) {
+      if (value !== undefined) {
+        merged[key] = value;
+      }
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged as T : undefined;
+}
+
+function mapCanonicalPropertyType(
+  propertyType: PropertyRecord['propertyType'] | undefined,
+): PropertyDetails['propertyType'] | undefined {
+  switch (propertyType) {
+    case 'single_family_residential':
+      return PropertyType.SFR;
+    case 'condominium':
+      return PropertyType.CONDO;
+    case 'townhome':
+      return PropertyType.TOWNHOME;
+    case 'multi_family':
+      return PropertyType.MULTI_FAMILY;
+    case 'manufactured_home':
+      return PropertyType.MANUFACTURED;
+    case 'land':
+      return PropertyType.VACANT_LAND;
+    case 'commercial':
+      return PropertyType.COMMERCIAL;
+    case 'mixed_use':
+      return PropertyType.MIXED_USE;
+    default:
+      return undefined;
+  }
+}
+
+function toCanonicalPropertyAddress(property: PropertyRecord): Partial<PropertyAddress> {
+  const canonicalAddress: Partial<PropertyAddress> = {
+    streetAddress: property.address.street,
+    city: property.address.city,
+    state: property.address.state,
+    zipCode: property.address.zip,
+  };
+
+  if (property.address.county) {
+    canonicalAddress.county = property.address.county;
+  }
+  if (property.apn) {
+    canonicalAddress.apn = property.apn;
+  }
+  if (property.legalDescription) {
+    canonicalAddress.legalDescription = property.legalDescription;
+  }
+  if (property.subdivision) {
+    canonicalAddress.subdivision = property.subdivision;
+  }
+  if (property.address.latitude != null && property.address.longitude != null) {
+    canonicalAddress.coordinates = {
+      latitude: property.address.latitude,
+      longitude: property.address.longitude,
+    };
+  }
+
+  return canonicalAddress;
+}
+
+function toCanonicalPropertyDetails(property: PropertyRecord): Partial<PropertyDetails> {
+  const canonicalDetails: Partial<PropertyDetails> = {
+    yearBuilt: property.building.yearBuilt,
+    grossLivingArea: property.building.gla,
+    bedrooms: property.building.bedrooms,
+    bathrooms: property.building.bathrooms,
+  };
+
+  if (typeof property.lotSizeSqFt === 'number') {
+    canonicalDetails.lotSize = property.lotSizeSqFt;
+  }
+
+  if (typeof property.building.stories === 'number') {
+    canonicalDetails.stories = property.building.stories;
+  }
+
+  if (typeof property.building.garageSpaces === 'number') {
+    canonicalDetails.garage = property.building.garageSpaces > 0;
+  }
+
+  if (typeof property.building.pool === 'boolean') {
+    canonicalDetails.pool = property.building.pool;
+  }
+
+  const propertyType = mapCanonicalPropertyType(property.propertyType);
+  if (propertyType) {
+    canonicalDetails.propertyType = propertyType;
+  }
+
+  if (typeof property.ownerOccupied === 'boolean') {
+    canonicalDetails.occupancy = property.ownerOccupied
+      ? OccupancyType.OWNER_OCCUPIED
+      : OccupancyType.INVESTMENT;
+  }
+
+  if (property.building.condition) {
+    canonicalDetails.condition = property.building.condition as unknown as NonNullable<PropertyDetails['condition']>;
+  }
+
+  if (property.building.constructionType) {
+    canonicalDetails.constructionType = property.building.constructionType as unknown as NonNullable<PropertyDetails['constructionType']>;
+  }
+
+  return canonicalDetails;
+}
+
 // ─── Field accessors ────────────────────────────────────────────────────────
 //
-// These read a logical field, preferring ClientOrder (the new home) and
-// falling back to the deprecated VendorOrder copy (legacy rows / pre-Phase-8).
-// Once Phase 8 strips the deprecated fields, the fallback branch goes away
-// and these accessors become trivial pass-throughs.
+// These read a logical field, preferring the canonical PropertyRecord when it
+// has been loaded, then falling back to ClientOrder (the workflow cache/new
+// home) and finally the deprecated VendorOrder copy (legacy rows / pre-Phase-8).
+// Once Phase 8 strips the deprecated fields, the final fallback branch goes away.
 
 export function getPropertyAddress(ctx: OrderContext): PropertyAddress | undefined {
-  return ctx.clientOrder?.propertyAddress ?? ctx.vendorOrder.propertyAddress;
+  const workflowAddress = ctx.clientOrder?.propertyAddress ?? ctx.vendorOrder.propertyAddress;
+  const canonicalAddress = ctx.property ? toCanonicalPropertyAddress(ctx.property) : undefined;
+  return mergeDefined<PropertyAddress>(workflowAddress, canonicalAddress);
 }
 
 export function getPropertyDetails(ctx: OrderContext): PropertyDetails | undefined {
-  return ctx.clientOrder?.propertyDetails ?? ctx.vendorOrder.propertyDetails;
+  const workflowDetails = ctx.clientOrder?.propertyDetails ?? ctx.vendorOrder.propertyDetails;
+  const canonicalDetails = ctx.property ? toCanonicalPropertyDetails(ctx.property) : undefined;
+  return mergeDefined<PropertyDetails>(workflowDetails, canonicalDetails);
 }
 
 export function getOrderType(ctx: OrderContext): OrderType | undefined {
@@ -132,8 +269,11 @@ export function getMetadata(ctx: OrderContext): Record<string, unknown> | undefi
 
 export class OrderContextLoader {
   private readonly logger = new Logger('OrderContextLoader');
+  private readonly observationService: PropertyObservationService;
 
-  constructor(private readonly dbService: CosmosDbService) {}
+  constructor(private readonly dbService: CosmosDbService) {
+    this.observationService = new PropertyObservationService(dbService);
+  }
 
   /**
    * Load a complete OrderContext starting from a VendorOrder id.
@@ -230,7 +370,12 @@ export class OrderContextLoader {
     try {
       const container = this.dbService.getContainer('property-records');
       const { resource } = await container.item(propertyId, tenantId).read<PropertyRecord>();
-      return resource ?? null;
+      if (!resource) {
+        return null;
+      }
+
+      const observations = await this.observationService.listByPropertyId(propertyId, tenantId);
+      return materializePropertyRecordHistory(resource, observations);
     } catch (err) {
       const code = (err as { code?: number; statusCode?: number }).code
         ?? (err as { code?: number; statusCode?: number }).statusCode;

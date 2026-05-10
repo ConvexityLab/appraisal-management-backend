@@ -70,11 +70,17 @@ export interface CanonicalSnapshotRecord {
   id: string;
   type: 'canonical-snapshot';
   tenantId: string;
+  propertyId?: string;
+  orderId?: string;
+  documentId?: string;
+  sourceRunId?: string;
   createdAt: string;
   createdBy: string;
   status: 'ready' | 'processing' | 'failed';
   engagementId?: string;
   loanPropertyContextId?: string;
+  projectorVersion: string;
+  sourceSchemaVersion?: string;
   sourceIdentity?: IntakeSourceIdentity;
   sourceRefs: Array<{ sourceType: string; sourceId: string; sourceRunId?: string }>;
   normalizedDataRef: string;

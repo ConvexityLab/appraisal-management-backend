@@ -46,6 +46,7 @@ function makeMockDb(stores: {
   comparables?: AnyDoc[];
   vendorOrders?: AnyDoc[];
   propertyRecords?: AnyDoc[];
+  propertyObservations?: AnyDoc[];
 }) {
   const comparables = new Map<string, AnyDoc>();
   (stores.comparables ?? []).forEach((d) => comparables.set(d.id, d));
@@ -53,6 +54,7 @@ function makeMockDb(stores: {
   (stores.vendorOrders ?? []).forEach((d) => vendorOrders.set(d.id, d));
   const propertyRecords = new Map<string, AnyDoc>();
   (stores.propertyRecords ?? []).forEach((d) => propertyRecords.set(d.id, d));
+  const propertyObservations = stores.propertyObservations ?? [];
 
   function compsContainer() {
     return {
@@ -104,6 +106,20 @@ function makeMockDb(stores: {
         };
       }
       throw new Error(`Unexpected container request: ${name}`);
+    }),
+    queryDocuments: vi.fn(async (container: string, _query: string, params: Array<{ name: string; value: unknown }>) => {
+      if (container !== 'property-observations') {
+        return [];
+      }
+
+      const paramsMap = Object.fromEntries(params.map((p) => [p.name, p.value]));
+      return propertyObservations.filter((doc) => {
+        if (paramsMap['@type'] !== undefined && doc.type !== paramsMap['@type']) return false;
+        if (paramsMap['@tenantId'] !== undefined && doc.tenantId !== paramsMap['@tenantId']) return false;
+        if (paramsMap['@propertyId'] !== undefined && doc.propertyId !== paramsMap['@propertyId']) return false;
+        if (paramsMap['@observationType'] !== undefined && doc.observationType !== paramsMap['@observationType']) return false;
+        return true;
+      });
     }),
   };
   return { db };
@@ -454,6 +470,65 @@ describe('GET /api/vendor-orders/:vendorOrderId/comparables', () => {
     expect(res.status).toBe(200);
     expect(res.body.subject).toBeDefined();
     expect(res.body.subject).not.toHaveProperty('photos');
+  });
+
+  it('derives subject valuation from observation-backed avm updates', async () => {
+    const collection = makeCollectionDoc({
+      id: 'collection-co-5-2026-04-20T00:00:00Z',
+      orderId: 'co-5',
+      createdAt: '2026-04-20T00:00:00Z',
+    });
+    const { db } = makeMockDb({
+      comparables: [collection],
+      vendorOrders: [
+        {
+          id: 'vo-5',
+          tenantId: 'tenant-a',
+          type: VENDOR_ORDER_DOC_TYPE,
+          clientOrderId: 'co-5',
+          propertyId: 'prop-5',
+        },
+      ],
+      propertyRecords: [
+        {
+          id: 'prop-5',
+          tenantId: 'tenant-a',
+          propertyType: 'SFR',
+          address: { street: '3 Main', city: 'X', state: 'CA', zip: '90001', county: 'LA', latitude: 34, longitude: -118 },
+          building: { gla: 1500, yearBuilt: 1990, bedrooms: 3, bathrooms: 2 },
+        },
+      ],
+      propertyObservations: [
+        {
+          id: 'obs-avm-5',
+          type: 'property-observation',
+          tenantId: 'tenant-a',
+          propertyId: 'prop-5',
+          observationType: 'avm-update',
+          sourceSystem: 'bridge-interactive',
+          sourceFingerprint: 'fp-avm-5',
+          observedAt: '2026-05-10T00:00:00.000Z',
+          ingestedAt: '2026-05-10T00:00:01.000Z',
+          normalizedFacts: {
+            avm: {
+              value: 512000,
+              confidence: 0.82,
+              fetchedAt: '2026-05-10T00:00:00.000Z',
+              source: 'bridge-zestimate',
+            },
+          },
+        },
+      ],
+    });
+    const app = makeApp(db);
+    const res = await request(app).get('/api/vendor-orders/vo-5/comparables');
+    expect(res.status).toBe(200);
+    expect(res.body.subject).toBeDefined();
+    expect(res.body.subject.valuation).toEqual({
+      estimatedValue: 512000,
+      confidenceScore: 0.82,
+      asOfDate: '2026-05-10T00:00:00.000Z',
+    });
   });
 
   it('blocks vendor-order comparable reads when authorizeResource denies access', async () => {

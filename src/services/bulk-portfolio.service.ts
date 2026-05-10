@@ -22,6 +22,8 @@ import { ReviewDocumentExtractionService } from './review-document-extraction.se
 import { BlobStorageService } from './blob-storage.service.js';
 import { DocumentService } from './document.service.js';
 import { PropertyRecordService } from './property-record.service.js';
+import { PropertyObservationService } from './property-observation.service.js';
+import { materializePropertyRecordHistory } from './property-record-history-materializer.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { EngagementService } from './engagement.service.js';
 import {
@@ -50,6 +52,7 @@ import type {
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority } from '../types/index.js';
+import type { PropertyRecord } from '../types/property-record.types.js';
 import type { AxiomBulkEvaluationRequestedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -101,6 +104,7 @@ export class BulkPortfolioService {
   private _extractionService: ReviewDocumentExtractionService | null = null;
   private _documentService: DocumentService | null = null;
   private _propertyRecordService: PropertyRecordService | null = null;
+  private _propertyObservationService: PropertyObservationService | null = null;
   private _propertyEnrichmentService: PropertyEnrichmentService | null = null;
   private _engagementService: EngagementService | null = null;
   private _clientOrderService: ClientOrderService | null = null;
@@ -159,6 +163,13 @@ export class BulkPortfolioService {
     return this._propertyEnrichmentService;
   }
 
+  private get propertyObservationService(): PropertyObservationService {
+    if (!this._propertyObservationService) {
+      this._propertyObservationService = new PropertyObservationService(this.dbService);
+    }
+    return this._propertyObservationService;
+  }
+
   private get engagementService(): EngagementService {
     if (!this._engagementService) {
       this._engagementService = new EngagementService(
@@ -175,6 +186,12 @@ export class BulkPortfolioService {
       this._clientOrderService = new ClientOrderService(this.dbService);
     }
     return this._clientOrderService;
+  }
+
+  private async loadMaterializedPropertyRecord(propertyId: string, tenantId: string): Promise<PropertyRecord> {
+    const rawRecord = await this.propertyRecordService.getById(propertyId, tenantId);
+    const observations = await this.propertyObservationService.listByPropertyId(propertyId, tenantId);
+    return materializePropertyRecordHistory(rawRecord, observations);
   }
 
   /**
@@ -967,8 +984,10 @@ export class BulkPortfolioService {
 
         if (property && property.propertyId && (mappedItem as any).propertyAddress) {
           const mItem = mappedItem as any;
-          // Ensure we merge existing so we don't wipe out unmapped fields
-          const baseRec = await this.propertyRecordService.getById(property.propertyId, job.tenantId);
+          // Ensure we merge the current observation-materialized canonical
+          // property so we don't wipe out unmapped fields or regress to stale
+          // raw root-history branches during extraction-driven updates.
+          const baseRec = await this.loadMaterializedPropertyRecord(property.propertyId, job.tenantId);
           await this.propertyRecordService.createVersion(
             property.propertyId,
             job.tenantId,

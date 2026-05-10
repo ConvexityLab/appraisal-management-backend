@@ -177,40 +177,11 @@ const vendorSearch = await cosmosService.searchVendors({
 
 ### Property Operations
 
-```typescript
-// Create property summary
-const propertyData = {
-  address: {
-    street: '456 Oak Ave',
-    city: 'Springfield',
-    state: 'IL',
-    zip: '62701',
-    county: 'Sangamon'
-  },
-  propertyType: 'SINGLE_FAMILY',
-  condition: 'GOOD',
-  building: {
-    yearBuilt: 1995,
-    livingAreaSquareFeet: 1800,
-    bedroomCount: 3,
-    bathroomCount: 2
-  },
-  valuation: {
-    estimatedValue: 275000
-  }
-};
+> Legacy note: the old `property-summaries` compatibility helpers described in earlier versions of this document have been retired.
 
-const propertyResult = await cosmosService.createPropertySummary(propertyData);
+Active property-domain work should use the canonical `PropertyRecord` services and controllers instead of direct summary writes/searches through this service.
 
-// Search properties
-const propertySearch = await cosmosService.searchProperties({
-  propertyType: ['SINGLE_FAMILY'],
-  city: 'Springfield',
-  state: 'IL',
-  minSquareFeet: 1500,
-  maxSquareFeet: 2500
-});
-```
+Current `CosmosDbService` property responsibilities center on canonical containers such as `property-records`, `property-data-cache`, and `attom-data`, with live property API reads flowing through the canonical router and `PropertyRecordService`.
 
 ### Error Handling
 

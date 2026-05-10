@@ -879,16 +879,14 @@ export class AutoAssignmentOrchestratorService {
     // load failure.
     let bidCtx;
     try {
-      bidCtx = await this.contextLoader.loadByVendorOrder(order);
+      bidCtx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
     } catch (err) {
       this.logger.warn('sendBidToVendor: could not load OrderContext; using bare order', {
         orderId: order.id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const bidPropertyAddress = bidCtx
-      ? getPropertyAddress(bidCtx) ?? order.propertyDetails?.fullAddress
-      : order.propertyAddress ?? order.propertyDetails?.fullAddress;
+    const bidPropertyAddress = this.resolveOrderAddressText(order, bidCtx);
     const bidDueDate = bidCtx ? getDueDate(bidCtx) : order.dueDate;
     const bidOrderType = bidCtx?.clientOrder?.orderType ?? order.orderType;
 
@@ -1044,16 +1042,14 @@ export class AutoAssignmentOrchestratorService {
     // from the parent ClientOrder.
     let broadcastCtx;
     try {
-      broadcastCtx = await this.contextLoader.loadByVendorOrder(order);
+      broadcastCtx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
     } catch (err) {
       this.logger.warn('sendBroadcastBids: could not load OrderContext; using bare order', {
         orderId: order.id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const broadcastPropertyAddress = broadcastCtx
-      ? getPropertyAddress(broadcastCtx) ?? order.propertyDetails?.fullAddress
-      : order.propertyAddress ?? order.propertyDetails?.fullAddress;
+    const broadcastPropertyAddress = this.resolveOrderAddressText(order, broadcastCtx);
     const broadcastDueDate = broadcastCtx ? getDueDate(broadcastCtx) : order.dueDate;
     const broadcastOrderType = broadcastCtx?.clientOrder?.orderType ?? order.orderType;
 
@@ -1446,20 +1442,14 @@ export class AutoAssignmentOrchestratorService {
     // reads on the bare order shape.
     let qcCtx: OrderContext | null = null;
     try {
-      qcCtx = await this.contextLoader.loadByVendorOrder(order);
+      qcCtx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
     } catch (err) {
       this.logger.warn('Could not load OrderContext for QC queue entry; using bare order', {
         orderId: order.id,
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    const qcAddr = qcCtx ? getPropertyAddress(qcCtx) : undefined;
-    const qcAddrString =
-      (qcAddr as { fullAddress?: string } | undefined)?.fullAddress ??
-      qcAddr?.streetAddress ??
-      order.propertyAddress?.fullAddress ??
-      order.propertyAddress?.streetAddress ??
-      (typeof order.propertyAddress === 'string' ? order.propertyAddress : '');
+    const qcAddrString = this.resolveOrderAddressText(order, qcCtx);
 
     // Add to QC queue
     let qcReviewId: string;
@@ -1789,7 +1779,7 @@ export class AutoAssignmentOrchestratorService {
       // Best-effort: if the load fails we still send the bare order shape.
       let ctx: OrderContext | undefined;
       try {
-        ctx = await this.contextLoader.loadByVendorOrder(order);
+        ctx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
       } catch (loadErr) {
         this.logger.warn('Could not load OrderContext for AI vendor-bid scoring; falling back to bare order', {
           orderId: order.id,
@@ -1921,19 +1911,7 @@ export class AutoAssignmentOrchestratorService {
     // pull from the parent ClientOrder when present and fall back to the
     // deprecated VendorOrder copy). When no context is provided, fall back
     // to the legacy any-typed reads.
-    const addrFromCtx = ctx ? getPropertyAddress(ctx) : undefined;
-    const addrSource = addrFromCtx ?? order.propertyAddress;
-    const propertyAddress =
-      typeof addrSource === 'string'
-        ? addrSource
-        : [
-            addrSource?.streetAddress ?? addrSource?.street ?? '',
-            addrSource?.city ?? '',
-            addrSource?.state ?? '',
-            addrSource?.zipCode ?? addrSource?.zip ?? '',
-          ]
-            .filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
-            .join(', ');
+    const propertyAddress = this.resolveOrderAddressText(order, ctx);
 
     const dueDateValue = ctx ? getDueDate(ctx) : order.dueDate;
     const orderTypeValue = ctx?.clientOrder?.orderType ?? order.orderType;
@@ -1944,6 +1922,52 @@ export class AutoAssignmentOrchestratorService {
       priority: order.priority ?? 'STANDARD',
       dueDate: dueDateValue ?? new Date().toISOString(),
     };
+  }
+
+  private resolveOrderAddressText(order: any, ctx?: OrderContext | null): string {
+    const canonicalAddress = ctx ? this.formatAddressValue(getPropertyAddress(ctx)) : '';
+    if (canonicalAddress) {
+      return canonicalAddress;
+    }
+
+    const workflowAddress = this.formatAddressValue(order.propertyAddress);
+    if (workflowAddress) {
+      return workflowAddress;
+    }
+
+    return typeof order.propertyDetails?.fullAddress === 'string'
+      ? order.propertyDetails.fullAddress
+      : '';
+  }
+
+  private formatAddressValue(address: unknown): string {
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (!address || typeof address !== 'object') {
+      return '';
+    }
+
+    const candidate = address as Record<string, unknown>;
+    const street = typeof candidate['streetAddress'] === 'string'
+      ? candidate['streetAddress']
+      : typeof candidate['street'] === 'string'
+        ? candidate['street']
+        : typeof candidate['fullAddress'] === 'string'
+          ? candidate['fullAddress']
+          : '';
+    const city = typeof candidate['city'] === 'string' ? candidate['city'] : '';
+    const state = typeof candidate['state'] === 'string' ? candidate['state'] : '';
+    const zip = typeof candidate['zipCode'] === 'string'
+      ? candidate['zipCode']
+      : typeof candidate['zip'] === 'string'
+        ? candidate['zip']
+        : '';
+
+    const locality = [city, state].filter(Boolean).join(', ');
+    const trailing = [locality, zip].filter(Boolean).join(' ');
+    return [street, trailing].filter(Boolean).join(', ');
   }
 
   private reorderRankedVendorsByAnalysis(

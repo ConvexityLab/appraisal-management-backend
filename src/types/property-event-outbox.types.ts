@@ -11,6 +11,8 @@ export interface PropertyEventOutboxPayload {
   snapshotId?: string;
   propertyId: string;
   recordVersion?: number;
+  projectorVersion?: string;
+  sourceSchemaVersion?: string | null;
   observationType?: string;
   observedAt?: string;
   sourceSystem?: string;

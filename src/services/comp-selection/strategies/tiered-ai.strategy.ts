@@ -278,6 +278,11 @@ export class TieredAiCompSelectionStrategy implements ICompSelectionStrategy {
 function toPromptSubject(subject: PropertyRecord): Record<string, unknown> {
   // Trim down to just the fields the model needs for selection. Avoids
   // sending volatile fields like _etag / version history.
+  //
+  // Phase P6 note: `avm` here is a runtime projection already attached to the
+  // subject input for this selection flow. The tiered-AI strategy does not
+  // reach back into property observations; canonical API/controller paths own
+  // observation-derived AVM materialization.
   return {
     propertyId: subject.id,
     address: subject.address,
@@ -291,6 +296,9 @@ function toPromptCandidate(
   c: CollectedCompCandidate,
   distanceMi: number,
 ): PromptCandidate {
+  // Candidate `propertyRecord.avm` is a per-run comp-collection projection,
+  // not a canonical parcel truth read. Keep that boundary explicit so this
+  // strategy remains pure over the assembled candidate batch.
   return {
     propertyId: c.propertyRecord.id,
     address: c.propertyRecord.address,

@@ -1,8 +1,16 @@
 /**
  * CompBasedValueEstimator
  *
- * Pure computation: estimate subject value from the AVM (`PropertyRecord.avm`)
- * of a selected set of sold comps + the subject's GLA.
+ * Pure computation: estimate subject value from the runtime AVM projection on
+ * the selected sold comps (`propertyRecord.avm`) + the subject's GLA.
+ *
+ * Important Phase P6 boundary:
+ *   - For subject/canonical property APIs, AVM truth now comes from immutable
+ *     `avm-update` observations with legacy root fallback.
+ *   - This estimator intentionally does NOT read observations. It consumes the
+ *     in-memory comp AVM values hydrated by comp collection for the current
+ *     selection/evaluation run. Those are workflow/runtime projections, not
+ *     parcel source-of-truth reads.
  *
  * Formula:
  *   For each sold comp with avm.value AND propertyRecord.building.gla > 0:

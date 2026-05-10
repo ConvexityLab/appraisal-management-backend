@@ -9,10 +9,6 @@ import {
   ApiResponse
 } from '../types/index.js';
 import type { QueryFilter } from '../types/authorization.types.js';
-import {
-  PropertySummary,
-  CreatePropertySummaryRequest
-} from '../types/property-enhanced.js';
 import { Logger } from '../utils/logger.js';
 import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
@@ -33,7 +29,6 @@ export class CosmosDbService {
   private vendorsContainer: Container | null = null;
   private usersContainer: Container | null = null;
   private propertiesContainer: Container | null = null;
-  private propertySummariesContainer: Container | null = null;
   private qcReviewsContainer: Container | null = null;
   private qcResultsContainer: Container | null = null;
   private qcChecklistsContainer: Container | null = null;
@@ -77,7 +72,6 @@ export class CosmosDbService {
     vendors: 'vendors',
     users: 'users',
     properties: 'properties',
-    propertySummaries: 'property-summaries',
     qcReviews: 'qc-reviews',           // Master QC Review records
     qcResults: 'results',              // QC execution results (legacy/detailed)
     qcChecklists: 'criteria',          // QC checklist templates
@@ -207,7 +201,6 @@ export class CosmosDbService {
       this.vendorsContainer = this.database.container(this.containers.vendors);
       this.usersContainer = this.database.container(this.containers.users);
       this.propertiesContainer = this.database.container(this.containers.properties);
-      this.propertySummariesContainer = this.database.container(this.containers.propertySummaries);
       this.qcReviewsContainer = this.database.container(this.containers.qcReviews);
       this.qcResultsContainer = this.database.container(this.containers.qcResults);
       this.qcChecklistsContainer = this.database.container(this.containers.qcChecklists);
@@ -921,159 +914,6 @@ export class CosmosDbService {
     }
     await this.updateProduct(id, tenantId, { status: 'INACTIVE' });
     return { success: true, data: undefined };
-  }
-
-  // ===============================
-  // Property Operations
-  // ===============================
-
-  async createPropertySummary(property: CreatePropertySummaryRequest): Promise<ApiResponse<PropertySummary>> {
-    try {
-      if (!this.propertySummariesContainer) {
-        throw new Error('Property summaries container not initialized');
-      }
-
-      const propertyWithId: PropertySummary = {
-        ...property,
-        id: this.generateId(),
-        building: property.building || {},
-        valuation: property.valuation || {},
-        owner: {
-          fullName: '',
-          ownerOccupied: false
-        },
-        quickLists: {
-          vacant: false,
-          ownerOccupied: false,
-          freeAndClear: false,
-          highEquity: false,
-          activeForSale: false,
-          recentlySold: false
-        },
-        lastUpdated: new Date(),
-        dataSource: 'internal'
-      };
-
-      const { resource } = await this.propertySummariesContainer.items.create(propertyWithId);
-      
-      this.logger.info('Property summary created successfully', { propertyId: resource?.id });
-
-      return {
-        success: true,
-        data: resource as PropertySummary
-      };
-
-    } catch (error) {
-      this.logger.error('Failed to create property summary', { error });
-      return {
-        success: false,
-        error: createApiError(ErrorCodes.PROPERTY_CREATE_FAILED, error instanceof Error ? error.message : 'Unknown error'
-        )
-      };
-    }
-  }
-
-  async findPropertySummaryById(id: string): Promise<ApiResponse<PropertySummary | null>> {
-    try {
-      if (!this.propertySummariesContainer) {
-        throw new Error('Property summaries container not initialized');
-      }
-
-      const querySpec = {
-        query: 'SELECT * FROM c WHERE c.id = @id',
-        parameters: [{ name: '@id', value: id }]
-      };
-
-      const { resources } = await this.propertySummariesContainer.items.query<PropertySummary>(querySpec).fetchAll();
-      const property = resources.length > 0 ? resources[0] : null;
-
-      return {
-        success: true,
-        data: property as PropertySummary | null
-      };
-
-    } catch (error) {
-      this.logger.error('Failed to find property summary', { error, id });
-      return {
-        success: false,
-        data: null,
-        error: createApiError('FIND_PROPERTY_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
-      };
-    }
-  }
-
-  async searchPropertySummaries(filters: any, offset: number = 0, limit: number = 50): Promise<ApiResponse<PropertySummary[]>> {
-    try {
-      if (!this.propertySummariesContainer) {
-        throw new Error('Property summaries container not initialized');
-      }
-
-      let query = 'SELECT * FROM c WHERE 1=1';
-      const parameters: any[] = [];
-
-      // Handle property type - support both array and string formats
-      if (filters.propertyType) {
-        if (Array.isArray(filters.propertyType) && filters.propertyType.length > 0) {
-          query += ' AND c.propertyType IN (' + filters.propertyType.map((_: any, index: number) => `@type${index}`).join(', ') + ')';
-          filters.propertyType.forEach((type: any, index: number) => {
-            parameters.push({ name: `@type${index}`, value: type });
-          });
-        } else if (typeof filters.propertyType === 'string') {
-          query += ' AND c.propertyType = @propertyType';
-          parameters.push({ name: '@propertyType', value: filters.propertyType });
-        }
-      }
-
-      // Handle state - support both nested and flat structures
-      const state = filters.state || filters.address?.state;
-      if (state) {
-        query += ' AND c.address.state = @state';
-        parameters.push({ name: '@state', value: state });
-      }
-
-      // Handle city - support both nested and flat structures
-      const city = filters.city || filters.address?.city;
-      if (city) {
-        query += ' AND c.address.city = @city';
-        parameters.push({ name: '@city', value: city });
-      }
-
-      // Handle value range - support both nested and flat structures
-      const minValue = filters.minValue || filters.priceRange?.min;
-      const maxValue = filters.maxValue || filters.priceRange?.max;
-      
-      if (minValue) {
-        query += ' AND c.valuation.estimatedValue >= @minPrice';
-        parameters.push({ name: '@minPrice', value: minValue });
-      }
-      
-      if (maxValue) {
-        query += ' AND c.valuation.estimatedValue <= @maxPrice';
-        parameters.push({ name: '@maxPrice', value: maxValue });
-      }
-
-      query += ' ORDER BY c.lastUpdated DESC';
-      query += ` OFFSET ${offset} LIMIT ${limit}`;
-
-      const querySpec = { query, parameters };
-      const { resources } = await this.propertySummariesContainer.items.query<PropertySummary>(querySpec).fetchAll();
-
-      return {
-        success: true,
-        data: resources,
-        metadata: { total: resources.length, offset, limit }
-      };
-
-    } catch (error) {
-      this.logger.error('Failed to search property summaries', { error, filters });
-      return {
-        success: false,
-        data: [],
-        error: createApiError('SEARCH_PROPERTIES_FAILED', error instanceof Error ? error.message : 'Unknown error'
-        )
-      };
-    }
   }
 
   // ===============================

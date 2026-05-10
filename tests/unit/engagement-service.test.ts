@@ -205,6 +205,48 @@ describe('createEngagement', () => {
     expect(capturedDoc!.properties[0]!.clientOrders[0]!.productType).toBe(EngagementProductType.FULL_APPRAISAL);
   });
 
+  it('persists a thin engagement property cache instead of copied physical property truth', async () => {
+    let capturedDoc: Engagement | undefined;
+    const container = makeMockContainer(makeEngagement());
+    container.items.create = vi.fn().mockImplementation(async (d: Engagement) => {
+      capturedDoc = d;
+      return { resource: d };
+    });
+
+    const svc = new EngagementService(makeDbService(container), makePropertyRecordService());
+    await svc.createEngagement(makeCreateRequest({
+      property: {
+        address: '1 Main',
+        city: 'Denver',
+        state: 'CO',
+        zipCode: '80203',
+        county: 'Denver',
+        coordinates: { latitude: 39.7392, longitude: -104.9903 },
+        propertyType: 'SINGLE_FAMILY',
+        yearBuilt: 1999,
+        squareFootage: 2200,
+        estimatedValue: 550000,
+        bedrooms: 4,
+        bathrooms: 3,
+      },
+    }));
+
+    expect(capturedDoc!.properties[0]!.property).toMatchObject({
+      address: '1 Main',
+      city: 'Denver',
+      state: 'CO',
+      zipCode: '80203',
+      county: 'Denver',
+      coordinates: { latitude: 39.7392, longitude: -104.9903 },
+      propertyType: 'SINGLE_FAMILY',
+    });
+    expect(capturedDoc!.properties[0]!.property.yearBuilt).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.squareFootage).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.estimatedValue).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.bedrooms).toBeUndefined();
+    expect(capturedDoc!.properties[0]!.property.bathrooms).toBeUndefined();
+  });
+
   it('sets engagementType=SINGLE when 1 loan', async () => {
     let capturedDoc: Engagement | undefined;
     const container = makeMockContainer(makeEngagement());
@@ -982,6 +1024,13 @@ describe('createEngagement - ClientOrderService bridge', () => {
     expect(calls[0].clientId).toBe('c-001');
     expect(calls[0].tenantId).toBe('tenant-001');
     expect(calls[0].propertyId).toBe('prop-test-001');
+    expect(calls[0].propertyDetails).toBeUndefined();
+    expect(calls[0].propertyAddress).toMatchObject({
+      streetAddress: '1 Main St',
+      city: 'Denver',
+      state: 'CO',
+      zipCode: '80203',
+    });
     expect(calls[0].productType).toBe(EngagementProductType.BPO);
   });
 

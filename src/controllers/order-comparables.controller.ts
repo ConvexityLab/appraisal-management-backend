@@ -52,6 +52,8 @@ import type { PropertyPhoto } from '../types/canonical-schema.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Logger } from '../utils/logger.js';
+import { PropertyObservationService } from '../services/property-observation.service.js';
+import { materializePropertyRecordHistory } from '../services/property-record-history-materializer.service.js';
 
 const logger = new Logger('OrderComparablesController');
 
@@ -93,6 +95,11 @@ interface SubjectPropertyData {
   };
   propertyType: string;
   lotSizeSqFt?: number;
+  valuation?: {
+    estimatedValue?: number;
+    confidenceScore?: number;
+    asOfDate?: string;
+  };
   /** Vendor-supplied subject property photos (e.g. ATTOM PHOTOURLPREFIX/PHOTOKEY).
    *  Omitted entirely when the property record carries no photos — never `[]`. */
   photos?: PropertyPhoto[];
@@ -148,11 +155,13 @@ export class OrderComparablesController {
   public routerByClientOrder: Router;
   /** Mount under `/api/vendor-orders/:vendorOrderId/comparables` */
   public routerByVendorOrder: Router;
+  private readonly observationService: PropertyObservationService;
 
   constructor(
     private readonly dbService: CosmosDbService,
     authzMiddleware?: AuthorizationMiddleware,
   ) {
+    this.observationService = new PropertyObservationService(dbService);
     this.routerByClientOrder = Router({ mergeParams: true });
     const clientOrderRead = authzMiddleware
       ? [
@@ -371,8 +380,11 @@ export class OrderComparablesController {
       const { resource } = await container.item(propertyId, tenantId).read<PropertyRecord>();
       if (!resource) return null;
 
-      const addr = resource.address;
-      const b = resource.building;
+      const observations = await this.observationService.listByPropertyId(propertyId, tenantId);
+      const record = materializePropertyRecordHistory(resource, observations);
+
+      const addr = record.address;
+      const b = record.building;
 
       return {
         latitude: addr.latitude ?? null,
@@ -391,9 +403,18 @@ export class OrderComparablesController {
           bathrooms: b.bathrooms,
           ...(b.stories !== undefined && { stories: b.stories }),
         },
-        propertyType: resource.propertyType,
-        ...(resource.lotSizeSqFt !== undefined && { lotSizeSqFt: resource.lotSizeSqFt }),
-        ...(resource.photos && resource.photos.length > 0 && { photos: resource.photos }),
+        propertyType: record.propertyType,
+        ...(record.lotSizeSqFt !== undefined && { lotSizeSqFt: record.lotSizeSqFt }),
+        ...(record.avm
+          ? {
+              valuation: {
+                ...(record.avm.value !== undefined ? { estimatedValue: record.avm.value } : {}),
+                ...(record.avm.confidence !== undefined ? { confidenceScore: record.avm.confidence } : {}),
+                ...(record.avm.fetchedAt ? { asOfDate: record.avm.fetchedAt } : {}),
+              },
+            }
+          : {}),
+        ...(record.photos && record.photos.length > 0 && { photos: record.photos }),
       };
     } catch (err) {
       logger.warn('readSubjectFromPropertyRecord failed — subject omitted from response', {

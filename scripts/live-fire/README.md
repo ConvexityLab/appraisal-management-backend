@@ -44,6 +44,27 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
   - Verifies token subject matches `scripts/user-identities.json` and, for staging, `seed-staging-users.ts`
   - Asserts response `user.id`, `user.email`, `user.role`, and `interpretation.can_view_all`
 
+- `axiom-live-fire-canonical-suite.ts`  ← **pnpm axiom:livefire:canonical-suite**
+  - `POST /api/analysis/submissions` — exact current UI submit contract
+  - `GET /api/documents/stream/:executionId` — exact upload-zone live tracker stream
+  - `GET /api/analysis/submissions/:submissionId` — submission status polling
+  - `GET /api/axiom/evaluations/:evaluationId` — upload-zone “Open Insights” payload
+  - `GET /api/axiom/evaluations/order/:orderId` — compatibility check for the legacy order-list surface
+  - `GET /api/axiom/scopes/:scopeId/results?programId=…` — current `AxiomInsightsPanel` data source
+  - `GET /api/axiom/scopes/:scopeId/criteria/:criterionId/history` — current criterion-history drawer surface
+  - Purpose: one canonical live-fire suite that mirrors how the UI submits, monitors, and processes Axiom results today
+  - Artifacts: writes JSON outputs under `test-artifacts/live-fire/axiom-canonical-suite/<timestamp>-<orderId>/` unless `AXIOM_LIVE_ARTIFACT_DIR` is set
+
+- `axiom-live-fire-review-program-suite.ts`  ← **pnpm axiom:livefire:review-program-suite**
+  - `POST /api/review-programs/prepare` — exact prepared-context entrypoint the review workspace should use
+  - `GET /api/review-programs/prepared/:preparedContextId` — confirms the persisted prepared artifact and planned engine payloads
+  - `POST /api/review-programs/prepared/:preparedContextId/dispatch` — exact prepared-context dispatch contract
+  - `GET /api/analysis/submissions/:submissionId?analysisType=CRITERIA` — monitors Axiom-backed review-program criteria runs to terminal state
+  - `GET /api/axiom/scopes/:scopeId/results?programId=…` — verifies the latest-results surface after review-program dispatch
+  - `GET /api/axiom/scopes/:scopeId/criteria/:criterionId/history` — verifies criterion history after review-program dispatch
+  - Purpose: exercise review programs sending full prepared Axiom payloads, monitor the live criteria runs, and validate the result/history surfaces as they land
+  - Artifacts: writes JSON outputs under `test-artifacts/live-fire/axiom-review-program-suite/<timestamp>-<orderId>/` unless `AXIOM_LIVE_REVIEW_ARTIFACT_DIR` is set
+
 - `axiom-live-fire-ui-parity.ts`
   - Mode `extraction`: `POST /api/runs/extraction` + `POST /api/runs/:runId/refresh-status` + `GET /api/runs/:runId/snapshot`
   - Mode `criteria`: `POST /api/runs/criteria` + run/step polling + `GET /api/runs/:stepRunId/step-input`
@@ -217,6 +238,22 @@ Full mode (`full`, mirrors submit-from-document journey):
 - Optional:
   - `AXIOM_LIVE_DOCUMENT_TYPE` (default `appraisal`)
 
+### Review-program prepared-context suite (`axiom-live-fire-review-program-suite.ts`)
+
+- `AXIOM_LIVE_ORDER_ID`
+- `AXIOM_LIVE_REVIEW_PROGRAM_IDS` (comma-delimited review program ids)
+- Optional:
+  - `AXIOM_LIVE_REVIEW_CLIENT_ID`
+  - `AXIOM_LIVE_REVIEW_SUB_CLIENT_ID`
+  - `AXIOM_LIVE_REVIEW_ENGAGEMENT_ID`
+  - `AXIOM_LIVE_REVIEW_DISPATCH_MODE` (`all_ready_only` or `include_partial`, default `all_ready_only`)
+  - `AXIOM_LIVE_REVIEW_CONFIRM_WARNINGS` (`true` or `false`, default `false`)
+  - `AXIOM_LIVE_REVIEW_INCLUDE_COMP_CONTEXT`
+  - `AXIOM_LIVE_REVIEW_INCLUDE_DOCUMENT_INVENTORY`
+  - `AXIOM_LIVE_REVIEW_AUTO_RESOLVE_DERIVED_FIELDS`
+  - `AXIOM_LIVE_REVIEW_AUTO_PLAN_EXTRACTION`
+  - `AXIOM_LIVE_REVIEW_ARTIFACT_DIR`
+
 Optional poll tuning for all scripts:
 
 - `AXIOM_LIVE_POLL_ATTEMPTS` (default `20`)
@@ -246,6 +283,8 @@ Optional preflight tuning:
 - `pnpm axiom:livefire:analyze-webhook`
 - `pnpm axiom:livefire:bulk-submit`
 - `pnpm axiom:livefire:preflight`
+- `pnpm axiom:livefire:canonical-suite`
+- `pnpm axiom:livefire:review-program-suite`
 - `pnpm axiom:livefire:ui-parity -- --mode extraction`
 - `pnpm axiom:livefire:ui-parity -- --mode criteria`
 - `pnpm axiom:livefire:ui-parity -- --mode full`

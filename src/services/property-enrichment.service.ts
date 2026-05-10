@@ -10,7 +10,8 @@
  *   3. If a result is returned:
  *      - Apply enriched data to the PropertyRecord via createVersion()
  *        (preserves full audit trail; no silent overwrites).
- *      - Append the latest tax assessment to the record's assessment time series.
+ *      - Emit immutable tax/AVM observations for time-series facts instead of
+ *        storing those histories as root truth on PropertyRecord.
  *   4. Persist the raw enrichment result in the `property-enrichments` container
  *      for traceability and debugging.
  *   5. Return a typed EnrichmentResult.
@@ -29,7 +30,7 @@ import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { PropertyRecordService } from './property-record.service.js';
 import { PropertyRecordType } from '../types/property-record.types.js';
-import type { PropertyRecord, TaxAssessmentRecord } from '../types/property-record.types.js';
+import type { PropertyRecord } from '../types/property-record.types.js';
 import type {
   PropertyDataProvider,
   PropertyDataLookupParams,
@@ -38,6 +39,7 @@ import type {
 import { createPropertyDataProvider } from './property-data-providers/factory.js';
 import { BridgeInteractiveService } from './bridge-interactive.service.js';
 import { PropertyObservationService } from './property-observation.service.js';
+import { materializePropertyRecordHistory } from './property-record-history-materializer.service.js';
 import type { PropertyObservationNormalizedFacts } from '../types/property-observation.types.js';
 import type { PropertyObservationSourceSystem } from '../types/property-observation.types.js';
 
@@ -213,12 +215,19 @@ export class PropertyEnrichmentService {
       method: resolution.method,
     });
 
-    // ── Step 2: Fetch the full PropertyRecord once (used for cache check and
-    //            tax-assessment dedup — avoids a second Cosmos read later).
+    // ── Step 2: Fetch the full canonical PropertyRecord once for cache
+    //            checks and enrichment-time patching decisions, then overlay
+    //            immutable observation-backed history so this staging read
+    //            does not bypass the active Phase 6 materialization path.
     const existingRecord = await this.propertyRecordService.getById(
       resolution.propertyId,
       tenantId,
     );
+    const existingObservations = await this.observationService.listByPropertyId(
+      resolution.propertyId,
+      tenantId,
+    );
+    const materializedRecord = materializePropertyRecordHistory(existingRecord, existingObservations);
 
     // ── Step 2.5: Geocode the address when the record lacks coordinates.
     // Coordinates are required by downstream comp-collection (it skips with
@@ -226,7 +235,7 @@ export class PropertyEnrichmentService {
     // tax / building data but NOT lat/lng, so geocoding is a separate
     // explicit step here. We re-fetch the record after a successful patch so
     // the rest of this method sees the updated address.
-    let workingRecord = existingRecord;
+    let workingRecord = materializedRecord;
     if (workingRecord.address.latitude == null || workingRecord.address.longitude == null) {
       let geo: { latitude: number; longitude: number } | null = null;
       try {
@@ -411,17 +420,6 @@ export class PropertyEnrichmentService {
         });
       }
 
-      // ── Step 6: Append tax assessment if present ─────────────────────────
-      // Pass the pre-fetched record to avoid a second getById Cosmos read.
-      if (dataResult.publicRecord?.taxAssessedValue != null) {
-        await this.appendTaxAssessmentIfNew(
-          resolution.propertyId,
-          tenantId,
-          dataResult,
-          workingRecord,
-        );
-      }
-
       await this.observationService.createObservation({
         tenantId,
         propertyId: resolution.propertyId,
@@ -511,46 +509,31 @@ export class PropertyEnrichmentService {
         return;
       }
 
-      await this.propertyRecordService.createVersion(
-        propertyId,
-        tenantId,
-        {
-          avm: {
-            value,
-            fetchedAt: new Date().toISOString(),
-            source: 'bridge-zestimate' as const,
-          },
-        },
-        'AVM value fetched from Bridge Interactive (Zestimate)',
-        'PUBLIC_RECORDS_API',
-        'SYSTEM:property-enrichment',
-        'Bridge Interactive',
-        undefined,
-      );
-
-      this.logger.info('PropertyEnrichmentService: AVM patched on PropertyRecord', {
-        orderId,
-        propertyId,
-        avmValue: value,
-      });
+      const fetchedAt = new Date().toISOString();
 
       await this.observationService.createObservation({
         tenantId,
         propertyId,
         observationType: 'avm-update',
         sourceSystem: 'bridge-interactive',
-        observedAt: new Date().toISOString(),
+        observedAt: fetchedAt,
         orderId,
         sourceProvider: 'Bridge Interactive',
         normalizedFacts: {
           avm: {
             value,
-            fetchedAt: new Date().toISOString(),
+            fetchedAt,
             source: 'bridge-zestimate',
           },
         },
         rawPayload: result as unknown as Record<string, unknown>,
         createdBy: 'SYSTEM:property-enrichment',
+      });
+
+      this.logger.info('PropertyEnrichmentService: AVM recorded as immutable observation', {
+        orderId,
+        propertyId,
+        avmValue: value,
       });
     } catch (err) {
       this.logger.warn(
@@ -794,54 +777,4 @@ export class PropertyEnrichmentService {
     return ageDays < CACHE_TTL_DAYS;
   }
 
-  /**
-   * Appends a tax assessment to the PropertyRecord only when one for the same
-   * tax year doesn't already exist (prevents duplicates on repeated enrichment runs).
-   *
-   * Receives the already-fetched PropertyRecord to avoid a second Cosmos read.
-   */
-  private async appendTaxAssessmentIfNew(
-    propertyId: string,
-    tenantId: string,
-    dataResult: PropertyDataResult,
-    existingRecord: PropertyRecord,
-  ): Promise<void> {
-    const pr = dataResult.publicRecord;
-    if (!pr || pr.taxAssessedValue == null) return;
-
-    const taxYear = pr.taxYear ?? new Date().getFullYear();
-
-    const existing = existingRecord;
-
-    // Skip if we already have an assessment for this year from this (or any) source
-    const alreadyHaveYear = existing.taxAssessments.some(a => a.taxYear === taxYear);
-    if (alreadyHaveYear) {
-      this.logger.info('PropertyEnrichmentService: tax assessment already exists for year, skipping', {
-        propertyId,
-        taxYear,
-      });
-      return;
-    }
-
-    const assessment: TaxAssessmentRecord = {
-      taxYear,
-      totalAssessedValue: pr.taxAssessedValue,
-      ...(pr.annualTaxAmount != null ? { annualTaxAmount: pr.annualTaxAmount } : {}),
-      assessedAt: dataResult.fetchedAt,
-    };
-
-    const updatedAssessments = [...existing.taxAssessments, assessment];
-
-    // Use createVersion to add the assessment — this maintains the audit trail.
-    await this.propertyRecordService.createVersion(
-      propertyId,
-      tenantId,
-      { taxAssessments: updatedAssessments },
-      `Tax assessment appended for year ${taxYear}`,
-      'PUBLIC_RECORDS_API',
-      'SYSTEM:property-enrichment',
-      dataResult.source,
-      undefined, // we don't thread sourceArtifactId down to _addTaxAssessmentRecord at the moment.
-    );
-  }
 }

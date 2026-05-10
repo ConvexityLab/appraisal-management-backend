@@ -84,17 +84,10 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     it('should create a new order with real database persistence', async () => {
       const orderData = {
         engagementId: testEngagementId,
-        engagementPropertyId: testEngagementPropertyId,
-        engagementClientOrderId: testEngagementClientOrderId,
+        propertyId: testEngagementPropertyId,
+        clientOrderId: testEngagementClientOrderId,
         clientId: testClientId,
         orderNumber: `INTEGRATION-${Date.now()}`,
-        propertyAddress: {
-          streetAddress: '1600 Amphitheatre Parkway',
-          city: 'Mountain View',
-          state: 'CA',
-          zipCode: '94043',
-          county: 'Santa Clara'
-        },
         propertyDetails: {
           propertyType: PropertyType.SFR,
           occupancy: OccupancyType.OWNER_OCCUPIED,
@@ -140,7 +133,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
 
       expect(response.body.id).toBeDefined();
       expect(response.body.orderNumber).toBe(orderData.orderNumber);
-      expect(response.body.propertyAddress.streetAddress).toBe('1600 Amphitheatre Parkway');
+  expect(response.body.propertyId).toBe(testEngagementPropertyId);
 
       testOrderId = response.body.id;
 
@@ -156,7 +149,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       expect(response.status).toBe(200);
 
       expect(response.body.id).toBe(testOrderId);
-      expect(response.body.propertyAddress.city).toBe('Mountain View');
+      expect(response.body.propertyId).toBe(testEngagementPropertyId);
       expect(response.body.borrowerInformation.firstName).toBe('Integration');
 
       console.log(`✅ Retrieved order from database: ${response.body.orderNumber}`);

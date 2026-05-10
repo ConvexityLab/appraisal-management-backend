@@ -6,6 +6,7 @@ import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
 import { BlobStorageService } from './blob-storage.service.js';
 import { DocumentService } from './document.service.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import { RevisionSeverity, RevisionStatus, type RevisionRequest } from '../types/qc-workflow.js';
 import type { InspectionAppointment } from '../types/inspection.types.js';
 import type {
@@ -120,15 +121,17 @@ export class VendorIntegrationEventConsumerService {
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: EventPublisher;
   private readonly filePersistor: VendorFilePersistor;
+  private readonly contextLoader: OrderContextLoader;
   private documentService: DocumentService | null = null;
   private isStarted = false;
 
   constructor(
-    private readonly dbService: Pick<CosmosDbService, 'getItem' | 'updateItem' | 'queryItems' | 'upsertItem'> = new CosmosDbService(),
+    private readonly dbService: Pick<CosmosDbService, 'getItem' | 'updateItem' | 'queryItems' | 'upsertItem' | 'getContainer'> = new CosmosDbService(),
     publisher?: EventPublisher,
     filePersistor?: VendorFilePersistor,
   ) {
     this.publisher = publisher ?? new ServiceBusEventPublisher();
+    this.contextLoader = new OrderContextLoader(this.dbService as CosmosDbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -355,7 +358,7 @@ export class VendorIntegrationEventConsumerService {
       data: {
         orderId,
         clientId: order.clientId ?? event.data.lenderId,
-        propertyAddress: formatPropertyAddress(order),
+        propertyAddress: await this.resolvePropertyAddress(order),
         appraisalType: String(order.productType ?? payload.orderType ?? 'vendor_order'),
         priority: payload.rush ? EventPriority.HIGH : EventPriority.NORMAL,
         dueDate: new Date(order.dueDate ?? payload.dueDate ?? event.data.occurredAt),
@@ -661,7 +664,7 @@ export class VendorIntegrationEventConsumerService {
       appraiserId: payload.appraiserId,
       appraiserName: `${appraiser.firstName} ${appraiser.lastName}`.trim(),
       appraiserPhone: String(appraiser.phone ?? ''),
-      propertyAddress: formatPropertyAddress(order),
+      propertyAddress: await this.resolvePropertyAddress(order),
       propertyType: String(order.propertyType ?? order.productType ?? 'unknown'),
       propertyAccess: payload.propertyAccess,
       status: 'scheduled',
@@ -686,6 +689,30 @@ export class VendorIntegrationEventConsumerService {
     if (!result.success) {
       throw new Error(result.error?.message ?? `Failed to persist inspection artifact for vendor event ${event.id}`);
     }
+  }
+
+  private async resolvePropertyAddress(order: OrderSnapshot): Promise<string> {
+    try {
+      const ctx = await this.contextLoader.loadByVendorOrder(order as any, { includeProperty: true });
+      const canonicalAddress = getPropertyAddress(ctx);
+      if (canonicalAddress) {
+        const formatted = [
+          canonicalAddress.streetAddress,
+          canonicalAddress.city,
+          canonicalAddress.state,
+        ].filter(Boolean).join(', ');
+        if (formatted) {
+          return formatted;
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Vendor integration could not resolve canonical property address; using embedded order copy', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return formatPropertyAddress(order);
   }
 
   private async persistVendorFiles(params: {

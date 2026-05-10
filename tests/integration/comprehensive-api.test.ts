@@ -173,17 +173,10 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATI
     it('POST /api/orders - should create new appraisal order', async () => {
       const orderData = {
         engagementId: testEngagementId,
-        engagementPropertyId: testEngagementPropertyId,
-        engagementClientOrderId: testEngagementClientOrderId,
+        propertyId: testEngagementPropertyId,
+        clientOrderId: testEngagementClientOrderId,
         clientId: testClientId,
         orderNumber: `COMP-TEST-${Date.now()}`,
-        propertyAddress: {
-          streetAddress: '1600 Amphitheatre Parkway',
-          city: 'Mountain View',
-          state: 'CA',
-          zipCode: '94043',
-          county: 'Santa Clara'
-        },
         propertyDetails: {
           propertyType: PropertyType.SFR,
           occupancy: OccupancyType.OWNER_OCCUPIED,
@@ -228,6 +221,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATI
       expect(response.body.id).toBeDefined();
       expect(response.body.orderNumber).toBe(orderData.orderNumber);
       expect(response.body.clientId).toBe(testClientId);
+      expect(response.body.propertyId).toBe(testEngagementPropertyId);
       testOrderId = response.body.id;
       console.log(`✅ Order created: ${response.body.orderNumber} (ID: ${testOrderId})`);
     }, TEST_TIMEOUT);
@@ -240,7 +234,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'Set VITEST_INTEGRATI
       expect(response.status).toBe(200);
       
       expect(response.body.id).toBe(testOrderId);
-      expect(response.body.propertyAddress?.city || response.body.propertyAddress?.streetAddress).toBeDefined();
+      expect(response.body.propertyId).toBe(testEngagementPropertyId);
 
       console.log(`✅ Order retrieved: ${response.body.orderNumber}`);
     });

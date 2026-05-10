@@ -11,6 +11,7 @@ import { VendorMatchingEngine } from '../services/vendor-matching-engine.service
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { ServiceBusEventPublisher } from '../services/service-bus-publisher.js';
 import { AutoAssignmentOrchestratorService } from '../services/auto-assignment-orchestrator.service.js';
+import { OrderContextLoader, getLoanInformation, getPropertyAddress } from '../services/order-context-loader.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import {
   loadVendorAndOrderContext,
@@ -27,6 +28,34 @@ const logger = new Logger();
 const matchingEngine = new VendorMatchingEngine();
 const dbService = new CosmosDbService();
 const publisher = new ServiceBusEventPublisher();
+const orderContextLoader = new OrderContextLoader(dbService);
+
+function formatPropertyAddress(address: unknown): string {
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (!address || typeof address !== 'object') {
+    return '';
+  }
+
+  const candidate = address as Record<string, unknown>;
+  const street = typeof candidate['streetAddress'] === 'string'
+    ? candidate['streetAddress']
+    : typeof candidate['street'] === 'string'
+      ? candidate['street']
+      : '';
+  const city = typeof candidate['city'] === 'string' ? candidate['city'] : '';
+  const state = typeof candidate['state'] === 'string' ? candidate['state'] : '';
+  const zip = typeof candidate['zipCode'] === 'string'
+    ? candidate['zipCode']
+    : typeof candidate['zip'] === 'string'
+      ? candidate['zip']
+      : '';
+  const locality = [city, state].filter(Boolean).join(', ');
+  const trailing = [locality, zip].filter(Boolean).join(' ');
+  return [street, trailing].filter(Boolean).join(', ');
+}
 
 export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestratorService): Router => {
   const router = express.Router();
@@ -66,12 +95,22 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           });
         }
 
+        let canonicalAddressText = formatPropertyAddress(order.propertyAddress);
+        try {
+          const ctx = await orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
+          canonicalAddressText = formatPropertyAddress(getPropertyAddress(ctx)) || canonicalAddressText;
+        } catch (error) {
+          logger.warn('Auto-assignment suggest could not resolve canonical property address; using embedded order copy', {
+            orderId,
+            tenantId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         const matchRequest: VendorMatchRequest = {
           orderId,
           tenantId,
-          propertyAddress: order.propertyAddress
-            ? `${order.propertyAddress.streetAddress}, ${order.propertyAddress.city}, ${order.propertyAddress.state} ${order.propertyAddress.zipCode}`
-            : '',
+          propertyAddress: canonicalAddressText,
           propertyType: order.propertyType || order.productType || 'Standard',
           ...(order.dueDate ? { dueDate: new Date(order.dueDate) } : {}),
           ...(order.urgency || order.priority ? { urgency: order.urgency || order.priority?.toUpperCase() } : {}),
@@ -606,18 +645,29 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           return res.status(404).json({ success: false, error: 'Order not found' });
         }
 
+        let propertyAddress = formatPropertyAddress(order.propertyAddress);
+        let propertyState = order.propertyAddress?.state ?? '';
+        let loanAmount = order.loanAmount ?? 0;
+        try {
+          const ctx = await orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
+          const canonicalAddress = getPropertyAddress(ctx);
+          propertyAddress = formatPropertyAddress(canonicalAddress) || propertyAddress;
+          propertyState = canonicalAddress?.state ?? propertyState;
+          loanAmount = getLoanInformation(ctx)?.loanAmount ?? loanAmount;
+        } catch (error) {
+          logger.warn('Manual vendor trigger could not resolve canonical order context; using embedded order copy', {
+            orderId,
+            tenantId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         if (!orchestrator) {
           return res.status(503).json({
             success: false,
             error: 'Auto-assignment orchestrator is not running',
           });
         }
-
-        const propertyAddress = order.propertyAddress
-          ? typeof order.propertyAddress === 'string'
-            ? order.propertyAddress
-            : `${order.propertyAddress.streetAddress ?? ''}, ${order.propertyAddress.city ?? ''}, ${order.propertyAddress.state ?? ''} ${order.propertyAddress.zipCode ?? ''}`.trim()
-          : '';
 
         await orchestrator.triggerVendorAssignment({
           orderId: order.id,
@@ -626,9 +676,9 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           engagementId: order.engagementId ?? '',
           productType: order.productType ?? order.orderType ?? 'FULL_APPRAISAL',
           propertyAddress,
-          propertyState: order.propertyAddress?.state ?? '',
+          propertyState,
           clientId: order.clientId ?? '',
-          loanAmount: order.loanAmount ?? 0,
+          loanAmount,
           priority: order.priority ?? 'STANDARD',
           dueDate: order.dueDate ? new Date(order.dueDate) : new Date(Date.now() + 7 * 86400000),
           // Eligibility gates — carried from the order record into the matching engine

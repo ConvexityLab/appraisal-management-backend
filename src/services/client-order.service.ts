@@ -65,7 +65,7 @@ export type PlaceClientOrderInput = Partial<Order> & {
   engagementPropertyId: string;
   clientId: string;
   productType: ProductType;
-  propertyDetails: PropertyDetails;
+  propertyDetails?: PropertyDetails;
   /** Optional canonical PropertyRecord id; passed through to each VendorOrder. */
   propertyId?: string;
   /** Optional client-facing instructions; copied to each VendorOrder by default. */
@@ -143,6 +143,10 @@ export class ClientOrderConcurrencyError extends Error {
 /** Max etag-conflict retries before giving up. */
 const ADD_VENDOR_ORDERS_MAX_ATTEMPTS = 4;
 
+function hasCanonicalPropertyId(propertyId: string | undefined): propertyId is string {
+  return typeof propertyId === 'string' && propertyId.trim().length > 0;
+}
+
 const REQUIRED_FIELDS: Array<keyof PlaceClientOrderInput> = [
   'tenantId',
   'createdBy',
@@ -150,7 +154,6 @@ const REQUIRED_FIELDS: Array<keyof PlaceClientOrderInput> = [
   'engagementPropertyId',
   'clientId',
   'productType',
-  'propertyDetails',
 ];
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -199,10 +202,14 @@ export class ClientOrderService {
     if (missing.length > 0) {
       throw new InvalidClientOrderInputError(missing as string[]);
     }
+    if (!input.propertyId && !input.propertyDetails) {
+      throw new InvalidClientOrderInputError(['propertyId|propertyDetails']);
+    }
 
     const now = new Date().toISOString();
     const clientOrderId = input.clientOrderId ?? newId();
     const clientOrderNumber = clientOrderId;
+    const persistPropertyDetails = !hasCanonicalPropertyId(input.propertyId);
 
     const clientOrder: ClientOrder = {
       id: clientOrderId,
@@ -215,7 +222,6 @@ export class ClientOrderService {
       clientId: input.clientId,
 
       productType: input.productType,
-      propertyDetails: input.propertyDetails,
 
       clientOrderStatus: ClientOrderStatus.PLACED,
       placedAt: now,
@@ -227,6 +233,9 @@ export class ClientOrderService {
       createdBy: input.createdBy,
 
       ...(input.propertyId !== undefined ? { propertyId: input.propertyId } : {}),
+      ...(persistPropertyDetails && input.propertyDetails !== undefined
+        ? { propertyDetails: input.propertyDetails }
+        : {}),
       ...(input.instructions !== undefined ? { instructions: input.instructions } : {}),
       ...(input.priority !== undefined ? { priority: String(input.priority) } : {}),
       ...(input.dueDate !== undefined
@@ -392,8 +401,8 @@ export class ClientOrderService {
       engagementPropertyId: parent.engagementPropertyId,
       clientId: parent.clientId,
       productType: parent.productType,
-      propertyDetails: parent.propertyDetails,
       ...(parent.propertyId !== undefined ? { propertyId: parent.propertyId } : {}),
+      ...(parent.propertyDetails !== undefined ? { propertyDetails: parent.propertyDetails } : {}),
       ...(parent.instructions !== undefined ? { instructions: parent.instructions } : {}),
     };
 
@@ -469,20 +478,34 @@ export class ClientOrderService {
       ...vendorPassthrough
     } = placementInput;
 
+    const canonicalPropertyId = hasCanonicalPropertyId(clientOrder.propertyId)
+      ? clientOrder.propertyId
+      : hasCanonicalPropertyId(placementInput.propertyId)
+        ? placementInput.propertyId
+        : undefined;
+    const sanitizedVendorPassthrough = (() => {
+      if (!canonicalPropertyId) {
+        return vendorPassthrough;
+      }
+
+      const { propertyDetails: _propertyDetails, ...withoutPropertyDetails } = vendorPassthrough;
+      return withoutPropertyDetails;
+    })();
+
     const out: VendorOrder[] = [];
     for (const spec of specs) {
       // Slice 8e: route through VendorOrderService (the canonical write path)
       // instead of calling dbService.createOrder directly. Same write, same
       // shape — just owns the discriminator + linkage decisions in one place.
       const vendorOrderInput: CreateVendorOrderInput = {
-        ...vendorPassthrough,
+        ...sanitizedVendorPassthrough,
         status: OrderStatus.NEW,
         tenantId: clientOrder.tenantId,
         clientOrderId: clientOrder.id,
         engagementId: clientOrder.engagementId,
         engagementPropertyId: clientOrder.engagementPropertyId,
         clientId: clientOrder.clientId,
-        propertyId: clientOrder.propertyId ?? '',
+        propertyId: canonicalPropertyId ?? '',
         vendorWorkType: spec.vendorWorkType,
         ...(spec.vendorFee !== undefined ? { vendorFee: spec.vendorFee } : {}),
         ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),

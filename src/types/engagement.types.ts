@@ -214,7 +214,9 @@ export interface EngagementProperty {
   propertyId: string;
   /**
    * @deprecated Use propertyId to reference the canonical PropertyRecord instead.
-   * Retained as a display cache during Phase R0–R2 migration.
+    * Retained as a thin display/request cache during Phase R0–R2 migration.
+    * This is never canonical property truth and should avoid copying derived
+    * physical facts that already live on `PropertyRecord.currentCanonical`.
    */
   property: PropertyDetails;
 

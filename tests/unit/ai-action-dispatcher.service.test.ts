@@ -59,8 +59,8 @@ describe('AiActionDispatcherService', () => {
       // existing engagement) and passes the resolved IDs here.
       engagementId: 'eng-1',
       engagementPropertyId: 'prop-1',
+      propertyId: 'prop-1',
       clientOrderId: 'co-1',
-      propertyAddress: { streetAddress: '123 Main', city: 'Dallas', state: 'TX', zipCode: '75001' },
       orderType: 'PURCHASE',
       productType: 'FULL_APPRAISAL',
       dueDate: '2030-01-01T00:00:00.000Z',
@@ -74,12 +74,15 @@ describe('AiActionDispatcherService', () => {
         engagementId: 'eng-1',
         engagementPropertyId: 'prop-1',
         engagementClientOrderId: 'co-1',
+        clientOrderId: 'co-1',
         clientId: 'client-1',
+        propertyId: 'prop-1',
         productType: 'FULL_APPRAISAL',
         tenantId: 'tenant-123',
         createdBy: 'user-123',
       }),
     );
+    expect(addVendorOrders.mock.calls[0]?.[3]).not.toHaveProperty('propertyAddress');
     expect(result.data).toEqual({ orderId: 'vo-1', orderNumber: 'ORD-1', status: 'NEW' });
   });
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CanonicalSnapshotService } from '../../src/services/canonical-snapshot.service.js';
 import type { RunLedgerRecord } from '../../src/types/run-ledger.types.js';
 import { OrderContextLoader } from '../../src/services/order-context-loader.service.js';
+import { PROPERTY_CANONICAL_PROJECTOR_VERSION } from '../../src/mappers/property-canonical-projection.js';
 
 function buildExtractionRun(overrides?: Partial<RunLedgerRecord>): RunLedgerRecord {
   const now = new Date().toISOString();
@@ -172,12 +173,19 @@ describe('CanonicalSnapshotService merge behavior', () => {
         sourceRunId: 'ext_run_001',
       }),
     ]);
+    expect(snapshot.projectorVersion).toBe(PROPERTY_CANONICAL_PROJECTOR_VERSION);
+    expect(snapshot.sourceSchemaVersion).toBe('1.0.0');
+    expect(snapshot.sourceRunId).toBe('ext_run_001');
+    expect(snapshot.documentId).toBe('doc-001');
+    expect(snapshot.orderId).toBe('order-001');
     expect(snapshot.normalizedData?.extraction).toMatchObject({ appraisalValue: 510000, qualityScore: 'A' });
     // Slice 8k: subjectProperty / providerData shims are no longer emitted on new
     // snapshots. Readers migrated to canonical paths in slice 8j.
     expect(snapshot.normalizedData?.providerData).toBeUndefined();
     expect(snapshot.normalizedData?.subjectProperty).toBeUndefined();
     expect(snapshot.normalizedData?.provenance).toMatchObject({
+      snapshotProjectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+      sourceSchemaVersion: '1.0.0',
       extractionRunId: 'ext_run_001',
       documentId: 'doc-001',
       orderId: 'order-001',
@@ -312,11 +320,15 @@ describe('CanonicalSnapshotService merge behavior', () => {
     const service = new CanonicalSnapshotService(db as any);
     const snapshot = await service.createFromExtractionRun(buildExtractionRun());
 
-    expect(snapshot.normalizedData?.provenance).toEqual({
+    expect(snapshot.normalizedData?.provenance).toMatchObject({
       extractionRunId: 'ext_run_001',
       documentId: 'doc-001',
       orderId: 'order-001',
       enrichmentId: 'enrich-999',
+      propertyId: 'prop-001',
+      snapshotOrderId: 'order-001',
+      snapshotProjectorVersion: PROPERTY_CANONICAL_PROJECTOR_VERSION,
+      sourceSchemaVersion: '1.0.0',
     });
     expect(snapshot.sourceRefs).toEqual(
       expect.arrayContaining([
@@ -519,6 +531,9 @@ describe('CanonicalSnapshotService.refreshFromExtractionRun', () => {
     expect(result).not.toBeNull();
     expect(result!.id).toBe('snap-001');
     expect(result!.status).toBe('ready');
+    expect(result!.projectorVersion).toBe(PROPERTY_CANONICAL_PROJECTOR_VERSION);
+    expect(result!.sourceSchemaVersion).toBe('1.0.0');
+    expect(result!.sourceRunId).toBe('ext_run_001');
     expect(typeof (result as any).refreshedAt).toBe('string');
     expect(Date.parse((result as any).refreshedAt)).toBeGreaterThanOrEqual(before);
     // normalizedData should reflect the POST-Axiom document state, not the

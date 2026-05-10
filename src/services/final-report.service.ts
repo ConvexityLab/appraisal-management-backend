@@ -358,7 +358,7 @@ export class FinalReportService {
     // Load dependencies. Use OrderContextLoader so we get the joined
     // VendorOrder + parent ClientOrder view — lender-side fields
     // (contactInformation, etc.) live on ClientOrder post Phase 4.
-    const ctx = await this.contextLoader.loadByVendorOrderId(orderId);
+    const ctx = await this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
     const order = ctx.vendorOrder;
     const qcReview = await this._loadApprovedQcReview(orderId);
 
@@ -463,7 +463,7 @@ export class FinalReportService {
    * the joined OrderContext instead of the bare VendorOrder.
    */
   private async _loadOrderContext(orderId: string): Promise<OrderContext> {
-    return this.contextLoader.loadByVendorOrderId(orderId);
+    return this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
   }
 
   private async _loadApprovedQcReview(orderId: string): Promise<QCReview> {

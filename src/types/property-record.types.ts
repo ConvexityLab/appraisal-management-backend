@@ -309,6 +309,16 @@ export interface PropertyRecord {
    */
   lastVerifiedSource?: string;
 
+  // ── Projection lineage ───────────────────────────────────────────────────
+  /** ISO timestamp when `currentCanonical` was most recently materialized. */
+  projectedAt?: string;
+  /** Projector implementation version that produced the current materialization. */
+  projectionVersion?: string;
+  /** Snapshot id associated with the latest applied projection, when present. */
+  latestSnapshotId?: string;
+  /** ISO timestamp of the latest immutable projection observation applied. */
+  latestObservationAt?: string;
+
   createdAt: string;
   updatedAt: string;
   createdBy: string;

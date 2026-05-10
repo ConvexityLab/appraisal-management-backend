@@ -3,11 +3,26 @@ import { EventCategory } from '../../src/types/events.js';
 import { OrderStatus } from '../../src/types/order-status.js';
 import { VendorIntegrationEventConsumerService } from '../../src/services/vendor-integration-event-consumer.service.js';
 
+const {
+  loadByVendorOrderMock,
+  getPropertyAddressMock,
+} = vi.hoisted(() => ({
+  loadByVendorOrderMock: vi.fn(),
+  getPropertyAddressMock: vi.fn(),
+}));
+
 vi.mock('../../src/services/service-bus-subscriber.js', () => ({
   ServiceBusEventSubscriber: vi.fn().mockImplementation(() => ({
     subscribe: vi.fn().mockResolvedValue(undefined),
     unsubscribe: vi.fn().mockResolvedValue(undefined),
   })),
+}));
+
+vi.mock('../../src/services/order-context-loader.service.js', () => ({
+  OrderContextLoader: vi.fn().mockImplementation(() => ({
+    loadByVendorOrder: loadByVendorOrderMock,
+  })),
+  getPropertyAddress: getPropertyAddressMock,
 }));
 
 function makeOrder(overrides: Record<string, unknown> = {}) {
@@ -57,6 +72,14 @@ function makeEvent(type: string, payload: Record<string, unknown>, overrides: Re
 describe('VendorIntegrationEventConsumerService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    loadByVendorOrderMock.mockResolvedValue({ vendorOrder: { id: 'order-123' }, clientOrder: null, property: {} });
+    getPropertyAddressMock.mockReturnValue({
+      streetAddress: '123 Canonical Main St',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78701',
+      county: 'Travis',
+    });
   });
 
   it('publishes canonical order.created when a vendor order is received', async () => {
@@ -88,6 +111,7 @@ describe('VendorIntegrationEventConsumerService', () => {
       data: expect.objectContaining({
         orderId: 'order-123',
         clientId: 'lender-1',
+        propertyAddress: '123 Canonical Main St, Austin, TX',
       }),
     }));
   });
@@ -139,6 +163,49 @@ describe('VendorIntegrationEventConsumerService', () => {
         newStatus: OrderStatus.SUBMITTED,
       }),
     }));
+  });
+
+  it('uses canonical property address when creating inspection artifacts', async () => {
+    const db = {
+      getItem: vi.fn().mockResolvedValue({ success: true, data: makeOrder() }),
+      updateItem: vi.fn().mockImplementation(async (_container, _id, updates) => ({
+        success: true,
+        data: { ...makeOrder(), ...updates },
+      })),
+      queryItems: vi.fn().mockImplementation(async (container: string) => {
+        if (container === 'appraisers') {
+          return {
+            success: true,
+            data: [{ id: 'appraiser-1', firstName: 'Avery', lastName: 'Appraiser', phone: '555-0101' }],
+          };
+        }
+        return { success: true, data: [] };
+      }),
+      upsertItem: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      getContainer: vi.fn(),
+    };
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn());
+
+    await (service as any).onVendorEvent(makeEvent('vendor.order.scheduled', {
+      appraiserId: 'appraiser-1',
+      appointmentType: 'property_inspection',
+      propertyAccess: 'occupied',
+      scheduledSlot: {
+        date: '2026-05-02T15:00:00.000Z',
+        endDate: '2026-05-02T17:00:00.000Z',
+        timezone: 'UTC',
+      },
+      requestedBy: 'vendor',
+      inspectionNotes: 'Bring ID',
+    }));
+
+    expect(db.upsertItem).toHaveBeenCalledWith(
+      'orders',
+      expect.objectContaining({
+        propertyAddress: '123 Canonical Main St, Austin, TX',
+      }),
+    );
   });
 
   it('records inbound vendor messages as communication records', async () => {

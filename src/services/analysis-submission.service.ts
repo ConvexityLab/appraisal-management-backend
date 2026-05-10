@@ -338,7 +338,7 @@ export class AnalysisSubmissionService {
     // ClientOrder (their proper home post Phase 4).
     let ctx: OrderContext;
     try {
-      ctx = await this.contextLoader.loadByVendorOrderId(request.orderId);
+      ctx = await this.contextLoader.loadByVendorOrderId(request.orderId, { includeProperty: true });
     } catch (err) {
       throw new Error(
         `Order '${request.orderId}' not found: ${err instanceof Error ? err.message : String(err)}`,

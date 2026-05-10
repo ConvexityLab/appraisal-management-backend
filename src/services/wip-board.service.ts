@@ -9,6 +9,33 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { OrderStatus, STATUS_CONFIG, getStatusesByCategory, getStatusLabel } from '../types/order-status.js';
 import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
+import { CLIENT_ORDERS_CONTAINER, type ClientOrder } from '../types/client-order.types.js';
+import { PROPERTY_RECORDS_CONTAINER } from './property-record.service.js';
+import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyAddress } from '../types/index.js';
+
+interface WipBoardOrderRow {
+  id: string;
+  orderNumber?: string;
+  status: OrderStatus;
+  propertyId?: string;
+  clientOrderId?: string;
+  propertyAddress?: string | PropertyAddress;
+  clientName?: string;
+  vendorName?: string;
+  borrowerName?: string;
+  borrower?: {
+    lastName?: string;
+  };
+  productType?: string;
+  dueDate?: string;
+  isRush?: boolean;
+  rush?: boolean;
+  updatedAt: string;
+  createdAt: string;
+  vendorId?: string;
+  clientId?: string;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +165,121 @@ export class WIPBoardService {
     this.logger = new Logger('WIPBoardService');
   }
 
+  private async loadClientOrderMap(
+    tenantId: string,
+    clientOrderIds: string[],
+  ): Promise<Map<string, ClientOrder>> {
+    if (clientOrderIds.length === 0) {
+      return new Map();
+    }
+
+    const clientOrders = await this.dbService.queryDocuments<ClientOrder>(
+      CLIENT_ORDERS_CONTAINER,
+      'SELECT * FROM c WHERE c.tenantId = @tenantId AND ARRAY_CONTAINS(@clientOrderIds, c.id)',
+      [
+        { name: '@tenantId', value: tenantId },
+        { name: '@clientOrderIds', value: clientOrderIds },
+      ],
+    );
+
+    return new Map(clientOrders.map((order) => [order.id, order]));
+  }
+
+  private async loadPropertyRecordMap(
+    tenantId: string,
+    propertyIds: string[],
+  ): Promise<Map<string, PropertyRecord>> {
+    if (propertyIds.length === 0) {
+      return new Map();
+    }
+
+    const properties = await this.dbService.queryDocuments<PropertyRecord>(
+      PROPERTY_RECORDS_CONTAINER,
+      'SELECT * FROM c WHERE c.tenantId = @tenantId AND ARRAY_CONTAINS(@propertyIds, c.id)',
+      [
+        { name: '@tenantId', value: tenantId },
+        { name: '@propertyIds', value: propertyIds },
+      ],
+    );
+
+    return new Map(properties.map((property) => [property.id, property]));
+  }
+
+  private async buildAddressContext(
+    tenantId: string,
+    rows: WipBoardOrderRow[],
+  ): Promise<{
+    clientOrders: Map<string, ClientOrder>;
+    properties: Map<string, PropertyRecord>;
+  }> {
+    const clientOrderIds = Array.from(new Set(
+      rows
+        .map((row) => row.clientOrderId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ));
+
+    const clientOrders = await this.loadClientOrderMap(tenantId, clientOrderIds);
+
+    const propertyIds = Array.from(new Set(
+      rows
+        .map((row) => row.propertyId ?? (row.clientOrderId ? clientOrders.get(row.clientOrderId)?.propertyId : undefined))
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ));
+
+    const properties = await this.loadPropertyRecordMap(tenantId, propertyIds);
+
+    return { clientOrders, properties };
+  }
+
+  private resolveAddressText(
+    row: WipBoardOrderRow,
+    clientOrders: Map<string, ClientOrder>,
+    properties: Map<string, PropertyRecord>,
+  ): string {
+    const propertyId = row.propertyId ?? (row.clientOrderId ? clientOrders.get(row.clientOrderId)?.propertyId : undefined);
+    const property = propertyId ? properties.get(propertyId) : undefined;
+
+    if (property) {
+      return formatPropertyRecordAddress(property);
+    }
+
+    const clientOrder = row.clientOrderId ? clientOrders.get(row.clientOrderId) : undefined;
+    if (clientOrder?.propertyAddress) {
+      return formatPropertyAddress(clientOrder.propertyAddress);
+    }
+
+    if (typeof row.propertyAddress === 'string') {
+      return row.propertyAddress;
+    }
+
+    return formatPropertyAddress(row.propertyAddress);
+  }
+
+  private resolveDisplayAddress(
+    row: WipBoardOrderRow,
+    clientOrders: Map<string, ClientOrder>,
+    properties: Map<string, PropertyRecord>,
+  ): string {
+    const propertyId = row.propertyId ?? (row.clientOrderId ? clientOrders.get(row.clientOrderId)?.propertyId : undefined);
+    const property = propertyId ? properties.get(propertyId) : undefined;
+
+    if (property?.address?.street) {
+      return property.address.street;
+    }
+
+    const clientOrder = row.clientOrderId ? clientOrders.get(row.clientOrderId) : undefined;
+    const clientOrderStreet = clientOrder?.propertyAddress?.streetAddress;
+    if (clientOrderStreet) {
+      return clientOrderStreet;
+    }
+
+    if (typeof row.propertyAddress === 'string') {
+      return row.propertyAddress;
+    }
+
+    return row.propertyAddress?.streetAddress ?? '';
+  }
+
   /**
    * Get the full WIP board with all columns and order cards.
    */
@@ -147,16 +289,11 @@ export class WIPBoardService {
       return this.emptyBoard(tenantId);
     }
 
-    // Build query with optional filters. The discriminator predicate
-    // (VENDOR_ORDER_TYPE_PREDICATE) tolerates both 'order' (pre-slice-8f) and
-    // 'vendor-order' (post-flip) rows so the board doesn't go empty after
-    // the flip lands.
-    //
-    // TODO(Phase 8 of Order-relocation): when c.propertyAddress is removed
-    //   from VendorOrder, this SELECT has to join the parent ClientOrder
-    //   for `propertyAddress`. Today the field still lives on VendorOrder
-    //   via the placeClientOrder spread.
-    let query = `SELECT c.id, c.orderNumber, c.status, c.propertyAddress, c.clientName, c.vendorName, c.productType, c.dueDate, c.isRush, c.rush, c.updatedAt, c.createdAt FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.tenantId = @tid`;
+    // Build query with optional filters. The board now carries forward only
+    // canonical join keys (`propertyId`, `clientOrderId`) and resolves the
+    // display/search address after the query, instead of depending on the
+    // deprecated embedded VendorOrder property blob.
+    let query = `SELECT c.id, c.orderNumber, c.status, c.propertyId, c.clientOrderId, c.clientName, c.vendorName, c.productType, c.dueDate, c.isRush, c.rush, c.updatedAt, c.createdAt FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.tenantId = @tid`;
     const params: Array<{ name: string; value: any }> = [{ name: '@tid', value: tenantId }];
 
     if (filters?.vendorId) {
@@ -174,7 +311,9 @@ export class WIPBoardService {
 
     query += ` ORDER BY c.updatedAt DESC`;
 
-    const { resources: rawOrders } = await container.items.query({ query, parameters: params }).fetchAll();
+    const { resources } = await container.items.query({ query, parameters: params }).fetchAll();
+    const rawOrders = resources as WipBoardOrderRow[];
+    const { clientOrders, properties } = await this.buildAddressContext(tenantId, rawOrders);
 
     // Build one column per BoardCategory (always exactly 5)
     const columnMap = new Map<BoardCategory, WIPColumn>();
@@ -207,7 +346,8 @@ export class WIPBoardService {
       // Text search filter
       if (filters?.searchTerm) {
         const term = filters.searchTerm.toLowerCase();
-        const searchable = [raw.orderNumber, raw.propertyAddress, raw.clientName, raw.vendorName]
+        const resolvedAddress = this.resolveAddressText(raw, clientOrders, properties);
+        const searchable = [raw.orderNumber, resolvedAddress, raw.clientName, raw.vendorName]
           .filter(Boolean).join(' ').toLowerCase();
         if (!searchable.includes(term)) continue;
       }
@@ -227,19 +367,17 @@ export class WIPBoardService {
       const card: WIPOrderCard = {
         orderId: raw.id,
         orderNumber: raw.orderNumber ?? raw.id,
-        propertyAddress: typeof raw.propertyAddress === 'string'
-          ? raw.propertyAddress
-          : raw.propertyAddress?.street ?? '',
+        propertyAddress: this.resolveDisplayAddress(raw, clientOrders, properties),
         clientName: raw.clientName ?? '',
-        vendorName: raw.vendorName,
         productType: raw.productType ?? '',
-        dueDate: raw.dueDate,
         // Use the raw OrderStatus (e.g. 'IN_PROGRESS') not the grouped BoardCategory.
         // The frontend Kanban keyField matches on exact OrderStatus strings.
         category: status as unknown as BoardCategory,
         isRush,
         daysInCategory: WIPBoardService.daysAgo(raw.updatedAt),
         slaStatus: sla,
+        ...(raw.vendorName ? { vendorName: raw.vendorName } : {}),
+        ...(raw.dueDate ? { dueDate: raw.dueDate } : {}),
       };
 
       col.orders.push(card);
@@ -269,7 +407,7 @@ export class WIPBoardService {
     if (statuses.length === 0) return [];
 
     const statusList = statuses.map(s => `'${s}'`).join(',');
-    let query = `SELECT * FROM c WHERE c.type = 'order' AND c.tenantId = @tid AND c.status IN (${statusList})`;
+    let query = `SELECT c.id, c.orderNumber, c.status, c.propertyId, c.clientOrderId, c.clientName, c.vendorName, c.productType, c.dueDate, c.isRush, c.rush, c.updatedAt, c.createdAt FROM c WHERE ${VENDOR_ORDER_TYPE_PREDICATE} AND c.tenantId = @tid AND c.status IN (${statusList})`;
     const params: Array<{ name: string; value: any }> = [{ name: '@tid', value: tenantId }];
 
     if (filters?.vendorId) {
@@ -285,24 +423,26 @@ export class WIPBoardService {
     params.push({ name: '@offset', value: offset }, { name: '@limit', value: limit });
 
     const { resources } = await container.items.query({ query, parameters: params }).fetchAll();
+    const rows = resources as WipBoardOrderRow[];
+    const { clientOrders, properties } = await this.buildAddressContext(tenantId, rows);
     const now = Date.now();
 
-    return resources.map((order: any) => ({
+    return rows.map((order) => ({
       id: order.id,
       orderNumber: order.orderNumber ?? order.id,
       status: order.status as OrderStatus,
       statusLabel: getStatusLabel(order.status as OrderStatus),
       category,
-      propertyAddress: order.propertyAddress ?? order.address?.street ?? '',
+      propertyAddress: this.resolveDisplayAddress(order, clientOrders, properties),
       borrowerName: order.borrowerName ?? order.borrower?.lastName ?? '',
       clientName: order.clientName ?? '',
-      vendorName: order.vendorName,
       productType: order.productType ?? '',
-      dueDate: order.dueDate,
       isOverdue: order.dueDate ? new Date(order.dueDate).getTime() < now : false,
       isRush: order.isRush ?? order.rush ?? false,
       updatedAt: order.updatedAt,
       createdAt: order.createdAt,
+      ...(order.vendorName ? { vendorName: order.vendorName } : {}),
+      ...(order.dueDate ? { dueDate: order.dueDate } : {}),
     }));
   }
 
@@ -323,4 +463,21 @@ export class WIPBoardService {
       summary: { rushOrders: 0, slaAtRisk: 0, overdueCount: 0 },
     };
   }
+}
+
+function formatPropertyAddress(address?: PropertyAddress): string {
+  if (!address) {
+    return '';
+  }
+
+  const street = address.streetAddress ?? '';
+  const locality = [address.city, address.state].filter(Boolean).join(', ');
+  const trailing = [locality, address.zipCode].filter(Boolean).join(' ');
+  return [street, trailing].filter(Boolean).join(', ');
+}
+
+function formatPropertyRecordAddress(property: PropertyRecord): string {
+  const locality = [property.address?.city, property.address?.state].filter(Boolean).join(', ');
+  const trailing = [locality, property.address?.zip].filter(Boolean).join(' ');
+  return [property.address?.street, trailing].filter(Boolean).join(', ');
 }

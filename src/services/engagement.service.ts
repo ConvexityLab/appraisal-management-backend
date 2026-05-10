@@ -19,7 +19,10 @@ import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { AddressServiceGeocoder } from './address-service.geocoder.js';
 import { ClientOrderService } from './client-order.service.js';
-import type { PropertyDetails as ClientOrderPropertyDetails } from '../types/index.js';
+import type {
+  PropertyDetails as ClientOrderPropertyDetails,
+  PropertyAddress as ClientOrderPropertyAddress,
+} from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 import type { CommunicationRecord } from '../types/communication.types.js';
 import type {
@@ -52,6 +55,37 @@ const logger = new Logger('EngagementService');
  * Above this threshold the service throws a 400-class error rather than silently truncating.
  */
 const MAX_EMBEDDED_LOANS = 1000;
+
+function toClientOrderPropertyAddress(
+  property: EngagementProperty['property'],
+): ClientOrderPropertyAddress {
+  return {
+    streetAddress: property.address,
+    city: property.city,
+    state: property.state,
+    zipCode: property.zipCode,
+    county: property.county,
+    ...(property.parcelNumber ? { apn: property.parcelNumber } : {}),
+    ...(property.coordinates ? { coordinates: property.coordinates } : {}),
+  };
+}
+
+function toThinEngagementPropertyCache(
+  property: EngagementProperty['property'],
+): EngagementProperty['property'] {
+  return {
+    address: property.address,
+    city: property.city,
+    state: property.state,
+    zipCode: property.zipCode,
+    county: property.county,
+    coordinates: property.coordinates,
+    propertyType: property.propertyType,
+    ...(property.parcelNumber ? { parcelNumber: property.parcelNumber } : {}),
+    ...(property.accessConcerns ? { accessConcerns: property.accessConcerns } : {}),
+    ...(property.specialInstructions ? { specialInstructions: property.specialInstructions } : {}),
+  };
+}
 
 // ── ID helpers ────────────────────────────────────────────────────────────────
 
@@ -156,7 +190,7 @@ function buildLoan(l: CreateEngagementLoanRequest, propertyId: string): Engageme
     ...(primary.loanType !== undefined && { loanType: primary.loanType }),
     ...(primary.fhaCase !== undefined && { fhaCase: primary.fhaCase }),
     loanReferences,
-    property: l.property,
+    property: toThinEngagementPropertyCache(l.property),
     status: EngagementPropertyStatus.PENDING,
     clientOrders: l.clientOrders.map(buildClientOrder),
   };
@@ -373,15 +407,18 @@ export class EngagementService {
           engagementPropertyId: loanId,
           clientId,
           productType: clientOrder.productType,
-          // EngagementProperty.property (order-management.PropertyDetails) and
-          // ClientOrder.propertyDetails (index.PropertyDetails) are different
-          // structural shapes that share the same name. The ClientOrder doc
-          // stores propertyDetails opaquely — the engagement-flow listener
-          // chain reads `propertyId` from the event, not propertyDetails —
-          // so a structural cast is safe here.
-          propertyDetails: loanProperty as unknown as ClientOrderPropertyDetails,
           clientOrderId: clientOrder.id,
+          propertyAddress: toClientOrderPropertyAddress(loanProperty),
           ...(propertyId !== undefined && { propertyId }),
+          ...(propertyId === undefined
+            ? {
+                // EngagementProperty.property (order-management.PropertyDetails) and
+                // ClientOrder.propertyDetails (index.PropertyDetails) are different
+                // structural shapes that share the same name. Only keep this
+                // duplicate cache when we do not yet have a canonical propertyId.
+                propertyDetails: loanProperty as unknown as ClientOrderPropertyDetails,
+              }
+            : {}),
           ...(clientOrder.fee !== undefined && { clientFee: clientOrder.fee }),
           ...(clientOrder.dueDate !== undefined && { dueDate: new Date(clientOrder.dueDate) }),
           ...(clientOrder.instructions !== undefined && { instructions: clientOrder.instructions }),
@@ -610,7 +647,7 @@ export class EngagementService {
       ...(updates.loanOfficerPhone !== undefined && { loanOfficerPhone: updates.loanOfficerPhone }),
       ...(updates.loanType !== undefined && { loanType: updates.loanType }),
       ...(updates.fhaCase !== undefined && { fhaCase: updates.fhaCase }),
-      ...(updates.property !== undefined && { property: updates.property }),
+      ...(updates.property !== undefined && { property: toThinEngagementPropertyCache(updates.property) }),
     };
 
     const updatedLoans = [...engagement.properties];
@@ -798,10 +835,15 @@ export class EngagementService {
         engagementPropertyId: loanId,
         clientId: engagement.client.clientId,
         productType: newClientOrder.productType,
-        // See enrichAndPlaceClientOrders for why this cast is safe.
-        propertyDetails: loan.property as unknown as ClientOrderPropertyDetails,
         clientOrderId: newClientOrder.id,
+        propertyAddress: toClientOrderPropertyAddress(loan.property),
         ...(loan.propertyId !== undefined && { propertyId: loan.propertyId }),
+        ...(loan.propertyId === undefined
+          ? {
+              // See enrichAndPlaceClientOrders for why this cast is safe.
+              propertyDetails: loan.property as unknown as ClientOrderPropertyDetails,
+            }
+          : {}),
         ...(newClientOrder.fee !== undefined && { clientFee: newClientOrder.fee }),
         ...(newClientOrder.dueDate !== undefined && { dueDate: new Date(newClientOrder.dueDate) }),
         ...(newClientOrder.instructions !== undefined && { instructions: newClientOrder.instructions }),
