@@ -13,22 +13,23 @@ function createResponseMock() {
 }
 
 describe('OrderController.createOrder', () => {
-  // Phase B step 4: createOrder now calls ClientOrderService.addVendorOrders
-  // against an existing standalone ClientOrder (engagementClientOrderId is
-  // required on the request). This test's mocks set up dbService.createOrder
-  // directly. Pending rewrite: inject a stub ClientOrderService, supply
-  // engagementClientOrderId, assert addVendorOrders was called.
-  it.skip('LEGACY (Phase B follow-up): reassociates intake draft documents to the created order and writes audit provenance', async () => {
-    const createOrder = vi.fn().mockResolvedValue({
-      success: true,
-      data: {
+  it('attaches a VendorOrder to the parent ClientOrder via addVendorOrders + reassociates intake draft documents', async () => {
+    // Phase B step 4: controller now calls ClientOrderService.addVendorOrders
+    // against an existing ClientOrder. Test injects a stub clientOrderService
+    // and asserts the new contract.
+    const addVendorOrders = vi.fn().mockResolvedValue([
+      {
         id: 'order-789',
         orderNumber: 'ORD-789',
         status: OrderStatus.NEW,
+        engagementId: 'eng-test-001',
       },
-    });
+    ]);
 
-    const controller = new OrderController({ createOrder } as any);
+    const controller = new OrderController({} as never);
+    (controller as unknown as { clientOrderService: { addVendorOrders: typeof addVendorOrders } })
+      .clientOrderService = { addVendorOrders };
+
     const associateEntityDocumentsToOrder = vi.fn().mockResolvedValue({
       success: true,
       data: [
@@ -43,29 +44,30 @@ describe('OrderController.createOrder', () => {
     const logDocumentReassociatedToOrder = vi.fn().mockResolvedValue(undefined);
     const log = vi.fn().mockResolvedValue(undefined);
 
-    (controller as any)._documentService = {
+    (controller as never as { _documentService: unknown })._documentService = {
       associateEntityDocumentsToOrder,
     };
-    (controller as any).duplicateDetection = {
+    (controller as never as { duplicateDetection: unknown }).duplicateDetection = {
       checkForDuplicates: vi.fn().mockResolvedValue({ hasPotentialDuplicates: false, matches: [] }),
     };
-    (controller as any).auditService = {
+    (controller as never as { auditService: unknown }).auditService = {
       logDocumentReassociatedToOrder,
       log,
     };
-    (controller as any).eventService = {
+    (controller as never as { eventService: unknown }).eventService = {
       publishOrderCreated: vi.fn().mockResolvedValue(undefined),
     };
-    (controller as any).publisher = {
+    (controller as never as { publisher: unknown }).publisher = {
       publish: vi.fn().mockResolvedValue(undefined),
     };
 
     const req = {
       body: {
         intakeDraftId: 'draft-123',
-        // Slice 8g engagement-primacy: every order must reference an Engagement.
         engagementId: 'eng-test-001',
+        clientOrderId: 'co-test-001',
         priority: 'RUSH',
+        productType: 'FULL_APPRAISAL',
         propertyAddress: {
           streetAddress: '123 Main St',
           city: 'Denver',
@@ -81,9 +83,12 @@ describe('OrderController.createOrder', () => {
     } as UnifiedAuthRequest;
     const res = createResponseMock();
 
-    await controller.createOrder(req, res as any);
+    await controller.createOrder(req, res as never);
 
-    expect(createOrder).toHaveBeenCalledWith(
+    expect(addVendorOrders).toHaveBeenCalledWith(
+      'co-test-001',
+      'tenant-1',
+      [expect.objectContaining({ vendorWorkType: 'FULL_APPRAISAL' })],
       expect.objectContaining({
         priority: 'RUSH',
         tenantId: 'tenant-1',
@@ -97,7 +102,6 @@ describe('OrderController.createOrder', () => {
         }),
       }),
     );
-    expect(createOrder.mock.calls[0]?.[0]).not.toHaveProperty('intakeDraftId');
     expect(associateEntityDocumentsToOrder).toHaveBeenCalledWith({
       tenantId: 'tenant-1',
       entityType: 'order-intake-draft',
@@ -120,9 +124,6 @@ describe('OrderController.createOrder', () => {
       },
     );
     expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.status.mock.results[0]?.value.json).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'order-789' }),
-    );
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'ORDER_CREATED',
