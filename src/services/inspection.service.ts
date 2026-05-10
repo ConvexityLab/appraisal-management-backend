@@ -29,9 +29,11 @@ export class InspectionService {
   async getAllInspections(tenantId: string, status?: string): Promise<InspectionAppointment[]> {
     const container = this.cosmosService.getContainer('orders');
     
-    let query = 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId';
+    // Phase B inspection unification: filter by VendorOrder role rather than
+    // the legacy `type: 'inspection'` discriminator. Inspections are now
+    // VendorOrders with role='INSPECTION'.
+    let query = "SELECT * FROM c WHERE c.type = 'vendor-order' AND c.role = 'INSPECTION' AND c.tenantId = @tenantId";
     const parameters: any[] = [
-      { name: '@type', value: 'inspection' },
       { name: '@tenantId', value: tenantId }
     ];
 
@@ -78,9 +80,9 @@ export class InspectionService {
     const container = this.cosmosService.getContainer('orders');
     
     const { resources } = await container.items.query<InspectionAppointment>({
-      query: 'SELECT * FROM c WHERE c.type = @type AND c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.createdAt DESC',
+      // Phase B inspection unification: filter by VendorOrder role.
+      query: "SELECT * FROM c WHERE c.type = 'vendor-order' AND c.role = 'INSPECTION' AND c.orderId = @orderId AND c.tenantId = @tenantId ORDER BY c.createdAt DESC",
       parameters: [
-        { name: '@type', value: 'inspection' },
         { name: '@orderId', value: orderId },
         { name: '@tenantId', value: tenantId }
       ]
@@ -95,9 +97,9 @@ export class InspectionService {
   async getInspectionsByAppraiserId(appraiserId: string, tenantId: string = 'test-tenant-123', status?: string): Promise<InspectionAppointment[]> {
     const container = this.cosmosService.getContainer('orders');
     
-    let query = 'SELECT * FROM c WHERE c.type = @type AND c.appraiserId = @appraiserId AND c.tenantId = @tenantId';
+    // Phase B inspection unification: filter by VendorOrder role.
+    let query = "SELECT * FROM c WHERE c.type = 'vendor-order' AND c.role = 'INSPECTION' AND c.appraiserId = @appraiserId AND c.tenantId = @tenantId";
     const parameters: any[] = [
-      { name: '@type', value: 'inspection' },
       { name: '@appraiserId', value: appraiserId },
       { name: '@tenantId', value: tenantId }
     ];
@@ -159,9 +161,23 @@ export class InspectionService {
     }
 
     const now = new Date().toISOString();
-    const inspection: InspectionAppointment = {
+    // Phase B inspection unification (partial): write the InspectionAppointment
+    // as a VendorOrder with `role: 'INSPECTION'` per ORDER-DOMAIN-REDESIGN.md
+    // §2.1. The inspection-specific scheduling fields (scheduledSlot,
+    // alternateSlots, propertyAccess, etc.) ride along on the same doc since
+    // VendorOrder is `Order & VendorOrderLinkage` and accepts extra fields.
+    //
+    // Type discriminator and role:
+    //   - type: 'vendor-order' (was 'inspection')
+    //   - role: 'INSPECTION'  (new field on VendorOrderLinkage)
+    //
+    // Read-path query update (this file lines 32, 81, 98) must filter
+    // `c.type = 'vendor-order' AND c.role = 'INSPECTION'` instead of
+    // `c.type = 'inspection'`. Done in lockstep below.
+    const inspection: InspectionAppointment & { role?: string } = {
       id: `inspection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: 'inspection',
+      type: 'vendor-order' as never,
+      role: 'INSPECTION',
       appointmentType: request.appointmentType ?? 'property_inspection',
       tenantId,
       orderId: request.orderId,

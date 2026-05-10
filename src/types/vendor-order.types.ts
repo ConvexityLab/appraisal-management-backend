@@ -87,6 +87,20 @@ export const VENDOR_ORDER_TYPE_PREDICATE =
 // ─── Linkage fields (NEW, added by Phase 1 / Phase 4 migration) ─────────────
 
 /**
+ * VendorOrder role within its parent ClientOrder's fan-out.
+ * Per ORDER-DOMAIN-REDESIGN.md §2.1 — a single ClientOrder can decompose into
+ * multiple VendorOrders, each with a distinct role:
+ *   PRIMARY    — the lead vendor doing the main work (e.g., the appraisal)
+ *   SUPPORTING — auxiliary work supporting the primary (e.g., comps)
+ *   QC         — internal staff QC review
+ *   INSPECTION — physical property inspection (replaces InspectionAppointment
+ *                in the unification rollout; scheduling fields move under
+ *                the VendorOrder's scope/metadata)
+ *   REVIEW     — desk/field review of an existing report
+ */
+export type VendorOrderRole = 'PRIMARY' | 'SUPPORTING' | 'QC' | 'INSPECTION' | 'REVIEW';
+
+/**
  * Linkage fields VendorOrder docs gain on top of the existing Order
  * shape. Phase 1 starts writing these on every newly-created VendorOrder;
  * Phase 4 backfills them on historical rows.
@@ -97,6 +111,8 @@ export const VENDOR_ORDER_TYPE_PREDICATE =
  *                          time, never updated independently of the ClientOrder.
  * - vendorWorkType        what kind of work this VendorOrder represents
  *                          (= productType today).
+ * - role                  optional role within the parent ClientOrder's
+ *                          fan-out (introduced for inspection unification).
  *
  * `engagementId`, `engagementPropertyId`, and `propertyId` already exist on
  * Order as optional. They become REQUIRED on VendorOrder.
@@ -113,6 +129,13 @@ export interface VendorOrderLinkage {
   productType: ProductType;
   propertyId: string;
   vendorWorkType: VendorWorkType;
+  /**
+   * Role within the parent ClientOrder's fan-out. Optional for back-compat
+   * with VendorOrder docs created before the role taxonomy shipped; new
+   * writes should set it. INSPECTION VendorOrders supersede the legacy
+   * InspectionAppointment doc shape during the inspection-unification rollout.
+   */
+  role?: VendorOrderRole;
   /**
    * Populated once an inspection vendor order is placed via InspectionVendorService.
    * Tracks all vendor-side state, external IDs, and blob storage paths for artifacts.
