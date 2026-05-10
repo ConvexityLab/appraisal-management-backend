@@ -45,8 +45,8 @@ class FakeContainer {
 
 function makeFakeDb() {
   const containers: Record<string, FakeContainer> = {
-    'vendor-matching-rule-packs': new FakeContainer(),
-    'vendor-matching-rule-audit': new FakeContainer(),
+    'decision-rule-packs': new FakeContainer(),
+    'decision-rule-audit': new FakeContainer(),
   };
   return {
     _containers: containers,
@@ -69,14 +69,17 @@ function makeFakeDb() {
       const params: Record<string, any> = {};
       for (const p of parameters) params[p.name] = p.value;
       const tenantId = params['@tenantId'];
+      const category = params['@category'];
       const packId = params['@packId'];
       const docs = await containers[cn]!.query(d =>
-        d.tenantId === tenantId && d.packId === packId
+        d.tenantId === tenantId
+        && d.packId === packId
+        && (category === undefined || d.category === category)
       );
       // Mirror the service's ORDER BY clauses.
-      if (cn === 'vendor-matching-rule-packs') {
+      if (cn === 'decision-rule-packs') {
         docs.sort((a: any, b: any) => b.version - a.version);
-      } else if (cn === 'vendor-matching-rule-audit') {
+      } else if (cn === 'decision-rule-audit') {
         docs.sort((a: any, b: any) =>
           new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
         );
@@ -126,7 +129,7 @@ describe('VendorMatchingRulePackService — versioning', () => {
     expect(pack.version).toBe(1);
     expect(pack.parentVersion).toBeNull();
     expect(pack.status).toBe('active');
-    expect(pack.id).toBe(`${TENANT}__${PACK}__v1`);
+    expect(pack.id).toBe(`${TENANT}__vendor-matching__${PACK}__v1`);
     expect(pack.tenantId).toBe(TENANT);
     expect(pack.rules).toHaveLength(1);
   });
