@@ -106,8 +106,8 @@ const testOrders: TestOrderTemplate[] = [
     }
   },
   {
-    name: 'QC Analyst-owned order (Team QC, assigned to analyst)',
-    token: process.env.TEST_JWT_QC_ANALYST || '',
+    name: 'Analyst-owned order (Team QC, assigned to analyst)',
+    token: process.env.TEST_JWT_ANALYST || process.env.TEST_JWT_QC_ANALYST || '',
     expectedOwner: 'test-qc-analyst',
     expectedTeam: 'team-qc',
     expectedAssignedUsers: ['test-qc-analyst'],
@@ -255,7 +255,7 @@ async function createAllTestOrders() {
   const missingTokens: string[] = [];
   if (!process.env.TEST_JWT_ADMIN) missingTokens.push('TEST_JWT_ADMIN');
   if (!process.env.TEST_JWT_MANAGER) missingTokens.push('TEST_JWT_MANAGER');
-  if (!process.env.TEST_JWT_QC_ANALYST) missingTokens.push('TEST_JWT_QC_ANALYST');
+  if (!process.env.TEST_JWT_ANALYST && !process.env.TEST_JWT_QC_ANALYST) missingTokens.push('TEST_JWT_ANALYST');
   if (!process.env.TEST_JWT_APPRAISER) missingTokens.push('TEST_JWT_APPRAISER');
 
   if (missingTokens.length > 0) {

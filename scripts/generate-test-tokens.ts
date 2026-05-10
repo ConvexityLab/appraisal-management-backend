@@ -37,8 +37,8 @@ TEST_JWT_ADMIN=${tokens.admin}
 # Manager token (team/client management)
 TEST_JWT_MANAGER=${tokens.manager}
 
-# QC Analyst token (assigned items only)
-TEST_JWT_QC_ANALYST=${tokens.qc_analyst}
+# Analyst token (assigned items only)
+TEST_JWT_ANALYST=${tokens.analyst}
 
 # Appraiser token (owned/assigned items)
 TEST_JWT_APPRAISER=${tokens.appraiser}
@@ -82,9 +82,9 @@ const users = [
     scope: 'Team 1, Team 2 - CA, NV, AZ regions'
   },
   {
-    role: 'QC Analyst',
-    email: 'qc.analyst@test.local',
-    permissions: 'QC validation, assigned items only',
+    role: 'Analyst',
+    email: 'analyst@test.local',
+    permissions: 'QC execution/review, assigned items only',
     scope: 'QC Team - CA, NV regions'
   },
   {
@@ -109,7 +109,10 @@ console.log('   • Tokens contain isTestToken=true flag\n');
 
 // Decode and show admin token structure
 const jwt = require('jsonwebtoken');
-const adminDecoded = jwt.decode(tokens.admin);
+const adminDecoded = jwt.verify(
+  tokens.admin,
+  process.env.TEST_JWT_SECRET || 'test-secret-key-DO-NOT-USE-IN-PRODUCTION',
+);
 
 console.log('🔍 Token Structure (Admin example):\n');
 console.log(JSON.stringify(adminDecoded, null, 2));

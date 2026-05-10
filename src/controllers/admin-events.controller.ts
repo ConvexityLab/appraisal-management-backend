@@ -10,7 +10,7 @@
  *   The replay is itself recorded as a `human.intervention` audit event so
  *   operators can see who replayed what, when.
  *
- *   Authz: requires admin role (via authzMiddleware.authorize('admin', 'write')).
+ *   Authz: requires admin role (via authzMiddleware.authorize('admin_panel', 'manage')).
  */
 
 import { Router, Request, Response } from 'express';
@@ -30,11 +30,11 @@ export function createAdminEventsRouter(
   const logger = new Logger('AdminEventsController');
   const publisher = new ServiceBusEventPublisher();
 
-  // Admin-only. We check role inline rather than through Casbin because
-  // replay is a system-admin operation, not a resource-scoped one.
+  // Fallback guard only when authz middleware is unavailable in a narrow test
+  // harness. Real runtime should always pass authz middleware.
   const ensureAdmin = (req: Request, res: Response): boolean => {
-    const role = (req as any).user?.role;
-    if (role === 'admin' || role === 'system' || role === 'onelend_admin') return true;
+    const role = (req as any).userProfile?.role ?? (req as any).user?.role;
+    if (role === 'admin') return true;
     res.status(403).json({
       success: false,
       error: { code: 'FORBIDDEN', message: 'Event replay requires admin role' },
@@ -42,10 +42,12 @@ export function createAdminEventsRouter(
     return false;
   };
 
-  const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+  const guard = authzMiddleware
+    ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('admin_panel', 'manage')]
+    : [];
 
-  router.post('/events/:eventId/replay', ...loadProfile, async (req: Request, res: Response) => {
-    if (!ensureAdmin(req, res)) return;
+  router.post('/events/:eventId/replay', ...guard, async (req: Request, res: Response) => {
+    if (!authzMiddleware && !ensureAdmin(req, res)) return;
 
     const { eventId } = req.params;
     const user = (req as any).user;

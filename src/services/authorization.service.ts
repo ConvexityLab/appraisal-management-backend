@@ -88,6 +88,7 @@ export class AuthorizationService {
     const context: AuthorizationContext = {
       user: {
         id: user.id,
+        tenantId: user.tenantId,
         role: user.role,
         portalDomain: user.portalDomain,
         boundEntityIds: user.boundEntityIds,
@@ -287,7 +288,7 @@ export class AuthorizationService {
       };
     } catch (error) {
       this.logger.error('Failed to get user profile', { userId, tenantId, error });
-      return null;
+      throw error;
     }
   }
 
@@ -404,7 +405,7 @@ export class AuthorizationService {
       const auditLog: AuthorizationAuditLog = {
         id: this.generateRequestId(),
         orderId: context.resource.id ?? 'system',
-        tenantId: 'system',
+        tenantId: context.user.tenantId,
         userId: context.user.id,
         userEmail: context.user.email,
         userRole: context.user.role,

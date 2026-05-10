@@ -2,6 +2,7 @@ import { Request, Response, Router } from 'express';
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { listPropertyRecords } from '../services/property-record-listing.service.js';
 import { Logger } from '../utils/logger.js';
+import { PropertyObservationService } from '../services/property-observation.service.js';
 
 type AuthenticatedRequestLike = Request & {
   user?: {
@@ -43,6 +44,7 @@ function resolveActorId(req: Request): string {
 export function createPropertyRecordRouter(propertyRecordService: PropertyRecordService): Router {
   const router = Router();
   const logger = new Logger('PropertyRecordController');
+  const observationService = new PropertyObservationService((propertyRecordService as any).cosmosService);
 
   /**
    * GET /api/v1/property-records
@@ -185,6 +187,19 @@ export function createPropertyRecordRouter(propertyRecordService: PropertyRecord
         actor,
         'api'
       );
+
+      await observationService.createObservation({
+        tenantId,
+        propertyId,
+        observationType: 'manual-correction',
+        sourceSystem: 'manual-user',
+        observedAt: new Date().toISOString(),
+        sourceArtifactRef: { kind: 'manual-edit', id: `property-record:${propertyId}` },
+        sourceRecordId: propertyId,
+        normalizedFacts: { propertyPatch: req.body },
+        rawPayload: req.body,
+        createdBy: actor,
+      });
 
       return res.status(200).json(updated);
     } catch (error) {

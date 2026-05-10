@@ -129,9 +129,9 @@ $headers = @{ Authorization = "Bearer $env:TEST_JWT_ADMIN" }
 $headers = @{ Authorization = "Bearer $env:TEST_JWT_MANAGER" }
 ```
 
-### QC Analyst (Assigned Items)
+### Analyst (Assigned Items)
 ```powershell
-$headers = @{ Authorization = "Bearer $env:TEST_JWT_QC_ANALYST" }
+$headers = @{ Authorization = "Bearer $env:TEST_JWT_ANALYST" }
 ```
 
 ### Appraiser (Own Items Only)

@@ -17,7 +17,7 @@ The current authorization model defines one user-facing role (`appraiser`) where
 
 ### 1.1 The `appraiser` role conflation
 
-The authorization system has four roles: `admin`, `manager`, `qc_analyst`, `appraiser`.
+The current canonical authorization role set is: `admin`, `manager`, `supervisor`, `analyst`, `appraiser`, `reviewer`.
 
 The domain has these fulfillment-side principals:
 
@@ -35,7 +35,7 @@ All five are currently forced into the single `appraiser` role. They have differ
 - An **internal appraiser** should see VendorOrders assigned to them but may also have visibility into more internal workflow steps (e.g. can see the QC checklist before submission).
 - A **vendor coordinator** (firm-level) should see ALL VendorOrders where `accessControl.vendorId = their vendorId` — they manage their whole firm's queue.
 - An **internal supervisor** should see all VendorOrders in their team/supervisory scope.
-- An **internal reviewer** acts more like a `qc_analyst` than an appraiser — they review work before the external QC step.
+- An **internal reviewer** acts more like an `analyst` than an appraiser — they review work before the external QC step.
 
 ### 1.2 The `order` resource type conflation
 
@@ -88,7 +88,7 @@ Each "actor group" corresponds to a portal persona and a `UserProfile.role` valu
 |---|---|---|---|
 | `admin` | `admin` | Full tenant access — all resources, all actions. Configures the platform. | `admin` (keep) |
 | `operations_manager` | `manager` | Manages order flow for their client/team portfolio. Creates orders, assigns vendors, views analytics. | `manager` (keep) |
-| `qc_analyst` | `qc_analyst` | Reviews submitted appraisal reports. Approve/fail/escalate. Cannot modify orders or vendor data. | `qc_analyst` (keep) |
+| `analyst` | `analyst` (`qc_analyst` is accepted only as a legacy alias at old boundaries) | Reviews submitted appraisal reports. Approve/fail/escalate. Cannot modify orders or vendor data. | `analyst` |
 | `supervisor` | *(missing)* | Supervisory appraiser overseeing internal staff. Can view internal staff workloads, reassign internal orders. | `supervisor` *(new)* |
 
 ### Fulfillment-side actors (vendor/appraiser portal)
@@ -112,7 +112,7 @@ Each "actor group" corresponds to a portal persona and a `UserProfile.role` valu
 admin
   └── manager / operations_manager
         └── supervisor
-              ├── qc_analyst
+              ├── analyst
               └── appraiser_internal
 
 vendor_coordinator     ← not in the platform hierarchy; separate vendor hierarchy
@@ -149,7 +149,7 @@ client_admin           ← separate client hierarchy; does NOT inherit platform 
 
 > ✓ = allowed  ✗ = denied  ⊘ = only own/scoped
 
-| Resource | admin | manager | qc_analyst | supervisor | appraiser_internal | appraiser | vendor_coordinator |
+| Resource | admin | manager | analyst | supervisor | appraiser_internal | appraiser | vendor_coordinator |
 |---|---|---|---|---|---|---|---|
 | `engagement` | ✓ all | ✓ scoped to their clients | ✗ | ✓ scoped | ✗ | ✗ | ✗ |
 | `client_order` | ✓ all | ✓ scoped to their clients | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -172,9 +172,9 @@ client_admin           ← separate client hierarchy; does NOT inherit platform 
 | Create `vendor_order` (decomposition) | `admin`, `manager`, system (auto-assignment) |
 | Upload report on `vendor_order` | `appraiser`, `appraiser_internal`, `vendor_coordinator` (for firm orders) |
 | Update status on `vendor_order` | `appraiser`, `appraiser_internal`, `vendor_coordinator` (accept, start, deliver) |
-| Create `qc_review` | `qc_analyst`, `admin` |
-| Approve/reject `qc_review` | `qc_analyst`, `admin` |
-| Request revision on `vendor_order` | `qc_analyst`, `manager`, `admin` |
+| Create `qc_review` | `analyst`, `admin` |
+| Approve/reject `qc_review` | `analyst`, `admin` |
+| Request revision on `vendor_order` | `analyst`, `manager`, `admin` |
 | Reassign `vendor_order` to different vendor | `manager`, `admin` |
 | Assign `vendor_order` to appraiser (within firm) | `vendor_coordinator`, `manager`, `admin` |
 | Create `vendor` profile | `admin` |
@@ -280,7 +280,7 @@ These must be answered before building the DB-backed policy schema.
 | P2 | **Do lenders get portal access now, or is that a future phase?** | Determines whether we model `client_admin` / `client_user` now or leave `clientId` scoping as a future concern. |
 | P3 | **What distinguishes `appraiser_internal` from `appraiser` for access purposes?** (Same VendorOrder scope, or do internal staff see more?) | Determines if `appraiser_internal` is a separate role or just `appraiser` with an `isInternal: true` attribute. |
 | P4 | **Can a `vendor_coordinator` create a VendorOrder themselves (for corrections/re-orders), or only view/update existing ones?** | Determines write-side policy for `vendor_coordinator`. |
-| P5 | **Can a `qc_analyst` see a ClientOrder?** (They need to know the lender's instructions, fee, and due date for the QC report, but these are on the ClientOrder). | Determines whether `qc_analyst` needs read access to `client_order` scoped to their assigned VendorOrder. |
+| P5 | **Can an `analyst` see a ClientOrder?** (They need to know the lender's instructions, fee, and due date for the QC report, but these are on the ClientOrder). | Determines whether `analyst` needs read access to `client_order` scoped to their assigned VendorOrder. |
 | P6 | **What fields on a VendorOrder can an appraiser modify vs read-only?** (E.g., can an appraiser update the status to `IN_PROGRESS`, or does the system do that? Can they update the due date?) | Determines the action scope for `appraiser` on `vendor_order`. |
 | P7 | **Per-tenant vs per-client policy config:** Is there a use case where two different lenders using the same tenant need different scoping rules? Or is tenant-level always sufficient? | If yes, `boundClientId` on AccessScope is needed. If no, tenant-level policies suffice. |
 | P8 | **Should `supervisor` be a platform-side role or a vendor-side role?** Today `staffRole='supervisor'` is stored in the vendors container (internal staff), but a supervisor might also be an operations manager. | Determines whether supervisor is in the platform hierarchy (inherits from `manager`) or the fulfillment hierarchy. |

@@ -46,9 +46,9 @@ function makeMockDb() {
 }
 
 function makeAuthzStub(overrides?: {
-  authorize?: () => any;
+  authorize?: (resourceType?: string, action?: string) => any;
   authorizeQuery?: () => any;
-  authorizeResource?: () => any;
+  authorizeResource?: (resourceType?: string, action?: string, options?: any) => any;
 }) {
   return {
     loadUserProfile: () => async (req: any, _res: Response, next: NextFunction) => {
@@ -165,5 +165,61 @@ describe('VendorController authorization', () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('AUTHORIZATION_DENIED');
     expect(db.updateVendor).not.toHaveBeenCalled();
+  });
+
+  it('blocks vendor assignment when parent order authorization denies access', async () => {
+    const authz = makeAuthzStub({
+      authorizeResource: () => async (_req: any, res: Response) => {
+        res.status(403).json({ code: 'AUTHORIZATION_DENIED' });
+      },
+    });
+    const app = makeApp(db, authz);
+
+    const res = await request(app)
+      .post('/api/vendors/assign/order-1')
+      .send({ vendorId: 'vendor-1' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
+    expect(db.findOrderById).not.toHaveBeenCalled();
+    expect(db.updateOrder).not.toHaveBeenCalled();
+  });
+
+  it('blocks vendor performance when analytics capability denies access', async () => {
+    const authz = makeAuthzStub({
+      authorize: (resourceType?: string) => async (_req: any, res: Response, next: NextFunction) => {
+        if (resourceType === 'analytics') {
+          res.status(403).json({ code: 'AUTHORIZATION_DENIED' });
+          return;
+        }
+        next();
+      },
+    });
+    const app = makeApp(db, authz);
+
+    const res = await request(app).get('/api/vendors/performance/vendor-1');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
+    expect(db.getVendorPerformance).not.toHaveBeenCalled();
+  });
+
+  it('blocks vendor performance when vendor resource authorization denies access', async () => {
+    const authz = makeAuthzStub({
+      authorizeResource: (resourceType?: string) => async (_req: any, res: Response, next: NextFunction) => {
+        if (resourceType === 'vendor') {
+          res.status(403).json({ code: 'AUTHORIZATION_DENIED' });
+          return;
+        }
+        next();
+      },
+    });
+    const app = makeApp(db, authz);
+
+    const res = await request(app).get('/api/vendors/performance/vendor-1');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
+    expect(db.getVendorPerformance).not.toHaveBeenCalled();
   });
 });

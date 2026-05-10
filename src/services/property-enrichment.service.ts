@@ -167,7 +167,7 @@ export class PropertyEnrichmentService {
     orderId: string,
     tenantId: string,
     address: { street: string; city: string; state: string; zipCode: string },
-    meta?: { engagementId?: string },
+    meta?: { engagementId?: string; sourceArtifactId?: string },
   ): Promise<EnrichmentResult> {
     if (!orderId) {
       throw new Error('PropertyEnrichmentService.enrichOrder: orderId is required');
@@ -266,7 +266,8 @@ export class PropertyEnrichmentService {
           'Geocoded subject coordinates at enrichment time',
           'PUBLIC_RECORDS_API',
           'SYSTEM:property-enrichment',
-          'geocoder',
+          meta?.sourceArtifactId,
+          'geocoder'
         );
         // createVersion returns the updated record; fall back to a synthesised
         // copy if the implementation returns void in some test stubs.
@@ -377,7 +378,8 @@ export class PropertyEnrichmentService {
             : 'Public-records refresh at order creation',
           'PUBLIC_RECORDS_API',
           'SYSTEM:property-enrichment',
-          dataResult.source,
+          meta?.sourceArtifactId,
+          dataResult.source
         );
       }
 
@@ -471,7 +473,8 @@ export class PropertyEnrichmentService {
         'AVM value fetched from Bridge Interactive (Zestimate)',
         'PUBLIC_RECORDS_API',
         'SYSTEM:property-enrichment',
-        'Bridge Interactive',
+        undefined,
+        'Bridge Interactive'
       );
 
       this.logger.info('PropertyEnrichmentService: AVM patched on PropertyRecord', {
@@ -728,7 +731,8 @@ export class PropertyEnrichmentService {
       `Tax assessment appended for year ${taxYear}`,
       'PUBLIC_RECORDS_API',
       'SYSTEM:property-enrichment',
-      dataResult.source,
+      undefined, // we don't thread sourceArtifactId down to _addTaxAssessmentRecord at the moment.
+      dataResult.source
     );
   }
 }

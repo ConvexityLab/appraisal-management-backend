@@ -270,12 +270,21 @@ describe('PropertyEnrichmentService.enrichOrder', () => {
     const svc = new PropertyEnrichmentService(cosmos as any, propSvc as any, provider, makeNoopGeocoder() as any, makeBridgeService() as any);
     await svc.enrichOrder(ORDER_ID, TENANT, BASE_ADDRESS);
 
-    const [, , firstCallChanges, , , , firstCallSourceProvider] =
-      propSvc.createVersion.mock.calls[0] as [string, string, any, string, string, string, string | undefined];
+    const [, , firstCallChanges, , , , sourceArtifactId, firstCallSourceProvider] =
+      propSvc.createVersion.mock.calls[0] as [
+        string,
+        string,
+        any,
+        string,
+        string,
+        string,
+        string | undefined,
+        string,
+      ];
 
     // Top-level lastVerifiedSource is set on the PropertyRecord changes payload
     expect(firstCallChanges.lastVerifiedSource).toBe('Bridge Interactive');
-    // The 7th argument to createVersion is the per-version sourceProvider audit value
+    // The 8th argument to createVersion is the per-version sourceProvider audit value
     expect(firstCallSourceProvider).toBe('Bridge Interactive');
   });
 

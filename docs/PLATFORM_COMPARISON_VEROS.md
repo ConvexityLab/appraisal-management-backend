@@ -216,7 +216,7 @@ interface QCValidationReport {
 - 15 checklist management endpoints
 - 12 execution endpoints
 - 20 results/analytics endpoints
-- Role-based access control (admin, manager, qc_analyst, appraiser)
+- Role-based access control (admin, manager, analyst, appraiser)
 
 #### ⚠️ What We're Missing
 - Visual QC dashboard with charts/graphs

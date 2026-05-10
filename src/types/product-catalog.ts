@@ -23,7 +23,7 @@
  * HIERARCHY
  * ---------
  *   Engagement
- *     └── EngagementLoan (many, embedded)
+ *     └── EngagementProperty (many, embedded)
  *           └── EngagementClientOrder (many) — productType: ProductType
  *                 └── VendorOrder / Order (many) — productType: ProductType
  *                       └── Document (many) — category: DocumentCategory

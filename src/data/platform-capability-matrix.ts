@@ -30,7 +30,7 @@ export const AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID = 'platform-capa
 
 const ALL_RESOURCE_TYPES: ResourceType[] = [
   'order', 'client_order', 'vendor_order',
-  'vendor', 'qc_review', 'qc_queue',
+  'vendor', 'access_graph', 'admin_panel', 'ai', 'code', 'qc_review', 'qc_queue',
   'revision', 'escalation', 'analytics',
   'user', 'rov_request', 'arv_analysis',
   'document', 'engagement', 'appraiser',
@@ -79,7 +79,7 @@ export const DEFAULT_AUTHORIZATION_CAPABILITY_DEFINITIONS: CapabilityRule[] = [
   allow('manager', 'rov_request',   ['read', 'create', 'update'], 'default capability for manager on rov_request'),
   allow('manager', 'arv_analysis',  ['read', 'create', 'update'], 'default capability for manager on arv_analysis'),
 
-  // ── Analyst (canonical role name; was "qc_analyst") ───────────────────────
+  // ── Analyst (canonical role name) ─────────────────────────────────────────
   allow('analyst',  'order',        ['read', 'update'], 'default capability for analyst on order'),
   allow('analyst',  'client_order', ['read', 'update'], 'default capability for analyst on client_order'),
   allow('analyst',  'vendor_order', ['read', 'update'], 'default capability for analyst on vendor_order'),

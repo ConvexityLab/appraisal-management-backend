@@ -1,5 +1,10 @@
 # Property-as-Root Data Architecture Refactor
 
+> **Superseded direction note (2026-05-10):** The approved target-state plan is now
+> [current-plan/PROPERTY_CANONICAL_ARCHITECTURE_IMPLEMENTATION_PLAN_2026-05-10.md](current-plan/PROPERTY_CANONICAL_ARCHITECTURE_IMPLEMENTATION_PLAN_2026-05-10.md).
+> This earlier plan remains useful as historical context, but the new plan is the
+> authoritative implementation tracker.
+
 **Created:** March 11, 2026  
 **Last Updated:** March 11, 2026  
 **Status:** 🔴 PLANNING — Not yet started  

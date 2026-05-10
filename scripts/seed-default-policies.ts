@@ -14,7 +14,7 @@
  *
  * Required environment variables:
  *   COSMOS_ENDPOINT       — Cosmos DB account endpoint
- *   COSMOS_DATABASE_ID    — Cosmos DB database name
+ *   COSMOS_DATABASE_ID or COSMOS_DATABASE_NAME — Cosmos DB database name
  *   SEED_TENANT_ID        — Target tenant; defaults to 'default'
  *
  * Authentication:
@@ -47,11 +47,11 @@ function deterministicId(tenantId: string, r: PolicyRule): string {
 
 async function main(): Promise<void> {
   const endpoint = process.env['COSMOS_ENDPOINT'];
-  const databaseId = process.env['COSMOS_DATABASE_ID'];
+  const databaseId = process.env['COSMOS_DATABASE_ID'] ?? process.env['COSMOS_DATABASE_NAME'];
   const tenantId = process.env['SEED_TENANT_ID'] ?? 'default';
 
   if (!endpoint) throw new Error('COSMOS_ENDPOINT is required');
-  if (!databaseId) throw new Error('COSMOS_DATABASE_ID is required');
+  if (!databaseId) throw new Error('COSMOS_DATABASE_ID or COSMOS_DATABASE_NAME is required');
 
   const client = new CosmosClient({
     endpoint,

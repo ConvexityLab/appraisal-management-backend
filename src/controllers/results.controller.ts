@@ -17,6 +17,8 @@ import {
   QCDecision
 } from '../types/qc-management.js';
 import { ApiResponse } from '../types/index.js';
+import type { UserProfile } from '../types/authorization.types.js';
+import { normalizePrivilegedRoleAlias } from '../utils/auth-normalization.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -26,7 +28,26 @@ export interface AuthenticatedRequest extends Request {
     permissions: string[];
     organizationId?: string;
     clientId?: string;
+    tenantId?: string;
   };
+  userProfile?: UserProfile;
+}
+
+type QCResultsAccessUser = {
+  id?: string;
+  role?: UserProfile['role'];
+  email?: string;
+  clientId?: string;
+  organizationId?: string;
+  tenantId?: string;
+};
+
+function normalizeLegacyRole(role: string | undefined): UserProfile['role'] | undefined {
+  if (!role) {
+    return undefined;
+  }
+
+  return normalizePrivilegedRoleAlias(role) ?? undefined;
 }
 
 export interface QCResultsFilter {
@@ -332,7 +353,7 @@ export class QCResultsController {
       }
 
       // Check access permissions (adapted for both result types)
-      if (!this.hasResultAccess(req.user, result)) {
+      if (!this.hasResultAccess(this.getAccessUser(req), result)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_RESULT_ACCESS_DENIED', 'Access denied to this QC result')
@@ -402,7 +423,7 @@ export class QCResultsController {
       const result: any = resultResponse.data;
 
       // Check access permissions
-      if (!this.hasResultAccess(req.user, result)) {
+      if (!this.hasResultAccess(this.getAccessUser(req), result)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_RESULT_ACCESS_DENIED', 'Access denied to this QC result')
@@ -859,7 +880,7 @@ export class QCResultsController {
       const report: any = reportResponse.data;
 
       // Check access permissions
-      if (!this.hasReportAccess(req.user, report)) {
+      if (!this.hasReportAccess(this.getAccessUser(req), report)) {
         res.status(403).json({
           success: false,
           error: createApiError('QC_REPORT_ACCESS_DENIED', 'Access denied to this QC report')
@@ -1074,7 +1095,7 @@ export class QCResultsController {
 
       // Filter out null results and check access
       const validResults = results.filter(result => 
-        result && this.hasResultAccess(req.user, result)
+        result && this.hasResultAccess(this.getAccessUser(req), result)
       );
 
       if (validResults.length < 2) {
@@ -1592,20 +1613,41 @@ export class QCResultsController {
     };
   }
 
-  private hasResultAccess(user: any, result: any): boolean {
+  private getAccessUser(req: AuthenticatedRequest): QCResultsAccessUser | undefined {
+    if (req.userProfile) {
+      return req.userProfile as QCResultsAccessUser;
+    }
+
+    if (!req.user) {
+      return undefined;
+    }
+
+    const canonicalRole = normalizeLegacyRole(req.user.role);
+
+    return {
+      id: req.user.id,
+      email: req.user.email,
+      ...(canonicalRole !== undefined ? { role: canonicalRole } : {}),
+      ...(req.user.clientId ? { clientId: req.user.clientId } : {}),
+      ...(req.user.organizationId ? { organizationId: req.user.organizationId } : {}),
+      ...(req.user.tenantId ? { tenantId: req.user.tenantId } : {}),
+    };
+  }
+
+  private hasResultAccess(user: QCResultsAccessUser | undefined, result: any): boolean {
     if (!user) return false;
-    if (user.role === 'admin' || user.role === 'system') return true;
+    if (user.role === 'admin') return true;
     if (result.executedBy === user.id) return true;
     if (result.clientId && user.clientId && result.clientId === user.clientId) return true;
     if (result.organizationId && user.organizationId && result.organizationId === user.organizationId) return true;
-    // For QC reviews, allow QC analysts, managers, and appraisers to access reviews
-    if (user.role === 'qc_analyst' || user.role === 'manager' || user.role === 'appraiser') return true;
+    // For QC reviews, canonical analyst, manager, and appraiser roles may access reviews.
+    if (user.role === 'analyst' || user.role === 'manager' || user.role === 'appraiser') return true;
     return false;
   }
 
-  private hasReportAccess(user: any, report: any): boolean {
+  private hasReportAccess(user: QCResultsAccessUser | undefined, report: any): boolean {
     if (!user) return false;
-    if (user.role === 'admin' || user.role === 'system') return true;
+    if (user.role === 'admin') return true;
     if (report.generatedBy === user.id) return true;
     if (report.filters.clientId && user.clientId && report.filters.clientId === user.clientId) return true;
     if (report.filters.organizationId && user.organizationId && report.filters.organizationId === user.organizationId) return true;

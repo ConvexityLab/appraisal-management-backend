@@ -345,7 +345,7 @@ describe('PATCH /api/users/:userId/role', () => {
       expect(res.status).toBe(403);
     });
 
-    it('qc_analyst → 403', async () => {
+    it('analyst → 403', async () => {
       const res = await request(app)
         .patch('/api/users/user-in-tenant-a/role')
         .set('Authorization', `Bearer ${mintToken('up-analyst-a-uid')}`)
@@ -563,7 +563,7 @@ describe('PATCH /api/users/:userId/access-scope', () => {
       expect(res.status).toBe(403);
     });
 
-    it('qc_analyst → 403', async () => {
+    it('analyst → 403', async () => {
       const res = await request(app)
         .patch('/api/users/user-in-tenant-a/access-scope')
         .set('Authorization', `Bearer ${mintToken('up-analyst-a-uid')}`)

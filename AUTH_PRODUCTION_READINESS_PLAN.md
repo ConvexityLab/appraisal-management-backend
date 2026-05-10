@@ -36,8 +36,8 @@ The authorization infrastructure has a **solid skeleton** but critical gaps that
 | G7 | **Legacy `qc-api-validation.middleware.ts` `requireRole()` reads roles from JWT claims** — conflicts with the Casbin architecture that intentionally strips roles from the token and loads them from DB. These checks silently pass or fail based on stale JWT data. | MEDIUM |
 | G8 | **UI auth is still mock** — `authApi.ts` calls `/api/mock/auth/*`. No real MSAL/Entra token flow is wired to the user object that `FuseAuthorization` checks. | **CRITICAL** |
 | G9 | **UI route guards are empty** — every production route has `auth: null` or no `auth` property. `FuseAuthorization` is wired but never invoked on protected content. | HIGH |
-| G10 | **UI role taxonomy (`admin/staff/user`) does not match backend** (`admin/manager/qc_analyst/appraiser`). The mapping bridge in `aiScopes.ts` does not apply to route guards or data-fetch hooks. | MEDIUM |
-| G11 | **No field-level authorization** — a `qc_analyst` can read the full order document including loan amounts, borrower PII, pricing, etc. Scoping which fields each role sees is not implemented. | MEDIUM |
+| G10 | **UI role taxonomy (`admin/staff/user`) does not match backend** (`admin/manager/analyst/appraiser`). The mapping bridge in `aiScopes.ts` does not apply to route guards or data-fetch hooks. | MEDIUM |
+| G11 | **No field-level authorization** — an `analyst` can read the full order document including loan amounts, borrower PII, pricing, etc. Scoping which fields each role sees is not implemented. | MEDIUM |
 | G12 | **`ENFORCE_AUTHORIZATION=false` has no start-up guard** — it silently disables all authorization in any environment including production if the env var is wrong. | HIGH |
 
 ---
@@ -148,7 +148,7 @@ Removes hard-coded role logic from `casbin-engine.service.ts` and makes policies
   interface PolicyRule {
     id: string;
     tenantId: string;
-    role: string;                    // 'manager', 'qc_analyst', etc.
+    role: string;                    // 'manager', 'analyst', etc.
     resourceType: ResourceType;
     actions: Action[];
     conditions: PolicyCondition[];   // attribute-based filters
@@ -175,8 +175,8 @@ Removes hard-coded role logic from `casbin-engine.service.ts` and makes policies
   | admin | * | * | none (allow all) |
   | manager | order | read | team IN user.accessScope.teamIds OR client IN user.accessScope.managedClientIds |
   | manager | order | write | team IN user.accessScope.teamIds |
-  | qc_analyst | order | read | is_assigned OR (is_owner AND ASSIGNED_ONLY) |
-  | qc_analyst | qc_review | read | is_assigned |
+  | analyst | order | read | is_assigned OR (is_owner AND ASSIGNED_ONLY) |
+  | analyst | qc_review | read | is_assigned |
   | appraiser | order | read | is_owner OR is_assigned |
   | appraiser | order | write | is_owner OR is_assigned |
 
@@ -302,9 +302,9 @@ Connects the frontend to real identity, applies route guards, and removes mock a
   const authRoles = {
     admin:      ['admin'],
     manager:    ['admin', 'manager'],
-    qc_analyst: ['admin', 'manager', 'qc_analyst'],
-    appraiser:  ['admin', 'manager', 'qc_analyst', 'appraiser'],
-    user:       ['admin', 'manager', 'qc_analyst', 'appraiser', 'user'],
+    analyst:    ['admin', 'manager', 'analyst'],
+    appraiser:  ['admin', 'manager', 'analyst', 'appraiser'],
+    user:       ['admin', 'manager', 'analyst', 'appraiser', 'user'],
     onlyGuest:  []
   };
   ```
@@ -321,10 +321,10 @@ Connects the frontend to real identity, applies route guards, and removes mock a
   | Route prefix | Required role |
   |---|---|
   | `/orders/*` | `authRoles.appraiser` (any authenticated staff) |
-  | `/vendors/*` | `authRoles.qc_analyst` |
+  | `/vendors/*` | `authRoles.analyst` |
   | `/analytics/*` | `authRoles.manager` |
   | `/admin/*` | `authRoles.admin` |
-  | `/qc/*` | `authRoles.qc_analyst` |
+  | `/qc/*` | `authRoles.analyst` |
   | `/bulk-portfolios/*` | `authRoles.manager` |
 
 - [ ] Write test (Playwright or Vitest React): sign in as `appraiser`, navigate to `/admin` → verify redirect to 403 page; navigate to `/orders` → verify content loads
@@ -339,7 +339,7 @@ Connects the frontend to real identity, applies route guards, and removes mock a
   - Create Order button → hide for `user` role
   - Assign Vendor button → hide for `appraiser`
   - Admin panel link → hide for non-admin
-  - Bulk Upload tab → hide for `appraiser` and `qc_analyst`
+  - Bulk Upload tab → hide for `appraiser` and `analyst`
 - [ ] Write component tests for each conditional rendering case
 
 ### 5.5 — Intercept 401/403 API responses globally
@@ -360,8 +360,8 @@ Expands the policy model to support attribute-based conditions, inheritance, tim
 
 > **Files:** `src/services/policy-evaluator.service.ts`, `src/types/policy.types.ts`
 
-- [ ] Add `RoleHierarchy` document to Cosmos: defines parent/child relationships (`manager` > `qc_analyst` > `appraiser`)
-- [ ] `PolicyEvaluatorService` resolves inherited policies: a `manager` automatically satisfies any `qc_analyst` or `appraiser` policy
+- [ ] Add `RoleHierarchy` document to Cosmos: defines parent/child relationships (`manager` > `analyst` > `appraiser`)
+- [ ] `PolicyEvaluatorService` resolves inherited policies: a `manager` automatically satisfies any `analyst` or `appraiser` policy
 - [ ] This removes the need to duplicate policies for every sub-role
 - [ ] Write test: `manager` calls a route guarded by `appraiser`-level policy → allowed via inheritance
 
@@ -390,7 +390,7 @@ Expands the policy model to support attribute-based conditions, inheritance, tim
 
 - [ ] Define a projection map: `role → allowedFields[]` for the `order` document type:
   - `appraiser`: `[id, orderNumber, status, propertyAddress, dueDate, checklistItems]` — no loan amount, borrower PII
-  - `qc_analyst`: above + `[assessedValue, loanAmount]` — no borrower SSN/DOB
+  - `analyst`: above + `[assessedValue, loanAmount]` — no borrower SSN/DOB
   - `manager`+: full document
 - [ ] Add `applyFieldProjection(doc, role): PartialOrder` utility
 - [ ] Apply to `GET /api/orders/:id` response and to order list items

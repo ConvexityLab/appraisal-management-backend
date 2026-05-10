@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CanonicalSnapshotService } from '../../src/services/canonical-snapshot.service.js';
 import type { RunLedgerRecord } from '../../src/types/run-ledger.types.js';
+import { OrderContextLoader } from '../../src/services/order-context-loader.service.js';
 
 function buildExtractionRun(overrides?: Partial<RunLedgerRecord>): RunLedgerRecord {
   const now = new Date().toISOString();
@@ -36,6 +37,87 @@ function buildExtractionRun(overrides?: Partial<RunLedgerRecord>): RunLedgerReco
 describe('CanonicalSnapshotService merge behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('records a document-extraction observation when property context is available', async () => {
+    vi.spyOn(OrderContextLoader.prototype, 'loadByVendorOrderId').mockResolvedValue({
+      vendorOrder: {
+        id: 'order-001',
+        tenantId: 'tenant-001',
+        propertyId: 'prop-001',
+      },
+      clientOrder: null,
+    } as any);
+
+    const queryItems = vi.fn().mockImplementation(async (container: string) => {
+      if (container === 'documents') {
+        return {
+          success: true,
+          data: [
+            {
+              id: 'doc-001',
+              tenantId: 'tenant-001',
+              orderId: 'order-001',
+              uploadedAt: new Date('2026-05-10T00:00:00.000Z'),
+              name: 'doc.pdf',
+              blobUrl: 'https://example/doc.pdf',
+              blobName: 'doc.pdf',
+              fileSize: 12,
+              mimeType: 'application/pdf',
+              version: 1,
+              isLatestVersion: true,
+              uploadedBy: 'user-1',
+              extractedData: { appraisalValue: 500000 },
+            },
+          ],
+        };
+      }
+      if (container === 'property-enrichments') {
+        return { success: true, data: [] };
+      }
+      if (container === 'property-records') {
+        return {
+          success: true,
+          data: [
+            {
+              id: 'prop-001',
+              tenantId: 'tenant-001',
+              address: { street: '1 MAIN', city: 'A', state: 'TX', zip: '1' },
+              propertyType: 'single_family_residential',
+              building: { gla: 1, yearBuilt: 1, bedrooms: 1, bathrooms: 1 },
+              taxAssessments: [],
+              permits: [],
+              recordVersion: 1,
+              versionHistory: [],
+              dataSource: 'MANUAL_ENTRY',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              createdBy: 'SYSTEM',
+            },
+          ],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    const upsertItem = vi.fn().mockResolvedValue({ success: true });
+    const getDocument = vi.fn().mockResolvedValue(null);
+    const createDocument = vi.fn().mockImplementation(async (_container: string, doc: any) => doc);
+    const db = { queryItems, upsertItem, getDocument, createDocument };
+
+    const service = new CanonicalSnapshotService(db as any);
+    await service.createFromExtractionRun(buildExtractionRun());
+
+    expect(createDocument).toHaveBeenCalledWith(
+      'property-observations',
+      expect.objectContaining({
+        type: 'property-observation',
+        propertyId: 'prop-001',
+        observationType: 'document-extraction',
+        sourceSystem: 'document-extraction',
+        sourceRecordId: 'ext_run_001',
+      }),
+    );
   });
 
   it('builds snapshot when enrichment is missing', async () => {

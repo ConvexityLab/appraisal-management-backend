@@ -64,6 +64,13 @@ vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
             };
           }
 
+          if (querySpec?.query?.includes("c.type = 'authorization-policy'")) {
+            const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
+            return {
+              resources: SEEDED_POLICIES.filter((doc) => doc.tenantId === tenantId),
+            };
+          }
+
           return { resources: [] };
         },
       }),
@@ -90,18 +97,25 @@ import { AppraisalManagementAPIServer } from '../../src/api/api-server.js';
 import { AuthorizationService } from '../../src/services/authorization.service.js';
 import { TestTokenGenerator } from '../../src/utils/test-token-generator.js';
 import type { UserProfile } from '../../src/types/authorization.types.js';
+import type { PolicyRule } from '../../src/types/policy.types.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const TENANT = 'policy-http-test-tenant';
 
-function makeProfile(id: string, role: UserProfile['role']): UserProfile {
+function makeProfile(
+  id: string,
+  role: UserProfile['role'],
+  overrides: Partial<Pick<UserProfile, 'portalDomain' | 'boundEntityIds' | 'clientId' | 'subClientId' | 'accessScope'>> = {},
+): UserProfile {
   return {
     id,
     email: `${role}@policy-test.dev`,
     name: `Test ${role}`,
     tenantId: TENANT,
     role,
+    clientId: overrides.clientId,
+    subClientId: overrides.subClientId,
     accessScope: {
       teamIds: [],
       departmentIds: [],
@@ -113,11 +127,12 @@ function makeProfile(id: string, role: UserProfile['role']): UserProfile {
       canViewAllOrders: false,
       canViewAllVendors: false,
       canOverrideQC: false,
+      ...overrides.accessScope,
     },
-    boundEntityIds: [],
+    boundEntityIds: overrides.boundEntityIds ?? [],
     isInternal: false,
     isActive: true,
-    portalDomain: 'platform',
+    portalDomain: overrides.portalDomain ?? 'platform',
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -126,10 +141,121 @@ function makeProfile(id: string, role: UserProfile['role']): UserProfile {
 const TEST_USERS: Record<string, UserProfile> = {
   'pm-admin-uid':     makeProfile('pm-admin-uid', 'admin'),
   'pm-manager-uid':   makeProfile('pm-manager-uid', 'manager'),
+  'pm-client-admin-uid': makeProfile('pm-client-admin-uid', 'manager', {
+    portalDomain: 'client',
+    boundEntityIds: ['client-123'],
+    clientId: 'client-123',
+    subClientId: 'sub-789',
+  }),
+  'pm-client-analyst-uid': makeProfile('pm-client-analyst-uid', 'analyst', {
+    portalDomain: 'client',
+    boundEntityIds: ['client-123'],
+    clientId: 'client-123',
+    subClientId: 'sub-789',
+  }),
   'pm-analyst-uid':   makeProfile('pm-analyst-uid', 'analyst'),
   'pm-appraiser-uid': makeProfile('pm-appraiser-uid', 'appraiser'),
   'pm-reviewer-uid':  makeProfile('pm-reviewer-uid', 'reviewer'),
 };
+
+const SEEDED_POLICIES: PolicyRule[] = [
+  {
+    id: 'policy-3',
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'manager',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 100,
+    description: 'manager engagement read for client 123',
+    clientId: 'client-123',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'seed',
+  },
+  {
+    id: 'policy-2',
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'admin',
+    resourceType: 'order',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 50,
+    description: 'admin order read low priority',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'seed',
+  },
+  {
+    id: 'policy-1',
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'admin',
+    resourceType: 'order',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 200,
+    description: 'admin order read high priority',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'seed',
+  },
+  {
+    id: 'policy-4',
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'analyst',
+    resourceType: 'escalation',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 125,
+    description: 'analyst escalation read for client 123 sub 789',
+    clientId: 'client-123',
+    subClientId: 'sub-789',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'seed',
+  },
+  {
+    id: 'policy-5',
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'analyst',
+    resourceType: 'escalation',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 90,
+    description: 'analyst escalation read for client 123 other sub',
+    clientId: 'client-123',
+    subClientId: 'sub-other',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'seed',
+  },
+  {
+    id: 'policy-6',
+    type: 'authorization-policy',
+    tenantId: TENANT,
+    role: 'manager',
+    resourceType: 'engagement',
+    actions: ['read'],
+    conditions: [],
+    effect: 'allow',
+    priority: 100,
+    description: 'manager engagement read for other client',
+    clientId: 'client-999',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'seed',
+  },
+];
 
 // ─── Server setup ────────────────────────────────────────────────────────────
 
@@ -146,8 +272,8 @@ function mintToken(userId: string): string {
     name: profile.name,
     role: profile.role,
     tenantId: TENANT,
-    clientId: process.env.AXIOM_CLIENT_ID,
-    subClientId: process.env.AXIOM_SUB_CLIENT_ID,
+    clientId: profile.clientId ?? process.env.AXIOM_CLIENT_ID,
+    subClientId: profile.subClientId ?? process.env.AXIOM_SUB_CLIENT_ID,
   });
 }
 
@@ -208,7 +334,7 @@ async function assertAdminPasses(
   expect(res.status).not.toBe(403);
 }
 
-const NON_ADMIN_IDS = ['pm-manager-uid', 'pm-analyst-uid', 'pm-appraiser-uid', 'pm-reviewer-uid'];
+const NON_ADMIN_IDS = ['pm-manager-uid', 'pm-client-analyst-uid', 'pm-analyst-uid', 'pm-appraiser-uid', 'pm-reviewer-uid'];
 const SAMPLE_POLICY = {
   role: 'manager',
   resourceType: 'order',
@@ -232,8 +358,54 @@ describe('GET /api/policies', () => {
     });
   }
 
-  it('admin → passes auth gate', async () => {
-    await assertAdminPasses('get', '/api/policies');
+  it('admin → returns policies sorted by role, resource type, then priority desc', async () => {
+    const token = mintToken('pm-admin-uid');
+    const res = await request(app)
+      .get('/api/policies')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((policy: PolicyRule) => policy.id)).toEqual([
+      'policy-1',
+      'policy-2',
+      'policy-4',
+      'policy-5',
+      'policy-3',
+      'policy-6',
+    ]);
+  });
+
+  it('client admin → returns only their client and matching sub-client policies', async () => {
+    const token = mintToken('pm-client-admin-uid');
+    const res = await request(app)
+      .get('/api/policies')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((policy: PolicyRule) => policy.id)).toEqual([
+      'policy-4',
+      'policy-3',
+    ]);
+  });
+
+  it('client admin → supports scoped server-side filters', async () => {
+    const token = mintToken('pm-client-admin-uid');
+    const res = await request(app)
+      .get('/api/policies?scope=sub-client-scoped&clientId=client-123&subClientId=sub-789')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((policy: PolicyRule) => policy.id)).toEqual(['policy-4']);
+  });
+
+  it('client admin → cannot request another client scope', async () => {
+    const token = mintToken('pm-client-admin-uid');
+    const res = await request(app)
+      .get('/api/policies?clientId=client-999')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('POLICY_SCOPE_FORBIDDEN');
   });
 });
 
@@ -277,6 +449,29 @@ describe('POST /api/policies', () => {
 
   it('admin → passes auth gate', async () => {
     await assertAdminPasses('post', '/api/policies', SAMPLE_POLICY);
+  });
+
+  it('client admin → can create a policy inside their scope', async () => {
+    const token = mintToken('pm-client-admin-uid');
+    const res = await request(app)
+      .post('/api/policies')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...SAMPLE_POLICY, clientId: 'client-123', subClientId: 'sub-789' })
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(201);
+  });
+
+  it('client admin → cannot create tenant-wide policy', async () => {
+    const token = mintToken('pm-client-admin-uid');
+    const res = await request(app)
+      .post('/api/policies')
+      .set('Authorization', `Bearer ${token}`)
+      .send(SAMPLE_POLICY)
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('POLICY_SCOPE_FORBIDDEN');
   });
 });
 

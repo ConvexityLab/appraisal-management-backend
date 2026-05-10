@@ -46,43 +46,38 @@ vi.mock('../../src/services/property-enrichment.service.js', () => ({
   }),
 }));
 
-// Capture the EngagementService instance so we can control createEngagement.
-// Phase B: each property must have at least one clientOrder with an id, since
-// the worker pulls productId/engagementClientOrderId from clientOrders[0].id
-// to call ClientOrderService.addVendorOrders.
-let capturedCreateEngagement: ReturnType<typeof vi.fn>;
+// Eager init at module load: tests can call .mockResolvedValue() on these
+// BEFORE constructing the worker. Previously they were set inside the
+// vi.mock factory (which only fires when the class is instantiated), so
+// .mockResolvedValue called pre-construction hit `undefined.mockResolvedValue`.
+const capturedCreateEngagement = vi.fn().mockResolvedValue({
+  id:       'eng-001',
+  tenantId: 'tenant-001',
+  properties: [
+    {
+      id:         'loan-001',
+      loanNumber: 'LN-001',
+      propertyId: 'prop-001',
+      clientOrders: [{ id: 'co-001', productType: 'FULL_APPRAISAL' }],
+      property: { address: '123 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+    },
+  ],
+});
 vi.mock('../../src/services/engagement.service.js', () => ({
-  EngagementService: vi.fn().mockImplementation(() => {
-    capturedCreateEngagement = vi.fn().mockResolvedValue({
-      id:       'eng-001',
-      tenantId: 'tenant-001',
-      properties: [
-        {
-          id:         'loan-001',
-          loanNumber: 'LN-001',
-          propertyId: 'prop-001',
-          clientOrders: [{ id: 'co-001', productType: 'FULL_APPRAISAL' }],
-          property: { address: '123 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
-        },
-      ],
-    });
-    return { createEngagement: capturedCreateEngagement };
-  }),
+  EngagementService: vi.fn().mockImplementation(() => ({
+    createEngagement: capturedCreateEngagement,
+  })),
 }));
 
-// Capture the ClientOrderService instance so we can control addVendorOrders.
-// Phase B step 6: bulk-ingestion-worker now calls addVendorOrders against
-// the existing standalone ClientOrder created during engagement creation.
-let capturedAddVendorOrders: ReturnType<typeof vi.fn>;
+const capturedAddVendorOrders = vi.fn().mockImplementation(async (clientOrderId: string) => [{
+  id: `vo-${clientOrderId}`,
+  orderNumber: `ORD-${clientOrderId}`,
+  tenantId: 'tenant-001',
+}]);
 vi.mock('../../src/services/client-order.service.js', () => ({
-  ClientOrderService: vi.fn().mockImplementation(() => {
-    capturedAddVendorOrders = vi.fn().mockImplementation(async (clientOrderId: string) => [{
-      id: `vo-${clientOrderId}`,
-      orderNumber: `ORD-${clientOrderId}`,
-      tenantId: 'tenant-001',
-    }]);
-    return { addVendorOrders: capturedAddVendorOrders };
-  }),
+  ClientOrderService: vi.fn().mockImplementation(() => ({
+    addVendorOrders: capturedAddVendorOrders,
+  })),
   ClientOrderNotFoundError: class extends Error {},
   ClientOrderConcurrencyError: class extends Error {},
 }));
@@ -221,7 +216,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await vi.waitFor(() => expect(capturedEnrichOrder).toHaveBeenCalledOnce());
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): fires enrichOrder N times for N created orders (multi-item job)', async () => {
+  it('fires enrichOrder N times for N created orders (multi-item job)', async () => {
     const job    = makeJob(3);
     const db     = makeDbStub(job);
     // EngagementService mock must return N loans to match N items
@@ -245,7 +240,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await vi.waitFor(() => expect(capturedEnrichOrder).toHaveBeenCalledTimes(3));
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): creates one engagement per item when engagementGranularity is PER_LOAN', async () => {
+  it('creates one engagement per item when engagementGranularity is PER_LOAN', async () => {
     const job = makeJob(2, { engagementGranularity: 'PER_LOAN' });
     const db = makeDbStub(job);
     const worker = new BulkIngestionOrderCreationWorkerService(db);
@@ -293,7 +288,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     });
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): creates one shared engagement for multi-item jobs by default', async () => {
+  it('creates one shared engagement for multi-item jobs by default', async () => {
     const job = makeJob(2);
     const db = makeDbStub(job);
     const worker = new BulkIngestionOrderCreationWorkerService(db);
@@ -326,7 +321,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     expect(capturedAddVendorOrders.mock.calls[1]?.[3]?.engagementId).toBe('eng-batch-1');
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): uses configured engagement field mapping when standard borrower fields are absent', async () => {
+  it('uses configured engagement field mapping when standard borrower fields are absent', async () => {
     const job = makeJob(1, {
       items: [
         {
@@ -400,7 +395,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     );
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): passes orderId, tenantId, parsed address, and engagementId to enrichOrder', async () => {
+  it('passes orderId, tenantId, parsed address, and engagementId to enrichOrder', async () => {
     const job    = makeJob(1);
     const db     = makeDbStub(job);
     const worker = new BulkIngestionOrderCreationWorkerService(db);
@@ -432,7 +427,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     expect(meta.propertyId).toBe('prop-001');
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): propagates shared source identity from bulk row to created order metadata and canonical outputs', async () => {
+  it('propagates shared source identity from bulk row to created order metadata and canonical outputs', async () => {
     const job = makeJob(1);
     const db = makeDbStub(job);
     const worker = new BulkIngestionOrderCreationWorkerService(db);
@@ -488,7 +483,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     );
   });
 
-  it.skip('LEGACY (Phase B follow-up — capturedCreateEngagement init order): does not throw or abort order loop when enrichOrder rejects (non-fatal)', async () => {
+  it('does not throw or abort order loop when enrichOrder rejects (non-fatal)', async () => {
     const job    = makeJob(2);
     const db     = makeDbStub(job);
     capturedCreateEngagement.mockResolvedValue({

@@ -68,7 +68,7 @@ vi.mock('../src/services/service-bus-subscriber.js', () => ({
 vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
   VendorMatchingEngine: vi.fn().mockImplementation(() => {
     const instance: any = {
-    findMatchingVendors: vi.fn(),
+      findMatchingVendors: vi.fn(),
     };
     // Production now calls findMatchingVendorsAndDenied; adapt to the legacy
     // findMatchingVendors mock so existing test setups keep working.

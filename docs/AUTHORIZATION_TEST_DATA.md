@@ -105,8 +105,8 @@ This document describes the test orders created for authorization testing and fi
   - TEST-MGR-002 (owned, team-1/client-1)
   - TEST-ADMIN-001 (team-1/client-1)
 
-### QC Analyst (test-qc-analyst)
-- **Role**: qc_analyst
+### Analyst (test-analyst)
+- **Role**: analyst
 - **Teams**: [team-qc]
 - **Clients**: []
 - **Permissions**: Read/write QC reviews, assigned orders only
@@ -141,9 +141,9 @@ WHERE (
 )
 ```
 
-### QC Analyst Query Filter
+### Analyst Query Filter
 ```sql
--- QC Analyst sees only assigned or owned
+-- Analyst sees only assigned or owned
 WHERE (
   c.accessControl.ownerId = 'test-qc-analyst'
   OR ARRAY_CONTAINS(c.accessControl.assignedUserIds, 'test-qc-analyst')
@@ -175,7 +175,7 @@ Invoke-RestMethod -Uri "http://localhost:3000/api/orders" -Headers $headers
 $headers = @{ "Authorization" = "Bearer $env:TEST_JWT_MANAGER" }
 Invoke-RestMethod -Uri "http://localhost:3000/api/orders" -Headers $headers
 
-$headers = @{ "Authorization" = "Bearer $env:TEST_JWT_QC_ANALYST" }
+$headers = @{ "Authorization" = "Bearer $env:TEST_JWT_ANALYST" }
 Invoke-RestMethod -Uri "http://localhost:3000/api/orders" -Headers $headers
 
 $headers = @{ "Authorization" = "Bearer $env:TEST_JWT_APPRAISER" }

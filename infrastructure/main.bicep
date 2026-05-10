@@ -344,6 +344,17 @@ module cosmosPropertyEnrichmentsContainer 'modules/cosmos-property-enrichments-c
   }
 }
 
+// Cosmos DB Property Observations Container
+// Stores immutable property-domain observations for projector-driven canonical reads.
+module cosmosPropertyObservationsContainer 'modules/cosmos-property-observations-container.bicep' = {
+  name: 'cosmos-property-observations-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Property Data Cache Container
 // Persistent cache for all third-party property data (ATTOM, Bridge, etc.).
 // Pre-populated with ATTOM FL/LA CSV data; write-through on every live API call.

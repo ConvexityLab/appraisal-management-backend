@@ -301,7 +301,7 @@ The VisionOne Valuation Platform is a **full-stack, enterprise-grade appraisal m
 | # | Feature | Description | Frontend | Backend | DB Data | Enhancements Needed | ValueLink Parity |
 |---|---------|-------------|----------|---------|---------|---------------------|-----------------|
 | 13.1 | Azure Entra ID (SSO) Authentication | Enterprise SSO — all routes protected by Azure AD token validation | ✅ `@auth/useUser()` hook throughout | ✅ `AzureEntraAuthMiddleware` + `UnifiedAuthMiddleware` (supports test tokens for dev) | 🗄️ `users` | — | ✅ VisionOne Superior |
-| 13.2 | Casbin RBAC Engine | Industrial-strength role-based access: admin/manager/qc_analyst/appraiser | — (enforced per route) | ✅ `CasbinEngineService` + `AccessGraphService` + `AccessControlHelperService` | 🗄️ | — | ✅ VisionOne Superior |
+| 13.2 | Casbin RBAC Engine | Industrial-strength role-based access: admin/manager/analyst/appraiser | — (enforced per route) | ✅ `CasbinEngineService` + `AccessGraphService` + `AccessControlHelperService` | 🗄️ | — | ✅ VisionOne Superior |
 | 13.3 | Audit Trail | Every action logged: who, what, when, before/after state | — (automatic) | ✅ `AuditTrailService` — writes to `audit-trail` Cosmos container on every state change | 🗄️ `audit-trail` | — | ✅ VisionOne Exclusive |
 | 13.4 | Service Health Monitoring | Comprehensive health checks for all Azure services | ✅ (via API) | ✅ `ServiceHealthController` + `HealthCheckService` | — | — | ✅ VisionOne Exclusive |
 | 13.5 | Multi-tenant Architecture | Full tenant isolation: `tenantId` on every entity, enforced in all queries | — (architectural) | ✅ `tenantId` on every Cosmos document; tenant resolved from JWT | 🗄️ | — | ✅ VisionOne Exclusive |

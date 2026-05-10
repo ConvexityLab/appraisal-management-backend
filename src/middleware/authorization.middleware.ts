@@ -534,11 +534,13 @@ export class AuthorizationMiddleware {
       // Map resource types to container names
       const containerMap: Record<string, string> = {
         order: 'orders',
+        engagement: 'engagements',
         client: 'clients',
         client_order: 'client-orders',
         vendor_order: 'orders',
         vendor: 'vendors',
         appraiser: 'vendors',
+        document: 'documents',
         qc_review: 'qc_reviews',
         qc_queue: 'qc_queues',
         revision: 'revisions',

@@ -183,7 +183,9 @@ Current role mappings in the API:
 |---------------|----------|-------------|
 | Appraisal-Admins | `admin` | All permissions (`*`) |
 | Appraisal-Managers | `manager` | order_manage, vendor_manage, vendor_assign, analytics_view, qc_metrics, qc_validate |
-| Appraisal-QC-Analysts | `qc_analyst` | qc_validate, qc_execute, qc_metrics |
+| Appraisal-QC-Analysts | `analyst` | qc_validate, qc_execute, qc_metrics |
+
+Legacy Azure group and environment variable names may still say `QC_ANALYST`, but they should map to the canonical backend role `analyst`.
 | Appraisal-Appraisers | `appraiser` | order_view, order_update |
 
 To modify role mappings, edit `src/api/api-server.ts` → `configureAzureRoles()` method.

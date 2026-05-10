@@ -23,7 +23,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
-import type { Express } from 'express';
+import type { Application } from 'express';
 
 // ─── Set required env vars BEFORE any module imports ────────────────────────
 // These values must be set before the server classes are imported so that
@@ -163,9 +163,9 @@ function mintToken(userId: string, role: string): string {
 
 // ─── Server setup ────────────────────────────────────────────────────────────
 
-let app: Express;
+let app: Application;
 let server: AppraisalManagementAPIServer;
-let getUserProfileSpy: ReturnType<typeof vi.spyOn>;
+let getUserProfileSpy: { mockRestore: () => void };
 
 beforeAll(async () => {
   // Spy on getUserProfile BEFORE server init so newly created instances are covered.
@@ -317,6 +317,34 @@ describe('Layer 3 — Casbin DENY → 403 AUTHORIZATION_DENIED', () => {
     buildQueryFilterSpy.mockRestore();
   });
 
+  it('manager → GET /api/axiom/admin/queue/stats (admin_panel:manage denied) → 403', async () => {
+    const token = mintToken('manager-uid', 'manager');
+    const res = await request(app)
+      .get('/api/axiom/admin/queue/stats')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
+  });
+
+  it('appraiser → GET /api/analytics/overview (analytics:read denied) → 403', async () => {
+    const token = mintToken('appraiser-uid', 'appraiser');
+    const res = await request(app)
+      .get('/api/analytics/overview')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
+  });
+
+  it('manager → POST /api/ai/qc/analyze (ai:execute denied) → 403', async () => {
+    const token = mintToken('manager-uid', 'manager');
+    const res = await request(app)
+      .post('/api/ai/qc/analyze')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
+  });
+
   // The previous assertion that manager → GET /api/qc-workflow/queue → 403
   // is no longer valid. As of the Phase-1 auth refactor (PLATFORM_CAPABILITY_MATRIX),
   // manager now has qc_queue:read. The analyst → ALLOW test at line ~343
@@ -416,6 +444,34 @@ describe('Layer 3 — Casbin ALLOW → request passes auth gate (not 401/403)', 
     const res = await request(app)
       .get('/api/clients')
       .set('Authorization', `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  it('admin → GET /api/axiom/admin/queue/stats → passes auth', async () => {
+    const token = mintToken('admin-uid', 'admin');
+    const res = await request(app)
+      .get('/api/axiom/admin/queue/stats')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  it('manager → GET /api/analytics/overview → passes auth', async () => {
+    const token = mintToken('manager-uid', 'manager');
+    const res = await request(app)
+      .get('/api/analytics/overview')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  it('admin → POST /api/ai/qc/analyze → passes auth before payload validation', async () => {
+    const token = mintToken('admin-uid', 'admin');
+    const res = await request(app)
+      .post('/api/ai/qc/analyze')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });

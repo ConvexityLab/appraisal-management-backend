@@ -99,7 +99,7 @@ echo "Backend Client Secret: $secret"
      - Who can consent: **Admins and users**
      - Display name: "Access appraisal orders"
 3. Go to **App roles** (for role-based access):
-   - Add roles: `Admin`, `Manager`, `Appraiser`, `QC_Analyst`
+  - Add roles: `Admin`, `Manager`, `Analyst`, `Appraiser` (`QCAnalyst` remains acceptable only as a legacy alias during migration)
 4. Go to **API permissions**:
    - **Microsoft Graph**:
      - `User.Read` (delegated)

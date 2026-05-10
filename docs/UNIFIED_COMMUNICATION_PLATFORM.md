@@ -646,7 +646,7 @@ const authorizationMatrix = {
   },
   'qc_review': {
     'appraiser': ['view_chat', 'send_message', 'view_transcript'],
-    'qc_analyst': ['view_chat', 'send_message', 'view_insights', 'flag_issues'],
+    'analyst': ['view_chat', 'send_message', 'view_insights', 'flag_issues'],
     'reviewer': ['view_all', 'override', 'view_insights']
   }
 };

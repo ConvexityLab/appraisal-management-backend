@@ -21,6 +21,7 @@ import { FieldOverride } from '../types/final-report.types.js';
 import { FinalReportService } from '../services/final-report.service.js';
 import { Logger } from '../utils/logger.js';
 import type { AuthorizationMiddleware } from '../middleware/authorization.middleware.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 
 const logger = new Logger();
 
@@ -35,18 +36,56 @@ const axiomService = new AxiomService();
 export function createQCWorkflowRouter(authzMiddleware?: AuthorizationMiddleware): express.Router {
   const router = express.Router();
 
+  type AuthorizedRequest = Request & { authorizationFilter?: QueryFilter };
+
+  const loadProfile = authzMiddleware ? [authzMiddleware.loadUserProfile()] : [];
+
   // Guard arrays — empty when authzMiddleware is absent (e.g. test/legacy mode)
-  const qcQueueRead     = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'read')]    : [];
-  const qcQueueUpdate   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'update')]  : [];
-  const qcQueueExecute  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_queue',  'execute')] : [];
-  const revisionRead    = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'read')]    : [];
-  const revisionCreate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'create')]  : [];
-  const revisionUpdate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('revision',  'update')]  : [];
-  const escalationRead  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','read')]    : [];
-  const escalationCreate= authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','create')]  : [];
-  const escalationUpdate= authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('escalation','update')]  : [];
-  const analyticsRead   = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('analytics', 'read')]    : [];
-  const qcReviewUpdate  = authzMiddleware ? [authzMiddleware.loadUserProfile(), authzMiddleware.authorize('qc_review', 'update')]  : [];
+  const qcQueueRead = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'read')] : [];
+  const qcQueueReadScoped = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'read'), authzMiddleware.authorizeQuery('order', 'read')]
+    : [];
+  const qcQueueReadForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'read'), authzMiddleware.authorizeResource('order', 'read', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const qcQueueReadForDirectOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'read'), authzMiddleware.authorizeResource('order', 'read', { resourceIdParam: 'orderId' })]
+    : [];
+  const qcQueueUpdate = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'update')] : [];
+  const qcQueueUpdateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'update'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const qcQueueExecute = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'execute')] : [];
+  const qcQueueExecuteForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_queue', 'execute'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const revisionRead = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('revision', 'read')] : [];
+  const revisionReadScoped = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('revision', 'read'), authzMiddleware.authorizeQuery('order', 'read')]
+    : [];
+  const revisionReadForDirectOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('revision', 'read'), authzMiddleware.authorizeResource('order', 'read', { resourceIdParam: 'orderId' })]
+    : [];
+  const revisionUpdateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('revision', 'update'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const revisionCreateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('revision', 'create'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const escalationRead = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('escalation', 'read')] : [];
+  const escalationReadScoped = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('escalation', 'read'), authzMiddleware.authorizeQuery('order', 'read')]
+    : [];
+  const escalationCreateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('escalation', 'create'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const escalationUpdateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('escalation', 'update'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
+  const analyticsRead = authzMiddleware ? [...loadProfile, authzMiddleware.authorize('analytics', 'read')] : [];
+  const qcReviewUpdateForOrder = authzMiddleware
+    ? [...loadProfile, authzMiddleware.authorize('qc_review', 'update'), authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderIdForAuth' })]
+    : [];
 
   /** Lazy-init: resolved once for the controller-level CosmosDB instance */
 let _controllerDbInit: Promise<void> | null = null;
@@ -74,6 +113,111 @@ const handleValidationErrors = (req: Request, res: Response, next: Function): vo
   next();
 };
 
+const copyBodyStringToParam = (bodyField: string, paramName: string) => (req: Request, _res: Response, next: Function): void => {
+  const value = req.body?.[bodyField];
+  if (typeof value === 'string' && value.trim().length > 0) {
+    req.params[paramName] = value;
+  }
+  next();
+};
+
+const loadOrderIdFromDocument = (containerName: string, resourceIdParam: string, label: string) =>
+  async (req: Request, res: Response, next: Function): Promise<void> => {
+    try {
+      await ensureControllerDb();
+
+      const resourceId = req.params[resourceIdParam];
+      if (!resourceId) {
+        res.status(400).json({ success: false, error: `${resourceIdParam} is required` });
+        return;
+      }
+
+      const document = await dbService.getDocument<any>(containerName, resourceId);
+      if (!document) {
+        res.status(404).json({ success: false, error: `${label} not found` });
+        return;
+      }
+
+      if (typeof document.orderId !== 'string' || document.orderId.trim().length === 0) {
+        logger.error('QC workflow resource is missing parent orderId', { containerName, resourceId, label });
+        res.status(500).json({
+          success: false,
+          error: `${label} is missing parent order linkage`,
+        });
+        return;
+      }
+
+      req.params.orderIdForAuth = document.orderId;
+      next();
+    } catch (error) {
+      logger.error('Failed to resolve parent order for QC workflow authorization', {
+        containerName,
+        resourceIdParam,
+        label,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to resolve parent order authorization context',
+      });
+    }
+  };
+
+async function getAuthorizedOrderIds(orderIds: string[], authorizationFilter?: QueryFilter): Promise<Set<string>> {
+  if (orderIds.length === 0) {
+    return new Set();
+  }
+
+  if (!authorizationFilter || authorizationFilter.sql.trim() === '1=1') {
+    return new Set(orderIds);
+  }
+
+  if (authorizationFilter.sql.trim() === '1=0') {
+    return new Set();
+  }
+
+  await ensureControllerDb();
+
+  const orders = dbService.getContainer('orders');
+  const { resources } = await orders.items.query<string>({
+    query: `SELECT VALUE c.id FROM c WHERE ARRAY_CONTAINS(@orderIds, c.id) AND (${authorizationFilter.sql})`,
+    parameters: [{ name: '@orderIds', value: orderIds }, ...authorizationFilter.parameters],
+  }).fetchAll();
+
+  return new Set(resources);
+}
+
+async function filterItemsByAuthorizedOrder<T extends { orderId?: string }>(
+  req: AuthorizedRequest,
+  items: T[],
+): Promise<T[]> {
+  const orderIds = [...new Set(items.map(item => item.orderId).filter((orderId): orderId is string => typeof orderId === 'string' && orderId.length > 0))];
+  const allowedOrderIds = await getAuthorizedOrderIds(orderIds, req.authorizationFilter);
+  return items.filter(item => item.orderId && allowedOrderIds.has(item.orderId));
+}
+
+function buildQueueStatistics(queueItems: Array<{ status: string; slaBreached?: boolean; priorityLevel: string; submittedAt: Date }>) {
+  const pending = queueItems.filter(item => item.status === 'PENDING');
+  const now = Date.now();
+  const waitTimes = pending.map(item => Math.floor((now - item.submittedAt.getTime()) / (1000 * 60)));
+
+  return {
+    total: queueItems.length,
+    pending: queueItems.filter(item => item.status === 'PENDING').length,
+    inReview: queueItems.filter(item => item.status === 'IN_REVIEW').length,
+    completed: queueItems.filter(item => item.status === 'COMPLETED').length,
+    breached: queueItems.filter(item => item.slaBreached).length,
+    averageWaitTime: waitTimes.length > 0 ? Math.floor(waitTimes.reduce((sum, value) => sum + value, 0) / waitTimes.length) : 0,
+    longestWaitTime: waitTimes.length > 0 ? Math.max(...waitTimes) : 0,
+    byPriority: {
+      CRITICAL: queueItems.filter(item => item.priorityLevel === 'CRITICAL').length,
+      HIGH: queueItems.filter(item => item.priorityLevel === 'HIGH').length,
+      MEDIUM: queueItems.filter(item => item.priorityLevel === 'MEDIUM').length,
+      LOW: queueItems.filter(item => item.priorityLevel === 'LOW').length,
+    },
+  };
+}
+
 // ===========================
 // QC REVIEW QUEUE ENDPOINTS
 // ===========================
@@ -84,7 +228,7 @@ const handleValidationErrors = (req: Request, res: Response, next: Function): vo
  */
 router.get(
   '/queue',
-  ...qcQueueRead,
+  ...qcQueueReadScoped,
   [
     query('orderId').optional().isString(),
     query('status').optional().isString(),
@@ -108,8 +252,9 @@ router.get(
       };
 
       const queueItems = await qcQueueService.searchQueue(criteria);
+      const scopedQueueItems = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, queueItems);
 
-      return res.json(queueItems);
+      return res.json(scopedQueueItems);
 
     } catch (error) {
       logger.error('Failed to get queue', { 
@@ -134,7 +279,7 @@ router.get(
  */
 router.get(
   '/queue/order/:orderId/current',
-  ...qcQueueRead,
+  ...qcQueueReadForDirectOrder,
   [param('orderId').notEmpty().withMessage('orderId is required')],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -166,7 +311,8 @@ router.get(
  */
 router.post(
   '/queue',
-  ...qcQueueUpdate,
+  copyBodyStringToParam('orderId', 'orderIdForAuth'),
+  ...qcQueueUpdateForOrder,
   [
     body('orderId').notEmpty().withMessage('orderId is required'),
     body('orderNumber').notEmpty().withMessage('orderNumber is required'),
@@ -215,9 +361,11 @@ router.post(
  * GET /api/qc-workflow/queue/statistics
  * Get queue statistics
  */
-router.get('/queue/statistics', ...qcQueueRead, async (req: Request, res: Response) => {
+router.get('/queue/statistics', ...qcQueueReadScoped, async (req: Request, res: Response) => {
   try {
-    const stats = await qcQueueService.getQueueStatistics();
+    const queueItems = await qcQueueService.searchQueue({ limit: 10000 });
+    const scopedQueueItems = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, queueItems);
+    const stats = buildQueueStatistics(scopedQueueItems);
 
     return res.json({
       success: true,
@@ -254,7 +402,9 @@ router.get('/queue/statistics', ...qcQueueRead, async (req: Request, res: Respon
  */
 router.post(
   '/queue/assign',
-  ...qcQueueUpdate,
+  copyBodyStringToParam('queueItemId', 'queueItemId'),
+  loadOrderIdFromDocument('qc-reviews', 'queueItemId', 'QC queue item'),
+  ...qcQueueUpdateForOrder,
   [
     body('queueItemId').notEmpty(),
     body('analystId').notEmpty(),
@@ -314,14 +464,19 @@ router.post('/queue/auto-assign', ...qcQueueUpdate, async (req: Request, res: Re
  */
 router.get(
   '/queue/next/:analystId',
-  ...qcQueueRead,
+  ...qcQueueReadScoped,
   [param('analystId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
     try {
       const nextReview = await qcQueueService.getNextReview(req.params.analystId!);
+      const scopedReviews = await filterItemsByAuthorizedOrder(
+        req as AuthorizedRequest,
+        nextReview ? [nextReview] : [],
+      );
+      const visibleNextReview = scopedReviews[0] ?? null;
 
-      if (!nextReview) {
+      if (!visibleNextReview) {
         return res.json({
           success: true,
           data: null,
@@ -331,7 +486,7 @@ router.get(
 
       return res.json({
         success: true,
-        data: nextReview
+        data: visibleNextReview
       });
 
     } catch (error) {
@@ -374,14 +529,15 @@ router.get('/analysts/workload', ...qcQueueRead, async (req: Request, res: Respo
  * GET /api/qc-workflow/revisions/active
  * Get all active revisions
  */
-router.get('/revisions/active', ...revisionRead, async (req: Request, res: Response) => {
+router.get('/revisions/active', ...revisionReadScoped, async (req: Request, res: Response) => {
   try {
     const revisions = await revisionService.getActiveRevisions();
+    const scopedRevisions = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, revisions);
 
     return res.json({
       success: true,
-      data: revisions,
-      count: revisions.length
+      data: scopedRevisions,
+      count: scopedRevisions.length
     });
 
   } catch (error) {
@@ -397,14 +553,15 @@ router.get('/revisions/active', ...revisionRead, async (req: Request, res: Respo
  * GET /api/qc-workflow/revisions/overdue
  * Get overdue revisions
  */
-router.get('/revisions/overdue', ...revisionRead, async (req: Request, res: Response) => {
+router.get('/revisions/overdue', ...revisionReadScoped, async (req: Request, res: Response) => {
   try {
     const revisions = await revisionService.getOverdueRevisions();
+    const scopedRevisions = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, revisions);
 
     return res.json({
       success: true,
-      data: revisions,
-      count: revisions.length
+      data: scopedRevisions,
+      count: scopedRevisions.length
     });
 
   } catch (error) {
@@ -422,7 +579,7 @@ router.get('/revisions/overdue', ...revisionRead, async (req: Request, res: Resp
  */
 router.get(
   '/revisions/order/:orderId/history',
-  ...revisionRead,
+  ...revisionReadForDirectOrder,
   [param('orderId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -449,7 +606,8 @@ router.get(
  */
 router.post(
   '/revisions',
-  ...revisionCreate,
+  copyBodyStringToParam('orderId', 'orderIdForAuth'),
+  ...revisionCreateForOrder,
   [
     body('orderId').notEmpty().withMessage('orderId is required'),
     body('appraisalId').optional().isString(),
@@ -500,7 +658,8 @@ router.post(
  */
 router.post(
   '/revisions/:id/submit',
-  ...revisionUpdate,
+  loadOrderIdFromDocument('revisions', 'id', 'Revision'),
+  ...revisionUpdateForOrder,
   [
     param('id').notEmpty(),
     body('resolvedIssues').isArray().withMessage('resolvedIssues is required'),
@@ -539,7 +698,8 @@ router.post(
  */
 router.post(
   '/revisions/:id/accept',
-  ...revisionUpdate,
+  loadOrderIdFromDocument('revisions', 'id', 'Revision'),
+  ...revisionUpdateForOrder,
   [
     param('id').notEmpty(),
     body('acceptedBy').notEmpty().withMessage('acceptedBy is required'),
@@ -576,7 +736,8 @@ router.post(
  */
 router.post(
   '/revisions/:id/reject',
-  ...revisionUpdate,
+  loadOrderIdFromDocument('revisions', 'id', 'Revision'),
+  ...revisionUpdateForOrder,
   [
     param('id').notEmpty(),
     body('rejectedBy').notEmpty().withMessage('rejectedBy is required'),
@@ -617,7 +778,8 @@ router.post(
  */
 router.post(
   '/escalations',
-  ...escalationCreate,
+  copyBodyStringToParam('orderId', 'orderIdForAuth'),
+  ...escalationCreateForOrder,
   [
     body('orderId').notEmpty(),
     body('escalationType').isIn([
@@ -654,14 +816,15 @@ router.post(
  * GET /api/qc-workflow/escalations/open
  * Get all open escalations
  */
-router.get('/escalations/open', ...escalationRead, async (req: Request, res: Response) => {
+router.get('/escalations/open', ...escalationReadScoped, async (req: Request, res: Response) => {
   try {
     const escalations = await escalationService.getOpenEscalations();
+    const scopedEscalations = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, escalations);
 
     return res.json({
       success: true,
-      data: escalations,
-      count: escalations.length
+      data: scopedEscalations,
+      count: scopedEscalations.length
     });
 
   } catch (error) {
@@ -679,17 +842,18 @@ router.get('/escalations/open', ...escalationRead, async (req: Request, res: Res
  */
 router.get(
   '/escalations/manager/:managerId',
-  ...escalationRead,
+  ...escalationReadScoped,
   [param('managerId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
     try {
       const escalations = await escalationService.getEscalationsByManager(req.params.managerId!);
+      const scopedEscalations = await filterItemsByAuthorizedOrder(req as AuthorizedRequest, escalations);
 
       return res.json({
         success: true,
-        data: escalations,
-        count: escalations.length
+        data: scopedEscalations,
+        count: scopedEscalations.length
       });
 
     } catch (error) {
@@ -708,7 +872,8 @@ router.get(
  */
 router.post(
   '/escalations/:escalationId/comment',
-  ...escalationUpdate,
+  loadOrderIdFromDocument('escalations', 'escalationId', 'Escalation'),
+  ...escalationUpdateForOrder,
   [
     param('escalationId').notEmpty(),
     body('commentBy').notEmpty(),
@@ -747,7 +912,8 @@ router.post(
  */
 router.post(
   '/escalations/:escalationId/resolve',
-  ...escalationUpdate,
+  loadOrderIdFromDocument('escalations', 'escalationId', 'Escalation'),
+  ...escalationUpdateForOrder,
   [
     param('escalationId').notEmpty(),
     body('resolution').notEmpty(),
@@ -790,7 +956,8 @@ router.post(
  */
 router.post(
   '/sla/start',
-  ...qcQueueExecute,
+  copyBodyStringToParam('orderId', 'orderIdForAuth'),
+  ...qcQueueExecuteForOrder,
   [
     body('entityType').isIn(['QC_REVIEW', 'REVISION', 'ESCALATION']),
     body('entityId').notEmpty(),
@@ -911,7 +1078,8 @@ router.get(
  */
 router.get(
   '/sla/:trackingId',
-  ...qcQueueRead,
+  loadOrderIdFromDocument('sla-tracking', 'trackingId', 'SLA tracking record'),
+  ...qcQueueReadForOrder,
   [param('trackingId').notEmpty()],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -939,7 +1107,8 @@ router.get(
  */
 router.post(
   '/sla/:trackingId/extend',
-  ...qcQueueUpdate,
+  loadOrderIdFromDocument('sla-tracking', 'trackingId', 'SLA tracking record'),
+  ...qcQueueUpdateForOrder,
   [
     param('trackingId').notEmpty(),
     body('extensionMinutes').isInt({ min: 1 }),
@@ -978,7 +1147,8 @@ router.post(
  */
 router.post(
   '/sla/:trackingId/waive',
-  ...qcQueueUpdate,
+  loadOrderIdFromDocument('sla-tracking', 'trackingId', 'SLA tracking record'),
+  ...qcQueueUpdateForOrder,
   [
     param('trackingId').notEmpty(),
     body('reason').notEmpty(),
@@ -1022,7 +1192,8 @@ router.post(
  */
 router.post(
   '/queue/:queueItemId/return',
-  ...qcQueueUpdate,
+  loadOrderIdFromDocument('qc-reviews', 'queueItemId', 'QC queue item'),
+  ...qcQueueUpdateForOrder,
   [
     param('queueItemId').notEmpty().withMessage('queueItemId is required'),
     body('reason').isString().notEmpty().withMessage('reason is required'),
@@ -1059,7 +1230,8 @@ router.post(
  */
 router.post(
   '/queue/:queueItemId/decision',
-  ...qcQueueUpdate,
+  loadOrderIdFromDocument('qc-reviews', 'queueItemId', 'QC queue item'),
+  ...qcQueueUpdateForOrder,
   [
     param('queueItemId').notEmpty().withMessage('queueItemId is required'),
     body('outcome').isIn(['APPROVED', 'REJECTED', 'CONDITIONAL']).withMessage('outcome must be APPROVED, REJECTED, or CONDITIONAL'),
@@ -1278,7 +1450,8 @@ router.post(
  */
 router.post(
   '/:reviewId/field-overrides',
-  ...qcReviewUpdate,
+  loadOrderIdFromDocument('qc-reviews', 'reviewId', 'QC review'),
+  ...qcReviewUpdateForOrder,
   [
     param('reviewId').notEmpty().withMessage('reviewId is required'),
     body('fieldKey').notEmpty().withMessage('fieldKey is required'),

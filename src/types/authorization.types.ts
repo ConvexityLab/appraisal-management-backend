@@ -198,6 +198,7 @@ export interface AccessPath {
 export interface AuthorizationContext {
   user: {
     id: string;
+    tenantId: string;
     role: Role;
     portalDomain: PortalDomain;
     boundEntityIds: string[];   // [] for platform domain and internal staff

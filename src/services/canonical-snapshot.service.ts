@@ -23,6 +23,8 @@ import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
 import { OrderContextLoader, type OrderContext } from './order-context-loader.service.js';
+import { PropertyObservationService } from './property-observation.service.js';
+import { PropertyProjectorService } from './property-projector.service.js';
 
 interface PropertyEnrichmentRecord {
   id: string;
@@ -40,9 +42,13 @@ export class CanonicalSnapshotService {
   private readonly enrichmentContainerName = 'property-enrichments';
 
   private readonly contextLoader: OrderContextLoader;
+  private readonly observationService: PropertyObservationService;
+  private readonly projectorService: PropertyProjectorService;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.contextLoader = new OrderContextLoader(dbService);
+    this.observationService = new PropertyObservationService(dbService);
+    this.projectorService = new PropertyProjectorService(dbService);
   }
 
   async createFromExtractionRun(extractionRun: RunLedgerRecord): Promise<CanonicalSnapshotRecord> {
@@ -107,6 +113,14 @@ export class CanonicalSnapshotService {
       hasExtraction: Boolean(sourceArtifacts.extractionData),
       hasEnrichment: Boolean(sourceArtifacts.enrichment),
     });
+
+    await this.recordSnapshotObservations(
+      extractionRun,
+      sourceArtifacts,
+      normalizedData?.canonical ?? null,
+      snapshot.id,
+      now,
+    );
 
     // Slice 8a: project property-scoped branches back to PropertyRecord.currentCanonical
     // so cross-order accumulation survives. Best-effort — failures don't block
@@ -190,6 +204,14 @@ export class CanonicalSnapshotService {
       hasEnrichment: Boolean(sourceArtifacts.enrichment),
     });
 
+    await this.recordSnapshotObservations(
+      extractionRun,
+      sourceArtifacts,
+      normalizedData?.canonical ?? null,
+      existing.id,
+      now,
+    );
+
     // Slice 8a: refresh the property's currentCanonical too, so post-Axiom
     // consolidated extraction reaches the rolling property view.
     await this.updatePropertyCurrentCanonical(
@@ -201,6 +223,81 @@ export class CanonicalSnapshotService {
     );
 
     return refreshed;
+  }
+
+  private async recordSnapshotObservations(
+    extractionRun: RunLedgerRecord,
+    artifacts: {
+      document: DocumentMetadata | null;
+      extractionData: Record<string, unknown> | null;
+      enrichment: PropertyEnrichmentRecord | null;
+      orderContext: OrderContext | null;
+      propertyCurrentCanonical: PropertyCurrentCanonicalView | null;
+    },
+    canonical: unknown,
+    snapshotId: string,
+    observedAt: string,
+  ): Promise<void> {
+    try {
+      const db = this.dbService as unknown as {
+        createDocument?: unknown;
+        getDocument?: unknown;
+      };
+      if (typeof db.createDocument !== 'function' || typeof db.getDocument !== 'function') {
+        return;
+      }
+
+      const propertyId = artifacts.orderContext?.vendorOrder.propertyId;
+      if (!propertyId || !artifacts.extractionData || Object.keys(artifacts.extractionData).length === 0) {
+        return;
+      }
+
+      const propertyCanonicalPatch = pickPropertyCanonical(
+        canonical as Partial<CanonicalReportDocument> | null,
+        {
+          snapshotId,
+          lastSnapshotAt: observedAt,
+        },
+      );
+
+      await this.observationService.createObservation({
+        tenantId: extractionRun.tenantId,
+        propertyId,
+        observationType: 'document-extraction',
+        sourceSystem: 'document-extraction',
+        observedAt,
+        sourceArtifactRef: artifacts.document?.id
+          ? {
+              kind: 'document',
+              id: artifacts.document.id,
+            }
+          : {
+              kind: 'snapshot',
+              id: snapshotId,
+            },
+        lineageRefs: [
+          ...(artifacts.document?.id ? [{ kind: 'document' as const, id: artifacts.document.id }] : []),
+          { kind: 'snapshot' as const, id: snapshotId },
+          { kind: 'other' as const, id: extractionRun.id },
+          ...(artifacts.enrichment?.id ? [{ kind: 'other' as const, id: artifacts.enrichment.id }] : []),
+        ],
+        ...(artifacts.document?.orderId ? { orderId: artifacts.document.orderId } : {}),
+        ...(extractionRun.engagementId ? { engagementId: extractionRun.engagementId } : {}),
+        ...(artifacts.document?.id ? { documentId: artifacts.document.id } : {}),
+        snapshotId,
+        sourceRecordId: extractionRun.id,
+        sourceProvider: extractionRun.engine,
+        ...(propertyCanonicalPatch ? { normalizedFacts: { canonicalPatch: propertyCanonicalPatch } } : {}),
+        rawPayload: artifacts.extractionData,
+        createdBy: extractionRun.initiatedBy,
+      });
+    } catch (err) {
+      this.logger.warn('Snapshot: failed to record extraction observation — non-fatal', {
+        runId: extractionRun.id,
+        snapshotId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async getSnapshotById(snapshotId: string, tenantId: string): Promise<CanonicalSnapshotRecord | null> {
@@ -596,103 +693,22 @@ export class CanonicalSnapshotService {
     snapshotId: string,
     snapshotAt: string,
   ): Promise<void> {
-    try {
-      if (!order || !order.propertyId) {
-        return; // no propertyId — nothing to write back to
-      }
-
-      const projected = pickPropertyCanonical(canonical as Partial<CanonicalReportDocument> | null, {
-        snapshotId,
-        lastSnapshotAt: snapshotAt,
-      });
-      if (!projected) {
-        return; // no property-scoped content
-      }
-
-      const propertyId = order.propertyId;
-      const tenantId = extractionRun.tenantId;
-
-      // Read the current property record so we can merge with existing
-      // currentCanonical. We go through the cosmos service directly here
-      // (rather than depending on PropertyRecordService) to avoid widening
-      // CanonicalSnapshotService's constructor signature mid-slice. The
-      // version-history pattern is preserved by appending an entry inline.
-      const propertyResult = await this.dbService.queryItems<PropertyRecord>(
-        'property-records',
-        `SELECT TOP 1 * FROM c WHERE c.id = @id AND c.tenantId = @tenantId`,
-        [
-          { name: '@id', value: propertyId },
-          { name: '@tenantId', value: tenantId },
-        ],
-      );
-      if (!propertyResult.success || !propertyResult.data?.[0]) {
-        this.logger.warn('Snapshot: PropertyRecord not found — skipping currentCanonical update', {
-          propertyId,
-          tenantId,
-          runId: extractionRun.id,
-        });
-        return;
-      }
-      const property = propertyResult.data[0];
-
-      const merged = mergePropertyCanonical(
-        property.currentCanonical as PropertyCurrentCanonicalView | undefined,
-        projected,
-      );
-
-      // No-op if the merged view is identical to existing — avoid unnecessary
-      // version bumps.
-      const existingJson = JSON.stringify(property.currentCanonical ?? {});
-      const mergedJson = JSON.stringify(merged);
-      if (existingJson === mergedJson) {
-        return;
-      }
-
-      const newVersion = property.recordVersion + 1;
-      const updated: PropertyRecord = {
-        ...property,
-        currentCanonical: merged,
-        recordVersion: newVersion,
-        versionHistory: [
-          ...property.versionHistory,
-          {
-            version: newVersion,
-            createdAt: snapshotAt,
-            createdBy: extractionRun.initiatedBy ?? 'SYSTEM:canonical-snapshot',
-            reason: `Canonical snapshot ${snapshotId} updated currentCanonical`,
-            source: 'CANONICAL_SNAPSHOT',
-            changedFields: ['currentCanonical'],
-            previousValues: { currentCanonical: property.currentCanonical ?? null },
-          },
-        ],
-        updatedAt: snapshotAt,
-      };
-
-      const writeResult = await this.dbService.upsertItem<PropertyRecord>(
-        'property-records',
-        updated,
-      );
-      if (!writeResult.success) {
-        this.logger.warn('Snapshot: PropertyRecord currentCanonical write failed — non-fatal', {
-          propertyId,
-          tenantId,
-          error: writeResult.error?.message,
-        });
-        return;
-      }
-
-      this.logger.info('PropertyRecord currentCanonical updated from snapshot', {
-        propertyId,
-        tenantId,
-        snapshotId,
-        newVersion,
-      });
-    } catch (err) {
-      this.logger.warn('Snapshot: PropertyRecord currentCanonical update threw — non-fatal', {
-        runId: extractionRun.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    if (!order?.propertyId) {
+      return;
     }
+
+    await this.projectorService.projectCurrentCanonicalFromSnapshot({
+      tenantId: extractionRun.tenantId,
+      propertyId: order.propertyId,
+      orderId: order.id,
+      ...(extractionRun.engagementId ? { engagementId: extractionRun.engagementId } : {}),
+      ...(extractionRun.documentId ? { documentId: extractionRun.documentId } : {}),
+      sourceRunId: extractionRun.id,
+      snapshotId,
+      snapshotAt,
+      initiatedBy: extractionRun.initiatedBy ?? 'SYSTEM:canonical-snapshot',
+      canonical: canonical as Partial<CanonicalReportDocument> | null,
+    });
   }
 
   private toRecord(value: unknown): Record<string, unknown> | null {

@@ -51,7 +51,7 @@
   "user": {
     "id": "user-123",
     "email": "user@example.com",
-    "role": "qc_analyst"
+    "role": "analyst"
   }
 }
 ```
@@ -74,7 +74,7 @@
 
 **Validation:**
 - Password: minimum 8 characters, must contain uppercase, lowercase, and number
-- Role: `admin`, `manager`, `appraiser`, `qc_analyst`
+- Role: `admin`, `manager`, `supervisor`, `analyst`, `appraiser`, `reviewer` (legacy `qc_analyst` is normalized to `analyst`)
 
 ---
 

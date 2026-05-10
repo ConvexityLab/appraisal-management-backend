@@ -31,14 +31,17 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     // Create test user and auth token using TestTokenGenerator (ALLOW_TEST_TOKENS=true in .env)
     const tokenGen = new TestTokenGenerator();
     testUser = {
-      id: 'test-user-qc-analyst',
-      email: 'qc.analyst@test.com',
-      name: 'Test QC Analyst',
-      role: 'qc_analyst' as const,
+      id: 'test-user-analyst',
+      email: 'analyst@test.com',
+      name: 'Test Analyst',
+      role: 'analyst' as const,
       tenantId: 'test-tenant',
       permissions: [
-        'qc_validate', 'qc_execute', 'qc_manage', 
-        'qc_checklist_manage', 'qc_results_view'
+        'qc_queue:read',
+        'qc_review:read',
+        'qc_review:create',
+        'qc_review:update',
+        'qc_review:execute'
       ]
     };
     
@@ -240,9 +243,9 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
           id: 'limited-user',
           email: 'limited@test.com',
           name: 'Limited User',
-          role: 'qc_analyst' as const,
+          role: 'analyst' as const,
           tenantId: 'test-tenant',
-          permissions: ['qc_results_view']
+          permissions: ['qc_review:read']
         });
 
         const executionRequest = {

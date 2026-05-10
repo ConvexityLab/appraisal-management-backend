@@ -49,10 +49,14 @@ export class VendorController {
       ? [...lp, authzMiddleware.authorizeResource('vendor', 'delete', { resourceIdParam: 'vendorId' })]
       : [];
     const analytics = authzMiddleware ? [...lp, authzMiddleware.authorize('analytics', 'read')]   : [];
+    const analyticsForVendor = authzMiddleware ? [...analytics, authzMiddleware.authorizeResource('vendor', 'read', { resourceIdParam: 'vendorId' })] : [];
+    const updateOrderResource = authzMiddleware
+      ? [...lp, authzMiddleware.authorizeResource('order', 'update', { resourceIdParam: 'orderId' })]
+      : [];
 
     // Order matters: specific paths before parameterized paths
-    this.router.get('/performance/:vendorId', ...analytics,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
-    this.router.post('/assign/:orderId',       ...update,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
+    this.router.get('/performance/:vendorId', ...analyticsForVendor,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
+    this.router.post('/assign/:orderId',       ...updateOrderResource,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
 
     this.router.get('/',                       ...readQuery,    this.getVendors.bind(this));
     this.router.get('/:vendorId',              ...readResource,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));

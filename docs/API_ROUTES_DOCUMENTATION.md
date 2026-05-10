@@ -64,7 +64,7 @@ This document outlines all API routes available in the Appraisal Management Plat
   - `password` (string, required): Strong password (min 8 chars, mixed case, numbers)
   - `firstName` (string, required): User's first name
   - `lastName` (string, required): User's last name
-  - `role` (enum, required): User role (`admin`, `manager`, `appraiser`, `qc_analyst`)
+  - `role` (enum, required): User role (`admin`, `manager`, `supervisor`, `analyst`, `appraiser`, `reviewer`; legacy `qc_analyst` is normalized to `analyst`)
 - **Response**: JWT token and created user profile
 - **Use Case**: New user onboarding, account creation
 
