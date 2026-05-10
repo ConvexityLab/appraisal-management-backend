@@ -12,7 +12,9 @@
 
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer } from '../seed-types.js';
-import { VISION_APPRAISAL_V1_PROGRAM } from '../../data/review-programs.js';
+// `'../../data/review-programs.js'` trips tsx resolveTsPaths from this
+// nested seed module; @/ alias resolves cleanly.
+import { VISION_APPRAISAL_V1_PROGRAM } from '@/data/review-programs.js';
 
 const CONTAINER = 'review-programs';
 
