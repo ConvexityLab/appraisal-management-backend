@@ -440,7 +440,9 @@ export class AutoAssignmentOrchestratorService {
       this.logger.warn('No matching vendors found — escalating immediately', { orderId });
       await this.recordAssignmentTrace({
         tenantId, orderId, initiatedAt, triggerStart,
-        propertyAddress, productType, productId, requiredCapabilities,
+        propertyAddress, productType,
+        ...(productId ? { productId } : {}),
+        ...(requiredCapabilities?.length ? { requiredCapabilities } : {}),
         dueDate: dueDate as unknown as Date,
         priority,
         rankedVendors: [],
@@ -506,7 +508,9 @@ export class AutoAssignmentOrchestratorService {
           : 'pending_bid';
       await this.recordAssignmentTrace({
         tenantId, orderId, initiatedAt, triggerStart,
-        propertyAddress, productType, productId, requiredCapabilities,
+        propertyAddress, productType,
+        ...(productId ? { productId } : {}),
+        ...(requiredCapabilities?.length ? { requiredCapabilities } : {}),
         dueDate: dueDate as unknown as Date,
         priority,
         rankedVendors,
