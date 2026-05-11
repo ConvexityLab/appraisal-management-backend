@@ -503,4 +503,60 @@ export function bootstrapAiCatalog(): void {
 		aiExposure: 'tool',
 		keywords: ['auto-assignment', 'suggestions', 'matching'],
 	});
+
+	// ── mop / vendor-matching ─────────────────────────────────────────
+	// Phase 13 of AI-UNIVERSAL-SURFACE-PLAN.md (2026-05-10).  MOP is our
+	// first-party rules engine (RETE / Prio) fronted by AMS endpoints.
+	// The find-matches endpoint routes through `mopProvider.evaluateForVendors`
+	// internally — so this single AI tool unlocks the "why did vendor X
+	// not get this order?" use case: call find-matches, filter the result
+	// to vendor X, read X's denyReasons[].
+
+	registerAiRoute({
+		id: 'find-vendor-matches',
+		method: 'POST',
+		path: '/api/auto-assignment/find-matches',
+		summary: 'Run MOP vendor-matching evaluation for an order. Returns ranked vendor matches with applied rule ids + denyReasons. Use this to answer "which vendors match for order X" and "why didn\'t vendor X get this order?" (filter the result to that vendor and read its denyReasons[]).',
+		category: 'mop',
+		scopes: ['order:read', 'vendor:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		body: {
+			description:
+				'VendorMatchRequest body: { orderId?, propertyAddress (required), propertyType (required), dueDate?, urgency?: "STANDARD"|"RUSH"|"SUPER_RUSH", budget?: number, topN?: number, productId?: string, requiredCapabilities?: string[] }',
+		},
+		keywords: ['mop', 'vendor', 'matching', 'find', 'evaluate', 'rules', 'denyReasons', 'why'],
+	});
+
+	registerAiRoute({
+		id: 'mop-vendor-match-trigger-vendor',
+		method: 'POST',
+		path: '/api/auto-assignment/orders/:orderId/trigger-vendor',
+		summary: 'Trigger MOP vendor-matching for one specific order. Returns the matching result, including which vendors were eligible / denied (with denyReasons[]) under the current rule pack.',
+		category: 'mop',
+		scopes: ['order:read', 'vendor:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		pathParams: { orderId: { type: 'string', required: true } },
+		keywords: ['mop', 'vendor', 'matching', 'trigger', 'order'],
+	});
+
+	registerAiRoute({
+		id: 'mop-vendor-match-suggestions',
+		method: 'GET',
+		path: '/api/auto-assignment/suggest',
+		summary: 'GET version of the MOP vendor suggestions endpoint. Returns top-N matches per orderId in the queue.',
+		category: 'mop',
+		scopes: ['order:read', 'vendor:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		queryParams: {
+			orderId: { type: 'string', description: 'Restrict to one order' },
+			topN: { type: 'number' },
+		},
+		keywords: ['mop', 'suggest', 'recommendations', 'matching'],
+	});
 }
