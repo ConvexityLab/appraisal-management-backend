@@ -17,6 +17,7 @@
 - 2026-05-10 (rev 6) — Phase D MVP complete. `VendorMatchingReplayService` reads recent `assignment-traces` for a tenant, fetches current vendor data, calls MOP `/preview` with the proposed rules, and returns a per-decision diff (changed / unchanged / skipped + new denials / new acceptances counts). `CategoryDefinition.replay` interface; vendor-matching wires it. New endpoint `POST /api/decision-engine/rules/:category/replay`. New "Sandbox" tab in the workspace with the visual editor + replay form (sinceDays 1-30, samplePercent 1-100) + diff table with expandable per-decision details. 7 new tests; replay uses *current* vendor data (operators see the caveat in the UI).
 - 2026-05-10 (rev 7) — Phase E MVP complete. `VendorMatchingAnalyticsService` aggregates recent `assignment-traces` in-memory (no new container; on-the-fly compute) and returns per-rule fire counts, denial contributions, score-adjustment sums, daily fire histograms, and outcome counts. `CategoryDefinition.analytics` interface; vendor-matching wires it. New endpoint `GET /api/decision-engine/rules/:category/analytics?days=N` (1-90). New "Analytics" tab in the workspace: summary cards (decisions / evaluations / escalations / dead rules), outcome distribution chips, top-firing rules table with daily-fire sparklines, never-fired rules section. New cross-category landing page at `/decision-engine` with per-category 7-day KPI strip + quick links into rules / decisions. 8 new tests. Future swap-in: pre-aggregated `decision-rule-analytics` Cosmos container if/when on-the-fly compute hits scale limits.
 - 2026-05-10 (rev 8) — Phases F + G + H land as live categories (storage + workspace surface only — upstream evaluators are per-phase polish). Shared Prio-style validator (`validatePrioRulePack`) extracted; vendor-matching refactored to use it; `buildReviewProgramCategory` / `buildFiringRulesCategory` / `buildAxiomCriteriaCategory` register with the same validator. All three registered in api-server.ts. FE `FrontendCategoryDefinition` entries updated to `status: 'live'` with full variable + action + sample catalogs (Axiom Criteria intentionally has empty action catalog — its custom editor is Phase H polish). The inner workspace page is now category-aware: every rule-pack hook (`useGetActive...` / `useList...` / `useGetVersion...` / `useGetAudit...` / `useSeed...` / `useCreate...`) takes `category` from `useDecisionCategory()` and routes to the correct `/api/decision-engine/rules/:category/*` endpoint. `RulePackAnalytics` and `RulePackSandbox` now degrade gracefully when the upstream evaluator returns 501 (Sandbox shows a "replay not wired yet" message; Analytics shows a "no decision traces yet" empty state). `RulePackPreviewPanel` switched to the new category-aware mutation. Operators can now author + version + audit rule packs for all four categories today; sandbox + analytics + replay light up automatically as each category's upstream evaluator + trace store ship.
+- 2026-05-10 (rev 12) — Added Phases J/K/L/M to close out the surface: J = live-fire validation across ALL paths (no more "shipped but never exercised"); K = review-program evaluation on every order-creation path (not just bulk-portfolio); L = Axiom Criteria evaluator integration (push criteria from workspace to Axiom + trace results back); M = operator UX (override / lookup by order / mid-flight intervention / bulk replay-commit / cross-category audit hub). Each phase has a full task list + acceptance criteria. Status table updated.
 - 2026-05-10 (rev 11) — Phase I kill-switch BE wiring complete (no remaining Phase I items deferred). `DecisionEngineKillSwitchService` reads/writes per-(tenant, category) flags via the existing `client-configs` Cosmos container with discriminator `entityType: 'decision-engine-kill-switches'` (no new container — investigated existing storage first). 60s in-process cache; fail-OPEN on read errors so a kill-switch fetch hiccup never blocks normal traffic. `DecisionEngineOpsController` mounted at `/api/decision-engine/ops` with GET `/kill-switches` + PATCH `/kill-switches/:category`. Rules controller now consults the kill switch on every write/eval path (createVersion / seedFromDefault / preview / replay) and short-circuits with 503 + a clear toggle-it-off hint. `FiringRulesEvaluatorJob` consults the flag in its per-tenant loop — toggling kill stops the next daily run for that tenant. FE: `decisionEngineOpsApi` + `useGet/SetDecisionEngineKillSwitchMutation`; OpsHealthDashboard toggle is now functional (was UI-only before) with a "killed" pip color + tooltip explaining the 503 contract. 7 new BE tests pinning the merge / fail-open / cache invariants.
 - 2026-05-10 (rev 10) — Phase I follow-through (no items deferred): added `TraceFlowDiagram` (React Flow visualization on every assignment trace — left column inputs/vendors, center column rules fired, right column outcome, with List/Flow toggle on each timeline entry) and `OpsHealthDashboard` (cross-category 24h pips + decision counts + escalation rates + kill-switch UI surface on `/decision-engine` landing). New dep: `@xyflow/react`. Also category-aware empty state on `ActiveRulesView` — non-vendor-matching categories without packs no longer fall through to the MOP-specific diagnostic warning; they get a "Click New version to author the first pack" CTA. Kill-switch BE plumbing (config store + evaluator middleware) explicitly named as a separate PR — UI ships visible + read-only today.
 - 2026-05-10 (rev 9) — Per-category polish: G full polish (in-process evaluator + cron + traces + analytics + replay), H custom editor, I live feed, F polish via existing storage adapter, plus a critical bug fix.
@@ -45,6 +46,10 @@ This section is the **live tracker** — update statuses, add commit/PR refs, an
 | G | **Add Firing Rules as third category** | ✅ | 2026-05-10 | 2026-05-10 | Full polish landed: in-process JSONLogic evaluator (no new deps), pure firing evaluator, `firing-decisions` Cosmos container (Bicep applied to dev + staging), daily cron job (off by default), preview/replay/analytics all wired. 27 new tests. |
 | H | **Add Axiom Criteria as fourth category** | 🟡 | 2026-05-10 | — | **Storage + custom editor shipped:** `customEditor` plugin field on FrontendCategoryDefinition; `AxiomCriteriaEditor` (prompt / expected answer / rubric / weight per criterion); operators can author criteria with proper UI today. **Pending polish:** Axiom evaluator integration for push/preview/replay (different paradigm than Prio — separate PR). |
 | I | **Cross-cutting: live feed + trace flow viz + ops dashboard** (was Phases 5/7 of the review) | ✅ | 2026-05-10 | 2026-05-10 | All landed: polling `LiveDecisionsFeed` (10s), `TraceFlowDiagram` React Flow viz with List/Flow toggle on order-detail traces, `OpsHealthDashboard` with kill-switch toggles **functional** (BE wired through `DecisionEngineKillSwitchService` + `/ops/kill-switches` endpoints + 60s cached enforcement on every write/eval path + firing-rules cron). Real-time WebSocket relay (vs current 10s polling) is the only optional follow-up — useful when latency under 10s matters. |
+| J | **Live-fire validation across ALL paths** — end-to-end exercise of every evaluator + every visible surface against deployed staging | ⬜ | — | — | Per-category test matrix. Includes the config flips needed (`RULES_PROVIDER=mop-with-fallback`, `FIRING_RULES_JOB_ENABLED=true`) and the seed-order set that drives each path. Test artifact: `e2e/live-fire/decision-engine-suite.live-fire.spec.ts`. |
+| K | **Review Programs fire on every order-creation path** — not just bulk-portfolio | ⬜ | — | — | Survey existing order-creation events; introduce `ReviewProgramOrchestrator` subscribing to `engagement.order.created` (and any sibling creation events) with per-tenant `reviewProgramTriggers` config. Writes results into existing `review-results` container (no new schema). |
+| L | **Axiom Criteria evaluator integration** — push criteria from Decision Engine workspace to Axiom; trace results back into analytics | ⬜ | — | — | Survey existing Axiom integration (axiom.service.ts + axiom-auto-trigger + axiom-bulk-submission). Design: AMS-authored criteria → push client (analogous to `MopRulePackPusher`) → Axiom evaluates → webhook back → adapter reads existing Axiom evaluation results into Decision Engine analytics. Reuses existing Axiom containers, no new schema. |
+| M | **Operator UX — interact / intervene / trace** — override decisions, lookup by vendor order, mid-flight intervention, cross-category audit hub | ⬜ | — | — | High-leverage operator power. Per-decision Override button on every trace; deep-linkable `?orderId=X` filter on `/decision-engine/decisions/:category`; "Cancel + re-evaluate" / "Force-pick vendor" on PENDING_BID orders; bulk replay-then-commit flow; tenant-wide cross-category audit feed. |
 
 ---
 
@@ -436,6 +441,164 @@ The plugin pattern means adding any of these is a CategoryDefinition + a few com
 - Trace flow viz renders in <500ms for a typical trace.
 - Ops dashboard shows the platform's decision-engine health at a glance.
 
+### 5.J Phase J — Live-fire validation across ALL paths
+
+**Goal:** demonstrate that every evaluator + every visible surface works end-to-end against deployed staging. No more "shipped but never exercised" code paths.
+
+**Approach:** all live-fire happens against deployed staging (per the team's standing rule — local stacks diverge on auth / config / managed identity). The deliverable is a Playwright suite at `e2e/live-fire/decision-engine-suite.live-fire.spec.ts` plus a documented manual checklist for assertions that can't be fully scripted.
+
+**Staging config prerequisites:**
+1. `RULES_PROVIDER=mop-with-fallback` on the AMS Container App so vendor-matching actually consults MOP at decision time. Without this, the rule pack you author in the workspace IS pushed to MOP but the live evaluation uses the homegrown in-process provider — so workspace edits don't affect real decisions in the way operators expect.
+2. `FIRING_RULES_JOB_ENABLED=true` so the daily cron starts on next deploy. First tick runs 5 seconds after AMS startup, then every 24h.
+3. `MOP_RULES_BASE_URL` already set; confirm pointing at `ca-mop-dev.…/health` returns 200.
+4. Once Phase K lands: `REVIEW_PROGRAM_ON_ORDER_CREATED=true` (new flag introduced by Phase K) so review-program eval fires on every engagement.order.created event, not just bulk-portfolio uploads.
+
+**Test matrix:**
+
+| # | Category | Trigger path | Expected outcome | Where to verify |
+|---|---|---|---|---|
+| J1 | Vendor Matching | Create order on existing engagement via `/api/orders` POST | `engagement.order.created` → orchestrator → `findMatchingVendorsAndDenied` → trace recorded → bid invitation OR escalation | `/decision-engine` landing (RecentTraceFlowPreview must update within 30s); `/decision-engine/decisions/vendor-matching` table; `/orders/<id>` trace timeline; `assignment-traces` Cosmos row |
+| J2 | Vendor Matching | Sandbox replay against last 7 days from the workspace | `POST /api/decision-engine/rules/vendor-matching/replay` returns diff with non-zero `totalEvaluated`; per-decision rows expand | Sandbox tab on `/decision-engine/rules/vendor-matching` |
+| J3 | Vendor Matching | Save a new rule pack version via "New version" dialog | 201 from `POST /api/decision-engine/rules/vendor-matching`; audit row appears; MOP push hook fires; subsequent decisions reflect the new rules | History + Audit tabs; subsequent J1 trace shows new ruleId in `appliedRuleIds` |
+| J4 | Vendor Matching | Flip kill switch ON, attempt J1 trigger | Order is created but auto-assignment escalates immediately; no new trace recorded for that tenant | OpsHealthDashboard pip turns slate-grey; `/orders/<id>` shows manual-assignment escalation |
+| J5 | Firing Rules | Author 1 rule pack, wait 24h or admin-trigger | Daily cron evaluates every vendor; non-trivial outcomes land in `firing-decisions` container | `/decision-engine/rules/firing-rules` → Analytics tab; `/decision-engine/decisions/firing-rules` |
+| J6 | Firing Rules | Sandbox replay of proposed rules against last 30 days of `firing-decisions` | `POST /:category/replay` returns per-decision diff; outcome flips visible | Sandbox tab on `/decision-engine/rules/firing-rules` |
+| J7 | Review Programs (post-Phase K) | Create order on existing engagement | Order creation event → `ReviewProgramOrchestrator` → TapeEvaluation runs against the order's report fields → result lands in `review-results` with `triggerSource: 'order-created'` | `/decision-engine/rules/review-program` → Analytics tab populates; per-order review history |
+| J8 | Review Programs | Upload a bulk portfolio (existing path) | Existing behaviour preserved — results land in `review-results` keyed by jobId | Analytics tab; bulk portfolio job page |
+| J9 | Axiom Criteria (post-Phase L) | Author criteria pack + create order with attached document | Criteria pushed to Axiom on save → AxiomService extracts + evaluates document → webhook back to AMS → result mapped into Decision Engine analytics | `/decision-engine/rules/axiom-criteria` → Analytics; `/decision-engine/decisions/axiom-criteria`; per-order Axiom evaluation view |
+| J10 | All categories | Kill switch ON for each in turn; attempt every endpoint | Every write/eval path returns 503 `kind: 'kill-switch-active'`; read paths still work; landing-page pip + workspace banner reflect killed state | OpsHealthDashboard; HTTP 503 responses with the documented error shape |
+
+**Auth setup for live-fire:** use the existing `TestTokenGenerator` infra. The Playwright suite mints an admin token per run and threads it through `Authorization: Bearer`. See `scripts/generate-test-tokens.ts` + `docs/TEST_JWT_TOKENS.md`.
+
+**Definition of done:**
+- All 10 rows green in CI (manual rows have explicit checklist artifacts).
+- The five UI surfaces (`/decision-engine` landing, `/decision-engine/rules/:category` ×4, `/decision-engine/decisions/:category` ×4, OpsHealthDashboard, `/orders/<id>` trace timeline) all show non-trivial data for the test tenant.
+- Doc revision with screenshots + the per-row green-state pin.
+
+### 5.K Phase K — Review Programs fire on EVERY order-creation path
+
+**Goal:** review-program evaluation runs whenever an order with a report is created on the platform, not only when a portfolio is uploaded in bulk. Operators control this per-tenant + per-program.
+
+**Why this is critical:** today review programs only fire when `TapeEvaluationService` is called inside `BulkPortfolioService`. That covers exactly ONE creation path. Single-order creates (via order intake wizard, AI assistant, lender API, etc.) bypass review-program evaluation entirely — which is wrong for any tenant relying on review programs as a gate on auto-routing.
+
+**Tasks:**
+1. **Survey every order-creation event source.** Each row in this table needs a clear yes/no on "should review-program fire here?":
+
+   | Event / path | File | Today | Phase K target |
+   |---|---|---|---|
+   | `engagement.order.created` | `order.controller.ts` (lender API + admin UI) | No review-program eval | YES — main path |
+   | Bulk-portfolio TAPE_EVALUATION mode | `BulkPortfolioService` | Already fires (legacy path) | Keep — preserve |
+   | Bulk-portfolio DOCUMENT_EXTRACTION mode | `BulkPortfolioService` | Already fires after Axiom extraction | Keep — preserve |
+   | AI-assistant CREATE_ORDER intent | `ai-action-dispatcher.service.ts` | No review-program eval | YES — same event |
+   | Single-order intake wizard | `order-intake/wizard` (FE) → `order.controller.ts` | No review-program eval | YES — uses same controller path |
+   | Vendor-portal order submission | `vendor-portal-receiver.controller.ts` (if exists) | TBD survey | TBD per survey |
+
+2. **`ReviewProgramOrchestrator` service** (new) — subscribes to `engagement.order.created`. For each event:
+   a. Load the tenant config; consult new `reviewProgramTriggers: { onOrderCreated: boolean; onDocumentUploaded: boolean; onAxiomCompleted: boolean }` block on `ClientAutomationConfig` (extend the existing type — no new container).
+   b. If `onOrderCreated === false`, skip.
+   c. Resolve the tenant's active review-program pack(s) via `DecisionRulePackService.getActive('review-program', tenantId, packId)`.
+   d. Build a `RiskTapeItem`-shaped fact bundle from the order + report context. Mirror the existing `TapeEvaluationService` projection (reuse the same canonical mappers — `appraisal-order.mapper.ts`, `property-canonical-projection.ts`).
+   e. Call the existing `TapeEvaluationService` (no new evaluator — it's already generic across programType).
+   f. Persist the result into `review-results` with a new `triggerSource: 'order-created' | 'bulk-portfolio' | 'document-uploaded' | 'axiom-completed'` field on the `ReviewTapeResult` doc (additive field, backward-compatible).
+   g. Publish `review-program.decision.completed` event so downstream consumers (e.g., the review-dispatch service) can route based on `computedDecision`.
+
+3. **Kill-switch wiring** — `ReviewProgramOrchestrator` consults `DecisionEngineKillSwitchService` per event; killed tenants get a single "skipped due to kill switch" log line, no decision recorded.
+
+4. **FE polish** — `ReviewProgramResultsReader` already reads `review-results`; the new `triggerSource` field becomes a filter chip on `/decision-engine/decisions/review-program` so operators can slice by trigger.
+
+5. **Per-tenant config UX** — add a small panel to the workspace's Active tab for review-program category showing the current trigger config + an "Edit triggers" dialog that PATCHes the `ClientAutomationConfig.reviewProgramTriggers` block. Same RBAC as the existing automation toggles.
+
+6. **Tests:** unit tests for the orchestrator's event handler (skip on kill, skip on config off, write trigger source); integration test that creates an order via the test harness and asserts a `review-results` row lands within N seconds.
+
+**Definition of done:**
+- Creating an order on an engagement with `reviewProgramTriggers.onOrderCreated = true` produces a `review-results` document within 5s.
+- Bulk-portfolio path still works identically.
+- Kill switch ON for review-program category stops new `review-results` for that tenant.
+- FE chip filter on `/decision-engine/decisions/review-program` lets operators see only `triggerSource: 'order-created'` rows.
+
+### 5.L Phase L — Axiom Criteria evaluator integration
+
+**Goal:** criteria authored in the Decision Engine workspace actually drive Axiom evaluations, and Axiom's results stream back into the Decision Engine analytics + decisions surface — same UX as the other three categories.
+
+**Pre-survey (mandatory first task):** before writing any integration code, document the existing Axiom touchpoints:
+- `src/services/axiom.service.ts` — the HTTP client to Axiom; what's its current criteria-passing contract? Does it take criteria inline, or does Axiom load criteria from its own store keyed by `(programId, programVersion)`?
+- `src/services/axiom-auto-trigger.service.ts` — when does Axiom currently evaluate? Document upload? QC gate?
+- `src/services/axiom-bulk-submission.service.ts` — how does the bulk path pass criteria?
+- Axiom-side storage: where does Axiom store the criteria it evaluates against? (Decision A vs B below depends on this.)
+- The shared `programId`/`programVersion` model: today `ReviewProgram` carries `aiCriteriaRefs?: Array<{programId, programVersion}>` — does that already reference Axiom-stored criteria sets?
+
+**Integration design — two viable paths** (pick after the survey):
+
+**Option A — AMS-authoritative criteria, push to Axiom on save.** Mirror the MopRulePackPusher pattern:
+- `AxiomCriteriaPusher` service. `push(pack)` translates the Decision Engine rule envelope (criterion fields in `actions[0].data`) into Axiom's criteria-document shape and PUTs to Axiom's criteria endpoint.
+- `buildAxiomCriteriaCategory({ pusher, db })` wires `push` into the Decision Engine `onNewActivePack` hook — same pattern as vendor-matching.
+- Existing `AxiomService.submitEvaluation` reads from Axiom's criteria store as it does today; AMS-side edits propagate automatically on save.
+- Replay: `axiom-criteria.replay({ tenantId, rules, sinceDays })` re-runs each historical Axiom result against the proposed criteria. Mechanically harder than Prio replay because Axiom is LLM-based — the proposed criteria need a fresh Axiom evaluation pass for each document. Phase L1 ships replay as "stub returns 501"; Phase L2 wires it once we know whether Axiom supports stateless preview.
+
+**Option B — Axiom-authoritative, mirror into Decision Engine for read-only viewing.** If Axiom owns the criteria storage and AMS shouldn't push, then the Decision Engine workspace becomes a proxy:
+- `getActive` for axiom-criteria category reads from Axiom's criteria endpoint (proxied through AMS for auth).
+- `createVersion` does an upstream Axiom write; AMS only stores audit rows for the local audit log.
+- No Decision Engine `decision-rule-packs` row for axiom-criteria (the `category='axiom-criteria'` rows in that container become read-only mirrors).
+
+**Recommendation pending survey:** Option A is cleaner because it puts the Decision Engine in the authoring driver's seat. Option B is the right call only if Axiom has policy reasons for owning criteria storage.
+
+**Tasks (assuming Option A — adjust after survey):**
+1. Survey commit — document findings in this section.
+2. `AxiomCriteriaPusher` service in `src/services/decision-engine/axiom-criteria/` mirroring `MopRulePackPusher`. `push()` + `getSeed()` (Axiom's default criteria pack) + `drop()`.
+3. `AxiomCriteriaResultsReader` adapter (analogous to `ReviewProgramResultsReader`) — reads existing Axiom evaluation results (Cosmos `axiomEvaluation` container or similar) and projects into Decision Engine analytics shape.
+4. `buildAxiomCriteriaCategory({ pusher, db })` wires push / preview / analytics. Replay stubbed in L1, full in L2.
+5. Webhook handler: when Axiom POSTs an evaluation completion to AMS, the existing handler writes the result; add a Decision Engine projection that updates analytics caches.
+6. FE: `RecentTraceFlowPreview` already polls the most recent trace generically — make it cycle through registered categories so Axiom traces also surface on the landing page once they're flowing.
+7. Tests: end-to-end test that authors a criterion → pushes to Axiom → submits a document → reads result back through Decision Engine analytics.
+
+**Definition of done:**
+- Editing an Axiom criterion in the Decision Engine workspace causes the next document evaluation to honor it (verifiable via test document + asserted score).
+- `/decision-engine/rules/axiom-criteria` → Analytics tab populates from real Axiom evaluation history.
+- `/decision-engine/decisions/axiom-criteria` browse works — each row = one Axiom evaluation.
+- Replay surface either works (L2) or returns a clear 501 with documented reason (L1).
+
+### 5.M Phase M — Operator UX: interact / intervene / trace
+
+**Goal:** Decision Engine is not read-only. Operators routinely override decisions, lookup decisions by vendor order / report / document, intervene mid-flight, and audit the trail across categories. Every one of those surfaces should be one click away from where the decision lives.
+
+**Tasks:**
+
+1. **Per-decision Override**: Every trace entry (vendor-matching `assignment-traces`, firing-rules `firing-decisions`, review-program `review-results`, axiom-criteria evaluation results) gets an **Override** button.
+   - Opens a category-aware override dialog: "Why are you overriding?" (required reason) + the category-specific override fields (pick a different vendor, change `computedDecision` to Accept/Conditional/Reject, force-pass an Axiom criterion, etc.).
+   - Persists the override as an additive field on the existing trace doc (`overrideOutcome`, `overrideReason`, `overriddenBy`, `overriddenAt`). The `review-results` container already has these fields per `ReviewTapeResult` — extend the others to match.
+   - Publishes `decision.overridden` event → downstream consumers reroute (vendor-matching: reassigns vendor; firing-rules: cancels the fire action; review-program: routes the report differently).
+   - Audit row in `decision-rule-audit` with `action: 'override'`.
+
+2. **Decision lookup by vendor order / report / document**:
+   - `/decision-engine/decisions/:category?orderId=X` filter — deep-linkable, paste-and-go.
+   - Per-order detail page already shows `AssignmentTraceTimeline`; mirror the pattern on every order detail page that has a relevant decision: `ReviewProgramTimeline`, `AxiomCriteriaTimeline`. Same component shape, different data source.
+   - Top-of-landing-page search box: paste an orderId / vendorId / reportId; see every decision across every category for that subject.
+
+3. **Mid-flight intervention** (vendor-matching specific today; generalizes later):
+   - On orders with `autoVendorAssignment.status = 'PENDING_BID'`: "Cancel + re-evaluate" button (publishes `vendor.assignment.cancelled`; orchestrator re-runs) and "Force-pick vendor X" (creates the bid invitation directly, bypasses the ranking).
+   - Both write audit rows + emit override events.
+
+4. **Bulk override / replay-then-commit**:
+   - On `/decision-engine/decisions/:category`, select N decisions → "Replay with proposed rules" → opens Sandbox pre-populated with those N rows as the replay set.
+   - Sandbox grows a "Commit overrides" button: if the operator approves the diff, every changed decision gets `overrideOutcome` set in one transaction with a shared `overrideReason: 'Bulk replay-driven override (N decisions)'`.
+
+5. **Cross-category audit hub** at `/decision-engine/audit`:
+   - Tenant-wide stream of every rule edit + every override across every category.
+   - Filter by category, by actor, by action (`create | update | override | drop`), by date range.
+   - Powered by the existing `decision-rule-audit` container; review-results override fields read via the existing `ReviewProgramResultsReader`.
+
+6. **Per-tenant Decision Engine settings page** at `/decision-engine/settings`:
+   - Kill switches (already in OpsHealthDashboard — link from settings).
+   - Trigger config for review-program (introduced in Phase K).
+   - RBAC roles (which users can override; which can edit rules; defer to existing platform roles).
+   - Optional Slack / email webhooks for `decision.overridden` events.
+
+**Definition of done:**
+- Operators can override any decision in <5s from the trace timeline (no detour through admin UIs).
+- Pasting an orderId into the search box surfaces every decision touching that order, across all four categories.
+- The audit hub shows every rule edit + every override across the tenant in a single filterable feed.
+- Bulk override flow committable from the Sandbox diff in one click.
+
 ---
 
 ## 6. Migration plan
@@ -512,6 +675,17 @@ After A lands, **Phase B + C in parallel** (BE plugin pattern + FE category-awar
 Then **Phase D (sandbox/replay)** — the single biggest operator value-add in this entire plan, and it's category-generic so all subsequent categories inherit it for free.
 
 Then F/G/H pick up new categories one by one; E (analytics) and I (polish) can run alongside as the trace dataset grows.
+
+### 8.1 Next-up after rev 12 — recommended ordering of J/K/L/M
+
+Now that A–I have all shipped or shipped-as-MVP, the productive ordering is:
+
+1. **K first** (Review Programs on every order-creation path). Highest user-visible delta — operators today see review-program eval ONLY on bulk uploads, and that's the most-asked-about gap. K also unblocks J7 (the order-created review-program row in the live-fire matrix). ~1.5 weeks BE+FE.
+2. **J in parallel with K** — the live-fire suite for the parts that work today (J1–J6 + J10). Run J as soon as K's first cut lands; iterate on issues found while K finishes polishing.
+3. **L next** — Axiom integration. Starts with the mandatory survey commit. Real work depends on the survey outcome but plan for ~2 weeks once Option A vs B is settled.
+4. **M last** but in pieces — Override (M.1) is the biggest single bang for the buck and can land independently of M.2–M.6. Recommend shipping M.1 immediately after K (operators want overrides as soon as more decisions are firing). M.2 (lookup by order) is cheap and can ride along.
+
+Total to close the doc: ~4–6 weeks of dev work after rev 12, ~3–4 weeks calendar with two engineers in parallel.
 
 ---
 
