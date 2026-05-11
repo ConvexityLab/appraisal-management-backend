@@ -63,6 +63,14 @@ export interface FiringDecisionDocument {
 	terminalActionFired: boolean;
 	/** Outcome roll-up for the analytics summary's outcomeCounts bucket. */
 	outcome: 'no_action' | 'notify_only' | 'probation' | 'fire';
+
+	// ── Phase M.1 — operator override fields (additive) ──────────────────────
+	/** Operator-supplied outcome that supersedes the rules-driven `outcome`. */
+	overrideOutcome?: 'no_action' | 'notify_only' | 'probation' | 'fire';
+	overrideReason?: string;
+	overriddenBy?: string;
+	overriddenAt?: string;
+	overrideData?: Record<string, unknown>;
 }
 
 /** Light projection for live-feed style listings. */

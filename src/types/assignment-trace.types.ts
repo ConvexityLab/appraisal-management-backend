@@ -73,6 +73,18 @@ export interface AssignmentTraceDocument {
 
   /** Wall-clock latency from triggerVendorAssignment start to ranking complete. */
   rankingLatencyMs: number;
+
+  // ── Phase M.1 — operator override fields (additive) ──────────────────────
+  /** New disposition the operator chose (e.g., 'manual_assign' or another vendor id). */
+  overrideOutcome?: string;
+  /** Required when overrideOutcome is set. Recorded in audit + comms. */
+  overrideReason?: string;
+  /** User id that performed the override. */
+  overriddenBy?: string;
+  /** ISO timestamp the override was saved. */
+  overriddenAt?: string;
+  /** Per-category override payload (vendor id to force-pick, etc.). */
+  overrideData?: Record<string, unknown>;
 }
 
 /** Light projection for the FE timeline (rendering thousands of entries). */

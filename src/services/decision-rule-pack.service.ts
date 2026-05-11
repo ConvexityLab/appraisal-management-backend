@@ -223,6 +223,45 @@ export class DecisionRulePackService {
     );
   }
 
+  /**
+   * Phase M.5 — cross-category tenant-wide audit feed. Returns every audit
+   * row for the tenant, sorted by timestamp DESC. Single Cosmos query
+   * (audit container is partitioned by `/tenantId`).
+   */
+  async listAuditForTenant(
+    tenantId: string,
+    opts: { limit?: number; sinceDays?: number; category?: DecisionRuleCategory; action?: string } = {},
+  ): Promise<RulePackAuditEntry[]> {
+    const limit = Math.min(Math.max(1, opts.limit ?? 200), 500);
+    const params: Array<{ name: string; value: unknown }> = [
+      { name: '@tenantId', value: tenantId },
+      { name: '@limit', value: limit },
+    ];
+    let extra = '';
+    if (opts.sinceDays !== undefined && Number.isFinite(opts.sinceDays) && opts.sinceDays > 0) {
+      const sinceIso = new Date(Date.now() - opts.sinceDays * 24 * 60 * 60 * 1000).toISOString();
+      extra += ' AND c.timestamp >= @sinceIso';
+      params.push({ name: '@sinceIso', value: sinceIso });
+    }
+    if (opts.category) {
+      extra += ' AND c.category = @category';
+      params.push({ name: '@category', value: opts.category });
+    }
+    if (opts.action) {
+      extra += ' AND c.action = @action';
+      params.push({ name: '@action', value: opts.action });
+    }
+    return this.db.queryDocuments<RulePackAuditEntry>(
+      AUDIT_CONTAINER,
+      `SELECT TOP @limit * FROM c
+       WHERE c.type = 'decision-rule-audit'
+         AND c.tenantId = @tenantId
+         ${extra}
+       ORDER BY c.timestamp DESC`,
+      params,
+    );
+  }
+
   // ── Internal helpers ──────────────────────────────────────────────────
 
   private composeId(

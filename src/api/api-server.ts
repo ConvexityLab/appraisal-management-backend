@@ -55,6 +55,7 @@ import { DecisionRulePackService } from '../services/decision-rule-pack.service.
 import { DecisionEngineRulesController } from '../controllers/decision-engine-rules.controller.js';
 import { DecisionEngineOpsController } from '../controllers/decision-engine-ops.controller.js';
 import { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
+import { DecisionOverrideService } from '../services/decision-engine/override/decision-override.service.js';
 import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
 import {
   CategoryRegistry,
@@ -1642,9 +1643,10 @@ export class AppraisalManagementAPIServer {
         new DecisionEngineRulesController(packs, registry, killSwitches).router,
       );
 
+      const overrideService = new DecisionOverrideService(this.dbService);
       this.app.use('/api/decision-engine/ops',
         this.unifiedAuth.authenticate(),
-        new DecisionEngineOpsController(killSwitches, registry).router,
+        new DecisionEngineOpsController(killSwitches, registry, overrideService, packs).router,
       );
 
       // Backward-compat: keep `/api/auto-assignment/rules/*` working as a
