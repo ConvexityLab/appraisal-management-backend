@@ -125,6 +125,14 @@ export interface Order {
   engagementPropertyId?: string;
   /** FK to the specific EngagementClientOrder within the loan */
   engagementClientOrderId?: string;
+  /**
+   * Phase N4 — id of the DecompositionRule that produced this order's
+   * `vendorWorkType` (via `composeFromRule`). Stamped at creation time
+   * by `ClientOrderService.createVendorOrders`. Decision Engine
+   * analytics for the `order-decomposition` category aggregates by
+   * this field to compute fire counts + impact per rule.
+   */
+  decompositionRuleId?: string;
   // â”€â”€ Report linkage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** FK to the report document in the reporting container, written back on upsert. */
   reportId?: string;

@@ -502,6 +502,10 @@ export class ClientOrderService {
         status: OrderStatus.NEW,
         tenantId: clientOrder.tenantId,
         clientOrderId: clientOrder.id,
+        // Every VendorOrder must carry the id of its parent EngagementClientOrder
+        // (which is the same doc as the ClientOrder). Required by the
+        // engagement-primacy guard in CosmosDbService.createOrder.
+        engagementClientOrderId: clientOrder.id,
         engagementId: clientOrder.engagementId,
         engagementPropertyId: clientOrder.engagementPropertyId,
         clientId: clientOrder.clientId,
@@ -509,6 +513,12 @@ export class ClientOrderService {
         vendorWorkType: spec.vendorWorkType,
         ...(spec.vendorFee !== undefined ? { vendorFee: spec.vendorFee } : {}),
         ...(spec.instructions !== undefined ? { instructions: spec.instructions } : {}),
+        // Phase N4 — stamp the decomposition rule provenance on every
+        // VendorOrder so Decision Engine analytics for the
+        // 'order-decomposition' category can aggregate without joining.
+        ...(spec.decompositionRuleId !== undefined
+          ? { decompositionRuleId: spec.decompositionRuleId }
+          : {}),
       };
 
       const created = await this.vendorOrderService.createVendorOrder(vendorOrderInput);

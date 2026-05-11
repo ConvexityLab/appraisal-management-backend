@@ -399,6 +399,10 @@ export class AutoAssignmentOrchestratorService {
     let rankedVendors: RankedVendorEntry[] = [];
     let matchResults: VendorMatchResult[] = [];
     let deniedVendors: DeniedVendorEntry[] = [];
+    // Phase D.faithful — frozen facts the rules engine evaluated; persisted
+    // on the assignment-trace doc so Sandbox replay can re-evaluate against
+    // the SAME facts that drove the original decision.
+    let evaluationsSnapshot: Awaited<ReturnType<typeof this.matchingEngine.findMatchingVendorsAndDenied>>['evaluationsSnapshot'] = [];
     try {
       const result = await this.matchingEngine.findMatchingVendorsAndDenied(
         {
@@ -424,6 +428,7 @@ export class AutoAssignmentOrchestratorService {
       );
       matchResults = result.matches;
       deniedVendors = result.denied;
+      evaluationsSnapshot = result.evaluationsSnapshot;
 
       rankedVendors = matchResults.map((r) => ({
         vendorId: r.vendorId,
@@ -448,6 +453,7 @@ export class AutoAssignmentOrchestratorService {
         rankedVendors: [],
         deniedVendors,
         matchResults: [],
+        evaluationsSnapshot,
         outcome: 'escalated',
         selectedVendorId: null,
       });
@@ -516,6 +522,7 @@ export class AutoAssignmentOrchestratorService {
         rankedVendors,
         deniedVendors,
         matchResults,
+        evaluationsSnapshot,
         outcome,
         selectedVendorId: top?.vendorId ?? null,
       });
@@ -898,7 +905,6 @@ export class AutoAssignmentOrchestratorService {
       vendorId: vendor.vendorId,
       vendorName: vendor.vendorName,
       tenantId,
-      propertyAddress: bidPropertyAddress,
       propertyType: order.productType ?? bidOrderType,
       dueDate: bidDueDate,
       urgency: order.priority,
@@ -1220,6 +1226,8 @@ export class AutoAssignmentOrchestratorService {
     rankedVendors: RankedVendorEntry[];
     deniedVendors: DeniedVendorEntry[];
     matchResults: VendorMatchResult[];
+    /** Phase D.faithful — frozen facts the engine evaluated. */
+    evaluationsSnapshot?: AssignmentTraceDocument['evaluationsSnapshot'];
     outcome: AssignmentTraceDocument['outcome'];
     selectedVendorId: string | null;
   }): Promise<void> {
@@ -1266,6 +1274,9 @@ export class AutoAssignmentOrchestratorService {
       outcome: args.outcome,
       selectedVendorId: args.selectedVendorId,
       rankingLatencyMs: Date.now() - args.triggerStart,
+      ...(args.evaluationsSnapshot && args.evaluationsSnapshot.length > 0
+        ? { evaluationsSnapshot: args.evaluationsSnapshot }
+        : {}),
     };
 
     await this.traceRecorder.record(trace);

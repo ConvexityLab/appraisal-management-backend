@@ -78,6 +78,22 @@ const ADAPTERS: Record<string, CategoryAdapter> = {
 			?? (doc['overrideDecision'] as string | undefined)
 			?? null,
 	},
+	/**
+	 * Phase N5 — decomposition decisions ARE the VendorOrder docs. Overriding
+	 * a decomposition decision means stamping an override outcome on the
+	 * VendorOrder (e.g. mark this auto-generated vendor order as "cancelled
+	 * by operator" or "added by operator override"). The `orders` container
+	 * is partitioned by `/tenantId`.
+	 */
+	'order-decomposition': {
+		container: 'orders',
+		partitionKey: (doc) => doc.tenantId ?? '',
+		findById: (id) => ({
+			query: 'SELECT * FROM c WHERE c.id = @id',
+			params: [{ name: '@id', value: id }],
+		}),
+		readOutcome: (doc) => (doc['vendorWorkType'] as string | undefined) ?? null,
+	},
 };
 
 export class DecisionOverrideService {

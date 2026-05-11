@@ -74,6 +74,33 @@ export interface AssignmentTraceDocument {
   /** Wall-clock latency from triggerVendorAssignment start to ranking complete. */
   rankingLatencyMs: number;
 
+  /**
+   * Phase D.faithful — frozen-fact snapshot of the {vendor, order} bundles
+   * the rules engine evaluated at decision time. Lets Sandbox replay
+   * re-evaluate proposed rules against the SAME facts that drove the
+   * original decision, instead of falling back to current vendor data
+   * (which can have drifted since). Populated by the orchestrator on
+   * every new trace going forward; legacy traces without it fall back
+   * to current-data replay (still useful, just less faithful).
+   */
+  evaluationsSnapshot?: Array<{
+    vendor: {
+      id: string;
+      capabilities?: string[];
+      states?: string[];
+      performanceScore?: number;
+      licenseType?: string;
+      distance?: number | null;
+    };
+    order: {
+      productType?: string;
+      propertyState?: string;
+      orderValueUsd?: number;
+    };
+    originallyRanked: boolean;
+    originalScore: number;
+  }>;
+
   // ── Phase M.1 — operator override fields (additive) ──────────────────────
   /** New disposition the operator chose (e.g., 'manual_assign' or another vendor id). */
   overrideOutcome?: string;

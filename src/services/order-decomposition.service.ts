@@ -157,6 +157,75 @@ export class OrderDecompositionService {
     if (!rule) return [];
     return composeFromRule(rule, context);
   }
+
+  // ── CRUD surface — Phase N3 of DECISION_ENGINE_RULES_SURFACE.md ───────────
+
+  /** List every decomposition rule for a tenant (plus global defaults). */
+  async listRules(tenantId: string): Promise<DecompositionRule[]> {
+    const container = this.dbService.getContainer(DECOMPOSITION_RULES_CONTAINER);
+    const { resources: tenantRows } = await container.items
+      .query<DecompositionRule>({
+        query: 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @tenantId',
+        parameters: [
+          { name: '@type', value: DECOMPOSITION_RULE_DOC_TYPE },
+          { name: '@tenantId', value: tenantId },
+        ],
+      })
+      .fetchAll();
+    const { resources: globalRows } = await container.items
+      .query<DecompositionRule>({
+        query: 'SELECT * FROM c WHERE c.type = @type AND c.tenantId = @globalTenant',
+        parameters: [
+          { name: '@type', value: DECOMPOSITION_RULE_DOC_TYPE },
+          { name: '@globalTenant', value: GLOBAL_DEFAULT_TENANT },
+        ],
+      })
+      .fetchAll();
+    return [...tenantRows, ...globalRows];
+  }
+
+  async getRule(tenantId: string, ruleId: string): Promise<DecompositionRule | null> {
+    const container = this.dbService.getContainer(DECOMPOSITION_RULES_CONTAINER);
+    try {
+      const { resource } = await container.item(ruleId, tenantId).read<DecompositionRule>();
+      return resource ?? null;
+    } catch (err: unknown) {
+      if ((err as { code?: number })?.code === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Upsert a decomposition rule. Stamps audit metadata. Tenant ownership is
+   * the caller's responsibility — the controller enforces it via the auth
+   * context's tenantId.
+   */
+  async upsertRule(rule: DecompositionRule, actor: string): Promise<DecompositionRule> {
+    const container = this.dbService.getContainer(DECOMPOSITION_RULES_CONTAINER);
+    const now = new Date().toISOString();
+    const toWrite: DecompositionRule = {
+      ...rule,
+      type: DECOMPOSITION_RULE_DOC_TYPE,
+      createdAt: rule.createdAt ?? now,
+      updatedAt: now,
+    };
+    const { resource } = await container.items.upsert<DecompositionRule>(toWrite);
+    if (!resource) throw new Error(`Failed to upsert decomposition rule ${rule.id}`);
+    this.logger.info('decomposition rule upserted', { id: rule.id, tenantId: rule.tenantId, actor });
+    return resource;
+  }
+
+  async deleteRule(tenantId: string, ruleId: string): Promise<boolean> {
+    const container = this.dbService.getContainer(DECOMPOSITION_RULES_CONTAINER);
+    try {
+      await container.item(ruleId, tenantId).delete();
+      this.logger.info('decomposition rule deleted', { id: ruleId, tenantId });
+      return true;
+    } catch (err: unknown) {
+      if ((err as { code?: number })?.code === 404) return false;
+      throw err;
+    }
+  }
 }
 
 // ─── Composition helpers (exported for testability) ──────────────────────────
@@ -176,7 +245,9 @@ export function composeFromRule(
     for (const t of templates) {
       if (t.templateKey && seenKeys.has(t.templateKey)) continue;
       if (t.templateKey) seenKeys.add(t.templateKey);
-      out.push(t);
+      // Phase N4 — stamp the rule id on every emitted template so the
+      // downstream VendorOrder carries provenance back to the rule.
+      out.push({ ...t, decompositionRuleId: rule.id });
     }
   };
 

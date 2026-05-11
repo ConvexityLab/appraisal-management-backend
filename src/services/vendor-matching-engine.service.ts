@@ -140,12 +140,35 @@ export class VendorMatchingEngine {
   async findMatchingVendorsAndDenied(
     request: VendorMatchRequest,
     topN: number = 10
-  ): Promise<{ matches: VendorMatchResult[]; denied: DeniedVendorEntry[] }> {
+  ): Promise<{
+    matches: VendorMatchResult[];
+    denied: DeniedVendorEntry[];
+    /**
+     * Phase D.faithful — frozen-fact snapshot of every {vendor, order}
+     * bundle the rules engine evaluated. Orchestrator persists this on
+     * the assignment-trace doc so Sandbox replay re-evaluates proposed
+     * rules against the SAME facts that drove the original decision
+     * (not against possibly-drifted current vendor data).
+     */
+    evaluationsSnapshot: Array<{
+      vendor: {
+        id: string;
+        capabilities?: string[];
+        states?: string[];
+        performanceScore?: number;
+        licenseType?: string;
+        distance?: number | null;
+      };
+      order: { productType?: string; propertyState?: string };
+      originallyRanked: boolean;
+      originalScore: number;
+    }>;
+  }> {
     const propertyCoords = await this.geocodeAddress(request.propertyAddress);
     const { eligible, denied } = await this.getEligibleVendors(request, propertyCoords);
 
     if (eligible.length === 0) {
-      return { matches: [], denied };
+      return { matches: [], denied, evaluationsSnapshot: [] };
     }
 
     const scoredVendors = await Promise.all(
@@ -158,7 +181,41 @@ export class VendorMatchingEngine {
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, topN);
 
-    return { matches, denied };
+    const evaluationsSnapshot = [
+      ...eligible.map(({ vendor, distance }) => ({
+        vendor: {
+          id: vendor.id as string,
+          ...(Array.isArray(vendor.capabilities) ? { capabilities: vendor.capabilities as string[] } : {}),
+          ...(Array.isArray((vendor as Record<string, unknown>).serviceAreas)
+            ? {
+                states: ((vendor as Record<string, unknown>).serviceAreas as Array<{ state?: string }>)
+                  .map(s => s.state)
+                  .filter((x): x is string => !!x),
+              }
+            : {}),
+          ...(typeof (vendor as Record<string, unknown>).overallScore === 'number'
+            ? { performanceScore: (vendor as Record<string, unknown>).overallScore as number }
+            : {}),
+          ...(typeof (vendor as Record<string, unknown>).licenseType === 'string'
+            ? { licenseType: (vendor as Record<string, unknown>).licenseType as string }
+            : {}),
+          distance: distance ?? null,
+        },
+        order: {
+          ...(request.productId ? { productType: request.productId } : {}),
+        },
+        originallyRanked: true,
+        originalScore: matches.find(m => m.vendorId === vendor.id)?.matchScore ?? 0,
+      })),
+      ...denied.map(d => ({
+        vendor: { id: d.vendorId },
+        order: { ...(request.productId ? { productType: request.productId } : {}) },
+        originallyRanked: false,
+        originalScore: 0,
+      })),
+    ];
+
+    return { matches, denied, evaluationsSnapshot };
   }
 
   /**
@@ -882,7 +939,6 @@ export class VendorMatchingEngine {
         orderId,
         vendorId,
         tenantId: request.tenantId,
-        propertyAddress: request.propertyAddress,
         propertyType: request.propertyType,
         dueDate: request.dueDate,
         urgency: request.urgency,

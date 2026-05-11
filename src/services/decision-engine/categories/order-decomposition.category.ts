@@ -27,6 +27,8 @@ import type {
 	CategoryDefinition,
 	CategoryValidationResult,
 } from '../category-definition.js';
+import type { CosmosDbService } from '../../cosmos-db.service.js';
+import { OrderDecompositionAnalyticsService } from '../order-decomposition/order-decomposition-analytics.service.js';
 
 export const ORDER_DECOMPOSITION_CATEGORY_ID = 'order-decomposition';
 
@@ -40,7 +42,8 @@ interface DecompositionRuleLike {
 	[k: string]: unknown;
 }
 
-export function buildOrderDecompositionCategory(): CategoryDefinition {
+export function buildOrderDecompositionCategory(opts: { db?: CosmosDbService } = {}): CategoryDefinition {
+	const analyticsService = opts.db ? new OrderDecompositionAnalyticsService(opts.db) : null;
 	return {
 		id: ORDER_DECOMPOSITION_CATEGORY_ID,
 		label: 'Order Decomposition',
@@ -84,16 +87,16 @@ export function buildOrderDecompositionCategory(): CategoryDefinition {
 
 			return { errors, warnings };
 		},
-		// Phase N analytics — stub. N4 wires the real adapter (counts
-		// VendorOrder docs by decompositionRuleId once stamping ships).
+		// Phase N4 analytics — real reader, reads VendorOrder docs stamped
+		// with decompositionRuleId. Falls back to a "pending" payload when
+		// no db handle is supplied (test isolation).
 		async analytics(input: CategoryAnalyticsInput): Promise<CategoryAnalyticsSummary> {
-			if (!input.tenantId) throw new Error('analytics: tenantId is required');
+			if (analyticsService) return analyticsService.summary(input);
 			const days = clampDays(input.days ?? 30);
-			const windowDates = buildWindowDates(days);
 			return {
 				category: ORDER_DECOMPOSITION_CATEGORY_ID,
 				windowDays: days,
-				windowDates,
+				windowDates: buildWindowDatesLocal(days),
 				totalDecisions: 0,
 				totalEvaluations: 0,
 				escalationCount: 0,
@@ -110,7 +113,7 @@ function clampDays(d: number): number {
 	return Math.min(Math.floor(d), 90);
 }
 
-function buildWindowDates(days: number): string[] {
+function buildWindowDatesLocal(days: number): string[] {
 	const out: string[] = [];
 	const now = new Date();
 	for (let i = days - 1; i >= 0; i--) {

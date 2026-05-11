@@ -226,36 +226,59 @@ export class VendorMatchingReplayService {
 		vendorById: Map<string, VendorRecord>,
 	): Promise<CategoryReplayDecision> {
 		const evaluations: VendorMatchingPreviewEvaluation[] = [];
-		const ranked = trace.rankedVendors ?? [];
-		const denied = trace.deniedVendors ?? [];
-		const allConsidered: Array<{ id: string; originallyRanked: boolean; originalScore: number }> = [
-			...ranked.map(r => ({ id: r.vendorId, originallyRanked: true, originalScore: r.score })),
-			...denied.map(d => ({ id: d.vendorId, originallyRanked: false, originalScore: 0 })),
-		];
+		let factSource: 'snapshot' | 'current-data' = 'current-data';
 
-		for (const v of allConsidered) {
-			const rec = vendorById.get(v.id);
-			if (!rec) continue; // Vendor was deleted/inactive — skip from replay.
-			evaluations.push({
-				vendor: {
-					id: rec.id,
-					...(rec.capabilities ? { capabilities: rec.capabilities } : {}),
-					...(rec.serviceAreas
-						? { states: rec.serviceAreas.map(sa => sa.state).filter((s): s is string => Boolean(s)) }
-						: {}),
-					...(rec.overallScore !== undefined ? { performanceScore: rec.overallScore } : {}),
-					...(rec.licenseType !== undefined ? { licenseType: rec.licenseType } : {}),
-				},
-				order: {
-					// trace stores `propertyType` (the product/loan-product type at decision time);
-					// MOP's vendor-matching facts call this `productType`. Same value, different name.
-					...(trace.matchRequest.propertyType ? { productType: trace.matchRequest.propertyType } : {}),
-					// propertyState would need address parsing — skipped for MVP. Operators
-					// see this in the trace's matchRequest.propertyAddress field anyway.
-				},
-				__originalRanked: v.originallyRanked,
-				__originalScore: v.originalScore,
-			});
+		// Phase D.faithful — prefer the frozen-fact snapshot when the trace
+		// carries one (new traces only). Falls back to current vendor data
+		// for legacy traces or snapshots that captured zero rows.
+		if (trace.evaluationsSnapshot && trace.evaluationsSnapshot.length > 0) {
+			factSource = 'snapshot';
+			for (const s of trace.evaluationsSnapshot) {
+				evaluations.push({
+					vendor: {
+						id: s.vendor.id,
+						...(s.vendor.capabilities ? { capabilities: s.vendor.capabilities } : {}),
+						...(s.vendor.states ? { states: s.vendor.states } : {}),
+						...(s.vendor.performanceScore !== undefined ? { performanceScore: s.vendor.performanceScore } : {}),
+						...(s.vendor.licenseType !== undefined ? { licenseType: s.vendor.licenseType } : {}),
+						...(s.vendor.distance !== undefined && s.vendor.distance !== null ? { distance: s.vendor.distance } : {}),
+					},
+					order: {
+						...(s.order.productType ? { productType: s.order.productType } : {}),
+						...(s.order.propertyState ? { propertyState: s.order.propertyState } : {}),
+					},
+					__originalRanked: s.originallyRanked,
+					__originalScore: s.originalScore,
+				});
+			}
+		} else {
+			const ranked = trace.rankedVendors ?? [];
+			const denied = trace.deniedVendors ?? [];
+			const allConsidered: Array<{ id: string; originallyRanked: boolean; originalScore: number }> = [
+				...ranked.map(r => ({ id: r.vendorId, originallyRanked: true, originalScore: r.score })),
+				...denied.map(d => ({ id: d.vendorId, originallyRanked: false, originalScore: 0 })),
+			];
+
+			for (const v of allConsidered) {
+				const rec = vendorById.get(v.id);
+				if (!rec) continue;
+				evaluations.push({
+					vendor: {
+						id: rec.id,
+						...(rec.capabilities ? { capabilities: rec.capabilities } : {}),
+						...(rec.serviceAreas
+							? { states: rec.serviceAreas.map(sa => sa.state).filter((s): s is string => Boolean(s)) }
+							: {}),
+						...(rec.overallScore !== undefined ? { performanceScore: rec.overallScore } : {}),
+						...(rec.licenseType !== undefined ? { licenseType: rec.licenseType } : {}),
+					},
+					order: {
+						...(trace.matchRequest.propertyType ? { productType: trace.matchRequest.propertyType } : {}),
+					},
+					__originalRanked: v.originallyRanked,
+					__originalScore: v.originalScore,
+				});
+			}
 		}
 
 		if (evaluations.length === 0) {
@@ -331,7 +354,8 @@ export class VendorMatchingReplayService {
 				newAcceptances,
 				scoreDeltas,
 				vendorsConsidered: evaluations.length,
-				vendorsMissingFromCurrentDataset: allConsidered.length - evaluations.length,
+				factSource,
+				faithful: factSource === 'snapshot',
 			},
 		};
 	}

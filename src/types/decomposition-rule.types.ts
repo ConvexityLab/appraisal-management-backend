@@ -53,6 +53,14 @@ export interface VendorOrderTemplate {
    * reference siblings within the same rule.
    */
   templateKey?: string;
+  /**
+   * Phase N4 — id of the DecompositionRule that emitted this template.
+   * `composeFromRule` stamps this for every emitted template (static +
+   * selector + conditional). Forwarded onto the resulting VendorOrder
+   * doc so Decision Engine analytics can aggregate "which decomposition
+   * rule produced this vendor order" without joining containers.
+   */
+  decompositionRuleId?: string;
 }
 
 // ─── Rule ────────────────────────────────────────────────────────────────────

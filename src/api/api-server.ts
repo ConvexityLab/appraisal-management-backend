@@ -54,6 +54,8 @@ import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.c
 import { DecisionRulePackService } from '../services/decision-rule-pack.service.js';
 import { DecisionEngineRulesController } from '../controllers/decision-engine-rules.controller.js';
 import { DecisionEngineOpsController } from '../controllers/decision-engine-ops.controller.js';
+import { DecisionEngineOrderDecompositionController } from '../controllers/decision-engine-order-decomposition.controller.js';
+import { OrderDecompositionService } from '../services/order-decomposition.service.js';
 import { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
 import { DecisionOverrideService } from '../services/decision-engine/override/decision-override.service.js';
 import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
@@ -1638,7 +1640,7 @@ export class AppraisalManagementAPIServer {
       registry.register(buildReviewProgramCategory({ db: this.dbService }));
       registry.register(buildFiringRulesCategory({ db: this.dbService }));
       registry.register(buildAxiomCriteriaCategory());
-      registry.register(buildOrderDecompositionCategory());
+      registry.register(buildOrderDecompositionCategory({ db: this.dbService }));
 
       // Register each category's `push` as an onNewActivePack hook so saves
       // automatically notify the upstream evaluator.
@@ -1660,6 +1662,20 @@ export class AppraisalManagementAPIServer {
       this.app.use('/api/decision-engine/ops',
         this.unifiedAuth.authenticate(),
         new DecisionEngineOpsController(killSwitches, registry, overrideService, packs).router,
+      );
+
+      // Phase N3 — Order Decomposition CRUD through Decision Engine workspace.
+      // Proxies through OrderDecompositionService (which owns the existing
+      // decomposition-rules container) so authoring flows through the
+      // canonical service, not a parallel write path.
+      const decompositionService = new OrderDecompositionService(this.dbService);
+      this.app.use('/api/decision-engine/order-decomposition',
+        this.unifiedAuth.authenticate(),
+        new DecisionEngineOrderDecompositionController(
+          decompositionService,
+          this.dbService,
+          killSwitches,
+        ).router,
       );
 
       // Backward-compat: keep `/api/auto-assignment/rules/*` working as a
