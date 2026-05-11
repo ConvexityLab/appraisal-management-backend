@@ -368,7 +368,14 @@ export class ReviewContextAssemblyService {
 
     for (const root of roots) {
       for (const path of root) {
-        const normalized = path.replace(/^(subjectProperty|extraction|providerData|provenance)\./, '');
+        // Strip ALL known bucket prefixes (canonical / subjectProperty /
+        // extraction / providerData / provenance) so consumers checking
+        // "do we have `subject.X`?" find it regardless of which bucket
+        // the snapshot stored it in. Earlier this regex omitted
+        // `canonical`, leaving `canonical.subject.taxYear` un-normalized
+        // in the path set — same class of bug as the canonicalData
+        // destructure omission in this file (see f12fc18).
+        const normalized = path.replace(/^(canonical|subjectProperty|extraction|providerData|provenance)\./, '');
         if (normalized.length > 0) {
           pathSet.add(normalized);
         }
