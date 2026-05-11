@@ -105,4 +105,28 @@ describe('PortalController order status route', () => {
       { includeProperty: true },
     );
   });
+
+  it('falls back to normalized legacy string property text when canonical lookup fails', async () => {
+    loadByVendorOrderMock.mockRejectedValueOnce(new Error('canonical lookup failed'));
+    findOrderByIdMock.mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 'order-2',
+        tenantId: 'tenant-1',
+        status: 'Completed',
+        orderType: 'Full',
+        propertyAddress: '999 Legacy Main St, Legacy City, tx 73301',
+      },
+    });
+
+    const res = await request(buildApp()).get('/api/portal/orders/order-2');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.propertyAddress).toEqual({
+      streetAddress: '999 Legacy Main St',
+      city: 'Legacy City',
+      state: 'TX',
+      zipCode: '73301',
+    });
+  });
 });

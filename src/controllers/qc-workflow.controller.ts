@@ -332,7 +332,9 @@ router.post(
         orderId: req.body.orderId,
         orderNumber: req.body.orderNumber,
         appraisalId: req.body.appraisalId,
-        propertyAddress: req.body.propertyAddress ?? '',
+        ...(typeof req.body.propertyAddress === 'string' && req.body.propertyAddress.trim().length > 0
+          ? { propertyAddress: req.body.propertyAddress }
+          : {}),
         appraisedValue: req.body.appraisedValue ?? 0,
         orderPriority: req.body.orderPriority ?? 'STANDARD',
         clientId: req.body.clientId ?? '',

@@ -109,7 +109,7 @@ describe('QCLifecycleHandler', () => {
       const call = addToQueueMock.mock.calls[0][0];
       expect(call.orderId).toBe('order-1');
       expect(call.orderNumber).toBe('ORD-001');
-      expect(call.propertyAddress).toContain('1 Main');
+      expect(call).not.toHaveProperty('propertyAddress');
       expect(call.vendorId).toBe('vendor-1');
     });
 

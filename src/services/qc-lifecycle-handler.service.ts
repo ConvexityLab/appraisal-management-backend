@@ -115,17 +115,6 @@ export class QCLifecycleHandler {
         orderId,
         orderNumber: order.orderNumber ?? orderId,
         appraisalId: order.appraisalId ?? orderId,
-        propertyAddress:
-          typeof addr === 'string'
-            ? addr
-            : [
-                addr?.streetAddress,
-                addr?.city,
-                addr?.state,
-                addr?.zipCode,
-              ]
-                .filter(Boolean)
-                .join(', '),
         appraisedValue: order.appraisedValue ?? 0,
         orderPriority: order.priority ?? 'STANDARD',
         clientId: order.clientId ?? 'unknown',

@@ -9,6 +9,9 @@ import { Logger } from '../utils/logger.js';
 import { CosmosClient } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 import { createApiError, createApiResponse } from '../utils/api-response.util.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { OrderContextLoader, getPropertyAddress } from '../services/order-context-loader.service.js';
+import type { PropertyAddress } from '../types/index.js';
 
 const router = Router();
 const logger = new Logger();
@@ -26,6 +29,9 @@ const DATABASE_ID = 'appraisal-management';
 const credential = new DefaultAzureCredential();
 const client = new CosmosClient({ endpoint: COSMOS_ENDPOINT, aadCredentials: credential });
 const database = client.database(DATABASE_ID);
+const loaderDbService = new CosmosDbService();
+const orderContextLoader = new OrderContextLoader(loaderDbService);
+let loaderInitializationPromise: Promise<void> | null = null;
 
 // Middleware to handle validation errors
 const handleValidationErrors = (req: Request, res: Response, next: Function): void => {
@@ -140,6 +146,52 @@ function mergeQcReviewDocs(docs: any[]): any {
   return base;
 }
 
+function formatPropertyAddress(address: unknown): string {
+  if (!address) {
+    return '';
+  }
+
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (typeof address !== 'object') {
+    return '';
+  }
+
+  const typedAddress = address as Partial<PropertyAddress> & { street?: string };
+  return [
+    typedAddress.streetAddress ?? typedAddress.street ?? '',
+    typedAddress.city ?? '',
+    typedAddress.state ?? '',
+    typedAddress.zipCode ?? '',
+  ].filter(Boolean).join(', ');
+}
+
+async function ensureOrderContextLoaderInitialized(): Promise<void> {
+  if (!loaderInitializationPromise) {
+    loaderInitializationPromise = loaderDbService.initialize();
+  }
+
+  await loaderInitializationPromise;
+}
+
+async function resolveQcReviewPropertyAddress(orderId: string, fallbackAddress: unknown): Promise<string> {
+  const fallback = formatPropertyAddress(fallbackAddress);
+
+  try {
+    await ensureOrderContextLoaderInitialized();
+    const ctx = await orderContextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
+    return formatPropertyAddress(getPropertyAddress(ctx)) || fallback;
+  } catch (error) {
+    logger.warn('QC results could not resolve canonical property address; falling back to stored QC address', {
+      orderId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  }
+}
+
 /**
  * GET /api/qc/results/order/:orderId
  * Fetch and merge ALL qc-review documents for an order.
@@ -174,6 +226,7 @@ router.get(
 
       logger.info(`Found ${resources.length} qc-review doc(s) for order, merging`, { orderId });
       const qcReview = resources.length === 1 ? resources[0] : mergeQcReviewDocs(resources);
+      const propertyAddress = await resolveQcReviewPropertyAddress(orderId as string, qcReview.propertyAddress);
 
       const qcValidationReport = {
         id: qcReview.id,
@@ -183,7 +236,7 @@ router.get(
         checklistId: qcReview.checklistId,
         checklistName: qcReview.checklistName,
         checklistVersion: qcReview.checklistVersion,
-        propertyAddress: qcReview.propertyAddress,
+        propertyAddress,
         appraisedValue: qcReview.appraisedValue,
         status: qcReview.status,
         overallScore: qcReview.overallScore,
@@ -257,6 +310,7 @@ router.get(
       }
 
       const qcReview = resources[0];
+  const propertyAddress = await resolveQcReviewPropertyAddress(orderId as string, qcReview.propertyAddress);
 
       // Ensure we have the expected structure for the frontend
       const qcValidationReport = {
@@ -269,7 +323,7 @@ router.get(
         checklistVersion: qcReview.checklistVersion,
         
         // Property information
-        propertyAddress: qcReview.propertyAddress,
+        propertyAddress,
         appraisedValue: qcReview.appraisedValue,
         
         // Overall results

@@ -11,6 +11,8 @@ export interface VerdictCounts {
   passCount: number;
   warnCount: number;
   failCount: number;
+  /** Criteria the engine could not score due to missing required data. */
+  cannotEvaluateCount: number;
   totalCount: number;
 }
 
@@ -24,6 +26,7 @@ export function computeVerdictCounts(
   let passCount = 0;
   let warnCount = 0;
   let failCount = 0;
+  let cannotEvaluateCount = 0;
 
   for (const criterion of criteria) {
     switch (criterion?.evaluation) {
@@ -36,6 +39,9 @@ export function computeVerdictCounts(
       case 'fail':
         failCount += 1;
         break;
+      case 'cannot_evaluate':
+        cannotEvaluateCount += 1;
+        break;
       default:
         // 'unknown' / null / undefined / unexpected values are intentionally
         // not counted so the totals reflect criteria that returned a verdict.
@@ -47,6 +53,7 @@ export function computeVerdictCounts(
     passCount,
     warnCount,
     failCount,
+    cannotEvaluateCount,
     totalCount: criteria.length,
   };
 }

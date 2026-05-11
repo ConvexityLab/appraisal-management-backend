@@ -354,3 +354,90 @@ describe('VendorIntegrationEventConsumerService', () => {
     );
   });
 });
+
+describe('VendorIntegrationEventConsumerService — outbound dispatch', () => {
+  function makeDbWithOrder(orderOverrides: Record<string, unknown> = {}) {
+    return {
+      getItem: vi.fn().mockResolvedValue({ success: true, data: { id: 'order-123', tenantId: 'tenant-1', clientId: 'lender-1', orderNumber: 'ORD-123', status: 'NEW', metadata: {}, ...orderOverrides } }),
+      updateItem: vi.fn().mockResolvedValue({ success: true, data: { id: 'order-123', status: 'ASSIGNED', metadata: {} } }),
+      queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      upsertItem: vi.fn().mockResolvedValue({ success: true }),
+      getContainer: vi.fn(),
+    };
+  }
+
+  it('calls outboundDispatcher.dispatch fire-and-forget when dispatcher is provided', async () => {
+    const db = makeDbWithOrder();
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const dispatcher = { dispatch: vi.fn().mockResolvedValue(undefined) };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn(), dispatcher);
+
+    const event = makeEvent('vendor.order.assigned', {});
+    await (service as any).onVendorEvent(event);
+
+    expect(dispatcher.dispatch).toHaveBeenCalledOnce();
+    expect(dispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'vendor.order.assigned',
+        vendorType: 'aim-port',
+        vendorOrderId: 'AP-1001',
+        tenantId: 'tenant-1',
+      }),
+      'vc-1',
+    );
+  });
+
+  it('does NOT call outboundDispatcher when none is provided', async () => {
+    const db = makeDbWithOrder();
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn());
+
+    // just confirming no explosion — no dispatcher means no dispatch
+    await expect((service as any).onVendorEvent(makeEvent('vendor.order.assigned', {}))).resolves.toBeUndefined();
+  });
+
+  it('continues inbound processing even when outboundDispatcher.dispatch rejects', async () => {
+    const db = makeDbWithOrder();
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const dispatcher = { dispatch: vi.fn().mockRejectedValue(new Error('connection refused')) };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn(), dispatcher);
+
+    const event = makeEvent('vendor.order.assigned', {});
+    // should resolve without throwing despite dispatcher failure
+    await expect((service as any).onVendorEvent(event)).resolves.toBeUndefined();
+    // internal status update still happened
+    expect(db.updateItem).toHaveBeenCalled();
+  });
+
+  it('skips dispatch when event has no connectionId', async () => {
+    const db = makeDbWithOrder();
+    const publisher = { publish: vi.fn().mockResolvedValue(undefined), publishBatch: vi.fn() };
+    const dispatcher = { dispatch: vi.fn().mockResolvedValue(undefined) };
+    const service = new VendorIntegrationEventConsumerService(db as any, publisher as any, vi.fn(), dispatcher);
+
+    const event = makeEvent('vendor.order.assigned', {}, { connectionId: '' });
+    await (service as any).onVendorEvent(event);
+
+    expect(dispatcher.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('maps VendorIntegrationEvent fields correctly to VendorDomainEvent', () => {
+    const service = new VendorIntegrationEventConsumerService(
+      { getItem: vi.fn(), updateItem: vi.fn(), queryItems: vi.fn(), upsertItem: vi.fn(), getContainer: vi.fn() } as any,
+    );
+    const event = makeEvent('vendor.order.completed', { files: [] });
+    const domainEvent = (service as any).toVendorDomainEvent(event);
+
+    expect(domainEvent).toEqual({
+      id: 'evt-1',
+      eventType: 'vendor.order.completed',
+      vendorType: 'aim-port',
+      vendorOrderId: 'AP-1001',
+      ourOrderId: 'order-123',
+      lenderId: 'lender-1',
+      tenantId: 'tenant-1',
+      occurredAt: '2026-04-23T00:00:00.000Z',
+      payload: { files: [] },
+    });
+  });
+});

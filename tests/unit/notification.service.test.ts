@@ -78,4 +78,25 @@ describe('NotificationService', () => {
       expect.any(String),
     );
   });
+
+  it('falls back to legacy string property addresses when canonical lookup fails', async () => {
+    loadByVendorOrderMock.mockRejectedValueOnce(new Error('canonical load failed'));
+
+    const service = new NotificationService();
+
+    await service.notifyVendorAssignment('vendor-1', {
+      id: 'order-2',
+      tenantId: 'tenant-1',
+      propertyAddress: '999 Legacy Main St, Legacy City, TX, 73301',
+      productType: 'Standard',
+      priority: 'normal',
+    } as any);
+
+    expect(sendEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        htmlBody: expect.stringContaining('999 Legacy Main St, Legacy City, TX, 73301'),
+      }),
+      expect.any(String),
+    );
+  });
 });

@@ -16,9 +16,11 @@
 import { Response, Router, Request, NextFunction } from 'express';
 import { query, param, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
+import { OrderContextLoader, getPropertyAddress } from '../services/order-context-loader.service.js';
+import type { VendorOrder } from '../types/vendor-order.types.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import type { WorkScheduleBlock } from '../types/index.js';
+import type { PropertyAddress, WorkScheduleBlock } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
 // Response shape
@@ -198,6 +200,44 @@ function toRosterEntry(vendor: any): StaffRosterEntry {
   };
 }
 
+type VendorActiveOrderRow = {
+  id?: string;
+  orderNumber?: string;
+  status?: string;
+  priority?: string;
+  productType?: string;
+  propertyAddress?: unknown;
+  propertyId?: string;
+  clientOrderId?: string;
+  tenantId?: string;
+  dueDate?: string;
+  assignedAt?: string;
+  clientId?: string;
+  fee?: number;
+};
+
+function formatPropertyAddress(address: unknown): string {
+  if (!address) {
+    return '';
+  }
+
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (typeof address !== 'object') {
+    return '';
+  }
+
+  const typedAddress = address as Partial<PropertyAddress> & { street?: string };
+  return [
+    typedAddress.streetAddress ?? typedAddress.street ?? '',
+    typedAddress.city ?? '',
+    typedAddress.state ?? '',
+    typedAddress.zipCode ?? '',
+  ].filter(Boolean).join(', ');
+}
+
 // ---------------------------------------------------------------------------
 // Controller
 // ---------------------------------------------------------------------------
@@ -361,9 +401,31 @@ export class StaffRosterController {
   // member so supervisors can drill into workload detail.
   // ---------------------------------------------------------------------------
 
+  private async resolveActiveOrderAddress(
+    order: VendorActiveOrderRow,
+    orderContextLoader: OrderContextLoader,
+  ): Promise<string> {
+    const fallbackAddress = formatPropertyAddress(order.propertyAddress);
+
+    try {
+      const ctx = await orderContextLoader.loadByVendorOrder(order as unknown as VendorOrder, { includeProperty: true });
+      return formatPropertyAddress(getPropertyAddress(ctx)) || fallbackAddress;
+    } catch (error) {
+      this.logger.warn('Failed to resolve canonical property address for staff roster active order', {
+        orderId: order.id,
+        clientOrderId: order.clientOrderId,
+        propertyId: order.propertyId,
+        tenantId: order.tenantId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return fallbackAddress;
+    }
+  }
+
   private async getVendorActiveOrders(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const { vendorId } = req.params as { vendorId: string };
+      const orderContextLoader = new OrderContextLoader(this.dbService);
 
       // Terminal statuses — exclude from the active set
       const terminalStatuses = ['CANCELLED', 'DELIVERED', 'COMPLETED', 'ARCHIVED'];
@@ -375,39 +437,26 @@ export class StaffRosterController {
 
       const sql =
         `SELECT c.id, c.orderNumber, c.status, c.priority, c.productType, ` +
-        `c.propertyAddress, c.dueDate, c.assignedAt, c.clientId, c.fee ` +
+        `c.propertyAddress, c.propertyId, c.clientOrderId, c.tenantId, c.dueDate, c.assignedAt, c.clientId, c.fee ` +
         `FROM c ` +
         `WHERE (c.assignedVendorId = @vendorId OR c.vendorId = @vendorId) ` +
         `AND NOT ARRAY_CONTAINS([${placeholders}], c.status) ` +
         `ORDER BY c.dueDate ASC`;
 
-      const orders = await this.dbService.queryDocuments<Record<string, unknown>>('orders', sql, parameters);
+      const orders = await this.dbService.queryDocuments<VendorActiveOrderRow>('orders', sql, parameters);
 
-      // Slim down property address to a readable string
-      const result = orders.map((o) => {
-        const addr = o['propertyAddress'];
-        let addressStr = '';
-        if (typeof addr === 'string') {
-          addressStr = addr;
-        } else if (addr && typeof addr === 'object') {
-          const a = addr as Record<string, string>;
-          addressStr = [a['streetAddress'] ?? a['street'] ?? '', a['city'] ?? '', a['state'] ?? '', a['zipCode'] ?? '']
-            .filter(Boolean)
-            .join(', ');
-        }
-        return {
-          id: o['id'],
-          orderNumber: o['orderNumber'],
-          status: o['status'],
-          priority: o['priority'],
-          productType: o['productType'],
-          propertyAddress: addressStr,
-          dueDate: o['dueDate'],
-          assignedAt: o['assignedAt'],
-          clientId: o['clientId'],
-          fee: o['fee'],
-        };
-      });
+      const result = await Promise.all(orders.map(async (order) => ({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        priority: order.priority,
+        productType: order.productType,
+        propertyAddress: await this.resolveActiveOrderAddress(order, orderContextLoader),
+        dueDate: order.dueDate,
+        assignedAt: order.assignedAt,
+        clientId: order.clientId,
+        fee: order.fee,
+      })));
 
       this.logger.info('Vendor active orders returned', { vendorId, count: result.length });
       res.json({ vendorId, orders: result, count: result.length });

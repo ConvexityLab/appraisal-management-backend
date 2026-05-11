@@ -19,6 +19,7 @@ import type {
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
+import type { VendorDomainEvent } from '../types/vendor-integration.types.js';
 import type {
   VendorInspectionRequestedBy,
   VendorEventType,
@@ -116,12 +117,17 @@ function inferMimeType(filename: string): string {
   }
 }
 
+export interface OutboundVendorDispatcher {
+  dispatch(event: VendorDomainEvent, connectionId: string): Promise<void>;
+}
+
 export class VendorIntegrationEventConsumerService {
   private readonly logger = new Logger('VendorIntegrationEventConsumerService');
   private readonly subscriber: ServiceBusEventSubscriber;
   private readonly publisher: EventPublisher;
   private readonly filePersistor: VendorFilePersistor;
   private readonly contextLoader: OrderContextLoader;
+  private readonly outboundDispatcher: OutboundVendorDispatcher | undefined;
   private documentService: DocumentService | null = null;
   private isStarted = false;
 
@@ -129,7 +135,9 @@ export class VendorIntegrationEventConsumerService {
     private readonly dbService: Pick<CosmosDbService, 'getItem' | 'updateItem' | 'queryItems' | 'upsertItem' | 'getContainer'> = new CosmosDbService(),
     publisher?: EventPublisher,
     filePersistor?: VendorFilePersistor,
+    outboundDispatcher?: OutboundVendorDispatcher,
   ) {
+    this.outboundDispatcher = outboundDispatcher;
     this.publisher = publisher ?? new ServiceBusEventPublisher();
     this.contextLoader = new OrderContextLoader(this.dbService as CosmosDbService);
     this.subscriber = new ServiceBusEventSubscriber(
@@ -170,8 +178,41 @@ export class VendorIntegrationEventConsumerService {
     this.logger.info('VendorIntegrationEventConsumerService stopped');
   }
 
+  private toVendorDomainEvent(event: VendorIntegrationEvent): VendorDomainEvent {
+    return {
+      id: event.id,
+      eventType: event.type,
+      vendorType: event.data.vendorType,
+      vendorOrderId: event.data.vendorOrderId,
+      ourOrderId: event.data.ourOrderId,
+      lenderId: event.data.lenderId,
+      tenantId: event.data.tenantId,
+      occurredAt: event.data.occurredAt,
+      payload: event.data.payload,
+    };
+  }
+
+  private tryDispatchOutbound(event: VendorIntegrationEvent): void {
+    if (!this.outboundDispatcher || !event.data.connectionId) return;
+    const domainEvent = this.toVendorDomainEvent(event);
+    this.outboundDispatcher.dispatch(domainEvent, event.data.connectionId).catch((err) => {
+      this.logger.warn('Outbound vendor callback failed — not retrying synchronously', {
+        eventType: event.type,
+        vendorOrderId: event.data.vendorOrderId,
+        connectionId: event.data.connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   private async onVendorEvent(event: VendorIntegrationEvent): Promise<void> {
     const { ourOrderId, tenantId } = event.data;
+
+    // Fire-and-forget: mirror the normalised inbound event back to the vendor's
+    // outbound endpoint (e.g. AIM-Port OrderAssignedRequest / OrderFilesRequest).
+    // The dispatcher returns null for event types it has no mapping for, so
+    // calling it unconditionally is safe.
+    this.tryDispatchOutbound(event);
 
     if (!ourOrderId) {
       this.logger.warn('Vendor event has no mapped internal order id; skipping downstream consumer work', {

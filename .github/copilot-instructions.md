@@ -36,6 +36,25 @@
 21. **Match project linters/formatters** (eslint/prettier, rustfmt, clang-format, black/ruff) and existing naming, file layout, and architectural patterns. Follow existing error-handling style — don't mix paradigms.
 22. **Comments: only for non-obvious intent or trade-offs.** Prefer clear naming first; prefer a comment over a mystery; never over-comment the obvious.
 23. **Update documentation** (README, doc comments, guides) when behavior, APIs, or configuration changes. Don't leave docs describing the old behavior.
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+    State your assumptions explicitly. If uncertain, ask.
+    If multiple interpretations exist, present them - don't pick silently.
+    If a simpler approach exists, say so. Push back when warranted.
+    If something is unclear, stop. Name what's confusing. Ask.
+
+Simplicity First
+
+Minimum code that solves the problem. Nothing speculative.
+
+    No features beyond what was asked.
+    No abstractions for single-use code.
+    No "flexibility" or "configurability" that wasn't requested.
+    No error handling for impossible scenarios.
+    If you write 200 lines and it could be 50, rewrite it.
+
 
 ## Phase 4 — Infrastructure & Deployment
 
@@ -66,6 +85,11 @@
     - **Next steps** — what to do next, if applicable.
 
 ---
+
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ## Default test commands
 

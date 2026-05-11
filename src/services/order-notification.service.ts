@@ -162,7 +162,10 @@ export class OrderNotificationService {
       });
     }
 
-    return formatPropertyAddress(order.propertyAddress);
+    return formatPropertyAddress(
+      order.propertyAddress
+      ?? (order as VendorOrder & { propertyDetails?: { fullAddress?: string } }).propertyDetails?.fullAddress,
+    );
   }
 
   private async lookupVendor(vendorId: string, orderId: string): Promise<Vendor | null> {
@@ -323,12 +326,21 @@ export class OrderNotificationService {
   }
 }
 
-function formatPropertyAddress(address?: Partial<PropertyAddress>): string {
+function formatPropertyAddress(address?: unknown): string {
   if (!address) {
     return 'Unknown address';
   }
 
-  const line1 = [address.streetAddress].filter(Boolean).join(', ');
-  const line2 = [address.city, address.state, address.zipCode].filter(Boolean).join(', ');
+  if (typeof address === 'string') {
+    return address.trim() || 'Unknown address';
+  }
+
+  if (typeof address !== 'object') {
+    return 'Unknown address';
+  }
+
+  const typedAddress = address as Partial<PropertyAddress> & { street?: string; fullAddress?: string };
+  const line1 = [typedAddress.streetAddress ?? typedAddress.street ?? typedAddress.fullAddress].filter(Boolean).join(', ');
+  const line2 = [typedAddress.city, typedAddress.state, typedAddress.zipCode].filter(Boolean).join(', ');
   return [line1, line2].filter(Boolean).join(', ') || 'Unknown address';
 }

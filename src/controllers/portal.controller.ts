@@ -24,6 +24,7 @@ import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.j
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { OrderContextLoader, getPropertyAddress } from '../services/order-context-loader.service.js';
 import type { VendorOrder } from '../types/vendor-order.types.js';
+import type { PropertyAddress } from '../types/index.js';
 import { Logger } from '../utils/logger.js';
 
 const ORDERS_CONTAINER   = 'orders';
@@ -36,7 +37,38 @@ type PortalOrderRecord = VendorOrder & {
   deliveredAt?: string;
   borrowerName?: string;
   loanNumber?: string;
+  propertyDetails?: { fullAddress?: string };
 };
+
+function normalizePortalPropertyAddress(address: unknown): PropertyAddress | undefined {
+  if (!address) {
+    return undefined;
+  }
+
+  if (typeof address === 'object') {
+    return address as PropertyAddress;
+  }
+
+  if (typeof address !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = address.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parts = trimmed.split(',').map((part) => part.trim()).filter(Boolean);
+  const [streetAddress, city, stateZip] = parts;
+  const stateZipMatch = stateZip?.match(/^([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/);
+
+  return {
+    streetAddress: streetAddress ?? trimmed,
+    ...(city ? { city } : {}),
+    ...(stateZipMatch?.[1] ? { state: stateZipMatch[1].toUpperCase() } : {}),
+    ...(stateZipMatch?.[2] ? { zipCode: stateZipMatch[2] } : {}),
+  } as PropertyAddress;
+}
 
 export function createPortalRouter(db: CosmosDbService): Router {
   const router = Router();
@@ -65,10 +97,10 @@ export function createPortalRouter(db: CosmosDbService): Router {
         return;
       }
 
-      let propertyAddress = order.propertyAddress;
+      let propertyAddress = normalizePortalPropertyAddress(order.propertyAddress ?? order.propertyDetails?.fullAddress);
       try {
         const ctx = await orderContextLoader.loadByVendorOrder(order as VendorOrder, { includeProperty: true });
-        propertyAddress = getPropertyAddress(ctx) ?? order.propertyAddress;
+        propertyAddress = getPropertyAddress(ctx) ?? propertyAddress;
       } catch (error) {
         logger.warn('Portal order lookup could not resolve canonical property address; falling back to embedded address', {
           orderId,

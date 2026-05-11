@@ -99,11 +99,12 @@ const createOrderPayloadSchema = z
     // backend contract; payloads missing any of these fields are rejected
     // up-front so the model gets a structured 400 with the missing path.
     engagementId: nonEmptyString,
-    engagementPropertyId: nonEmptyString,
+    engagementPropertyId: nonEmptyString.optional(),
     clientOrderId: nonEmptyString,
+    propertyId: nonEmptyString,
     clientId: nonEmptyString,
     orderNumber: nonEmptyString,
-    propertyAddress: propertyAddressSchema,
+    propertyAddress: propertyAddressSchema.optional(),
     propertyDetails: propertyDetailsSchema,
     orderType: nonEmptyString,
     productType: nonEmptyString,
@@ -116,6 +117,15 @@ const createOrderPayloadSchema = z
     specialInstructions: nonEmptyString.optional(),
     tags: z.array(nonEmptyString),
     metadata: z.record(z.string(), z.unknown()),
+  })
+  .superRefine((value, ctx) => {
+    if (value.engagementPropertyId && value.engagementPropertyId !== value.propertyId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['engagementPropertyId'],
+        message: 'engagementPropertyId must match propertyId when both are provided.',
+      });
+    }
   });
 
 const engagementPropertySchema = z.object({

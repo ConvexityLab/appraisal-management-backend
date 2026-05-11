@@ -2,8 +2,41 @@ import OpenAI from 'openai';
 import { AzureOpenAI } from 'openai';
 import { AiParseResult, AiParseRequest } from '../types/ai-parser.types.js';
 import { Logger } from '../utils/logger.js';
+import { AiAuditServerEmitter } from './ai-audit-server.service.js';
+import type { CosmosDbService } from './cosmos-db.service.js';
 
 const logger = new Logger('AiParserService');
+
+/**
+ * Authenticated request context passed by the controller.  Used for the
+ * token-meter audit row so per-tenant LLM spend can be summed in
+ * `AiAuditService.sumTenantSpend()`.  Optional because synthetic / test
+ * callers may invoke `parseIntent` without a user.
+ */
+export interface AiParseAuthContext {
+	tenantId?: string;
+	userId?: string;
+	conversationId?: string;
+}
+
+/**
+ * Phase 17b token-meter (2026-05-11) — per-1k-token cost in USD.  These
+ * are model-list-price-ish defaults for gpt-4o / gpt-4o-mini; production
+ * tenants override via App Config keys `services.openai.cost-per-1k-input`
+ * and `services.openai.cost-per-1k-output`.  Cost is informational only —
+ * the rate-limit + budget enforcement uses these numbers but never
+ * blocks based on uncertain pricing data.
+ */
+function getPerCallCostUsd(usage: {
+	prompt_tokens?: number;
+	completion_tokens?: number;
+}): number {
+	const inputPer1k = Number(process.env.AZURE_OPENAI_COST_PER_1K_INPUT_USD ?? 0.005);
+	const outputPer1k = Number(process.env.AZURE_OPENAI_COST_PER_1K_OUTPUT_USD ?? 0.015);
+	const prompt = usage.prompt_tokens ?? 0;
+	const completion = usage.completion_tokens ?? 0;
+	return (prompt / 1000) * inputPer1k + (completion / 1000) * outputPer1k;
+}
 
 // Phase 17.5 / T2 — `aiPresentationFieldSchema` deleted with the
 // structured-output legacy path.  Function-calling lets the LLM emit
@@ -59,8 +92,9 @@ const INTENT_DEFINITIONS: Record<string, { description: string; payloadShape: st
 
 export class AiParserService {
   private openai: OpenAI;
+  private auditEmitter: AiAuditServerEmitter | null;
 
-  constructor() {
+  constructor(cosmos?: CosmosDbService) {
     if (process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT) {
       this.openai = new AzureOpenAI({
         apiKey: process.env.AZURE_OPENAI_API_KEY,
@@ -75,12 +109,25 @@ export class AiParserService {
       }
       this.openai = new OpenAI({ apiKey });
     }
+    // Phase 17b token-meter: emit a usage audit row per parse-intent call
+    // so per-tenant LLM spend is sum-able from the existing ai-audit-events
+    // container (no new container — honors the no-schema-bloat rule).
+    this.auditEmitter = cosmos ? new AiAuditServerEmitter(cosmos) : null;
   }
 
   /**
-   * Parses natural language or CSV text and returns a structured AI Parse Result
+   * Parses natural language or CSV text and returns a structured AI Parse Result.
+   *
+   * @param request — function-calling tools + history + page context.
+   * @param authContext — tenantId + userId from the authenticated request.
+   *   Required for the token-meter audit row; if omitted the call still
+   *   completes but no usage row is written (the rollup will under-count
+   *   that call).  Callers should always pass it for production traffic.
    */
-  async parseIntent(request: AiParseRequest): Promise<AiParseResult> {
+  async parseIntent(
+    request: AiParseRequest,
+    authContext?: AiParseAuthContext,
+  ): Promise<AiParseResult> {
     try {
       let allowedIntents = request.context?.allowedIntents || Object.keys(INTENT_DEFINITIONS);
       if (!allowedIntents.includes('TOOL_CALL')) {
@@ -239,6 +286,36 @@ Reserve UNKNOWN strictly for: requests entirely unrelated to the platform ("what
           tools: request.tools as any,
           tool_choice: 'auto',
         });
+
+        // Phase 17b token-meter: persist the LLM usage envelope as an
+        // audit row so the per-tenant rollup endpoint can sum spend.
+        // Fire-and-forget — we never let an audit failure block the
+        // user's request, and AiAuditServerEmitter swallows errors
+        // internally (logged, not thrown).
+        const usage = (fcResponse as { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }).usage;
+        if (usage && this.auditEmitter && authContext?.tenantId && authContext?.userId) {
+          const costUsd = getPerCallCostUsd(usage);
+          void this.auditEmitter.emit({
+            tenantId: authContext.tenantId,
+            userId: authContext.userId,
+            kind: 'tool',
+            name: 'llm-parse-intent',
+            scopes: [],
+            sideEffect: 'read',
+            success: true,
+            source: 'be-service',
+            ...(authContext.conversationId && { conversationId: authContext.conversationId }),
+            timestamp: new Date().toISOString(),
+            description: `Azure OpenAI parse-intent call (${process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini'})`,
+            usage: {
+              promptTokens: usage.prompt_tokens ?? 0,
+              completionTokens: usage.completion_tokens ?? 0,
+              totalTokens: usage.total_tokens ?? 0,
+              costUsd,
+              model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini',
+            },
+          });
+        }
 
         const msg = fcResponse.choices[0]?.message;
         if (!msg) throw new Error('Received empty response from OpenAI.');

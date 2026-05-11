@@ -30,6 +30,49 @@ export class VendorManagementService {
     this.orderContextLoader = new OrderContextLoader(this.dbService);
   }
 
+  private normalizeState(value?: string): string | undefined {
+    const normalized = value?.trim().toUpperCase();
+    return normalized && normalized.length > 0 ? normalized : undefined;
+  }
+
+  private parseStateFromAddressText(addressText?: string): string | undefined {
+    if (!addressText) {
+      return undefined;
+    }
+
+    const trimmed = addressText.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const withZipMatch = trimmed.match(/,\s*([A-Za-z]{2})\s+\d{5}(?:-\d{4})?\s*$/);
+    if (withZipMatch?.[1]) {
+      return this.normalizeState(withZipMatch[1]);
+    }
+
+    const trailingStateMatch = trimmed.match(/,\s*([A-Za-z]{2})\s*$/);
+    if (trailingStateMatch?.[1]) {
+      return this.normalizeState(trailingStateMatch[1]);
+    }
+
+    return undefined;
+  }
+
+  private resolveLegacyOrderState(order: Order): string | undefined {
+    const structuredState = this.normalizeState(order.propertyAddress?.state);
+    if (structuredState) {
+      return structuredState;
+    }
+
+    const addressText = typeof (order as any).propertyAddress === 'string'
+      ? (order as any).propertyAddress as string
+      : typeof (order as any).propertyDetails?.fullAddress === 'string'
+        ? (order as any).propertyDetails.fullAddress as string
+        : undefined;
+
+    return this.parseStateFromAddressText(addressText);
+  }
+
   /**
    * Find vendors available for an order based on state, product type, and status.
    */
@@ -47,7 +90,11 @@ export class VendorManagementService {
           return false;
         }
 
-        if (orderState && vendor.serviceAreas && !vendor.serviceAreas.some(area => area.state === orderState)) {
+        if (
+          orderState
+          && vendor.serviceAreas
+          && !vendor.serviceAreas.some(area => this.normalizeState(area.state) === orderState)
+        ) {
           return false;
         }
 
@@ -67,15 +114,17 @@ export class VendorManagementService {
   }
 
   private async resolveOrderState(order: Order): Promise<string | undefined> {
+    const legacyFallbackState = this.resolveLegacyOrderState(order);
+
     try {
       const ctx = await this.orderContextLoader.loadByVendorOrder(order, { includeProperty: true });
-      return getPropertyAddress(ctx)?.state ?? order.propertyAddress?.state;
+      return this.normalizeState(getPropertyAddress(ctx)?.state) ?? legacyFallbackState;
     } catch (error) {
       this.logger.warn('VendorManagementService could not resolve canonical property state; using embedded order state', {
         orderId: order.id,
         error: error instanceof Error ? error.message : String(error),
       });
-      return order.propertyAddress?.state;
+      return legacyFallbackState;
     }
   }
 

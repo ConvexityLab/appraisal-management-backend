@@ -20,7 +20,9 @@ interface WipBoardOrderRow {
   status: OrderStatus;
   propertyId?: string;
   clientOrderId?: string;
-  propertyAddress?: string | PropertyAddress;
+  // NOTE: propertyAddress is intentionally absent — the Cosmos query does not
+  // project this deprecated embedded field. Address resolution always goes
+  // through the canonical propertyId / clientOrderId join path.
   clientName?: string;
   vendorName?: string;
   borrowerName?: string;
@@ -248,11 +250,7 @@ export class WIPBoardService {
       return formatPropertyAddress(clientOrder.propertyAddress);
     }
 
-    if (typeof row.propertyAddress === 'string') {
-      return row.propertyAddress;
-    }
-
-    return formatPropertyAddress(row.propertyAddress);
+    return '';
   }
 
   private resolveDisplayAddress(
@@ -273,11 +271,7 @@ export class WIPBoardService {
       return clientOrderStreet;
     }
 
-    if (typeof row.propertyAddress === 'string') {
-      return row.propertyAddress;
-    }
-
-    return row.propertyAddress?.streetAddress ?? '';
+    return '';
   }
 
   /**

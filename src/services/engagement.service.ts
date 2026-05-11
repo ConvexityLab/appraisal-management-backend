@@ -19,6 +19,7 @@ import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { AddressServiceGeocoder } from './address-service.geocoder.js';
 import { ClientOrderService } from './client-order.service.js';
+import { OrderPlacementOrchestrator } from './order-placement-orchestrator.service.js';
 import type {
   PropertyDetails as ClientOrderPropertyDetails,
   PropertyAddress as ClientOrderPropertyAddress,
@@ -202,6 +203,7 @@ export class EngagementService {
   private _container: Container | null = null;
   private readonly enrichmentService: PropertyEnrichmentService;
   private readonly clientOrderService: ClientOrderService;
+  private readonly orchestrator: OrderPlacementOrchestrator;
 
   constructor(
     private readonly dbService: CosmosDbService,
@@ -219,6 +221,14 @@ export class EngagementService {
      * so no ComparableSelectionService dependency is required here.
      */
     clientOrderService?: ClientOrderService,
+    /**
+     * Optional: inject an OrderPlacementOrchestrator (used in tests). When
+     * omitted, a default instance is constructed from the resolved
+     * clientOrderService. The orchestrator is the single funnel through which
+     * ALL ClientOrder + VendorOrder creation flows — it consults decomposition
+     * rules before delegating to ClientOrderService.
+     */
+    orchestrator?: OrderPlacementOrchestrator,
   ) {
     this.enrichmentService = enrichmentService ??
       new PropertyEnrichmentService(
@@ -228,6 +238,8 @@ export class EngagementService {
         new AddressServiceGeocoder(),
       );
     this.clientOrderService = clientOrderService ?? new ClientOrderService(dbService);
+    this.orchestrator = orchestrator ??
+      OrderPlacementOrchestrator.fromDb(dbService);
   }
 
   /** Lazily resolve the container — safe even if called before dbService.initialize() */
@@ -240,7 +252,18 @@ export class EngagementService {
 
   // ── Create ─────────────────────────────────────────────────────────────────
 
-  async createEngagement(request: CreateEngagementRequest): Promise<Engagement> {
+  /**
+   * @param options.skipClientOrderPlacement  When true, the per-loan
+   * enrichAndPlaceClientOrders pipeline is NOT fired after the Engagement doc
+   * is persisted.  Use this when the caller (e.g. bulk ingestion worker) is
+   * itself responsible for creating standalone ClientOrder and VendorOrder
+   * documents with full row-level metadata via the OrderPlacementOrchestrator.
+   * Passing false (the default) keeps the existing fire-and-forget behaviour.
+   */
+  async createEngagement(
+    request: CreateEngagementRequest,
+    options?: { skipClientOrderPlacement?: boolean },
+  ): Promise<Engagement> {
     if (!request.tenantId) {
       throw new Error('tenantId is required to create an Engagement');
     }
@@ -325,35 +348,42 @@ export class EngagementService {
     // Fire-and-forget per-loan pipeline (non-fatal):
     //   1. Enrich the loan's property (geocode → lat/lng on PropertyRecord).
     //   2. For each embedded EngagementClientOrder, persist a standalone
-    //      ClientOrder doc via ClientOrderService.placeClientOrder, which
-    //      also publishes `client-order.created`. The CompCollectionListener
-    //      consumes that event and runs Phase 1 (order-comparables) → Phase 2
-    //      (comparable-analyses).
+    //      ClientOrder doc via the OrderPlacementOrchestrator, which consults
+    //      decomposition rules before delegating to ClientOrderService.
+    //      The orchestrator also publishes `client-order.created`. The
+    //      CompCollectionListener consumes that event and runs Phase 1
+    //      (order-comparables) → Phase 2 (comparable-analyses).
     // Step 1 is awaited inside enrichAndPlaceClientOrders before Step 2 so the
     // PropertyRecord has lat/lng by the time the listener reads it.
-    for (const loan of (resource as Engagement).properties) {
-      this.enrichAndPlaceClientOrders(
-        engagement.id,
-        loan.id,
-        engagement.tenantId,
-        engagement.client.clientId,
-        engagement.createdBy,
-        {
-          street: loan.property.address,
-          city: loan.property.city ?? '',
-          state: loan.property.state,
-          zipCode: loan.property.zipCode,
-        },
-        loan.property,
-        loan.propertyId,
-        loan.clientOrders,
-      ).catch(err => {
-        logger.warn('Engagement loan post-create pipeline failed (non-fatal)', {
-          engagementId: engagement.id,
-          loanId: loan.id,
-          error: err instanceof Error ? err.message : String(err),
+    //
+    // skipClientOrderPlacement=true: caller (e.g. bulk ingestion worker) owns
+    // ClientOrder + VendorOrder creation with full row-level metadata — skip
+    // the FF pipeline entirely to avoid race conditions and double creation.
+    if (!options?.skipClientOrderPlacement) {
+      for (const loan of (resource as Engagement).properties) {
+        this.enrichAndPlaceClientOrders(
+          engagement.id,
+          loan.id,
+          engagement.tenantId,
+          engagement.client.clientId,
+          engagement.createdBy,
+          {
+            street: loan.property.address,
+            city: loan.property.city ?? '',
+            state: loan.property.state,
+            zipCode: loan.property.zipCode,
+          },
+          loan.property,
+          loan.propertyId,
+          loan.clientOrders,
+        ).catch(err => {
+          logger.warn('Engagement loan post-create pipeline failed (non-fatal)', {
+            engagementId: engagement.id,
+            loanId: loan.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
-      });
+      }
     }
 
     return resource as Engagement;
@@ -400,7 +430,10 @@ export class EngagementService {
 
     for (const clientOrder of clientOrders) {
       try {
-        await this.clientOrderService.placeClientOrder({
+        // Route through the orchestrator so decomposition rules are consulted
+        // before VendorOrders are created. The orchestrator delegates to
+        // ClientOrderService.placeClientOrder with the resolved specs.
+        await this.orchestrator.orchestrateClientOrder({
           tenantId,
           createdBy,
           engagementId,
@@ -819,16 +852,16 @@ export class EngagementService {
     const result = await this.updateEngagement(engagementId, tenantId, { properties: updatedLoans, updatedBy });
 
     // Standalone ClientOrder placement for the new order.
-    // Mirrors the createEngagement path: placeClientOrder writes the
-    // `client-orders` doc and publishes `client-order.created`, which the
-    // CompCollectionListener consumes to drive Phase 1 + Phase 2.
+    // Routes through the OrderPlacementOrchestrator so decomposition rules are
+    // consulted before VendorOrders are created — the same universal pipeline
+    // as createEngagement and all other entry points.
     //
     // AWAITED + propagating: previous fire-and-forget swallowed errors,
     // leaving callers to think the clientOrder was placed when it actually
     // failed. Bulk paths and downstream addVendorOrders depend on the
     // ClientOrder existing — silent failure here was a real bug.
     try {
-      await this.clientOrderService.placeClientOrder({
+      await this.orchestrator.orchestrateClientOrder({
         tenantId,
         createdBy: updatedBy,
         engagementId,

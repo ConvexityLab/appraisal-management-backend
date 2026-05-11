@@ -311,8 +311,9 @@ module cosmosCompletionReportsContainer 'modules/cosmos-completion-reports-conta
   }
 }
 
-// Cosmos DB AI Assistant Containers (Phase 8 post-review)
-// Adds: ai-audit-events, ai-conversations, ai-feature-flags, ai-telemetry-events
+// Cosmos DB AI Assistant Containers (Phase 8 post-review + Phase 14 v2)
+// Adds: ai-audit-events, ai-conversations, ai-feature-flags, ai-telemetry-events,
+//       ai-autopilot (single shared container, recipes + runs, entityType discriminator).
 // Backs the frontend AI Assistant subsystem under l1-valuation-platform-ui.
 module cosmosAiAssistantContainers 'modules/cosmos-ai-assistant-containers.bicep' = {
   name: 'cosmos-ai-assistant-containers-deployment'

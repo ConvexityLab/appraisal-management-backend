@@ -156,9 +156,12 @@ describe('AutoAssignmentOrchestratorService canonical property access', () => {
     expect(db.createItem).toHaveBeenCalledWith(
       'vendor-bids',
       expect.objectContaining({
-        propertyAddress: '123 Canonical Main St, Austin, TX 78701',
         dueDate: '2026-05-15T00:00:00.000Z',
       }),
+    );
+    expect(db.createItem).toHaveBeenCalledWith(
+      'vendor-bids',
+      expect.not.objectContaining({ propertyAddress: expect.anything() }),
     );
   });
 

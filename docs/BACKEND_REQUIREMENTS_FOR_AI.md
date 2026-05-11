@@ -575,7 +575,7 @@ async function analyzeFraudRisk(orderId, appraisalData) {
 **Example improvement**:
 ```javascript
 // Improved validation with clear error messages
-const requiredFields = ['clientId', 'propertyAddress', 'orderType'];
+const requiredFields = ['engagementId', 'clientOrderId', 'propertyId', 'clientId', 'orderType'];
 const missingFields = requiredFields.filter(field => !req.body[field]);
 
 if (missingFields.length > 0) {
@@ -584,9 +584,12 @@ if (missingFields.length > 0) {
     message: 'Missing required fields',
     missingFields: missingFields,
     requiredSchema: {
+      engagementId: 'string',
+      clientOrderId: 'string',
+      propertyId: 'string',
       clientId: 'string',
-      propertyAddress: 'string',
       orderType: 'string',
+      propertyAddress: 'optional compatibility object',
       // ... list all fields
     }
   });

@@ -10,6 +10,7 @@
 
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import {
   QCReviewQueueItem,
   QCReviewStatus,
@@ -18,6 +19,7 @@ import {
   QCPriorityScoreFactors,
   QCReviewQueueSearchCriteria
 } from '../types/qc-workflow.js';
+import type { PropertyAddress } from '../types/index.js';
 
 export interface QueueStatistics {
   total: number;
@@ -35,6 +37,7 @@ export interface QueueStatistics {
 export class QCReviewQueueService {
   private logger: Logger;
   private dbService: CosmosDbService;
+  private orderContextLoader: OrderContextLoader;
   private dbInitialized: boolean = false;
   
   // In-memory analyst cache (would be DB in production)
@@ -43,6 +46,7 @@ export class QCReviewQueueService {
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
+    this.orderContextLoader = new OrderContextLoader(this.dbService);
   }
 
   /**
@@ -52,6 +56,47 @@ export class QCReviewQueueService {
     if (!this.dbInitialized) {
       await this.dbService.initialize();
       this.dbInitialized = true;
+    }
+  }
+
+  private formatPropertyAddress(address: unknown): string {
+    if (!address) {
+      return '';
+    }
+
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (typeof address !== 'object') {
+      return '';
+    }
+
+    const typedAddress = address as Partial<PropertyAddress> & { street?: string };
+    return [
+      typedAddress.streetAddress ?? typedAddress.street ?? '',
+      typedAddress.city ?? '',
+      typedAddress.state ?? '',
+      typedAddress.zipCode ?? '',
+    ].filter(Boolean).join(', ');
+  }
+
+  private async resolveQueuePropertyAddress(review: { orderId?: string; propertyAddress?: unknown }): Promise<string> {
+    const fallback = this.formatPropertyAddress(review.propertyAddress) || 'N/A';
+
+    if (!review.orderId) {
+      return fallback;
+    }
+
+    try {
+      const ctx = await this.orderContextLoader.loadByVendorOrderId(review.orderId, { includeProperty: true });
+      return this.formatPropertyAddress(getPropertyAddress(ctx)) || fallback;
+    } catch (error) {
+      this.logger.warn('Failed to resolve canonical property address for QC queue item', {
+        orderId: review.orderId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
     }
   }
 
@@ -66,7 +111,7 @@ export class QCReviewQueueService {
     orderId: string;
     orderNumber: string;
     appraisalId: string;
-    propertyAddress: string;
+    propertyAddress?: string;
     appraisedValue: number;
     orderPriority: string;
     clientId: string;
@@ -91,6 +136,8 @@ export class QCReviewQueueService {
         orderData.submittedAt || new Date()
       );
 
+      const propertyAddress = orderData.propertyAddress?.trim();
+
       const queueItem: QCReviewQueueItem = {
         id: `qc-queue-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         orderId: orderData.orderId,
@@ -100,7 +147,7 @@ export class QCReviewQueueService {
         priorityScore: this.sumPriorityFactors(priorityFactors),
         status: QCReviewStatus.PENDING,
         submittedAt: orderData.submittedAt || new Date(),
-        propertyAddress: orderData.propertyAddress,
+        propertyAddress: propertyAddress || 'N/A',
         appraisedValue: orderData.appraisedValue,
         orderPriority: orderData.orderPriority,
         clientId: orderData.clientId,
@@ -113,8 +160,13 @@ export class QCReviewQueueService {
         updatedAt: new Date()
       };
 
+      const { propertyAddress: _propertyAddress, ...queueItemWithoutPropertyAddress } = queueItem;
+      const persistedQueueItem = propertyAddress
+        ? { ...queueItemWithoutPropertyAddress, propertyAddress }
+        : queueItemWithoutPropertyAddress;
+
       // Store in database
-      await this.dbService.createDocument('qc-reviews', queueItem);
+      await this.dbService.createDocument('qc-reviews', persistedQueueItem);
 
       this.logger.info('Appraisal added to QC queue successfully', {
         queueItemId: queueItem.id,
@@ -709,7 +761,7 @@ export class QCReviewQueueService {
       const { resources } = await container.items.readAll().fetchAll();
       
       // Map QCReview to QCReviewQueueItem
-      let queueItems = resources.map((review: any): QCReviewQueueItem => {
+      let queueItems = await Promise.all(resources.map(async (review: any): Promise<QCReviewQueueItem> => {
         const assignedAnalystId = review.reviewers?.[0]?.analystId;
         const assignedAnalystName = review.reviewers?.[0]?.analystName;
         const assignedAt = review.reviewers?.[0]?.assignedAt ? new Date(review.reviewers[0].assignedAt) : undefined;
@@ -731,7 +783,7 @@ export class QCReviewQueueService {
           ...(startedAt && { startedAt }),
           ...(completedAt && { completedAt }),
           updatedAt: review.updatedAt ? new Date(review.updatedAt) : new Date(),
-          propertyAddress: review.propertyAddress || 'N/A',
+          propertyAddress: await this.resolveQueuePropertyAddress(review),
           appraisedValue: review.appraisedValue || 0,
           orderPriority: review.priorityLevel,
           clientId: review.clientId || 'unknown',
@@ -742,7 +794,7 @@ export class QCReviewQueueService {
           slaBreached: review.sla?.breached || false,
           createdAt: review.createdAt ? new Date(review.createdAt) : new Date()
         };
-      });
+      }));
 
       // Apply filters
       if (criteria.orderId) {

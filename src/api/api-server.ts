@@ -1639,7 +1639,7 @@ export class AppraisalManagementAPIServer {
       // pending.
       registry.register(buildReviewProgramCategory({ db: this.dbService }));
       registry.register(buildFiringRulesCategory({ db: this.dbService }));
-      registry.register(buildAxiomCriteriaCategory());
+      registry.register(buildAxiomCriteriaCategory({ db: this.dbService }));
       registry.register(buildOrderDecompositionCategory({ db: this.dbService }));
 
       // Register each category's `push` as an onNewActivePack hook so saves

@@ -14,10 +14,14 @@
  *     by ReviewProgramResultsReader; wires only when a Cosmos handle is
  *     supplied.
  *
+ * Phase F.replay (shipped):
+ *   - replay: re-evaluates operator-proposed fragments against historical
+ *     review-results via ReviewProgramReplayService. Faithful by
+ *     construction — ReviewTapeResult extends RiskTapeItem, so every
+ *     source field that drove the original auto-flag fire is on the
+ *     persisted row.
+ *
  * Pending Phase F polish v2:
- *   - replay: re-evaluate proposed rules against historical
- *     ReviewTapeResults' RiskTapeItem fields (needs the variable-name
- *     mapping between the FE catalog and the canonical projection).
  *   - push / preview: route to MOP's `review-program` Prio program once it
  *     ships.
  */
@@ -31,6 +35,7 @@ import type {
 } from '../category-definition.js';
 import { validatePrioRulePack } from '../shared/prio-rule-validator.js';
 import { ReviewProgramResultsReader } from '../review-program/review-program-results-reader.service.js';
+import { ReviewProgramReplayService } from '../replay/review-program-replay.service.js';
 import type { CosmosDbService } from '../../cosmos-db.service.js';
 
 export const REVIEW_PROGRAM_CATEGORY_ID = 'review-program';
@@ -114,6 +119,12 @@ export function buildReviewProgramCategory(opts: { db?: CosmosDbService } = {}):
 				computedAt: new Date().toISOString(),
 			};
 		};
+
+	}
+
+	if (db) {
+		const replayer = new ReviewProgramReplayService(db);
+		definition.replay = async (input) => replayer.replay(input);
 	}
 
 	return definition;

@@ -73,6 +73,22 @@ export interface AiAuditDoc {
 		sponsorUserId?: string;
 		parentRunId?: string;
 	};
+	/**
+	 * Phase 17b token-meter (2026-05-11).  When the BE makes an LLM call
+	 * on behalf of this audit row's logical operation, we record the
+	 * usage envelope.  Per-tenant spend rollups (GET /api/ai/cost/snapshot)
+	 * SUM `usage.costUsd` across rows in the period.
+	 *
+	 * Rows that never invoked the LLM (pure FE-emitted tool dispatches,
+	 * deterministic BE service calls, etc.) omit this field.
+	 */
+	usage?: {
+		promptTokens: number;
+		completionTokens: number;
+		totalTokens: number;
+		costUsd: number;
+		model?: string;
+	};
 }
 
 export interface AiAuditWriteInput {
@@ -90,6 +106,8 @@ export interface AiAuditWriteInput {
 	/** Phase 14 v1: origin of this audit row. */
 	source?: AiAuditDoc['source'];
 	triggeredBy?: AiAuditDoc['triggeredBy'];
+	/** Phase 17b token-meter: LLM usage envelope, when the row covers an LLM call. */
+	usage?: AiAuditDoc['usage'];
 }
 
 export interface AiAuditQueryOptions {
@@ -161,6 +179,7 @@ export class AiAuditService {
 			...(input.entityId !== undefined && { entityId: input.entityId }),
 			...(input.source !== undefined && { source: input.source }),
 			...(input.triggeredBy !== undefined && { triggeredBy: input.triggeredBy }),
+			...(input.usage !== undefined && { usage: input.usage }),
 		};
 
 		return this.cosmos.createItem<AiAuditDoc>(CONTAINER_NAME, doc);
@@ -209,6 +228,64 @@ export class AiAuditService {
 		const query = `SELECT TOP ${limit} * FROM c WHERE ${conditions.join(' AND ')} ORDER BY c.timestamp DESC`;
 
 		return this.cosmos.queryItems<AiAuditDoc>(CONTAINER_NAME, query, parameters);
+	}
+
+	/**
+	 * Phase 17b token-meter (2026-05-11) — sum LLM spend for a tenant
+	 * across audit rows in the given window.  Used by the FE cost-budget
+	 * banner + the `useAiToolLoop` cost guard to decide when to refuse
+	 * new prompts.  Returns zeros if the tenant has no LLM rows in range.
+	 */
+	async sumTenantSpend(
+		tenantId: string,
+		dateFrom: string,
+		dateTo: string,
+	): Promise<ApiResponse<{ totalTokens: number; totalCostUsd: number; rowCount: number }>> {
+		if (!tenantId) {
+			return {
+				success: false,
+				error: {
+					code: 'MISSING_TENANT',
+					message: 'sumTenantSpend requires tenantId.',
+					timestamp: new Date(),
+				},
+			};
+		}
+		const query = `
+			SELECT
+				SUM(c.usage.totalTokens) AS totalTokens,
+				SUM(c.usage.costUsd) AS totalCostUsd,
+				COUNT(1) AS rowCount
+			FROM c
+			WHERE c.tenantId = @tenantId
+			  AND c.timestamp >= @dateFrom
+			  AND c.timestamp <= @dateTo
+			  AND IS_DEFINED(c.usage)
+		`;
+		const result = await this.cosmos.queryItems<{
+			totalTokens: number | null;
+			totalCostUsd: number | null;
+			rowCount: number | null;
+		}>(CONTAINER_NAME, query, [
+			{ name: '@tenantId', value: tenantId },
+			{ name: '@dateFrom', value: dateFrom },
+			{ name: '@dateTo', value: dateTo },
+		]);
+		if (!result.success || !result.data || result.data.length === 0) {
+			return {
+				success: true,
+				data: { totalTokens: 0, totalCostUsd: 0, rowCount: 0 },
+			};
+		}
+		const r = result.data[0]!;
+		return {
+			success: true,
+			data: {
+				totalTokens: r.totalTokens ?? 0,
+				totalCostUsd: r.totalCostUsd ?? 0,
+				rowCount: r.rowCount ?? 0,
+			},
+		};
 	}
 
 	/**

@@ -286,7 +286,7 @@ Default precedence order:
 - [x] Add `PropertyObservationService`
 - [x] Add infrastructure module for `property-observations`
 - [x] Export service foundation for downstream wiring
-- [ ] Add explicit observation document schema docs/examples
+- [x] Add explicit observation document schema docs/examples
 
 ## Phase P2 — Dual-Write Ingestion
 - [x] Refactor property enrichment to write immutable observations on provider enrichment / AVM success
@@ -314,17 +314,19 @@ Default precedence order:
 
 ## Phase P5 — Read Path Cutover
 - [x] Update property list/detail APIs to read from projected `PropertyRecord`
-- [~] Remove mixed-source property view assembly
+- [x] Remove mixed-source property view assembly
 - [x] Expose provenance/observation refs via the property API
 
 **Current Phase P5 note:** canonical `PropertyRecord` now backs the primary `/api/v1/property-records` endpoints plus the legacy `/api/properties/summary` and `/api/properties/detailed` read paths. Remaining mixed-source work is now concentrated in older unmounted/unused legacy property services rather than the active property API surface.
 
 ## Phase P6 — Thin `PropertyRecord`
-- [ ] Stop writing deprecated root-level fact branches
-- [ ] Move remaining fact history to observations
-- [~] Remove duplicated property truth from workflow aggregates where feasible
+- [x] Stop writing deprecated root-level fact branches
+- [x] Move remaining fact history to observations
+- [x] Remove duplicated property truth from workflow aggregates where feasible
 
 **Current Phase P6 note:** audit work confirmed the `EnhancedPropertyController` / `EnhancedPropertyService` / `EnhancedPropertyCosmosService` stack had no runtime callers and remained only as stale mixed-source code. That unmounted stack is now retired. The remaining legacy property surface is `PropertyController`, which is retained only for skipped CRUD integration coverage and is not mounted by the production API server.
+
+**Phase P6 root-branch audit note (2026-05-10):** active enrichment write paths no longer push to deprecated root-level fact branches. `PropertyEnrichmentService.buildTopLevelChanges(...)` does not include `taxAssessments`, `permits`, or `avm`; AVM is recorded exclusively as an immutable `avm-update` observation. Manual patch and enrichment tax-assessment + permit writes were moved to `tax-assessment-update` / `permit-update` observations in earlier slices. The remaining root writes are: (1) `PropertyRecord.taxAssessments: []` initialization in `createRecord(...)` — correct and necessary as the type field must exist (the materializer overlays observation-derived values for reads); (2) the ATTOM comp-collection mapper (`attom-to-property-record.mapper.ts`) which synthesizes non-authoritative `PropertyRecord` objects for the comparables surface — this is explicitly deferred because ATTOM records lack tenant-scoped `propertyId` and the plan note calls them out as non-authoritative global staging cache. Both remaining root writes are intentional and deferred, not forgotten.
 
 **Workflow de-duplication update:** the first workflow aggregate thinning slice is now in place for `client-orders`: `propertyDetails` is optional cache-only state, `EngagementService` stops copying full property-details blobs into standalone ClientOrder docs when a canonical `propertyId` already exists, and snapshot/order canonical projection now falls back to `PropertyRecord` when that cache is absent. A follow-on engagement slice now also stores a thinner address/request cache on `EngagementProperty.property`, dropping copied physical facts that belong on canonical property materializations instead of the workflow aggregate. The next thinning slice now extends that rule through order placement and vendor fan-out: `ClientOrderService` drops duplicated `propertyDetails` when a canonical `propertyId` is already known, `addVendorOrders(...)` no longer rehydrates that cache onto child vendor orders, and `VendorOrderService` defensively strips copied property-details blobs whenever the canonical join key is present.
 
@@ -357,9 +359,9 @@ Default precedence order:
 **Enrichment staging read update:** `PropertyEnrichmentService` now also overlays immutable property observations onto the resolved `PropertyRecord` before making cache/geocode/write decisions. That means the remaining non-controller enrichment staging read no longer bypasses the same observation-materialized canonical property path used by the active property API, loader, comparables, and service-side subject readers.
 
 ## Phase P7 — Legacy Retirement
-- [ ] Retire legacy `/api/properties` stack
-- [ ] Remove deprecated embedded property truth dependencies
-- [ ] Finalize documentation and operational runbooks
+- [x] Retire legacy `/api/properties` stack
+- [x] Remove deprecated embedded property truth dependencies
+- [~] Finalize documentation and operational runbooks
 
 **Current Phase P7 note:** the legacy `PropertyController` / `PropertyManagementService` CRUD stack has now been retired. The production `/api/properties` surface is the canonical `createPropertyRecordRouter(...)` mount, and the skipped legacy integration tests that targeted the old CRUD controller were removed with the dead code.
 
@@ -388,6 +390,38 @@ Default precedence order:
 **Create-order middleware update:** `validateCreateOrder()` now mirrors the service-layer canonical property contract instead of rejecting `propertyId`-only requests at the HTTP boundary. The middleware accepts either canonical `propertyId` or the legacy embedded `propertyAddress`, still validates embedded address fields whenever that compatibility payload is supplied, and fails fast with a clear validation error when neither property identity path is present.
 
 **First-party create-order caller update:** the first-party intake and AI order-creation paths now submit canonical `propertyId` / `clientOrderId` linkage instead of always sending an embedded `propertyAddress` blob. The intake wizard payload builder now emits canonical property/client-order ids after engagement placement, `AiActionDispatcherService` forwards canonical `propertyId` to `ClientOrderService.addVendorOrders(...)` without rehydrating an embedded address when canonical identity is already present, and representative integration tests now exercise `POST /api/orders` through that canonical-first request shape.
+
+**AI contract cutover update:** the backend and frontend `CREATE_ORDER` AI schemas are now canonical-property-first at the request-contract layer, not just internally after dispatch. Both validator stacks now require canonical `propertyId` alongside `engagementId` / `clientOrderId`, treat embedded `propertyAddress` as optional compatibility data instead of a required field, and explicitly reject mismatched `engagementPropertyId` aliases when legacy callers send both ids.
+
+**AI docs/fixture cleanup update:** first-party AI fixtures and capability docs no longer describe `CREATE_ORDER` as requiring embedded `propertyAddress`. Approval-flow fixtures now carry canonical `propertyId` / `clientOrderId`, the intent-registry fixture dispatches the canonical-first payload shape, and the remaining backend/frontend AI docs now describe embedded `propertyAddress` as compatibility-only instead of the primary create-order contract.
+
+**Staff-roster reader update:** the supervisor staff-roster active-orders drill-down no longer formats its property column straight from the embedded VendorOrder address projection as the primary source. `GET /api/staff/roster/:vendorId/orders` now carries the canonical join keys needed for `OrderContextLoader`, resolves display addresses through `getPropertyAddress(...)` first, and only falls back to the embedded `propertyAddress` projection when the canonical context load is unavailable for a legacy row.
+
+**QC-results reader update:** the active QC results endpoints no longer return the stored `qcReview.propertyAddress` field as their primary property display source. `GET /api/qc/results/order/:orderId` and the legacy `GET /api/qc/results/:orderId` route now resolve property text through `OrderContextLoader.loadByVendorOrderId(..., { includeProperty: true })` + `getPropertyAddress(...)` first, with the persisted QC review address retained only as an explicit fallback when canonical order context cannot be loaded.
+
+**QC-queue reader update:** the active QC queue read path no longer returns the stored `qc-review.propertyAddress` field as the primary property text for supervisor/workflow reads. `QCReviewQueueService.searchQueue(...)` now resolves queue item property strings through `OrderContextLoader.loadByVendorOrderId(..., { includeProperty: true })` + `getPropertyAddress(...)` first, while retaining the persisted QC review address only as an explicit fallback for legacy rows or failed canonical context loads.
+
+**QC-queue persistence thinning update:** queue writes now treat stored `qc-review.propertyAddress` as compatibility-only cache instead of default persisted truth. Automatic QC lifecycle queue creation no longer copies a formatted property string onto the persisted QC review document, the manual `POST /api/qc-workflow/queue` path forwards `propertyAddress` only when a caller explicitly supplies it, and `QCReviewQueueService.addToQueue(...)` omits the field from the stored `qc-reviews` row when no compatibility address was provided while still returning a display-safe queue item shape to callers.
+
+**AI-QC gate reader update:** `AIQCGateService` no longer builds its fallback QC-analysis report payload from the embedded order `propertyAddress` copy as the primary display source. When an order lacks a persisted `reportText` / `appraisalReport`, the service now resolves property text through `OrderContextLoader.loadByVendorOrderId(..., { includeProperty: true })` + `getPropertyAddress(...)` first, and only falls back to a formatted legacy order address copy if canonical property context cannot be loaded.
+
+**Inspection scheduling update:** `InspectionService.scheduleInspection(...)` no longer seeds inspection appointment property text directly from the parent VendorOrder's embedded `propertyAddress` blob. New inspection appointments now resolve property display text through `OrderContextLoader.loadByVendorOrder(..., { includeProperty: true })` + `getPropertyAddress(...)` first and persist a formatted canonical string, while retaining a formatted legacy order-address fallback only when canonical context lookup fails.
+
+**Vendor-management state reader update:** vendor availability filtering continues to resolve the subject state canonically through `OrderContextLoader.loadByVendorOrder(..., { includeProperty: true })` + `getPropertyAddress(...)`, and now also normalizes its legacy fallback path so string-form embedded order addresses still yield a state when canonical context cannot be loaded. This keeps vendor-state eligibility canonical-first while preserving compatibility for older rows that only cached property text.
+
+**Notification display fallback update:** `NotificationService` still resolves vendor-assignment property text canonically through `OrderContextLoader.loadByVendorOrder(..., { includeProperty: true })` first, but its compatibility fallback no longer assumes every cached workflow address is a structured object. Legacy string-form `propertyAddress` values (and `propertyDetails.fullAddress` copies when present) now format correctly for outbound notification content instead of collapsing to an empty address.
+
+**Order-notification display fallback update:** `OrderNotificationService` continues to resolve lifecycle-notification property text canonically through `OrderContextLoader.loadByVendorOrder(..., { includeProperty: true })` first, and now hardens its compatibility fallback the same way. Legacy string-form `propertyAddress` values and `propertyDetails.fullAddress` copies now survive cancellation/delivery/assignment notification formatting instead of being treated like missing structured address blobs.
+
+**Portal order-status fallback update:** the borrower/realtor portal order-status route still resolves `propertyAddress` canonically through `OrderContextLoader.loadByVendorOrder(..., { includeProperty: true })` first, but its compatibility fallback no longer leaks mixed shapes from legacy workflow rows. When canonical context is unavailable, string-form `propertyAddress` / `propertyDetails.fullAddress` values are now normalized into the structured portal `propertyAddress` object instead of being returned as raw strings.
+
+**Vendor-bid persistence thinning update:** auto-assignment vendor-bid invitations no longer persist a copied `propertyAddress` field by default. Both sequential bids from `AutoAssignmentOrchestratorService.sendBidToVendor(...)` and broadcast-round bids from `BroadcastBidService.startRound(...)` now omit the compatibility address cache from stored `vendor-bids` rows, relying on canonical order context for downstream address reads instead of treating the bid document as another property-text source of truth.
+
+**Vendor matching engine persistence thinning update:** legacy bid invitations created by `VendorMatchingEngine.createBidInvitation(...)` also no longer persist a copied `propertyAddress` field on `vendor-bids` rows. The engine still uses the request address for matching and scoring, but stored invitation documents now stay aligned with the broader canonical-property rule that bid documents must not become another embedded property-text source of truth.
+
+**WIP board dead-fallback removal:** `WipBoardOrderRow` no longer carries a `propertyAddress` field (the Cosmos query never projected it, so the field was always `undefined` in production). The corresponding dead-code fallback branches in `resolveDisplayAddress(...)` and `resolveAddressText(...)` have been removed. Address resolution now explicitly terminates at the client-order `propertyAddress` join, with no ambiguous embedded-field path remaining. Existing tests that were exercising the unreachable `row.propertyAddress` path via raw mock data have been updated to use canonical `propertyId`/`clientOrderId` joins, matching actual runtime behavior.
+
+**VendorOrderReferenceService tsc-fix:** the two pre-existing `exactOptionalPropertyTypes` compiler errors in `VendorOrderReferenceService.ts` are now resolved. `normalizeLoanType(payload.loanType)` and `normalizeLoanPurpose(payload.loanPurpose)` are pre-computed into local `const` variables before the `createEngagement(...)` call so TypeScript can narrow them from `string | undefined` to `string` in the truthy branch of the conditional spread, satisfying `exactOptionalPropertyTypes` without a type-cast escape hatch.
 
 ## Phase P8 — Integration Event Outbox
 - [x] Add durable outbox for property-domain integration events

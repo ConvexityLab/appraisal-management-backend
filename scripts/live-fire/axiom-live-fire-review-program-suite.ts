@@ -21,6 +21,7 @@ import {
   logConfig,
   logSection,
   postJson,
+  resolveLiveFirePath,
   sleep,
 } from './_axiom-live-fire-common.js';
 
@@ -174,7 +175,7 @@ function parseDispatchMode(): DispatchMode {
 function artifactDirFor(orderId: string): string {
   const configured = optionalEnv('AXIOM_LIVE_REVIEW_ARTIFACT_DIR');
   if (configured) {
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    return resolveLiveFirePath(configured, 'AXIOM_LIVE_REVIEW_ARTIFACT_DIR');
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');

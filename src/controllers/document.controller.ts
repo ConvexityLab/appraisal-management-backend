@@ -369,7 +369,102 @@ export class DocumentController {
       return byJobId.data;
     }
 
+    const evaluation = await this.axiomService.getEvaluationById(executionIdOrJobId).catch(() => null);
+    if (evaluation?.pipelineJobId) {
+      const tenantAndOrder = await this.resolveTenantAndOrder({
+        ...(evaluation.tenantId ? { tenantId: evaluation.tenantId } : {}),
+        ...(evaluation.orderId ? { orderId: evaluation.orderId } : {}),
+      });
+      if (tenantAndOrder) {
+        const documentId = this.getEvaluationDocumentId(evaluation as unknown as { _metadata?: unknown });
+        return {
+          tenantId: tenantAndOrder.tenantId,
+          axiomJobId: evaluation.pipelineJobId,
+          ...(tenantAndOrder.orderId ? { orderId: tenantAndOrder.orderId } : {}),
+          documentIds: documentId ? [documentId] : [],
+        };
+      }
+    }
+
+    const orderExecution = await this.resolveOrderBackedExecution(executionIdOrJobId);
+    if (orderExecution) {
+      return orderExecution;
+    }
+
     return null;
+  }
+
+  private async resolveTenantAndOrder(params: {
+    tenantId?: string;
+    orderId?: string;
+  }): Promise<{ tenantId: string; orderId?: string } | null> {
+    if (params.tenantId) {
+      return {
+        tenantId: params.tenantId,
+        ...(params.orderId ? { orderId: params.orderId } : {}),
+      };
+    }
+
+    if (!params.orderId) {
+      return null;
+    }
+
+    const orderResult = await this.dbService.findOrderById(params.orderId);
+    if (!orderResult.success || !orderResult.data?.tenantId) {
+      return null;
+    }
+
+    return {
+      tenantId: orderResult.data.tenantId,
+      orderId: params.orderId,
+    };
+  }
+
+  private getEvaluationDocumentId(evaluation: { _metadata?: unknown }): string | undefined {
+    const metadata = evaluation['_metadata'];
+    if (!metadata || typeof metadata !== 'object') {
+      return undefined;
+    }
+
+    const documentId = (metadata as Record<string, unknown>)['documentId'];
+    return typeof documentId === 'string' && documentId.length > 0 ? documentId : undefined;
+  }
+
+  private async resolveOrderBackedExecution(orderId: string): Promise<{
+    tenantId: string;
+    axiomJobId: string;
+    orderId: string;
+    documentIds: string[];
+  } | null> {
+    const orderResult = await this.dbService.findOrderById(orderId);
+    if (!orderResult.success || !orderResult.data?.tenantId) {
+      return null;
+    }
+
+    const order = orderResult.data as unknown as Record<string, unknown>;
+    let axiomJobId = typeof order['axiomPipelineJobId'] === 'string' ? order['axiomPipelineJobId'] as string : undefined;
+
+    if (!axiomJobId) {
+      const runResult = await this.dbService.queryItems<Record<string, unknown>>(
+        'aiInsights',
+        `SELECT TOP 1 c.engineRunRef FROM c WHERE c.tenantId = @tenantId AND c.type = 'run-ledger-entry' AND c.loanPropertyContextId = @orderId AND c.engineRunRef != 'pending' ORDER BY c.createdAt DESC`,
+        [{ name: '@tenantId', value: orderResult.data.tenantId }, { name: '@orderId', value: orderId }],
+      );
+      if (runResult.success && runResult.data?.[0]?.['engineRunRef']) {
+        axiomJobId = runResult.data[0]['engineRunRef'] as string;
+      }
+    }
+
+    if (!axiomJobId) {
+      return null;
+    }
+
+    return {
+      tenantId: orderResult.data.tenantId,
+      axiomJobId,
+      orderId,
+      documentIds: [],
+    };
   }
 
   /**

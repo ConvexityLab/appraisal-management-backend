@@ -40,11 +40,11 @@ describe('WIPBoardService', () => {
 
     it('should categorize orders into correct columns', async () => {
       const orders = [
-        { id: '1', orderNumber: 'ORD-1', status: 'NEW', propertyAddress: '123 Main', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '2', orderNumber: 'ORD-2', status: 'ASSIGNED', propertyAddress: '456 Oak', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '3', orderNumber: 'ORD-3', status: 'IN_PROGRESS', propertyAddress: '789 Pine', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '4', orderNumber: 'ORD-4', status: 'QC_REVIEW', propertyAddress: '101 Elm', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '5', orderNumber: 'ORD-5', status: 'COMPLETED', propertyAddress: '202 Birch', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '1', orderNumber: 'ORD-1', status: 'NEW', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '2', orderNumber: 'ORD-2', status: 'ASSIGNED', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '3', orderNumber: 'ORD-3', status: 'IN_PROGRESS', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '4', orderNumber: 'ORD-4', status: 'QC_REVIEW', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '5', orderNumber: 'ORD-5', status: 'COMPLETED', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
       ];
       const dbService = createMockDbService(orders);
       const service = new WIPBoardService(dbService);
@@ -76,12 +76,20 @@ describe('WIPBoardService', () => {
       expect(board.overdueOrders).toBe(1);
     });
 
-    it('should filter by search term', async () => {
+    it('should filter by search term using canonical property-record address', async () => {
       const orders = [
-        { id: '1', orderNumber: 'ORD-1', status: 'NEW', propertyAddress: '123 Main St', borrowerName: 'Smith', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
-        { id: '2', orderNumber: 'ORD-2', status: 'NEW', propertyAddress: '456 Oak Ave', borrowerName: 'Jones', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '1', orderNumber: 'ORD-1', status: 'NEW', propertyId: 'prop-1', clientOrderId: 'co-1', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
+        { id: '2', orderNumber: 'ORD-2', status: 'NEW', propertyId: 'prop-2', clientOrderId: 'co-2', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() },
       ];
-      const dbService = createMockDbService(orders);
+      const clientOrders = [
+        { id: 'co-1', propertyId: 'prop-1', propertyAddress: { streetAddress: '123 Main St', city: 'Austin', state: 'TX', zipCode: '78701' } },
+        { id: 'co-2', propertyId: 'prop-2', propertyAddress: { streetAddress: '456 Oak Ave', city: 'Dallas', state: 'TX', zipCode: '75201' } },
+      ];
+      const propertyRecords = [
+        { id: 'prop-1', address: { street: '123 Main St', city: 'Austin', state: 'TX', zip: '78701' } },
+        { id: 'prop-2', address: { street: '456 Oak Ave', city: 'Dallas', state: 'TX', zip: '75201' } },
+      ];
+      const dbService = createMockDbService(orders, clientOrders, propertyRecords);
       const service = new WIPBoardService(dbService);
       const board = await service.getBoard('tenant-1', { searchTerm: 'oak' });
 

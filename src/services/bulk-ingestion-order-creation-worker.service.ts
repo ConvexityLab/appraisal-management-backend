@@ -11,10 +11,10 @@ import { PropertyRecordService } from './property-record.service.js';
 import { PropertyEnrichmentService } from './property-enrichment.service.js';
 import { EngagementService } from './engagement.service.js';
 import {
-  ClientOrderService,
   ClientOrderNotFoundError,
   type VendorOrderSpec,
 } from './client-order.service.js';
+import { OrderPlacementOrchestrator } from './order-placement-orchestrator.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority } from '../types/index.js';
@@ -49,7 +49,7 @@ export class BulkIngestionOrderCreationWorkerService {
   private readonly propertyRecordService: PropertyRecordService;
   private readonly enrichmentService: PropertyEnrichmentService;
   private readonly engagementService: EngagementService;
-  private readonly clientOrderService: ClientOrderService;
+  private readonly orchestrator: OrderPlacementOrchestrator;
   private isStarted = false;
   public isRunning = false;
   private readonly accessControlHelper = new AccessControlHelper();
@@ -63,7 +63,11 @@ export class BulkIngestionOrderCreationWorkerService {
     // and directly here (order-level records keyed by orderId).
     this.enrichmentService = new PropertyEnrichmentService(this.dbService, this.propertyRecordService);
     this.engagementService = new EngagementService(this.dbService, this.propertyRecordService, this.enrichmentService);
-    this.clientOrderService = new ClientOrderService(this.dbService);
+    // OrderPlacementOrchestrator is the universal funnel for ClientOrder +
+    // VendorOrder creation. Bulk ingestion calls addDecomposedVendorOrders()
+    // after building the full row-level context (orderNumber, loanNumber, etc.)
+    // that the engagement-creation step does not have.
+    this.orchestrator = OrderPlacementOrchestrator.fromDb(this.dbService);
     this.subscriber = new ServiceBusEventSubscriber(
       undefined,
       'appraisal-events',
@@ -222,10 +226,12 @@ export class BulkIngestionOrderCreationWorkerService {
             engagementId: engagement.id,
           });
 
-        // Phase B step 6: route through ClientOrderService.addVendorOrders.
-        // The engagement-context's clientOrder (engagementClientOrderId) was
-        // created during engagement.service.createEngagement /
-        // enrichAndPlaceClientOrders — we just attach a VendorOrder to it.
+        // Route through the OrderPlacementOrchestrator. The orchestrator
+        // consults decomposition rules before attaching VendorOrders to the
+        // ClientOrder that was created in the createBatchEngagementContexts /
+        // createPerLoanEngagementContext step (skipClientOrderPlacement=true
+        // prevented the FF pipeline from doing it, so the ClientOrder is bare).
+        // Falls back to 1-to-1 spec when no autoApply rule is configured.
         const orderProductType = ANALYSIS_TYPE_TO_PRODUCT_TYPE[job.analysisType];
         const inheritedFields = {
           orderNumber,
@@ -285,13 +291,17 @@ export class BulkIngestionOrderCreationWorkerService {
             visibilityScope: 'TEAM',
           }),
         };
-        const vendorOrderSpec: VendorOrderSpec = { vendorWorkType: orderProductType };
+        const fallbackSpec: VendorOrderSpec = { vendorWorkType: orderProductType };
         let createdVendorOrders;
         try {
-          createdVendorOrders = await this.clientOrderService.addVendorOrders(
+          // addDecomposedVendorOrders: consults decomposition rules and falls
+          // back to the 1-to-1 fallbackSpec when no autoApply rule is found.
+          createdVendorOrders = await this.orchestrator.addDecomposedVendorOrders(
             engagementClientOrderId,
             job.tenantId,
-            [vendorOrderSpec],
+            job.clientId,
+            orderProductType,
+            [fallbackSpec],
             inheritedFields as any,
           );
         } catch (err) {
@@ -301,7 +311,7 @@ export class BulkIngestionOrderCreationWorkerService {
           throw err;
         }
         if (createdVendorOrders.length === 0) {
-          throw new Error('addVendorOrders returned no rows');
+          throw new Error('addDecomposedVendorOrders returned no rows');
         }
         const createResult = { success: true as const, data: createdVendorOrders[0]! };
 
@@ -492,6 +502,11 @@ export class BulkIngestionOrderCreationWorkerService {
     items: BulkIngestionItem[],
     adapterConfig: BulkIngestionAdapterConfig | null,
   ): Promise<Map<string, EngagementContext>> {
+    // skipClientOrderPlacement=true: the bulk worker owns ClientOrder +
+    // VendorOrder creation with full row-level metadata. Skipping the FF
+    // enrichAndPlaceClientOrders pipeline avoids a race condition where the
+    // engagement-level pipeline would create bare ClientOrders before this
+    // worker's addDecomposedVendorOrders calls can attach VendorOrders.
     const engagement = await this.engagementService.createEngagement({
       tenantId: job.tenantId,
       createdBy: job.submittedBy,
@@ -500,7 +515,7 @@ export class BulkIngestionOrderCreationWorkerService {
         clientName: job.clientId,
       },
       properties: items.map((item) => this.buildEngagementLoanInput(job, item, adapterConfig)),
-    } as any);
+    } as any, { skipClientOrderPlacement: true });
 
     const engagementLoans = [...engagement.properties].sort((left, right) => {
       const leftLoan = left.loanNumber ?? '';
@@ -537,6 +552,7 @@ export class BulkIngestionOrderCreationWorkerService {
     item: BulkIngestionItem,
     adapterConfig: BulkIngestionAdapterConfig | null,
   ): Promise<EngagementContext> {
+    // Same skipClientOrderPlacement=true rationale as createBatchEngagementContexts.
     const engagement = await this.engagementService.createEngagement({
       tenantId: job.tenantId,
       createdBy: job.submittedBy,
@@ -545,7 +561,11 @@ export class BulkIngestionOrderCreationWorkerService {
         clientName: job.clientId,
       },
       properties: [this.buildEngagementLoanInput(job, item, adapterConfig)],
-    } as any);
+    } as any, { skipClientOrderPlacement: true });
+
+    // NOTE: we do NOT call orchestrator.addDecomposedVendorOrders() here —
+    // that happens in the main onOrderingRequested loop after the engagement
+    // context is resolved, where the full row-level metadata is available.
 
     const loan = engagement.properties[0];
     return {

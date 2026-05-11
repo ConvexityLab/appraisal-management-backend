@@ -135,6 +135,10 @@ vi.mock('../../src/services/service-bus-publisher.js', () => ({
   })),
 }));
 
+vi.mock('../../src/services/axiom-execution.service.js', () => ({
+  AxiomExecutionService: vi.fn().mockImplementation(() => ({})),
+}));
+
 import { AnalysisSubmissionService } from '../../src/services/analysis-submission.service.js';
 
 describe('AnalysisSubmissionService prepared-context criteria dispatch', () => {

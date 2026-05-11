@@ -3734,11 +3734,24 @@ export class AxiomService {
           const runLedger = new RunLedgerService(this.dbService);
           const existingRun = await runLedger.getRunById(runIdForLedger, tenantIdForLedger);
           if (existingRun) {
+            // Derive the criterion-level terminal outcome for the run.
+            // cannot_evaluate = engine could not score due to missing required data.
+            // Only set when ALL evaluated criteria hit the terminal case (no
+            // pass/warn/fail verdicts returned alongside).
+            const terminalOutcome: 'cannot_evaluate' | undefined =
+              verdictCounts.cannotEvaluateCount > 0 &&
+              verdictCounts.passCount === 0 &&
+              verdictCounts.failCount === 0 &&
+              verdictCounts.warnCount === 0
+                ? 'cannot_evaluate'
+                : undefined;
+
             await runLedger.updateRun(runIdForLedger, tenantIdForLedger, {
               statusDetails: {
                 ...(existingRun.statusDetails ?? {}),
                 verdictCounts,
               },
+              ...(terminalOutcome ? { terminalOutcome } : {}),
             });
           }
         } catch (ledgerErr) {

@@ -559,4 +559,21 @@ export function bootstrapAiCatalog(): void {
 		},
 		keywords: ['mop', 'suggest', 'recommendations', 'matching'],
 	});
+
+	// ── ai cost snapshot (Phase 17b token-meter, 2026-05-11) ─────────────
+	registerAiRoute({
+		id: 'ai-cost-snapshot',
+		method: 'GET',
+		path: '/api/ai/cost/snapshot',
+		summary: 'Per-tenant LLM spend snapshot — currentSpendUsd, totalTokens, periodDays, hardLimitUsd, warnThresholdUsd, exhausted flag. The FE banner + cost guard read this; the AI can read it too to answer "how much of my AI budget have I used this month?"',
+		category: 'ops',
+		scopes: [],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		queryParams: {
+			periodDays: { type: 'number', description: 'Rolling window (default 30, max 365)' },
+		},
+		keywords: ['cost', 'budget', 'spend', 'tokens', 'usage', 'llm'],
+	});
 }

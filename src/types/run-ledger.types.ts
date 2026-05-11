@@ -63,6 +63,18 @@ export interface RunLedgerRecord {
   preparedPayloadContractVersion?: string;
   criteriaStepKeys?: string[];
   criteriaStepRunIds?: string[];
+  /**
+   * Criterion-level terminal outcome for criteria and criteria-step runs.
+   * Set when the engine returns a terminal verdict that explains why the run
+   * did not produce a normal pass/fail decision:
+   *   - `cannot_evaluate`            – required data was absent; engine could not score
+   *   - `skipped_missing_requirements` – run was bypassed by the dispatcher before reaching the engine
+   *   - `evaluation_error`           – engine returned an unexpected error verdict
+   *
+   * For criteria runs this is the worst terminal outcome across all criteria.
+   * For criteria-step runs this is the outcome for that specific step.
+   */
+  terminalOutcome?: 'cannot_evaluate' | 'skipped_missing_requirements' | 'evaluation_error';
   statusDetails?: Record<string, unknown>;
 }
 

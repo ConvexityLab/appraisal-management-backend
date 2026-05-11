@@ -5,6 +5,7 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
+import { OrderContextLoader, getPropertyAddress } from './order-context-loader.service.js';
 import type { 
   InspectionAppointment, 
   ScheduleInspectionRequest,
@@ -13,14 +14,54 @@ import type {
   SchedulingConflict,
   TimeSlot
 } from '../types/inspection.types.js';
+import type { PropertyAddress } from '../types/index.js';
 
 export class InspectionService {
   private cosmosService: CosmosDbService;
   private logger: Logger;
+  private orderContextLoader: OrderContextLoader;
 
   constructor(cosmosService: CosmosDbService) {
     this.cosmosService = cosmosService;
     this.logger = new Logger('InspectionService');
+    this.orderContextLoader = new OrderContextLoader(this.cosmosService);
+  }
+
+  private formatPropertyAddress(address: unknown): string {
+    if (!address) {
+      return '';
+    }
+
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (typeof address !== 'object') {
+      return '';
+    }
+
+    const typedAddress = address as Partial<PropertyAddress> & { street?: string };
+    return [
+      typedAddress.streetAddress ?? typedAddress.street ?? '',
+      typedAddress.city ?? '',
+      typedAddress.state ?? '',
+      typedAddress.zipCode ?? '',
+    ].filter(Boolean).join(', ');
+  }
+
+  private async resolveInspectionPropertyAddress(order: Record<string, any>): Promise<string> {
+    const fallback = this.formatPropertyAddress(order.propertyAddress);
+
+    try {
+      const ctx = await this.orderContextLoader.loadByVendorOrder(order as any, { includeProperty: true });
+      return this.formatPropertyAddress(getPropertyAddress(ctx)) || fallback;
+    } catch (error) {
+      this.logger.warn('InspectionService: canonical property lookup failed; using legacy order copy', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
+    }
   }
 
   /**
@@ -174,6 +215,8 @@ export class InspectionService {
     // Read-path query update (this file lines 32, 81, 98) must filter
     // `c.type = 'vendor-order' AND c.role = 'INSPECTION'` instead of
     // `c.type = 'inspection'`. Done in lockstep below.
+    const inspectionPropertyAddress = await this.resolveInspectionPropertyAddress(order as Record<string, any>);
+
     const inspection: InspectionAppointment & { role?: string } = {
       id: `inspection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'vendor-order' as never,
@@ -189,7 +232,7 @@ export class InspectionService {
       appraiserId: request.appraiserId,
       appraiserName: `${appraiser.firstName} ${appraiser.lastName}`,
       appraiserPhone: appraiser.phone,
-      propertyAddress: order.propertyAddress,
+      propertyAddress: inspectionPropertyAddress,
       propertyType: order.propertyType,
       propertyAccess: request.propertyAccess,
       status: 'scheduled',

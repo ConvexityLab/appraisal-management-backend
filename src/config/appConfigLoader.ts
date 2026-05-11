@@ -33,6 +33,14 @@ const KEY_TO_ENV: Record<string, string> = {
   'services.openai.endpoint': 'AZURE_OPENAI_ENDPOINT',
   'services.openai.deployment': 'AZURE_OPENAI_DEPLOYMENT',
   'services.openai.model-name': 'AZURE_OPENAI_MODEL_NAME',
+  // Phase 17b token-meter (2026-05-11): per-1k-token rates + per-tenant
+  // budget ceilings.  Override per environment via App Config push so
+  // the values are tenant-tunable without a redeploy.
+  'services.openai.cost-per-1k-input-usd': 'AZURE_OPENAI_COST_PER_1K_INPUT_USD',
+  'services.openai.cost-per-1k-output-usd': 'AZURE_OPENAI_COST_PER_1K_OUTPUT_USD',
+  'features.ai-cost.hard-limit-usd': 'AI_COST_HARD_LIMIT_USD',
+  'features.ai-cost.warn-threshold-usd': 'AI_COST_WARN_THRESHOLD_USD',
+  'features.ai-cost.period-days': 'AI_COST_PERIOD_DAYS',
   'services.sambanova.endpoint': 'SAMBANOVA_ENDPOINT',
   'services.certo.endpoint': 'CERTO_ENDPOINT',
   // Storage (account names + logical container names; SAS keys stay in KV)

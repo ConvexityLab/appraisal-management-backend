@@ -69,17 +69,26 @@ vi.mock('../../src/services/engagement.service.js', () => ({
   })),
 }));
 
-const capturedAddVendorOrders = vi.fn().mockImplementation(async (clientOrderId: string) => [{
-  // id pattern `order-...` matches the legacy mock so tests asserting /^order-/
-  // continue to pass; embed clientOrderId for traceability.
+const capturedAddDecomposedVendorOrders = vi.fn().mockImplementation(async (clientOrderId: string) => [{
+  // id pattern `order-...` keeps passing tests that assert /^order-/
   id: `order-${clientOrderId}-${Math.random().toString(36).slice(2, 8)}`,
   orderNumber: `ORD-${clientOrderId}`,
   tenantId: 'tenant-001',
 }]);
+vi.mock('../../src/services/order-placement-orchestrator.service.js', () => ({
+  OrderPlacementOrchestrator: Object.assign(
+    vi.fn().mockImplementation(() => ({
+      addDecomposedVendorOrders: capturedAddDecomposedVendorOrders,
+    })),
+    {
+      fromDb: vi.fn().mockImplementation(() => ({
+        addDecomposedVendorOrders: capturedAddDecomposedVendorOrders,
+      })),
+    },
+  ),
+}));
 vi.mock('../../src/services/client-order.service.js', () => ({
-  ClientOrderService: vi.fn().mockImplementation(() => ({
-    addVendorOrders: capturedAddVendorOrders,
-  })),
+  // Only error-class re-exports needed — the worker no longer uses ClientOrderService directly.
   ClientOrderNotFoundError: class extends Error {},
   ClientOrderConcurrencyError: class extends Error {},
 }));
@@ -223,7 +232,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     mockPublish.mockResolvedValue(undefined);
     // Re-establish the captured-mock defaults after clearAllMocks wiped them.
     capturedCreateEngagement.mockResolvedValue(defaultEngagement);
-    capturedAddVendorOrders.mockImplementation(async (clientOrderId: string) => [{
+    capturedAddDecomposedVendorOrders.mockImplementation(async (clientOrderId: string) => [{
       id: `order-${clientOrderId}-${Math.random().toString(36).slice(2, 8)}`,
       orderNumber: `ORD-${clientOrderId}`,
       tenantId: 'tenant-001',
@@ -306,8 +315,8 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     // — addVendorOrders stamps those from the parent ClientOrder when it
     // creates the VendorOrder. Asserting the right clientOrderId per call
     // verifies the right engagement context was selected.
-    expect(capturedAddVendorOrders.mock.calls[0]?.[0]).toBe('prod-loan-1');
-    expect(capturedAddVendorOrders.mock.calls[1]?.[0]).toBe('prod-loan-2');
+    expect(capturedAddDecomposedVendorOrders.mock.calls[0]?.[0]).toBe('prod-loan-1');
+    expect(capturedAddDecomposedVendorOrders.mock.calls[1]?.[0]).toBe('prod-loan-2');
   });
 
   it('creates one shared engagement for multi-item jobs by default', async () => {
@@ -342,8 +351,8 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     // Both items attach to clientOrders within the SAME shared engagement
     // (different properties within it). The clientOrderIds are 'prod-batch-1'
     // and 'prod-batch-2' from the mocked engagement.
-    expect(capturedAddVendorOrders.mock.calls[0]?.[0]).toBe('prod-batch-1');
-    expect(capturedAddVendorOrders.mock.calls[1]?.[0]).toBe('prod-batch-2');
+    expect(capturedAddDecomposedVendorOrders.mock.calls[0]?.[0]).toBe('prod-batch-1');
+    expect(capturedAddDecomposedVendorOrders.mock.calls[1]?.[0]).toBe('prod-batch-2');
   });
 
   it('uses configured engagement field mapping when standard borrower fields are absent', async () => {
@@ -405,10 +414,11 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
           }),
         ],
       }),
+      expect.objectContaining({ skipClientOrderPlacement: true }),
     );
-    // addVendorOrders is called with (clientOrderId, tenantId, specs, inheritedFields).
-    // The inheritedFields payload (4th arg) is what carries the order shape.
-    expect(capturedAddVendorOrders.mock.calls[0]?.[3]).toMatchObject({
+    // addDecomposedVendorOrders is called with (clientOrderId, tenantId, clientId, productType, fallbackSpecs, inheritedFields).
+    // The inheritedFields payload (6th arg / index [5]) carries the order shape.
+    expect(capturedAddDecomposedVendorOrders.mock.calls[0]?.[5]).toMatchObject({
       borrowerInfo: {
         name: 'Grace Hopper',
         email: 'grace@example.com',
@@ -459,8 +469,8 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
 
     await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
 
-    // 4th arg of addVendorOrders is the inheritedFields object that carries metadata.
-    expect(capturedAddVendorOrders.mock.calls[0]?.[3]).toMatchObject({
+    // 6th arg (index [5]) of addDecomposedVendorOrders is inheritedFields.
+    expect(capturedAddDecomposedVendorOrders.mock.calls[0]?.[5]).toMatchObject({
       metadata: {
         sourceIdentity: expect.objectContaining({
           sourceKind: 'bulk-item',
@@ -529,7 +539,7 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await expect((worker as any).onOrderingRequested(event)).resolves.not.toThrow();
 
     // Both orders were still created despite enrichment failures
-    expect(capturedAddVendorOrders).toHaveBeenCalledTimes(2);
+    expect(capturedAddDecomposedVendorOrders).toHaveBeenCalledTimes(2);
   });
 
   it('does not fire enrichOrder when there are no canonical records', async () => {
@@ -548,5 +558,60 @@ describe('BulkIngestionOrderCreationWorkerService — per-order enrichment', () 
     await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
 
     expect(capturedEnrichOrder).not.toHaveBeenCalled();
+  });
+});
+
+// ── Orchestrator integration ──────────────────────────────────────────────────
+
+describe('BulkIngestionOrderCreationWorkerService — orchestrator integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPublish.mockResolvedValue(undefined);
+    capturedCreateEngagement.mockResolvedValue({
+      id:       'eng-001',
+      tenantId: 'tenant-001',
+      properties: [
+        {
+          id:         'loan-001',
+          loanNumber: 'LN-001',
+          propertyId: 'prop-001',
+          clientOrders: [{ id: 'co-001', productType: 'FULL_APPRAISAL' }],
+          property: { address: '123 Main St', city: 'Denver', state: 'CO', zipCode: '80203' },
+        },
+      ],
+    });
+    capturedAddDecomposedVendorOrders.mockImplementation(async (clientOrderId: string) => [{
+      id: `order-${clientOrderId}-${Math.random().toString(36).slice(2, 8)}`,
+      orderNumber: `ORD-${clientOrderId}`,
+      tenantId: 'tenant-001',
+    }]);
+  });
+
+  it('calls createEngagement with skipClientOrderPlacement:true to prevent race with orchestrator', async () => {
+    const job    = makeJob(1);
+    const db     = makeDbStub(job);
+    const worker = new BulkIngestionOrderCreationWorkerService(db);
+
+    await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
+
+    // Every createEngagement call from the worker MUST include skipClientOrderPlacement:true.
+    // Without it the fire-and-forget pipeline races with addDecomposedVendorOrders.
+    for (const callArgs of capturedCreateEngagement.mock.calls) {
+      expect(callArgs[1]).toMatchObject({ skipClientOrderPlacement: true });
+    }
+  });
+
+  it('calls addDecomposedVendorOrders with correct clientOrderId, tenantId, and clientId', async () => {
+    const job    = makeJob(1);
+    const db     = makeDbStub(job);
+    const worker = new BulkIngestionOrderCreationWorkerService(db);
+
+    await (worker as any).onOrderingRequested(makeOrderingRequestedEvent());
+
+    expect(capturedAddDecomposedVendorOrders).toHaveBeenCalledOnce();
+    const [clientOrderId, tenantId, clientId] = capturedAddDecomposedVendorOrders.mock.calls[0]!;
+    expect(clientOrderId).toBe('co-001');
+    expect(tenantId).toBe(TENANT);
+    expect(clientId).toBe(CLIENT);
   });
 });

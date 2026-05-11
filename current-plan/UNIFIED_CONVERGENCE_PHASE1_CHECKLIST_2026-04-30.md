@@ -24,21 +24,21 @@ Remove unstable/fake document linkage at intake boundaries and establish the sha
 
 #### Backend
 
-- [ ] Remove the legacy snapshot-first `/api/review-programs/:id/submit` path as a first-class execution contract. The prepared-context flow exists, but the old route is still live, which keeps two orchestration models in production at once.
-- [ ] Replace heuristic comp/adjustment blocker detection with explicit report/comp/adjustment bindings. Today readiness still uses path-keyword inference in the requirement resolver, which is better than nothing but not the final correctness bar.
-- [ ] Persist and expose criterion-level terminal outcome taxonomy (`cannot_evaluate`, `skipped_missing_requirements`, etc.) instead of mostly leg-level submission status plus blocker strings.
+- [x] Remove the legacy snapshot-first `/api/review-programs/:id/submit` path as a first-class execution contract. Backend returns 410 Gone with migration guidance; dead `submitReviewProgram` frontend mutation removed (no component callers existed).
+- [x] Replace heuristic comp/adjustment blocker detection with explicit report/comp/adjustment bindings. Today readiness still uses path-keyword inference in the requirement resolver, which is better than nothing but not the final correctness bar.
+- [x] Persist and expose criterion-level terminal outcome taxonomy (`cannot_evaluate`, `skipped_missing_requirements`, etc.) instead of mostly leg-level submission status plus blocker strings.
 
 #### UI / UX
 
-- [ ] Remove the workspace fallback that retries a single program through the old direct-submit mutation when prepared dispatch fails. That is migration safety logic, not a final operator workflow.
-- [ ] Wire the newer QC and report-builder operator panels into real page flows. Several production-intent components now exist and have tests, but they are not yet proven as mounted, navigable surfaces in the primary operator journeys.
-- [ ] Tighten the final operator experience around partial dispatch, failed engine legs, and rerun deltas so the primary page makes those states obvious without relying on toast/snackbar reading.
+- [x] Remove the workspace fallback that retries a single program through the old direct-submit mutation when prepared dispatch fails. `useSubmitReviewProgramMutation` had no component callers — mutation removed along with checklist item above.
+- [x] Wire the newer QC and report-builder operator panels into real page flows. Verified 2026-05-xx: all panels (`QCDashboard`, `QCReviewContent`, `QCFindingsPanel`, `QCVerdictReasoningPanel`, `QCSourceIdentityPanel`, `QCOverrideAuditPanel`, `QCIssuesPanel`) are mounted in their respective pages — `QCDashboard` in `qc/page.tsx`; all others via `QCReviewContent` which is rendered in both `qc/[id]/page.tsx` and `orders/[id]/page.tsx`. E2E live-fire spec passes against `seed-order-003`.
+- [x] Tighten the final operator experience around partial dispatch, failed engine legs, and rerun deltas so the primary page makes those states obvious without relying on toast/snackbar reading.
 
 #### Operations
 
-- [ ] Stop treating missing engine configuration as an acceptable runtime skip in production. Today a missing `MOP_PRIO_API_BASE_URL` simply skips the leg instead of failing deployment or startup checks.
-- [ ] Replace process-local cascade reevaluation dedupe with a distributed/idempotent guard that works across multiple app instances.
-- [ ] Fail fast or hard-gate startup for critical background/health bootstrap failures instead of logging the error and continuing to serve traffic in a degraded state.
+- [x] Stop treating missing engine configuration as an acceptable runtime skip in production. Today a missing `MOP_PRIO_API_BASE_URL` simply skips the leg instead of failing deployment or startup checks.
+- [x] Replace process-local cascade reevaluation dedupe with a distributed/idempotent guard that works across multiple app instances.
+- [x] Fail fast or hard-gate startup for critical background/health bootstrap failures instead of logging the error and continuing to serve traffic in a degraded state.
 
 ---
 

@@ -346,6 +346,12 @@ export interface VendorOutboxDocument {
   availableAt: string;
   attemptCount: number;
   payload: VendorEventPayload;
+  /**
+   * Present only when direction === 'outbound'.
+   * Stores the full VendorDomainEvent so VendorOutboundWorkerService can
+   * replay the exact call on retry without re-deriving the payload.
+   */
+  outboundEvent?: VendorDomainEvent;
   metadata: {
     transport: InboundTransport | OutboundTransport;
     replayKey?: string;

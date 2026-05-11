@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'supertest';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createVendorIntegrationRouter } from '../../src/controllers/vendor-integration.controller.js';
 import { VendorConnectionConfigurationError } from '../../src/services/vendor-integrations/VendorIntegrationErrors.js';
 
@@ -41,6 +41,16 @@ const classValuationBody = {
 
 const aimPortAck = { client_id: '501102', success: 'true', order_id: 'AP-1001', fee: 0 };
 const classValuationAck = { received: true };
+
+const originalEnvironment = process.env.ENVIRONMENT;
+
+afterEach(() => {
+  if (originalEnvironment === undefined) {
+    delete process.env.ENVIRONMENT;
+    return;
+  }
+  process.env.ENVIRONMENT = originalEnvironment;
+});
 
 describe('vendor-integration.controller', () => {
   it('routes /aim-port/inbound to the AimPort adapter and returns its ack', async () => {
@@ -162,5 +172,66 @@ describe('vendor-integration.controller', () => {
 
     expect(res.status).toBe(404);
     expect(service.processInbound).not.toHaveBeenCalled();
+  });
+
+  it('rejects direct AIM-Port ingress outside dev when APIM forwarding header is missing', async () => {
+    process.env.ENVIRONMENT = 'staging';
+    const service: FakeService = {
+      processInbound: vi.fn(),
+    };
+
+    const res = await request(makeApp(service))
+      .post('/api/v1/integrations/aim-port/inbound')
+      .send(aimPortBody);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      success: false,
+      error: {
+        code: 'VENDOR_INTEGRATION_EDGE_ENFORCEMENT_FAILED',
+        message: 'AIM-Port inbound requests must be routed through APIM.',
+      },
+    });
+    expect(service.processInbound).not.toHaveBeenCalled();
+  });
+
+  it('accepts AIM-Port ingress outside dev when APIM forwarding header is present', async () => {
+    process.env.ENVIRONMENT = 'staging';
+    const service: FakeService = {
+      processInbound: vi.fn().mockResolvedValue({
+        adapter: { vendorType: 'aim-port' },
+        connection: { id: 'vc-aim' },
+        domainEvents: [{ id: 'evt-1' }],
+        ack: { statusCode: 200, body: aimPortAck },
+      }),
+    };
+
+    const res = await request(makeApp(service))
+      .post('/api/v1/integrations/aim-port/inbound')
+      .set('x-apim-forwarded', 'true')
+      .send(aimPortBody);
+
+    expect(res.status).toBe(200);
+    expect(service.processInbound).toHaveBeenCalledOnce();
+  });
+
+  it('does not require APIM forwarding header for Class Valuation ingress yet', async () => {
+    process.env.ENVIRONMENT = 'staging';
+    const service: FakeService = {
+      processInbound: vi.fn().mockResolvedValue({
+        adapter: { vendorType: 'class-valuation' },
+        connection: { id: 'vc-cv' },
+        domainEvents: [{ id: 'evt-2' }],
+        ack: { statusCode: 202, body: classValuationAck },
+      }),
+    };
+
+    const res = await request(makeApp(service))
+      .post('/api/v1/integrations/class-valuation/inbound')
+      .set('x-class-valuation-account-id', 'cv-acct-1')
+      .send(classValuationBody);
+
+    expect(res.status).toBe(202);
+    expect(service.processInbound).toHaveBeenCalledOnce();
   });
 });

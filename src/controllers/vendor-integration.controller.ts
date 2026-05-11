@@ -3,8 +3,49 @@ import { Logger } from '../utils/logger.js';
 import { VendorIntegrationService } from '../services/vendor-integrations/VendorIntegrationService.js';
 import type { VendorType } from '../types/vendor-integration.types.js';
 import { VendorConnectionConfigurationError } from '../services/vendor-integrations/VendorIntegrationErrors.js';
+import type { VendorAssignmentTrigger } from '../services/vendor-integrations/VendorOrderReferenceService.js';
 
 const logger = new Logger('VendorIntegrationController');
+const APIM_FORWARDED_HEADER = 'x-apim-forwarded';
+
+function normalizedEnvironment(): string {
+  return (process.env.ENVIRONMENT ?? 'dev').trim().toLowerCase();
+}
+
+function requiresApimForwarding(vendorType: VendorType): boolean {
+  return vendorType === 'aim-port' && normalizedEnvironment() !== 'dev';
+}
+
+function enforceApimForwarding(vendorType: VendorType): (req: Request, res: Response, next: express.NextFunction) => void {
+  return (req, res, next) => {
+    if (!requiresApimForwarding(vendorType)) {
+      next();
+      return;
+    }
+
+    const forwardedHeader = req.get(APIM_FORWARDED_HEADER)?.trim().toLowerCase();
+    if (forwardedHeader === 'true') {
+      next();
+      return;
+    }
+
+    logger.warn('Rejected vendor integration request that did not arrive through APIM', {
+      vendorType,
+      path: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      headerValue: forwardedHeader ?? null,
+    });
+
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'VENDOR_INTEGRATION_EDGE_ENFORCEMENT_FAILED',
+        message: 'AIM-Port inbound requests must be routed through APIM.',
+      },
+    });
+  };
+}
 
 function statusForError(error: unknown, message: string): number {
   if (error instanceof VendorConnectionConfigurationError) return 503;
@@ -62,11 +103,15 @@ function sendInbound(
   };
 }
 
-export function createVendorIntegrationRouter(service?: VendorIntegrationService): Router {
+export function createVendorIntegrationRouter(
+  service?: VendorIntegrationService,
+  orchestratorRef?: () => VendorAssignmentTrigger | undefined,
+): Router {
   const router = express.Router();
-  const integrationService = service ?? new VendorIntegrationService();
+  const integrationService =
+    service ?? new VendorIntegrationService(undefined, undefined, undefined, undefined, orchestratorRef);
 
-  router.post('/aim-port/inbound', sendInbound(integrationService, 'aim-port'));
+  router.post('/aim-port/inbound', enforceApimForwarding('aim-port'), sendInbound(integrationService, 'aim-port'));
   router.post('/class-valuation/inbound', sendInbound(integrationService, 'class-valuation'));
 
   return router;

@@ -68,4 +68,40 @@ describe('VendorManagementService', () => {
     );
     expect(vendors.map((vendor) => vendor.id)).toEqual(['vendor-tx']);
   });
+
+  it('falls back to parsing legacy string property addresses when canonical state lookup fails', async () => {
+    loadByVendorOrderMock.mockRejectedValueOnce(new Error('canonical lookup failed'));
+
+    const db = {
+      findAllVendors: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'vendor-tx',
+            name: 'Texas Vendor',
+            status: VendorStatus.ACTIVE,
+            serviceAreas: [{ state: 'TX' }],
+            productTypes: ['FULL_APPRAISAL'],
+          },
+          {
+            id: 'vendor-ca',
+            name: 'California Vendor',
+            status: VendorStatus.ACTIVE,
+            serviceAreas: [{ state: 'CA' }],
+            productTypes: ['FULL_APPRAISAL'],
+          },
+        ],
+      }),
+    };
+
+    const service = new VendorManagementService(db as any);
+    const vendors = await service.findAvailableVendors({
+      id: 'order-legacy',
+      tenantId: 'tenant-1',
+      productType: 'FULL_APPRAISAL',
+      propertyAddress: '999 Legacy Main St, Austin, tx 78701',
+    } as any);
+
+    expect(vendors.map((vendor) => vendor.id)).toEqual(['vendor-tx']);
+  });
 });

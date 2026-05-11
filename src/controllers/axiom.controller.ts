@@ -832,6 +832,11 @@ export class AxiomController {
    * }
    */
   analyzeDocument = async (req: UnifiedAuthRequest, res: Response): Promise<void> => {
+    // Deprecated: migrate callers to POST /api/analysis/submissions with analysisType: 'DOCUMENT_ANALYZE'
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', 'Sat, 01 Jan 2028 00:00:00 GMT');
+    res.setHeader('Link', '</api/analysis/submissions>; rel="successor-version"');
+
     try {
       const { documentId, orderId, documentType, evaluationMode, programId, programVersion, forceResubmit } = req.body;
       const normalizedEvaluationMode =

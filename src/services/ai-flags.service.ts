@@ -25,6 +25,10 @@ export interface AiFlagsPayload {
 		messaging?: boolean;
 		negotiation?: boolean;
 		navigation?: boolean;
+		composites?: boolean;
+		mopVendorMatching?: boolean;
+		axiomTools?: boolean;
+		autonomous?: boolean;
 	};
 	axiomAgent?: boolean;
 	/**
@@ -41,6 +45,26 @@ export interface AiFlagsPayload {
 		maxSlaSlipBusinessDays?: number;
 		/** Final-round headroom — refuses at `maxRounds - roundHeadroom`. */
 		roundHeadroom?: number;
+	};
+	/**
+	 * Phase 14 v2 canary-tenant flip lever (2026-05-11).  Default OFF
+	 * per tenant; only the canary cohort gets `autopilot.enabled = true`
+	 * until pentest + soak time produce green data.
+	 */
+	autopilot?: {
+		enabled?: boolean;
+		/** Per-tenant chain-depth cap.  Defaults to env default if omitted. */
+		maxChainDepth?: number;
+	};
+	/**
+	 * Phase 17b token-meter (2026-05-11) — per-tenant cost ceilings.
+	 * Override the env-driven AI_COST_HARD_LIMIT_USD /
+	 * AI_COST_WARN_THRESHOLD_USD on a tenant-specific basis.
+	 */
+	costBudget?: {
+		hardLimitUsd?: number;
+		warnThresholdUsd?: number;
+		periodDays?: number;
 	};
 }
 
@@ -232,5 +256,7 @@ function stripMeta(doc: AiFlagsDoc): AiFlagsPayload {
 	if (doc.tools && typeof doc.tools === 'object') out.tools = doc.tools;
 	if (typeof doc.axiomAgent === 'boolean') out.axiomAgent = doc.axiomAgent;
 	if (doc.negotiation && typeof doc.negotiation === 'object') out.negotiation = doc.negotiation;
+	if (doc.autopilot && typeof doc.autopilot === 'object') out.autopilot = doc.autopilot;
+	if (doc.costBudget && typeof doc.costBudget === 'object') out.costBudget = doc.costBudget;
 	return out;
 }

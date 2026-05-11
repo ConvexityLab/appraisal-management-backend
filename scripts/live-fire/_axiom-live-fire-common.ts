@@ -61,10 +61,35 @@ function envNumber(name: string, fallback: number): number {
 
 const currentDir = __dirname;
 
+function liveFireAllowedRoots(): string[] {
+  return Array.from(new Set([
+    path.resolve(currentDir),
+    path.resolve(process.cwd()),
+  ]));
+}
+
+function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
+  return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}${path.sep}`);
+}
+
+export function resolveLiveFirePath(configuredPath: string, envName: string): string {
+  const resolvedPath = path.resolve(configuredPath);
+  const allowedRoots = liveFireAllowedRoots();
+
+  if (allowedRoots.some((rootPath) => isPathWithinRoot(resolvedPath, rootPath))) {
+    return resolvedPath;
+  }
+
+  throw new Error(
+    `${envName} must resolve inside the workspace root or scripts/live-fire directory. ` +
+    `Received: ${configuredPath}`,
+  );
+}
+
 function tokenCacheFilePath(): string {
   const configured = optionalEnv('AXIOM_LIVE_TOKEN_CACHE_FILE');
   if (configured) {
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    return resolveLiveFirePath(configured, 'AXIOM_LIVE_TOKEN_CACHE_FILE');
   }
   return path.resolve(currentDir, '.livefire-token-cache.json');
 }

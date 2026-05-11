@@ -14,6 +14,7 @@ const mockDocumentService = vi.hoisted(() => ({
 
 const mockAxiomService = vi.hoisted(() => ({
   proxyPipelineStream: vi.fn(),
+  getEvaluationById: vi.fn(),
 }));
 
 const mockAxiomExecutionService = vi.hoisted(() => ({
@@ -67,6 +68,9 @@ vi.mock('../src/services/axiom.service', () => ({
   AxiomService: class AxiomService {
     async proxyPipelineStream(...args: unknown[]) {
       return mockAxiomService.proxyPipelineStream(...args);
+    }
+    async getEvaluationById(...args: unknown[]) {
+      return mockAxiomService.getEvaluationById(...args);
     }
   },
 }));
@@ -132,6 +136,8 @@ function resetDocumentServiceMocks() {
   mockAxiomService.proxyPipelineStream.mockImplementation(async (_jobId: unknown, _req: unknown, res: Response) => {
     res.status(200).end();
   });
+  mockAxiomService.getEvaluationById.mockReset();
+  mockAxiomService.getEvaluationById.mockResolvedValue(null);
 
   mockAxiomExecutionService.getExecutionById.mockReset();
   mockAxiomExecutionService.getExecutionById.mockResolvedValue({ success: true, data: makeExecution() });
@@ -189,7 +195,11 @@ function makeApp(authzMiddleware?: Partial<AuthorizationMiddleware>) {
     next();
   });
 
-  const controller = new DocumentController({} as any, authzMiddleware as AuthorizationMiddleware | undefined);
+  const controller = new DocumentController({
+    getDocument: vi.fn(),
+    findOrderById: vi.fn().mockResolvedValue({ success: false, data: null }),
+    queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  } as any, authzMiddleware as AuthorizationMiddleware | undefined);
   app.use('/api/documents', controller.router);
   return app;
 }
@@ -300,5 +310,57 @@ describe('DocumentController authorization', () => {
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('EXECUTION_NOT_FOUND');
     expect(mockAxiomService.proxyPipelineStream).not.toHaveBeenCalled();
+  });
+
+  it('falls back to evaluation records when a document stream is opened with an evaluation ID', async () => {
+    mockAxiomExecutionService.getExecutionById.mockResolvedValueOnce({ success: false, error: { code: 'NOT_FOUND' } });
+    mockAxiomExecutionService.getExecutionByAxiomJobId.mockResolvedValueOnce({ success: false, error: { code: 'NOT_FOUND' } });
+    mockAxiomService.getEvaluationById.mockResolvedValueOnce({
+      evaluationId: 'eval-1',
+      orderId: 'order-1',
+      tenantId: 'tenant-a',
+      pipelineJobId: 'job-from-eval',
+      documentType: 'appraisal',
+      status: 'pending',
+      criteria: [],
+      overallRiskScore: 0,
+      timestamp: new Date().toISOString(),
+      _metadata: { documentId: 'doc-1' },
+    });
+
+    const app = makeApp(makeAuthzStub());
+    const res = await request(app).get('/api/documents/stream/eval-1');
+
+    expect(res.status).toBe(200);
+    expect(mockAxiomService.proxyPipelineStream).toHaveBeenCalledWith('job-from-eval', expect.anything(), expect.anything());
+  });
+
+  it('falls back to order-linked pipeline IDs when no execution record exists', async () => {
+    mockAxiomExecutionService.getExecutionById.mockResolvedValueOnce({ success: false, error: { code: 'NOT_FOUND' } });
+    mockAxiomExecutionService.getExecutionByAxiomJobId.mockResolvedValueOnce({ success: false, error: { code: 'NOT_FOUND' } });
+
+    const app = express();
+    app.use(express.json());
+    app.use((req: any, _res: Response, next: NextFunction) => {
+      req.user = {
+        id: 'user-1',
+        tenantId: 'tenant-a',
+        email: 'u@example.com',
+        name: 'User One',
+      };
+      next();
+    });
+
+    const controller = new DocumentController({
+      getDocument: vi.fn(),
+      findOrderById: vi.fn().mockResolvedValue({ success: true, data: { id: 'order-1', tenantId: 'tenant-a', axiomPipelineJobId: 'job-from-order' } }),
+      queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    } as any, makeAuthzStub() as AuthorizationMiddleware);
+    app.use('/api/documents', controller.router);
+
+    const res = await request(app).get('/api/documents/stream/order-1');
+
+    expect(res.status).toBe(200);
+    expect(mockAxiomService.proxyPipelineStream).toHaveBeenCalledWith('job-from-order', expect.anything(), expect.anything());
   });
 });

@@ -4,9 +4,21 @@ const { mockGenerateReadSasUrl } = vi.hoisted(() => ({
   mockGenerateReadSasUrl: vi.fn(),
 }));
 
+const mockAxiomExecutionService = vi.hoisted(() => ({
+  getExecutionByAxiomJobId: vi.fn(),
+  createExecution: vi.fn(),
+}));
+
 vi.mock('../../src/services/blob-storage.service.js', () => ({
   BlobStorageService: vi.fn().mockImplementation(() => ({
     generateReadSasUrl: mockGenerateReadSasUrl,
+  })),
+}));
+
+vi.mock('../../src/services/axiom-execution.service.js', () => ({
+  AxiomExecutionService: vi.fn().mockImplementation(() => ({
+    getExecutionByAxiomJobId: mockAxiomExecutionService.getExecutionByAxiomJobId,
+    createExecution: mockAxiomExecutionService.createExecution,
   })),
 }));
 
@@ -17,6 +29,8 @@ describe('AnalysisSubmissionService DOCUMENT_ANALYZE parity', () => {
     vi.clearAllMocks();
     process.env.STORAGE_CONTAINER_DOCUMENTS = 'documents';
     mockGenerateReadSasUrl.mockResolvedValue('https://blob.example/orders/order-123/report.pdf?sas=1');
+    mockAxiomExecutionService.getExecutionByAxiomJobId.mockResolvedValue({ success: false, error: { code: 'NOT_FOUND' } });
+    mockAxiomExecutionService.createExecution.mockResolvedValue({ success: true, data: { id: 'exec-123' } });
   });
 
   it.each([
@@ -131,6 +145,20 @@ describe('AnalysisSubmissionService DOCUMENT_ANALYZE parity', () => {
       provider: 'AXIOM',
       evaluationId: 'eval-123',
       pipelineJobId: 'job-123',
+    });
+    expect(mockAxiomExecutionService.getExecutionByAxiomJobId).toHaveBeenCalledWith('job-123');
+    expect(mockAxiomExecutionService.createExecution).toHaveBeenCalledWith({
+      tenantId: 'tenant-123',
+      orderId: 'order-123',
+      documentIds: ['doc-123'],
+      axiomJobId: 'job-123',
+      pipelineMode:
+        evaluationMode === 'EXTRACTION'
+          ? 'EXTRACTION_ONLY'
+          : evaluationMode === 'CRITERIA_EVALUATION'
+            ? 'CRITERIA_ONLY'
+            : 'FULL_PIPELINE',
+      initiatedBy: 'user-123',
     });
   });
 

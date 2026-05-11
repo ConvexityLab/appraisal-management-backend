@@ -782,6 +782,144 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
     }
   );
 
+  /**
+   * POST /api/auto-assignment/orders/:orderId/vendor/accept
+   * Accept the currently active vendor bid, advancing the FSM to ACCEPTED.
+   * Used by the vendor portal, human operators, and integration tests.
+   * Publishes vendor.bid.accepted which the orchestrator's onVendorBidAccepted
+   * handler consumes to finalise the assignment.
+   */
+  router.post(
+    '/orders/:orderId/vendor/accept',
+    [
+      param('orderId').notEmpty().withMessage('orderId is required'),
+    ],
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({ success: false, errors: errors.array() });
+        }
+
+        const tenantId = (req as any).user?.tenantId as string || 'default';
+        const { orderId } = req.params as { orderId: string };
+
+        const result = await dbService.getItem('orders', orderId, tenantId) as any;
+        const order = result?.data ?? result;
+        if (!order) {
+          return res.status(404).json({ success: false, error: 'Order not found' });
+        }
+
+        const state = order.autoVendorAssignment;
+        if (!state || state.status !== 'PENDING_BID') {
+          return res.status(409).json({
+            success: false,
+            error: 'No active vendor bid to accept',
+            currentStatus: state?.status ?? 'NOT_STARTED',
+          });
+        }
+
+        const currentVendor = state.rankedVendors?.[state.currentAttempt];
+        if (!currentVendor) {
+          return res.status(409).json({
+            success: false,
+            error: 'No vendor in ranked list at current attempt index',
+          });
+        }
+
+        const acceptedAt = new Date();
+        const bidEventPayload = {
+          id: uuidv4(),
+          type: 'vendor.bid.accepted' as const,
+          timestamp: acceptedAt,
+          source: 'auto-assignment-controller',
+          version: '1.0',
+          category: EventCategory.VENDOR as EventCategory.VENDOR,
+          data: {
+            orderId: order.id,
+            orderNumber: order.orderNumber ?? order.id,
+            tenantId,
+            clientId: order.clientId ?? '',
+            vendorId: currentVendor.vendorId,
+            vendorName: currentVendor.vendorName,
+            bidId: state.currentBidId ?? '',
+            acceptedAt,
+            priority: EventPriority.NORMAL,
+          },
+        };
+
+        if (state.broadcastMode) {
+          // Broadcast mode: the orchestrator's onVendorBidAccepted owns the
+          // ACCEPTED transition AND cancels remaining broadcast bids.  Just
+          // publish the event — DO NOT write ACCEPTED to Cosmos here or the
+          // orchestrator will see status===ACCEPTED and skip cancellations.
+          await publisher.publish(bidEventPayload);
+
+          logger.info('Vendor bid accepted (broadcast) — orchestrator will finalise', {
+            orderId,
+            vendorId: currentVendor.vendorId,
+            bidId: state.currentBidId,
+          });
+
+          return res.json({
+            success: true,
+            message: 'Vendor bid accepted. Orchestrator finalising broadcast assignment.',
+            data: {
+              vendorId: currentVendor.vendorId,
+              vendorName: currentVendor.vendorName,
+              bidId: state.currentBidId,
+            },
+          });
+        }
+
+        // Sequential mode: orchestrator's onVendorBidAccepted is a no-op here,
+        // so write the ACCEPTED state directly before publishing the event.
+        const acceptedState = {
+          ...state,
+          status: 'ACCEPTED',
+          currentBidId: null,
+          currentBidExpiresAt: null,
+        };
+
+        await dbService.updateItem(
+          'orders',
+          orderId,
+          {
+            ...order,
+            autoVendorAssignment: acceptedState,
+            assignedVendorId: currentVendor.vendorId,
+            assignedVendorName: currentVendor.vendorName,
+            assignedAt: acceptedAt.toISOString(),
+            updatedAt: acceptedAt.toISOString(),
+          },
+          tenantId,
+        );
+
+        await publisher.publish(bidEventPayload);
+
+        logger.info('Vendor bid accepted by operator/portal (sequential)', {
+          orderId,
+          vendorId: currentVendor.vendorId,
+          attempt: state.currentAttempt,
+          bidId: state.currentBidId,
+        });
+
+        return res.json({
+          success: true,
+          message: 'Vendor bid accepted. Order assignment finalised.',
+          data: {
+            vendorId: currentVendor.vendorId,
+            vendorName: currentVendor.vendorName,
+            bidId: state.currentBidId,
+          },
+        });
+      } catch (error: any) {
+        logger.error('Failed to accept vendor bid', error);
+        return next(error);
+      }
+    }
+  );
+
   return router;
 };
 

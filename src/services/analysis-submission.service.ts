@@ -9,6 +9,7 @@ import {
 import { BlobStorageService } from './blob-storage.service.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { AxiomService } from './axiom.service.js';
+import { AxiomExecutionService } from './axiom-execution.service.js';
 import { RunLedgerService } from './run-ledger.service.js';
 import { CanonicalSnapshotService } from './canonical-snapshot.service.js';
 import { EngineDispatchService } from './engine-dispatch.service.js';
@@ -36,6 +37,7 @@ import { buildManualDraftSourceIdentity, extendIntakeSourceIdentity } from '../t
 
 export class AnalysisSubmissionService {
   private readonly axiomService: AxiomService;
+  private readonly axiomExecutionService: AxiomExecutionService;
   private readonly runLedgerService: RunLedgerService;
   private readonly snapshotService: CanonicalSnapshotService;
   private readonly dispatchService: EngineDispatchService;
@@ -48,6 +50,7 @@ export class AnalysisSubmissionService {
 
   constructor(private readonly dbService: CosmosDbService, axiomService?: AxiomService) {
     this.axiomService = axiomService ?? new AxiomService(dbService);
+    this.axiomExecutionService = new AxiomExecutionService(dbService);
     this.runLedgerService = new RunLedgerService(dbService);
     this.snapshotService = new CanonicalSnapshotService(dbService);
     this.dispatchService = new EngineDispatchService(this.axiomService, dbService);
@@ -396,6 +399,27 @@ export class AnalysisSubmissionService {
       throw new Error(lastError?.message ?? 'Failed to submit document to Axiom pipeline');
     }
 
+    try {
+      const existingExecution = await this.axiomExecutionService.getExecutionByAxiomJobId(pipelineResult.pipelineJobId);
+      if (!existingExecution.success || !existingExecution.data) {
+        await this.axiomExecutionService.createExecution({
+          tenantId: actor.tenantId,
+          orderId: request.orderId,
+          documentIds: [request.documentId],
+          axiomJobId: pipelineResult.pipelineJobId,
+          pipelineMode: this.mapEvaluationModeToPipelineMode(request.evaluationMode),
+          initiatedBy: actor.initiatedBy,
+        });
+      }
+    } catch (executionErr) {
+      this.logger.error('Failed to create execution record for DOCUMENT_ANALYZE submission — falling back to order/evaluation stream resolution', {
+        orderId: request.orderId,
+        documentId: request.documentId,
+        pipelineJobId: pipelineResult.pipelineJobId,
+        error: (executionErr as Error).message,
+      });
+    }
+
     // Create a run-ledger record so the unified monitoring UI can track this submission
     try {
       const config = await this.configService.getConfig(clientId, subClientId);
@@ -441,6 +465,21 @@ export class AnalysisSubmissionService {
       evaluationId: pipelineResult.evaluationId,
       pipelineJobId: pipelineResult.pipelineJobId,
     };
+  }
+
+  private mapEvaluationModeToPipelineMode(
+    evaluationMode: DocumentAnalyzeSubmissionRequest['evaluationMode'],
+  ): 'FULL_PIPELINE' | 'EXTRACTION_ONLY' | 'CRITERIA_ONLY' {
+    switch (evaluationMode) {
+      case 'EXTRACTION':
+        return 'EXTRACTION_ONLY';
+      case 'CRITERIA_EVALUATION':
+        return 'CRITERIA_ONLY';
+      case 'COMPLETE_EVALUATION':
+        return 'FULL_PIPELINE';
+      default:
+        throw new Error(`Unsupported evaluationMode '${String(evaluationMode)}'`);
+    }
   }
 
   private async submitExtraction(

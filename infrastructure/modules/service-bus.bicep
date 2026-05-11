@@ -115,6 +115,37 @@ resource notificationsQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-p
   }
 }
 
+// AI Autopilot Tasks Queue — Phase 14 v2 (2026-05-11).
+//
+// Point-to-point transport between AiAutopilotSweepJob (publisher) and
+// AiAutopilotConsumer (subscriber).  Each message kicks one autopilot
+// run.  Application-level idempotency via `idempotencyKey` short-circuits
+// duplicate deliveries at the consumer; the broker just guarantees
+// at-least-once.  Tuned long-lock (PT10M) because autopilot runs may
+// dispatch to slow downstream services (Axiom, MOP) before completing.
+resource aiAutopilotTasksQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'autopilot-tasks'
+  properties: {
+    maxSizeInMegabytes: 1024
+    // 5 attempts before dead-letter — matches order-events / vendor-assignment.
+    maxDeliveryCount: 5
+    // Long lock because an autopilot run may take minutes (Axiom
+    // pipelines + MOP eval + dispatcher chain).  PT10M gives the
+    // consumer breathing room before the broker redelivers.
+    lockDuration: 'PT10M'
+    // 14d retention matches order-events.  If a message sits this long
+    // unprocessed the recipe state is stale anyway.
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    // Broker-level dedupe is belt-and-suspenders on top of the
+    // app-level idempotencyKey probe in AutopilotRunRepository.
+    requiresDuplicateDetection: config.sku != 'Basic'
+    enablePartitioning: config.sku != 'Premium'
+  }
+}
+
 // QC Events Topic (for publishing QC workflow events)
 resource qcEventsTopic 'Microsoft.ServiceBus/namespaces/topics@2023-01-01-preview' = if (config.sku != 'Basic') {
   parent: serviceBusNamespace
@@ -463,6 +494,7 @@ output queueNames array = [
   propertyIntelligenceQueue.name
   vendorAssignmentQueue.name
   notificationsQueue.name
+  aiAutopilotTasksQueue.name
 ]
 output topicNames array = config.sku != 'Basic' ? [
   qcEventsTopic.name

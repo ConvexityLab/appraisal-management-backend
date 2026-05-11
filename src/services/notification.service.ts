@@ -41,18 +41,42 @@ export class NotificationService {
     this.tenantId = process.env.DEFAULT_TENANT_ID || 'tenant-001';
   }
 
+  private formatPropertyAddress(address: unknown): string {
+    if (!address) {
+      return '';
+    }
+
+    if (typeof address === 'string') {
+      return address;
+    }
+
+    if (typeof address !== 'object') {
+      return '';
+    }
+
+    const typedAddress = address as {
+      streetAddress?: string;
+      street?: string;
+      city?: string;
+      state?: string;
+      zipCode?: string;
+    };
+
+    return [
+      typedAddress.streetAddress ?? typedAddress.street ?? '',
+      typedAddress.city ?? '',
+      typedAddress.state ?? '',
+      typedAddress.zipCode ?? '',
+    ].filter(Boolean).join(', ');
+  }
+
   private async resolveOrderAddress(order: VendorOrder): Promise<string> {
     try {
       const loader = new OrderContextLoader(this.dbService);
       const ctx = await loader.loadByVendorOrder(order, { includeProperty: true });
       const canonicalAddress = getPropertyAddress(ctx);
       if (canonicalAddress) {
-        return [
-          canonicalAddress.streetAddress,
-          canonicalAddress.city,
-          canonicalAddress.state,
-          canonicalAddress.zipCode,
-        ].filter(Boolean).join(', ');
+        return this.formatPropertyAddress(canonicalAddress);
       }
     } catch (error) {
       this.logger.debug('NotificationService.resolveOrderAddress: canonical load failed, using legacy order copy', {
@@ -61,13 +85,11 @@ export class NotificationService {
       });
     }
 
-    if (order.propertyAddress) {
-      return [
-        order.propertyAddress.streetAddress,
-        order.propertyAddress.city,
-        order.propertyAddress.state,
-        order.propertyAddress.zipCode,
-      ].filter(Boolean).join(', ');
+    const legacyAddress = this.formatPropertyAddress(
+      order.propertyAddress ?? (order as VendorOrder & { propertyDetails?: { fullAddress?: string } }).propertyDetails?.fullAddress,
+    );
+    if (legacyAddress) {
+      return legacyAddress;
     }
 
     return 'Address pending';

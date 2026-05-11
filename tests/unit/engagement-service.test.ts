@@ -945,10 +945,10 @@ describe('createEngagement â€” enrichment wiring', () => {
 
 
 // ---------------------------------------------------------------------------
-// 11. createEngagement -> ClientOrderService bridge (Option B pipeline)
+// 11. createEngagement -> OrderPlacementOrchestrator bridge (Option B pipeline)
 // ---------------------------------------------------------------------------
 
-describe('createEngagement - ClientOrderService bridge', () => {
+describe('createEngagement - OrderPlacementOrchestrator bridge', () => {
   function makeEnrichmentService(propertyId = 'prop-test-001') {
     return {
       enrichEngagement: vi.fn().mockResolvedValue({
@@ -959,9 +959,10 @@ describe('createEngagement - ClientOrderService bridge', () => {
     };
   }
 
-  function makeClientOrderService() {
+  /** Mock orchestrator injected as 5th EngagementService constructor param. */
+  function makeOrchestrator() {
     return {
-      placeClientOrder: vi.fn(async (input: any) => ({
+      orchestrateClientOrder: vi.fn(async (input: any) => ({
         clientOrder: { id: input.clientOrderId ?? 'co-auto', tenantId: input.tenantId },
         vendorOrders: [],
       })),
@@ -984,13 +985,14 @@ describe('createEngagement - ClientOrderService bridge', () => {
     });
     const container = makeMockContainer(storedEng);
     const enrich = makeEnrichmentService();
-    const cos = makeClientOrderService();
+    const orch = makeOrchestrator();
 
     const svc = new EngagementService(
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — no longer used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement({
@@ -1008,10 +1010,10 @@ describe('createEngagement - ClientOrderService bridge', () => {
       }],
     });
 
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalledTimes(2));
 
     // Both calls reuse the embedded ids from the persisted engagement.
-    const calls = cos.placeClientOrder.mock.calls.map((c: any[]) => c[0]);
+    const calls = orch.orchestrateClientOrder.mock.calls.map((c: any[]) => c[0]);
     expect(calls[0].clientOrderId).toBe('co-embed-1');
     expect(calls[1].clientOrderId).toBe('co-embed-2');
     // Ancestry fields are propagated correctly. The engagementId is the
@@ -1054,8 +1056,8 @@ describe('createEngagement - ClientOrderService bridge', () => {
         return { enrichmentId: 'e', propertyId: 'prop-test-001', status: 'enriched' };
       }),
     };
-    const cos = {
-      placeClientOrder: vi.fn(async () => {
+    const orch = {
+      orchestrateClientOrder: vi.fn(async () => {
         order.push('place');
         return { clientOrder: { id: 'co-x', tenantId: 't' }, vendorOrders: [] };
       }),
@@ -1065,11 +1067,12 @@ describe('createEngagement - ClientOrderService bridge', () => {
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — not used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement(makeCreateRequest());
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalled());
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalled());
 
     expect(order).toEqual(['enrich-start', 'enrich-end', 'place']);
   });
@@ -1088,18 +1091,19 @@ describe('createEngagement - ClientOrderService bridge', () => {
     const enrich = {
       enrichEngagement: vi.fn().mockRejectedValue(new Error('attom down')),
     };
-    const cos = makeClientOrderService();
+    const orch = makeOrchestrator();
 
     const svc = new EngagementService(
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — not used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement(makeCreateRequest());
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalled());
-    expect(cos.placeClientOrder).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalled());
+    expect(orch.orchestrateClientOrder).toHaveBeenCalledTimes(1);
   });
 
   it('isolates failures: one placeClientOrder rejection does not abort siblings', async () => {
@@ -1117,8 +1121,8 @@ describe('createEngagement - ClientOrderService bridge', () => {
     });
     const container = makeMockContainer(storedEng);
     const enrich = makeEnrichmentService();
-    const cos = {
-      placeClientOrder: vi.fn(async (input: any) => {
+    const orch = {
+      orchestrateClientOrder: vi.fn(async (input: any) => {
         if (input.clientOrderId === 'co-1') throw new Error('cosmos 409');
         return { clientOrder: { id: input.clientOrderId, tenantId: input.tenantId }, vendorOrders: [] };
       }),
@@ -1128,7 +1132,8 @@ describe('createEngagement - ClientOrderService bridge', () => {
       makeDbService(container),
       makePropertyRecordService(),
       enrich as any,
-      cos as any,
+      undefined,    // clientOrderService — not used in this path
+      orch as any,  // orchestrator — 5th param
     );
 
     await svc.createEngagement({
@@ -1146,6 +1151,69 @@ describe('createEngagement - ClientOrderService bridge', () => {
       }],
     });
 
-    await vi.waitFor(() => expect(cos.placeClientOrder).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalledTimes(2));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12. createEngagement — skipClientOrderPlacement option
+// ---------------------------------------------------------------------------
+
+describe('createEngagement — skipClientOrderPlacement', () => {
+  it('does NOT invoke orchestrator when skipClientOrderPlacement:true (bulk worker owns placement)', async () => {
+    const storedEng = makeEngagement({
+      properties: [makeLoan({
+        id: 'loan-a',
+        propertyId: 'prop-test-001',
+        clientOrders: [
+          { id: 'co-embed-1', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+        ],
+      })],
+    });
+    const container = makeMockContainer(storedEng);
+    const orch = {
+      orchestrateClientOrder: vi.fn(),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      undefined,
+      undefined,
+      orch as any,
+    );
+
+    await svc.createEngagement(makeCreateRequest(), { skipClientOrderPlacement: true });
+
+    // Must have completed synchronously — give any potential fire-and-forget time to fire
+    await new Promise((r) => setTimeout(r, 50));
+    expect(orch.orchestrateClientOrder).not.toHaveBeenCalled();
+  });
+
+  it('DOES invoke orchestrator (default) when skipClientOrderPlacement is omitted', async () => {
+    const storedEng = makeEngagement({
+      properties: [makeLoan({
+        id: 'loan-b',
+        propertyId: 'prop-test-001',
+        clientOrders: [
+          { id: 'co-embed-2', productType: EngagementProductType.BPO, status: EngagementClientOrderStatus.PENDING, vendorOrderIds: [] },
+        ],
+      })],
+    });
+    const container = makeMockContainer(storedEng);
+    const orch = {
+      orchestrateClientOrder: vi.fn().mockResolvedValue({ clientOrder: {}, vendorOrders: [] }),
+    };
+
+    const svc = new EngagementService(
+      makeDbService(container),
+      makePropertyRecordService(),
+      undefined,
+      undefined,
+      orch as any,
+    );
+
+    await svc.createEngagement(makeCreateRequest());
+    await vi.waitFor(() => expect(orch.orchestrateClientOrder).toHaveBeenCalled());
   });
 });
