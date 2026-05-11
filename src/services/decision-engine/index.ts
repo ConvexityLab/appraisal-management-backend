@@ -38,6 +38,11 @@ export {
   AXIOM_CRITERIA_CATEGORY_ID,
 } from './categories/axiom-criteria.category.js';
 
+export {
+  buildOrderDecompositionCategory,
+  ORDER_DECOMPOSITION_CATEGORY_ID,
+} from './categories/order-decomposition.category.js';
+
 /**
  * Wire each registered category's `push` method into the
  * DecisionRulePackService as a per-category onNewActivePack hook.

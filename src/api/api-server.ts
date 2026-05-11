@@ -63,6 +63,7 @@ import {
   buildReviewProgramCategory,
   buildFiringRulesCategory,
   buildAxiomCriteriaCategory,
+  buildOrderDecompositionCategory,
   wireRegistryHooks,
 } from '../services/decision-engine/index.js';
 import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
@@ -190,6 +191,8 @@ import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
 // Import Phase 3 background jobs
 import { SLAMonitoringJob } from '../jobs/sla-monitoring.job';
 import { OverdueOrderDetectionJob } from '../jobs/overdue-order-detection.job';
+import { AiAutopilotSweepJob } from '../jobs/ai-autopilot-sweep.job.js';
+import { AiAutopilotConsumer } from '../services/ai-autopilot-consumer.service.js';
 import { AxiomTimeoutWatcherJob } from '../jobs/axiom-timeout-watcher.job';
 import { SupervisionTimeoutWatcherJob } from '../jobs/supervision-timeout-watcher.job';
 
@@ -345,6 +348,7 @@ import { createAiExecuteRouter } from '../controllers/ai-execute.controller.js';
 import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
 import { createAiAuditRouter } from '../controllers/ai-audit.controller.js';
 import { createAiCostRouter } from '../controllers/ai-cost.controller.js';
+import { createAiAutopilotRouter } from '../controllers/ai-autopilot.controller.js';
 import { createAiCatalogRouter } from '../controllers/ai-catalog.controller.js';
 import { bootstrapAiCatalog } from '../bootstrap/ai-catalog-bootstrap.js';
 import { createAiRateLimitMiddleware } from '../middleware/ai-rate-limit.middleware.js';
@@ -376,6 +380,8 @@ export class AppraisalManagementAPIServer {
   private vendorTimeoutJob?: VendorTimeoutCheckerJob;
   private slaMonitoringJob?: SLAMonitoringJob;
   private overdueDetectionJob?: OverdueOrderDetectionJob;
+  private aiAutopilotSweepJob?: AiAutopilotSweepJob;
+  private aiAutopilotConsumer?: AiAutopilotConsumer;
   private eventOrchestrator?: EventNotificationOrchestrator;
   private autoAssignmentOrchestrator?: AutoAssignmentOrchestratorService;
   private reviewTimeoutJob?: ReviewAssignmentTimeoutJob;
@@ -1231,6 +1237,12 @@ export class AppraisalManagementAPIServer {
       createAiCostRouter(this.dbService),
     );
 
+    // Phase 14 v2 autopilot recipe + run admin surface.
+    this.app.use('/api/ai/autopilot',
+      this.unifiedAuth.authenticate(),
+      createAiAutopilotRouter(this.dbService),
+    );
+
     // AI Assistant — subsystem endpoints backing the frontend under
     // l1-valuation-platform-ui (phases 0–8 of
     // AI-ASSISTANT-PRODUCTION-READINESS-PLAN.md).  Each mounts its own
@@ -1626,6 +1638,7 @@ export class AppraisalManagementAPIServer {
       registry.register(buildReviewProgramCategory({ db: this.dbService }));
       registry.register(buildFiringRulesCategory({ db: this.dbService }));
       registry.register(buildAxiomCriteriaCategory());
+      registry.register(buildOrderDecompositionCategory());
 
       // Register each category's `push` as an onNewActivePack hook so saves
       // automatically notify the upstream evaluator.
@@ -5165,6 +5178,25 @@ export class AppraisalManagementAPIServer {
     // Start overdue order detection job (Phase 3.4)
     this.overdueDetectionJob = new OverdueOrderDetectionJob(this.dbService);
     this.overdueDetectionJob.start();
+
+    // AI Autopilot — Phase 14 v2 (2026-05-11).  Two pieces:
+    //   1. Sweep job (in-process timer) emits SB messages for active
+    //      cron-triggered recipes.
+    //   2. Consumer service subscribes to the autopilot-tasks queue
+    //      and processes each message via AiAutopilotService.
+    // Enabled by default in production; gate via AI_AUTOPILOT_ENABLED=false
+    // to disable per-environment.  Both pieces no-op safely when no
+    // recipes exist or when Service Bus is in mock mode.
+    if (process.env.AI_AUTOPILOT_ENABLED !== 'false') {
+      this.aiAutopilotSweepJob = new AiAutopilotSweepJob(this.dbService);
+      this.aiAutopilotSweepJob.start();
+      this.aiAutopilotConsumer = new AiAutopilotConsumer(this.dbService);
+      this.aiAutopilotConsumer.start().catch((err) => {
+        this.logger.warn('AI autopilot consumer failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     // Start event-driven notification orchestrator (Phase E)
     // Subscribes to Service Bus events and routes to WebSocket/Email/SMS channels
