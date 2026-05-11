@@ -34,6 +34,7 @@ import type {
 } from '../types/decision-rule-pack.types.js';
 import type { CategoryDefinition, CategoryRegistry } from '../services/decision-engine/category-definition.js';
 import type { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
+import type { DecisionAnalyticsAggregationService } from '../services/decision-engine/analytics/decision-analytics-aggregation.service.js';
 
 export class DecisionEngineRulesController {
   public readonly router: Router;
@@ -45,6 +46,10 @@ export class DecisionEngineRulesController {
      *  per-(tenant, category) kill switch and short-circuit with 503 when
      *  the flag is on. Omit in tests that don't need to exercise the lever. */
     private readonly killSwitches: DecisionEngineKillSwitchService | null = null,
+    /** Optional — when present, /analytics prefers pre-aggregated snapshots
+     *  over on-the-fly computation. Phase E.preagg. Falls through to live
+     *  compute when no fresh snapshot exists. */
+    private readonly aggregations: DecisionAnalyticsAggregationService | null = null,
   ) {
     this.router = Router({ mergeParams: true });
     this.initRoutes();
@@ -459,11 +464,28 @@ export class DecisionEngineRulesController {
     }
 
     try {
-      const summary = await def.analytics({
-        tenantId,
-        ...(days !== undefined ? { days } : {}),
-      });
-      res.json({ success: true, data: summary });
+      // Phase E.preagg — prefer the nightly snapshot for the (tenant, category, days)
+      // tuple when one is fresh. Falls through to live compute when missing
+      // or stale. The aggregator is optional so unit tests + bootstrap paths
+      // without Cosmos can still call analytics.
+      let summary;
+      let source: 'aggregated' | 'live' = 'live';
+      if (this.aggregations && days !== undefined) {
+        const cached = await this.aggregations
+          .readLatestSnapshot(tenantId, category, days)
+          .catch(() => null);
+        if (cached) {
+          summary = cached;
+          source = 'aggregated';
+        }
+      }
+      if (!summary) {
+        summary = await def.analytics({
+          tenantId,
+          ...(days !== undefined ? { days } : {}),
+        });
+      }
+      res.json({ success: true, data: summary, __source: source });
     } catch (err) {
       res.status(502).json({
         success: false,

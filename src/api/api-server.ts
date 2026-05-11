@@ -252,6 +252,8 @@ import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.servi
 import { MismoAutoGenerateService } from '../services/mismo-auto-generate.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
 import { FiringRulesEvaluatorJob } from '../jobs/firing-rules-evaluator.job.js';
+import { DecisionAnalyticsAggregationJob } from '../jobs/decision-analytics-aggregation.job.js';
+import { DecisionAnalyticsAggregationService } from '../services/decision-engine/analytics/decision-analytics-aggregation.service.js';
 import { ReviewProgramOrchestrator } from '../services/decision-engine/review-program/review-program-orchestrator.service.js';
 import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
@@ -1653,9 +1655,10 @@ export class AppraisalManagementAPIServer {
       // the very next decision (60s in-process cache TTL).
       const killSwitches = new DecisionEngineKillSwitchService(this.dbService);
 
+      const analyticsAggregator = new DecisionAnalyticsAggregationService(this.dbService);
       this.app.use('/api/decision-engine/rules/:category',
         this.unifiedAuth.authenticate(),
-        new DecisionEngineRulesController(packs, registry, killSwitches).router,
+        new DecisionEngineRulesController(packs, registry, killSwitches, analyticsAggregator).router,
       );
 
       const overrideService = new DecisionOverrideService(this.dbService);
@@ -1696,6 +1699,24 @@ export class AppraisalManagementAPIServer {
           : '';
         res.redirect(308, `/api/decision-engine/rules/vendor-matching${tail}`);
       });
+
+      // Phase E.preagg — Decision Analytics Aggregation Job. Daily run that
+      // pre-computes per-(tenant, category, days) summaries and writes to
+      // `decision-rule-analytics`. The /analytics endpoint reads these
+      // snapshots before falling back to live compute. Off by default until
+      // the container is provisioned (see
+      // infrastructure/modules/cosmos-decision-engine-analytics-container.bicep).
+      if (process.env['DECISION_ANALYTICS_JOB_ENABLED'] === 'true') {
+        try {
+          const analyticsJob = new DecisionAnalyticsAggregationJob(this.dbService, registry);
+          analyticsJob.start();
+          this.logger.info('DecisionAnalyticsAggregationJob enabled (DECISION_ANALYTICS_JOB_ENABLED=true)');
+        } catch (err) {
+          this.logger.warn('DecisionAnalyticsAggregationJob could not be started', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
     }
 
     // Assignment Traces — Phase 5 of AUTO_ASSIGNMENT_REVIEW.md §13.6.
@@ -5667,6 +5688,7 @@ export class AppraisalManagementAPIServer {
         });
       }
     }
+
 
     // ReviewProgramOrchestrator — Phase K of DECISION_ENGINE_RULES_SURFACE.md.
     // Subscribes to engagement.order.created and runs review-program eval
