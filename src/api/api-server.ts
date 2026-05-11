@@ -240,6 +240,7 @@ import { VendorPerformanceUpdaterService } from '../services/vendor-performance-
 import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.service.js';
 import { MismoAutoGenerateService } from '../services/mismo-auto-generate.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
+import { FiringRulesEvaluatorJob } from '../jobs/firing-rules-evaluator.job.js';
 import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
 // Import Audit Event Sink + Engagement Audit Controller
@@ -336,6 +337,8 @@ import {
 import { createAiExecuteRouter } from '../controllers/ai-execute.controller.js';
 import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
 import { createAiAuditRouter } from '../controllers/ai-audit.controller.js';
+import { createAiCatalogRouter } from '../controllers/ai-catalog.controller.js';
+import { bootstrapAiCatalog } from '../bootstrap/ai-catalog-bootstrap.js';
 import { createAiConversationRouter } from '../controllers/ai-conversation.controller.js';
 import { createAiFlagsRouter } from '../controllers/ai-flags.controller.js';
 import { createAiTelemetryRouter } from '../controllers/ai-telemetry.controller.js';
@@ -1180,6 +1183,12 @@ export class AppraisalManagementAPIServer {
     );
 
     // AI Agentic Workflow / Structured Parsing
+    // Seed the AI catalog registry before any /api/ai/catalog request
+    // could land.  Phase 10-full part 1 — controllers will eventually
+    // register their own entries inline; this bootstrap holds the
+    // baseline until that migration completes.
+    bootstrapAiCatalog();
+
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
       createAiExecuteRouter({ dbService: this.dbService }),
@@ -1201,6 +1210,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/ai/audit',
       this.unifiedAuth.authenticate(),
       createAiAuditRouter(this.dbService)
+    );
+    // AI catalog — Phase 10-full of AI-UNIVERSAL-SURFACE-PLAN.md.
+    // Read-only metadata endpoint backing the FE's CapabilityCatalog
+    // consumer; controllers opt in to AI exposure by calling
+    // registerAiRoute() from utils/ai-catalog-registry.ts at module load.
+    this.app.use('/api/ai/catalog',
+      this.unifiedAuth.authenticate(),
+      createAiCatalogRouter()
     );
     this.app.use('/api/ai/conversations',
       this.unifiedAuth.authenticate(),
@@ -1578,7 +1595,7 @@ export class AppraisalManagementAPIServer {
       // the FE renders an empty state explaining the upstream evaluator is
       // pending.
       registry.register(buildReviewProgramCategory());
-      registry.register(buildFiringRulesCategory());
+      registry.register(buildFiringRulesCategory({ db: this.dbService }));
       registry.register(buildAxiomCriteriaCategory());
 
       // Register each category's `push` as an onNewActivePack hook so saves
@@ -5506,6 +5523,25 @@ export class AppraisalManagementAPIServer {
       this.logger.warn('ReviewSLAWatcherJob could not be created', {
         error: err instanceof Error ? err.message : String(err)
       });
+    }
+
+    // Start Firing Rules Evaluator Job — Phase G of DECISION_ENGINE_RULES_SURFACE.md.
+    // Daily run that evaluates each tenant's firing-rules pack against current
+    // vendor performance metrics and writes per-vendor decisions to the
+    // firing-decisions container. Off by default — set FIRING_RULES_JOB_ENABLED=true
+    // once the tenant population starts authoring firing-rules packs to avoid
+    // accumulating no-action documents.
+    if (process.env['FIRING_RULES_JOB_ENABLED'] === 'true') {
+      try {
+        const decisionPacksForJob = new DecisionRulePackService(this.dbService);
+        const firingJob = new FiringRulesEvaluatorJob(this.dbService, decisionPacksForJob);
+        firingJob.start();
+        this.logger.info('FiringRulesEvaluatorJob enabled (FIRING_RULES_JOB_ENABLED=true)');
+      } catch (err) {
+        this.logger.warn('FiringRulesEvaluatorJob could not be started', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
     }
 
     // Start Audit Event Sink (persists every Service Bus event to engagement-audit-events container)
