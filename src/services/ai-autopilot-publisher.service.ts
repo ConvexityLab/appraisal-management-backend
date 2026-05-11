@@ -24,7 +24,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
 import type { AutopilotTaskMessage } from './ai-autopilot.service.js';
 
-const DEFAULT_QUEUE = 'autopilot-tasks';
+// Queue name is fixed — declared in
+// `infrastructure/modules/service-bus.bicep` as `autopilot-tasks` and
+// hardcoded on both ends (publisher + consumer) so no env-name drift.
+const QUEUE_NAME = 'autopilot-tasks';
 
 /** Test-visible mock outbox.  Cleared by `_resetForTests()`. */
 const mockOutbox: AutopilotTaskMessage[] = [];
@@ -37,7 +40,7 @@ export class AiAutopilotPublisher {
 	private readonly useMock: boolean;
 
 	constructor() {
-		this.queueName = process.env.AI_AUTOPILOT_QUEUE_NAME || DEFAULT_QUEUE;
+		this.queueName = QUEUE_NAME;
 		const ns = process.env.AZURE_SERVICE_BUS_NAMESPACE;
 		const forceMock = process.env.USE_MOCK_SERVICE_BUS === 'true';
 		this.useMock = forceMock || !ns || ns === 'local-emulator';

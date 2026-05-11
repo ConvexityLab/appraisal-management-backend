@@ -28,8 +28,13 @@ import type { AutopilotRun } from '../types/autopilot-recipe.types.js';
 
 const DEFAULT_CONTAINER = 'ai-autopilot';
 
+/**
+ * Matches the `COSMOS_CONTAINER_<NAME>` env naming convention already in
+ * use elsewhere (orders / properties / vendors).  Shared with the recipe
+ * repository — same container, different `entityType`.
+ */
 function containerName(): string {
-	return process.env.AI_AUTOPILOT_CONTAINER || DEFAULT_CONTAINER;
+	return process.env.COSMOS_CONTAINER_AI_AUTOPILOT || DEFAULT_CONTAINER;
 }
 
 /**

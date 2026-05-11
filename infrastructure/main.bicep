@@ -440,6 +440,18 @@ module cosmosDecompositionRulesContainer 'modules/cosmos-decomposition-rules-con
   }
 }
 
+// Cosmos DB Vendor Marketplace Containers (Phase 4 — vendor-bids, vendor-performance-metrics, etc.)
+// Defines containers for vendor bidding and marketplace operations.
+// Partitioned by /orderId (vendor-bids) and /tenantId (others).
+module cosmosVendorMarketplaceContainers 'modules/vendor-marketplace-containers.bicep' = {
+  name: 'cosmos-vendor-marketplace-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'

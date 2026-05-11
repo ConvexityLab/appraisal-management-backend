@@ -2340,9 +2340,10 @@ export class OrderController {
       const bidId = req.params.bidId as string;
       const tenantId = req.user!.tenantId as string;
 
-      const bidResult = await this.dbService.getItem('vendor-bids', bidId, tenantId);
+      // vendor-bids container is partitioned by /orderId, not /tenantId
+      const bidResult = await this.dbService.getItem('vendor-bids', bidId, orderId);
       const bid = (bidResult as any)?.data ?? bidResult;
-      if (!bid) {
+      if (!bid || !(bid as any).id) {
         res.status(404).json({ error: 'Bid not found' });
         return;
       }
@@ -2370,12 +2371,12 @@ export class OrderController {
         return;
       }
 
-      // Mark bid ACCEPTED
+      // Mark bid ACCEPTED — vendor-bids partitioned by /orderId
       await this.dbService.updateItem(
         'vendor-bids',
         bid.id,
         { ...bid, status: 'ACCEPTED', acceptedAt: new Date().toISOString() },
-        tenantId,
+        orderId,
       );
 
       // Update order: vendor assignment state → ACCEPTED, assign vendor fields, advance order status

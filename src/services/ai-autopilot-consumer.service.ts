@@ -30,7 +30,17 @@ import {
 	type AutopilotTaskMessage,
 } from './ai-autopilot.service.js';
 
-const DEFAULT_QUEUE = 'autopilot-tasks';
+// Queue name is fixed — declared in
+// `infrastructure/modules/service-bus.bicep` and hardcoded on both ends
+// (publisher + consumer) so there's no env-name drift.
+const QUEUE_NAME = 'autopilot-tasks';
+
+// Azure Service Bus caps `lockDuration` at PT5M for a queue (any larger
+// value rejects with MessagingGatewayBadRequest at deploy time).  Long-
+// running autopilot dispatches (Axiom pipelines + MOP eval + chain) can
+// exceed that, so the consumer must renew the lock periodically.  We
+// renew every 3m — comfortable margin before the 5m expiry.
+const LOCK_RENEW_INTERVAL_MS = 180_000;
 
 export class AiAutopilotConsumer {
 	private readonly logger = new Logger('AiAutopilotConsumer');
@@ -45,7 +55,7 @@ export class AiAutopilotConsumer {
 	constructor(dbService?: CosmosDbService) {
 		this.cosmos = dbService ?? new CosmosDbService();
 		this.autopilot = new AiAutopilotService(this.cosmos);
-		this.queueName = process.env.AI_AUTOPILOT_QUEUE_NAME || DEFAULT_QUEUE;
+		this.queueName = QUEUE_NAME;
 		const ns = process.env.AZURE_SERVICE_BUS_NAMESPACE;
 		const forceMock = process.env.USE_MOCK_SERVICE_BUS === 'true';
 		this.useMock = forceMock || !ns || ns === 'local-emulator';
@@ -135,17 +145,36 @@ export class AiAutopilotConsumer {
 			});
 			return;
 		}
-		const result = await this.processOneTask(task);
-		if (result.ok || result.status === 'awaiting-approval' || result.status === 'cancelled') {
-			// Terminal-for-this-delivery — even cancellations are
-			// completed (the run row records the reason).
-			await this.receiver.completeMessage(msg);
-		} else {
-			// Transient failure — abandon so the broker can redeliver.
-			// MaxDeliveries on the queue eventually DLQs.
-			await this.receiver.abandonMessage(msg, {
-				reason: result.reason ?? 'process-failed',
+
+		// Lock renewal — Azure caps queue lockDuration at PT5M, but a
+		// recipe that fans out to Axiom + MOP + dispatcher can exceed that.
+		// Renew the lock every 3m while processOneTask runs.  Cleared as
+		// soon as the task settles (complete / abandon / dead-letter).
+		const renewer = this.receiver;
+		const renewTimer = setInterval(() => {
+			renewer.renewMessageLock(msg).catch((err) => {
+				this.logger.warn('Failed to renew autopilot message lock', {
+					messageId: msg.messageId,
+					error: err instanceof Error ? err.message : String(err),
+				});
 			});
+		}, LOCK_RENEW_INTERVAL_MS);
+
+		try {
+			const result = await this.processOneTask(task);
+			if (result.ok || result.status === 'awaiting-approval' || result.status === 'cancelled') {
+				// Terminal-for-this-delivery — even cancellations are
+				// completed (the run row records the reason).
+				await this.receiver.completeMessage(msg);
+			} else {
+				// Transient failure — abandon so the broker can redeliver.
+				// MaxDeliveries on the queue eventually DLQs.
+				await this.receiver.abandonMessage(msg, {
+					reason: result.reason ?? 'process-failed',
+				});
+			}
+		} finally {
+			clearInterval(renewTimer);
 		}
 	}
 

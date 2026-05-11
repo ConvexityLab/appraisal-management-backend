@@ -19,7 +19,7 @@
  *   both recipes AND runs cleanly.  Single new container, two
  *   entityTypes, per-doc TTL on runs.
  *
- * Provisioning: this code reads `AI_AUTOPILOT_CONTAINER` (default
+ * Provisioning: this code reads `COSMOS_CONTAINER_AI_AUTOPILOT` (default
  * `ai-autopilot`) and assumes the container EXISTS.  If it doesn't,
  * every CRUD call returns a clean error — we never create infrastructure
  * in code (per CLAUDE.md rule #3).  Bicep declares the container in
@@ -34,8 +34,16 @@ import type { AutopilotRecipe } from '../types/autopilot-recipe.types.js';
 
 const DEFAULT_CONTAINER = 'ai-autopilot';
 
+/**
+ * Matches the `COSMOS_CONTAINER_<NAME>` env naming convention already in
+ * use for other domains (e.g. `COSMOS_CONTAINER_ORDERS`,
+ * `COSMOS_CONTAINER_PROPERTIES`, `COSMOS_CONTAINER_VENDORS`).  The
+ * runtime almost never overrides this; the var exists so test envs and
+ * the deploy pipeline can point at a non-default container without a
+ * code change.
+ */
 function containerName(): string {
-	return process.env.AI_AUTOPILOT_CONTAINER || DEFAULT_CONTAINER;
+	return process.env.COSMOS_CONTAINER_AI_AUTOPILOT || DEFAULT_CONTAINER;
 }
 
 export interface CreateRecipeInput

@@ -51,6 +51,10 @@ const KEY_TO_ENV: Record<string, string> = {
   // Cosmos
   'services.cosmos.endpoint': 'AZURE_COSMOS_ENDPOINT',
   'services.cosmos.database-name': 'AZURE_COSMOS_DATABASE_NAME',
+  // Phase 14 v2 autopilot container — follows the
+  // `services.<svc>.container.<name>` → `<SVC>_CONTAINER_<NAME>` pattern
+  // used elsewhere for storage containers.
+  'services.cosmos.container.ai-autopilot': 'COSMOS_CONTAINER_AI_AUTOPILOT',
   // Service Bus / Web PubSub / Fluid Relay
   'services.service-bus.namespace': 'AZURE_SERVICE_BUS_NAMESPACE',
   'services.web-pubsub.endpoint': 'AZURE_WEB_PUBSUB_ENDPOINT',

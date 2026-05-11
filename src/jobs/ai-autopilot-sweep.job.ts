@@ -33,7 +33,12 @@ import { AutopilotRecipeRepository } from '../services/autopilot-recipe.reposito
 import { AiFlagsService } from '../services/ai-flags.service.js';
 import type { AutopilotRecipe } from '../types/autopilot-recipe.types.js';
 
-const TICK_INTERVAL_MS = Number(process.env.AI_AUTOPILOT_SWEEP_INTERVAL_MS ?? 60_000);
+// Matches the hardcoded-constant pattern used by every other in-process
+// job (OverdueOrderDetection / ReviewSlaWatcher / SLAMonitoring etc).
+// 60s is the minimum useful resolution given the supported cron
+// expressions (every-15m, every-2h, hourly).  Sub-minute fires would
+// require a different scheduler.
+const TICK_INTERVAL_MS = 60_000;
 
 export class AiAutopilotSweepJob {
 	private readonly logger = new Logger('AiAutopilotSweepJob');
