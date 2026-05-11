@@ -6,13 +6,13 @@ import { randomUUID } from 'crypto';
 import {
   assertStatus,
   getJson,
-  hasMeaningfulContent,
   isRecord,
   loadLiveFireContext,
   loadPollOptions,
   logConfig,
   logSection,
   postJson,
+  resolveLiveFirePath,
   sleep,
 } from './_axiom-live-fire-common.js';
 
@@ -35,44 +35,6 @@ interface SubmitEnvelope {
 }
 
 interface SubmissionGetEnvelope extends SubmitEnvelope {}
-
-interface LiveCriterion {
-  resultId?: string;
-  evaluationRunId?: string;
-  criterionId?: string;
-  criterionName?: string;
-  evaluation?: string;
-  confidence?: number;
-  reasoning?: string;
-  evaluatedBy?: string;
-  evaluatedAt?: string;
-  manualOverride?: boolean;
-  criterionSnapshot?: unknown;
-  dataConsulted?: unknown;
-  documentReferences?: unknown[];
-  supportingData?: unknown[];
-}
-
-interface EvaluationRecord {
-  evaluationId: string;
-  status?: string;
-  overallRiskScore?: number;
-  criteria?: LiveCriterion[];
-  extractedData?: Record<string, unknown>;
-  axiomExtractionResult?: unknown;
-  axiomCriteriaResult?: unknown;
-}
-
-interface EvaluationEnvelope {
-  success: boolean;
-  data?: EvaluationRecord;
-  error?: { message?: string; code?: string };
-}
-
-interface OrderEvaluationsEnvelope {
-  success: boolean;
-  data?: Array<{ evaluationId: string; status?: string; programId?: string; programVersion?: string }>;
-}
 
 interface OrderEnvelope {
   success?: boolean;
@@ -195,7 +157,7 @@ function streamTimeoutMs(): number {
 function artifactDirFor(orderId: string): string {
   const configured = optionalEnv('AXIOM_LIVE_ARTIFACT_DIR');
   if (configured) {
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    return resolveLiveFirePath(configured, 'AXIOM_LIVE_ARTIFACT_DIR');
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return path.resolve(process.cwd(), 'test-artifacts/live-fire/axiom-canonical-suite', `${stamp}-${orderId}`);
@@ -240,50 +202,6 @@ function parseStreamStatus(payload: unknown): { status: StreamStatus; message: s
     return { status: 'queued', message: raw };
   }
   return { status: 'streaming', message: raw };
-}
-
-function countInformativeCriteria(criteria: LiveCriterion[] | undefined): number {
-  return (criteria ?? []).filter((criterion) => {
-    const hasIdentity = typeof criterion.criterionId === 'string' || typeof criterion.criterionName === 'string';
-    const hasNarrative = typeof criterion.reasoning === 'string' && criterion.reasoning.trim().length > 0;
-    const hasDecision = typeof criterion.evaluation === 'string' && criterion.evaluation.trim().length > 0;
-    const hasEvidence = Array.isArray(criterion.documentReferences) && criterion.documentReferences.length > 0;
-    const hasSupportingData = Array.isArray(criterion.supportingData) && criterion.supportingData.length > 0;
-    return hasIdentity && (hasNarrative || hasDecision || hasEvidence || hasSupportingData);
-  }).length;
-}
-
-function assertSubstantiveEvaluation(evaluation: EvaluationRecord, evaluationMode: EvaluationMode): void {
-  if (evaluation.status !== 'completed') {
-    throw new Error(
-      `Evaluation '${evaluation.evaluationId}' did not complete successfully. Status='${evaluation.status ?? 'unknown'}'.`,
-    );
-  }
-
-  if (typeof evaluation.overallRiskScore !== 'number' || !Number.isFinite(evaluation.overallRiskScore)) {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' is missing a numeric overallRiskScore.`);
-  }
-
-  const informativeCriteriaCount = countInformativeCriteria(evaluation.criteria);
-  const hasExtraction = hasMeaningfulContent(evaluation.extractedData) || hasMeaningfulContent(evaluation.axiomExtractionResult);
-  const hasCriteriaAggregate = hasMeaningfulContent(evaluation.axiomCriteriaResult);
-
-  if (evaluationMode === 'EXTRACTION' && !hasExtraction) {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' completed without substantive extraction output.`);
-  }
-
-  if (evaluationMode === 'CRITERIA_EVALUATION' && informativeCriteriaCount === 0 && !hasCriteriaAggregate) {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' completed without substantive criteria output.`);
-  }
-
-  if (evaluationMode === 'COMPLETE_EVALUATION' && informativeCriteriaCount === 0 && !hasExtraction && !hasCriteriaAggregate) {
-    throw new Error(`Evaluation '${evaluation.evaluationId}' completed without substantive extraction or criteria output.`);
-  }
-
-  console.log(`✓ overallRiskScore=${evaluation.overallRiskScore}`);
-  console.log(`✓ informativeCriteriaCount=${informativeCriteriaCount}`);
-  console.log(`✓ hasExtractionOutput=${hasExtraction}`);
-  console.log(`✓ hasCriteriaAggregate=${hasCriteriaAggregate}`);
 }
 
 function assertVerdict(value: unknown, field: string): Verdict {
@@ -426,7 +344,9 @@ async function resolveProgramFromOrder(
   const res = await getJson<OrderEnvelope>(`${baseUrl}/api/orders/${encodeURIComponent(orderId)}`, authHeader);
   assertStatus(res.status, [200], 'get order for program resolution', res.data);
 
-  const order = isRecord(res.data) && 'data' in res.data ? res.data.data : undefined;
+  const order = isRecord(res.data) && isRecord(res.data.data)
+    ? (res.data.data as NonNullable<OrderEnvelope['data']>)
+    : undefined;
   const programId = order?.axiomProgramId?.trim();
   const programVersion = order?.axiomProgramVersion?.trim();
 
@@ -542,65 +462,23 @@ async function main(): Promise<void> {
   }
   console.log(`✓ submissionTerminalStatus=${terminalSubmission.status}`);
 
-  logSection('Step 4 — Fetch final evaluation (upload-zone insights payload)');
-  let finalEvaluation: EvaluationRecord | undefined;
-  for (let attempt = 1; attempt <= poll.attempts; attempt += 1) {
-    const evaluationRes = await getJson<EvaluationEnvelope>(
-      `${context.baseUrl}/api/axiom/evaluations/${encodeURIComponent(evaluationId)}?bypassCache=true`,
-      context.authHeader,
-    );
-    assertStatus(evaluationRes.status, [200, 404], 'get evaluation by id', evaluationRes.data);
-    if (evaluationRes.status === 404) {
-      console.log(`… evaluation not yet available (attempt ${attempt}/${poll.attempts})`);
-      await sleep(poll.intervalMs);
-      continue;
-    }
-    if (!evaluationRes.data?.success || !evaluationRes.data.data) {
-      throw new Error(`Evaluation lookup returned no substantive payload: ${JSON.stringify(evaluationRes.data)}`);
-    }
-    finalEvaluation = evaluationRes.data.data;
-    await writeArtifact(artifactDir, '04-evaluation-by-id.json', evaluationRes.data);
-    break;
-  }
-
-  if (!finalEvaluation) {
-    throw new Error(`Evaluation '${evaluationId}' was not retrievable inside the poll window.`);
-  }
-  assertSubstantiveEvaluation(finalEvaluation, evaluationMode);
-
-  logSection('Step 5 — Verify legacy order evaluation list still surfaces the run');
-  let matchedOrderEvaluation: { evaluationId: string; status?: string; programId?: string; programVersion?: string } | undefined;
-  for (let attempt = 1; attempt <= poll.attempts; attempt += 1) {
-    const orderEvalRes = await getJson<OrderEvaluationsEnvelope>(
-      `${context.baseUrl}/api/axiom/evaluations/order/${encodeURIComponent(orderId)}`,
-      context.authHeader,
-    );
-    assertStatus(orderEvalRes.status, [200, 404], 'get order evaluations', orderEvalRes.data);
-    await writeArtifact(artifactDir, '05-order-evaluations.json', orderEvalRes.data);
-    if (orderEvalRes.status === 200 && orderEvalRes.data?.success && Array.isArray(orderEvalRes.data.data)) {
-      matchedOrderEvaluation = orderEvalRes.data.data.find((item) => item.evaluationId === evaluationId);
-      if (matchedOrderEvaluation) break;
-    }
-    await sleep(poll.intervalMs);
-  }
-
-  if (!matchedOrderEvaluation) {
-    throw new Error(`Evaluation '${evaluationId}' never surfaced in GET /api/axiom/evaluations/order/${orderId}.`);
-  }
-  console.log(`✓ orderEvaluationStatus=${matchedOrderEvaluation.status ?? 'unknown'}`);
+  // Legacy `GET /api/axiom/evaluations/:id` + `GET /api/axiom/evaluations/order/:orderId`
+  // steps were retired in the 2026-05-07 v2 migration. The substantive
+  // evaluation payload now lives at the v2 `/scopes/:scopeId/results` and
+  // `/scopes/:scopeId/runs/:runId` surfaces, which Step 4 below covers.
 
   let latestResultsCount: number | undefined;
   let criterionHistoryCount: number | undefined;
 
   if (evaluationMode !== 'EXTRACTION') {
-    logSection('Step 6 — Verify the v2 results surface that AxiomInsightsPanel consumes');
+    logSection('Step 4 — Verify the v2 results surface that AxiomInsightsPanel consumes');
     const { programId } = await resolveProgramFromOrder(context.baseUrl, context.authHeader, orderId);
     const latestResultsRes = await getJson<LatestResultsEnvelope>(
       `${context.baseUrl}/api/axiom/scopes/${encodeURIComponent(orderId)}/results?programId=${encodeURIComponent(programId)}`,
       context.authHeader,
     );
     assertStatus(latestResultsRes.status, [200], 'get latest results', latestResultsRes.data);
-    await writeArtifact(artifactDir, '06-latest-results.json', latestResultsRes.data);
+    await writeArtifact(artifactDir, '04-latest-results.json', latestResultsRes.data);
 
     const latestResults = latestResultsRes.data?.data?.results ?? [];
     if (!Array.isArray(latestResults) || latestResults.length === 0) {
@@ -622,7 +500,7 @@ async function main(): Promise<void> {
       context.authHeader,
     );
     assertStatus(historyRes.status, [200], 'get criterion history', historyRes.data);
-    await writeArtifact(artifactDir, '07-criterion-history.json', historyRes.data);
+    await writeArtifact(artifactDir, '05-criterion-history.json', historyRes.data);
 
     const history = historyRes.data?.data?.history ?? [];
     if (!Array.isArray(history) || history.length === 0) {

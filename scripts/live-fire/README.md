@@ -6,6 +6,18 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
 
 - `scripts/live-fire/STAGING_RUNBOOK.md`
 
+## v2-only
+
+As of the 2026-05-07 Axiom proxy migration, every live-fire script exercises
+the v2 surface (`/api/axiom/scopes/...`) or feature-specific surfaces (property
+enrichment, complexity scoring, bulk submission, review programs, analysis
+submissions). The legacy `/analyze`, `/criteria/evaluate`, `/evaluations/:id`,
+`/evaluations/order/:orderId`, and `/evaluations/order/:orderId/stream` routes
+have been **retired on the backend** — the scripts that exercised them
+(`document-flow`, `analyze-webhook`, `analyze-with-sse`, `sse-round-trip`)
+have been deleted along with their npm scripts. Mixed scripts
+(`canonical-suite`, `ui-parity`) have had their legacy sections removed.
+
 ## Scripts
 
 - `axiom-live-fire-property-intake.ts`
@@ -14,23 +26,18 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
   - `POST /api/axiom/scoring/complexity`
   - `GET /api/axiom/scoring/complexity/:orderId`
 
-- `axiom-live-fire-document-flow.ts`
-  - `POST /api/axiom/documents`
-  - `GET /api/axiom/evaluations/:evaluationId`
-  - `GET /api/axiom/evaluations/order/:orderId`
-  - `POST /api/axiom/documents/compare`
-  - `GET /api/axiom/comparisons/:comparisonId` (when returned)
-
-- `axiom-live-fire-analyze-and-webhook.ts`
-  - `POST /api/axiom/analyze`
-  - `GET /api/axiom/evaluations/order/:orderId` (poll)
-  - `POST /api/axiom/webhook` unsigned (expects `401` if webhook secret configured, else `200`)
-  - `POST /api/axiom/webhook` signed (when `AXIOM_LIVE_WEBHOOK_SECRET` is provided)
-
 - `axiom-live-fire-bulk-submit.ts`
   - `POST /api/bulk-ingestion/submit` (multipart `CSV + PDF`)
   - `GET /api/bulk-ingestion/:jobId` (poll)
+  - `GET /api/bulk-ingestion?clientId=...` (client-facing job list)
+  - `GET /api/bulk-ingestion/:jobId/failures` (client-facing failure grid)
+  - `GET /api/bulk-ingestion/:jobId/failures/export` (client-facing export path)
   - Validates live submission + job persistence path for engagement/order + related document intake
+
+- `integration-live-fire-aim-port.ts`  ← **pnpm integration:livefire:aim-port**
+  - `POST /api/v1/integrations/aim-port/inbound`
+  - Verifies the real AIM-Port adapter/auth/ack path, including `X-Vendor-Type`, `X-Vendor-Connection-Id`, and normalized-event-count response headers
+  - Purpose: live-fire partner/client endpoint coverage for inbound vendor integrations
 
 - `axiom-live-fire-preflight-probe.ts`
   - `GET /api/orders` (paged)
@@ -48,10 +55,8 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
   - `POST /api/analysis/submissions` — exact current UI submit contract
   - `GET /api/documents/stream/:executionId` — exact upload-zone live tracker stream
   - `GET /api/analysis/submissions/:submissionId` — submission status polling
-  - `GET /api/axiom/evaluations/:evaluationId` — upload-zone “Open Insights” payload
-  - `GET /api/axiom/evaluations/order/:orderId` — compatibility check for the legacy order-list surface
-  - `GET /api/axiom/scopes/:scopeId/results?programId=…` — current `AxiomInsightsPanel` data source
-  - `GET /api/axiom/scopes/:scopeId/criteria/:criterionId/history` — current criterion-history drawer surface
+  - `GET /api/axiom/scopes/:scopeId/results?programId=…` — current `AxiomInsightsPanel` data source (v2)
+  - `GET /api/axiom/scopes/:scopeId/criteria/:criterionId/history` — current criterion-history drawer surface (v2)
   - Purpose: one canonical live-fire suite that mirrors how the UI submits, monitors, and processes Axiom results today
   - Artifacts: writes JSON outputs under `test-artifacts/live-fire/axiom-canonical-suite/<timestamp>-<orderId>/` unless `AXIOM_LIVE_ARTIFACT_DIR` is set
 
@@ -68,31 +73,12 @@ For a permanent staging setup + troubleshooting guide (Entra auth wiring, error-
 - `axiom-live-fire-ui-parity.ts`
   - Mode `extraction`: `POST /api/runs/extraction` + `POST /api/runs/:runId/refresh-status` + `GET /api/runs/:runId/snapshot`
   - Mode `criteria`: `POST /api/runs/criteria` + run/step polling + `GET /api/runs/:stepRunId/step-input`
-  - Mode `full`: `POST /api/axiom/analyze` + `GET /api/axiom/evaluations/order/:orderId` polling
   - Purpose: backend-only UI-parity validation to isolate UI issues from pipeline/engine issues
+  - Note: the prior `full` mode (`POST /api/axiom/analyze` + `/evaluations/...`) was retired in the 2026-05-07 v2 migration. The end-to-end UI submission flow is now covered by `axiom-live-fire-canonical-suite.ts`.
 
 - `axiom-live-fire-aegis-connect.ts`
   - Mode: direct Axiom API connectivity probe with Aegis-enforced auth
   - Purpose: acquire a real Entra JWT (`az account get-access-token --resource api://3bc96929-593c-4f35-8997-e341a7e09a69`) and verify headers (`Authorization`, `X-Client-Id`, optional `X-Sub-Client-Id`) against Axiom endpoint
-
-- `axiom-live-fire-sse-full-round-trip.ts`  ← **pnpm axiom:livefire:sse-round-trip**
-  - `POST /api/analysis/submissions` — exact UI submission path
-  - `GET /api/axiom/evaluations/order/:orderId/stream` — live SSE stream (runs concurrently with poll)
-  - `GET /api/analysis/submissions/:submissionId` — poll until terminal status
-  - `GET /api/axiom/evaluations/:evaluationId` — full evaluation payload (not truncated)
-  - `POST /api/axiom/webhook` — unsigned + signed (when `AXIOM_LIVE_WEBHOOK_SECRET` set)
-  - Purpose: full round-trip mimicking exact UI flow with real-time SSE monitoring and complete response logging
-  - Extra env: `AXIOM_LIVE_EVALUATION_MODE` (default `COMPLETE_EVALUATION`), `AXIOM_LIVE_SSE_TIMEOUT_MS` (default `120000`)
-
-- `axiom-live-fire-analyze-with-sse.ts`  ← **pnpm axiom:livefire:analyze-with-sse**
-  - `POST /api/axiom/analyze` — legacy analyze path
-  - `GET /api/axiom/evaluations/:evaluationId` — immediate check after submit
-  - `GET /api/axiom/evaluations/order/:orderId/stream` — SSE stream (runs concurrently with order-list poll)
-  - `GET /api/axiom/evaluations/order/:orderId` — poll for evaluation in order list
-  - `GET /api/axiom/evaluations/:evaluationId` — poll to completed, full payload logged
-  - `POST /api/axiom/webhook` — unsigned + signed (when `AXIOM_LIVE_WEBHOOK_SECRET` set)
-  - Purpose: legacy analyze path with concurrent SSE, order-list polling, full response logging, and webhook round-trip
-  - Extra env: `AXIOM_LIVE_SSE_TIMEOUT_MS` (default `120000`)
 
 - `axiom-live-fire-v2-flow.ts`  ← **pnpm axiom:livefire:v2-flow**
   - `POST   /api/axiom/scopes/:scopeId/evaluate` — kicks off v2 evaluation run
@@ -146,7 +132,7 @@ To avoid interactive login on every run, delegated/device-code and default-crede
 
 Optional cache controls:
 
-- `AXIOM_LIVE_TOKEN_CACHE_FILE` (absolute or workspace-relative path)
+- `AXIOM_LIVE_TOKEN_CACHE_FILE` (path must stay under the repo root or `scripts/live-fire/`)
 - `AXIOM_LIVE_TOKEN_CACHE_SKEW_SECONDS` (default `120`)
 - `AXIOM_LIVE_DISABLE_TOKEN_CACHE=true` (forces fresh token acquisition every run)
 
@@ -160,22 +146,23 @@ Script-specific required values:
 - `AXIOM_LIVE_PROPERTY_STATE`
 - `AXIOM_LIVE_PROPERTY_ZIP`
 
-### Document flow
-
-- `AXIOM_LIVE_ORDER_ID`
-- `AXIOM_LIVE_DOCUMENT_URL`
-- `AXIOM_LIVE_REVISED_DOCUMENT_URL`
-
-### Analyze + webhook
-
-- `AXIOM_LIVE_ORDER_ID`
-- `AXIOM_LIVE_DOCUMENT_ID` (must exist in backend `documents` collection for that tenant)
-- Optional: `AXIOM_LIVE_WEBHOOK_SECRET` (enables signed webhook acceptance check)
-
 ### Bulk submit
 
 - `AXIOM_LIVE_BULK_ADAPTER_KEY`
 - `AXIOM_LIVE_ANALYSIS_TYPE` (`AVM`, `FRAUD`, `ANALYSIS_1033`, `QUICK_REVIEW`, `DVR`, or `ROV`)
+
+### AIM-Port inbound
+
+- `AXIOM_LIVE_BASE_URL`
+- `INTEGRATION_LIVE_AIMPORT_CLIENT_ID`
+- `INTEGRATION_LIVE_AIMPORT_API_KEY`
+- Optional:
+  - `INTEGRATION_LIVE_AIMPORT_ORDER_ID`
+  - `INTEGRATION_LIVE_AIMPORT_ADDRESS`
+  - `INTEGRATION_LIVE_AIMPORT_CITY`
+  - `INTEGRATION_LIVE_AIMPORT_STATE`
+  - `INTEGRATION_LIVE_AIMPORT_ZIP`
+  - `INTEGRATION_LIVE_AIMPORT_BORROWER`
 
 ### UI parity harness (`axiom-live-fire-ui-parity.ts`)
 
@@ -252,7 +239,7 @@ Full mode (`full`, mirrors submit-from-document journey):
   - `AXIOM_LIVE_REVIEW_INCLUDE_DOCUMENT_INVENTORY`
   - `AXIOM_LIVE_REVIEW_AUTO_RESOLVE_DERIVED_FIELDS`
   - `AXIOM_LIVE_REVIEW_AUTO_PLAN_EXTRACTION`
-  - `AXIOM_LIVE_REVIEW_ARTIFACT_DIR`
+  - `AXIOM_LIVE_REVIEW_ARTIFACT_DIR` (path must stay under the repo root or `scripts/live-fire/`)
 
 Optional poll tuning for all scripts:
 
