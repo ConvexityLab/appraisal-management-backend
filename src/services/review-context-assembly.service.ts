@@ -105,6 +105,18 @@ export class ReviewContextAssemblyService {
       ...(latestSnapshot?.normalizedData
         ? {
             canonicalData: {
+              // `canonical` is the UAD/MISMO-aligned projection — the
+              // preferred view per slice 8j and the one whose paths line
+              // up with Axiom criteria's `dataRequirements.fieldRef.path`
+              // (e.g. `subject.taxYear`). Earlier this destructure only
+              // copied subjectProperty/extraction/providerData/provenance,
+              // silently dropping canonical — the envelope assembler then
+              // had no canonical bucket to publish, so every Axiom
+              // criterion resolved to `cannot_evaluate` (surfaced by the
+              // full-pipeline live-fire on 2026-05-11).
+              ...((latestSnapshot.normalizedData as { canonical?: Record<string, unknown> }).canonical
+                ? { canonical: (latestSnapshot.normalizedData as { canonical?: Record<string, unknown> }).canonical }
+                : {}),
               ...(latestSnapshot.normalizedData.subjectProperty
                 ? { subjectProperty: latestSnapshot.normalizedData.subjectProperty }
                 : {}),
