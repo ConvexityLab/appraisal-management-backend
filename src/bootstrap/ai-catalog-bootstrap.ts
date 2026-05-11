@@ -398,6 +398,84 @@ export function bootstrapAiCatalog(): void {
 		pathParams: { orderId: { type: 'string', required: true } },
 		keywords: ['axiom', 'complexity', 'risk', 'score'],
 	});
+	registerAiRoute({
+		id: 'axiom-property-enrichment',
+		method: 'GET',
+		path: '/api/axiom/property/enrichment/:orderId',
+		summary: 'Read the latest Axiom property-enrichment payload for an order (cached comps, AVMs, market data).',
+		category: 'axiom',
+		scopes: ['document:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		pathParams: { orderId: { type: 'string', required: true } },
+		keywords: ['axiom', 'property', 'enrichment', 'comps', 'avm', 'market'],
+	});
+	registerAiRoute({
+		id: 'axiom-get-comparison',
+		method: 'GET',
+		path: '/api/axiom/comparisons/:comparisonId',
+		summary: 'Fetch a document-comparison job by id (results of axiomCompareDocuments).',
+		category: 'axiom',
+		scopes: ['document:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		pathParams: { comparisonId: { type: 'string', required: true } },
+		keywords: ['axiom', 'comparison', 'diff', 'revisions'],
+	});
+	registerAiRoute({
+		id: 'axiom-scope-run',
+		method: 'GET',
+		path: '/api/axiom/scopes/:scopeId/runs/:runId',
+		summary: 'Poll one scope-evaluation run (status, stage progress, pipelineExecutionLog).',
+		category: 'axiom',
+		scopes: ['document:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		pathParams: {
+			scopeId: { type: 'string', required: true },
+			runId: { type: 'string', required: true },
+		},
+		keywords: ['axiom', 'scope', 'run', 'progress', 'stage'],
+	});
+	registerAiRoute({
+		id: 'axiom-bulk-submission-metrics',
+		method: 'GET',
+		path: '/api/axiom/bulk-submission/metrics',
+		summary: 'Operational metrics for Axiom bulk-submission processing — throughput, success / failure counts.',
+		category: 'axiom',
+		scopes: ['audit:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'admin',
+		keywords: ['axiom', 'bulk', 'submission', 'metrics', 'ops'],
+	});
+	registerAiRoute({
+		id: 'axiom-bulk-submission-dlq',
+		method: 'GET',
+		path: '/api/axiom/bulk-submission/dlq',
+		summary: 'Dead-letter queue inspection for Axiom bulk submissions. Returns failed events with their last error.',
+		category: 'axiom',
+		scopes: ['audit:read'],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'admin',
+		keywords: ['axiom', 'dlq', 'failed', 'errors', 'bulk', 'ops'],
+	});
+	registerAiRoute({
+		id: 'axiom-status',
+		method: 'GET',
+		path: '/api/axiom/status',
+		summary: 'Axiom service health + live/mocked mode indicator. Use to verify Axiom is reachable before kicking off long runs.',
+		category: 'axiom',
+		scopes: [],
+		sideEffect: 'read',
+		audit: 'never',
+		aiExposure: 'tool',
+		keywords: ['axiom', 'status', 'health', 'live', 'mock'],
+	});
 
 	// ── decision engine / auto-assignment ──────────────────────────────
 	registerAiRoute({
