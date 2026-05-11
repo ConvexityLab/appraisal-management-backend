@@ -1,28 +1,14 @@
 import OpenAI from 'openai';
 import { AzureOpenAI } from 'openai';
-import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { AiParseResult, AiParseRequest } from '../types/ai-parser.types.js';
 import { Logger } from '../utils/logger.js';
 
 const logger = new Logger('AiParserService');
 
-const dynamicSchemaCache = new Map<string, any>();
-const dynamicJsonSchemaCache = new Map<string, any>();
-
-// ── Strict Schemas for Output ────────────────────────────────────────────────
-const aiPresentationFieldSchema = z.object({
-  label: z.string(),
-  // value accepts string|number|boolean|null because models occasionally
-  // emit a bare number for a "count" or "fee" field; coercing to string
-  // upstream would lose the type signal the UI uses to right-align.
-  value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
-  status: z.enum(['added', 'changed', 'removed', 'unchanged']),
-  // Both warning and oldValue accept the same union plus undefined; the
-  // model has been observed to omit them rather than emit null.
-  warning: z.union([z.string(), z.null()]).optional(),
-  oldValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional()
-});
+// Phase 17.5 / T2 — `aiPresentationFieldSchema` deleted with the
+// structured-output legacy path.  Function-calling lets the LLM emit
+// the presentationSchema shape inline within each synthetic-terminal
+// tool's args; validation lives at the per-intent Zod gate downstream.
 
 const INTENT_DEFINITIONS: Record<string, { description: string; payloadShape: string }> = {
   'CREATE_ENGAGEMENT': {
@@ -109,105 +95,11 @@ export class AiParserService {
       const currentPage = request.context?.currentPage || 'Unknown Context';
       const knownEnums = Array.from(new Set([...allowedIntents, 'UNKNOWN', 'INFO'])) as [string, ...string[]];
 
-      // Server-side validation Zod schema — must accept the same
-      // looser shape we ask Azure OpenAI to produce (see comment block
-      // on `dynamicJsonSchemaForAiParseResult` below).  actionPayload
-      // is a passthrough object: per-intent payload validation lives
-      // in src/validators/ai-intent-payloads.validator.ts and the
-      // matching frontend Zod, both of which fire at execute time.
-      const dynamicParseResultSchema = z.object({
-        intent: z.enum(knownEnums),
-        confidence: z.number().min(0).max(1),
-        actionPayload: z.record(z.string(), z.unknown()).nullable(),
-        presentationSchema: z.object({
-          title: z.string(),
-          summary: z.string(),
-          fields: z.array(aiPresentationFieldSchema),
-          actionButtonText: z.string()
-        }).passthrough()
-      });
-
-      // Loose JSON-schema response_format — the model is told the
-      // OUTER shape (intent / confidence / actionPayload /
-      // presentationSchema) but actionPayload + toolArgs are
-      // free-form objects.  We DELIBERATELY do NOT use `strict:true`
-      // and DO NOT lock down property whitelists on actionPayload /
-      // toolArgs because:
-      //
-      //   1. Strict mode + `additionalProperties:false` requires every
-      //      listed property to be in `required` AND forbids extras.
-      //      The previous schema whitelisted 8 toolArgs keys
-      //      (textQuery, status, state, searchTerm, entityType,
-      //      stateFilter, vendorId, orderId) and 10 actionPayload
-      //      keys.  Every new tool we add (searchEngagements,
-      //      countEngagementsByStatus, askAxiom, navigate, …) plus
-      //      every action intent's payload (CREATE_ORDER needs
-      //      engagementId / engagementPropertyId / clientOrderId /
-      //      etc.) needs keys NOT in those whitelists.  Azure OpenAI
-      //      then rejects the response and the controller emits 500
-      //      — which is what staging hit on 2026-05-10.
-      //
-      //   2. Per-tool / per-intent argument validation lives in the
-      //      Zod schemas at:
-      //        backend  src/validators/ai-intent-payloads.validator.ts
-      //        frontend src/store/api/schemas/aiSchemas.ts
-      //      Both already validate the shape of each intent's payload
-      //      before dispatch.  Layering OpenAI's response_format on
-      //      top of those was duplicative and brittle.
-      //
-      //   3. Strict mode was originally added when the registry had
-      //      6 tools and a handful of intents; the surface has since
-      //      grown to 14 tools + 10 intents.  Maintaining a flat
-      //      whitelist of every possible argument key is no longer
-      //      tractable.
-      const dynamicJsonSchemaForAiParseResult = {
-        name: "ai_parse_result",
-        schema: {
-          type: "object",
-          properties: {
-            intent: {
-              type: "string",
-              enum: knownEnums
-            },
-            confidence: { type: "number" },
-            // actionPayload is intentionally free-form.  TOOL_CALL
-            // responses set { toolName, toolArgs }; action intents
-            // set whatever the per-intent Zod schema expects (e.g.
-            // CREATE_ORDER's full engagement-linkage payload).
-            actionPayload: {
-              type: ["object", "null"],
-              additionalProperties: true,
-            },
-            presentationSchema: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-                summary: { type: "string" },
-                fields: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      label: { type: "string" },
-                      value: { type: ["string", "number", "boolean", "null"] },
-                      status: { type: "string", enum: ['added', 'changed', 'removed', 'unchanged'] },
-                      warning: { type: ["string", "null"] },
-                      oldValue: { type: ["string", "number", "boolean", "null"] }
-                    },
-                    required: ["label", "value", "status"],
-                    additionalProperties: true
-                  }
-                },
-                actionButtonText: { type: "string" }
-              },
-              required: ["title", "summary", "fields", "actionButtonText"],
-              additionalProperties: true
-            }
-          },
-          required: ["intent", "confidence", "actionPayload", "presentationSchema"],
-          additionalProperties: false
-        }
-      };
+      // Phase 17.5 / T2 (2026-05-10) — dynamicParseResultSchema +
+      // dynamicJsonSchemaForAiParseResult deleted along with the legacy
+      // structured-output branch.  Function-calling (Phase 11-B) is the
+      // only supported path.  See HISTORY in git log for the previous
+      // schema if the legacy branch is ever resurrected.
 
       let systemPrompt = `You are an expert AI parser for the L1 Valuation Platform.
 The user is currently executing an action from the context: "${currentPage}".
@@ -411,36 +303,14 @@ Reserve UNKNOWN strictly for: requests entirely unrelated to the platform ("what
         } as AiParseResult;
       }
 
-      // ── Legacy structured-output path (no tools[] supplied) ─────────
-      // Kept for backward compatibility with any caller that hasn't
-      // migrated to sending the tools array.  The FE's parse-intent
-      // mutation always sends tools post-Phase-11-B, but tests and any
-      // future automated caller may still use this path.
-      logger.info('Sending request to Azure OpenAI (structured-output legacy)', {
-        intentContext: knownEnums,
-        messageCount: messages.length,
-      });
-
-      const response = await this.openai.chat.completions.create({
-        model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini',
-        messages,
-        response_format: {
-          type: 'json_schema',
-          json_schema: dynamicJsonSchemaForAiParseResult as any
-        }
-      });
-
-      const messageContent = response.choices[0]?.message?.content;
-      if (!messageContent) {
-        throw new Error("Received empty response from OpenAI.");
-      }
-
-      const parsedJson = JSON.parse(messageContent);
-
-      // Zod validation step to guarantee structure using dynamic schema
-      const parsedResult = dynamicParseResultSchema.parse(parsedJson);
-
-      return parsedResult as AiParseResult;
+      // Phase 17.5 / T2 (2026-05-10) — the legacy structured-output
+      // path was deleted.  Post-Phase-11-B the FE always sends `tools`
+      // and no test caller exercised the legacy branch.  If a future
+      // automated caller needs the old behaviour, restore the branch
+      // and explicitly opt in via a flag — don't reintroduce silently.
+      throw new Error(
+        'parseIntent requires `tools` (function-calling mode); the legacy structured-output path was removed in Phase 17.5.',
+      );
 
     } catch (error) {
       logger.error('Failed to parse AI intent', { error, text: request.text });

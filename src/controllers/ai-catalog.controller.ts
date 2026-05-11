@@ -58,13 +58,15 @@ export function createAiCatalogRouter(): Router {
 			const exposureParam = req.query.exposure as AiCatalogExposure | undefined;
 			const categoryParam = req.query.category as AiCatalogCategory | undefined;
 
-			// Filter by exposure with the user's role in mind: non-admins
-			// never see 'admin'-tier entries.  Non-admins requesting
-			// exposure=admin get an empty list (don't 403 — the catalog
-			// is non-sensitive metadata about route existence).
-			const roleStr = Array.isArray(user.role) ? user.role[0] : user.role;
-			const isAdmin =
-				typeof roleStr === 'string' && roleStr.toLowerCase() === 'admin';
+			// Phase 17.5 / C4 (2026-05-10) — admin detection must inspect
+			// EVERY entry of an array role, not just index 0.  A user with
+			// `role: ['analyst', 'admin']` should be classified admin
+			// regardless of ordering.
+			const isAdmin = Array.isArray(user.role)
+				? user.role.some(
+						(r) => typeof r === 'string' && r.toLowerCase() === 'admin',
+					)
+				: typeof user.role === 'string' && user.role.toLowerCase() === 'admin';
 			const allowedExposures: AiCatalogExposure[] = isAdmin
 				? ['tool', 'admin']
 				: ['tool'];
