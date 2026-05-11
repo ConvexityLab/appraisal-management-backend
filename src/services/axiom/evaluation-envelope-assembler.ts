@@ -159,7 +159,14 @@ function addField(
  * when they contain objects (so `comps[0].address` becomes `comps.0.address`).
  *
  * The `prefix` is prepended to every emitted path (e.g. `canonical`).
+ * Pass `''` to emit unprefixed (used for the canonical projection because
+ * Axiom criteria reference schema-relative paths like `subject.taxYear`).
  */
+function joinPath(prefix: string, segment: string | number): string {
+  if (!prefix) return String(segment);
+  return `${prefix}.${segment}`;
+}
+
 function walkAndEmit(
   fields: Record<string, EnvelopeFieldEntry>,
   prefix: string,
@@ -177,23 +184,30 @@ function walkAndEmit(
       (item) => item == null || typeof item !== 'object',
     );
     if (allScalar) {
+      // Refuse to emit a top-level "" key when prefix is empty and the
+      // top-level value happens to be a scalar array — that case has no
+      // sane path. Skip silently; the criterion will treat the field as
+      // not-provided.
+      if (!prefix) return;
       addField(fields, prefix, value, { contributedAt });
       return;
     }
     value.forEach((item, idx) => {
-      walkAndEmit(fields, `${prefix}.${idx}`, item, contributedAt);
+      walkAndEmit(fields, joinPath(prefix, idx), item, contributedAt);
     });
     return;
   }
 
   if (typeof value === 'object') {
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      walkAndEmit(fields, `${prefix}.${key}`, child, contributedAt);
+      walkAndEmit(fields, joinPath(prefix, key), child, contributedAt);
     }
     return;
   }
 
-  // Scalar leaf
+  // Scalar leaf — top-level scalars at empty prefix are skipped for the
+  // same reason as scalar arrays above (no sane path to assign them).
+  if (!prefix) return;
   addField(fields, prefix, value, { contributedAt });
 }
 
@@ -312,16 +326,31 @@ export class EvaluationEnvelopeAssembler {
     const fields: Record<string, EnvelopeFieldEntry> = {};
 
     // ── Canonical snapshot data ─────────────────────────────────────────
-    // Each bucket of normalizedData is walked recursively; leaves are
-    // emitted as path-keyed fields under their bucket prefix. This matches
-    // the prefixes resolved by `prepared-dispatch-payload-assembly`,
-    // which is how criteria binding paths are addressed elsewhere in
-    // the platform (single source of truth for path conventions).
+    // Axiom criteria reference fields by *schema-relative* paths
+    // (e.g. `subject.taxYear`, `subject.propertyAddress.street`), not by
+    // the internal review-context bucket prefixes. So we publish the
+    // canonical projection UNPREFIXED — that's the bucket whose shape is
+    // schema-aligned (UAD / MISMO / URAR).
+    //
+    // The other buckets are kept under their bucket prefix:
+    //   - extraction.*       — raw Axiom output, schema may differ
+    //   - subjectProperty.*  — deprecated pre-mapper shim
+    //   - providerData.*     — raw third-party blob
+    //   - provenance.*       — provenance metadata
+    // These remain available for criteria authors that explicitly opt into
+    // a non-canonical source, but they don't satisfy the default
+    // `subject.X` path-style lookups.
+    //
+    // (Earlier this assembler emitted everything under bucket prefixes —
+    // including canonical. That sent the envelope to Axiom with paths like
+    // `canonical.subject.taxYear`, while criteria looked up `subject.taxYear`
+    // and reported `dataConsulted.fields: {}` → cannot_evaluate. Surfaced
+    // by the full-pipeline live-fire on 2026-05-11.)
     if (context.canonicalData) {
       const cd = context.canonicalData;
-      if (cd.canonical) walkAndEmit(fields, 'canonical', cd.canonical, contributedAt);
-      if (cd.subjectProperty) walkAndEmit(fields, 'subjectProperty', cd.subjectProperty, contributedAt);
+      if (cd.canonical) walkAndEmit(fields, '', cd.canonical, contributedAt);
       if (cd.extraction) walkAndEmit(fields, 'extraction', cd.extraction, contributedAt);
+      if (cd.subjectProperty) walkAndEmit(fields, 'subjectProperty', cd.subjectProperty, contributedAt);
       if (cd.providerData) walkAndEmit(fields, 'providerData', cd.providerData, contributedAt);
       if (cd.provenance) walkAndEmit(fields, 'provenance', cd.provenance, contributedAt);
     }
