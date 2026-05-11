@@ -58,6 +58,7 @@ import {
   AxiomWebhookValidationError,
   parseAxiomWebhook,
 } from '../integrations/axiom/inbound.adapter.js';
+import { AiAutopilotWebhookDispatcher } from '../services/ai-autopilot-webhook-dispatcher.service.js';
 
 const BULK_INGESTION_AXIOM_CORRELATION_PREFIX = 'bulk-ingestion--';
 
@@ -77,6 +78,7 @@ export class AxiomController {
   private readonly analysisSubmissionService: AnalysisSubmissionService;
   private readonly contextLoader: OrderContextLoader;
   private readonly auditService: AuditTrailService;
+  private readonly autopilotWebhookDispatcher: AiAutopilotWebhookDispatcher;
   private readonly logger = new Logger('AxiomController');
 
   private createHeaderOrGeneratedValue(req: UnifiedAuthRequest, headerName: string, prefix: string): string {
@@ -386,6 +388,7 @@ export class AxiomController {
     this.analysisSubmissionService = new AnalysisSubmissionService(dbService, this.axiomService);
     this.contextLoader = new OrderContextLoader(dbService);
     this.auditService = new AuditTrailService(dbService);
+    this.autopilotWebhookDispatcher = new AiAutopilotWebhookDispatcher(dbService);
   }
 
   /**
@@ -2322,6 +2325,27 @@ export class AxiomController {
     try {
       await this.bulkPortfolioService.processExtractionCompletion(payload);
       res.status(200).json({ success: true, message: 'Extraction webhook processed' });
+      // Phase 14 v2 follow-up — fan out to every active autopilot recipe
+      // whose `trigger.webhookSource === 'axiom-extraction'` for the
+      // owning tenant.  Resolve tenant from the job row; if absent, skip
+      // (the primary webhook flow already responded 200, so missing-tenant
+      // is a soft-fail that goes to logs only).
+      try {
+        const tenantId = await this.resolveTenantForBulkJob(payload.jobId);
+        if (tenantId) {
+          await this.autopilotWebhookDispatcher.fire({
+            source: 'axiom-extraction',
+            tenantId,
+            sourceEventId: payload.evaluationId,
+          });
+        }
+      } catch (fanoutErr) {
+        this.logger.warn('Autopilot webhook fan-out failed for extraction event', {
+          evaluationId: payload.evaluationId,
+          jobId: payload.jobId,
+          error: fanoutErr instanceof Error ? fanoutErr.message : String(fanoutErr),
+        });
+      }
     } catch (error) {
       this.logger.error('Failed to process extraction webhook', {
         evaluationId: payload.evaluationId,
@@ -2330,6 +2354,31 @@ export class AxiomController {
         error: error instanceof Error ? error.message : String(error),
       });
       res.status(500).json({ success: false, error: 'Extraction webhook processing failed' });
+    }
+  };
+
+  /**
+   * Resolve the tenant id for a bulk-portfolio job — used by the
+   * autopilot webhook fan-out so we never trust the webhook payload to
+   * declare tenancy.  Returns null on lookup failure.
+   */
+  private resolveTenantForBulkJob = async (jobId: string): Promise<string | null> => {
+    try {
+      const container = this.dbService.getContainer('bulk-portfolio-jobs');
+      const { resources } = await container.items
+        .query<{ tenantId?: string }>({
+          query: 'SELECT TOP 1 c.tenantId FROM c WHERE c.id = @id',
+          parameters: [{ name: '@id', value: jobId }],
+        })
+        .fetchAll();
+      const t = resources[0]?.tenantId;
+      return typeof t === 'string' && t.length > 0 ? t : null;
+    } catch (err) {
+      this.logger.warn('Failed to resolve tenant for bulk job', {
+        jobId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
     }
   };
 

@@ -124,7 +124,10 @@ export class AiAutopilotSweepJob {
 	 */
 	private async isAutopilotEnabledForTenant(tenantId: string): Promise<boolean> {
 		try {
-			const result = await this.flags.fetchForUser(tenantId, '');
+			// `_system` placeholder — fetchForUser requires non-empty
+			// userId, but the tenant-doc lookup (`c.id = @tenantId`)
+			// doesn't care about the userId value.
+			const result = await this.flags.fetchForUser(tenantId, '_system');
 			if (result.success && result.data?.tenant?.autopilot?.enabled !== undefined) {
 				return Boolean(result.data.tenant.autopilot.enabled);
 			}

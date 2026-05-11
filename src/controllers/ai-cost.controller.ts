@@ -78,7 +78,9 @@ export function createAiCostRouter(cosmos: CosmosDbService): Router {
 			// — if Cosmos is unreachable we fall back to env values.
 			let tenantBudget: { hardLimitUsd?: number; warnThresholdUsd?: number; periodDays?: number } | undefined;
 			try {
-				const flags = await flagsService.fetchForUser(user.tenantId, user.id ?? '');
+				// fetchForUser requires non-empty userId for the per-user
+				// override lookup; the tenant-doc lookup doesn't care.
+				const flags = await flagsService.fetchForUser(user.tenantId, user.id || '_system');
 				if (flags.success && flags.data?.tenant?.costBudget) {
 					tenantBudget = flags.data.tenant.costBudget;
 				}
