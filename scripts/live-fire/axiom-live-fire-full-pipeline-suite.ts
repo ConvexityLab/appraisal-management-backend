@@ -375,9 +375,16 @@ async function main(): Promise<void> {
 
   // ── Step 1 — kick off extraction ───────────────────────────────────────
   logSection('Step 1 — POST /api/runs/extraction');
-  const schemaClientId = optionalEnv('AXIOM_LIVE_SCHEMA_CLIENT_ID') ?? requiredEnv('AXIOM_LIVE_CLIENT_ID');
-  const schemaSubClientId = optionalEnv('AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID') ?? 'default-sub-client';
-  const schemaDocumentType = optionalEnv('AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE') ?? 'APPRAISAL';
+  // Defaults match Axiom's `document-types` registry seed on staging
+  // (see axiom/seed-data/document-types/*-registry.json — every entry uses
+  // clientId=test-client / subClientId=test-tenant / kebab-case documentType).
+  // Sending the platform-side clientId here would fail with
+  // [missing-document-types] because Axiom's registry does NOT key on the
+  // platform's customer ids — it keys on its own seeded test-client /
+  // test-tenant pair until real per-tenant registries are stood up.
+  const schemaClientId = optionalEnv('AXIOM_LIVE_SCHEMA_CLIENT_ID') ?? 'test-client';
+  const schemaSubClientId = optionalEnv('AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID') ?? 'test-tenant';
+  const schemaDocumentType = optionalEnv('AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE') ?? 'uniform-residential-appraisal-report';
   const schemaVersion = optionalEnv('AXIOM_LIVE_SCHEMA_VERSION') ?? '1.0.0';
 
   const createRes = await postJson<RunEnvelope>(

@@ -230,9 +230,13 @@ async function runExtractionMode(
   intervalMs: number,
 ): Promise<RunLedgerRecord> {
   const documentId = requiredEnv('AXIOM_LIVE_DOCUMENT_ID');
-  const schemaClientId = optionalEnv('AXIOM_LIVE_SCHEMA_CLIENT_ID') ?? requiredEnv('AXIOM_LIVE_CLIENT_ID');
-  const schemaSubClientId = optionalEnv('AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID') ?? 'default-sub-client';
-  const schemaDocumentType = optionalEnv('AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE') ?? optionalEnv('AXIOM_LIVE_DOCUMENT_TYPE') ?? 'APPRAISAL';
+  // Defaults match Axiom's `document-types` registry seed
+  // (axiom/seed-data/document-types/*-registry.json all use test-client /
+  // test-tenant + kebab-case documentType slugs). Platform clientId does
+  // NOT work as a default — Axiom's registry keys on its own seeded ids.
+  const schemaClientId = optionalEnv('AXIOM_LIVE_SCHEMA_CLIENT_ID') ?? 'test-client';
+  const schemaSubClientId = optionalEnv('AXIOM_LIVE_SCHEMA_SUB_CLIENT_ID') ?? 'test-tenant';
+  const schemaDocumentType = optionalEnv('AXIOM_LIVE_SCHEMA_DOCUMENT_TYPE') ?? optionalEnv('AXIOM_LIVE_DOCUMENT_TYPE') ?? 'uniform-residential-appraisal-report';
   const schemaVersion = optionalEnv('AXIOM_LIVE_SCHEMA_VERSION') ?? '1.0.0';
   const runReason = optionalEnv('AXIOM_LIVE_RUN_REASON') ?? 'LIVE_FIRE_EXTRACTION_ONLY';
   const engagementId = optionalEnv('AXIOM_LIVE_ENGAGEMENT_ID');
