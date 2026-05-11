@@ -317,10 +317,100 @@ Reserve UNKNOWN strictly for: requests entirely unrelated to the platform ("what
         }
       ] as any[];
 
-      logger.info('Sending request to Azure OpenAI', {
+      // Phase 11-B (2026-05-10): function-calling path when the FE
+      // supplies a `tools` array.  The model picks one of the supplied
+      // tools (a real tool like `searchEngagements` OR a synthetic
+      // "terminal" tool like `present_info_response` / `request_action`)
+      // and emits a structured `tool_calls[]` with per-tool-validated
+      // args.  We then convert that back into the AiParseResult shape
+      // the FE expects so the FE useAiToolLoop hook is unchanged.
+      const wantsFunctionCalling = Array.isArray(request.tools) && request.tools.length > 0;
+
+      if (wantsFunctionCalling) {
+        logger.info('Sending request to Azure OpenAI (function-calling)', {
+          intentContext: knownEnums,
+          toolCount: request.tools!.length,
+          messageCount: messages.length,
+        });
+
+        const fcResponse = await this.openai.chat.completions.create({
+          model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini',
+          messages,
+          tools: request.tools as any,
+          tool_choice: 'auto',
+        });
+
+        const msg = fcResponse.choices[0]?.message;
+        if (!msg) throw new Error('Received empty response from OpenAI.');
+
+        // The model chose a tool — adapt the tool_call shape to the
+        // AiParseResult envelope.
+        const toolCalls = (msg as any).tool_calls as
+          | Array<{ function: { name: string; arguments: string } }>
+          | undefined;
+        if (toolCalls && toolCalls.length > 0) {
+          const call = toolCalls[0]!;
+          const toolName = call.function.name;
+          let parsedArgs: unknown = {};
+          try {
+            parsedArgs = JSON.parse(call.function.arguments || '{}');
+          } catch {
+            parsedArgs = {};
+          }
+
+          // Synthetic intent tools — name follows convention
+          // `present_<intent>_response` for INFO/UNKNOWN/NAVIGATE
+          // terminals and `request_<INTENT>` for action intents.
+          // Anything else is a real tool → emit TOOL_CALL.
+          const synth = parseSyntheticToolName(toolName);
+          if (synth) {
+            return {
+              intent: synth.intent,
+              confidence: 0.9,
+              actionPayload: synth.intent === 'NAVIGATE_TO_ENTITY' || synth.intent.startsWith('CREATE_') || synth.intent.startsWith('ASSIGN_') || synth.intent.startsWith('TRIGGER_') || synth.intent.startsWith('SEND_') || synth.intent === 'UPDATE_FEE_SPLIT' || synth.intent === 'RECORD_PAYMENT' || synth.intent === 'BATCH_PROCESS'
+                ? parsedArgs
+                : null,
+              presentationSchema: extractPresentation(parsedArgs, synth.intent),
+            } as AiParseResult;
+          }
+
+          // Real tool call.
+          return {
+            intent: 'TOOL_CALL',
+            confidence: 0.95,
+            actionPayload: { toolName, toolArgs: parsedArgs },
+            presentationSchema: {
+              title: `Calling ${toolName}`,
+              summary: `Retrieving data via ${toolName}…`,
+              fields: [],
+              actionButtonText: 'Continue',
+            },
+          } as AiParseResult;
+        }
+
+        // No tool call → use the message content as INFO.
+        const textOnly = (msg as any).content as string | undefined;
+        return {
+          intent: 'INFO',
+          confidence: 0.7,
+          actionPayload: null,
+          presentationSchema: {
+            title: 'Response',
+            summary: textOnly ?? '(empty response)',
+            fields: [],
+            actionButtonText: 'OK',
+          },
+        } as AiParseResult;
+      }
+
+      // ── Legacy structured-output path (no tools[] supplied) ─────────
+      // Kept for backward compatibility with any caller that hasn't
+      // migrated to sending the tools array.  The FE's parse-intent
+      // mutation always sends tools post-Phase-11-B, but tests and any
+      // future automated caller may still use this path.
+      logger.info('Sending request to Azure OpenAI (structured-output legacy)', {
         intentContext: knownEnums,
         messageCount: messages.length,
-        messages: JSON.stringify(messages, null, 2)
       });
 
       const response = await this.openai.chat.completions.create({
@@ -337,10 +427,6 @@ Reserve UNKNOWN strictly for: requests entirely unrelated to the platform ("what
         throw new Error("Received empty response from OpenAI.");
       }
 
-      logger.info('Received response from Azure OpenAI', {
-        content: messageContent
-      });
-
       const parsedJson = JSON.parse(messageContent);
 
       // Zod validation step to guarantee structure using dynamic schema
@@ -353,4 +439,72 @@ Reserve UNKNOWN strictly for: requests entirely unrelated to the platform ("what
       throw new Error(`Failed to process AI Intent: ${error instanceof Error ? error.message : 'Unknown Error'}`);
     }
   }
+}
+
+// ── Phase 11-B helpers — function-calling response adaptation ────────────
+//
+// The FE serializes its AiToolRegistry plus a small set of "synthetic"
+// intent tools as the `tools` array.  When the LLM picks one, we map
+// the tool name back to either:
+//   - TOOL_CALL (with toolName + toolArgs) for real tools
+//   - The named intent (INFO / UNKNOWN / NAVIGATE / CREATE_ORDER / …)
+//     for synthetic terminal tools
+
+const SYNTHETIC_TOOL_PREFIXES: Record<string, string> = {
+	present_info_response: 'INFO',
+	present_unknown_response: 'UNKNOWN',
+	request_navigate: 'NAVIGATE_TO_ENTITY',
+	request_create_order: 'CREATE_ORDER',
+	request_create_engagement: 'CREATE_ENGAGEMENT',
+	request_assign_vendor: 'ASSIGN_VENDOR',
+	request_trigger_auto_assignment: 'TRIGGER_AUTO_ASSIGNMENT',
+	request_update_fee_split: 'UPDATE_FEE_SPLIT',
+	request_record_payment: 'RECORD_PAYMENT',
+	request_batch_process: 'BATCH_PROCESS',
+	request_send_email: 'SEND_EMAIL',
+	request_send_sms: 'SEND_SMS',
+	request_send_teams_message: 'SEND_TEAMS_MESSAGE',
+};
+
+function parseSyntheticToolName(name: string): { intent: string } | null {
+	const intent = SYNTHETIC_TOOL_PREFIXES[name];
+	return intent ? { intent } : null;
+}
+
+interface PresentationCarrier {
+	title?: string;
+	summary?: string;
+	fields?: Array<{ label: string; value: unknown; status?: string; warning?: string | null; oldValue?: unknown }>;
+	actionButtonText?: string;
+}
+
+/**
+ * Pull a presentationSchema out of a synthetic tool's argument blob.
+ * The synthetic tools all expose the schema fields at the top level OR
+ * nested under `presentation` — accept both, fall back to a minimal
+ * schema if neither shape is present.
+ */
+function extractPresentation(args: unknown, intent: string): {
+	title: string;
+	summary: string;
+	fields: Array<{ label: string; value: string | number | boolean | null; status: 'added' | 'changed' | 'removed' | 'unchanged'; warning?: string | null; oldValue?: string | number | boolean | null }>;
+	actionButtonText: string;
+} {
+	const carrier = (args as { presentation?: PresentationCarrier } & PresentationCarrier) ?? {};
+	const src = (carrier.presentation ?? carrier) as PresentationCarrier;
+	const fields = Array.isArray(src.fields)
+		? src.fields.map((f) => ({
+				label: String(f.label ?? ''),
+				value: f.value as string | number | boolean | null,
+				status: (f.status ?? 'unchanged') as 'added' | 'changed' | 'removed' | 'unchanged',
+				...(f.warning !== undefined ? { warning: f.warning } : {}),
+				...(f.oldValue !== undefined ? { oldValue: f.oldValue as string | number | boolean | null } : {}),
+			}))
+		: [];
+	return {
+		title: src.title ?? intent,
+		summary: src.summary ?? '',
+		fields,
+		actionButtonText: src.actionButtonText ?? 'OK',
+	};
 }

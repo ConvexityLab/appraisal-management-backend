@@ -28,8 +28,35 @@ export interface AiPresentationField {
   warning?: string;            // E.g., "Client 'Bank X' mapped to ID 1092"
 }
 
+/**
+ * Function-calling tool descriptor — the OpenAI-compatible shape the
+ * FE serializes its AiToolRegistry into and sends in the parse-intent
+ * request body.  Phase 11-B (2026-05-10) of AI-UNIVERSAL-SURFACE-PLAN.md.
+ *
+ * When `tools` is present and non-empty in an AiParseRequest, the
+ * backend takes the function-calling code path (tools + tool_choice)
+ * instead of the legacy structured-output (response_format) path.
+ * Empty / missing `tools` keeps the legacy behaviour, so legacy clients
+ * that haven't been updated yet keep working.
+ */
+export interface AiParseRequestTool {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
+
 export interface AiParseRequest {
   text: string;
   context?: Record<string, any>; // Optional context (e.g. current order ID, current user ID)
   history?: Array<{ role: 'user' | 'assistant' | 'system', content: string }>;
+  /**
+   * Function-calling tool descriptors.  Optional — when present the
+   * backend uses Azure OpenAI's tools API instead of structured-output
+   * JSON Schema, getting per-tool argument validation natively.
+   * Phase 11-B (2026-05-10).
+   */
+  tools?: AiParseRequestTool[];
 }
