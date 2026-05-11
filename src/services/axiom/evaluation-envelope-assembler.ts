@@ -307,11 +307,23 @@ export class EvaluationEnvelopeAssembler {
       version: 1,
     };
 
+    const fieldKeys = Object.keys(fields);
     this.logger.info('Envelope assembled', {
       scopeId,
-      fieldCount: Object.keys(fields).length,
+      fieldCount: fieldKeys.length,
       sourceCount: Object.keys(sources).length,
       hasCanonicalSnapshot: Boolean(context.canonicalData),
+      canonicalDataKeys: context.canonicalData
+        ? Object.keys(context.canonicalData)
+        : [],
+      hasCanonicalBucket: Boolean(context.canonicalData?.canonical),
+      canonicalSubjectKeys: context.canonicalData?.canonical && typeof context.canonicalData.canonical === 'object'
+        ? Object.keys((context.canonicalData.canonical as Record<string, unknown>).subject as Record<string, unknown> ?? {})
+        : [],
+      // Sample first 10 envelope field paths so we can see exactly what
+      // shape we sent to Axiom — without this, "fieldCount=N" tells us
+      // nothing about which keys actually made it through.
+      sampleFieldKeys: fieldKeys.slice(0, 10),
     });
 
     return envelope;
