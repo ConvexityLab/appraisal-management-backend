@@ -235,6 +235,9 @@ import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
 import { VendorOutboxWorkerService } from '../services/vendor-integrations/VendorOutboxWorkerService.js';
+import { VendorOutboundDispatcher } from '../services/vendor-integrations/VendorOutboundDispatcher.js';
+import { VendorOutboundOutboxService } from '../services/vendor-integrations/VendorOutboundOutboxService.js';
+import { VendorOutboundWorkerService } from '../services/vendor-integrations/VendorOutboundWorkerService.js';
 import { PropertyOutboxWorkerService } from '../services/property-outbox-worker.service.js';
 import { AxiomMissedTriggerJob } from '../jobs/axiom-missed-trigger.job';
 import { EngagementLetterAutoSendService } from '../services/engagement-letter-autosend.service';
@@ -341,6 +344,7 @@ import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
 import { createAiAuditRouter } from '../controllers/ai-audit.controller.js';
 import { createAiCatalogRouter } from '../controllers/ai-catalog.controller.js';
 import { bootstrapAiCatalog } from '../bootstrap/ai-catalog-bootstrap.js';
+import { createAiRateLimitMiddleware } from '../middleware/ai-rate-limit.middleware.js';
 import { createAiConversationRouter } from '../controllers/ai-conversation.controller.js';
 import { createAiFlagsRouter } from '../controllers/ai-flags.controller.js';
 import { createAiTelemetryRouter } from '../controllers/ai-telemetry.controller.js';
@@ -388,6 +392,7 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionCriteriaWorkerService?: BulkIngestionCriteriaWorkerService;
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
   private vendorOutboxWorkerService?: VendorOutboxWorkerService;
+  private vendorOutboundWorkerService?: VendorOutboundWorkerService;
   private propertyOutboxWorkerService?: PropertyOutboxWorkerService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
@@ -829,7 +834,12 @@ export class AppraisalManagementAPIServer {
       // External vendor integrations (AIM-Port, future webhook/direct-call partners)
       // Intentionally unauthenticated at the app layer — authentication is performed
       // inside the vendor integration framework using vendor-specific credentials.
-      this.app.use('/api/v1/integrations', createVendorIntegrationRouter());
+      // Passes a lazy ref to the auto-assignment orchestrator so the matching engine
+      // is triggered immediately after each inbound order is created.
+      this.app.use('/api/v1/integrations', createVendorIntegrationRouter(
+        undefined,
+        () => this.autoAssignmentOrchestrator,
+      ));
 
       this.app.use('/api/portal',
         this.unifiedAuth.authenticate(),
@@ -1191,16 +1201,23 @@ export class AppraisalManagementAPIServer {
     // baseline until that migration completes.
     bootstrapAiCatalog();
 
+    // Phase 17.6 / BE rate-limit middleware (2026-05-11).  Applied to
+    // every AI route via family-keyed buckets.  Backend remains the
+    // authoritative gate; the FE has its own friendly-first-stop
+    // limiter at src/utils/aiRateLimit.ts.
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
+      createAiRateLimitMiddleware('native'),
       createAiExecuteRouter({ dbService: this.dbService }),
     );
     this.app.use('/api/agent',
       this.unifiedAuth.authenticate(),
+      createAiRateLimitMiddleware('axiom'),
       createVendorBidAnalysisRouter(this.dbService),
     );
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
+      createAiRateLimitMiddleware('native'),
       createAiParsingRouter()
     );
 
@@ -5090,10 +5107,21 @@ export class AppraisalManagementAPIServer {
       if (!process.env.AZURE_STORAGE_ACCOUNT_NAME) axiomWarnings.push('AZURE_STORAGE_ACCOUNT_NAME not set — Axiom extraction trigger input will be incomplete');
       for (const w of axiomWarnings) this.logger.warn(`[Axiom Config] ${w}`);
 
+      // Validate MOP/Prio pricing-engine configuration
+      if (!process.env.MOP_PRIO_API_BASE_URL) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            'MOP_PRIO_API_BASE_URL must be configured in production — ' +
+            'set the environment variable to the MOP/Prio pricing engine base URL before starting.',
+          );
+        }
+        this.logger.warn('[MOP/Prio Config] MOP_PRIO_API_BASE_URL not set — MOP/Prio pricing legs will be skipped in non-production environments');
+      }
+
       // Initialize database connection
       await this.initializeDatabase();
-      // Start background jobs
-      this.startBackgroundJobs();
+      // Start background jobs — throws in production if any critical service fails
+      await this.startBackgroundJobs();
       
       this.app.listen(this.port, () => {
         this.logger.info(`Appraisal Management API Server running on port ${this.port}`);
@@ -5109,9 +5137,12 @@ export class AppraisalManagementAPIServer {
   }
 
   /**
-   * Start background jobs
+   * Start background jobs.
+   * Critical services (AxiomAutoTriggerService, QCLifecycleHandler,
+   * CriteriaReevaluationHandlerService) throw in production on failure so the
+   * process exits rather than silently serving traffic in a broken state.
    */
-  private startBackgroundJobs(): void {
+  private async startBackgroundJobs(): Promise<void> {
     // Start vendor timeout checker (Phase 4.2) - pass dbService
     this.vendorTimeoutJob = new VendorTimeoutCheckerJob(this.dbService);
     this.vendorTimeoutJob.start();
@@ -5220,21 +5251,26 @@ export class AppraisalManagementAPIServer {
     }
 
     // Q-01 / Q-03 / Q-04: QC lifecycle auto-transitions
+    // CRITICAL: hard-gate in production — QC state machine won't advance without this.
     try {
       this.qcLifecycleHandler = new QCLifecycleHandler(this.dbService);
-      this.qcLifecycleHandler.start().catch(err => {
-        this.logger.warn('QCLifecycleHandler failed to start', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
+      await this.qcLifecycleHandler.start();
     } catch (err) {
-      this.logger.warn('QCLifecycleHandler could not be created', {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`QCLifecycleHandler failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.logger.warn('QCLifecycleHandler failed to start — QC auto-transitions will be unavailable', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
 
     try {
-      this.vendorIntegrationEventConsumerService = new VendorIntegrationEventConsumerService(this.dbService);
+      this.vendorIntegrationEventConsumerService = new VendorIntegrationEventConsumerService(
+        this.dbService,
+        undefined,
+        undefined,
+        new VendorOutboundOutboxService(this.dbService),
+      );
       this.vendorIntegrationEventConsumerService.start().catch(err => {
         this.logger.warn('VendorIntegrationEventConsumerService failed to start', {
           error: err instanceof Error ? err.message : String(err),
@@ -5247,16 +5283,16 @@ export class AppraisalManagementAPIServer {
     }
 
     // Start Axiom Auto-Trigger Service (listens for order.status.changed and fires Axiom evaluations)
+    // CRITICAL: hard-gate in production — if this doesn't start, new orders won't get Axiom evaluations.
     try {
       this.axiomAutoTriggerService = new AxiomAutoTriggerService(this.dbService);
-      this.axiomAutoTriggerService.start().catch(err => {
-        this.logger.warn('AxiomAutoTriggerService failed to start', {
-          error: err instanceof Error ? err.message : String(err)
-        });
-      });
+      await this.axiomAutoTriggerService.start();
     } catch (err) {
-      this.logger.warn('AxiomAutoTriggerService could not be created', {
-        error: err instanceof Error ? err.message : String(err)
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`AxiomAutoTriggerService failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.logger.warn('AxiomAutoTriggerService failed to start — Axiom auto-trigger will be unavailable', {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -5458,6 +5494,20 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Vendor Outbound Worker Service (delivers outbound vendor HTTP calls from durable outbox)
+    try {
+      this.vendorOutboundWorkerService = new VendorOutboundWorkerService(this.dbService);
+      this.vendorOutboundWorkerService.start().catch(err => {
+        this.logger.warn('VendorOutboundWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('VendorOutboundWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Start Property Outbox Worker Service (publishes property-domain notifications from durable outbox)
     try {
       this.propertyOutboxWorkerService = new PropertyOutboxWorkerService(this.dbService);
@@ -5590,16 +5640,16 @@ export class AppraisalManagementAPIServer {
 
     // Start Criteria Reevaluation Handler — turns field-correction cascade requests
     // into criteria-only reruns and per-criterion reevaluation audit events.
+    // CRITICAL: hard-gate in production — field corrections won't retrigger QC without this.
     try {
       this.criteriaReevaluationHandlerService = new CriteriaReevaluationHandlerService(this.dbService);
-      this.criteriaReevaluationHandlerService.start().catch(err => {
-        this.logger.warn('CriteriaReevaluationHandlerService failed to start', {
-          error: err instanceof Error ? err.message : String(err)
-        });
-      });
+      await this.criteriaReevaluationHandlerService.start();
     } catch (err) {
-      this.logger.warn('CriteriaReevaluationHandlerService could not be created', {
-        error: err instanceof Error ? err.message : String(err)
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`CriteriaReevaluationHandlerService failed to start: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.logger.warn('CriteriaReevaluationHandlerService failed to start — cascade reevaluation will be unavailable', {
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -5705,6 +5755,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.vendorOutboxWorkerService) {
       this.vendorOutboxWorkerService.stop().catch(() => {});
+    }
+    if (this.vendorOutboundWorkerService) {
+      this.vendorOutboundWorkerService.stop().catch(() => {});
     }
     if (this.propertyOutboxWorkerService) {
       this.propertyOutboxWorkerService.stop().catch(() => {});

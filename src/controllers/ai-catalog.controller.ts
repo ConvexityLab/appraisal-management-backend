@@ -30,6 +30,7 @@ import {
 	type AiCatalogCategory,
 	type AiCatalogExposure,
 } from '../utils/ai-catalog-registry.js';
+import { userHasAllScopes } from '../utils/ai-scopes.js';
 
 const logger = new Logger('AiCatalogController');
 
@@ -87,7 +88,17 @@ export function createAiCatalogRouter(): Router {
 
 			const opts: Parameters<typeof getAiCatalog>[0] = { exposure: exposureFilter };
 			if (categoryParam) opts.category = categoryParam;
-			const list = getAiCatalog(opts);
+			const rawList = getAiCatalog(opts);
+
+			// Phase 17.6 / C6 (2026-05-11) — scope-filter the response.
+			// Previously the catalog returned every 'tool'-exposure entry
+			// regardless of whether the caller could call it.  That
+			// leaked the AI surface to low-privilege users for enumeration.
+			// Now we only return entries whose scopes the caller's role
+			// mapping covers.  Admins still see admin-tier entries (above).
+			const list = rawList.filter((entry) =>
+				userHasAllScopes(user, entry.scopes ?? []),
+			);
 
 			logger.info('AI catalog query', {
 				tenantId: user.tenantId,
@@ -96,6 +107,7 @@ export function createAiCatalogRouter(): Router {
 				exposureFilter,
 				category: categoryParam,
 				resultCount: list.length,
+				filteredOutCount: rawList.length - list.length,
 			});
 
 			return res.json({
