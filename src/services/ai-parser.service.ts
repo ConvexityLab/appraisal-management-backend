@@ -253,6 +253,11 @@ UNIVERSAL-SURFACE META-TOOLS (use these for ANY question the curated tools above
 - getProgramCriteria: Fetch compiled criteria nodes for a review-program version. Args: { "toolName": "getProgramCriteria", "toolArgs": { "programId": string, "programVersion": string } }
 - navigate: Navigate the user to a page. Args: { "toolName": "navigate", "toolArgs": { "routeKey": "ORDER"|"VENDOR"|"ENGAGEMENT"|"ORDERS_DASHBOARD"|"VENDORS_DIRECTORY"|"BILLING"|"ENGAGEMENTS", "entityId"?: string } }
 
+COMPOSITE INTENTS (declarative multi-tool recipes — use when one of these matches the user's question; one call gets you the full chain of evidence):
+- listComposites: List the available composite recipes (id + summary + required inputs). Call this when the user asks a question that smells multi-step (readiness checks, "why didn't X happen?", cross-domain joins). Args: { "toolName": "listComposites", "toolArgs": {} }
+- runComposite: Execute one composite recipe by id. Returns the per-step outputs + a synthesizer instruction telling YOU how to render the result to the user on the next turn. Args: { "toolName": "runComposite", "toolArgs": { "recipeId": string, "params": object } }
+  Available recipes (today): order-readiness (inputs: orderId), why-not-vendor (inputs: orderId, vendorId), criteria-rule-history (inputs: scopeId, criterionId).
+
 MOP / VENDOR-MATCHING TOOLS (use these for "why didn't vendor X get this order?" / "which vendors match this order?" questions):
 - evaluateVendorMatching: Runs MOP's RETE rules engine against an order to produce ranked vendor matches + per-vendor denyReasons[]. Use for any vendor-eligibility question. Args: { "toolName": "evaluateVendorMatching", "toolArgs": { "propertyAddress": string, "propertyType": string, "orderId"?: string, "dueDate"?: string, "urgency"?: "STANDARD"|"RUSH"|"SUPER_RUSH", "budget"?: number, "topN"?: number, "requiredCapabilities"?: string[] } }
 
