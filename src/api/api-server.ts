@@ -1594,7 +1594,7 @@ export class AppraisalManagementAPIServer {
       // — until then the controller surfaces 501 for those endpoints and
       // the FE renders an empty state explaining the upstream evaluator is
       // pending.
-      registry.register(buildReviewProgramCategory());
+      registry.register(buildReviewProgramCategory({ db: this.dbService }));
       registry.register(buildFiringRulesCategory({ db: this.dbService }));
       registry.register(buildAxiomCriteriaCategory());
 
