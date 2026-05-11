@@ -58,7 +58,8 @@ export function buildReviewProgramCategory(opts: { db?: CosmosDbService } = {}):
 			const windowDates = buildWindowDates(days);
 			const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-			const decisions = await reader.listSince(input.tenantId, sinceIso);
+			// Phase K — include both bulk-portfolio rows AND order-created rows.
+			const decisions = await reader.listSinceIncludingOrderResults(input.tenantId, sinceIso);
 
 			let totalEvaluations = 0;
 			const outcomeCounts: Record<string, number> = {};

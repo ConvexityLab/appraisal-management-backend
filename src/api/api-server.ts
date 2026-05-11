@@ -246,6 +246,7 @@ import { UcdpEadAutoSubmitService } from '../services/ucdp-ead-auto-submit.servi
 import { MismoAutoGenerateService } from '../services/mismo-auto-generate.service.js';
 import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
 import { FiringRulesEvaluatorJob } from '../jobs/firing-rules-evaluator.job.js';
+import { ReviewProgramOrchestrator } from '../services/decision-engine/review-program/review-program-orchestrator.service.js';
 import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
 // Import Audit Event Sink + Engagement Audit Controller
@@ -342,6 +343,7 @@ import {
 import { createAiExecuteRouter } from '../controllers/ai-execute.controller.js';
 import { createAiParsingRouter } from '../controllers/ai-parsing.controller.js';
 import { createAiAuditRouter } from '../controllers/ai-audit.controller.js';
+import { createAiCostRouter } from '../controllers/ai-cost.controller.js';
 import { createAiCatalogRouter } from '../controllers/ai-catalog.controller.js';
 import { bootstrapAiCatalog } from '../bootstrap/ai-catalog-bootstrap.js';
 import { createAiRateLimitMiddleware } from '../middleware/ai-rate-limit.middleware.js';
@@ -1218,7 +1220,14 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/ai',
       this.unifiedAuth.authenticate(),
       createAiRateLimitMiddleware('native'),
-      createAiParsingRouter()
+      createAiParsingRouter(this.dbService)
+    );
+    // Phase 17b token-meter: per-tenant spend snapshot endpoint.  Mounted
+    // separately from ai-audit since the read pattern is "sum across
+    // rows" rather than "list rows."
+    this.app.use('/api/ai/cost',
+      this.unifiedAuth.authenticate(),
+      createAiCostRouter(this.dbService),
     );
 
     // AI Assistant — subsystem endpoints backing the frontend under
@@ -5607,6 +5616,25 @@ export class AppraisalManagementAPIServer {
           error: err instanceof Error ? err.message : String(err)
         });
       }
+    }
+
+    // ReviewProgramOrchestrator — Phase K of DECISION_ENGINE_RULES_SURFACE.md.
+    // Subscribes to engagement.order.created and runs review-program eval
+    // for any tenant that flipped reviewProgramOnOrderCreated=true in its
+    // ClientAutomationConfig. Always-on subscriber (per-tenant gating is
+    // inside the orchestrator); kill switch honored per evaluation.
+    try {
+      const killSwitchesForReviewProg = new DecisionEngineKillSwitchService(this.dbService);
+      const reviewProgOrchestrator = new ReviewProgramOrchestrator(this.dbService, killSwitchesForReviewProg);
+      reviewProgOrchestrator.start().catch(err => {
+        this.logger.warn('ReviewProgramOrchestrator failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('ReviewProgramOrchestrator could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     // Start Audit Event Sink (persists every Service Bus event to engagement-audit-events container)

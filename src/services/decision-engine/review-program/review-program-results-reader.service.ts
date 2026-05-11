@@ -63,6 +63,13 @@ export interface NormalizedReviewDecision {
 	firedFlagIds: string[];
 	/** Optional Axiom AI overlay (when the job ran AI extraction/evaluation). */
 	axiomDecision?: string;
+	/**
+	 * Phase K — which platform path produced this evaluation. Defaults to
+	 * 'bulk-portfolio' for legacy rows that predate the field.
+	 */
+	triggerSource?: 'order-created' | 'bulk-portfolio' | 'document-uploaded' | 'axiom-completed' | 'manual';
+	/** Order id when the result is order-scoped (Phase K). */
+	orderId?: string;
 }
 
 export class ReviewProgramResultsReader {
@@ -148,7 +155,76 @@ export class ReviewProgramResultsReader {
 			...(r.overrideDecision ? { overrideDecision: r.overrideDecision } : {}),
 			firedFlagIds,
 			...(r.axiomDecision ? { axiomDecision: r.axiomDecision } : {}),
+			triggerSource: r.triggerSource ?? 'bulk-portfolio',
+			...(r.orderId ? { orderId: r.orderId } : {}),
 		};
+	}
+
+	/**
+	 * Phase K — also surface standalone review-result docs that were written
+	 * by ReviewProgramOrchestrator directly (no parent bulk-portfolio-job).
+	 * Returns docs across both paths, deduped by id.
+	 */
+	async listSinceIncludingOrderResults(
+		tenantId: string,
+		sinceIso: string,
+	): Promise<NormalizedReviewDecision[]> {
+		const jobResults = await this.listSince(tenantId, sinceIso);
+
+		const orderResults = await this.db.queryDocuments<ReviewTapeResult & {
+			id: string;
+			tenantId?: string;
+			orderId?: string;
+		}>(
+			RESULTS_CONTAINER,
+			`SELECT TOP @limit * FROM c
+			 WHERE c.tenantId = @tenantId
+			   AND c.triggerSource = 'order-created'
+			   AND (c.evaluatedAt >= @sinceIso OR NOT IS_DEFINED(c.evaluatedAt))
+			 ORDER BY c.evaluatedAt DESC`,
+			[
+				{ name: '@tenantId', value: tenantId },
+				{ name: '@sinceIso', value: sinceIso },
+				{ name: '@limit', value: MAX_RESULTS_PER_JOB },
+			],
+		);
+
+		const orderNormalized: NormalizedReviewDecision[] = orderResults.map(r => {
+			const firedFlagIds: string[] = [];
+			for (const f of r.autoFlagResults ?? []) {
+				if (f?.isFired && typeof f.id === 'string') firedFlagIds.push(f.id);
+			}
+			for (const f of r.manualFlagResults ?? []) {
+				if (f?.isFired && typeof f.id === 'string') firedFlagIds.push(f.id);
+			}
+			return {
+				id: r.id,
+				tenantId,
+				jobId: (r as unknown as { jobId?: string }).jobId ?? r.orderId ?? r.id,
+				jobSubmittedAt: r.evaluatedAt ?? new Date().toISOString(),
+				...(r.programId ? { reviewProgramId: r.programId } : {}),
+				...(r.programVersion ? { reviewProgramVersion: r.programVersion } : {}),
+				...(r.loanNumber ? { loanNumber: r.loanNumber } : {}),
+				evaluatedAt: r.evaluatedAt ?? new Date().toISOString(),
+				...(typeof r.overallRiskScore === 'number' ? { overallRiskScore: r.overallRiskScore } : {}),
+				...(r.computedDecision ? { computedDecision: r.computedDecision } : {}),
+				...(r.overrideDecision ? { overrideDecision: r.overrideDecision } : {}),
+				firedFlagIds,
+				...(r.axiomDecision ? { axiomDecision: r.axiomDecision } : {}),
+				triggerSource: r.triggerSource ?? 'order-created',
+				...(r.orderId ? { orderId: r.orderId } : {}),
+			};
+		});
+
+		const seen = new Set<string>();
+		const merged: NormalizedReviewDecision[] = [];
+		for (const d of [...jobResults, ...orderNormalized]) {
+			if (seen.has(d.id)) continue;
+			seen.add(d.id);
+			merged.push(d);
+		}
+		merged.sort((a, b) => b.evaluatedAt.localeCompare(a.evaluatedAt));
+		return merged;
 	}
 }
 
