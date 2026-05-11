@@ -51,6 +51,28 @@ export interface AiAuditDoc {
 	errorMessage?: string;
 	/** Cross-link entity id (order / invoice / etc.). */
 	entityId?: string;
+	/**
+	 * Origin of the audit row.  Phase 14 v1 (2026-05-10):
+	 *   - 'fe'            : emitted by the frontend useAiToolLoop / intent registry
+	 *   - 'be-dispatcher' : emitted by AiActionDispatcherService on a server-side
+	 *                       /api/ai/execute call
+	 *   - 'autopilot'     : emitted by the autonomous-runtime consumer
+	 *                       (Service Bus / cron / webhook)
+	 *   - 'be-service'    : emitted by another BE service directly
+	 */
+	source?: 'fe' | 'be-dispatcher' | 'autopilot' | 'be-service';
+	/**
+	 * When `source === 'autopilot'`, identifies what triggered the run.
+	 * Delegated-identity model (Phase 14): every autopilot run has a
+	 * sponsoring human user — scopes follow the sponsor, audit
+	 * attribution carries the sponsor's userId.
+	 */
+	triggeredBy?: {
+		kind: 'cron' | 'webhook' | 'user-rule' | 'ai-chain' | 'queue';
+		recipeId?: string;
+		sponsorUserId?: string;
+		parentRunId?: string;
+	};
 }
 
 export interface AiAuditWriteInput {
@@ -65,6 +87,9 @@ export interface AiAuditWriteInput {
 	success: boolean;
 	errorMessage?: string;
 	entityId?: string;
+	/** Phase 14 v1: origin of this audit row. */
+	source?: AiAuditDoc['source'];
+	triggeredBy?: AiAuditDoc['triggeredBy'];
 }
 
 export interface AiAuditQueryOptions {
@@ -134,6 +159,8 @@ export class AiAuditService {
 			...(input.description !== undefined && { description: input.description }),
 			...(input.errorMessage !== undefined && { errorMessage: input.errorMessage }),
 			...(input.entityId !== undefined && { entityId: input.entityId }),
+			...(input.source !== undefined && { source: input.source }),
+			...(input.triggeredBy !== undefined && { triggeredBy: input.triggeredBy }),
 		};
 
 		return this.cosmos.createItem<AiAuditDoc>(CONTAINER_NAME, doc);
