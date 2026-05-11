@@ -87,6 +87,30 @@ export interface AutopilotRequest {
 	};
 }
 
+/**
+ * AI-chain trigger declaration — Phase 14 v2 follow-up (2026-05-11).
+ *
+ * When a recipe's dispatch succeeds, the orchestrator publishes a new
+ * autopilot-task targeting `chainTo.recipeId` with `triggeredBy.kind:
+ * 'ai-chain'` and `parentRunId` set to the just-completed run.  The
+ * chain-depth cap (default 3) lives in `AiAutopilotService.processTask`
+ * and refuses messages whose `chainDepth > MAX_CHAIN_DEPTH`.
+ *
+ * Only successful dispatches chain — a failed / cancelled / awaiting-
+ * approval run never spawns a child.  This keeps chains predictable
+ * and avoids runaway retry storms.
+ */
+export interface AutopilotChainTo {
+	recipeId: string;
+	/**
+	 * Optional reason text persisted in the child run's
+	 * `triggeredBy.sourceId` for forensics ("step-A ran, kicked off
+	 * step-B because completed-successfully-at <timestamp>").  Not
+	 * trusted as a prompt or scope grant.
+	 */
+	reason?: string;
+}
+
 export interface AutopilotRecipe {
 	id: string;
 	/** Cosmos partition key. */
@@ -107,6 +131,12 @@ export interface AutopilotRecipe {
 	policy: AutopilotPolicy;
 	trigger: AutopilotTrigger;
 	request: AutopilotRequest;
+	/**
+	 * Optional follow-up — when this recipe's dispatch succeeds, publish
+	 * a new autopilot-task targeting `chainTo.recipeId`.  The chain
+	 * depth cap (3 by default) prevents runaway loops.
+	 */
+	chainTo?: AutopilotChainTo;
 	/** Operational state — set by admin UI or runtime. */
 	status: 'active' | 'paused' | 'sponsor-missing' | 'budget-exhausted' | 'archived';
 	createdAt: string;
@@ -140,6 +170,12 @@ export interface AutopilotRun {
 		sourceId?: string;
 		parentRunId?: string;
 		idempotencyKey?: string;
+		/**
+		 * Depth in an AI-chain.  0 for root runs (cron / queue / webhook),
+		 * N+1 for children spawned by a recipe's `chainTo`.  The
+		 * orchestrator refuses dispatches at depth > MAX_CHAIN_DEPTH.
+		 */
+		chainDepth?: number;
 	};
 	status: 'queued' | 'running' | 'awaiting-approval' | 'succeeded' | 'failed' | 'cancelled' | 'timed-out' | 'budget-exhausted';
 	startedAt: string;

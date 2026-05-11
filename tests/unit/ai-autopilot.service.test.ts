@@ -339,4 +339,173 @@ describe('AiAutopilotService.processTask', () => {
 		expect(r.status).toBe('failed');
 		expect(r.reason).toBe('boom');
 	});
+
+	// AI-chain trigger contract — Phase 14 v2 follow-up (2026-05-11).
+	describe('AI-chain follow-up', () => {
+		function buildWithPublisher(
+			prebuiltQueries: Array<unknown[]>,
+			sponsorOk = true,
+		) {
+			const { mock } = makeMockCosmos(prebuiltQueries);
+			const sponsorIdentity = {
+				resolve: vi.fn(async () =>
+					sponsorOk
+						? { ok: true, tenantId: 't1', userId: 'sponsor-1', role: 'admin' }
+						: { ok: false, reason: 'sponsor-missing', message: 'x' },
+				),
+			};
+			const publisher = {
+				publish: vi.fn(async () => undefined),
+			};
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const service = new AiAutopilotService(mock as any, sponsorIdentity as any, publisher as any);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(service as any).dispatcher = dispatcherSpies;
+			return { service, publisher };
+		}
+
+		it('publishes the chained task on successful dispatch', async () => {
+			const chainedRecipe = recipe({
+				policy: { mode: 'always' },
+				chainTo: { recipeId: 'child-recipe-1', reason: 'parent-ok' },
+			});
+			const { service, publisher } = buildWithPublisher([
+				[],
+				[chainedRecipe],
+				[run({ status: 'running' })],
+				[chainedRecipe],
+			]);
+			const r = await service.processTask({
+				tenantId: 't1',
+				recipeId: 'recipe-1',
+				idempotencyKey: 'idem-1',
+				triggeredBy: { kind: 'cron' },
+			});
+			expect(r.ok).toBe(true);
+			expect(r.status).toBe('succeeded');
+			expect(publisher.publish).toHaveBeenCalledOnce();
+			const task = publisher.publish.mock.calls[0]![0] as {
+				recipeId: string;
+				idempotencyKey: string;
+				triggeredBy: { kind: string; parentRunId: string; chainDepth: number; sourceId: string };
+			};
+			expect(task.recipeId).toBe('child-recipe-1');
+			expect(task.triggeredBy.kind).toBe('ai-chain');
+			// runs.create generates a fresh uuid for the parent run, so
+			// assert shape rather than specific value.
+			expect(task.triggeredBy.parentRunId).toMatch(/^[0-9a-f-]+$/);
+			expect(task.triggeredBy.chainDepth).toBe(1);
+			expect(task.triggeredBy.sourceId).toBe('parent-ok');
+			expect(task.idempotencyKey).toMatch(/^child-recipe-1::ai-chain::[0-9a-f-]+$/);
+			// Cross-check: the idempotency key contains the same parentRunId.
+			expect(task.idempotencyKey).toContain(task.triggeredBy.parentRunId);
+		});
+
+		it('increments chainDepth from the parent message depth', async () => {
+			const chainedRecipe = recipe({
+				policy: { mode: 'always' },
+				chainTo: { recipeId: 'child-recipe-2' },
+			});
+			// Parent run row carries chainDepth: 2 (came from a previous chain).
+			const { service, publisher } = buildWithPublisher([
+				[],
+				[chainedRecipe],
+				[run({ status: 'running', triggeredBy: { kind: 'ai-chain', chainDepth: 2 } })],
+				[chainedRecipe],
+			]);
+			await service.processTask({
+				tenantId: 't1',
+				recipeId: 'recipe-1',
+				idempotencyKey: 'idem-2',
+				triggeredBy: { kind: 'ai-chain', chainDepth: 2 },
+			});
+			const task = publisher.publish.mock.calls[0]![0] as { triggeredBy: { chainDepth: number } };
+			expect(task.triggeredBy.chainDepth).toBe(3);
+		});
+
+		it('refuses chain publish past MAX_CHAIN_DEPTH', async () => {
+			const chainedRecipe = recipe({
+				policy: { mode: 'always' },
+				chainTo: { recipeId: 'child-recipe-3' },
+			});
+			// Parent run was at the depth cap (3 by default).  Child would
+			// be depth 4 — refused.
+			const { service, publisher } = buildWithPublisher([
+				[],
+				[chainedRecipe],
+				[run({ status: 'running', triggeredBy: { kind: 'ai-chain', chainDepth: 3 } })],
+				[chainedRecipe],
+			]);
+			await service.processTask({
+				tenantId: 't1',
+				recipeId: 'recipe-1',
+				idempotencyKey: 'idem-3',
+				triggeredBy: { kind: 'ai-chain', chainDepth: 3 },
+			});
+			expect(publisher.publish).not.toHaveBeenCalled();
+		});
+
+		it('does NOT chain on failed dispatch', async () => {
+			dispatcherSpies.handleTriggerAutoAssignment.mockRejectedValueOnce(new Error('dispatch-failed'));
+			const chainedRecipe = recipe({
+				policy: { mode: 'always' },
+				chainTo: { recipeId: 'child-recipe-4' },
+			});
+			const { service, publisher } = buildWithPublisher([
+				[],
+				[chainedRecipe],
+				[run({ status: 'running' })],
+				[chainedRecipe],
+			]);
+			const r = await service.processTask({
+				tenantId: 't1',
+				recipeId: 'recipe-1',
+				idempotencyKey: 'idem-4',
+				triggeredBy: { kind: 'cron' },
+			});
+			expect(r.ok).toBe(false);
+			expect(publisher.publish).not.toHaveBeenCalled();
+		});
+
+		it('does NOT chain on approval-queued runs', async () => {
+			const chainedRecipe = recipe({
+				policy: { mode: 'approve' },
+				chainTo: { recipeId: 'child-recipe-5' },
+			});
+			const { service, publisher } = buildWithPublisher([
+				[],
+				[chainedRecipe],
+			]);
+			const r = await service.processTask({
+				tenantId: 't1',
+				recipeId: 'recipe-1',
+				idempotencyKey: 'idem-5',
+				triggeredBy: { kind: 'cron' },
+			});
+			expect(r.status).toBe('awaiting-approval');
+			expect(publisher.publish).not.toHaveBeenCalled();
+		});
+
+		it('publisher errors do not roll back the parent succeeded state', async () => {
+			const chainedRecipe = recipe({
+				policy: { mode: 'always' },
+				chainTo: { recipeId: 'child-recipe-6' },
+			});
+			const { service, publisher } = buildWithPublisher([
+				[],
+				[chainedRecipe],
+				[run({ status: 'running' })],
+				[chainedRecipe],
+			]);
+			publisher.publish.mockRejectedValueOnce(new Error('SB down'));
+			const r = await service.processTask({
+				tenantId: 't1',
+				recipeId: 'recipe-1',
+				idempotencyKey: 'idem-6',
+				triggeredBy: { kind: 'cron' },
+			});
+			expect(r.ok).toBe(true);
+			expect(r.status).toBe('succeeded');
+		});
+	});
 });

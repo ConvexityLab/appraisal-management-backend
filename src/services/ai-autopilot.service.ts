@@ -32,6 +32,7 @@ import { AutopilotRecipeRepository } from './autopilot-recipe.repository.js';
 import { AutopilotRunRepository } from './autopilot-run.repository.js';
 import { AiAuditServerEmitter } from './ai-audit-server.service.js';
 import { AiActionDispatcherService } from './ai-action-dispatcher.service.js';
+import { AiAutopilotPublisher } from './ai-autopilot-publisher.service.js';
 import {
 	AutopilotSponsorIdentity,
 	type SponsorIdentityResult,
@@ -73,13 +74,22 @@ export class AiAutopilotService {
 	private readonly audit: AiAuditServerEmitter;
 	private readonly dispatcher: AiActionDispatcherService;
 	private readonly sponsorIdentity: AutopilotSponsorIdentity;
+	private readonly publisher: AiAutopilotPublisher;
 
-	constructor(cosmos: CosmosDbService, sponsorIdentity?: AutopilotSponsorIdentity) {
+	constructor(
+		cosmos: CosmosDbService,
+		sponsorIdentity?: AutopilotSponsorIdentity,
+		publisher?: AiAutopilotPublisher,
+	) {
 		this.recipes = new AutopilotRecipeRepository(cosmos);
 		this.runs = new AutopilotRunRepository(cosmos);
 		this.audit = new AiAuditServerEmitter(cosmos);
 		this.dispatcher = new AiActionDispatcherService(cosmos);
 		this.sponsorIdentity = sponsorIdentity ?? new AutopilotSponsorIdentity();
+		// Lazily created — `chainTo` follow-ups are the only place
+		// processTask needs to publish.  Reuses the singleton publisher
+		// pattern from the consumer + sweep job (mock mode in tests).
+		this.publisher = publisher ?? new AiAutopilotPublisher();
 	}
 
 	/**
@@ -170,6 +180,9 @@ export class AiAutopilotService {
 		}
 
 		// Create the Run row up front so failures still leave a trail.
+		// chainDepth is persisted on the row so subsequent chain-publish
+		// in `dispatch()` knows what depth this run was at without
+		// re-reading the triggering message.
 		const runResult = await this.runs.create({
 			tenantId: msg.tenantId,
 			recipeId: recipe.id,
@@ -179,6 +192,7 @@ export class AiAutopilotService {
 				...(msg.triggeredBy.sourceId !== undefined && { sourceId: msg.triggeredBy.sourceId }),
 				...(msg.triggeredBy.parentRunId !== undefined && { parentRunId: msg.triggeredBy.parentRunId }),
 				idempotencyKey: msg.idempotencyKey,
+				chainDepth: msg.triggeredBy.chainDepth ?? 0,
 			},
 			status: 'running',
 		});
@@ -287,6 +301,13 @@ export class AiAutopilotService {
 			});
 			await this.recipes.recordFire(run.tenantId, recipe.id, true);
 			await this.emitAudit(run, recipe, true, undefined, { dispatchResult: result });
+			// AI-chain emission — only on success.  Failed / cancelled /
+			// awaiting-approval runs never spawn children (prevents
+			// chains amplifying transient failures).  The depth check
+			// in processTask refuses messages at depth > MAX_CHAIN_DEPTH.
+			if (recipe.chainTo?.recipeId) {
+				await this.publishChainFollowUp(run, recipe);
+			}
 			return { ok: true, status: 'succeeded', runId: run.id };
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : String(err);
@@ -297,6 +318,64 @@ export class AiAutopilotService {
 			await this.recipes.recordFire(run.tenantId, recipe.id, false, errorMessage);
 			await this.emitAudit(run, recipe, false, errorMessage);
 			return { ok: false, status: 'failed', runId: run.id, reason: errorMessage };
+		}
+	}
+
+	/**
+	 * Publish the AI-chain follow-up after a successful dispatch.
+	 *
+	 * Idempotency key: `<chainRecipeId>::ai-chain::<parentRunId>` so a
+	 * second delivery of the parent message (which already produced this
+	 * follow-up) hits the dedup probe in AutopilotRunRepository.
+	 *
+	 * Fail-safe: a publish failure is logged but does NOT roll back the
+	 * parent run's success state.  The parent's actual work completed;
+	 * the chain is best-effort.
+	 */
+	private async publishChainFollowUp(
+		run: AutopilotRun,
+		recipe: AutopilotRecipe,
+	): Promise<void> {
+		if (!recipe.chainTo?.recipeId) return;
+		const parentDepth = run.triggeredBy.chainDepth ?? 0;
+		const nextDepth = parentDepth + 1;
+		// processTask enforces the same cap, but checking here too saves
+		// an unnecessary SB round-trip on doomed messages.
+		if (nextDepth > MAX_CHAIN_DEPTH) {
+			this.logger.warn('Autopilot chain refused — depth cap reached', {
+				tenantId: run.tenantId,
+				parentRunId: run.id,
+				parentDepth,
+				maxDepth: MAX_CHAIN_DEPTH,
+				chainRecipeId: recipe.chainTo.recipeId,
+			});
+			return;
+		}
+		try {
+			await this.publisher.publish({
+				tenantId: run.tenantId,
+				recipeId: recipe.chainTo.recipeId,
+				idempotencyKey: `${recipe.chainTo.recipeId}::ai-chain::${run.id}`,
+				triggeredBy: {
+					kind: 'ai-chain',
+					sourceId: recipe.chainTo.reason ?? `parent-run-${run.id}`,
+					parentRunId: run.id,
+					chainDepth: nextDepth,
+				},
+			});
+			this.logger.info('Autopilot chain follow-up published', {
+				tenantId: run.tenantId,
+				parentRunId: run.id,
+				chainRecipeId: recipe.chainTo.recipeId,
+				nextDepth,
+			});
+		} catch (err) {
+			this.logger.warn('Failed to publish autopilot chain follow-up', {
+				tenantId: run.tenantId,
+				parentRunId: run.id,
+				chainRecipeId: recipe.chainTo.recipeId,
+				error: err instanceof Error ? err.message : String(err),
+			});
 		}
 	}
 
