@@ -37,6 +37,34 @@ function isAdmin(role: unknown): boolean {
 	return arr.some((r) => typeof r === 'string' && r.toLowerCase() === 'admin');
 }
 
+/**
+ * Recipe write-authz — admin can manage any recipe in the tenant; a
+ * non-admin can only manage recipes they sponsor themselves.  Returns
+ * the typed reason for the audit log + the HTTP status to send.
+ *
+ * Reads are tenant-scoped only (every signed-in user in the tenant can
+ * see every recipe + run row).  Writes are the locked-down surface.
+ */
+function canManageRecipe(
+	user: { id?: string; role?: unknown } | undefined,
+	recipe: { sponsorUserId: string },
+): { ok: true } | { ok: false; status: 401 | 403; reason: string } {
+	if (!user?.id) {
+		return { ok: false, status: 401, reason: 'Authenticated user required.' };
+	}
+	if (isAdmin(user.role)) {
+		return { ok: true };
+	}
+	if (recipe.sponsorUserId === user.id) {
+		return { ok: true };
+	}
+	return {
+		ok: false,
+		status: 403,
+		reason: 'Recipe management requires admin role OR you must be the recipe sponsor.',
+	};
+}
+
 export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 	const router = Router();
 	const recipes = new AutopilotRecipeRepository(cosmos);
@@ -58,10 +86,28 @@ export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 				error: 'Recipe requires name, policy, trigger, and request fields.',
 			});
 		}
-		const sponsorUserId = body.sponsorUserId ?? user.id;
+		// Sponsorship authz — a non-admin caller can only sponsor THEMSELVES.
+		// Admins can sponsor any user in the tenant (for tenant-scoped
+		// recipes that aren't tied to a specific human's workflow).  This
+		// closes the gap where any signed-in user could create a recipe
+		// naming someone else as sponsor — that recipe would then run
+		// with the named sponsor's scopes (delegated identity flow), an
+		// obvious privilege-escalation vector.
+		const requestedSponsorUserId = body.sponsorUserId ?? user.id;
+		if (requestedSponsorUserId !== user.id && !isAdmin(user.role)) {
+			logger.warn('Refused autopilot recipe creation with non-self sponsor', {
+				tenantId: user.tenantId,
+				callerUserId: user.id,
+				requestedSponsorUserId,
+			});
+			return res.status(403).json({
+				success: false,
+				error: 'Only admins may create autopilot recipes sponsored by another user.  Non-admin callers must omit sponsorUserId or set it to their own id.',
+			});
+		}
 		const result = await recipes.create({
 			tenantId: user.tenantId,
-			sponsorUserId,
+			sponsorUserId: requestedSponsorUserId,
 			createdBy: user.id,
 			name: body.name,
 			description: body.description ?? '',
@@ -111,7 +157,22 @@ export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 		if (!recipeId) {
 			return res.status(400).json({ success: false, error: 'Missing recipe id.' });
 		}
+		// Load before patch so we can authz against the existing sponsor.
+		const existing = await recipes.getById(user.tenantId, recipeId);
+		if (!existing.success) return res.status(500).json({ success: false, error: existing.error });
+		if (!existing.data) return res.status(404).json({ success: false, error: 'Recipe not found.' });
+		const authz = canManageRecipe(user, existing.data);
+		if (!authz.ok) return res.status(authz.status).json({ success: false, error: authz.reason });
 		const patch = req.body as Partial<AutopilotRecipe>;
+		// Even on PATCH, a non-admin can't transfer sponsorship to someone
+		// else — that would let a sponsor hand their recipe to a more-
+		// privileged user.
+		if (patch.sponsorUserId && patch.sponsorUserId !== existing.data.sponsorUserId && !isAdmin(user.role)) {
+			return res.status(403).json({
+				success: false,
+				error: 'Only admins may transfer recipe sponsorship to a different user.',
+			});
+		}
 		const result = await recipes.update(user.tenantId, recipeId, patch);
 		if (!result.success) return res.status(500).json({ success: false, error: result.error });
 		return res.json({ success: true, data: result.data });
@@ -126,6 +187,11 @@ export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 		if (!recipeId) {
 			return res.status(400).json({ success: false, error: 'Missing recipe id.' });
 		}
+		const existing = await recipes.getById(user.tenantId, recipeId);
+		if (!existing.success) return res.status(500).json({ success: false, error: existing.error });
+		if (!existing.data) return res.status(404).json({ success: false, error: 'Recipe not found.' });
+		const authz = canManageRecipe(user, existing.data);
+		if (!authz.ok) return res.status(authz.status).json({ success: false, error: authz.reason });
 		const result = await recipes.update(user.tenantId, recipeId, { status: 'paused' });
 		if (!result.success) return res.status(500).json({ success: false, error: result.error });
 		return res.json({ success: true, data: result.data });
@@ -140,6 +206,11 @@ export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 		if (!recipeId) {
 			return res.status(400).json({ success: false, error: 'Missing recipe id.' });
 		}
+		const existing = await recipes.getById(user.tenantId, recipeId);
+		if (!existing.success) return res.status(500).json({ success: false, error: existing.error });
+		if (!existing.data) return res.status(404).json({ success: false, error: 'Recipe not found.' });
+		const authz = canManageRecipe(user, existing.data);
+		if (!authz.ok) return res.status(authz.status).json({ success: false, error: authz.reason });
 		const result = await recipes.update(user.tenantId, recipeId, { status: 'active' });
 		if (!result.success) return res.status(500).json({ success: false, error: result.error });
 		return res.json({ success: true, data: result.data });
