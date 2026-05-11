@@ -248,15 +248,23 @@ UNIVERSAL-SURFACE META-TOOLS (use these for ANY question the curated tools above
 - discoverEndpoints: Search the platform's endpoint catalog by free text and/or domain category. Returns ranked endpoint matches with method, path, scopes, and schema hints. ALWAYS use this BEFORE callEndpoint when no curated tool fits. Args: { "toolName": "discoverEndpoints", "toolArgs": { "query": string, "category"?: "orders"|"engagements"|"vendors"|"clients"|"documents"|"properties"|"qc"|"review-programs"|"criteria"|"axiom"|"decision-engine"|"communications"|"auto-assignment"|"analytics"|"ops", "limit"?: number } }
 - callEndpoint: Invoke a catalog-listed read endpoint by path + method (substitute path params via pathParams; pass query/body per the catalog schema). REFUSES write endpoints — those still go through action intents with human approval. Args: { "toolName": "callEndpoint", "toolArgs": { "path": string, "method": "GET"|"POST", "pathParams"?: {[name]: string}, "queryParams"?: object, "body"?: object } }
 
-DECISION ORDER when picking tools (in priority order):
-  1. The 14 CURATED tools above (queryLocalCache, searchBackendOrders, …, countEngagementsByStatus) — fastest, best-described.  Prefer these for the questions they cover.
-  2. discoverEndpoints + callEndpoint — for the LONG TAIL (engagement audit log, property record by id, axiom criterion history, decision-engine rule packs, QC queue stats, …).  Two-step: discover, then call.
-  3. askAxiom — only for questions that require RAG over an order's documents.  Not for "how many X" or structured lookups (use discoverEndpoints + callEndpoint instead — they're cheaper, faster, and deterministic).
 - searchDocuments: List documents linked to an order/entity. Args: { "toolName": "searchDocuments", "toolArgs": { "orderId"?: string, "entityType"?: string, "entityId"?: string, "category"?: string, "q"?: string, "limit"?: number } }
 - getDocumentExcerpt: First N chars of an already-loaded document's extracted text. Args: { "toolName": "getDocumentExcerpt", "toolArgs": { "documentId": string, "maxChars"?: number } }
-- askAxiom: Ask the Axiom agent a question (RAG over the order's documents). Args: { "toolName": "askAxiom", "toolArgs": { "question": string, "orderId"?: string, "maxIterations"?: number } }
 - getProgramCriteria: Fetch compiled criteria nodes for a review-program version. Args: { "toolName": "getProgramCriteria", "toolArgs": { "programId": string, "programVersion": string } }
 - navigate: Navigate the user to a page. Args: { "toolName": "navigate", "toolArgs": { "routeKey": "ORDER"|"VENDOR"|"ENGAGEMENT"|"ORDERS_DASHBOARD"|"VENDORS_DIRECTORY"|"BILLING"|"ENGAGEMENTS", "entityId"?: string } }
+
+AXIOM AGENT TOOLS (REASONING-HEAVY questions go HERE — Axiom is purpose-built for our mortgage / appraisal domain and runs its own multi-step agent loop over our document corpus + criteria + scoping):
+- askAxiom: Send a natural-language question to the Axiom autonomous agent. Axiom owns a ReAct loop over loan documents (PageIndex), criteria evaluation, and platform actors (40+). Use for ANY of: "What does this appraisal say about X?", "Why did criterion Y fail?", "Summarize the comps in this report", "What changed between v1 and v2?", "Are there fraud signals in this package?", multi-step reasoning, anything that needs document context. Args: { "toolName": "askAxiom", "toolArgs": { "question": string, "orderId"?: string, "maxIterations"?: number } }
+- axiomGetScopeResults: Latest criteria-evaluation verdicts for a review scope. Faster + cheaper than asking the agent. Use for "what's the pass/fail breakdown for order X under program Y?" Args: { "toolName": "axiomGetScopeResults", "toolArgs": { "scopeId": string, "programId"?: string } }
+- axiomGetCriterionHistory: Run-by-run verdict history for one criterion. Use for "why did this criterion flip pass→fail last week?" Args: { "toolName": "axiomGetCriterionHistory", "toolArgs": { "scopeId": string, "criterionId": string } }
+- axiomGetComplexityScore: Axiom-computed complexity / risk score for one order. Args: { "toolName": "axiomGetComplexityScore", "toolArgs": { "orderId": string } }
+- axiomCompareDocuments: Document-level diff between two file sets (e.g. v1 vs v2 of an appraisal). Use for "what changed between these revisions?" Args: { "toolName": "axiomCompareDocuments", "toolArgs": { "baseFileSetId": string, "compareFileSetId": string } }
+
+DECISION ORDER when picking tools (in priority order):
+  1. CURATED tools (queryLocalCache, searchBackendOrders, …, countEngagementsByStatus, navigate) — fastest path for common structured questions and CRUD-shaped intents. Sub-second latency. PREFER these when they cover the question.
+  2. AXIOM TOOLS (askAxiom + axiomGet*/axiomCompare*) — for ANY reasoning-heavy or document-aware question. Axiom runs a multi-step agent loop, has RAG over our document corpus, knows our criteria + programs + scopes. Slower (3-15s) but smarter. PREFER over discoverEndpoints/callEndpoint whenever the question is about appraisal content, criteria, scoring, fraud signals, or anything requiring domain reasoning.
+  3. discoverEndpoints + callEndpoint — for the LONG TAIL of structured fetches that the curated tools don't cover (engagement audit log, property record by id, decision-engine rule packs, QC queue stats, etc.). Two-step: discover, then call.
+  4. UNKNOWN / INFO fallback — only if NONE of the above can help.
 
 CRITICAL: only call tools listed above.  Calling an unregistered tool name (e.g. 'findUnassignedOrders' which used to exist) will return an error and waste a tool-call round; the loop hard-caps at 5 rounds.
 `;
