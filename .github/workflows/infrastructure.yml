@@ -235,6 +235,9 @@ jobs:
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         [ -n "$MOP_SERVICE_AUTH_TOKEN" ] && PARAM_ARGS+=("mopServiceAuthToken=$MOP_SERVICE_AUTH_TOKEN")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
+        # Grant the CI service principal Cosmos DB Data Contributor role so post-deploy
+        # smoke checks (verify-seeded-users) can read from Cosmos via DefaultAzureCredential.
+        [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("ciServicePrincipalId=$SP_OBJECT_ID")
         # AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID now come from App Configuration
         # (services.axiom-api.client-id / sub-client-id) — no bicep param plumbing.
         
@@ -270,6 +273,9 @@ jobs:
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         [ -n "$MOP_SERVICE_AUTH_TOKEN" ] && PARAM_ARGS+=("mopServiceAuthToken=$MOP_SERVICE_AUTH_TOKEN")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
+        # Grant the CI service principal Cosmos DB Data Contributor role so post-deploy
+        # smoke checks (verify-seeded-users) can read from Cosmos via DefaultAzureCredential.
+        [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("ciServicePrincipalId=$SP_OBJECT_ID")
         # AXIOM_CLIENT_ID / AXIOM_SUB_CLIENT_ID now come from App Configuration
         # (services.axiom-api.client-id / sub-client-id) — no bicep param plumbing.
         

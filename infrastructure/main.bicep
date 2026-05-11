@@ -614,7 +614,11 @@ module cosmosRoleAssignments 'modules/cosmos-role-assignments.bicep' = {
   scope: resourceGroup
   params: {
     cosmosAccountName: cosmosDb.outputs.cosmosAccountName
-    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    // Include CI service principal so post-deploy smoke checks (verify-seeded-users)
+    // can read Cosmos via DefaultAzureCredential without a separate role assignment step.
+    containerAppPrincipalIds: empty(ciServicePrincipalId)
+      ? appServices.outputs.containerAppPrincipalIds
+      : concat(appServices.outputs.containerAppPrincipalIds, [ciServicePrincipalId])
   }
 }
 
