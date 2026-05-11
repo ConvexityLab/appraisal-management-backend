@@ -53,6 +53,8 @@ import { createReviewProgramsRouter } from '../controllers/review-programs.contr
 import { createMatchingCriteriaRouter } from '../controllers/matching-criteria.controller.js';
 import { DecisionRulePackService } from '../services/decision-rule-pack.service.js';
 import { DecisionEngineRulesController } from '../controllers/decision-engine-rules.controller.js';
+import { DecisionEngineOpsController } from '../controllers/decision-engine-ops.controller.js';
+import { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
 import { MopRulePackPusher } from '../services/mop-rule-pack-pusher.service.js';
 import {
   CategoryRegistry,
@@ -1602,9 +1604,21 @@ export class AppraisalManagementAPIServer {
       // automatically notify the upstream evaluator.
       wireRegistryHooks(registry, packs);
 
+      // Phase I (kill-switch BE wiring): per-tenant kill switches stored in
+      // the existing client-configs container with a discriminator entityType.
+      // Lives at /api/decision-engine/ops/kill-switches; the rules controller
+      // consults it on every write/eval path so toggling kill takes effect on
+      // the very next decision (60s in-process cache TTL).
+      const killSwitches = new DecisionEngineKillSwitchService(this.dbService);
+
       this.app.use('/api/decision-engine/rules/:category',
         this.unifiedAuth.authenticate(),
-        new DecisionEngineRulesController(packs, registry).router,
+        new DecisionEngineRulesController(packs, registry, killSwitches).router,
+      );
+
+      this.app.use('/api/decision-engine/ops',
+        this.unifiedAuth.authenticate(),
+        new DecisionEngineOpsController(killSwitches, registry).router,
       );
 
       // Backward-compat: keep `/api/auto-assignment/rules/*` working as a
@@ -5534,9 +5548,10 @@ export class AppraisalManagementAPIServer {
     if (process.env['FIRING_RULES_JOB_ENABLED'] === 'true') {
       try {
         const decisionPacksForJob = new DecisionRulePackService(this.dbService);
-        const firingJob = new FiringRulesEvaluatorJob(this.dbService, decisionPacksForJob);
+        const killSwitchesForJob = new DecisionEngineKillSwitchService(this.dbService);
+        const firingJob = new FiringRulesEvaluatorJob(this.dbService, decisionPacksForJob, killSwitchesForJob);
         firingJob.start();
-        this.logger.info('FiringRulesEvaluatorJob enabled (FIRING_RULES_JOB_ENABLED=true)');
+        this.logger.info('FiringRulesEvaluatorJob enabled (FIRING_RULES_JOB_ENABLED=true) — honors per-tenant kill switch');
       } catch (err) {
         this.logger.warn('FiringRulesEvaluatorJob could not be started', {
           error: err instanceof Error ? err.message : String(err)

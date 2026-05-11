@@ -33,6 +33,7 @@ import type {
   DecisionRuleCategory,
 } from '../types/decision-rule-pack.types.js';
 import type { CategoryDefinition, CategoryRegistry } from '../services/decision-engine/category-definition.js';
+import type { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
 
 export class DecisionEngineRulesController {
   public readonly router: Router;
@@ -40,9 +41,34 @@ export class DecisionEngineRulesController {
   constructor(
     private readonly packs: DecisionRulePackService,
     private readonly registry: CategoryRegistry,
+    /** Optional — when present, push/preview/replay/createVersion check the
+     *  per-(tenant, category) kill switch and short-circuit with 503 when
+     *  the flag is on. Omit in tests that don't need to exercise the lever. */
+    private readonly killSwitches: DecisionEngineKillSwitchService | null = null,
   ) {
     this.router = Router({ mergeParams: true });
     this.initRoutes();
+  }
+
+  /**
+   * Returns true if the request was short-circuited because the (tenant,
+   * category) pair is killed. Caller should `return` immediately when true.
+   */
+  private async refuseIfKilled(
+    tenantId: string,
+    category: string,
+    res: Response,
+  ): Promise<boolean> {
+    if (!this.killSwitches) return false;
+    const killed = await this.killSwitches.isKilled(tenantId, category);
+    if (!killed) return false;
+    res.status(503).json({
+      success: false,
+      error: `Decision Engine kill switch is ON for tenant=${tenantId} category=${category}. ` +
+        `Toggle it off in Decision Engine → Operational health, or PATCH /api/decision-engine/ops/kill-switches/${category} {enabled:false}.`,
+      kind: 'kill-switch-active',
+    });
+    return true;
   }
 
   private initRoutes(): void {
@@ -115,6 +141,7 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
+    if (await this.refuseIfKilled(tenantId, category, res)) return;
     const def = this.resolveCategory(category);
 
     const body = req.body as Partial<CreateRulePackInput<unknown>>;
@@ -248,6 +275,7 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
+    if (await this.refuseIfKilled(tenantId, category, res)) return;
     const def = this.resolveCategory(category);
     if (!def.getSeed) {
       this.notImplemented(res, category, 'getSeed');
@@ -306,6 +334,7 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
+    if (await this.refuseIfKilled(tenantId, category, res)) return;
     const def = this.resolveCategory(category);
     if (!def.preview) {
       this.notImplemented(res, category, 'preview');
@@ -354,6 +383,7 @@ export class DecisionEngineRulesController {
     const tenantId = this.requireTenant(req, res);
     if (!tenantId) return;
     const category = req.params['category']!;
+    if (await this.refuseIfKilled(tenantId, category, res)) return;
     const def = this.resolveCategory(category);
     if (!def.replay) {
       this.notImplemented(res, category, 'replay');

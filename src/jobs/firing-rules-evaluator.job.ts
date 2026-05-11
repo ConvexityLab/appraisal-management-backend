@@ -20,6 +20,7 @@ import type { DecisionRulePackService } from '../services/decision-rule-pack.ser
 import { FiringDecisionRecorder } from '../services/decision-engine/firing/firing-decision-recorder.service.js';
 import { evaluateFiringRules } from '../services/decision-engine/firing/firing-evaluator.service.js';
 import { FIRING_RULES_CATEGORY_ID } from '../services/decision-engine/categories/firing-rules.category.js';
+import type { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
 import type { VendorPerformanceMetrics } from '../types/vendor-marketplace.types.js';
 import type {
 	FiringDecisionDocument,
@@ -41,6 +42,10 @@ export class FiringRulesEvaluatorJob {
 	constructor(
 		private readonly db: CosmosDbService,
 		private readonly packs: DecisionRulePackService,
+		/** Optional — when present, runForTenant short-circuits when the
+		 *  per-(tenant, firing-rules) kill switch is on. Daily cron stays
+		 *  responsive to operators who paused firing without redeploying. */
+		private readonly killSwitches: DecisionEngineKillSwitchService | null = null,
 	) {
 		this.recorder = new FiringDecisionRecorder(this.db);
 	}
@@ -128,6 +133,16 @@ export class FiringRulesEvaluatorJob {
 	}
 
 	private async runForTenant(tenantId: string, runDate: string): Promise<number> {
+		// Honor the kill switch — when ON, skip this tenant entirely.
+		// Operators expect the cron to stop firing decisions for them within
+		// a single run cycle of toggling the switch.
+		if (this.killSwitches && await this.killSwitches.isKilled(tenantId, FIRING_RULES_CATEGORY_ID)) {
+			this.logger.info('FiringRulesEvaluatorJob skipping tenant — kill switch ON', {
+				tenantId, runDate,
+			});
+			return 0;
+		}
+
 		const pack = await this.packs.getActive<VendorMatchingRuleDef>(
 			FIRING_RULES_CATEGORY_ID,
 			tenantId,
