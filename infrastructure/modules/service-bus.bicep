@@ -130,10 +130,13 @@ resource aiAutopilotTasksQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-0
     maxSizeInMegabytes: 1024
     // 5 attempts before dead-letter — matches order-events / vendor-assignment.
     maxDeliveryCount: 5
-    // Long lock because an autopilot run may take minutes (Axiom
-    // pipelines + MOP eval + dispatcher chain).  PT10M gives the
-    // consumer breathing room before the broker redelivers.
-    lockDuration: 'PT10M'
+    // Lock-duration capped at PT5M (Azure Service Bus hard max — values
+    // > 5 minutes return MessagingGatewayBadRequest at deploy time).
+    // For autopilot runs that exceed 5 minutes (Axiom pipelines + MOP +
+    // dispatcher chain), the consumer must call `renewMessageLock` to
+    // extend the lock incrementally — that's the supported pattern for
+    // long-running consumers. See AiAutopilotConsumerService.
+    lockDuration: 'PT5M'
     // 14d retention matches order-events.  If a message sits this long
     // unprocessed the recipe state is stale anyway.
     defaultMessageTimeToLive: 'P14D'
