@@ -36,8 +36,14 @@ have been deleted along with their npm scripts. Mixed scripts
 
 - `integration-live-fire-aim-port.ts`  ← **pnpm integration:livefire:aim-port**
   - `POST /api/v1/integrations/aim-port/inbound`
-  - Verifies the real AIM-Port adapter/auth/ack path, including `X-Vendor-Type`, `X-Vendor-Connection-Id`, and normalized-event-count response headers
+  - `GET /api/orders/:orderId`
+  - Verifies the real AIM-Port adapter/auth/ack path, then confirms the returned internal `order_id` is readable through the authenticated orders API with the expected `metadata.vendorIntegration` linkage
   - Purpose: live-fire partner/client endpoint coverage for inbound vendor integrations
+
+- `integration-live-fire-class-valuation.ts`  ← **pnpm integration:livefire:class-valuation**
+  - `POST /api/v1/integrations/class-valuation/inbound`
+  - Verifies the real Class Valuation webhook auth/normalize/ack path, including HMAC signature handling plus `X-Vendor-Type`, `X-Vendor-Connection-Id`, and normalized-event-count response headers
+  - Purpose: live-fire partner/client endpoint coverage for Class Valuation inbound webhooks
 
 - `axiom-live-fire-preflight-probe.ts`
   - `GET /api/orders` (paged)
@@ -79,6 +85,24 @@ have been deleted along with their npm scripts. Mixed scripts
 - `axiom-live-fire-aegis-connect.ts`
   - Mode: direct Axiom API connectivity probe with Aegis-enforced auth
   - Purpose: acquire a real Entra JWT (`az account get-access-token --resource api://3bc96929-593c-4f35-8997-e341a7e09a69`) and verify headers (`Authorization`, `X-Client-Id`, optional `X-Sub-Client-Id`) against Axiom endpoint
+
+- `axiom-live-fire-full-pipeline-suite.ts`  ← **pnpm axiom:livefire:full-pipeline**
+  - `POST /api/runs/extraction` — kicks off a fresh extraction
+  - `POST /api/runs/:runId/refresh-status` + `GET /api/runs/:runId` — poll until terminal
+  - `GET /api/runs/:runId/snapshot` — fetch canonical snapshot
+  - `POST /api/axiom/scopes/:scopeId/evaluate` — v2 criteria evaluation against fresh extraction
+  - `GET /api/orders/:scopeId` — verify `axiomStatus` + `axiomCompletedAt` stamped
+  - `GET /api/orders/:id/timeline` — verify `AXIOM_COMPLETED` audit event landed
+  - `GET /api/axiom/scopes/:scopeId/results?programId=...` — verify same criteria set surfaces
+  - `GET /api/axiom/scopes/:scopeId/criteria/:criterionId/history` — verify history row exists
+  - Purpose: the single canonical "did our changes break the full extraction → envelope → criteria → render → timeline chain?" regression gate.
+    Cross-step assertions catch the failure modes the component suites miss:
+      - Snapshot must be **substantive** (≥1 key in canonical/extraction/subjectProperty, or ≥1 sourceRef)
+      - At least one criterion must produce a **grounded verdict** (`pass`/`fail`/`needs_review`, not all `cannot_evaluate`)
+      - At least one criterion must have **non-empty `dataConsulted`** (proves envelope assembler flowed data through)
+      - Order must be **stamped** (`axiomStatus=completed`, `axiomCompletedAt` set)
+      - Timeline must contain **`AXIOM_COMPLETED`** audit event
+  - Extra env: `AXIOM_LIVE_DOCUMENT_ID` (required), `AXIOM_LIVE_V2_PROGRAM_ID` + `AXIOM_LIVE_V2_PROGRAM_VERSION` (else fetched from order), `AXIOM_LIVE_POLL_ATTEMPTS` (default 60, ~5 min ceiling), `AXIOM_LIVE_POLL_INTERVAL_MS` (default 5000)
 
 - `axiom-live-fire-v2-flow.ts`  ← **pnpm axiom:livefire:v2-flow**
   - `POST   /api/axiom/scopes/:scopeId/evaluate` — kicks off v2 evaluation run
@@ -153,7 +177,8 @@ Script-specific required values:
 
 ### AIM-Port inbound
 
-- `AXIOM_LIVE_BASE_URL`
+- Requires the shared live-fire auth env (`AXIOM_LIVE_TENANT_ID`, `AXIOM_LIVE_CLIENT_ID`, and one auth mode) because the harness now verifies the created order through the authenticated orders API.
+- `AXIOM_LIVE_BASE_URL` (use the APIM gateway URL in staging/prod; direct Container App ingress is now rejected for AIM-Port when `ENVIRONMENT != dev`)
 - `INTEGRATION_LIVE_AIMPORT_CLIENT_ID`
 - `INTEGRATION_LIVE_AIMPORT_API_KEY`
 - Optional:
@@ -163,6 +188,24 @@ Script-specific required values:
   - `INTEGRATION_LIVE_AIMPORT_STATE`
   - `INTEGRATION_LIVE_AIMPORT_ZIP`
   - `INTEGRATION_LIVE_AIMPORT_BORROWER`
+  - `INTEGRATION_LIVE_AIMPORT_DUE_DATE` (defaults to now + 72h; required by internal order creation)
+  - `INTEGRATION_LIVE_AIMPORT_DISCLOSED_FEE` (defaults to `550`)
+  - `INTEGRATION_LIVE_AIMPORT_EXPECT_LENDER_ID` (optional assertion for the created order's `clientId`)
+
+### Class Valuation inbound
+
+- `AXIOM_LIVE_BASE_URL`
+- `INTEGRATION_LIVE_CLASS_VALUATION_ACCOUNT_ID`
+- `INTEGRATION_LIVE_CLASS_VALUATION_HMAC_SECRET`
+- `INTEGRATION_LIVE_CLASS_VALUATION_EXTERNAL_ORDER_ID`
+- `INTEGRATION_LIVE_CLASS_VALUATION_OCCURRED_AT`
+- Optional:
+  - `INTEGRATION_LIVE_CLASS_VALUATION_ORDER_ID`
+  - `INTEGRATION_LIVE_CLASS_VALUATION_FILE_ID`
+  - `INTEGRATION_LIVE_CLASS_VALUATION_FILE_NAME`
+  - `INTEGRATION_LIVE_CLASS_VALUATION_FILE_CATEGORY`
+  - `INTEGRATION_LIVE_CLASS_VALUATION_FILE_CONTENT_BASE64`
+  - `INTEGRATION_LIVE_CLASS_VALUATION_FILE_DESCRIPTION`
 
 ### UI parity harness (`axiom-live-fire-ui-parity.ts`)
 
