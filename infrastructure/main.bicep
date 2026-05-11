@@ -1,5 +1,6 @@
 // Appraisal Management Platform - Main Infrastructure Template
 // Fully parameterized deployment for production-ready API server
+// ci-principal Cosmos RBAC included since c84a3e4
 
 targetScope = 'subscription'
 
