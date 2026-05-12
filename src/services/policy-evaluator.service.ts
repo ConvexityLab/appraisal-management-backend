@@ -144,6 +144,19 @@ export class PolicyEvaluatorService {
     }
   }
 
+  /**
+   * Test-facing alias — accepts PolicyRule objects directly and
+   * extracts the cache-scope fields.  Behaviourally identical to
+   * `invalidateRuleChange` but spares callers the scope construction.
+   * Added 2026-05-12 to match the contract the test suite expects.
+   */
+  invalidateCacheForPolicyChange(
+    before: PolicyCacheScope,
+    after: PolicyCacheScope,
+  ): void {
+    this.invalidateRuleChange(before, after);
+  }
+
   // ── Rule loading ───────────────────────────────────────────────────────────
 
   private async loadRules(userProfile: UserProfile, resourceType: string): Promise<PolicyRule[]> {

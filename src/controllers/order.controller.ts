@@ -133,6 +133,46 @@ function buildOrderFields(
   );
 }
 
+/**
+ * Format any address-ish value (string or object with street/city/state/zip)
+ * into a single human-readable string. Used when projecting a canonical
+ * PropertyAddress onto downstream consumers (QC queue, search results) that
+ * expect a flat string.
+ */
+function formatPropertyAddressValue(address: unknown): string {
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (!address || typeof address !== 'object') {
+    return '';
+  }
+
+  const candidate = address as Record<string, unknown>;
+  const street = typeof candidate['streetAddress'] === 'string'
+    ? candidate['streetAddress']
+    : typeof candidate['street'] === 'string'
+      ? candidate['street']
+      : '';
+  const city = typeof candidate['city'] === 'string' ? candidate['city'] : '';
+  const state = typeof candidate['state'] === 'string' ? candidate['state'] : '';
+  const zipCode = typeof candidate['zipCode'] === 'string'
+    ? candidate['zipCode']
+    : typeof candidate['zip'] === 'string'
+      ? candidate['zip']
+      : '';
+  const locality = [city, state].filter(Boolean).join(', ');
+  const trailing = [locality, zipCode].filter(Boolean).join(' ');
+  return [street, trailing].filter(Boolean).join(', ');
+}
+
+type CanonicalAddressParts = {
+  fullAddress: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+};
+
 export class OrderController {
   public router: Router;
   private dbService: CosmosDbService;
@@ -186,6 +226,109 @@ export class OrderController {
     this.contextLoader = new OrderContextLoader(dbService);
     this.clientOrderService = new ClientOrderService(dbService);
     this.setupRoutes(authzMiddleware);
+  }
+
+  /**
+   * Resolve the canonical PropertyAddress for an order via the
+   * OrderContextLoader, with safe fallback to the order's embedded
+   * propertyAddress when the canonical join fails. Returns a normalized
+   * shape callers can drop into downstream APIs.
+   */
+  private async loadCanonicalAddressParts(order: Order): Promise<CanonicalAddressParts> {
+    const fallbackAddress = (order as any).propertyAddress as unknown;
+    const fallbackCity = typeof fallbackAddress === 'object' && fallbackAddress !== null
+      ? (fallbackAddress as Record<string, unknown>)['city'] as string | undefined
+      : undefined;
+    const fallbackState = typeof fallbackAddress === 'object' && fallbackAddress !== null
+      ? (fallbackAddress as Record<string, unknown>)['state'] as string | undefined
+      : undefined;
+    const fallbackZipCode = typeof fallbackAddress === 'object' && fallbackAddress !== null
+      ? (fallbackAddress as Record<string, unknown>)['zipCode'] as string | undefined
+      : undefined;
+    const fallback: CanonicalAddressParts = {
+      fullAddress: formatPropertyAddressValue(fallbackAddress),
+      ...(fallbackCity ? { city: fallbackCity } : {}),
+      ...(fallbackState ? { state: fallbackState } : {}),
+      ...(fallbackZipCode ? { zipCode: fallbackZipCode } : {}),
+    };
+
+    try {
+      const ctx = await this.contextLoader.loadByVendorOrder(order, { includeProperty: true });
+      const address = getPropertyAddress(ctx);
+      if (!address) {
+        return fallback;
+      }
+
+      return {
+        fullAddress: formatPropertyAddressValue(address) || fallback.fullAddress,
+        city: address.city ?? fallback.city,
+        state: address.state ?? fallback.state,
+        zipCode: address.zipCode ?? fallback.zipCode,
+      };
+    } catch (error) {
+      logger.warn('OrderController could not resolve canonical property address; using embedded order copy', {
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return fallback;
+    }
+  }
+
+  /**
+   * Apply canonical-property-aware filtering to a candidate batch of orders.
+   * Canonical (PropertyRecord-backed) reads can disagree with the order's
+   * embedded propertyAddress copy — this method joins each candidate to the
+   * canonical address before applying user filters so search results match
+   * what the user actually sees in the UI.
+   */
+  private async applyCanonicalPropertyFilters(
+    orders: Order[],
+    filters: { textQuery?: string; propertyAddress?: { city?: string; state?: string; zipCode?: string } },
+  ): Promise<Order[]> {
+    const normalizedTextQuery = typeof filters.textQuery === 'string' ? filters.textQuery.trim().toLowerCase() : '';
+    const desiredCity = filters.propertyAddress?.city?.trim().toLowerCase();
+    const desiredState = filters.propertyAddress?.state?.trim().toLowerCase();
+    const desiredZip = filters.propertyAddress?.zipCode?.trim();
+
+    const enriched = await Promise.all(
+      orders.map(async (order) => ({
+        order,
+        address: await this.loadCanonicalAddressParts(order),
+      })),
+    );
+
+    return enriched
+      .filter(({ order, address }) => {
+        if (desiredCity && address.city?.toLowerCase() !== desiredCity) {
+          return false;
+        }
+        if (desiredState && address.state?.toLowerCase() !== desiredState) {
+          return false;
+        }
+        if (desiredZip && address.zipCode !== desiredZip) {
+          return false;
+        }
+
+        if (!normalizedTextQuery) {
+          return true;
+        }
+
+        const searchable = [
+          order.orderNumber,
+          address.fullAddress,
+          address.city,
+          address.state,
+          address.zipCode,
+          order.clientId,
+          (order as any).specialInstructions,
+        ]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .join(' ')
+          .toLowerCase();
+
+        return searchable.includes(normalizedTextQuery);
+      })
+      .map(({ order }) => order);
   }
 
   private setupRoutes(authzMiddleware?: AuthorizationMiddleware): void {
@@ -812,12 +955,13 @@ export class OrderController {
         // Auto-route to QC queue when order is SUBMITTED
         if (newStatus === OrderStatus.SUBMITTED) {
           const order = result.data!;
+          const canonicalAddress = await this.loadCanonicalAddressParts(order as Order);
 
           this.qcQueueService.addToQueue({
             orderId,
             orderNumber: (order as any).orderNumber || orderId,
             appraisalId: (order as any).appraisalId || orderId,
-            propertyAddress: (order as any).propertyAddress || (order as any).property?.address || '',
+            propertyAddress: canonicalAddress.fullAddress,
             appraisedValue: (order as any).appraisedValue || (order as any).orderValue || (order as any).fee || 0,
             orderPriority: (order as any).priority || (order as any).urgency || 'ROUTINE',
             clientId: (order as any).clientId || '',
@@ -1295,12 +1439,23 @@ export class OrderController {
         offset = 0,
       } = req.body;
 
+      // Text + property-address filters are evaluated against the canonical
+      // PropertyRecord, not the order's embedded propertyAddress copy. When
+      // the user has supplied any of those filters we skip the corresponding
+      // SQL predicates and re-apply them in JS after joining canonical addresses.
+      const requiresCanonicalPropertyFiltering = Boolean(
+        (typeof textQuery === 'string' && textQuery.trim())
+        || propertyAddress?.city
+        || propertyAddress?.state
+        || propertyAddress?.zipCode,
+      );
+
       // Build a dynamic Cosmos SQL query
       const conditions: string[] = ['c.id != null'];
       const parameters: { name: string; value: any }[] = [];
 
       // Full-text search across key fields
-      if (textQuery && typeof textQuery === 'string' && textQuery.trim()) {
+      if (!requiresCanonicalPropertyFiltering && textQuery && typeof textQuery === 'string' && textQuery.trim()) {
         const searchTerm = textQuery.trim().toLowerCase();
         conditions.push(
           `(CONTAINS(LOWER(c.orderNumber ?? ""), @textQuery) ` +
@@ -1349,16 +1504,18 @@ export class OrderController {
         parameters.push({ name: '@dueTo', value: dueDateRange.end });
       }
 
-      // Property address filters
-      if (propertyAddress?.city) {
+      // Property address filters — only applied to the SQL when we are
+      // NOT routing through canonical filtering; otherwise the JS post-filter
+      // handles them against the canonical address.
+      if (!requiresCanonicalPropertyFiltering && propertyAddress?.city) {
         conditions.push(`LOWER(c.propertyAddress.city) = @pCity`);
         parameters.push({ name: '@pCity', value: propertyAddress.city.toLowerCase() });
       }
-      if (propertyAddress?.state) {
+      if (!requiresCanonicalPropertyFiltering && propertyAddress?.state) {
         conditions.push(`LOWER(c.propertyAddress.state) = @pState`);
         parameters.push({ name: '@pState', value: propertyAddress.state.toLowerCase() });
       }
-      if (propertyAddress?.zipCode) {
+      if (!requiresCanonicalPropertyFiltering && propertyAddress?.zipCode) {
         conditions.push(`c.propertyAddress.zipCode = @pZip`);
         parameters.push({ name: '@pZip', value: propertyAddress.zipCode });
       }
@@ -1376,24 +1533,41 @@ export class OrderController {
       const safeLimit = Math.min(Math.max(1, Number(limit)), 100);
       const safeOffset = Math.max(0, Number(offset));
 
-      // Count query
-      const countSpec = this.dbService.buildOrdersQuerySpec(
-        `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`,
-        parameters,
-        req.authorizationFilter,
-      );
-      const countResult = await this.dbService.queryDocuments<number>('orders', countSpec.query, countSpec.parameters);
-      const total = countResult[0] ?? 0;
+      let total: number;
+      let orders: Order[];
 
-      // Data query
-      const dataSpec = this.dbService.buildOrdersQuerySpec(
-        `SELECT * FROM c WHERE ${whereClause} ` +
-        `ORDER BY c.${safeSortBy} ${safeSortOrder} ` +
-        `OFFSET ${safeOffset} LIMIT ${safeLimit}`,
-        parameters,
-        req.authorizationFilter,
-      );
-      const orders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
+      if (requiresCanonicalPropertyFiltering) {
+        // Canonical join can't run in Cosmos SQL — pull the candidate set,
+        // filter against canonical addresses in JS, then paginate the result.
+        const dataSpec = this.dbService.buildOrdersQuerySpec(
+          `SELECT * FROM c WHERE ${whereClause} ORDER BY c.${safeSortBy} ${safeSortOrder}`,
+          parameters,
+          req.authorizationFilter,
+        );
+        const candidateOrders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
+        const filteredOrders = await this.applyCanonicalPropertyFilters(candidateOrders, { textQuery, propertyAddress });
+        total = filteredOrders.length;
+        orders = filteredOrders.slice(safeOffset, safeOffset + safeLimit);
+      } else {
+        // Count query
+        const countSpec = this.dbService.buildOrdersQuerySpec(
+          `SELECT VALUE COUNT(1) FROM c WHERE ${whereClause}`,
+          parameters,
+          req.authorizationFilter,
+        );
+        const countResult = await this.dbService.queryDocuments<number>('orders', countSpec.query, countSpec.parameters);
+        total = countResult[0] ?? 0;
+
+        // Data query
+        const dataSpec = this.dbService.buildOrdersQuerySpec(
+          `SELECT * FROM c WHERE ${whereClause} ` +
+          `ORDER BY c.${safeSortBy} ${safeSortOrder} ` +
+          `OFFSET ${safeOffset} LIMIT ${safeLimit}`,
+          parameters,
+          req.authorizationFilter,
+        );
+        orders = await this.dbService.queryDocuments<Order>('orders', dataSpec.query, dataSpec.parameters);
+      }
 
       // Compute simple aggregations from the returned page
       const byStatus: Record<string, number> = {};
