@@ -254,6 +254,8 @@ import { ReviewSLAWatcherJob } from '../jobs/review-sla-watcher.job';
 import { FiringRulesEvaluatorJob } from '../jobs/firing-rules-evaluator.job.js';
 import { DecisionAnalyticsAggregationJob } from '../jobs/decision-analytics-aggregation.job.js';
 import { DecisionAnalyticsAggregationService } from '../services/decision-engine/analytics/decision-analytics-aggregation.service.js';
+import { DecisionImpactSimulatorService } from '../services/decision-engine/simulator/decision-impact-simulator.service.js';
+import { PackVersionDiffService } from '../services/decision-engine/diff/pack-version-diff.service.js';
 import { ReviewProgramOrchestrator } from '../services/decision-engine/review-program/review-program-orchestrator.service.js';
 import { ROVSLAWatcherJob } from '../jobs/rov-sla-watcher.job.js';
 
@@ -1656,9 +1658,20 @@ export class AppraisalManagementAPIServer {
       const killSwitches = new DecisionEngineKillSwitchService(this.dbService);
 
       const analyticsAggregator = new DecisionAnalyticsAggregationService(this.dbService);
+
+      // Scope expansions (rev 15): impact simulator + pack-version diff.
+      // Simulator needs the MOP pusher for replay-style preview; diff is
+      // category-agnostic and only needs Cosmos + the pack service.
+      const impactSimulator = vendorMatchingPusher
+        ? new DecisionImpactSimulatorService(this.dbService, vendorMatchingPusher)
+        : null;
+      const packDiff = new PackVersionDiffService(this.dbService, packs);
+
       this.app.use('/api/decision-engine/rules/:category',
         this.unifiedAuth.authenticate(),
-        new DecisionEngineRulesController(packs, registry, killSwitches, analyticsAggregator).router,
+        new DecisionEngineRulesController(
+          packs, registry, killSwitches, analyticsAggregator, impactSimulator, packDiff,
+        ).router,
       );
 
       const overrideService = new DecisionOverrideService(this.dbService);
@@ -2097,7 +2110,7 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/reviews',
       this.unifiedAuth.authenticate(),
       this.authzMiddleware?.loadUserProfile() || ((req: any, res: any, next: any) => next()),
-      createReviewRouter()
+      createReviewRouter(this.dbService)
     );
 
     // Legacy Azure Functions proxy routes

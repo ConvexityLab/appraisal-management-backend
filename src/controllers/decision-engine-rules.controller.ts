@@ -35,6 +35,8 @@ import type {
 import type { CategoryDefinition, CategoryRegistry } from '../services/decision-engine/category-definition.js';
 import type { DecisionEngineKillSwitchService } from '../services/decision-engine/kill-switch/kill-switch.service.js';
 import type { DecisionAnalyticsAggregationService } from '../services/decision-engine/analytics/decision-analytics-aggregation.service.js';
+import type { DecisionImpactSimulatorService } from '../services/decision-engine/simulator/decision-impact-simulator.service.js';
+import type { PackVersionDiffService } from '../services/decision-engine/diff/pack-version-diff.service.js';
 
 export class DecisionEngineRulesController {
   public readonly router: Router;
@@ -42,14 +44,12 @@ export class DecisionEngineRulesController {
   constructor(
     private readonly packs: DecisionRulePackService,
     private readonly registry: CategoryRegistry,
-    /** Optional — when present, push/preview/replay/createVersion check the
-     *  per-(tenant, category) kill switch and short-circuit with 503 when
-     *  the flag is on. Omit in tests that don't need to exercise the lever. */
     private readonly killSwitches: DecisionEngineKillSwitchService | null = null,
-    /** Optional — when present, /analytics prefers pre-aggregated snapshots
-     *  over on-the-fly computation. Phase E.preagg. Falls through to live
-     *  compute when no fresh snapshot exists. */
     private readonly aggregations: DecisionAnalyticsAggregationService | null = null,
+    /** Scope-expansion (rev 15): pack-change impact on in-flight decisions. */
+    private readonly simulator: DecisionImpactSimulatorService | null = null,
+    /** Scope-expansion (rev 15): pack version A/B diff + behavioral replay. */
+    private readonly packDiff: PackVersionDiffService | null = null,
   ) {
     this.router = Router({ mergeParams: true });
     this.initRoutes();
@@ -79,9 +79,10 @@ export class DecisionEngineRulesController {
   private initRoutes(): void {
     this.router.use(this.requireKnownCategory.bind(this));
 
-    // Route order matters: /preview, /seed, /seed-from-default, /replay, /analytics before /:packId.
+    // Route order matters: /preview, /seed, /seed-from-default, /replay, /analytics, /simulate before /:packId.
     this.router.post('/preview',                  this.preview.bind(this));
     this.router.post('/replay',                   this.replay.bind(this));
+    this.router.post('/simulate',                 this.simulate.bind(this));
     this.router.get('/analytics',                 this.analytics.bind(this));
     this.router.get('/seed',                      this.getSeed.bind(this));
     this.router.post('/seed-from-default',        this.seedFromDefault.bind(this));
@@ -90,6 +91,7 @@ export class DecisionEngineRulesController {
     this.router.get('/:packId/versions',          this.listVersions.bind(this));
     this.router.get('/:packId/versions/:version', this.getVersion.bind(this));
     this.router.get('/:packId/audit',             this.getAudit.bind(this));
+    this.router.get('/:packId/diff',              this.diffVersions.bind(this));
     this.router.delete('/:packId',                this.dropPack.bind(this));
   }
 
@@ -133,7 +135,7 @@ export class DecisionEngineRulesController {
   private notImplemented(
     res: Response,
     category: DecisionRuleCategory,
-    method: 'push' | 'preview' | 'getSeed' | 'drop' | 'replay' | 'analytics',
+    method: 'push' | 'preview' | 'getSeed' | 'drop' | 'replay' | 'analytics' | 'simulate' | 'diffVersions',
   ): void {
     res.status(501).json({
       success: false,
@@ -432,6 +434,89 @@ export class DecisionEngineRulesController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const status = /^MOP preview returned 400/.test(msg) ? 400 : 502;
+      res.status(status).json({ success: false, error: msg });
+    }
+  }
+
+  // ── POST /simulate — Decision Impact Simulator (rev 15) ────────────────
+  // Projects pack-change effect on in-flight (pending_bid / broadcast)
+  // decisions. Wired only for vendor-matching today; others return 501.
+  //   Body: { rules: unknown[]; packId?: string }
+  //   Response: SimulationResult (pendingCount + newlyEscalatedOrders +
+  //     losingBidVendors + perDecision rows).
+  private async simulate(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    const category = req.params['category']!;
+    if (await this.refuseIfKilled(tenantId, category, res)) return;
+    if (category !== 'vendor-matching' || !this.simulator) {
+      this.notImplemented(res, category, 'simulate');
+      return;
+    }
+    const body = req.body as { rules?: unknown[]; packId?: string };
+    if (!Array.isArray(body.rules) || body.rules.length === 0) {
+      res.status(400).json({ success: false, error: '`rules` (non-empty array) is required' });
+      return;
+    }
+    try {
+      const result = await this.simulator.simulate({
+        tenantId,
+        rules: body.rules,
+        ...(body.packId ? { packId: body.packId } : {}),
+      });
+      res.json({ success: true, data: result });
+    } catch (err) {
+      res.status(502).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  // ── GET /:packId/diff?versionA=N&versionB=M — Pack version A/B diff (rev 15) ─
+  // Returns added/removed/modified/unchanged rules between two versions.
+  //   ?behavioral=true also replays both packs and surfaces per-trace
+  //   outcome divergence.
+  private async diffVersions(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const tenantId = this.requireTenant(req, res);
+    if (!tenantId) return;
+    const category = req.params['category']!;
+    const packId   = req.params['packId']!;
+    if (!this.packDiff) {
+      this.notImplemented(res, category, 'diffVersions');
+      return;
+    }
+    const vA = Number(req.query['versionA']);
+    const vB = Number(req.query['versionB']);
+    if (!Number.isFinite(vA) || vA <= 0 || !Number.isFinite(vB) || vB <= 0) {
+      res.status(400).json({ success: false, error: '`versionA` and `versionB` query params must be positive integers' });
+      return;
+    }
+    const behavioral = req.query['behavioral'] === 'true';
+    const sinceDaysRaw = req.query['sinceDays'];
+    const sinceDays = sinceDaysRaw !== undefined ? Number(sinceDaysRaw) : undefined;
+    if (sinceDays !== undefined && (!Number.isFinite(sinceDays) || sinceDays <= 0)) {
+      res.status(400).json({ success: false, error: '`sinceDays` must be a positive number when supplied' });
+      return;
+    }
+
+    try {
+      if (!behavioral) {
+        const diff = await this.packDiff.diff({ tenantId, category, packId, versionA: vA, versionB: vB });
+        res.json({ success: true, data: diff });
+        return;
+      }
+      const def = this.resolveCategory(category);
+      if (!def.replay) {
+        this.notImplemented(res, category, 'replay');
+        return;
+      }
+      const result = await this.packDiff.behavioralDiff(
+        { tenantId, category, packId, versionA: vA, versionB: vB,
+          ...(sinceDays !== undefined ? { sinceDays } : {}) },
+        (replayInput) => def.replay!(replayInput),
+      );
+      res.json({ success: true, data: result });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes('not found') ? 404 : 502;
       res.status(status).json({ success: false, error: msg });
     }
   }
