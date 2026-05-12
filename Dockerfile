@@ -6,9 +6,13 @@ RUN npm install -g pnpm@9
 
 WORKDIR /usr/src/app
 
-# Copy package files
+# Copy workspace config and package files
+COPY pnpm-workspace.yaml ./
 COPY package.json pnpm-lock.yaml ./
 COPY tsconfig*.json ./
+
+# Copy local workspace packages (e.g. @l1/shared-types) required for build
+COPY packages/ ./packages/
 
 # Install all dependencies including dev dependencies for build
 RUN pnpm install --frozen-lockfile
