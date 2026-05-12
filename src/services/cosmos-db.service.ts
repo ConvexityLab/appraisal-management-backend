@@ -154,6 +154,43 @@ export class CosmosDbService {
       this.client = sharedClient;
       this.database = sharedDatabase;
       this.isConnected = sharedConnected;
+      // Synchronously bind all container references so getXxxContainer()
+      // guards don't throw "not initialized" on a freshly-constructed sibling.
+      // database.container() is a pure reference — no network call.
+      this.ordersContainer = sharedDatabase.container(this.containers.orders);
+      this.vendorsContainer = sharedDatabase.container(this.containers.vendors);
+      this.usersContainer = sharedDatabase.container(this.containers.users);
+      this.propertiesContainer = sharedDatabase.container(this.containers.properties);
+      this.qcReviewsContainer = sharedDatabase.container(this.containers.qcReviews);
+      this.qcResultsContainer = sharedDatabase.container(this.containers.qcResults);
+      this.qcChecklistsContainer = sharedDatabase.container(this.containers.qcChecklists);
+      this.qcExecutionsContainer = sharedDatabase.container(this.containers.qcExecutions);
+      this.qcSessionsContainer = sharedDatabase.container(this.containers.qcSessions);
+      this.qcTemplatesContainer = sharedDatabase.container(this.containers.qcTemplates);
+      this.analyticsContainer = sharedDatabase.container(this.containers.analytics);
+      this.rovRequestsContainer = sharedDatabase.container(this.containers.rovRequests);
+      this.templatesContainer = sharedDatabase.container(this.containers.documentTemplates);
+      this.reviewsContainer = sharedDatabase.container(this.containers.reviews);
+      this.comparableAnalysesContainer = sharedDatabase.container(this.containers.comparableAnalyses);
+      this.documentsContainer = sharedDatabase.container(this.containers.documents);
+      this.communicationsContainer = sharedDatabase.container(this.containers.communications);
+      this.clientsContainer = sharedDatabase.container(this.containers.clients);
+      this.productsContainer = sharedDatabase.container(this.containers.products);
+      this.bulkPortfolioJobsContainer = sharedDatabase.container(this.containers.bulkPortfolioJobs);
+      this.matchingCriteriaSetsContainer = sharedDatabase.container(this.containers.matchingCriteriaSets);
+      this.rfbRequestsContainer = sharedDatabase.container(this.containers.rfbRequests);
+      this.arvAnalysesContainer = sharedDatabase.container(this.containers.arvAnalyses);
+      this.engagementsContainer = sharedDatabase.container(this.containers.engagements);
+      this.reviewProgramsContainer = sharedDatabase.container(this.containers.reviewPrograms);
+      this.reviewResultsContainer = sharedDatabase.container(this.containers.reviewResults);
+      this.constructionLoansContainer = sharedDatabase.container(this.containers.constructionLoans);
+      this.drawsContainer = sharedDatabase.container(this.containers.draws);
+      this.contractorsContainer = sharedDatabase.container(this.containers.contractors);
+      this.appraisalDraftsContainer = sharedDatabase.container(this.containers.appraisalDrafts);
+      this.propertyRecordsContainer = sharedDatabase.container(this.containers.propertyRecords);
+      this.comparableSalesContainer = sharedDatabase.container(this.containers.comparableSales);
+      this.propertyDataCacheContainer = sharedDatabase.container(this.containers.propertyDataCache);
+      this.attomDataContainer = sharedDatabase.container(this.containers.attomData);
     }
   }
 

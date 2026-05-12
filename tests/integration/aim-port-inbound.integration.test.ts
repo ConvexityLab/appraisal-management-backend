@@ -32,6 +32,7 @@ describe.skipIf(!RUN)('AIM-Port inbound — full integration pipeline', () => {
   let app: Application;
   let adminToken: string;
   let db: CosmosDbService;
+  let originalMockSbFlag: string | undefined;
 
   // IDs seeded / created during the test — used for assertions and cleanup
   let vendorConnectionId: string;
@@ -46,6 +47,10 @@ describe.skipIf(!RUN)('AIM-Port inbound — full integration pipeline', () => {
   const SECRET_NAME = 'aim-port-integration-test-key';
 
   beforeAll(async () => {
+    // Use real Azure Service Bus — not the in-memory mock.
+    originalMockSbFlag = process.env.USE_MOCK_SERVICE_BUS;
+    process.env.USE_MOCK_SERVICE_BUS = 'false';
+
     serverInstance = new AppraisalManagementAPIServer(0);
     app = serverInstance.getExpressApp();
     await serverInstance.initDb();
@@ -94,12 +99,14 @@ describe.skipIf(!RUN)('AIM-Port inbound — full integration pipeline', () => {
     const vendorDoc = {
       id: seededVendorId,
       type: 'vendor',
+      entityType: 'vendor',
       tenantId: TENANT_ID,
       businessName: 'Integration Test Appraisers LLC',
       contactName: 'Test Appraiser',
       email: `vendor-inttest@example.com`,
       phone: '+1-512-555-0001',
       status: 'ACTIVE',
+      isActive: true,
       vendorType: 'INDEPENDENT',
       specialties: ['FULL_APPRAISAL', 'RESIDENTIAL'],
       serviceAreas: [{ state: 'TX', counties: ['Travis', 'Williamson', 'Hays'], zipCodes: [] }],
@@ -129,6 +136,18 @@ describe.skipIf(!RUN)('AIM-Port inbound — full integration pipeline', () => {
   }, 60_000);
 
   afterAll(async () => {
+    // Restore the Service Bus mock flag for any subsequent test suites.
+    process.env.USE_MOCK_SERVICE_BUS = originalMockSbFlag ?? 'true';
+
+    // Stop the orchestrator and close its SB receiver so it doesn't steal
+    // messages from the broadcast describe block which shares the same
+    // auto-assignment-service subscription on staging Service Bus.
+    const orchestrator = (serverInstance as any)?.autoAssignmentOrchestrator;
+    if (orchestrator) {
+      await orchestrator.stop().catch(() => {});
+      await orchestrator.subscriber?.close().catch(() => {});
+    }
+
     // Clean up: deactivate the vendor connection so it doesn't poison other runs.
     if (vendorConnectionId && app) {
       await request(app)
@@ -393,15 +412,13 @@ describe.skipIf(!RUN)('AIM-Port inbound — full integration pipeline', () => {
  *   1. autoVendorAssignment enters broadcast mode (broadcastBidIds populated).
  *   2. POST /vendor/accept returns 200 and delegates to the orchestrator.
  *   3. autoVendorAssignment reaches ACCEPTED (orchestrator cancels the other bid).
- *
- * Step 3 requires a live Service Bus consumer in the test server (same
- * requirement as the sequential accept test above).
  */
 describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () => {
   let serverInstance: AppraisalManagementAPIServer;
   let app: Application;
   let adminToken: string;
   let db: CosmosDbService;
+  let originalMockSbFlag: string | undefined;
 
   let vendorConnectionId: string;
   let createdOrderId: string;
@@ -417,6 +434,10 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
   const SECRET_NAME = 'aim-port-integration-test-key';
 
   beforeAll(async () => {
+    // Use real Azure Service Bus — not the in-memory mock.
+    originalMockSbFlag = process.env.USE_MOCK_SERVICE_BUS;
+    process.env.USE_MOCK_SERVICE_BUS = 'false';
+
     serverInstance = new AppraisalManagementAPIServer(0);
     app = serverInstance.getExpressApp();
     await serverInstance.initDb();
@@ -437,7 +458,7 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
     const configDoc = {
       id: seededClientConfigId,
       entityType: 'client-config',
-      clientId: CLIENT_ID,
+      clientId: 'lender-broadcast-inttest',
       bidMode: 'broadcast',
       broadcastCount: 2,
       autoAssignmentEnabled: true,
@@ -486,12 +507,14 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
     const buildVendorDoc = (idx: number) => ({
       id: `vendor-broadcast-inttest-${TS}-${idx}`,
       type: 'vendor',
+      entityType: 'vendor',
       tenantId: TENANT_ID,
       businessName: `Broadcast Integration Appraiser ${idx}`,
       contactName: `Test Appraiser ${idx}`,
       email: `vendor-broadcast-${idx}-${TS}@example.com`,
       phone: '+1-512-555-0100',
       status: 'ACTIVE',
+      isActive: true,
       vendorType: 'INDEPENDENT',
       specialties: ['FULL_APPRAISAL', 'RESIDENTIAL'],
       serviceAreas: [{ state: 'TX', counties: ['Travis', 'Williamson'], zipCodes: [] }],
@@ -527,6 +550,9 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
   }, 60_000);
 
   afterAll(async () => {
+    // Restore the Service Bus mock flag for any subsequent test suites.
+    process.env.USE_MOCK_SERVICE_BUS = originalMockSbFlag ?? 'true';
+
     if (vendorConnectionId && app) {
       await request(app)
         .delete(`/api/vendor-integrations/connections/${vendorConnectionId}`)
@@ -539,7 +565,7 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
       }
     }
     if (seededClientConfigId && db) {
-      await (db as any).deleteItem('client-configs', seededClientConfigId, CLIENT_ID).catch(() => {});
+      await (db as any).deleteItem('client-configs', seededClientConfigId, 'lender-broadcast-inttest').catch(() => {});
     }
   });
 
@@ -653,13 +679,12 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
     expect(acceptRes.body.message).toMatch(/orchestrat/i);
   }, 20_000);
 
-  it('autoVendorAssignment reaches ACCEPTED after broadcast accept (requires live Service Bus)', async () => {
+  it('autoVendorAssignment reaches ACCEPTED after broadcast accept', async () => {
     expect(createdOrderId).toBeDefined();
 
-    // The orchestrator handles onVendorBidAccepted via the Service Bus consumer
-    // that AppraisalManagementAPIServer starts.  Allow up to 20 s for the
-    // publish → consume → Cosmos-write cycle to complete.
-    const deadline = Date.now() + 20_000;
+    // The orchestrator handles onVendorBidAccepted via the real Service Bus consumer.
+    // Allow up to 60 s for the publish → SB broker → receive → Cosmos-write cycle.
+    const deadline = Date.now() + 60_000;
     let finalAssignment: Record<string, unknown> | undefined;
     while (Date.now() < deadline) {
       const result = await db.getItem('orders', createdOrderId, TENANT_ID);
@@ -678,5 +703,5 @@ describe.skipIf(!RUN)('AIM-Port inbound — broadcast-mode auto-assignment', () 
     // The other broadcast bid(s) must have been cancelled.
     const broadcastBidIds = (finalAssignment?.broadcastBidIds as unknown[]) ?? [];
     expect(broadcastBidIds.length).toBeGreaterThanOrEqual(1);
-  }, 25_000);
+  }, 75_000);
 });

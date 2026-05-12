@@ -1,4 +1,4 @@
-/**
+﻿/**
  * IFieldMapper — every form-type mapper must implement this interface.
  *
  * The mapper's job is to translate a CanonicalReportDocument into a flat
@@ -9,7 +9,7 @@
  * script (`pnpm ts-node src/scripts/inspect-pdf-fields.ts <path-to-pdf>`).
  */
 
-import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
 
 export interface IFieldMapper {
   /** Canonical domain key registered in TemplateRegistryService, e.g. 'urar-1004' */
@@ -24,4 +24,15 @@ export interface IFieldMapper {
    * the object as-is to Handlebars.compile().
    */
   mapToFieldMap(doc: CanonicalReportDocument): Record<string, unknown>;
+
+  /**
+   * Optional: maps each AcroForm field name to the section key it belongs to.
+   * Used by R-19 (AcroFormFillStrategy) to suppress fields for invisible sections.
+   *
+   * Example:
+   *   { 'CostLandValue': 'cost_approach', 'IncomeGRM': 'income_approach' }
+   *
+   * Fields not listed here are always filled regardless of section visibility.
+   */
+  readonly fieldSections?: Record<string, string>;
 }

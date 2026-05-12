@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+﻿import { randomUUID } from 'crypto';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import type { CanonicalSnapshotRecord, RunLedgerRecord } from '../types/run-ledger.types.js';
@@ -11,7 +11,8 @@ import { mapTransactionHistoryFromTape } from '../mappers/transaction-history.ma
 import { mapAvmCrossCheckFromTape } from '../mappers/avm.mapper.js';
 import { computeCompStatistics } from '../mappers/comp-statistics.mapper.js';
 import { mapRiskFlagsFromTape } from '../mappers/risk-flags.mapper.js';
-import { validateCanonicalIngress } from '../utils/validate-canonical-ingress.js';
+import { validateCanonicalIngress, type ValidateCanonicalIngressOpts } from '../utils/validate-canonical-ingress.js';
+import { ReportConfigMergerService } from './report-config-merger.service.js';
 import { mapAppraisalOrderToCanonical } from '../mappers/appraisal-order.mapper.js';
 import { mapPropertyEnrichmentToCanonical } from '../mappers/property-enrichment.mapper.js';
 import {
@@ -19,10 +20,10 @@ import {
   pickPropertyCanonical,
   PROPERTY_CANONICAL_PROJECTOR_VERSION,
 } from '../mappers/property-canonical-projection.js';
-import type { CanonicalReportDocument, CanonicalSubject } from '../types/canonical-schema.js';
+import type { CanonicalReportDocument, CanonicalSubject } from '@l1/shared-types';
 import type { RiskTapeItem } from '../types/review-tape.types.js';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
-import type { PropertyRecord, PropertyCurrentCanonicalView } from '../types/property-record.types.js';
+import type { PropertyRecord, PropertyCurrentCanonicalView } from '@l1/shared-types';
 import { OrderContextLoader, type OrderContext } from './order-context-loader.service.js';
 import type { PropertyDomainEventType } from '../types/property-event-outbox.types.js';
 import { PropertyEventOutboxService } from './property-event-outbox.service.js';
@@ -40,6 +41,31 @@ interface PropertyEnrichmentRecord {
 
 export const CANONICAL_SNAPSHOTS_CONTAINER = 'canonical-snapshots';
 
+/**
+ * Build a flat fieldKey→value map from a canonical fragment for R-22
+ * config-driven ingress validation.  Recursively collects all leaf values
+ * keyed by their terminal property name.  This is best-effort: when a config
+ * field key matches a terminal property name in the canonical doc, the value
+ * is found; mismatches are silently absent (field gets flagged as missing).
+ */
+function flattenCanonical(obj: unknown, out: Record<string, unknown> = {}): Record<string, unknown> {
+  if (obj === null || obj === undefined || typeof obj !== 'object' || Array.isArray(obj)) {
+    return out;
+  }
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      flattenCanonical(value, out);
+    } else {
+      // Later keys with the same terminal name overwrite earlier ones.
+      // This is acceptable for the soft-observability use case.
+      if (out[key] === undefined) {
+        out[key] = value;
+      }
+    }
+  }
+  return out;
+}
+
 export class CanonicalSnapshotService {
   private readonly logger = new Logger('CanonicalSnapshotService');
   private readonly runContainerName = CANONICAL_SNAPSHOTS_CONTAINER;
@@ -50,12 +76,14 @@ export class CanonicalSnapshotService {
   private readonly outboxService: PropertyEventOutboxService;
   private readonly observationService: PropertyObservationService;
   private readonly projectorService: PropertyProjectorService;
+  private readonly reportConfigMerger: ReportConfigMergerService;
 
   constructor(private readonly dbService: CosmosDbService) {
     this.contextLoader = new OrderContextLoader(dbService);
     this.outboxService = new PropertyEventOutboxService(dbService);
     this.observationService = new PropertyObservationService(dbService);
     this.projectorService = new PropertyProjectorService(dbService);
+    this.reportConfigMerger = new ReportConfigMergerService(dbService);
   }
 
   async createFromExtractionRun(extractionRun: RunLedgerRecord): Promise<CanonicalSnapshotRecord> {
@@ -82,6 +110,14 @@ export class CanonicalSnapshotService {
     }
 
     const normalizedData = this.buildNormalizedData(extractionRun, sourceArtifacts);
+
+    // R-22: config-driven ingress validation — soft-logs only, never throws.
+    await this._runIngressValidation(
+      extractionRun,
+      sourceArtifacts.orderContext?.vendorOrder ?? null,
+      normalizedData?.canonical ?? null,
+    );
+
     const sourceIdentity = extendIntakeSourceIdentity(
       extractionRun.sourceIdentity ?? sourceArtifacts.document?.sourceIdentity,
       {
@@ -770,23 +806,6 @@ export class CanonicalSnapshotService {
       if (compStats) (canonical as Partial<CanonicalReportDocument>).compStatistics = compStats;
     }
 
-    // Strict-canonical-ingress validation. Runs after all mappers + the merge
-    // produced the candidate canonical fragment. Logs structured warnings when
-    // a high-leverage branch (address / loan / ratios / riskFlags) drifted —
-    // the snapshot still persists. This is observability into mapper bugs;
-    // the per-source upstream adapters already strict-validate at the wire
-    // boundary.
-    const ingressValidation = validateCanonicalIngress(canonical as Partial<CanonicalReportDocument>);
-    if (!ingressValidation.ok) {
-      this.logger.warn('Canonical ingress validation: drift detected', {
-        runId: extractionRun.id,
-        tenantId: extractionRun.tenantId,
-        issueCount: ingressValidation.issues.length,
-        issues: ingressValidation.issues.slice(0, 10),
-        branchesChecked: ingressValidation.branchesChecked,
-      });
-    }
-
     // Slice 8k: legacy `subjectProperty` flat shim and `providerData` raw
     // blob are no longer emitted on new snapshots. Slice 8j migrated the
     // known readers (CriteriaStepInputService, PreparedDispatchPayloadAssembly)
@@ -855,6 +874,49 @@ export class CanonicalSnapshotService {
       return null;
     }
     return value as Record<string, unknown>;
+  }
+  // ---------------------------------------------------------------------------
+  // R-22: Canonical ingress validation helper
+  // ---------------------------------------------------------------------------
+
+  private async _runIngressValidation(
+    extractionRun: RunLedgerRecord,
+    order: Order | null,
+    canonical: Partial<CanonicalReportDocument> | null,
+  ): Promise<void> {
+    let ingressOpts: ValidateCanonicalIngressOpts | undefined;
+    if (order && canonical) {
+      try {
+        const effectiveConfig = await this.reportConfigMerger.getEffectiveConfig(order);
+        ingressOpts = {
+          config: effectiveConfig,
+          fieldData: flattenCanonical(canonical),
+        };
+      } catch (configErr) {
+        this.logger.warn(
+          'R-22: Failed to load EffectiveReportConfig for ingress validation — skipping config risk flags',
+          { runId: extractionRun.id, error: (configErr as Error).message },
+        );
+      }
+    }
+    const ingressValidation = validateCanonicalIngress(canonical, ingressOpts);
+    if (!ingressValidation.ok) {
+      this.logger.warn('Canonical ingress validation: drift detected', {
+        runId: extractionRun.id,
+        tenantId: extractionRun.tenantId,
+        issueCount: ingressValidation.issues.length,
+        issues: ingressValidation.issues.slice(0, 10),
+        branchesChecked: ingressValidation.branchesChecked,
+      });
+    }
+    if (ingressValidation.configRiskFlags.length > 0) {
+      this.logger.warn('Canonical ingress validation: required config fields absent from extraction', {
+        runId: extractionRun.id,
+        tenantId: extractionRun.tenantId,
+        flagCount: ingressValidation.configRiskFlags.length,
+        flags: ingressValidation.configRiskFlags.slice(0, 10),
+      });
+    }
   }
 }
 

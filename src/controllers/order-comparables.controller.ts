@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OrderComparablesController — read-only REST surface over the
  * `order-comparables` Cosmos container.
  *
@@ -47,8 +47,8 @@ import {
   LEGACY_VENDOR_ORDER_DOC_TYPE,
   type VendorOrder,
 } from '../types/vendor-order.types.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
-import type { PropertyPhoto } from '../types/canonical-schema.js';
+import type { PropertyRecord } from '@l1/shared-types';
+import type { PropertyPhoto } from '@l1/shared-types';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Logger } from '../utils/logger.js';

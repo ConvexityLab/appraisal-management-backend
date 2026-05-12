@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bulk-ingestion CSV row → AMP canonical mapper
  *
  * Projects a `BulkIngestionItemInput` (the typed CSV/XLSX row shape produced
@@ -35,7 +35,7 @@ import type {
     CanonicalLoan,
     CanonicalReportDocument,
     CanonicalSubject,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

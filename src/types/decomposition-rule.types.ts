@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DecompositionRule — Cosmos-stored configuration that maps a ClientOrder
  * (productType + scope) to the set of VendorOrders that should be created.
  *
@@ -20,7 +20,7 @@
 
 import type { ProductType } from './product-catalog.js';
 import type { ReviewFlagCondition } from './review-tape.types.js';
-import type { CanonicalReportDocument } from './canonical-schema.js';
+import type { CanonicalReportDocument } from '@l1/shared-types';
 
 // ─── Discriminator + container ───────────────────────────────────────────────
 

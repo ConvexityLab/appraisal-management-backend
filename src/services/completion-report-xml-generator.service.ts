@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Completion Report XML Generator
  *
  * Generates UAD 3.6 / MISMO 3.4 compliant XML for a Completion Report
@@ -41,7 +41,7 @@ import {
   CrContactParty,
   CrAppraiserAssignment,
   generateFinalValueConditionStatement,
-} from '../types/canonical-completion-report.js';
+} from '@l1/shared-types';
 import {
   CompletionReportMapper,
   CompletionReportGenerationContext,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Comparable Selection Types
  *
  * Types for the automated comparable-property selection pipeline that runs
@@ -13,7 +13,7 @@
  */
 
 import type { PropertyDataCacheEntry } from '../services/property-data-cache.service.js';
-import type { PropertyRecordType } from './property-record.types.js';
+import type { PropertyRecordType } from '@l1/shared-types';
 
 // ─── Ranking Weights ──────────────────────────────────────────────────────────
 

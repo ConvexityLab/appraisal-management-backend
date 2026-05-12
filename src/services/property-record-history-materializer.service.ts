@@ -1,5 +1,5 @@
-import type { PropertyObservationRecord } from '../types/property-observation.types.js';
-import type { PermitRecord, PropertyRecord, TaxAssessmentRecord } from '../types/property-record.types.js';
+﻿import type { PropertyObservationRecord } from '../types/property-observation.types.js';
+import type { PermitRecord, PropertyRecord, TaxAssessmentRecord } from '@l1/shared-types';
 
 type PropertyAvm = NonNullable<PropertyRecord['avm']>;
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OrderCompCollectionService
  *
  * Comp-collection stage of the comp pipeline. Triggered by a
@@ -34,7 +34,7 @@ import { materializePropertyRecordHistory } from './property-record-history-mate
 import { encodeGeohash } from '../utils/geohash.util.js';
 import { attomToPropertyRecord } from '../mappers/attom-to-property-record.mapper.js';
 import type { ClientOrderCreatedEvent } from '../types/events.js';
-import type { CanonicalAddress } from '../types/property-record.types.js';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
 import {
   ORDER_COMPARABLES_CONTAINER,
   type CollectedCompCandidate,
@@ -425,7 +425,7 @@ export class OrderCompCollectionService {
     clientOrderNumber: string;
     tenantId: string;
     productType: string;
-    subject: import('../types/property-record.types.js').PropertyRecord;
+    subject: import('@l1/shared-types/property-record').PropertyRecord;
     soldCandidates: CollectedCompCandidate[];
     activeCandidates: CollectedCompCandidate[];
     numSold: number;
@@ -460,7 +460,7 @@ export class OrderCompCollectionService {
    * Other exceptions rethrow.
    */
   private async runValueEstimate(
-    subject: import('../types/property-record.types.js').PropertyRecord,
+    subject: import('@l1/shared-types/property-record').PropertyRecord,
     selection: CompSelectionResult,
     soldCandidates: CollectedCompCandidate[],
     clientOrderId: string,

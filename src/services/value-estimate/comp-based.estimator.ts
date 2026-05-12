@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CompBasedValueEstimator
  *
  * Pure computation: estimate subject value from the runtime AVM projection on
@@ -30,7 +30,7 @@
  * explicit config keys and surface them through this estimator's input.
  */
 
-import type { PropertyRecord } from '../../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 import type {
   IValueEstimator,
   SelectedCompWithPropertyRecord,

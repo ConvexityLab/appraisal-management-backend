@@ -24,7 +24,7 @@ import {
   type CanonicalValuation,
   type CanonicalRentComp,
   type CanonicalSubject,
-} from '../src/types/canonical-schema';
+} from '@l1/shared-types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers — build valid minimal objects for testing

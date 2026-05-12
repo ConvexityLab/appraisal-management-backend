@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Seed Module: Properties
  *
  * Seeds legacy property rows, property-summary snapshots, and canonical
@@ -9,7 +9,7 @@
 import type { SeedModule, SeedModuleResult, SeedContext } from '../seed-types.js';
 import { upsert, cleanContainer, daysAgo } from '../seed-types.js';
 import { PROPERTY_IDS, ORDER_IDS } from '../seed-ids.js';
-import { BuildingQualityRating, PropertyRecordCondition, PropertyRecordType } from '../../../types/property-record.types.js';
+import { BuildingQualityRating, PropertyRecordCondition, PropertyRecordType } from '@l1/shared-types';
 
 function buildProperties(tenantId: string): Record<string, unknown>[] {
   return [

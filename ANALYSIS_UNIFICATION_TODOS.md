@@ -54,10 +54,10 @@ Create one unified analysis experience and contract across Engagement, Order, an
   - [x] Simple: submit + status + completion/failure display
   - [x] Advanced: engine target selection, run reason (EXTRACTION); CRITERIA deferred
 - [x] Accept generic context props: `orderId`, `engagementId`, `documentId`.
-- [ ] Add route-aware wrappers for:
-  - [ ] Engagement Documents tab
-  - [ ] Order Documents tab
-  - [ ] Bulk row detail documents panel
+- [x] Add route-aware wrappers for:
+  - [x] Engagement Documents tab
+  - [x] Order Documents tab
+  - [x] Bulk row detail documents panel
 
 ## Phase 5 — Results & Eventing Normalization
 - [x] Normalize pending/running/completed/failed state transitions.

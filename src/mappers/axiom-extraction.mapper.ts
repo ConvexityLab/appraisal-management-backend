@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Axiom Extraction → AMP Canonical Mapper
  *
  * Projects Axiom's raw extracted-fields shape onto the AMP canonical schema
@@ -32,7 +32,7 @@ import type {
     CanonicalComp,
     CanonicalReportDocument,
     CanonicalSubject,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 
 // ─── Value-envelope helpers ────────────────────────────────────────────────────
 

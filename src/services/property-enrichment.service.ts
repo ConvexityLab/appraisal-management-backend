@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property Enrichment Service
  *
  * Fetches subject-property data from the configured PropertyDataProvider
@@ -29,8 +29,9 @@
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
 import { PropertyRecordService } from './property-record.service.js';
-import { PropertyRecordType } from '../types/property-record.types.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
+import { PropertyRecordType } from '@l1/shared-types';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
+import type { PropertyRecord } from '@l1/shared-types';
 import type {
   PropertyDataProvider,
   PropertyDataLookupParams,

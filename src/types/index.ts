@@ -4,7 +4,7 @@
 // PropertyRecord: canonical physical asset â€” the root of all work entities
 // PropertyComparableSale: persisted market transaction events (our comp database)
 // Phase R0 â€” see PROPERTY_DATA_REFACTOR_PLAN.md
-export * from './property-record.types.js';
+export * from '@l1/shared-types';
 export * from './comparable-sale.types.js';
 
 // â”€â”€â”€ Engagement domain (aggregate root for lender-side work) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -157,6 +157,18 @@ export interface Order {
    * authorization middleware enforces presence at the boundaries it gates.
    */
   accessControl?: import('./authorization.types.js').AccessControl;
+  // ── Assignment scorecard (per-vendor-order, append-only) ─────────────────
+  /**
+   * Reviewer scorecards for this vendor order. Append-only — the latest
+   * non-superseded entry is the active rating; older entries are kept via
+   * the supersedes / supersededBy chain. Optional; only populated once a
+   * reviewer scores the assignment (DELIVERED state or later).
+   *
+   * Shape: VendorOrderScorecardEntry[] from vendor-order.types.ts. Cross-file
+   * `import('./vendor-order.types.js')` keeps the dep one-way (this file is
+   * the lower-level Order shape).
+   */
+  scorecards?: import('./vendor-order.types.js').VendorOrderScorecardEntry[];
 }
 
 export interface PropertyAddress {
@@ -296,6 +308,17 @@ export interface Vendor {
    * Per-product proficiency grades certified by a supervisor.
    */
   productGrades?: ProductGrade[];
+
+  // ── Confidential fields (David/Doug meeting — Phase C) ────────────────────
+  //
+  // STRIPPED FROM API RESPONSES for users without the `confidential:read`
+  // scope. Doug's "Hiro star" for difficult-assignment vendors, plus a
+  // free-form classification tag set for senior-staff-only notes. NEVER
+  // exposed to auto-matching — the trustedVendor flag is for human
+  // operator override, not algorithmic boost, per Doug's meeting note
+  // ("I want to see it before I make the final decision").
+  trustedVendor?: boolean;
+  confidentialClassifications?: string[];
 }
 
 export interface VendorPerformance {

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UAD 3.6 Validation Service
  * 
  * Validates appraisal data against Fannie Mae/Freddie Mac UAD 3.6 specification
@@ -15,7 +15,7 @@ import {
   UadOccupancyType,
   UadComparable,
   UadAdjustments
-} from '../types/uad-3.6.js';
+} from '@l1/shared-types';
 import { Logger } from '../utils/logger.js';
 
 export class UadValidationService {

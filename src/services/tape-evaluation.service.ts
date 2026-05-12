@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TapeEvaluationService
  *
  * Generic tape evaluation engine.  Evaluates a batch of RiskTapeItem rows
@@ -49,7 +49,7 @@ import type {
 import type {
   CanonicalCompStatistics,
   CanonicalReportDocument,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 import { mapLoanFromTape, computeLoanRatios } from '../mappers/loan-tape.mapper.js';
 import { mapTransactionHistoryFromTape } from '../mappers/transaction-history.mapper.js';
 import { mapAvmCrossCheckFromTape } from '../mappers/avm.mapper.js';

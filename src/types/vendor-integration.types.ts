@@ -52,6 +52,13 @@ export interface VendorConnection {
   /** Their endpoint — we POST to this URL for outbound calls */
   outboundEndpointUrl: string;
   active: boolean;
+  /**
+   * Per-connection product mapping table: vendor's product identifier (string or
+   * stringified number) → our internal ProductType.  Checked before keyword
+   * heuristics when resolving inbound order products.  Admin-editable at any
+   * time — no redeploy required.
+   */
+  productMappings?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
@@ -66,6 +73,8 @@ export interface CreateVendorConnectionInput {
   credentials: VendorConnectionCredentials;
   outboundEndpointUrl: string;
   active: boolean;
+  /** Optional initial product mappings: vendor product ID → internal ProductType. */
+  productMappings?: Record<string, string>;
 }
 
 export interface UpdateVendorConnectionInput {
@@ -76,6 +85,8 @@ export interface UpdateVendorConnectionInput {
   credentials?: VendorConnectionCredentials;
   outboundEndpointUrl?: string;
   active?: boolean;
+  /** Merged (not replaced) into the existing productMappings when sent via PATCH. */
+  productMappings?: Record<string, string>;
 }
 
 // ─── Normalized Domain Events ─────────────────────────────────────────────────
@@ -101,7 +112,9 @@ export type VendorEventType =
   | 'vendor.revision.requested'
   | 'vendor.loan_number.updated'
   | 'vendor.fha_case_number.updated'
-  | 'vendor.products.listed';
+  | 'vendor.products.listed'
+  // Internal alert events published by VendorOrderStuckCheckerJob (not from vendor push):
+  | 'vendor.order.stalled';
 
 export interface VendorDomainEvent {
   id: string;                      // uuid — for idempotency

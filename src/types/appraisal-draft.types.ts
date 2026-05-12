@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Appraisal Draft Types — Phase 1 of UAD 3.6 Full Compliance
  *
  * Defines the draft entity stored in the `appraisal-drafts` Cosmos container
@@ -8,7 +8,7 @@
  * @see UAD_3.6_COMPLIANCE_PLAN.md — AD-1: Appraisal Draft as First-Class Entity
  */
 
-import type { CanonicalReportDocument } from './canonical-schema.js';
+import type { CanonicalReportDocument } from '@l1/shared-types';
 import type { AppraisalFormType } from './template.types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -88,12 +88,29 @@ export interface AppraisalDraft {
   orderId: string;
   /** The FNMA form type being filled (e.g. FORM_1004, FORM_1073). */
   reportType: AppraisalFormType;
+  /**
+   * Product ID from the product catalog — drives EffectiveReportConfig merging.
+   * Populated from the associated order's productId at draft creation time (R-10).
+   * Optional for backward compatibility with drafts created before R-10.
+   */
+  productId?: string;
   /** Current lifecycle status. */
   status: DraftStatus;
   /** The actual report data being authored — same shape as finalized reports. */
   reportDocument: CanonicalReportDocument;
-  /** Per-section completion tracking. */
-  sectionStatus: Record<DraftSectionId, SectionStatus>;
+  /**
+   * Product-agnostic section data bag (R-10).
+   * Keys are section IDs from EffectiveReportConfig (e.g. 'prior-transfers', 'photos').
+   * Sections whose data maps directly to CanonicalReportDocument fields (the 13 core
+   * canonical sections) are merged into `reportDocument` instead. All other product-
+   * or client-specific sections land here.
+   */
+  sections: Record<string, unknown>;
+  /**
+   * Per-section completion status — widened to Record<string, SectionStatus> (R-10)
+   * so arbitrary product-config section keys can be tracked without modifying the type.
+   */
+  sectionStatus: Record<string, SectionStatus>;
   /** Last UAD validation result, if any. */
   validationErrors: DraftValidationError[] | null;
   /** ISO-8601 timestamp of draft creation. */
@@ -119,7 +136,8 @@ export interface AppraisalDraft {
  */
 export interface DraftValidationError {
   /** Which section the error belongs to. */
-  sectionId: DraftSectionId;
+  /** The section key (matches EffectiveReportConfig section key). */
+  sectionId: string;
   /** Dot-notation path to the offending field (e.g. 'subject.address.city'). */
   fieldPath: string;
   /** Human-readable error message. */
@@ -146,11 +164,16 @@ export interface CreateDraftRequest {
 
 /**
  * Request body for PATCH /api/appraisal-drafts/:id/sections/:sectionId — save one section.
- * The body is a partial CanonicalReportDocument scoped to the fields that section covers.
+ *
+ * For sections that map to CanonicalReportDocument (the 13 core canonical sections),
+ * `data` is a partial CanonicalReportDocument keyed by the top-level field names.
+ * For all other (product-agnostic) sections, `data` is free-form and stored in the
+ * draft `sections` bag keyed by sectionId (R-10).
  */
 export interface SectionSaveRequest {
-  /** Partial report data for the section being saved. */
-  data: Partial<CanonicalReportDocument>;
+  /** Section data — a partial CanonicalReportDocument for canonical sections,
+   *  or arbitrary shape for product-agnostic sections. */
+  data: Record<string, unknown>;
   /** Client-side version for optimistic concurrency. */
   expectedVersion: number;
 }
@@ -172,17 +195,19 @@ export interface DraftValidationResponse {
   data: {
     isValid: boolean;
     errors: DraftValidationError[];
-    sectionStatus: Record<DraftSectionId, SectionStatus>;
+    sectionStatus: Record<string, SectionStatus>;
   };
 }
 
 /**
- * Builds initial sectionStatus with all sections set to NOT_STARTED.
+ * Builds initial sectionStatus with all 13 canonical sections set to NOT_STARTED.
+ * The returned type is widened to Record<string, SectionStatus> (R-10) so
+ * product-specific section keys can be added without a type change.
  */
-export function createInitialSectionStatus(): Record<DraftSectionId, SectionStatus> {
-  const status: Partial<Record<DraftSectionId, SectionStatus>> = {};
+export function createInitialSectionStatus(): Record<string, SectionStatus> {
+  const status: Record<string, SectionStatus> = {};
   for (const id of DRAFT_SECTION_IDS) {
     status[id] = SectionStatus.NOT_STARTED;
   }
-  return status as Record<DraftSectionId, SectionStatus>;
+  return status;
 }

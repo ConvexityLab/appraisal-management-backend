@@ -20,12 +20,11 @@ import express, { type Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AppraisalDraftService } from '../services/appraisal-draft.service.js';
+import { ReportConfigMergerService } from '../services/report-config-merger.service.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
-import {
-  DRAFT_SECTION_IDS,
-  type DraftSectionId,
-} from '../types/appraisal-draft.types.js';
+// DRAFT_SECTION_IDS / DraftSectionId removed from controller (R-10):
+// section key validation is now open to any string (product-config-driven).
 
 const logger = new Logger('AppraisalDraftController');
 
@@ -48,9 +47,9 @@ const validateCreate = [
 
 const validateSectionSave = [
   param('draftId').isString().notEmpty(),
-  param('sectionId').isString().isIn([...DRAFT_SECTION_IDS]).withMessage(
-    `sectionId must be one of: ${DRAFT_SECTION_IDS.join(', ')}`,
-  ),
+  // Accept any non-empty string sectionId — valid keys are determined by the
+  // product's EffectiveReportConfig, not a compile-time enum (R-10).
+  param('sectionId').isString().notEmpty().withMessage('sectionId must be a non-empty string'),
   body('data').isObject().withMessage('data must be an object'),
   body('expectedVersion').isInt({ min: 1 }).withMessage('expectedVersion must be a positive integer'),
 ];
@@ -69,7 +68,8 @@ const validateFinalize = [
 
 export function createAppraisalDraftRouter(dbService: CosmosDbService): express.Router {
   const router = express.Router();
-  const draftService = new AppraisalDraftService(dbService);
+  const mergerService = new ReportConfigMergerService(dbService);
+  const draftService = new AppraisalDraftService(dbService, mergerService);
 
   // ── POST / — Create draft ──────────────────────────────────────────────
 
@@ -182,14 +182,25 @@ export function createAppraisalDraftRouter(dbService: CosmosDbService): express.
         }
 
         const { data, expectedVersion } = req.body;
+
+        // R-22b: run config-driven validation before persisting. Errors are
+        // returned in the response alongside the saved draft so the FE can
+        // display inline field messages.  A non-empty errors list does NOT
+        // block the save — section data is always persisted (soft validation).
+        const fieldErrors = await draftService.validateSection(orderId, sectionId, data ?? {});
+
         const draft = await draftService.saveSection(
           draftId,
           orderId,
-          sectionId as DraftSectionId,
+          sectionId,
           { data, expectedVersion },
           userId,
         );
-        return res.status(200).json({ success: true, data: draft });
+        return res.status(200).json({
+          success: true,
+          data: draft,
+          ...(fieldErrors.length > 0 && { fieldErrors }),
+        });
       } catch (error) {
         logger.error('Error saving section', { error });
         const status = (error as Error).message?.includes('Version conflict') ? 409 : 500;

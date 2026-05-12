@@ -710,14 +710,72 @@ jobs:
             }
           });
 
+  aim-port-smoke-test:
+    name: AIM-Port APIM Smoke Test
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-container-app]
+    # Only run on staging; requires the APIM E2E opt-in secrets to be configured.
+    # Does not fail the deployment if secrets are absent (continue-on-error).
+    if: |
+      needs.deploy-container-app.result == 'success' &&
+      needs.determine-environment.outputs.environment == 'staging'
+    environment: ${{ needs.determine-environment.outputs.environment }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v5
+      with:
+        version: 9
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Azure login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Resolve Cosmos endpoint for smoke assertions
+      id: cosmos
+      run: |
+        RG_NAME="rg-appraisal-mgmt-staging-eastus"
+        COSMOS_ENDPOINT=$(az cosmosdb list --resource-group "$RG_NAME" --query '[0].documentEndpoint' -o tsv)
+        if [[ -z "$COSMOS_ENDPOINT" ]]; then
+          echo "❌ Could not resolve Cosmos endpoint — skipping smoke test"
+          echo "endpoint=" >> "$GITHUB_OUTPUT"
+        else
+          echo "endpoint=$COSMOS_ENDPOINT" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run AIM-Port APIM E2E smoke test
+      if: steps.cosmos.outputs.endpoint != ''
+      continue-on-error: true  # smoke failure alerts but does not block deploy
+      env:
+        VITEST_APIM_E2E: 'true'
+        USE_MOCK_SERVICE_BUS: 'false'
+        AZURE_COSMOS_ENDPOINT: ${{ steps.cosmos.outputs.endpoint }}
+        APIM_BASE_URL: 'https://apim-appraisal-staging-lqxl5v.azure-api.net'
+        APIM_SUBSCRIPTION_KEY: ${{ secrets.APIM_SUBSCRIPTION_KEY }}
+      run: pnpm vitest run tests/integration/aim-port-apim-e2e.integration.test.ts
+
   post-deployment:
     name: Post-Deployment Tasks
     runs-on: ubuntu-latest
-    needs: [determine-environment, deploy-container-app, verify-seeded-users]
+    needs: [determine-environment, deploy-container-app, verify-seeded-users, aim-port-smoke-test]
     if: |
       always() &&
       needs.deploy-container-app.result == 'success' &&
-      (needs.verify-seeded-users.result == 'success' || needs.verify-seeded-users.result == 'skipped')
+      (needs.verify-seeded-users.result == 'success' || needs.verify-seeded-users.result == 'skipped') &&
+      (needs.aim-port-smoke-test.result == 'success' || needs.aim-port-smoke-test.result == 'skipped' || needs.aim-port-smoke-test.result == 'failure')
     
     steps:
     - name: Update README badges

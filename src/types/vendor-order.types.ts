@@ -153,3 +153,57 @@ export interface VendorOrderLinkage {
  * runtime authority and `VendorOrder` as the target shape.
  */
 export type VendorOrder = Order & VendorOrderLinkage;
+
+// ─── Assignment-level scorecard ──────────────────────────────────────────────
+//
+// Rubric source of truth:
+//   l1-valuation-platform-ui/docs/screens/Appraiser_Scorecard_Definitions.htm
+// FE display constants:
+//   l1-valuation-platform-ui/src/components/vendor-scorecard/vendorScorecardRubric.ts
+//
+// Reviewer scores a VendorOrder once it reaches a terminal state. Scorecards
+// are append-only on the order doc; the latest non-superseded entry is the
+// active rating. The supersedes / supersededBy chain preserves the audit trail
+// without a separate Cosmos container.
+
+export type ScorecardCategoryKey =
+  | 'report'
+  | 'quality'
+  | 'communication'
+  | 'turnTime'
+  | 'professionalism';
+
+export type ScorecardValue = 0 | 1 | 2 | 3 | 4 | 5;
+
+export interface ScorecardCategoryEntry {
+  value: ScorecardValue;
+  /** Reviewer note. Required for 0-4 per comment policy; optional for 5. */
+  comment?: string;
+}
+
+export type ScorecardCategoryScores = Record<ScorecardCategoryKey, ScorecardCategoryEntry>;
+
+export interface VendorOrderScorecardEntry {
+  /** Stable id within the order's scorecards[] array. */
+  id: string;
+  scores: ScorecardCategoryScores;
+  /** Mean of the five category values, 0-5 with two-decimal precision. */
+  overallScore: number;
+  /** Optional reviewer comments that aren't tied to a specific category. */
+  generalComments?: string;
+  /** User who submitted the score. */
+  reviewedBy: string;
+  /** ISO datetime. */
+  reviewedAt: string;
+  /** Id of the entry this one supersedes (re-score case). */
+  supersedes?: string;
+  /** Id of the entry that has superseded this one (set when re-scored). */
+  supersededBy?: string;
+}
+
+export interface AppendVendorOrderScorecardRequest {
+  scores: ScorecardCategoryScores;
+  generalComments?: string;
+  /** Pass the existing scorecard's id when re-scoring; backend wires supersedes. */
+  supersedes?: string;
+}

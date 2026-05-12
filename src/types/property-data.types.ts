@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property Data Provider Types
  *
  * Provider-agnostic interface for subject property data enrichment.
@@ -9,7 +9,7 @@
  * known address rather than comp searching.
  */
 
-import type { PropertyPhoto } from './canonical-schema.js';
+import type { PropertyPhoto } from '@l1/shared-types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Lookup params

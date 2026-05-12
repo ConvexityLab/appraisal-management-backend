@@ -1,4 +1,4 @@
-/**
+﻿/**
  * attomToPropertyRecord — pure mapper from `AttomDataDocument` (third-party
  * row in the `attom-data` Cosmos container) to the canonical `PropertyRecord`
  * shape used by the comp-collection pipeline.
@@ -23,11 +23,11 @@
 import type { AttomDataDocument } from '../types/attom-data.types.js';
 import {
   PropertyRecordType,
-  type CanonicalAddress,
   type PropertyRecord,
   type PropertyVersionEntry,
   type TaxAssessmentRecord,
-} from '../types/property-record.types.js';
+} from '@l1/shared-types';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
 import { extractAttomPhotos } from './attom-photos.js';
 
 /** Per-record completeness summary returned alongside the mapped record. */

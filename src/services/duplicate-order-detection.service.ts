@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Duplicate Order Detection Service (Phase 1.12)
  *
  * Checks for potential duplicate orders at intake by matching on
@@ -15,7 +15,8 @@ import {
   getBorrowerInformation,
   type OrderContext,
 } from './order-context-loader.service.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
 
 export interface DuplicateCheckRequest {
   /** Street address of the subject property */

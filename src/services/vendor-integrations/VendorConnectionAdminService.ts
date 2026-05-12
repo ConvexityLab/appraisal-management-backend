@@ -28,6 +28,7 @@ const ALLOWED_TOP_LEVEL_FIELDS = new Set([
   'credentials',
   'outboundEndpointUrl',
   'active',
+  'productMappings',
 ]);
 const ALLOWED_CREDENTIAL_FIELDS = new Set([
   'inboundApiKeySecretName',
@@ -122,10 +123,18 @@ export class VendorConnectionAdminService {
     }
 
     const updates = this.parseUpdateInput(input);
+    const { productMappings: incomingMappings, ...otherUpdates } = updates;
+    const mergedProductMappings = incomingMappings
+      ? { ...(existing.productMappings ?? {}), ...incomingMappings }
+      : existing.productMappings;
+
     const merged: VendorConnection = {
       ...existing,
-      ...updates,
-      credentials: updates.credentials ? { ...existing.credentials, ...updates.credentials } : existing.credentials,
+      ...otherUpdates,
+      credentials: otherUpdates.credentials ? { ...existing.credentials, ...otherUpdates.credentials } : existing.credentials,
+      // Merge-not-replace: incoming keys are overlaid on top of existing ones so
+      // a PATCH with a subset of mappings doesn't wipe the rest.
+      ...(mergedProductMappings !== undefined ? { productMappings: mergedProductMappings } : {}),
       updatedAt: new Date().toISOString(),
       updatedBy: actorId,
     };
@@ -187,6 +196,8 @@ export class VendorConnectionAdminService {
       active: this.requireBoolean(record['active'], 'active'),
     };
 
+    if ('productMappings' in record) parsed.productMappings = this.requireProductMappings(record['productMappings']);
+
     this.validateNormalizedConnection(parsed as VendorConnection, { requireExplicitActive: true });
     return parsed;
   }
@@ -204,12 +215,62 @@ export class VendorConnectionAdminService {
     if ('credentials' in record) updates.credentials = this.parseCredentials(record['credentials'], false);
     if ('outboundEndpointUrl' in record) updates.outboundEndpointUrl = this.requireValidOutboundEndpointUrl(record['outboundEndpointUrl']);
     if ('active' in record) updates.active = this.requireBoolean(record['active'], 'active');
+    if ('productMappings' in record) updates.productMappings = this.requireProductMappings(record['productMappings']);
 
     if (Object.keys(updates).length === 0) {
       throw new VendorConnectionValidationError('At least one updatable field is required in the request body.');
     }
 
     return updates;
+  }
+
+  /**
+   * Patches productMappings on a connection without touching any other field.
+   * Incoming mappings are merged (not replaced) into the existing set.
+   */
+  async patchProductMappings(
+    id: string,
+    tenantId: string,
+    mappings: Record<string, string>,
+    actorId: string,
+  ): Promise<VendorConnection> {
+    const existing = await this.getConnection(id, tenantId);
+    if (!existing) {
+      throw new VendorConnectionNotFoundError(`Vendor connection not found: id=${id} tenantId=${tenantId}`);
+    }
+
+    const updated: VendorConnection = {
+      ...existing,
+      productMappings: { ...(existing.productMappings ?? {}), ...mappings },
+      updatedAt: new Date().toISOString(),
+      updatedBy: actorId,
+    };
+
+    const saved = await this.db.upsertDocument<VendorConnection>(VENDOR_CONNECTIONS_CONTAINER, updated);
+    this.logger.info('Vendor connection productMappings patched', {
+      connectionId: saved.id,
+      tenantId,
+      vendorType: saved.vendorType,
+      mappingCount: Object.keys(mappings).length,
+    });
+    return saved;
+  }
+
+  private requireProductMappings(value: unknown): Record<string, string> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new VendorConnectionValidationError(
+        `productMappings must be a JSON object mapping vendor product IDs to internal ProductType strings. Received: ${JSON.stringify(value)}.`,
+      );
+    }
+    const record = value as Record<string, unknown>;
+    for (const [k, v] of Object.entries(record)) {
+      if (typeof v !== 'string' || !v.trim()) {
+        throw new VendorConnectionValidationError(
+          `productMappings values must be non-empty strings (internal ProductType). Invalid entry: ${JSON.stringify(k)} → ${JSON.stringify(v)}.`,
+        );
+      }
+    }
+    return record as Record<string, string>;
   }
 
   private parseCredentials(input: unknown, requireAnyField: boolean): VendorConnectionCredentials {

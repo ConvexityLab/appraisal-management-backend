@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Value-Estimator Interface
  *
  * Same swap-friendly pattern as `ICompSelectionStrategy` — narrow interface
@@ -7,7 +7,7 @@
  * pipeline.
  */
 
-import type { PropertyRecord } from '../../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 import type { SelectedComp } from '../comp-selection/strategy.js';
 
 /**

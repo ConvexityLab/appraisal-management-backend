@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Review-flag-condition evaluator (shared utility — slice 8h).
  *
  * Evaluates a `ReviewFlagCondition` against a partial CanonicalReportDocument.
@@ -17,7 +17,7 @@
  * `thresholdKey` (matches the review-program pattern).
  */
 
-import type { CanonicalReportDocument } from '../types/canonical-schema.js';
+import type { CanonicalReportDocument } from '@l1/shared-types';
 import type {
     ReviewFlagCondition,
     ReviewFlagOperator,

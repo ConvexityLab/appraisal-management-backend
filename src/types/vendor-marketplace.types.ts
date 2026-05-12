@@ -274,6 +274,120 @@ export interface VendorMatchCriteria {
   excludedVendors?: string[];       // Vendor IDs to exclude
 }
 
+// ─── Matching Criteria Profiles (David/Doug meeting — Phase B) ───────────────
+//
+// Doug's requirement: each criterion (performance, availability, proximity,
+// experience, cost, licensure) should be toggleable per product. Example:
+// proximity OFF for DVR/desktop review (reviewer in CA can do an FL desktop),
+// licensure ON whenever the work-product requires state licensing.
+//
+// George's overlay model: canonical defaults at the base, overlay by client,
+// overlay by product, overlay by phase (original vs. review). Each overlay
+// is versioned. Resolution at match-time merges from base → most-specific.
+//
+// Phase B (this PR) delivers the data model + storage; the matcher behaviour
+// changes (consuming these toggles, proximity expansion, why-no-match reason)
+// land in the follow-up since they require a deeper rewrite of
+// VendorMatchingEngine.scoreVendor / getEligibleVendors.
+
+export type MatchingCriterionKey =
+  | 'performance'
+  | 'availability'
+  | 'proximity'
+  | 'experience'
+  | 'cost'
+  | 'licensure';
+
+export interface MatchingCriterionConfig {
+  /** Whether this criterion participates in the match decision. */
+  enabled: boolean;
+  /**
+   * Weight for the criterion in the blended match score, 0..1.
+   * Ignored when `enabled` is false. Sum across enabled criteria should equal 1.0;
+   * the matcher renormalizes if not.
+   */
+  weight: number;
+  /**
+   * Hard-gate behaviour. When 'HARD_GATE' (e.g. licensure), a failing vendor is
+   * removed from candidates entirely. When 'SCORED' (the default), a failing
+   * vendor is just penalised by its contribution to the weighted score.
+   */
+  mode: 'SCORED' | 'HARD_GATE';
+}
+
+export interface ProximityCriterionConfig extends MatchingCriterionConfig {
+  /** Primary radius in miles. */
+  primaryRadiusMiles: number;
+  /**
+   * Fallback radius for Doug's "expand from 30 to 50 if no match" pattern.
+   * Matcher first tries primaryRadiusMiles; if zero candidates, expands.
+   * Omit to disable expansion.
+   */
+  expansionRadiusMiles?: number;
+}
+
+export interface VendorMatchingCriteriaProfile {
+  /** Cosmos id. Convention: `mcp-<scope>-<scopeId>-<phase>`. */
+  id: string;
+  tenantId: string;
+  /** Discriminator. */
+  type: 'vendor-matching-criteria-profile';
+
+  /**
+   * Scope hierarchy — at resolution time the matcher walks from BASE to the
+   * most-specific overlay (BASE → CLIENT → PRODUCT → CLIENT+PRODUCT) and
+   * merges. Phase modifier ('ORIGINAL' vs 'REVIEW') is independent.
+   */
+  scope: {
+    kind: 'BASE' | 'CLIENT' | 'PRODUCT' | 'CLIENT_PRODUCT';
+    clientId?: string;        // present when kind ∈ CLIENT, CLIENT_PRODUCT
+    productType?: string;     // present when kind ∈ PRODUCT, CLIENT_PRODUCT
+  };
+
+  /** ORIGINAL = first appraisal/BPO. REVIEW = secondary review pass. */
+  phase: 'ORIGINAL' | 'REVIEW' | 'ANY';
+
+  /** Monotonically increasing version per (scope, phase) pair. */
+  version: number;
+  /** Whether this is the live version; older versions retained for replay. */
+  active: boolean;
+
+  criteria: {
+    performance: MatchingCriterionConfig;
+    availability: MatchingCriterionConfig;
+    proximity: ProximityCriterionConfig;
+    experience: MatchingCriterionConfig;
+    cost: MatchingCriterionConfig;
+    licensure: MatchingCriterionConfig;
+  };
+
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+/**
+ * Top-level reason for an empty match result. Surfaced to assigners per Doug's
+ * "tell me why you can't find anyone" requirement. Sanitised — does not list
+ * the full criteria set (Doug: "don't want assigners gaming the system").
+ */
+export type NoMatchReasonCode =
+  | 'NO_LICENSED_VENDOR_IN_STATE'
+  | 'NO_VENDOR_WITHIN_RADIUS'
+  | 'NO_VENDOR_WITH_CAPACITY'
+  | 'NO_VENDOR_MEETS_TIER'
+  | 'ALL_VENDORS_EXCLUDED_BY_RULES'
+  | 'UNKNOWN';
+
+export interface NoMatchReason {
+  code: NoMatchReasonCode;
+  /** Human-readable, e.g. "No vendor licensed in FL within 50 miles". */
+  message: string;
+  /** Hints for the assigner — what would unblock the match. */
+  hints?: string[];
+}
+
 export type NegotiationStatus = 
   | 'PENDING_VENDOR' 
   | 'VENDOR_COUNTERED' 

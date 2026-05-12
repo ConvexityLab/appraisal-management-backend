@@ -68,58 +68,37 @@ function ensureIsoDate(value: string | undefined, fieldName: string, vendorOrder
 }
 
 /**
- * Explicit lookup table for all known AIM-Port numeric product IDs.
+/**
+ * Resolves one vendor product entry to an internal ProductType string.
  *
- * WHY: AIM-Port sends a numeric `id` and human-readable `name` in each report
- * entry. Keyword matching on the name is fragile (e.g. "Multi-Family 2-4 Unit
- * 1025/72 - FHA" contains no keyword the old logic handled, causing a throw).
- * This table is the primary mapping path; keyword heuristics below are a
- * safety net for future IDs that are not yet catalogued here.
+ * Resolution order:
+ *  1. `productMappings` from the VendorConnection Cosmos doc — admin-configured,
+ *     per-connection, no redeploy needed.  Key is the vendor product id stringified.
+ *  2. Keyword heuristics on the product name + id — vendor-agnostic safety net
+ *     for products not yet explicitly mapped.
+ *  3. Hard throw: unknown product — caller must add a mapping via the admin API.
  *
- * Source of truth for IDs: docs/AIMPort/porduct-list.md
+ * To add a new vendor product: PATCH /api/vendor-integrations/connections/:id
+ * with { "productMappings": { "<vendorProductId>": "<ProductType>" } }.
+ * No code change or redeploy required.
  */
-const AIM_PORT_PRODUCT_ID_MAP: Record<number, ProductType> = {
-  // ── Recertification / update ─────────────────────────────────────────────
-  48899: 'DESKTOP_APPRAISAL', // 1004D/442 - Recertification of Value
-  48900: 'DESKTOP_APPRAISAL', // 1004D/442 - Update / Completion Certificate
-  // ── Field reviews ────────────────────────────────────────────────────────
-  48909: 'FIELD_REVIEW',      // 2000/1032 - One-Unit Residential Field Review
-  48910: 'FIELD_REVIEW',      // 2000A/1072 - 2-4 Unit Residential Field Review
-  // ── Desk review ──────────────────────────────────────────────────────────
-  48912: 'DESK_REVIEW',       // URAR Appraisal Desk Review - DRF
-  // ── Condo appraisals ─────────────────────────────────────────────────────
-  48930: 'CONDO_APPRAISAL',   // Condo 1073/465 - FHA
-  48935: 'CONDO_APPRAISAL',   // Condo 1073/465
-  49003: 'CONDO_APPRAISAL',   // Condo 1073/465 + Operating Income Stmt & Rent Schedule
-  49033: 'CONDO_APPRAISAL',   // Condo 1073/465 + Rent Schedule (1007)
-  49052: 'CONDO_APPRAISAL',   // Condo 1073/465 + Operating Income Stmt (216)
-  // ── Full appraisals (SFR, multi-family, manufactured, land) ──────────────
-  48860: 'FULL_APPRAISAL',    // Manufactured Home 1004C/70B - FHA
-  48869: 'FULL_APPRAISAL',    // Multi-Family 2-4 Unit 1025/72 - FHA
-  48873: 'FULL_APPRAISAL',    // Land Appraisal
-  48915: 'FULL_APPRAISAL',    // Manufactured Home 1004C/70B
-  48944: 'FULL_APPRAISAL',    // SFR 1004/70 - LB Platinum
-  48952: 'FULL_APPRAISAL',    // SFR 1004/70
-  48982: 'FULL_APPRAISAL',    // Multi-Family 2-4 Unit 1025/72 - FHA + Operating Income
-  48994: 'FULL_APPRAISAL',    // SFR 1004/70 + Operating Income Stmt & Rent Schedule
-  49032: 'FULL_APPRAISAL',    // SFR 1004/70 + Rent Schedule (1007)
-  49046: 'FULL_APPRAISAL',    // SFR 1004/70 + Operating Income Stmt (216)
-  49081: 'FULL_APPRAISAL',    // SFR 1004/70 - FHA
-  49099: 'FULL_APPRAISAL',    // Multi-Family 2-4 Unit 1025/72 + Operating Income Stmt
-};
-
 function mapSingleProductType(
   product: VendorOrderReceivedPayload['products'][number],
   vendorOrderId: string,
+  productMappings?: Record<string, string>,
 ): string {
-  // Primary path: explicit ID lookup — covers all catalogued AIM-Port products.
-  if (typeof product.id === 'number' && product.id !== 0) {
-    const mapped = AIM_PORT_PRODUCT_ID_MAP[product.id];
-    if (mapped !== undefined) return mapped;
+  // 1. Connection-level explicit mapping (admin-configured in Cosmos).
+  if (productMappings) {
+    const key = String(product.id ?? '');
+    const mapped = key ? productMappings[key] : undefined;
+    if (mapped) return mapped;
   }
 
-  // Fallback: keyword heuristics for unlisted / future product IDs.
-  const raw = `${product.name ?? ''} ${product.id}`.trim().toLowerCase();
+  // 2. Keyword heuristics — order matters; more specific patterns come first.
+  const raw = `${product.name ?? ''} ${product.id ?? ''}`.trim().toLowerCase();
+
+  // 1004D = desktop / recertification / update — must precede the generic '1004' check.
+  if (raw.includes('1004d') || raw.includes('recertif') || raw.includes('completion cert')) return 'DESKTOP_APPRAISAL';
   if (raw.includes('desktop')) return 'DESKTOP_APPRAISAL';
   if (raw.includes('field review')) return 'FIELD_REVIEW';
   if (raw.includes('desk review')) return 'DESK_REVIEW';
@@ -131,7 +110,9 @@ function mapSingleProductType(
 
   throw new Error(
     `Unable to map vendor product to internal productType for vendorOrderId=${vendorOrderId}. ` +
-      `Received product=${JSON.stringify(product)}`,
+    `Received product=${JSON.stringify(product)}. ` +
+    `Add an explicit mapping via PATCH /api/vendor-integrations/connections/:id ` +
+    `with { "productMappings": { "${product.id}": "<ProductType>" } }.`,
   );
 }
 
@@ -144,23 +125,19 @@ function mapAllProductSpecs(
   products: VendorOrderReceivedPayload['products'],
   vendorOrderId: string,
   specialInstructions?: string,
+  productMappings?: Record<string, string>,
 ): { primaryProductType: string; specs: VendorOrderSpec[] } {
   if (products.length === 0) {
     throw new Error(`At least one vendor product is required to create order reference for vendorOrderId=${vendorOrderId}`);
   }
 
   const specs: VendorOrderSpec[] = products.map((p) => ({
-    vendorWorkType: mapSingleProductType(p, vendorOrderId) as ProductType,
+    vendorWorkType: mapSingleProductType(p, vendorOrderId, productMappings) as ProductType,
     ...(specialInstructions ? { instructions: specialInstructions } : {}),
   }));
 
   // Non-null assertion: length > 0 checked above.
   return { primaryProductType: specs[0]!.vendorWorkType as string, specs };
-}
-
-/** @deprecated Use mapAllProductSpecs — kept only as an alias for clarity in callers. */
-function mapProductType(products: VendorOrderReceivedPayload['products'], vendorOrderId: string): string {
-  return mapAllProductSpecs(products, vendorOrderId).primaryProductType;
 }
 
 function normalizeLoanPurpose(value: string | undefined): string | undefined {
@@ -248,6 +225,7 @@ export class VendorOrderReferenceService {
     tenantId: string,
     clientId: string,
     specialInstructions?: string,
+    productMappings?: Record<string, string>,
   ): Promise<{ primaryProductType: string; specs: VendorOrderSpec[] }> {
     if (products.length === 0) {
       throw new Error(
@@ -258,7 +236,7 @@ export class VendorOrderReferenceService {
     const allSpecs: VendorOrderSpec[] = [];
 
     for (const product of products) {
-      const productType = mapSingleProductType(product, vendorOrderId) as ProductType;
+      const productType = mapSingleProductType(product, vendorOrderId, productMappings) as ProductType;
 
       const templates = await this.decompositionService.compose(tenantId, clientId, productType);
 
@@ -290,7 +268,7 @@ export class VendorOrderReferenceService {
     }
 
     // Non-null assertion safe: length > 0 checked above.
-    const primaryProductType = mapSingleProductType(products[0]!, vendorOrderId);
+    const primaryProductType = mapSingleProductType(products[0]!, vendorOrderId, productMappings);
     return { primaryProductType, specs: allSpecs };
   }
 
@@ -316,6 +294,7 @@ export class VendorOrderReferenceService {
       connection.tenantId,
       connection.lenderId,
       payload.specialInstructions,
+      connection.productMappings,
     );
 
     // Pre-compute normalized optionals so TypeScript can narrow them properly

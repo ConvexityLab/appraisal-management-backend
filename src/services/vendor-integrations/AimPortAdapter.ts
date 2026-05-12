@@ -5,7 +5,7 @@ import type {
   AimPortOrderDetails,
   AimPortRequestType,
 } from '../../types/aim-port.types.js';
-import { detectAimPortRequestType, getAimPortEnvelope } from '../../types/aim-port.types.js';
+import { AIM_PORT_PRODUCT_NAMES, detectAimPortRequestType, getAimPortEnvelope } from '../../types/aim-port.types.js';
 import type {
   AdapterInboundResult,
   OutboundCall,
@@ -19,6 +19,7 @@ import type {
   VendorOrderReceivedPayload,
   VendorOrderScheduledPayload,
   VendorOrderResumedPayload,
+  VendorProductsListedPayload,
 } from '../../types/vendor-integration.types.js';
 import type { InboundAdapterContext, OutboundAdapterContext, VendorAdapter } from './VendorAdapter.js';
 
@@ -277,7 +278,7 @@ export class AimPortAdapter implements VendorAdapter {
       occurredAt: new Date().toISOString(),
     };
 
-    const events: VendorDomainEvent[] = this.mapInboundEvents(requestType, envelope, baseEvent);
+    const events: VendorDomainEvent[] = this.mapInboundEvents(requestType, envelope, baseEvent, connection.productMappings);
 
     let resolvedOrderId = legacyOrderId;
     if (
@@ -295,7 +296,7 @@ export class AimPortAdapter implements VendorAdapter {
       }
     }
 
-    const ack = this.buildAckResponse(requestType, login, vendorOrderId, resolvedOrderId, envelope);
+    const ack = this.buildAckResponse(requestType, login, vendorOrderId, resolvedOrderId, envelope, connection.productMappings);
 
     return { domainEvents: events, ack: { statusCode: 200, body: ack } };
   }
@@ -445,6 +446,7 @@ export class AimPortAdapter implements VendorAdapter {
     requestType: AimPortRequestType,
     envelope: Record<string, unknown> | null,
     baseEvent: Omit<VendorDomainEvent, 'eventType' | 'payload'>,
+    productMappings?: Record<string, string>,
   ): VendorDomainEvent[] {
     switch (requestType) {
       case 'OrderRequest': {
@@ -543,8 +545,19 @@ export class AimPortAdapter implements VendorAdapter {
         const message = asRecord(envelope?.message);
         return [{ ...baseEvent, eventType: 'vendor.revision.requested', payload: { subject: stringValue(message?.subject) ?? '', content: stringValue(message?.content) ?? '' } }];
       }
-      case 'ProductListRequest':
-        return [{ ...baseEvent, eventType: 'vendor.products.listed', payload: { products: [] } }];
+      case 'ProductListRequest': {
+        // AIM-Port is requesting our product catalogue. Build the payload from
+        // the productMappings on this VendorConnection (vendor ID → internal type).
+        const products: VendorProductsListedPayload['products'] = Object.entries(productMappings ?? {}).map(
+          ([vendorId, internalType]) => ({
+            productId: Number(vendorId),
+            productName: AIM_PORT_PRODUCT_NAMES[Number(vendorId)] ?? internalType,
+            formType: internalType,
+            orderType: 'residential',
+          }),
+        );
+        return [{ ...baseEvent, eventType: 'vendor.products.listed', payload: { products } }];
+      }
       case 'OrderAssignedRequest':
         return [{ ...baseEvent, eventType: 'vendor.order.assigned', payload: { vendorOrderId: baseEvent.vendorOrderId } }];
       case 'OrderAcceptedRequest': {
@@ -622,6 +635,7 @@ export class AimPortAdapter implements VendorAdapter {
     vendorOrderId: string | undefined,
     ourOrderId: string | null,
     envelope: Record<string, unknown> | null,
+    productMappings?: Record<string, string>,
   ): AimPortAckResponse {
     const clientId = stringValue(login?.client_id) ?? '';
     if (requestType === 'OrderRequest') {
@@ -631,6 +645,20 @@ export class AimPortAdapter implements VendorAdapter {
         success: 'true',
         order_id: ourOrderId ?? vendorOrderId,
         fee: numberValue(order?.disclosed_fee) ?? 0,
+      }) as AimPortAckResponse;
+    }
+
+    if (requestType === 'ProductListRequest') {
+      // Respond with our supported product catalogue so AIM-Port knows what
+      // to present in their ordering UI for this lender connection.
+      const products = Object.keys(productMappings ?? {}).map((vendorId) => ({
+        id: Number(vendorId),
+        name: AIM_PORT_PRODUCT_NAMES[Number(vendorId)] ?? vendorId,
+      }));
+      return definedProps({
+        client_id: clientId,
+        success: 'true',
+        products,
       }) as AimPortAckResponse;
     }
 

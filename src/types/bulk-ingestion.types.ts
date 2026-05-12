@@ -1,4 +1,4 @@
-import type { BulkAnalysisType } from './bulk-portfolio.types.js';
+﻿import type { BulkAnalysisType } from './bulk-portfolio.types.js';
 import type { IntakeSourceIdentity } from './intake-source.types.js';
 import type { AccessControl } from './authorization.types.js';
 
@@ -200,7 +200,7 @@ export interface BulkIngestionCanonicalRecord {
    * `canonicalData` shape. Slice 8j: this is the CANONICAL form going
    * forward; `canonicalData` is deprecated.
    */
-  canonicalDocument?: Partial<import('./canonical-schema.js').CanonicalReportDocument>;
+  canonicalDocument?: Partial<import('@l1/shared-types').CanonicalReportDocument>;
   sourceData: {
     loanNumber?: string;
     externalId?: string;

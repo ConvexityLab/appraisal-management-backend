@@ -111,6 +111,7 @@
   "author": "Appraisal Management Team",
   "license": "MIT",
   "dependencies": {
+    "@l1/shared-types": "workspace:*",
     "@azure/app-configuration": "^1.9.0",
     "@azure/communication-calling": "^1.42.1",
     "@azure/communication-chat": "^1.6.0",

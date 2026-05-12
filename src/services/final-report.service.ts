@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Final Report Service
  *
  * Orchestrates the full pipeline for generating a deliverable PDF appraisal report:
@@ -39,7 +39,7 @@ import { NotificationService } from './notification.service.js';
 import { MismoXmlGenerator } from './mismo-xml-generator.service.js';
 import type { SubmissionInfo } from './mismo-xml-generator.service.js';
 import { CompletionReportXmlGenerator } from './completion-report-xml-generator.service.js';
-import type { CanonicalCompletionReport } from '../types/canonical-completion-report.js';
+import type { CanonicalCompletionReport } from '@l1/shared-types';
 import { Logger } from '../utils/logger.js';
 import {
   FinalReport,
@@ -58,10 +58,14 @@ import { DvrBpoMapper } from './report-engine/field-mappers/dvr-bpo.mapper.js';
 import { DvrDeskReviewMapper } from './report-engine/field-mappers/dvr-desk-review.mapper.js';
 import { DvrNooReviewMapper } from './report-engine/field-mappers/dvr-noo-review.mapper.js';
 import { DvrNooDesktopMapper } from './report-engine/field-mappers/dvr-noo-desktop.mapper.js';
+import { Urar1073Mapper } from './report-engine/field-mappers/urar-1073.mapper.js';
+import { Urar1025Mapper } from './report-engine/field-mappers/urar-1025.mapper.js';
 import type { IFieldMapper } from './report-engine/field-mappers/field-mapper.interface.js';
-import type { CanonicalReportDocument } from '../types/canonical-schema.js';
-import type { UadAppraisalReport } from '../types/uad-3.6.js';
+import type { CanonicalReportDocument } from '@l1/shared-types';
+import type { UadAppraisalReport } from '@l1/shared-types';
 import { QCReview, QCDecision } from '../types/qc-workflow.js';
+import type { ReviewTapeResult } from '../types/review-tape.types.js';
+import { ReportConfigMergerService } from './report-config-merger.service.js';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -86,6 +90,7 @@ export class FinalReportService {
   private readonly notification: NotificationService;
   private readonly reportEngine: ReportEngineService;
   private readonly contextLoader: OrderContextLoader;
+  private readonly reportConfigMerger: ReportConfigMergerService;
 
   /** Blob container that holds blank template PDFs — must pre-exist */
   private readonly TEMPLATE_CONTAINER = 'pdf-report-templates';
@@ -100,10 +105,13 @@ export class FinalReportService {
     this.blob = new BlobStorageService();
     this.notification = new NotificationService();
     this.contextLoader = new OrderContextLoader(db);
+    this.reportConfigMerger = new ReportConfigMergerService(db);
 
     // ── Report Engine (html-render + acroform strategy dispatcher) ──────────
     const mappers: ReadonlyMap<string, IFieldMapper> = new Map<string, IFieldMapper>([
       ['urar-1004',       new Urar1004Mapper()],
+      ['urar-1073',       new Urar1073Mapper()],
+      ['urar-1025',       new Urar1025Mapper()],
       ['dvr-bpo',         new DvrBpoMapper()],
       ['dvr-desk-review', new DvrDeskReviewMapper()],
       ['dvr-noo-review',   new DvrNooReviewMapper()],
@@ -494,6 +502,14 @@ export class FinalReportService {
     return review;
   }
 
+  private async _loadOrderReviewTapeResults(orderId: string): Promise<ReviewTapeResult[]> {
+    return this.db.queryDocuments<ReviewTapeResult>(
+      'review-results',
+      'SELECT * FROM c WHERE c.jobId = @orderId',
+      [{ name: '@orderId', value: orderId }],
+    );
+  }
+
   private async _loadTemplate(templateId: string): Promise<ReportTemplate> {
     const template = await this.db.getDocument<ReportTemplate>(
       this.DOCUMENT_TEMPLATES_CONTAINER,
@@ -620,11 +636,14 @@ export class FinalReportService {
 
     // Enrich source documents so the preview reflects what the final report will show.
     // No qcReview available for preview — pass undefined to skip AI screening enrichment.
-    _enrichCanonicalDocForReport(canonicalDoc, order, undefined);
+    const reviewTapeResults = await this._loadOrderReviewTapeResults(orderId);
+    _enrichCanonicalDocForReport(canonicalDoc, order, undefined, reviewTapeResults);
 
+    const effectiveConfig = await this.reportConfigMerger.getEffectiveConfig(order);
     return this.reportEngine.generateHtml(
       { orderId, templateId, requestedBy: 'preview' },
       canonicalDoc,
+      effectiveConfig,
     );
   }
 
@@ -670,9 +689,11 @@ export class FinalReportService {
     }
 
     // ── Capability-5 enrichment (non-destructive) ────────────────────────────────
-    _enrichCanonicalDocForReport(canonicalDoc, order, qcReview);
+    const reviewTapeResults = await this._loadOrderReviewTapeResults(orderId);
+    _enrichCanonicalDocForReport(canonicalDoc, order, qcReview, reviewTapeResults);
 
-    return this.reportEngine.generate(request, canonicalDoc);
+    const effectiveConfig = await this.reportConfigMerger.getEffectiveConfig(order);
+    return this.reportEngine.generate(request, canonicalDoc, effectiveConfig);
   }
 
   /**
@@ -1233,6 +1254,7 @@ function _enrichCanonicalDocForReport(
   doc: CanonicalReportDocument,
   order: Order,
   qcReview: QCReview | undefined,
+  reviewTapeResults: ReviewTapeResult[] = [],
 ): void {
   // ── sourceDocuments from order.documents ─────────────────────────────────
   // order-management.ts Order has documents[]; index.ts version does not.
@@ -1283,6 +1305,42 @@ function _enrichCanonicalDocForReport(
   }
   if (!doc.metadata.axiomCompletedAt && order.axiomCompletedAt) {
     doc.metadata.axiomCompletedAt = order.axiomCompletedAt;
+  }
+
+  // ── reviewProgramResults from review-results container ────────────────────
+  if (reviewTapeResults.length > 0) {
+    doc.reviewProgramResults = reviewTapeResults.map(r => ({
+      programId:        r.programId,
+      programVersion:   r.programVersion,
+      evaluatedAt:      r.evaluatedAt,
+      overallRiskScore: r.overallRiskScore,
+      computedDecision: r.computedDecision,
+      ...(r.overrideDecision !== undefined && { overrideDecision: r.overrideDecision }),
+      ...(r.overrideReason   !== undefined && { overrideReason:   r.overrideReason }),
+      ...(r.axiomDecision    !== undefined && { axiomDecision:    r.axiomDecision }),
+      ...(r.axiomRiskScore   !== undefined && { axiomRiskScore:   r.axiomRiskScore }),
+    }));
+
+    // Append fired autoFlagResults as criteriaEvaluations so templates can
+    // reference all review-program findings alongside Axiom criterion verdicts.
+    const fired = reviewTapeResults.flatMap(r =>
+      (r.autoFlagResults ?? [])
+        .filter(f => f.isFired)
+        .map(f => ({
+          criterionId: f.id,
+          name:        f.label,
+          evaluation:
+            f.severity === 'CRITICAL' || f.severity === 'HIGH'
+              ? 'fail'
+              : f.severity === 'MEDIUM'
+              ? 'warning'
+              : 'pass',
+          reasoning: f.description,
+        })),
+    );
+    if (fired.length > 0) {
+      doc.criteriaEvaluations = [...(doc.criteriaEvaluations ?? []), ...fired];
+    }
   }
 }
 

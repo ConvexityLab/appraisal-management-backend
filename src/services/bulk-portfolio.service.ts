@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bulk Portfolio Service
  *
  * Accepts a pre-validated list of BulkPortfolioItems, creates one
@@ -52,7 +52,7 @@ import type {
 } from '../types/review-tape.types.js';
 import { OrderStatus } from '../types/order-status.js';
 import { OrderType, Priority } from '../types/index.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 import type { AxiomBulkEvaluationRequestedEvent } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 

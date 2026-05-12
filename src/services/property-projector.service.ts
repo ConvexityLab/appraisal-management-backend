@@ -1,11 +1,11 @@
-import { Logger } from '../utils/logger.js';
+﻿import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
-import type { CanonicalReportDocument } from '../types/canonical-schema.js';
+import type { CanonicalReportDocument } from '@l1/shared-types';
 import type {
   PropertyCurrentCanonicalView,
   PropertyRecord,
   PropertyVersionEntry,
-} from '../types/property-record.types.js';
+} from '@l1/shared-types';
 import {
   mergePropertyCanonical,
   pickPropertyCanonical,

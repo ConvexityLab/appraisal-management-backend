@@ -13,7 +13,7 @@ const logger = new Logger('VendorConnectionController');
 
 type VendorConnectionAdminPort = Pick<
   VendorConnectionAdminService,
-  'listConnections' | 'getConnection' | 'createConnection' | 'updateConnection' | 'deactivateConnection'
+  'listConnections' | 'getConnection' | 'createConnection' | 'updateConnection' | 'deactivateConnection' | 'patchProductMappings'
 >;
 
 function respondError(res: Response, error: unknown): void {
@@ -129,6 +129,22 @@ export function createVendorConnectionAdminRouter(
 
     try {
       const connection = await service.deactivateConnection(req.params['id'] ?? '', tenantId, actorId);
+      res.status(200).json({ success: true, data: connection });
+    } catch (error) {
+      respondError(res, error);
+    }
+  });
+
+  router.patch('/:id/product-mappings', async (req: UnifiedAuthRequest, res: Response) => {
+    const tenantId = req.user?.tenantId;
+    const actorId = req.user?.id ?? 'unknown';
+    if (!tenantId) {
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthenticated' } });
+      return;
+    }
+
+    try {
+      const connection = await service.patchProductMappings(req.params['id'] ?? '', tenantId, req.body, actorId);
       res.status(200).json({ success: true, data: connection });
     } catch (error) {
       respondError(res, error);

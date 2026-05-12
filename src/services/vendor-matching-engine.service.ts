@@ -750,7 +750,7 @@ export class VendorMatchingEngine {
       ]
     ) as any;
 
-    let vendors: any[] = result.resources || [];
+    let vendors: any[] = result.data || [];
 
     // Hard gate: product eligibility — if vendor has an explicit allow-list, order's product must be in it
     if (request.productId) {
@@ -919,9 +919,12 @@ export class VendorMatchingEngine {
    * Extract state from address string
    */
   private extractStateFromAddress(address: string): string {
-    // Simple regex to extract US state code
-    const stateMatch = address.match(/\b([A-Z]{2})\b\s+\d{5}/);
-    return stateMatch && stateMatch[1] ? stateMatch[1] : 'CA'; // Default to CA
+    // Try comma+space+STATE+comma/end pattern first (handles "Austin, TX, 78701" format).
+    const commaFormat = address.match(/,\s*([A-Z]{2})\s*(?:,|$)/);
+    if (commaFormat && commaFormat[1]) return commaFormat[1];
+    // Fall back to STATE+space+zip format (handles "Austin TX 78701" format).
+    const spaceFormat = address.match(/\b([A-Z]{2})\s+\d{5}/);
+    return spaceFormat && spaceFormat[1] ? spaceFormat[1] : 'CA'; // Default to CA
   }
 
   /**

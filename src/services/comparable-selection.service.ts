@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Comparable Selection Service
  *
  * Automated two-phase pipeline for selecting the most relevant comparable
@@ -34,8 +34,10 @@ import { haversineDistanceMiles } from './comparable-sale.service.js';
 import { PropertyObservationService } from './property-observation.service.js';
 import { materializePropertyRecordHistory } from './property-record-history-materializer.service.js';
 import { Logger } from '../utils/logger.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
-import { PropertyRecordType } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
+// PropertyRecordType is re-exported as `export type` from the barrel (which
+// strips the runtime enum value). Import the value directly from the sub-path.
+import { PropertyRecordType } from '@l1/shared-types/property-record';
 import type {
   CompSelectionConfig,
   RankingWeights,

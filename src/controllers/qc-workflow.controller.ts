@@ -16,6 +16,11 @@ import { EscalationWorkflowService } from '../services/escalation-workflow.servi
 import { SLATrackingService } from '../services/sla-tracking.service.js';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { AxiomService } from '../services/axiom.service.js';
+import {
+  VendorOrderScorecardService,
+  ScorecardError,
+} from '../services/vendor-order-scorecard.service.js';
+import { AuditTrailService } from '../services/audit-trail.service.js';
 import { RevisionSeverity, CreateRevisionRequest } from '../types/qc-workflow.js';
 import { FieldOverride } from '../types/final-report.types.js';
 import { FinalReportService } from '../services/final-report.service.js';
@@ -32,6 +37,8 @@ const escalationService = new EscalationWorkflowService();
 const slaService = new SLATrackingService();
 const dbService = new CosmosDbService();
 const axiomService = new AxiomService();
+const scorecardAuditService = new AuditTrailService(dbService);
+const scorecardService = new VendorOrderScorecardService(dbService, scorecardAuditService);
 
 export function createQCWorkflowRouter(authzMiddleware?: AuthorizationMiddleware): express.Router {
   const router = express.Router();
@@ -1195,6 +1202,12 @@ router.post(
     body('notes').optional().isString(),
     body('conditions').optional().isArray(),
     body('score').optional().isNumeric(),
+    // Vendor scorecard — REQUIRED when outcome=APPROVED per the David/Doug meeting:
+    // the QCer can't release to client without scoring the assignment.
+    body('scorecard').optional().isObject(),
+    body('scorecard.scores').optional().isObject(),
+    body('scorecard.generalComments').optional().isString(),
+    body('scorecard.supersedes').optional().isString(),
   ],
   handleValidationErrors,
   async (req: Request, res: Response) => {
@@ -1254,6 +1267,54 @@ router.post(
           }
         } catch (mopErr) {
           logger.warn('Could not fetch MOP snapshot for QC decision record', { mopErr, orderId });
+        }
+      }
+
+      // ── Scorecard gate (David/Doug meeting): APPROVED requires a scorecard
+      //    The scorecard is appended BEFORE we record the decision or transition
+      //    the order, so a missing / invalid scorecard rejects the whole action
+      //    with a clear 400. This is the "QCer can't leave the queue without
+      //    scoring" gate. Re-scoring uses the same path with `supersedes` set.
+      const incomingOutcome: string = req.body.outcome;
+      const incomingScorecard = req.body.scorecard as
+        | { scores?: unknown; generalComments?: string; supersedes?: string }
+        | undefined;
+
+      if (incomingOutcome === 'APPROVED') {
+        if (!incomingScorecard || !incomingScorecard.scores) {
+          res.status(400).json({
+            success: false,
+            error:
+              'A vendor scorecard with all five categories is required to approve and release this assignment.',
+            code: 'SCORECARD_REQUIRED',
+          });
+          return;
+        }
+        try {
+          await scorecardService.appendScorecard(
+            orderId,
+            {
+              scores: incomingScorecard.scores as never,
+              ...(incomingScorecard.generalComments
+                ? { generalComments: incomingScorecard.generalComments }
+                : {}),
+              ...(incomingScorecard.supersedes
+                ? { supersedes: incomingScorecard.supersedes }
+                : {}),
+            },
+            req.body.reviewedBy,
+            { allowPreDelivery: true },
+          );
+        } catch (scErr) {
+          if (scErr instanceof ScorecardError) {
+            res.status(scErr.statusCode).json({
+              success: false,
+              error: scErr.message,
+              code: 'SCORECARD_INVALID',
+            });
+            return;
+          }
+          throw scErr;
         }
       }
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reports Controller
  * Handles property valuation reports and comparable properties (comps)
  * 
@@ -23,7 +23,7 @@ import {
   type CanonicalReportDocument,
   type CanonicalComp,
   type CanonicalValuation,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 import { normalizeReportDocument } from '../mappers/normalize-report.js';
 
 const logger = new Logger();

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Report Normalization & Vendor Mapper Registry
  *
  * Ensures every report document returned from the API is in canonical schema
@@ -23,7 +23,7 @@
  * and by normalizeReportDocument for format detection.
  */
 
-import type { CanonicalReportDocument, VendorMapper } from '../types/canonical-schema.js';
+import type { CanonicalReportDocument, VendorMapper } from '@l1/shared-types';
 import { mapBatchDataReport, batchDataMapper } from './batch-data.mapper.js';
 import { Logger } from '../utils/logger.js';
 

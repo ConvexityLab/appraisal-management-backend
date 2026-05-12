@@ -70,6 +70,7 @@ const SUBSCRIBED_VENDOR_EVENTS: VendorEventType[] = [
   'vendor.revision.requested',
   'vendor.loan_number.updated',
   'vendor.fha_case_number.updated',
+  'vendor.order.stalled',
 ];
 
 // TODO(Phase 8 of Order-relocation): when VendorOrder no longer carries
@@ -206,6 +207,28 @@ export class VendorIntegrationEventConsumerService {
   }
 
   private async onVendorEvent(event: VendorIntegrationEvent): Promise<void> {
+    // vendor.order.stalled uses a non-standard data shape (published by
+    // VendorOrderStuckCheckerJob, not the normal vendor push pipeline).
+    // Handle it before the ourOrderId guard.
+    if (event.type === 'vendor.order.stalled') {
+      await this.handleVendorOrderStalled(event);
+      return;
+    }
+
+    // vendor.products.listed is fired when AIM-Port requests our product
+    // catalogue. It has ourOrderId: null (no order context). Log for audit
+    // and return — no Cosmos write needed.
+    if (event.type === 'vendor.products.listed') {
+      const count = (event.data.payload as { products?: unknown[] }).products?.length ?? 0;
+      this.logger.info('Vendor product list served', {
+        tenantId: event.data.tenantId,
+        vendorType: event.data.vendorType,
+        connectionId: event.data.connectionId,
+        productCount: count,
+      });
+      return;
+    }
+
     const { ourOrderId, tenantId } = event.data;
 
     // Fire-and-forget: mirror the normalised inbound event back to the vendor's
@@ -373,6 +396,84 @@ export class VendorIntegrationEventConsumerService {
           eventType: event.type,
           eventId: event.id,
         });
+    }
+  }
+
+  /**
+   * Handles `vendor.order.stalled` alert events published by VendorOrderStuckCheckerJob.
+   * These use a non-standard data shape (orderId/tenantId directly rather than
+   * ourOrderId/tenantId) so they cannot go through the normal updateOrderFields path.
+   *
+   * Records an operator-visible timeline entry in the communications container so the
+   * stall surfaces in the UI order detail view.
+   */
+  private async handleVendorOrderStalled(event: VendorIntegrationEvent): Promise<void> {
+    // The stalled event is published as `any` by VendorOrderStuckCheckerJob and uses
+    // data.orderId instead of data.ourOrderId.
+    const d = event.data as unknown as {
+      orderId?: string;
+      orderNumber?: string;
+      tenantId?: string;
+      clientId?: string;
+      currentStatus?: string;
+      stuckPhase?: string;
+      lastUpdatedAt?: string;
+    };
+
+    if (!d.orderId || !d.tenantId) {
+      this.logger.warn('vendor.order.stalled: missing orderId or tenantId — skipping', {
+        eventId: event.id,
+      });
+      return;
+    }
+
+    this.logger.warn('vendor.order.stalled — recording operator alert on order', {
+      orderId: d.orderId,
+      orderNumber: d.orderNumber,
+      currentStatus: d.currentStatus,
+      stuckPhase: d.stuckPhase,
+      lastUpdatedAt: d.lastUpdatedAt,
+    });
+
+    const stalledNote = {
+      id: `stalled-alert:${event.id}`,
+      tenantId: d.tenantId,
+      type: 'communication' as const,
+      primaryEntity: { type: 'order' as const, id: d.orderId },
+      channel: 'in_app' as const,
+      direction: 'inbound' as const,
+      from: { id: 'system', name: 'Vendor Order Monitor', role: 'system' },
+      to: [{ id: d.clientId ?? 'unknown', name: d.clientId ?? 'unknown', role: 'lender' }],
+      subject: `Vendor order stalled — ${d.stuckPhase ?? 'unknown phase'}`,
+      body: [
+        `Order ${d.orderNumber ?? d.orderId} is stuck in phase "${d.stuckPhase ?? 'unknown'}"`,
+        `(current status: ${d.currentStatus ?? 'unknown'}).`,
+        `Last activity: ${d.lastUpdatedAt ?? 'unknown'}.`,
+        'AIM-Port push callbacks may have stopped. Manual follow-up required.',
+      ].join(' '),
+      bodyFormat: 'text' as const,
+      status: 'delivered' as const,
+      deliveredAt: event.timestamp,
+      category: 'order_discussion' as const,
+      priority: 'high' as const,
+      tags: ['vendor-integration', 'stalled-order', `phase:${d.stuckPhase ?? 'unknown'}`],
+      createdAt: event.timestamp,
+      metadata: {
+        vendorStallAlert: {
+          stuckPhase: d.stuckPhase,
+          currentStatus: d.currentStatus,
+          lastUpdatedAt: d.lastUpdatedAt,
+          alertEventId: event.id,
+        },
+      },
+    };
+
+    const writeResult = await this.dbService.upsertItem('communications', stalledNote);
+    if (!writeResult.success) {
+      throw new Error(
+        writeResult.error?.message ??
+        `Failed to record stalled-order alert for order ${d.orderId}`,
+      );
     }
   }
 

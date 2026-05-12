@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property-canonical projection
  *
  * Picks the property-scoped branches out of a built CanonicalReportDocument
@@ -29,8 +29,8 @@ import type {
     CanonicalTransactionHistory,
     CanonicalAvmCrossCheck,
     CanonicalRiskFlags,
-} from '../types/canonical-schema.js';
-import type { PropertyCurrentCanonicalView } from '../types/property-record.types.js';
+} from '@l1/shared-types';
+import type { PropertyCurrentCanonicalView } from '@l1/shared-types';
 
 export const PROPERTY_CANONICAL_PROJECTOR_VERSION = '2026-05-10.1';
 

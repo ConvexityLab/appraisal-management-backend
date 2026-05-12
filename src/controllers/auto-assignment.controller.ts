@@ -27,7 +27,14 @@ import {
 const logger = new Logger();
 const matchingEngine = new VendorMatchingEngine();
 const dbService = new CosmosDbService();
-const publisher = new ServiceBusEventPublisher();
+// Lazily instantiated so it reads USE_MOCK_SERVICE_BUS at first-use time rather
+// than at module load time. Module-level eagerness breaks integration tests that
+// override the flag in beforeAll after the module has already been imported.
+let _publisher: ServiceBusEventPublisher | undefined;
+function getPublisher(): ServiceBusEventPublisher {
+  if (!_publisher) _publisher = new ServiceBusEventPublisher();
+  return _publisher;
+}
 const orderContextLoader = new OrderContextLoader(dbService);
 
 function formatPropertyAddress(address: unknown): string {
@@ -742,7 +749,7 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
         const currentVendor = state.rankedVendors?.[state.currentAttempt];
 
         // Publish event — auto-assignment orchestrator subscribes and advances the FSM
-        await publisher.publish({
+        await getPublisher().publish({
           id: uuidv4(),
           type: 'vendor.bid.declined',
           timestamp: new Date(),
@@ -853,7 +860,7 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           // ACCEPTED transition AND cancels remaining broadcast bids.  Just
           // publish the event — DO NOT write ACCEPTED to Cosmos here or the
           // orchestrator will see status===ACCEPTED and skip cancellations.
-          await publisher.publish(bidEventPayload);
+          await getPublisher().publish(bidEventPayload);
 
           logger.info('Vendor bid accepted (broadcast) — orchestrator will finalise', {
             orderId,
@@ -895,7 +902,7 @@ export const createAutoAssignmentRouter = (orchestrator?: AutoAssignmentOrchestr
           tenantId,
         );
 
-        await publisher.publish(bidEventPayload);
+        await getPublisher().publish(bidEventPayload);
 
         logger.info('Vendor bid accepted by operator/portal (sequential)', {
           orderId,
@@ -992,7 +999,7 @@ async function updateOrderBroadcastStatus(
 async function notifyVendorOfAssignment(vendorId: string, orderId: string): Promise<void> {
   const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
   if (!ctx) return;
-  await publishVendorBidSent(publisher, ctx, orderId, 4, 'auto-assignment.controller');
+  await publishVendorBidSent(getPublisher(), ctx, orderId, 4, 'auto-assignment.controller');
   logger.info('Published vendor.bid.sent for direct assignment', { vendorId, orderId });
 }
 
@@ -1003,14 +1010,14 @@ async function notifyVendorOfBroadcast(
 ): Promise<void> {
   const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
   if (!ctx) return;
-  await publishVendorBidSent(publisher, ctx, orderId, expirationHours, 'auto-assignment.controller');
+  await publishVendorBidSent(getPublisher(), ctx, orderId, expirationHours, 'auto-assignment.controller');
   logger.info('Published vendor.bid.sent for broadcast', { vendorId, orderId, expirationHours });
 }
 
 async function notifyVendorOfAcceptance(vendorId: string, orderId: string): Promise<void> {
   const ctx = await loadVendorAndOrderContext(dbService, vendorId, orderId);
   if (!ctx) return;
-  await publishVendorBidAccepted(publisher, ctx, orderId, 'auto-assignment.controller');
+  await publishVendorBidAccepted(getPublisher(), ctx, orderId, 'auto-assignment.controller');
   logger.info('Published vendor.bid.accepted', { vendorId, orderId });
 }
 

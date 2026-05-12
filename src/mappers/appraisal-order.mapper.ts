@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Order → AMP canonical mapper
  *
  * Projects an order's intake fields (address, property details, loan info,
@@ -36,7 +36,7 @@ import type {
     CanonicalLoanRatios,
     CanonicalReportDocument,
     CanonicalSubject,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 import type { VendorOrder as Order } from '../types/vendor-order.types.js';
 import {
   getPropertyAddress,

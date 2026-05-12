@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ReportEngineService
  *
  * Dispatcher: resolves the correct render strategy + field mapper for a given
@@ -9,7 +9,8 @@
  */
 
 import { ReportTemplate, FinalReportGenerationRequest, ReportSectionConfig } from '../../types/final-report.types';
-import { CanonicalReportDocument } from '../../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
+import type { EffectiveReportConfig } from '@l1/shared-types';
 import { IReportStrategy, ReportGenerationContext } from './strategies/report-strategy.interface';
 import { AcroFormFillStrategy } from './strategies/acroform-fill.strategy';
 import { HtmlRenderStrategy } from './strategies/html-render.strategy';
@@ -29,11 +30,14 @@ export class ReportEngineService {
    *
    * @param request        - Generation request (templateId, overrides, etc.)
    * @param canonicalDoc   - Pre-assembled canonical report document for this order
+   * @param effectiveConfig - Optional merged report config (R-20); used by strategies
+   *                          for section-visibility gating and field suppression.
    * @returns              - Raw PDF bytes
    */
   async generate(
     request: FinalReportGenerationRequest,
     canonicalDoc: CanonicalReportDocument,
+    effectiveConfig?: EffectiveReportConfig,
   ): Promise<Buffer> {
     const template = await this.templateRegistry.getTemplate(request.templateId);
 
@@ -62,6 +66,7 @@ export class ReportEngineService {
       template,
       effectiveSectionConfig,
       canonicalDoc: docWithPhotos,
+      ...(effectiveConfig !== undefined ? { effectiveConfig } : {}),
     };
 
     const strategy = this._pickStrategy(template);
@@ -71,10 +76,13 @@ export class ReportEngineService {
   /**
    * Renders the Handlebars template to an HTML string without launching Playwright.
    * Only valid for html-render templates — throws for acroform templates.
+   *
+   * @param effectiveConfig - Optional merged report config (R-20); controls section visibility in HBS.
    */
   async generateHtml(
     request: FinalReportGenerationRequest,
     canonicalDoc: CanonicalReportDocument,
+    effectiveConfig?: EffectiveReportConfig,
   ): Promise<string> {
     const template = await this.templateRegistry.getTemplate(request.templateId);
 
@@ -108,6 +116,7 @@ export class ReportEngineService {
       template,
       effectiveSectionConfig,
       canonicalDoc: docWithPhotos,
+      ...(effectiveConfig !== undefined ? { effectiveConfig } : {}),
     };
 
     return this.htmlRenderStrategy.renderHtml(ctx);

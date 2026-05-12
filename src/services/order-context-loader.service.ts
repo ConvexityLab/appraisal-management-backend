@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OrderContextLoader — joins a VendorOrder with its parent ClientOrder
  * (and, when needed, the canonical PropertyRecord) to give callers the
  * full lender + vendor view in one read.
@@ -66,7 +66,7 @@ import {
   OccupancyType,
   PropertyType,
 } from '../types/index.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 

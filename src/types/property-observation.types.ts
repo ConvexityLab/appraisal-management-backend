@@ -1,10 +1,10 @@
-import type {
+﻿import type {
   CanonicalAddress,
   PermitRecord,
   PropertyCurrentCanonicalView,
   PropertyRecord,
   TaxAssessmentRecord,
-} from './property-record.types.js';
+} from '@l1/shared-types';
 
 export type PropertyObservationType =
   | 'provider-enrichment'

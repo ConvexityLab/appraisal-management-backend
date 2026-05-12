@@ -1,0 +1,56 @@
+﻿
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/source/appraisal-management-backend[39m
+
+node.exe : 
+At C:\Program Files\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.cjs"  ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m[1m[41m Failed Suites 1 
+[49m[22m[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
+
+[41m[1m FAIL [22m[49m 
+tests/integration/aim-port-inbound.integration.test.ts[2m [ 
+tests/integration/aim-port-inbound.integration.test.ts ][22m
+[31m[1mError[22m: Transform failed with 1 error:
+C:/source/appraisal-management-backend/src/services/canonical-snapshot.service.
+ts:814:32: ERROR: "await" can only be used inside an "async" function[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/source/appraisal-management-backend/src/services/canonical-snap
+shot.service.ts[39m:814:32
+[33m  
+  [33m"await" can only be used inside an "async" function[33m
+  812 |      if (order) {
+  813 |        try {
+  814 |          const effectiveConfig = await 
+this.reportConfigMerger.getEffectiveConfig(order);
+      |                                  ^
+  815 |          ingressOpts = {
+  816 |            config: effectiveConfig,
+  [39m
+[90m [2mΓ¥»[22m failureErrorWithLog node_modules/.pnpm/esbuild@0.27.3/node_m
+odules/esbuild/lib/main.js:[2m1467:15[22m[39m
+[90m [2mΓ¥»[22m node_modules/.pnpm/esbuild@0.27.3/node_modules/esbuild/lib/m
+ain.js:[2m736:50[22m[39m
+[90m [2mΓ¥»[22m responseCallbacks.<computed> node_modules/.pnpm/esbuild@0.27
+.3/node_modules/esbuild/lib/main.js:[2m603:9[22m[39m
+[90m [2mΓ¥»[22m handleIncomingPacket node_modules/.pnpm/esbuild@0.27.3/node_
+modules/esbuild/lib/main.js:[2m658:12[22m[39m
+[90m [2mΓ¥»[22m Socket.readFromStdout node_modules/.pnpm/esbuild@0.27.3/node
+_modules/esbuild/lib/main.js:[2m581:7[22m[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»[1/1]ΓÄ»[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [2mno tests[22m
+[2m   Start at [22m 22:48:13
+[2m   Duration [22m 6.02s[2m (transform 997ms, setup 86ms, collect 0ms, tests 0ms, environment 0ms, prepare 217ms)[22m
+
+JSON report written to C:/source/appraisal-management-backend/coverage/test-results.json
+[1m[7m[35m HTML [39m[27m[22m [35mReport is generated[39m
+[2m       You can run [22m[1mnpx vite preview --outDir coverage[22m[2m to see the test results.[22m
+[globalTeardown] AZURE_COSMOS_ENDPOINT unset ΓÇö skipping test-tenant cleanup

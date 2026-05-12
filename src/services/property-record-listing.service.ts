@@ -1,6 +1,6 @@
-import { CosmosDbService } from './cosmos-db.service.js';
+﻿import { CosmosDbService } from './cosmos-db.service.js';
 import { PROPERTY_RECORDS_CONTAINER } from './property-record.service.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 
 export interface ListPropertyRecordsInput {
   tenantId: string;

@@ -1,6 +1,6 @@
-import { MopMapperService } from './mop/MopMapperService';
+﻿import { MopMapperService } from './mop/MopMapperService';
 import { MopApiClient, MopComplianceViolation } from './mop/MopApiClient';
-import { CanonicalReportDocument } from '../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
 import { CosmosDbService } from './cosmos-db.service';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
 import { AppraisalDraft, DraftStatus } from '../types/appraisal-draft.types';

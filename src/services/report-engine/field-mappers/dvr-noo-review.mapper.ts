@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DvrNooReviewMapper
  *
  * Maps a CanonicalReportDocument to the Handlebars context for the
@@ -15,7 +15,7 @@
  */
 
 import { IFieldMapper } from './field-mapper.interface';
-import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
 import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 // ── Formatting helpers ──────────────────────────────────────────────────────

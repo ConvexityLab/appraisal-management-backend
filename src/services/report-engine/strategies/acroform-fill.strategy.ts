@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AcroFormFillStrategy
  *
  * Fills a fillable PDF (AcroForm) template using pdf-lib.
@@ -33,7 +33,7 @@ export class AcroFormFillStrategy implements IReportStrategy {
   ) {}
 
   async generate(ctx: ReportGenerationContext): Promise<Buffer> {
-    const { template, canonicalDoc } = ctx;
+    const { template, canonicalDoc, effectiveConfig } = ctx;
 
     if (!template.blobName) {
       throw new Error(
@@ -59,7 +59,14 @@ export class AcroFormFillStrategy implements IReportStrategy {
     const templateBytes = await AcroFormFillStrategy._streamToBuffer(readableStream);
 
     // 2. Build field map
-    const fieldMap = mapper.mapToFieldMap(canonicalDoc);
+    const rawFieldMap = mapper.mapToFieldMap(canonicalDoc);
+
+    // R-19: suppress fields whose section is marked visible=false in effectiveConfig
+    const fieldMap = AcroFormFillStrategy._applyVisibilitySuppression(
+      rawFieldMap,
+      mapper.fieldSections,
+      effectiveConfig,
+    );
 
     // 3. Load, fill, return
     const pdfDoc = await PDFDocument.load(templateBytes);
@@ -83,6 +90,35 @@ export class AcroFormFillStrategy implements IReportStrategy {
 
     const filledBytes = await pdfDoc.save();
     return Buffer.from(filledBytes);
+  }
+
+  /**
+   * R-19: removes entries from `fieldMap` whose section is marked `visible=false`
+   * in the effective config.  No-ops when either input is absent.
+   */
+  private static _applyVisibilitySuppression(
+    fieldMap: Record<string, unknown>,
+    fieldSections: Record<string, string> | undefined,
+    effectiveConfig: import('@l1/shared-types').EffectiveReportConfig | undefined,
+  ): Record<string, unknown> {
+    if (!fieldSections || !effectiveConfig?.sections?.length) return fieldMap;
+
+    // Build a quick lookup: sectionKey → visible
+    const sectionVisibility = new Map<string, boolean>();
+    for (const s of effectiveConfig.sections) {
+      sectionVisibility.set(s.key, s.visible);
+    }
+
+    const filtered: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(fieldMap)) {
+      const sectionKey = fieldSections[name];
+      if (sectionKey !== undefined && sectionVisibility.get(sectionKey) === false) {
+        // Section explicitly suppressed — leave field blank / PDF default
+        continue;
+      }
+      filtered[name] = value;
+    }
+    return filtered;
   }
 
   private static _streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {

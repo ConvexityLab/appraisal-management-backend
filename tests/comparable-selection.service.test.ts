@@ -20,7 +20,7 @@ import {
   scoreBedBathMatch,
   mapAttomTypeToRecordType,
 } from '../src/services/comparable-selection.service';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import { PropertyRecordType } from '@l1/shared-types';
 import type { SelectionSubjectSummary, CompCandidate, RankingWeights } from '../src/types/comparable-selection.types';
 import type { PropertyDataCacheEntry } from '../src/services/property-data-cache.service';
 

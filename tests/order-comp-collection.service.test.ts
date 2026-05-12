@@ -15,7 +15,7 @@ import {
 import { ACTIVE_LISTING_STATUS } from '../src/config/comp-collection-config';
 import { EventCategory, type ClientOrderCreatedEvent } from '../src/types/events';
 import type { CompSearchParams, CompSearchResult } from '../src/types/attom-data.types';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import { PropertyRecordType } from '@l1/shared-types';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 

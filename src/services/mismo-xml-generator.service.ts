@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MISMO XML Generator for UAD 3.6
  * 
  * Generates MISMO 3.4 compliant XML for submission to:
@@ -14,7 +14,7 @@ import {
   UadAppraisalInfo,
   UadNeighborhood,
   UadMarketConditions
-} from '../types/uad-3.6.js';
+} from '@l1/shared-types';
 import { Logger } from '../utils/logger.js';
 
 export class MismoXmlGenerator {

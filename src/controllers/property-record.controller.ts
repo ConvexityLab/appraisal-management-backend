@@ -1,4 +1,4 @@
-import { Request, Response, Router } from 'express';
+﻿import { Request, Response, Router } from 'express';
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { listPropertyRecords } from '../services/property-record-listing.service.js';
 import { Logger } from '../utils/logger.js';
@@ -6,7 +6,7 @@ import { PropertyObservationService } from '../services/property-observation.ser
 import { PropertyProjectorService } from '../services/property-projector.service.js';
 import { materializePropertyRecordHistory } from '../services/property-record-history-materializer.service.js';
 import type { PropertyObservationRecord } from '../types/property-observation.types.js';
-import type { PermitRecord, PropertyRecord, TaxAssessmentRecord } from '../types/property-record.types.js';
+import type { PermitRecord, PropertyRecord, TaxAssessmentRecord } from '@l1/shared-types';
 
 type PropertyAvm = NonNullable<PropertyRecord['avm']>;
 

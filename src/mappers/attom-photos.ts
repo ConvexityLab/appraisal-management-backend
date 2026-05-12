@@ -1,4 +1,4 @@
-/**
+﻿/**
  * extractAttomPhotos — shared photo-URL builder for ATTOM rows.
  *
  * ATTOM CSVs carry photos via three columns preserved verbatim on
@@ -22,7 +22,7 @@
  */
 
 import type { AttomDataDocument } from '../types/attom-data.types.js';
-import type { PropertyPhoto } from '../types/canonical-schema.js';
+import type { PropertyPhoto } from '@l1/shared-types';
 
 export function extractAttomPhotos(doc: AttomDataDocument): PropertyPhoto[] {
   const raw = doc.rawData ?? {};

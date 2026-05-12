@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WIP Status Board Service (Phase 1.9)
  *
  * Aggregates orders by status category for a Kanban-style WIP board.
@@ -11,7 +11,7 @@ import { OrderStatus, STATUS_CONFIG, getStatusesByCategory, getStatusLabel } fro
 import { VENDOR_ORDER_TYPE_PREDICATE } from '../types/vendor-order.types.js';
 import { CLIENT_ORDERS_CONTAINER, type ClientOrder } from '../types/client-order.types.js';
 import { PROPERTY_RECORDS_CONTAINER } from './property-record.service.js';
-import type { PropertyRecord } from '../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 import type { PropertyAddress } from '../types/index.js';
 
 interface WipBoardOrderRow {

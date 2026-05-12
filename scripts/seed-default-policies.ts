@@ -42,7 +42,7 @@ const CONTAINER = 'authorization-policies';
  */
 function deterministicId(tenantId: string, r: PolicyRule): string {
   const key = `${tenantId}|${r.role}|${r.resourceType}|${r.description}`;
-  return crypto.createHash('sha1').update(key).digest('hex');
+  return `seed-policy-${crypto.createHash('sha1').update(key).digest('hex')}`;
 }
 
 async function main(): Promise<void> {

@@ -38,7 +38,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
         loanOfficerEmail: 'david.chen@firsthorizon.com',
         loanOfficerPhone: '901-555-0180',
       },
-      loans: [
+      properties: [
         {
           id: 'seed-loan-eng001-001',
           loanNumber: 'FH-2026-88201',
@@ -101,7 +101,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
         loanOfficerEmail: 'priya.nair@pacificcoast.com',
         loanOfficerPhone: '503-555-0144',
       },
-      loans: [
+      properties: [
         {
           id: 'seed-loan-eng002-001',
           loanNumber: 'PCL-2026-55030',
@@ -164,7 +164,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
         loanOfficerEmail: 's.cho@nationalamc.com',
         loanOfficerPhone: '404-555-0212',
       },
-      loans: [
+      properties: [
         // Loan A — BPO
         {
           id: 'seed-loan-eng003-001',
@@ -259,7 +259,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
         loanOfficerEmail: 'k.hoffmeister@firsthorizon.com',
         loanOfficerPhone: '901-555-0191',
       },
-      loans: [
+      properties: [
         {
           id: 'seed-loan-eng004-001',
           loanNumber: 'FH-2026-88001',
@@ -322,7 +322,7 @@ function buildEngagements(tenantId: string, clientId: string): Record<string, un
         loanOfficerEmail: 'j.sutton@clearpathamc.com',
         loanOfficerPhone: '602-555-0108',
       },
-      loans: [
+      properties: [
         {
           id: 'seed-loan-eng005-001',
           loanNumber: 'CP-2026-33217',

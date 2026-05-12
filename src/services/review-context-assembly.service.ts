@@ -1,11 +1,11 @@
-import { CosmosDbService } from './cosmos-db.service.js';
+﻿import { CosmosDbService } from './cosmos-db.service.js';
 import { CanonicalSnapshotService } from './canonical-snapshot.service.js';
 import { RunLedgerService } from './run-ledger.service.js';
 import type { DocumentMetadata } from '../types/document.types.js';
 import type { ReviewProgram } from '../types/review-tape.types.js';
 import type { CanonicalSnapshotRecord, RunLedgerRecord } from '../types/run-ledger.types.js';
 import type { AnalysisSubmissionActorContext } from '../types/analysis-submission.types.js';
-import type { CanonicalComp, CanonicalReportDocument } from '../types/canonical-schema.js';
+import type { CanonicalComp, CanonicalReportDocument } from '@l1/shared-types';
 import type { ReviewContext } from '../types/review-context.types.js';
 import type { PrepareReviewProgramsRequest } from '../types/review-preparation.types.js';
 import { selectPreferredReviewProgram } from '../utils/review-program-normalization.js';

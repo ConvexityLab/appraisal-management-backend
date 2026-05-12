@@ -1,4 +1,4 @@
-import { CanonicalReportDocument } from '../../types/canonical-schema';
+﻿import { CanonicalReportDocument } from '@l1/shared-types';
 
 export interface MopAppraisalFactPayload {
   program: string;

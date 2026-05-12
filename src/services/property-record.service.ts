@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Property Record Service — Phase R1.1
  *
  * The canonical service for the PropertyRecord aggregate root.
@@ -23,15 +23,15 @@
 
 import { CosmosDbService } from './cosmos-db.service.js';
 import { Logger } from '../utils/logger.js';
-import { PropertyRecordType } from '../types/property-record.types.js';
+import { PropertyRecordType } from '@l1/shared-types';
+import type { CanonicalAddress } from '@l1/shared-types/property-record';
 import type {
   PropertyRecord,
-  CanonicalAddress,
   PropertyVersionEntry,
   CreatePropertyRecordInput,
   PropertyResolutionResult,
   PropertyIdResolutionMethod,
-} from '../types/property-record.types.js';
+} from '@l1/shared-types';
 
 // ─── Container name constant ──────────────────────────────────────────────────
 

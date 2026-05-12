@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AVM → Canonical mapper
  *
  * Builds CanonicalAvmCrossCheck from a tape row + the current appraised
@@ -12,7 +12,7 @@
  */
 
 import type { RiskTapeItem } from '../types/review-tape.types.js';
-import type { CanonicalAvmCrossCheck } from '../types/canonical-schema.js';
+import type { CanonicalAvmCrossCheck } from '@l1/shared-types';
 
 function n(v: unknown): number | null {
     if (v == null) return null;

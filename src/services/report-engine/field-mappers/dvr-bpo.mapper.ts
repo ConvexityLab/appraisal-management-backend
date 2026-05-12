@@ -10,7 +10,7 @@
  */
 
 import { IFieldMapper } from './field-mapper.interface';
-import { CanonicalReportDocument } from '../../../types/canonical-schema';
+import { CanonicalReportDocument } from '@l1/shared-types';
 import { buildAiInsightsContext, buildEnrichmentContext, buildSourceDocumentsContext } from './ai-insights.helpers';
 
 const fmt = (val: number | null | undefined): string =>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WeightedCompSelectionStrategy
  *
  * Adapter that runs the existing weighted-scoring algorithm
@@ -24,7 +24,7 @@
  */
 
 import { Logger } from '../../../utils/logger.js';
-import type { PropertyRecord } from '../../../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 import type {
   CompCandidate,
   ScoredCandidate,

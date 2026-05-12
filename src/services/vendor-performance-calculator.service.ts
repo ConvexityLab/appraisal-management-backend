@@ -4,14 +4,26 @@
  */
 
 import type { VendorOrder as Order } from "../types/vendor-order.types.js";
+import type { VendorOrderScorecardEntry } from '../types/vendor-order.types.js';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
-import { 
-  VendorPerformanceMetrics, 
+import {
+  VendorPerformanceMetrics,
   VendorTier,
-  GeographicArea 
+  GeographicArea
 } from '../types/vendor-marketplace.types.js';
 import { OrderStatus } from '../types';
+
+/**
+ * Per Doug's meeting note: rate vendors on a TRAILING window of recent
+ * deliveries rather than all-time. 25 is the agreed default. Tunable here
+ * until the App Config migration lands and we can promote it to a remote
+ * setting.
+ */
+const SCORECARD_WINDOW_SIZE = 25;
+
+/** Scorecard contribution to the blended overallScore (0..1). 0.5 = 50/50. */
+const SCORECARD_BLEND_WEIGHT = 0.5;
 
 export class VendorPerformanceCalculatorService {
   private logger: Logger;
@@ -65,12 +77,23 @@ export class VendorPerformanceCalculatorService {
       const financialMetrics = this.calculateFinancialMetrics(orders);
 
       // Calculate overall weighted score
-      const overallScore = this.calculateOverallScore({
+      const derivedOverallScore = this.calculateOverallScore({
         quality: qualityMetrics.qualityScore,
         speed: speedMetrics.avgTurnaroundTime,
         reliability: reliabilityMetrics.completionRate,
         communication: communicationMetrics.communicationScore
       });
+
+      // Blend in human scorecard signal (trailing 25 orders, 50/50).
+      // Returns null if no scorecards exist yet — in that case derived score
+      // is the whole show until the vendor accumulates direct ratings.
+      const scorecardBlend = this.computeScorecardBlend(orders);
+      const overallScore = scorecardBlend
+        ? Math.round(
+            derivedOverallScore * (1 - SCORECARD_BLEND_WEIGHT) +
+              scorecardBlend.overallOnHundredScale * SCORECARD_BLEND_WEIGHT,
+          )
+        : derivedOverallScore;
 
       // Determine tier
       const tier = this.calculateTier(overallScore);
@@ -637,5 +660,57 @@ export class VendorPerformanceCalculatorService {
     ) as any;
 
     return (result.resources || []) as { id: string }[];
+  }
+
+  /**
+   * Blend the human reviewer scorecards into a single 0-100 signal.
+   *
+   * Takes the TRAILING window of orders (most-recently completed first, up to
+   * SCORECARD_WINDOW_SIZE), pulls the active (non-superseded) scorecard from
+   * each, computes the mean of each entry's `overallScore` (0-5), and scales
+   * to 0-100. Returns `null` if no qualifying scorecards exist — caller falls
+   * back to the derived score in that case.
+   */
+  private computeScorecardBlend(
+    orders: Order[],
+  ): { overallOnHundredScale: number; sampleCount: number } | null {
+    const completed = orders
+      .filter((o) => o.status === OrderStatus.COMPLETED || o.status === OrderStatus.DELIVERED)
+      .sort((a, b) => {
+        const aTime = new Date(
+          (a as any).completedAt ?? (a as any).deliveredAt ?? a.updatedAt ?? a.createdAt,
+        ).getTime();
+        const bTime = new Date(
+          (b as any).completedAt ?? (b as any).deliveredAt ?? b.updatedAt ?? b.createdAt,
+        ).getTime();
+        return bTime - aTime; // newest first
+      })
+      .slice(0, SCORECARD_WINDOW_SIZE);
+
+    const activeScores: number[] = [];
+    for (const order of completed) {
+      const scorecards = (order.scorecards ?? []) as VendorOrderScorecardEntry[];
+      if (scorecards.length === 0) continue;
+      // Walk backwards to find latest non-superseded entry.
+      let active: VendorOrderScorecardEntry | null = null;
+      for (let i = scorecards.length - 1; i >= 0; i--) {
+        const entry = scorecards[i];
+        if (entry && !entry.supersededBy) {
+          active = entry;
+          break;
+        }
+      }
+      if (active && typeof active.overallScore === 'number') {
+        activeScores.push(active.overallScore);
+      }
+    }
+
+    if (activeScores.length === 0) return null;
+    const meanZeroToFive =
+      activeScores.reduce((acc, v) => acc + v, 0) / activeScores.length;
+    return {
+      overallOnHundredScale: Math.round(meanZeroToFive * 20),
+      sampleCount: activeScores.length,
+    };
   }
 }

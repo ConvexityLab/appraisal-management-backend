@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TieredAiCompSelectionStrategy
  *
  * Rule-based 5-tier filtering + AI waterfall, ported from onelend-backend's
@@ -41,7 +41,7 @@ import type { CompSelectionPromptLoader, PromptCandidate } from '../prompt-loade
 import { Logger } from '../../../utils/logger.js';
 import { calculateHaversineDistance } from '../../../utils/geo.js';
 import type { CollectedCompCandidate } from '../../../types/order-comparables.types.js';
-import type { PropertyRecord } from '../../../types/property-record.types.js';
+import type { PropertyRecord } from '@l1/shared-types';
 
 /** Per-tier LLM-call diagnostic emitted in `result.diagnostics`. */
 interface TierCallDiagnostic {

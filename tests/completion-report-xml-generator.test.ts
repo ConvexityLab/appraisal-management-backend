@@ -18,8 +18,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CompletionReportXmlGenerator } from '../src/services/completion-report-xml-generator.service';
-import type { CanonicalCompletionReport } from '../src/types/canonical-completion-report';
-import { COMPLETION_REPORT_SCHEMA_VERSION } from '../src/types/canonical-completion-report';
+import type { CanonicalCompletionReport } from '@l1/shared-types';
+import { COMPLETION_REPORT_SCHEMA_VERSION } from '@l1/shared-types';
 import type { SubmissionInfo } from '../src/services/mismo-xml-generator.service';
 
 // ─── Fixture builders ─────────────────────────────────────────────────────────

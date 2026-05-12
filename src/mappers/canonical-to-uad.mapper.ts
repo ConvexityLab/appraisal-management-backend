@@ -1,4 +1,4 @@
-/**
+﻿/**
  * canonical-to-uad.mapper.ts
  *
  * Maps a fully-populated CanonicalReportDocument to the UadAppraisalReport shape
@@ -25,7 +25,7 @@ import type {
   CanonicalIncomeApproach,
   CanonicalAppraiserInfo,
   CanonicalUtilities,
-} from '../types/canonical-schema.js';
+} from '@l1/shared-types';
 import {
   UadQualityRating,
   UadConditionRating,
@@ -36,7 +36,7 @@ import {
   UadSaleType,
   UadFinancingType,
   UadDataSourceType,
-} from '../types/uad-3.6.js';
+} from '@l1/shared-types';
 import type {
   UadAppraisalReport,
   UadSubjectProperty,
@@ -50,7 +50,7 @@ import type {
   UadReconciliation,
   UadAppraiserInfo,
   UadCertification,
-} from '../types/uad-3.6.js';
+} from '@l1/shared-types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry point

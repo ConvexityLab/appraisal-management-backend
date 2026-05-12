@@ -28,8 +28,8 @@ import {
 import { PROPERTY_OBSERVATIONS_CONTAINER } from '../src/services/property-observation.service';
 import type { PropertyEnrichmentRecord } from '../src/services/property-enrichment.service';
 import type { PropertyDataProvider, PropertyDataResult } from '../src/types/property-data.types';
-import type { PropertyRecord } from '../src/types/property-record.types';
-import { PropertyRecordType } from '../src/types/property-record.types';
+import type { PropertyRecord } from '@l1/shared-types';
+import { PropertyRecordType } from '@l1/shared-types';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
