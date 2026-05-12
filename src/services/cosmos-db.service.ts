@@ -14,6 +14,23 @@ import { createApiError, ErrorCodes } from '../utils/api-response.util.js';
 import { VENDOR_ORDER_TYPE_PREDICATE, type VendorOrder } from '../types/vendor-order.types.js';
 
 /**
+ * Module-level shared client + database — every `new CosmosDbService()`
+ * picks these up so services that construct their own instance (e.g.
+ * UserProfileService, AutopilotRecipeRepository) inherit the connection
+ * established by api-server.ts's initialize() at boot.
+ *
+ * Pre-fix: services constructing `new CosmosDbService()` got an instance
+ * with `database = null`.  First call to getContainer/getDocument threw
+ * "Database not initialized" — a real production bug surfaced by
+ * live-fire test 5 (sponsor lookup hit it).  Sharing at the module
+ * level matches the singleton spirit without requiring every service
+ * to accept an injected cosmos param.
+ */
+let sharedClient: CosmosClient | null = null;
+let sharedDatabase: Database | null = null;
+let sharedConnected: boolean = false;
+
+/**
  * Comprehensive Azure Cosmos DB Service for Appraisal Management Platform
  * Unified service providing production-ready database operations with global scale and enterprise features
  * Includes local emulator support for development and testing
@@ -120,12 +137,23 @@ export class CosmosDbService {
     private endpoint: string = process.env.COSMOS_ENDPOINT || process.env.AZURE_COSMOS_ENDPOINT || ''
   ) {
     this.logger = new Logger();
-    
+
     if (!this.endpoint) {
       throw new Error(
         'Cosmos DB endpoint is required. ' +
         'Set COSMOS_ENDPOINT (or AZURE_COSMOS_ENDPOINT) to your production CosmosDB endpoint.'
       );
+    }
+
+    // Inherit the module-level shared client + database if a sibling
+    // instance has already been initialized.  Lets services that
+    // construct their own CosmosDbService (UserProfileService,
+    // autopilot repos, etc.) work without forcing every caller to
+    // thread the singleton manually.
+    if (sharedClient && sharedDatabase) {
+      this.client = sharedClient;
+      this.database = sharedDatabase;
+      this.isConnected = sharedConnected;
     }
   }
 
@@ -196,6 +224,14 @@ export class CosmosDbService {
       // Connect to existing database (provisioned via Bicep)
       this.database = this.client.database(this.databaseId);
 
+      // Publish to the module-level cache so sibling `new CosmosDbService()`
+      // instances (UserProfileService, autopilot repos, etc.) pick up the
+      // initialized client/database without needing their own initialize()
+      // call.  Real bug from live-fire — was returning "Database not
+      // initialized" on every POST /api/users on staging.
+      sharedClient = this.client;
+      sharedDatabase = this.database;
+
       // Connect to existing containers (provisioned via Bicep)
       this.ordersContainer = this.database.container(this.containers.orders);
       this.vendorsContainer = this.database.container(this.containers.vendors);
@@ -238,6 +274,7 @@ export class CosmosDbService {
       this.attomDataContainer = this.database.container(this.containers.attomData);
 
       this.isConnected = true;
+      sharedConnected = true;
       this.logger.info('Successfully connected to Azure Cosmos DB', {
         databaseId: this.databaseId,
         endpoint: this.endpoint
