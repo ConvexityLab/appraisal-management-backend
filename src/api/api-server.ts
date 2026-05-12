@@ -73,6 +73,7 @@ import { createOrderRfbRouter, createRfbActionRouter } from '../controllers/rfb.
 import { createArvRouter, createOrderArvRouter } from '../controllers/arv.controller.js';
 import { createEngagementRouter } from '../controllers/engagement.controller.js';
 import { createAppraisalDraftRouter } from '../controllers/appraisal-draft.controller.js';
+import { createReportConfigRouter } from '../controllers/report-config.controller.js';
 import { AVMCascadeService } from '../services/avm-cascade.service.js';
 import { validationResult as validateRequest } from 'express-validator';
 
@@ -189,6 +190,7 @@ import { createVendorIntegrationRouter } from '../controllers/vendor-integration
 // Import Vendor Timeout Job (Phase 4.2)
 import { QuickBooksTokenRefreshJob } from '../jobs/quickbooks-token-refresh.job.js';
 import { VendorTimeoutCheckerJob } from '../jobs/vendor-timeout-checker.job';
+import { VendorOrderStuckCheckerJob } from '../jobs/vendor-order-stuck-checker.job';
 
 // Import Phase 3 background jobs
 import { SLAMonitoringJob } from '../jobs/sla-monitoring.job';
@@ -384,6 +386,7 @@ export class AppraisalManagementAPIServer {
   private unifiedAuth: ReturnType<typeof createUnifiedAuth>;
   private authzMiddleware?: AuthorizationMiddleware;
   private vendorTimeoutJob?: VendorTimeoutCheckerJob;
+  private vendorOrderStuckJob?: VendorOrderStuckCheckerJob;
   private slaMonitoringJob?: SLAMonitoringJob;
   private overdueDetectionJob?: OverdueOrderDetectionJob;
   private aiAutopilotSweepJob?: AiAutopilotSweepJob;
@@ -540,7 +543,26 @@ export class AppraisalManagementAPIServer {
     
     // Register authorization routes AFTER middleware is initialized
     this.setupAuthorizationRoutes();
-    
+
+    // Instantiate the auto-assignment orchestrator here (not in startBackgroundJobs)
+    // so that the lazy ref registered in setupAuthorizationRoutes is resolvable
+    // when the server is used via initDb() in tests (which never calls start()).
+    try {
+      this.autoAssignmentOrchestrator = new AutoAssignmentOrchestratorService(this.dbService);
+      this.logger.info('AutoAssignmentOrchestratorService instantiated');
+      // Start here so event subscriptions (e.g. vendor.bid.accepted) are active
+      // in test processes that call initDb() rather than start().
+      this.autoAssignmentOrchestrator.start().catch(err => {
+        this.logger.warn('AutoAssignmentOrchestratorService failed to start — event-driven assignment disabled', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('AutoAssignmentOrchestratorService could not be instantiated — auto-assignment disabled', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Register error handlers LAST (after all routes)
     this.setupErrorHandling();
   }
@@ -1765,6 +1787,12 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/appraisal-drafts',
       this.unifiedAuth.authenticate(),
       createAppraisalDraftRouter(this.dbService)
+    );
+
+    // Report Config — effective merged config per order (R-8)
+    this.app.use('/api/report-config',
+      this.unifiedAuth.authenticate(),
+      createReportConfigRouter(this.dbService)
     );
 
     // ARV — analyses linked to an order
@@ -5181,15 +5209,22 @@ export class AppraisalManagementAPIServer {
       if (!process.env.AZURE_STORAGE_ACCOUNT_NAME) axiomWarnings.push('AZURE_STORAGE_ACCOUNT_NAME not set — Axiom extraction trigger input will be incomplete');
       for (const w of axiomWarnings) this.logger.warn(`[Axiom Config] ${w}`);
 
-      // Validate MOP/Prio pricing-engine configuration
+      // Validate MOP/Prio pricing-engine configuration.
+      //
+      // Originally this threw in production when MOP_PRIO_API_BASE_URL was
+      // unset, but that contradicted the warn-only pattern used by every
+      // other config check in this block (AXIOM_API_BASE_URL, API_BASE_URL,
+      // AXIOM_WEBHOOK_SECRET, STORAGE_CONTAINER_DOCUMENTS, etc).  The
+      // strict check bricked the 53a3468 deploy on staging — the new
+      // revision crash-looped and the old one silently served all
+      // traffic, masking shipped fixes.  Aligning with the surrounding
+      // warn-pattern: MOP_PRIO pricing legs simply skip when the URL
+      // isn't configured, matching the documented graceful degradation.
+      // Production deployments that NEED MOP/Prio active should set the
+      // env var; environments that don't need it should not be blocked
+      // from starting.
       if (!process.env.MOP_PRIO_API_BASE_URL) {
-        if (process.env.NODE_ENV === 'production') {
-          throw new Error(
-            'MOP_PRIO_API_BASE_URL must be configured in production — ' +
-            'set the environment variable to the MOP/Prio pricing engine base URL before starting.',
-          );
-        }
-        this.logger.warn('[MOP/Prio Config] MOP_PRIO_API_BASE_URL not set — MOP/Prio pricing legs will be skipped in non-production environments');
+        this.logger.warn('[MOP/Prio Config] MOP_PRIO_API_BASE_URL not set — MOP/Prio pricing legs will be skipped');
       }
 
       // Initialize database connection
@@ -5220,6 +5255,10 @@ export class AppraisalManagementAPIServer {
     // Start vendor timeout checker (Phase 4.2) - pass dbService
     this.vendorTimeoutJob = new VendorTimeoutCheckerJob(this.dbService);
     this.vendorTimeoutJob.start();
+
+    // Start vendor order stuck checker — alerts on silent AIM-Port push failures
+    this.vendorOrderStuckJob = new VendorOrderStuckCheckerJob(this.dbService);
+    this.vendorOrderStuckJob.start();
 
     // Start SLA monitoring job (Phase 3.3)
     this.slaMonitoringJob = new SLAMonitoringJob(this.dbService);
@@ -5263,17 +5302,12 @@ export class AppraisalManagementAPIServer {
       });
     }
 
-    // Start Auto-Assignment Orchestrator (event-driven vendor + review staff assignment)
-    try {
-      this.autoAssignmentOrchestrator = new AutoAssignmentOrchestratorService(this.dbService);
+    // Start Auto-Assignment Orchestrator — instantiated in initializeDatabase(); just start it here.
+    if (this.autoAssignmentOrchestrator) {
       this.autoAssignmentOrchestrator.start().catch(err => {
         this.logger.warn('AutoAssignmentOrchestrator failed to start — auto-assignment events will not be processed', {
-          error: err instanceof Error ? err.message : String(err)
+          error: err instanceof Error ? err.message : String(err),
         });
-      });
-    } catch (err) {
-      this.logger.warn('AutoAssignmentOrchestrator could not be created', {
-        error: err instanceof Error ? err.message : String(err)
       });
     }
 
@@ -5805,6 +5839,9 @@ export class AppraisalManagementAPIServer {
   public stopBackgroundJobs(): void {
     if (this.vendorTimeoutJob) {
       this.vendorTimeoutJob.stop();
+    }
+    if (this.vendorOrderStuckJob) {
+      this.vendorOrderStuckJob.stop();
     }
     if (this.slaMonitoringJob) {
       this.slaMonitoringJob.stop();
