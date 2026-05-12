@@ -558,11 +558,11 @@ The root of the linkage problem: `ClientOrder` and `VendorOrder` carry `productT
 - [x] Skips sections where `section.visible === false`
 - [x] Evaluates `visibleWhen` JSON Logic rules via `json-logic-js` against Redux draft state
 - [x] Add `json-logic-js` to FE `package.json`
-- [x] Tests (deferred to R-15 integration sprint)
+- [x] Tests (completed 2026-05-12)
   - [x] Section suppressed by delta does not render
   - [x] Additive section renders when present
   - [x] `visibleWhen` rule correctly shows/hides field
-  - [ ] `requiredWhen` rule marks field required
+  - [x] `requiredWhen` rule marks field required (4 cases: satisfied, not satisfied, static fallback, hidden-field guard)
 
 **Files:** 1 new component + 1 test + `package.json` (`json-logic-js`)
 
@@ -577,8 +577,8 @@ The root of the linkage problem: `ClientOrder` and `VendorOrder` carry `productT
 - [x] All 31 section components wired into SECTION_REGISTRY via `wrapSectionless` adapter (R-15)
 - [x] `SECTION_ICONS` static map exported from section-registry for sidebar icons
 - [x] `useReportConfig` signature updated to accept `string | undefined` (skip when undefined)
-- [ ] Remove `UrarFormType` prop drilling from all parent components (UrarFormType not actually prop-drilled; DynamicFormRenderer.tsx type-casts deferred to R-17)
-- [ ] Remove hardcoded `formType` switches from section components — replaced at shell level; individual field-level visibility still uses URAR_FORM_CONFIG (deferred to R-17)
+- [x] Remove `UrarFormType` prop drilling from all parent components — confirmed clean: `UrarFormType` only lives in `FormTypeSelector.tsx` and `src/types/form-types.ts`; no prop drilling exists
+- [x] Remove hardcoded `formType` switches from section components — completed by R-17; `URAR_FORM_CONFIG` deleted, all section components are `UrarFormType`-free
 
 **Files:** AppraisalFormPage + ~35 section components (remove formType prop)
 
