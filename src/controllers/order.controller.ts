@@ -81,6 +81,7 @@ import { PropertyEnrichmentService } from '../services/property-enrichment.servi
 import { PropertyRecordService } from '../services/property-record.service.js';
 import { AddressServiceGeocoder } from '../services/address-service.geocoder.js';
 import { AccessControlHelper } from '../services/access-control-helper.service.js';
+import { ClientOrderService, type VendorOrderSpec } from '../services/client-order.service.js';
 
 const logger = new Logger('OrderController');
 const accessControlHelper = new AccessControlHelper();
@@ -149,6 +150,7 @@ export class OrderController {
   private complianceService: ComplianceService;
   private enrichmentService: PropertyEnrichmentService;
   private contextLoader: OrderContextLoader;
+  private clientOrderService: ClientOrderService;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -170,7 +172,7 @@ export class OrderController {
       new AddressServiceGeocoder(),
     );
     this.eventService = new OrderEventService(this.enrichmentService);
-    this.auditService = new AuditTrailService();
+    this.auditService = new AuditTrailService(dbService);
     this.slaService = new SLATrackingService();
     this.qcQueueService = new QCReviewQueueService();
     this.axiomService = new AxiomService(dbService);
@@ -182,6 +184,7 @@ export class OrderController {
     this.waiverScreening = new WaiverScreeningService(dbService);
       this.complianceService = new ComplianceService(dbService);
     this.contextLoader = new OrderContextLoader(dbService);
+    this.clientOrderService = new ClientOrderService(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -346,12 +349,35 @@ export class OrderController {
         logger.warn('Duplicate order check failed — proceeding with order creation', { error: dupErr });
       }
 
-      const result = await this.dbService.createOrder(orderData);
+      // Phase B step 4: route through ClientOrderService.addVendorOrders so
+      // every VendorOrder is parented by an EngagementClientOrder. A caller
+      // MUST supply clientOrderId in the request body.
+      const clientOrderId = typeof requestBody.clientOrderId === 'string' && requestBody.clientOrderId.trim().length > 0
+        ? requestBody.clientOrderId.trim()
+        : undefined;
+      if (!clientOrderId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'CLIENT_ORDER_REQUIRED',
+            message: 'clientOrderId is required when creating a VendorOrder. Phase B engagement-primacy.',
+          },
+        });
+        return;
+      }
 
-      if (result.success) {
-        // Fire-and-forget: event bus + audit trail
-        const created = result.data as Order;
+      const productType = typeof requestBody.productType === 'string' ? requestBody.productType : (typeof requestBody.orderType === 'string' ? requestBody.orderType : 'FULL_APPRAISAL');
+      const vendorWorkSpecs: VendorOrderSpec[] = [{ vendorWorkType: productType as any }];
 
+      const createdOrders = await this.clientOrderService.addVendorOrders(
+        clientOrderId,
+        req.user!.tenantId,
+        vendorWorkSpecs,
+        orderData,
+      );
+      const created = createdOrders[0] as Order;
+
+      {
         if (intakeDraftId) {
           const documentAssociationResult = await this.documentService.associateEntityDocumentsToOrder({
             tenantId: req.user!.tenantId,
@@ -392,15 +418,24 @@ export class OrderController {
 
         // If this order belongs to an engagement, fire the engagement.order.created event
         // so the AutoAssignmentOrchestratorService can kick off automated vendor selection.
+        // Use canonical context loader so downstream consumers get enriched property/loan data.
         const engagementId: string | undefined = (created as any).engagementId;
         if (engagementId) {
-          const addr = (created as any).propertyAddress;
-          const addrString: string =
-            typeof addr === 'string'
-              ? addr
-              : addr?.streetAddress
-                  ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
-                  : '';
+          const ctx = await this.contextLoader.loadByVendorOrder(created).catch(() => null);
+          const canonicalAddr = ctx ? getPropertyAddress(ctx) : null;
+          const canonicalLoan = ctx ? getLoanInformation(ctx) : null;
+          const addrString: string = canonicalAddr?.streetAddress
+            ? `${canonicalAddr.streetAddress}, ${canonicalAddr.city ?? ''}, ${canonicalAddr.state ?? ''} ${canonicalAddr.zipCode ?? ''}`.trim()
+            : (() => {
+                const addr = (created as any).propertyAddress;
+                return typeof addr === 'string'
+                  ? addr
+                  : addr?.streetAddress
+                      ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
+                      : '';
+              })();
+          const propertyState: string = canonicalAddr?.state ?? (created as any).propertyAddress?.state ?? '';
+          const loanAmount: number = canonicalLoan?.loanAmount ?? (created as any).loanInformation?.loanAmount ?? 0;
           const orderPriority: string = (created as any).priority ?? 'STANDARD';
           const priority: EventPriority =
             orderPriority === 'EMERGENCY' ? EventPriority.CRITICAL
@@ -421,9 +456,9 @@ export class OrderController {
               tenantId: req.user!.tenantId,
               productType: (created as any).productType ?? (created as any).orderType ?? '',
               propertyAddress: addrString,
-              propertyState: (created as any).propertyAddress?.state ?? '',
+              propertyState,
               clientId: (created as any).clientId ?? '',
-              loanAmount: (created as any).loanInformation?.loanAmount ?? 0,
+              loanAmount,
               priority,
               dueDate: (created as any).dueDate ? new Date((created as any).dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             },
@@ -437,22 +472,16 @@ export class OrderController {
         }
         this.auditService.log({
           actor: { userId: req.user!.id, ...(req.user?.email != null && { email: req.user.email }) },
-          action: 'order.created',
+          action: 'ORDER_CREATED',
           resource: { type: 'order', id: created?.id || 'unknown' },
           after: { status: OrderStatus.NEW, priority: orderData.priority },
         }).catch((err) =>
           logger.error('Failed to write audit log for order creation', { error: err }),
         );
         res.status(201).json(duplicateWarning
-          ? { ...result.data as object, duplicateWarning }
-          : result.data,
+          ? { ...created as object, duplicateWarning }
+          : created,
         );
-      } else {
-        res.status(500).json({
-          error: 'Order creation failed',
-          code: 'ORDER_CREATION_ERROR',
-          details: result.error,
-        });
       }
     } catch (error) {
       res.status(500).json({
@@ -2427,30 +2456,22 @@ export class OrderController {
         return;
       }
 
-      const orderResult = await this.dbService.findOrderById(orderId);
-      if (!orderResult.success || !orderResult.data) {
-        res.status(404).json({ error: 'Order not found' });
-        return;
-      }
-
-      const propertyId: string | undefined = (orderResult.data as any).propertyId;
-      if (!propertyId) {
+      const ctx = await this.contextLoader.loadByVendorOrderId(orderId, { includeProperty: true });
+      if (!ctx.property) {
         res.status(404).json({ error: 'Order has no linked property record' });
         return;
       }
 
-      const container = this.dbService.getContainer('property-records');
-      const { resource } = await container.item(propertyId, tenantId).read();
-      if (!resource) {
-        res.status(404).json({ error: `Property record ${propertyId} not found` });
+      res.json(ctx.property);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('not found')) {
+        res.status(404).json({ error: 'Order not found' });
         return;
       }
-
-      res.json(resource);
-    } catch (err) {
       logger.error('getOrderPropertyRecord failed', {
         orderId: req.params.orderId,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
       });
       res.status(500).json({ error: 'Failed to retrieve property record' });
     }

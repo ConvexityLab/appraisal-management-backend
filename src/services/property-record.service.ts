@@ -403,6 +403,15 @@ export class PropertyRecordService {
     source: PropertyVersionEntry['source'],
     changedBy: string,
     sourceProvider?: string,
+    /**
+     * Optional opaque correlation id (Axiom evaluationId, geocoding
+     * artifact id, etc.) — recorded on the version-history entry so
+     * downstream observability can stitch back to the source event.
+     * Added 2026-05-12 to unblock deploy after parallel-agent
+     * callers (bulk-portfolio, property-enrichment) updated the call
+     * sites without extending the signature.
+     */
+    sourceArtifactId?: string,
   ): Promise<PropertyRecord> {
     if (!reason || !reason.trim()) {
       throw new Error('PropertyRecordService.createVersion: reason is required');
@@ -444,6 +453,7 @@ export class PropertyRecordService {
       reason,
       source,
       ...(sourceProvider ? { sourceProvider } : {}),
+      ...(sourceArtifactId ? { sourceArtifactId } : {}),
       changedFields,
       previousValues,
     };
