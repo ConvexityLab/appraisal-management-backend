@@ -70,22 +70,39 @@ export class AutopilotSponsorIdentity {
 				message: 'tenantId and sponsorUserId are both required.',
 			};
 		}
-		let profile: UserProfile | null;
+		// Lookup is dual-key: recipe.sponsorUserId may have been stored as
+		// either the doc id (email-derived) or the Azure AD oid, depending
+		// on whether the recipe was created via REST API (oid from JWT)
+		// or migrated/admin-seeded (doc id).  Try both.  Real bug surfaced
+		// by live-fire: AAD users that haven't been email-synced into the
+		// users container would silently flip the recipe to sponsor-missing
+		// on the first sweep, with no obvious remediation path.
+		let profile: UserProfile | null = null;
 		try {
 			profile = await this.profiles.getUserProfile(sponsorUserId, tenantId);
 		} catch (err) {
-			this.logger.warn('Sponsor lookup failed', {
+			this.logger.warn('Sponsor lookup (by doc id) failed', {
 				tenantId,
 				sponsorUserId,
 				error: err instanceof Error ? err.message : String(err),
 			});
-			profile = null;
+		}
+		if (!profile) {
+			try {
+				profile = await this.profiles.getUserProfileByAzureId(sponsorUserId, tenantId);
+			} catch (err) {
+				this.logger.warn('Sponsor lookup (by AAD oid) failed', {
+					tenantId,
+					sponsorUserId,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
 		}
 		if (!profile) {
 			return {
 				ok: false,
 				reason: 'sponsor-missing',
-				message: `Sponsor user ${sponsorUserId} not found in tenant ${tenantId}.`,
+				message: `Sponsor user ${sponsorUserId} not found in tenant ${tenantId} (tried both doc id and AAD oid keys).`,
 			};
 		}
 		if (profile.tenantId !== tenantId) {
