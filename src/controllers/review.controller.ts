@@ -5,6 +5,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { ReviewWorkflowService } from '../services/review-workflow.service.js';
+import { CosmosDbService } from '../services/cosmos-db.service.js';
 import { ComparableAnalysisService } from '../services/comparable-analysis.service.js';
 import { ReviewReportService } from '../services/review-report.service.js';
 import {
@@ -29,9 +30,9 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-export function createReviewRouter(): Router {
+export function createReviewRouter(dbService: CosmosDbService): Router {
   const router = Router();
-  const workflowService = new ReviewWorkflowService();
+  const workflowService = new ReviewWorkflowService(dbService);
   const analysisService = new ComparableAnalysisService();
   const reportService = new ReviewReportService();
 

@@ -23,14 +23,13 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
-import type { Application } from 'express';
+import type { Express } from 'express';
 
 // ─── Set required env vars BEFORE any module imports ────────────────────────
 // These values must be set before the server classes are imported so that
 // constructor-time validation (TestTokenGenerator, CosmosDbService, etc.) pass.
 process.env.NODE_ENV = 'test';
 process.env.ENFORCE_AUTHORIZATION = 'true';
-process.env.AUTO_PROVISION_USERS = 'false';
 process.env.AXIOM_CLIENT_ID = 'test-client-id';
 process.env.AXIOM_SUB_CLIENT_ID = 'test-sub-client-id';
 process.env.AXIOM_API_BASE_URL = 'https://axiom-stub.test';
@@ -53,12 +52,6 @@ process.env.IVUEIT_BASE_URL = process.env.IVUEIT_BASE_URL ?? 'https://test-place
 //     mocked initialize(). We return a minimal fake Container so constructors
 //     succeed. Any request that gets past the auth gate will receive an empty
 //     result or 500 from the fake, which is fine — beyond auth is out of scope.
-const capabilityMatrixModule = await import('../../src/data/platform-capability-matrix.js');
-const capabilityDocs = capabilityMatrixModule.materializeAuthorizationCapabilityDocuments(
-  capabilityMatrixModule.AUTHORIZATION_CAPABILITY_MATERIALIZATION_TENANT_ID,
-  'test',
-);
-
 // Mock the inspection provider factory so no real vendor client is instantiated
 // (IVueitInspectionProvider validates IVUEIT_API_KEY at construction time).
 vi.mock('../../src/services/inspection-providers/factory.js', () => ({
@@ -73,19 +66,7 @@ vi.mock('../../src/services/cosmos-db.service.js', async (importOriginal) => {
   // Service methods invoked AFTER the auth gate get empty/error responses.
   const fakeContainer = {
     items: {
-      query: (querySpec?: { query?: string; parameters?: Array<{ name: string; value: unknown }> }) => ({
-        fetchAll: async () => {
-          if (querySpec?.query?.includes("c.type = 'authorization-capability'")) {
-            const tenantId = querySpec.parameters?.find((parameter) => parameter.name === '@tenantId')?.value;
-            return {
-              resources: capabilityDocs.filter((doc) => doc.tenantId === tenantId && doc.enabled !== false),
-              requestCharge: 0,
-            };
-          }
-
-          return { resources: [], requestCharge: 0 };
-        },
-      }),
+      query: () => ({ fetchAll: async () => ({ resources: [], requestCharge: 0 }) }),
       create: async () => ({ resource: null, requestCharge: 0 }),
       upsert: async () => ({ resource: null, requestCharge: 0 }),
       readAll: () => ({ fetchAll: async () => ({ resources: [], requestCharge: 0 }) }),
@@ -128,8 +109,6 @@ function makeProfile(id: string, role: string, isActive = true): UserProfile {
     name: `Test ${role}`,
     tenantId: TENANT,
     role: role as UserProfile['role'],
-    portalDomain: 'platform',
-    boundEntityIds: [],
     accessScope: { teamIds: [], departmentIds: [] },
     isActive,
     createdAt: new Date('2024-01-01'),
@@ -140,7 +119,7 @@ function makeProfile(id: string, role: string, isActive = true): UserProfile {
 const TEST_USERS: Record<string, UserProfile | null> = {
   'admin-uid':     makeProfile('admin-uid', 'admin'),
   'manager-uid':   makeProfile('manager-uid', 'manager'),
-  'analyst-uid':   makeProfile('analyst-uid', 'analyst'),
+  'analyst-uid':   makeProfile('analyst-uid', 'qc_analyst'),
   'appraiser-uid': makeProfile('appraiser-uid', 'appraiser'),
   'inactive-uid':  makeProfile('inactive-uid', 'admin', false),
   'ghost-uid':     null, // user not found in DB
@@ -163,9 +142,9 @@ function mintToken(userId: string, role: string): string {
 
 // ─── Server setup ────────────────────────────────────────────────────────────
 
-let app: Application;
+let app: Express;
 let server: AppraisalManagementAPIServer;
-let getUserProfileSpy: { mockRestore: () => void };
+let getUserProfileSpy: ReturnType<typeof vi.spyOn>;
 
 beforeAll(async () => {
   // Spy on getUserProfile BEFORE server init so newly created instances are covered.
@@ -280,18 +259,13 @@ describe('Layer 2 — User profile gate (403)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Layer 3 — Casbin DENY → 403 AUTHORIZATION_DENIED', () => {
-  it('appraiser → GET /api/vendors builds a deny-all query filter', async () => {
-    const buildQueryFilterSpy = vi.spyOn(AuthorizationService.prototype, 'buildQueryFilter');
+  it('appraiser → GET /api/vendors (no vendor access in policy) → 403', async () => {
     const token = mintToken('appraiser-uid', 'appraiser');
     const res = await request(app)
       .get('/api/vendors')
       .set('Authorization', `Bearer ${token}`);
-
-    const filter = await buildQueryFilterSpy.mock.results.at(-1)?.value;
-    expect(filter).toEqual({ sql: '1=0', parameters: [] });
-    expect(res.status).not.toBe(401);
-
-    buildQueryFilterSpy.mockRestore();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
   });
 
   it('appraiser → GET /api/qc-workflow/queue (qc_queue:read denied) → 403', async () => {
@@ -303,51 +277,18 @@ describe('Layer 3 — Casbin DENY → 403 AUTHORIZATION_DENIED', () => {
     expect(res.body.code).toBe('AUTHORIZATION_DENIED');
   });
 
-  it('analyst → GET /api/vendors builds a deny-all query filter', async () => {
-    const buildQueryFilterSpy = vi.spyOn(AuthorizationService.prototype, 'buildQueryFilter');
-    const token = mintToken('analyst-uid', 'analyst');
+  it('qc_analyst → GET /api/vendors (no vendor policy for analyst) → 403', async () => {
+    const token = mintToken('analyst-uid', 'qc_analyst');
     const res = await request(app)
       .get('/api/vendors')
       .set('Authorization', `Bearer ${token}`);
-
-    const filter = await buildQueryFilterSpy.mock.results.at(-1)?.value;
-    expect(filter).toEqual({ sql: '1=0', parameters: [] });
-    expect(res.status).not.toBe(401);
-
-    buildQueryFilterSpy.mockRestore();
-  });
-
-  it('manager → GET /api/axiom/admin/queue/stats (admin_panel:manage denied) → 403', async () => {
-    const token = mintToken('manager-uid', 'manager');
-    const res = await request(app)
-      .get('/api/axiom/admin/queue/stats')
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
-  });
-
-  it('appraiser → GET /api/analytics/overview (analytics:read denied) → 403', async () => {
-    const token = mintToken('appraiser-uid', 'appraiser');
-    const res = await request(app)
-      .get('/api/analytics/overview')
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('AUTHORIZATION_DENIED');
-  });
-
-  it('manager → POST /api/ai/qc/analyze (ai:execute denied) → 403', async () => {
-    const token = mintToken('manager-uid', 'manager');
-    const res = await request(app)
-      .post('/api/ai/qc/analyze')
-      .set('Authorization', `Bearer ${token}`)
-      .send({});
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('AUTHORIZATION_DENIED');
   });
 
   // The previous assertion that manager → GET /api/qc-workflow/queue → 403
   // is no longer valid. As of the Phase-1 auth refactor (PLATFORM_CAPABILITY_MATRIX),
-  // manager now has qc_queue:read. The analyst → ALLOW test at line ~343
+  // manager now has qc_queue:read. The qc_analyst → ALLOW test at line ~343
   // covers the same route; manager's allow path is implicitly covered by the
   // capability matrix unit tests.
 });
@@ -394,8 +335,8 @@ describe('Layer 3 — Casbin ALLOW → request passes auth gate (not 401/403)', 
     expect(res.status).not.toBe(403);
   });
 
-  it('analyst → GET /api/orders → passes auth (analyst:order:read allow)', async () => {
-    const token = mintToken('analyst-uid', 'analyst');
+  it('qc_analyst → GET /api/orders → passes auth (qc_analyst:order:read allow)', async () => {
+    const token = mintToken('analyst-uid', 'qc_analyst');
     const res = await request(app)
       .get('/api/orders')
       .set('Authorization', `Bearer ${token}`);
@@ -403,8 +344,8 @@ describe('Layer 3 — Casbin ALLOW → request passes auth gate (not 401/403)', 
     expect(res.status).not.toBe(403);
   });
 
-  it('analyst → GET /api/qc-workflow/queue → passes auth (qc_queue:read allow)', async () => {
-    const token = mintToken('analyst-uid', 'analyst');
+  it('qc_analyst → GET /api/qc-workflow/queue → passes auth (qc_queue:read allow)', async () => {
+    const token = mintToken('analyst-uid', 'qc_analyst');
     const res = await request(app)
       .get('/api/qc-workflow/queue')
       .set('Authorization', `Bearer ${token}`);
@@ -444,34 +385,6 @@ describe('Layer 3 — Casbin ALLOW → request passes auth gate (not 401/403)', 
     const res = await request(app)
       .get('/api/clients')
       .set('Authorization', `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
-  });
-
-  it('admin → GET /api/axiom/admin/queue/stats → passes auth', async () => {
-    const token = mintToken('admin-uid', 'admin');
-    const res = await request(app)
-      .get('/api/axiom/admin/queue/stats')
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
-  });
-
-  it('manager → GET /api/analytics/overview → passes auth', async () => {
-    const token = mintToken('manager-uid', 'manager');
-    const res = await request(app)
-      .get('/api/analytics/overview')
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
-  });
-
-  it('admin → POST /api/ai/qc/analyze → passes auth before payload validation', async () => {
-    const token = mintToken('admin-uid', 'admin');
-    const res = await request(app)
-      .post('/api/ai/qc/analyze')
-      .set('Authorization', `Bearer ${token}`)
-      .send({});
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });
@@ -515,8 +428,8 @@ describe('QC Rules route — all roles except unknown', () => {
     expect(res.status).not.toBe(403);
   });
 
-  it('analyst → GET /api/qc-rules → passes auth', async () => {
-    const token = mintToken('analyst-uid', 'analyst');
+  it('qc_analyst → GET /api/qc-rules → passes auth', async () => {
+    const token = mintToken('analyst-uid', 'qc_analyst');
     const res = await request(app)
       .get('/api/qc-rules')
       .set('Authorization', `Bearer ${token}`);

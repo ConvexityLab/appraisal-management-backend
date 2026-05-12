@@ -367,5 +367,64 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true')(
         console.log(`Stage 5 — order status=${order.status} ✅`);
       }, 15_000);
     });
+
+    // ── Stage 6 ─────────────────────────────────────────────────────────────
+    //  Seed a SUBMITTED review → POST /api/reviews/:id/assign → status=ASSIGNED
+
+    describe('Stage 6 — POST /api/reviews/:id/assign assigns reviewer', () => {
+      let reviewId: string;
+
+      beforeAll(async () => {
+        const ts = Date.now();
+
+        // Seed via the API so the document lands with the correct partition key (orderId).
+        const createRes = await request(app)
+          .post('/api/reviews')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            orderId: `orders-stg6-ref-${ts}`,
+            originalAppraisalId: `appraisal-stg6-ref-${ts}`,
+            reviewType: 'TECHNICAL',
+            priority: 'STANDARD',
+            requestReason: 'Integration test Stage 6 seed',
+          });
+
+        if (createRes.status !== 201) {
+          throw new Error(
+            `Stage 6 setup failed — POST /api/reviews returned ${createRes.status}: ${JSON.stringify(createRes.body)}`,
+          );
+        }
+
+        reviewId = createRes.body.data.id;
+        const orderId = createRes.body.data.orderId;
+        cleanupDocs.push({ container: 'revisions', id: reviewId, partitionKey: orderId });
+
+        console.log(`Stage 6 — seeded reviewId=${reviewId} (orderId=${orderId})`);
+      }, 30_000);
+
+      it('POST /api/reviews/:id/assign returns 200', async () => {
+        const res = await request(app)
+          .post(`/api/reviews/${reviewId}/assign`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            reviewerId: 'stg6-reviewer-001',
+            reviewerName: 'Stage Six Reviewer',
+            reviewerEmail: 'stg6@test.com',
+          });
+
+        expect(res.status).toBe(200);
+        console.log(`Stage 6 — assign returned ${res.status} ✅`);
+      }, 20_000);
+
+      it('review.status = ASSIGNED after assignment', async () => {
+        const res = await request(app)
+          .get(`/api/reviews/${reviewId}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.status).toBe('ASSIGNED');
+        console.log(`Stage 6 — review status=${res.body.data.status} ✅`);
+      }, 20_000);
+    });
   },
 );

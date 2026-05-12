@@ -2982,8 +2982,8 @@ export class CosmosDbService {
         throw new Error('Reviews container not initialized');
       }
 
-      // Read existing document
-      const { resource: existing } = await this.reviewsContainer.item(reviewId, reviewId).read();
+      // Cross-partition lookup: revisions container PK is /orderId, not /id
+      const existing = await this.findReviewById(reviewId);
       
       if (!existing) {
         throw new Error(`Review not found: ${reviewId}`);
@@ -3000,8 +3000,8 @@ export class CosmosDbService {
         }
       };
 
-      // Replace document
-      const { resource } = await this.reviewsContainer.item(reviewId, reviewId).replace(updated);
+      // Point-replace using actual partition key (orderId)
+      const { resource } = await this.reviewsContainer.item(reviewId, existing.orderId).replace(updated);
       this.logger.info('Appraisal review updated', { reviewId, status: resource?.status });
       return resource;
     } catch (error) {
@@ -3019,12 +3019,14 @@ export class CosmosDbService {
         throw new Error('Reviews container not initialized');
       }
 
-      const { resource } = await this.reviewsContainer.item(reviewId, reviewId).read();
-      return resource || null;
+      // Cross-partition query: revisions container PK is /orderId, not /id
+      const querySpec = {
+        query: 'SELECT * FROM c WHERE c.id = @reviewId',
+        parameters: [{ name: '@reviewId', value: reviewId }]
+      };
+      const { resources } = await this.reviewsContainer.items.query(querySpec).fetchAll();
+      return resources[0] ?? null;
     } catch (error: any) {
-      if (error.code === 404) {
-        return null;
-      }
       this.logger.error('Failed to find appraisal review', { error, reviewId });
       throw error;
     }

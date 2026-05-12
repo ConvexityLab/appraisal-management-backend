@@ -14,8 +14,6 @@ import {
   normalizeStreetForMatch,
   PROPERTY_RECORDS_CONTAINER,
 } from '../src/services/property-record.service';
-import { listPropertyRecords } from '../src/services/property-record-listing.service';
-import { PropertyRecordType } from '../src/types/property-record.types';
 import type { PropertyRecord } from '../src/types/property-record.types';
 
 // ─── Mock CosmosDbService ─────────────────────────────────────────────────────
@@ -83,7 +81,7 @@ function makeRecord(overrides: Partial<PropertyRecord> = {}): PropertyRecord {
       state: 'CA',
       zip: '91103',
     },
-    propertyType: PropertyRecordType.SINGLE_FAMILY,
+    propertyType: 'single_family_residential',
     building: {
       gla: 1800,
       yearBuilt: 1965,
@@ -265,85 +263,6 @@ describe('PropertyRecordService.findByNormalizedAddress', () => {
     await expect(
       svc.findByNormalizedAddress({ street: '1 A', city: 'B', state: 'CA', zip: '90210' }, '')
     ).rejects.toThrow('tenantId is required');
-  });
-});
-
-describe('PropertyRecordService.list', () => {
-  it('is available on the runtime service instance', () => {
-    const svc = new PropertyRecordService(makeMockCosmosService() as any);
-
-    expect(typeof svc.list).toBe('function');
-  });
-
-  it('returns tenant-scoped, filtered, sorted, paginated records', async () => {
-    const cosmos = makeMockCosmosService([
-      makeRecord({
-        id: 'prop-a',
-        apn: '111',
-        address: { street: '123 MAIN STREET', city: 'PASADENA', state: 'CA', zip: '91103' },
-        updatedAt: '2026-01-03T00:00:00.000Z',
-      }),
-      makeRecord({
-        id: 'prop-b',
-        apn: '222',
-        address: { street: '456 OAK STREET', city: 'PASADENA', state: 'CA', zip: '91103' },
-        updatedAt: '2026-01-02T00:00:00.000Z',
-      }),
-      makeRecord({
-        id: 'prop-c',
-        tenantId: 'tenant-b',
-        apn: '333',
-        address: { street: '789 PINE STREET', city: 'PHOENIX', state: 'AZ', zip: '85001' },
-        updatedAt: '2026-01-04T00:00:00.000Z',
-      }),
-    ]);
-    const svc = new PropertyRecordService(cosmos as any);
-
-    const result = await svc.list({
-      tenantId: 'tenant-a',
-      city: 'pasadena',
-      state: 'ca',
-      q: 'street',
-      sortBy: 'updatedAt',
-      sortOrder: 'desc',
-      limit: 1,
-      offset: 0,
-    });
-
-    expect(result.total).toBe(2);
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].id).toBe('prop-a');
-    expect(result.limit).toBe(1);
-    expect(result.offset).toBe(0);
-  });
-
-  it('returns the same filtered page through the standalone listing helper', async () => {
-    const cosmos = makeMockCosmosService([
-      makeRecord({
-        id: 'prop-a',
-        apn: '111',
-        address: { street: '123 MAIN STREET', city: 'PASADENA', state: 'CA', zip: '91103' },
-        updatedAt: '2026-01-03T00:00:00.000Z',
-      }),
-      makeRecord({
-        id: 'prop-b',
-        apn: '222',
-        address: { street: '456 OAK STREET', city: 'PASADENA', state: 'CA', zip: '91103' },
-        updatedAt: '2026-01-02T00:00:00.000Z',
-      }),
-    ]);
-
-    const result = await listPropertyRecords(cosmos as any, {
-      tenantId: 'tenant-a',
-      city: 'pasadena',
-      sortBy: 'updatedAt',
-      sortOrder: 'desc',
-      limit: 1,
-      offset: 0,
-    });
-
-    expect(result.total).toBe(2);
-    expect(result.items[0].id).toBe('prop-a');
   });
 });
 

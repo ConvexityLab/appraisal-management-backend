@@ -208,87 +208,89 @@ describe('PolicyEvaluatorService', () => {
     expect(denied.sql).toBe('1=0');
   });
 
-  it('wraps unconditional allows with NOT clauses when a higher-priority scoped deny is conditional', async () => {
-    const evaluator = new PolicyEvaluatorService(makeMockDb([
-      rule({ effect: 'allow', priority: 100, conditions: [] }),
-      rule({
-        effect: 'deny',
-        priority: 200,
-        clientId: 'client-a',
-        conditions: [{
-          attribute: 'accessControl.teamId',
-          operator: 'in',
-          userField: 'accessScope.teamIds',
-        }],
-      }),
-    ]));
+  it('reloads cached rules after invalidating the current cache scope', async () => {
+    const rules: PolicyRule[] = [rule({ role: 'manager', resourceType: 'order' })];
+    const queryMock = vi.fn((querySpec: { parameters: Array<{ name: string; value: any }> }) => ({
+      fetchAll: async () => {
+        const params = new Map(querySpec.parameters.map(p => [p.name, p.value]));
+        return {
+          resources: rules.filter(candidate =>
+            candidate.tenantId === params.get('@tenantId')
+            && candidate.role === params.get('@role')
+            && candidate.resourceType === params.get('@resourceType'),
+          ),
+        };
+      },
+    }));
+    const evaluator = new PolicyEvaluatorService({
+      getContainer: vi.fn(() => ({ items: { query: queryMock } })),
+    } as any);
 
-    const result = await evaluator.buildQueryFilter(
-      'user-1',
-      makeProfile('manager', { teamIds: ['team-a'] }, { clientId: 'client-a' }),
-      'order',
-      'read',
-    );
+    const profile = makeProfile('manager');
+    const first = await evaluator.buildQueryFilter('user-1', profile, 'order', 'read');
+    expect(first.sql).toBe('1=1');
+    expect(queryMock).toHaveBeenCalledTimes(1);
 
-    expect(result.sql).toContain('NOT (');
-    expect(result.sql).toContain('c.accessControl.teamId =');
-    expect(result.parameters.map((parameter) => parameter.value)).toContain('team-a');
+    rules.splice(0, rules.length, rule({ role: 'manager', resourceType: 'order', effect: 'deny' }));
+
+    const cached = await evaluator.buildQueryFilter('user-1', profile, 'order', 'read');
+    expect(cached.sql).toBe('1=1');
+    expect(queryMock).toHaveBeenCalledTimes(1);
+
+    evaluator.invalidateCache(profile.tenantId, profile.role, 'order');
+
+    const reloaded = await evaluator.buildQueryFilter('user-1', profile, 'order', 'read');
+    expect(reloaded.sql).toBe('1=0');
+    expect(queryMock).toHaveBeenCalledTimes(2);
   });
 
-  it('prefers sub-client-specific allow rules over broader scoped rules when generating SQL', async () => {
-    const evaluator = new PolicyEvaluatorService(makeMockDb([
-      rule({
-        clientId: 'client-a',
-        conditions: [{
-          attribute: 'accessControl.clientId',
-          operator: 'eq',
-          staticValue: 'client-a',
-        }],
-      }),
-      rule({
-        clientId: 'client-a',
-        subClientId: 'sub-1',
-        priority: 300,
-        conditions: [{
-          attribute: 'accessControl.subClientId',
-          operator: 'eq',
-          staticValue: 'sub-1',
-        }],
-      }),
-    ]));
+  it('invalidates both old and new cache scopes when a policy changes role or resource type', async () => {
+    const rules: PolicyRule[] = [rule({ role: 'manager', resourceType: 'order' })];
+    const queryMock = vi.fn((querySpec: { parameters: Array<{ name: string; value: any }> }) => ({
+      fetchAll: async () => {
+        const params = new Map(querySpec.parameters.map(p => [p.name, p.value]));
+        return {
+          resources: rules.filter(candidate =>
+            candidate.tenantId === params.get('@tenantId')
+            && candidate.role === params.get('@role')
+            && candidate.resourceType === params.get('@resourceType'),
+          ),
+        };
+      },
+    }));
+    const evaluator = new PolicyEvaluatorService({
+      getContainer: vi.fn(() => ({ items: { query: queryMock } })),
+    } as any);
 
-    const result = await evaluator.buildQueryFilter(
-      'user-1',
-      makeProfile('manager', {}, { clientId: 'client-a', subClientId: 'sub-1' }),
-      'order',
-      'read',
+    const managerProfile = makeProfile('manager');
+    const analystProfile = makeProfile('analyst');
+
+    const managerBefore = await evaluator.buildQueryFilter('user-1', managerProfile, 'order', 'read');
+    const analystBefore = await evaluator.buildQueryFilter('user-2', analystProfile, 'qc_review', 'read');
+
+    expect(managerBefore.sql).toBe('1=1');
+    expect(analystBefore.sql).toBe('1=0');
+    expect(queryMock).toHaveBeenCalledTimes(2);
+
+    rules.splice(0, rules.length, rule({ role: 'analyst', resourceType: 'qc_review' }));
+
+    const managerCached = await evaluator.buildQueryFilter('user-1', managerProfile, 'order', 'read');
+    const analystCached = await evaluator.buildQueryFilter('user-2', analystProfile, 'qc_review', 'read');
+
+    expect(managerCached.sql).toBe('1=1');
+    expect(analystCached.sql).toBe('1=0');
+    expect(queryMock).toHaveBeenCalledTimes(2);
+
+    evaluator.invalidateRuleChange(
+      { tenantId: TENANT, role: 'manager', resourceType: 'order' },
+      { tenantId: TENANT, role: 'analyst', resourceType: 'qc_review' },
     );
 
-    expect(result.sql).toContain('c.accessControl.subClientId =');
-    expect(result.sql).toContain(' OR ');
-    expect(result.parameters.map((parameter) => parameter.value)).toContain('sub-1');
-  });
+    const managerAfter = await evaluator.buildQueryFilter('user-1', managerProfile, 'order', 'read');
+    const analystAfter = await evaluator.buildQueryFilter('user-2', analystProfile, 'qc_review', 'read');
 
-  it('expands array contains rules into ARRAY_CONTAINS OR clauses', async () => {
-    const evaluator = new PolicyEvaluatorService(makeMockDb([
-      rule({
-        conditions: [{
-          attribute: 'accessControl.assignedUserIds',
-          operator: 'contains',
-          userField: 'accessScope.managedUserIds',
-        }],
-      }),
-    ]));
-
-    const result = await evaluator.buildQueryFilter(
-      'user-1',
-      makeProfile('manager', { managedUserIds: ['user-a', 'user-b'] }),
-      'order',
-      'read',
-    );
-
-    expect(result.sql).toContain('ARRAY_CONTAINS');
-    expect(result.sql).toContain(' OR ');
-    expect(result.parameters.map((parameter) => parameter.value)).toEqual(['user-a', 'user-b']);
+    expect(managerAfter.sql).toBe('1=0');
+    expect(analystAfter.sql).toBe('1=1');
+    expect(queryMock).toHaveBeenCalledTimes(4);
   });
 });

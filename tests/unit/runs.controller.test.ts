@@ -81,10 +81,6 @@ vi.mock('../../src/services/axiom.service.js', () => ({
   AxiomService: vi.fn().mockImplementation(() => ({})),
 }));
 
-vi.mock('../../src/services/axiom-execution.service.js', () => ({
-  AxiomExecutionService: vi.fn().mockImplementation(() => ({})),
-}));
-
 vi.mock('../../src/services/blob-storage.service.js', () => ({
   BlobStorageService: vi.fn().mockImplementation(() => ({
     generateReadSasUrl: vi.fn().mockResolvedValue('https://blob.example/doc.pdf?sas=1'),
@@ -120,9 +116,9 @@ function buildApp() {
     };
     next();
   });
-  // Use the mocked CosmosDbService so AnalysisSubmissionService.loadDocumentById
-  // (called via resolveSubmissionSourceIdentity) gets a working queryItems.
-  app.use('/api/runs', createRunsRouter(new CosmosDbService() as any));
+  // Mocked CosmosDbService — AnalysisSubmissionService.loadDocumentById
+  // (called via resolveSubmissionSourceIdentity) gets the mock's queryItems.
+  app.use('/api/runs', createRunsRouter(dbService));
   return app;
 }
 
