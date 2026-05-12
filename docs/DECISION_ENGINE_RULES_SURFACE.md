@@ -1,7 +1,7 @@
 # Decision Engine Rules Surface — Implementation Guide
 
 **Created:** 2026-05-10
-**Last updated:** 2026-05-11 (rev 15 — all yellow phases turned green)
+**Last updated:** 2026-05-11 (rev 16 — scope expansions shipped + staging operationalized)
 **Scope:** Generalize the vendor-matching rules workspace shipped in `AUTO_ASSIGNMENT_REVIEW.md` Phases 1–5 into a universal Decision Engine Rules Surface that handles every rules-driven process in the platform: vendor matching, review programs, firing rules, Axiom Criteria, and any future decision surface. Same CRUD / version / audit / preview / sandbox / replay / analytics machinery, pluggable per category.
 
 **Why now:** The vendor-matching slice proved the architecture end-to-end (live in dev, operators can author + publish + see traces). Rather than build the same machinery N times for the N other rule-driven systems, generalize once and treat every decision system as a "category" plugged into the surface.
@@ -9,6 +9,11 @@
 **Sibling doc:** `AUTO_ASSIGNMENT_REVIEW.md` — vendor-matching specific review + Phases 1-5 status. This doc continues the story for everything else.
 
 **Revisions:**
+- 2026-05-11 (rev 16) — **Scope expansions shipped + staging operationalized.**
+  - **Decision Impact Simulator** (`POST /:category/simulate`) — projects pack-change effect on in-flight (pending_bid / broadcast) decisions. Returns `losingBidVendors` (originally-selected vendor now denied) + `newlyEscalatedOrders` (every considered vendor denied → human queue). FE: "Simulate impact" button on the Sandbox tab → `DecisionImpactSimulatorDialog`.
+  - **Multi-version Pack A/B Diff** (`GET /:packId/diff?versionA=N&versionB=M`) — canonical-JSON rule comparison (sorted keys, no cosmetic-edit noise). Returns added / removed / modified / unchanged + metadata changes. `?behavioral=true` mode replays both packs and surfaces per-trace outcome divergence. FE: "Compare versions" button on the History tab → `PackVersionDiffDialog`.
+  - **Operationalized in staging** — `cosmos-decision-engine-analytics-container.bicep` deployed; `DECISION_ANALYTICS_JOB_ENABLED=true` + `FIRING_RULES_JOB_ENABLED=true` set on `ca-appraisalapi-sta-lqxl`. Verified: nightly aggregation cron has written **10 snapshot rows** (5 categories × 2 windows) to `decision-rule-analytics` against staging Cosmos. Analytics endpoint now reads-through these snapshots before falling back to live compute.
+  - **Live-fire suite at 12/12 green** — J1, J2, J3, J4, J5, J7, J9, J10, J10b, J11, J12, J13 all pass against staging Cosmos via headless Playwright. New rows: J12 (Simulator end-to-end) + J13 (Pack A/B diff end-to-end).
 - 2026-05-11 (rev 15) — **All previously yellow phases turned green.** Lands the closing batch the user demanded ("everything in our yellow turned to green").
   - **D.faithful**: assignment-trace `evaluationsSnapshot` field; engine returns + orchestrator persists; replay prefers the frozen snapshot, falls back to current vendor data for legacy traces. Diff details include `factSource` + `faithful` flags.
   - **D.replayButton**: `ReplayThisOrderDialog` + Replay button on every `AssignmentTraceTimeline` entry. One-click "what would today's rules have done?" without opening the Sandbox tab.
