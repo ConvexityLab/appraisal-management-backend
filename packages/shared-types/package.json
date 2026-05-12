@@ -1,0 +1,28 @@
+{
+  "name": "@l1/shared-types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for L1 Valuation Platform (canonical schema, report config, UAD 3.6)",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./property-record": {
+      "types": "./src/property-record.types.ts",
+      "default": "./src/property-record.types.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "src"
+  ]
+}
