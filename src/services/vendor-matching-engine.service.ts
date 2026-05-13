@@ -29,14 +29,141 @@ import {
   VendorPerformanceMetrics,
   MatchExplanation,
   DeniedVendorEntry,
-  GeographicArea
+  GeographicArea,
+  NoMatchReason,
+  NoMatchReasonCode,
 } from '../types/vendor-marketplace.types.js';
+import {
+  VendorMatchingCriteriaService,
+  type ResolvedCriteriaProfile,
+} from './vendor-matching-criteria.service.js';
+import { AuditTrailService } from './audit-trail.service.js';
 
 /**
  * Tag identifying the scoring profile used (T6 audit). Bump when weights or
  * band thresholds change so historical match explanations remain replayable.
  */
 const WEIGHTS_VERSION = 'v1-30/25/20/15/10';
+
+// ─── Phase B helpers (no-match reason + radius override + toggles) ─────────
+
+/**
+ * Convert a resolved criteria profile's per-criterion enabled+weight
+ * settings into the fixed-weight shape the scorer expects. Disabled
+ * criteria get weight=0; remaining weights renormalize so the total sums
+ * to 1.0. This keeps the per-criterion score values 0..100 from the
+ * existing calculators, while letting Doug toggle proximity off for DVR
+ * without re-implementing the scorer.
+ */
+function computeEffectiveWeights(
+  criteria: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
+): { performance: number; availability: number; proximity: number; experience: number; cost: number } {
+  const raw = {
+    performance: criteria.performance.enabled ? criteria.performance.weight : 0,
+    availability: criteria.availability.enabled ? criteria.availability.weight : 0,
+    proximity: criteria.proximity.enabled && criteria.proximity.mode === 'SCORED' ? criteria.proximity.weight : 0,
+    experience: criteria.experience.enabled ? criteria.experience.weight : 0,
+    cost: criteria.cost.enabled ? criteria.cost.weight : 0,
+  };
+  const sum = raw.performance + raw.availability + raw.proximity + raw.experience + raw.cost;
+  if (sum <= 0) {
+    // Pathological: no SCORED criterion. Fall back to the legacy weights so
+    // we still rank vendors (every disabled criterion just contributes 0).
+    return { performance: 0.30, availability: 0.25, proximity: 0.20, experience: 0.15, cost: 0.10 };
+  }
+  return {
+    performance: raw.performance / sum,
+    availability: raw.availability / sum,
+    proximity: raw.proximity / sum,
+    experience: raw.experience / sum,
+    cost: raw.cost / sum,
+  };
+}
+
+// ─── Phase B helpers (no-match reason + radius override) ────────────────────
+
+function withMaxDistance(
+  request: VendorMatchRequest,
+  maxDistance: number,
+): VendorMatchRequest {
+  return {
+    ...request,
+    clientPreferences: {
+      ...(request.clientPreferences ?? {}),
+      maxDistance,
+    },
+  };
+}
+
+function inferNoMatchReason(
+  denied: DeniedVendorEntry[],
+  ctx: { radiusUsed: number; productState?: string },
+): NoMatchReason {
+  if (denied.length === 0) {
+    // Nothing came back at all — either no vendors exist or none cover the area.
+    return {
+      code: 'NO_VENDOR_WITHIN_RADIUS',
+      message: `No vendor was found within ${ctx.radiusUsed} miles of the property.`,
+      hints: [
+        'Widen the search radius or attach a fallback overlay.',
+        'Check that at least one vendor covers this geography.',
+      ],
+    };
+  }
+
+  // Aggregate denial reasons so we can pick the dominant one. Sanitised — we
+  // expose categories, not per-vendor reasons (Doug: "don't list everything").
+  const reasonHits: Record<NoMatchReasonCode, number> = {
+    NO_LICENSED_VENDOR_IN_STATE: 0,
+    NO_VENDOR_WITHIN_RADIUS: 0,
+    NO_VENDOR_WITH_CAPACITY: 0,
+    NO_VENDOR_MEETS_TIER: 0,
+    ALL_VENDORS_EXCLUDED_BY_RULES: 0,
+    UNKNOWN: 0,
+  };
+  for (const entry of denied) {
+    const joined = entry.denyReasons.join(' ').toLowerCase();
+    if (joined.includes('licens') || joined.includes('state')) {
+      reasonHits.NO_LICENSED_VENDOR_IN_STATE++;
+    } else if (joined.includes('distance') || joined.includes('mile') || joined.includes('proximity')) {
+      reasonHits.NO_VENDOR_WITHIN_RADIUS++;
+    } else if (joined.includes('capacity') || joined.includes('available') || joined.includes('busy')) {
+      reasonHits.NO_VENDOR_WITH_CAPACITY++;
+    } else if (joined.includes('tier') || joined.includes('rating')) {
+      reasonHits.NO_VENDOR_MEETS_TIER++;
+    } else {
+      reasonHits.ALL_VENDORS_EXCLUDED_BY_RULES++;
+    }
+  }
+  const top = (Object.entries(reasonHits) as [NoMatchReasonCode, number][]).sort(
+    (a, b) => b[1] - a[1],
+  )[0]!;
+  const code = top[0];
+
+  const messages: Record<NoMatchReasonCode, string> = {
+    NO_LICENSED_VENDOR_IN_STATE: ctx.productState
+      ? `No vendor licensed in ${ctx.productState} qualified for this assignment.`
+      : 'No vendor with proper state licensing qualified.',
+    NO_VENDOR_WITHIN_RADIUS: `No vendor qualified within ${ctx.radiusUsed} miles of the property.`,
+    NO_VENDOR_WITH_CAPACITY: 'Every qualified vendor is at capacity or on vacation.',
+    NO_VENDOR_MEETS_TIER: 'No vendor meets the minimum performance/tier threshold for this work.',
+    ALL_VENDORS_EXCLUDED_BY_RULES:
+      'Every candidate was excluded by the active assignment rules. Review the rule pack.',
+    UNKNOWN: 'No vendor matched for an unspecified reason.',
+  };
+
+  return {
+    code,
+    message: messages[code],
+  };
+}
+
+function extractStateHint(request: VendorMatchRequest): string | undefined {
+  // The request carries propertyAddress as a single string; try to pull a
+  // two-letter state code from the tail.
+  const match = request.propertyAddress?.match(/\b([A-Z]{2})\b/);
+  return match?.[1];
+}
 
 interface GeoCoordinates {
   latitude: number;
@@ -139,7 +266,13 @@ export class VendorMatchingEngine {
    */
   async findMatchingVendorsAndDenied(
     request: VendorMatchRequest,
-    topN: number = 10
+    topN: number = 10,
+    /**
+     * Phase B — optional resolved criteria profile. When supplied, scoreVendor
+     * honours toggles + renormalized weights + licensure HARD_GATE. When
+     * absent (the public legacy contract), the fixed-weight scorer runs.
+     */
+    criteriaProfile?: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
   ): Promise<{
     matches: VendorMatchResult[];
     denied: DeniedVendorEntry[];
@@ -173,7 +306,7 @@ export class VendorMatchingEngine {
 
     const scoredVendors = await Promise.all(
       eligible.map(({ vendor, distance, ruleResult }) =>
-        this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult)
+        this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult, criteriaProfile)
       )
     );
 
@@ -216,6 +349,119 @@ export class VendorMatchingEngine {
     ];
 
     return { matches, denied, evaluationsSnapshot };
+  }
+
+  /**
+   * Phase B — match with David/Doug's per-product overlays + a "why no match"
+   * reason when results are empty.
+   *
+   * Pipeline:
+   *   1. Resolve the active criteria profile for the (tenant, clientId,
+   *      productType, phase) tuple — overlays merged BASE → CLIENT → PRODUCT
+   *      → CLIENT_PRODUCT.
+   *   2. Run findMatchingVendorsAndDenied with the resolved profile's
+   *      primary proximity radius applied to the request's
+   *      clientPreferences.maxDistance.
+   *   3. If empty AND profile.proximity.expansionRadiusMiles is set,
+   *      RE-RUN with the wider radius (Doug's 30→50 mi pattern).
+   *   4. If still empty, infer a NoMatchReason from the denied list.
+   *
+   * NOTE: This is a wrapper. Per-criterion toggle enforcement in scoreVendor
+   * (e.g. "skip proximity for DVR product") is the larger rewrite of
+   * scoreVendor/getEligibleVendors and is intentionally deferred. The
+   * existing weights remain in force; this method changes the OUTER
+   * search behaviour and surfaces the no-match reason.
+   */
+  async findMatchingVendorsWithReason(
+    request: VendorMatchRequest,
+    options: {
+      clientId?: string;
+      phase?: 'ORIGINAL' | 'REVIEW';
+      topN?: number;
+    } = {},
+  ): Promise<{
+    matches: VendorMatchResult[];
+    denied: DeniedVendorEntry[];
+    appliedProfileIds: string[];
+    noMatchReason: NoMatchReason | null;
+    expansionApplied: boolean;
+  }> {
+    const topN = options.topN ?? 10;
+    const criteriaService = new VendorMatchingCriteriaService(
+      this.dbService,
+      new AuditTrailService(this.dbService),
+    );
+    const resolved = await criteriaService.resolveProfile({
+      tenantId: request.tenantId,
+      ...(options.clientId ? { clientId: options.clientId } : {}),
+      ...(request.productId ? { productType: request.productId } : {}),
+      ...(options.phase ? { phase: options.phase } : {}),
+    });
+
+    const primaryRadius = resolved.criteria.proximity.primaryRadiusMiles;
+    const expansionRadius = resolved.criteria.proximity.expansionRadiusMiles;
+
+    // First pass with primary radius — pass criteria through so toggles +
+    // licensure HARD_GATE + renormalized weights apply.
+    const firstPass = await this.findMatchingVendorsAndDenied(
+      withMaxDistance(request, primaryRadius),
+      topN,
+      resolved.criteria,
+    );
+    if (firstPass.matches.length > 0) {
+      return {
+        matches: firstPass.matches,
+        denied: firstPass.denied,
+        appliedProfileIds: resolved.appliedProfileIds,
+        noMatchReason: null,
+        expansionApplied: false,
+      };
+    }
+
+    // Expansion pass (Doug's pattern: 30 → 50 mi).
+    if (expansionRadius && expansionRadius > primaryRadius) {
+      this.logger.info('No matches at primary radius — expanding', {
+        primaryRadius,
+        expansionRadius,
+      });
+      const secondPass = await this.findMatchingVendorsAndDenied(
+        withMaxDistance(request, expansionRadius),
+        topN,
+        resolved.criteria,
+      );
+      if (secondPass.matches.length > 0) {
+        return {
+          matches: secondPass.matches,
+          denied: secondPass.denied,
+          appliedProfileIds: resolved.appliedProfileIds,
+          noMatchReason: null,
+          expansionApplied: true,
+        };
+      }
+      // Still nothing — fall through to reason inference, using the wider
+      // denied list which is more informative.
+      return {
+        matches: [],
+        denied: secondPass.denied,
+        appliedProfileIds: resolved.appliedProfileIds,
+        noMatchReason: inferNoMatchReason(secondPass.denied, {
+          radiusUsed: expansionRadius,
+          ...(extractStateHint(request) !== undefined ? { productState: extractStateHint(request) as string } : {}),
+        }),
+        expansionApplied: true,
+      };
+    }
+
+    return {
+      matches: [],
+      denied: firstPass.denied,
+      appliedProfileIds: resolved.appliedProfileIds,
+      noMatchReason: inferNoMatchReason(firstPass.denied, {
+        radiusUsed: primaryRadius,
+        ...(extractStateHint(request) !== undefined ? { productState: extractStateHint(request) as string } : {}),
+      }),
+      expansionApplied: false,
+    };
   }
 
   /**
@@ -338,7 +584,15 @@ export class VendorMatchingEngine {
     request: VendorMatchRequest,
     propertyCoords: GeoCoordinates | null,
     precomputedDistance?: number | null,
-    ruleResult?: RuleEvaluationResult
+    ruleResult?: RuleEvaluationResult,
+    /**
+     * Phase B — resolved criteria profile from VendorMatchingCriteriaService.
+     * When provided, per-criterion enabled flags + weights override the
+     * fixed WEIGHTS table. Disabled criteria are excluded from the score
+     * and remaining weights renormalize to 1.0. When absent, behaviour is
+     * identical to the legacy fixed-weight scorer.
+     */
+    criteriaProfile?: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
@@ -411,13 +665,56 @@ export class VendorMatchingEngine {
       request.clientPreferences?.maxFee
     );
 
-    // Weighted overall score
+    // Phase B — licensure HARD_GATE: when the resolved profile marks
+    // licensure as a hard gate, a vendor that isn't licensed in the
+    // property's state scores 0 overall (analogous to the requiredCapabilities
+    // gate above). 'SCORED' mode would feed the licensure check into
+    // experienceScore instead — not yet wired since the existing scorer
+    // doesn't have a licensure component to score against; if you want
+    // SCORED licensure, do it in a follow-up.
+    if (criteriaProfile?.licensure?.enabled && criteriaProfile.licensure.mode === 'HARD_GATE') {
+      const licensedStates: string[] = (vendor.licensedStates as string[] | undefined) ?? [];
+      if (propertyState && licensedStates.length > 0 && !licensedStates.includes(propertyState)) {
+        const zeroComponents = { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 };
+        return {
+          vendorId: vendor.id,
+          matchScore: 0,
+          scoreBreakdown: zeroComponents,
+          distance: precomputedDistance ?? null,
+          estimatedTurnaround: 0,
+          estimatedFee: null,
+          matchReasons: [`Not licensed in ${propertyState} (HARD_GATE).`],
+          vendor: {
+            id: vendor.id,
+            name: vendor.name || vendor.businessName,
+            tier: 'BRONZE' as const,
+            overallScore: 0,
+          },
+          explanation: {
+            vendorId: vendor.id,
+            scoreComponents: zeroComponents,
+            ruleResult: ruleResult ?? { appliedRuleIds: [], denyReasons: ['licensure HARD_GATE'], scoreAdjustment: 0 },
+            baseScore: 0,
+            finalScore: 0,
+            weightsVersion: WEIGHTS_VERSION,
+          },
+        };
+      }
+    }
+
+    // Weighted overall score — when a criteria profile is supplied, derive
+    // weights from it (honoring enabled flags and renormalizing). Otherwise
+    // use the legacy fixed WEIGHTS table so unprofiled tenants are unaffected.
+    const effectiveWeights = criteriaProfile
+      ? computeEffectiveWeights(criteriaProfile)
+      : this.WEIGHTS;
+
     const baseScore = Math.round(
-      performanceScore * this.WEIGHTS.performance +
-      availabilityScore * this.WEIGHTS.availability +
-      proximityScore.score * this.WEIGHTS.proximity +
-      experienceScore * this.WEIGHTS.experience +
-      costScore * this.WEIGHTS.cost
+      performanceScore * effectiveWeights.performance +
+      availabilityScore * effectiveWeights.availability +
+      proximityScore.score * effectiveWeights.proximity +
+      experienceScore * effectiveWeights.experience +
+      costScore * effectiveWeights.cost
     );
 
     // T5: apply rules-engine score adjustments (boost / reduce), clamped to [0, 100].

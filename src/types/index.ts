@@ -233,10 +233,88 @@ export interface ContactInfo {
   availabilityNotes?: string;
 }
 
+// ── Appraiser license (formerly in appraiser.types.ts) ───────────────────────
+export interface VendorLicense {
+  id: string;
+  type: 'state_license' | 'certified_residential' | 'certified_general' | 'trainee';
+  state: string;
+  licenseNumber: string;
+  issuedDate: string;
+  expirationDate: string;
+  status: 'active' | 'expired' | 'suspended' | 'revoked';
+  verificationUrl?: string;
+  documentUrl?: string;
+}
+
+/** Conflict-of-interest property (formerly in appraiser.types.ts) */
+export interface ConflictProperty {
+  address: string;
+  reason: 'ownership' | 'family' | 'financial_interest' | 'prior_appraisal';
+  radiusMiles: number;
+  notes?: string;
+  addedAt: string;
+}
+
+/** Assignment workflow record stored in the orders container (formerly in appraiser.types.ts) */
+export interface AppraiserAssignment {
+  id: string;
+  type: 'appraiser_assignment';
+  tenantId: string;
+  orderId: string;
+  orderNumber: string;
+  appraiserId: string;
+  assignedAt: string;
+  assignedBy: string;
+  acceptedAt?: string;
+  declinedAt?: string;
+  declineReason?: string;
+  status: 'pending' | 'accepted' | 'declined' | 'completed' | 'cancelled';
+  propertyAddress: string;
+  propertyLat?: number;
+  propertyLng?: number;
+  proposedFee?: number;
+  agreedFee?: number;
+  counterOfferFee?: number;
+  counterOfferNotes?: string;
+  negotiationId?: string;
+  slaDeadline?: string;
+  slaStartedAt?: string;
+  estimatedCompletionDate?: string;
+  actualCompletionDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Result of a conflict-of-interest check (formerly in appraiser.types.ts) */
+export interface ConflictCheckResult {
+  hasConflict: boolean;
+  conflicts: Array<{
+    type: 'distance' | 'property_conflict';
+    reason: string;
+    distance?: number;
+    conflictProperty?: ConflictProperty;
+  }>;
+}
+
 export interface Vendor {
   id: string;
   tenantId: string;
+  /** Legal/business display name. For individual appraisers use firstName + lastName; name may be derived or absent. */
   name: string;
+  /** First name — set for individual vendors (appraisers, inspectors). */
+  firstName?: string;
+  /** Last name — set for individual vendors (appraisers, inspectors). */
+  lastName?: string;
+  /**
+   * Discriminator for vendor sub-type.
+   * 'appraiser' | 'amc' | 'inspector' | 'notary'
+   * Absent = appraiser (backward compat with pre-migration documents).
+   */
+  vendorType?: 'appraiser' | 'amc' | 'inspector' | 'notary';
+  /** State licenses — required for appraisers. */
+  licenses?: VendorLicense[];
+  /** Conflict-of-interest properties for this vendor. */
+  conflictProperties?: ConflictProperty[];
   email: string;
   phone: string;
   licenseNumber: string;
@@ -319,6 +397,20 @@ export interface Vendor {
   // ("I want to see it before I make the final decision").
   trustedVendor?: boolean;
   confidentialClassifications?: string[];
+
+  // ── Appraiser workload tracking ───────────────────────────────────────────
+  /** Current number of active assignments (mirrors activeOrderCount for individual appraisers). */
+  currentWorkload?: number;
+  /** Maximum concurrent order capacity for individual appraisers. */
+  maxCapacity?: number;
+  /** Fine-grained availability status for individual appraisers. */
+  availability?: 'available' | 'busy' | 'on_leave';
+  /** ISO timestamp — set on creation. */
+  createdAt?: string;
+  /** ISO timestamp — updated on every write. */
+  updatedAt?: string;
+  /** ISO timestamp — last time an assignment was created for this vendor. */
+  lastAssignmentAt?: string;
 }
 
 export interface VendorPerformance {

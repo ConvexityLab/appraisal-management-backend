@@ -14,6 +14,10 @@ import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { AuthorizationMiddleware, AuthorizedRequest } from '../middleware/authorization.middleware.js';
 import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
+import {
+  stripConfidentialVendorFields,
+  stripConfidentialFieldsFromVendorList,
+} from '../utils/confidential-fields.js';
 
 export class VendorController {
   public router: Router;
@@ -61,8 +65,9 @@ export class VendorController {
     this.router.get('/',                       ...readQuery,    this.getVendors.bind(this));
     this.router.get('/:vendorId',              ...readResource,    ...this.validateVendorIdParam(), this.getVendorById.bind(this));
     this.router.post('/',                      ...create,  ...this.validateVendorCreation(), this.createVendor.bind(this));
-    this.router.patch('/:vendorId/availability', ...updateResource, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(), this.setVendorAvailability.bind(this));
-    this.router.put('/:vendorId',              ...updateResource,  ...this.validateVendorIdParam(), ...this.validateVendorUpdate(), this.updateVendor.bind(this));
+    this.router.patch('/:vendorId/availability',         ...updateResource, ...this.validateVendorIdParam(), ...this.validateAvailabilityUpdate(),       this.setVendorAvailability.bind(this));
+    this.router.patch('/:vendorId/product-eligibility',  ...updateResource, ...this.validateVendorIdParam(), ...this.validateProductEligibilityUpdate(), this.setProductEligibility.bind(this));
+    this.router.put('/:vendorId',                        ...updateResource, ...this.validateVendorIdParam(), ...this.validateVendorUpdate(),               this.updateVendor.bind(this));
     this.router.delete('/:vendorId',           ...deleteResource,     ...this.validateVendorIdParam(), this.deleteVendor.bind(this));
   }
 
@@ -129,6 +134,34 @@ export class VendorController {
     ];
   }
 
+  private validateProductEligibilityUpdate() {
+    const VALID_GRADES = ['trainee', 'proficient', 'expert', 'lead'] as const;
+    return [
+      body('eligibleProductIds')
+        .isArray().withMessage('eligibleProductIds must be an array')
+        .custom((ids: unknown[]) => {
+          if (!ids.every(id => typeof id === 'string' && id.trim().length > 0)) {
+            throw new Error('eligibleProductIds must be an array of non-empty strings');
+          }
+          return true;
+        }),
+      body('productGrades')
+        .isArray().withMessage('productGrades must be an array')
+        .custom((grades: unknown[]) => {
+          for (const g of grades as Array<Record<string, unknown>>) {
+            if (typeof g.productId !== 'string' || !g.productId.trim()) {
+              throw new Error('each productGrade must have a non-empty productId string');
+            }
+            if (!VALID_GRADES.includes(g.grade as typeof VALID_GRADES[number])) {
+              throw new Error(`productGrade.grade must be one of: ${VALID_GRADES.join(', ')}`);
+            }
+          }
+          return true;
+        }),
+      this.handleValidationErrors.bind(this)
+    ];
+  }
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
@@ -156,7 +189,9 @@ export class VendorController {
 
       if (result.success && result.data) {
         const vendorProfiles = result.data.map(v => this.transformVendorToProfile(v));
-        res.json(vendorProfiles);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialFieldsFromVendorList(vendorProfiles, req.user);
+        res.json(visible);
       } else {
         res.status(500).json({
           error: 'Failed to retrieve vendors',
@@ -185,7 +220,9 @@ export class VendorController {
 
       if (result.success && result.data) {
         const vendorProfile = this.transformVendorToProfile(result.data);
-        res.json(vendorProfile);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialVendorFields(vendorProfile, req.user);
+        res.json(visible);
       } else if (result.success && !result.data) {
         res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
       } else {
@@ -262,7 +299,9 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor updated', { vendorId });
         const profile = this.transformVendorToProfile(result.data);
-        res.json(profile);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.json(visible);
       } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
         res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
       } else {
@@ -308,7 +347,8 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor availability updated', { vendorId, isBusy, vacationStartDate, vacationEndDate });
         const profile = this.transformVendorToProfile(result.data);
-        res.json(profile);
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.json(visible);
       } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
         res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
       } else {
@@ -325,6 +365,43 @@ export class VendorController {
         code: 'AVAILABILITY_UPDATE_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  }
+
+  /**
+   * PATCH /api/vendors/:vendorId/product-eligibility
+   * Replace the full eligibleProductIds list and productGrades for a vendor.
+   * This is the canonical write path for the matching engine's hard gate and
+   * proficiency bonus.  Sends the complete desired state — not a delta.
+   */
+  private async setProductEligibility(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!;
+      const { eligibleProductIds, productGrades } = req.body as {
+        eligibleProductIds: string[];
+        productGrades: import('../types/index.js').ProductGrade[];
+      };
+
+      const result = await this.dbService.updateVendor(vendorId, {
+        eligibleProductIds,
+        productGrades,
+        updatedBy: req.user?.id,
+        updatedAt: new Date(),
+      } as any);
+
+      if (result.success && result.data) {
+        this.logger.info('Vendor product eligibility updated', { vendorId, productCount: eligibleProductIds.length });
+        const profile = this.transformVendorToProfile(result.data);
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.json(visible);
+      } else if (result.error?.code === 'VENDOR_NOT_FOUND') {
+        res.status(404).json({ error: 'Vendor not found', code: 'VENDOR_NOT_FOUND' });
+      } else {
+        res.status(500).json({ error: 'Product eligibility update failed', details: result.error });
+      }
+    } catch (error) {
+      this.logger.error('Failed to update vendor product eligibility', { error, vendorId: req.params.vendorId });
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 
