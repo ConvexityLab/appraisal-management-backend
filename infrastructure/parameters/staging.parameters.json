@@ -52,7 +52,12 @@
       ]
     },
     "developerPrincipalIds": {
-      "value": ["d14de96e-1d1b-43d4-8250-7086f0a386b9"]
+      "value": [
+        "d14de96e-1d1b-43d4-8250-7086f0a386b9",
+        "2d57c213-85b3-4ea2-9805-f1928d7532ee",
+        "3cb04a10-b6f3-4fd1-8997-798507299d73",
+        "057faa65-5ffd-4c8b-8edf-19820c2cc01a"
+      ]
     },
     "appConfigValues": {
       "value": {

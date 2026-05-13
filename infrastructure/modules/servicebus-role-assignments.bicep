@@ -52,5 +52,17 @@ resource serviceBusDeveloperSenderRoleAssignments 'Microsoft.Authorization/roleA
   }
 }]
 
+// Azure Service Bus Data Receiver — developer identities for local integration test consumption
+resource serviceBusDeveloperReceiverRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in developerPrincipalIds: if (!empty(developerPrincipalIds)) {
+  name: guid(serviceBusNamespace.id, principalId, '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0-developer')
+  scope: serviceBusNamespace
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0') // Azure Service Bus Data Receiver
+    principalId: principalId
+    principalType: 'User'
+    description: 'Allows developer ${i} to receive messages from Service Bus for local testing'
+  }
+}]
+
 output senderRoleAssignmentsCount int = length(containerAppPrincipalIds)
 output receiverRoleAssignmentsCount int = length(containerAppPrincipalIds)
