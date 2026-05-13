@@ -1242,7 +1242,3 @@ export interface UpdateProductRequest {
   gradeLevels?: GradeLevel[];
 }
 export * from './ai-parser.types';
-
-
-
-export * from './ai-parser.types';

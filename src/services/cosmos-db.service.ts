@@ -884,6 +884,8 @@ export class CosmosDbService {
       ...(product.feeSplitPercent !== undefined && { feeSplitPercent: product.feeSplitPercent }),
       ...(product.rushTurnTimeDays !== undefined && { rushTurnTimeDays: product.rushTurnTimeDays }),
       ...(product.gradeLevels !== undefined && { gradeLevels: product.gradeLevels }),
+      ...(product.matchingCriteriaSets !== undefined && { matchingCriteriaSets: product.matchingCriteriaSets }),
+      ...(product.autoAwardFirstBid !== undefined && { autoAwardFirstBid: product.autoAwardFirstBid }),
     } satisfies import('../types/index.js').Product;
     const { resource } = await this.productsContainer.items.create(doc);
     return { success: true, data: resource as unknown as import('../types/index.js').Product };
