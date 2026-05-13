@@ -205,7 +205,7 @@ describe('Approve / reject — admin gate (regression)', () => {
 });
 
 describe('Approve — delegated-identity re-check at fire time', () => {
-	function awaitingRun() {
+	function awaitingRun(overrides: { intent?: string; actionPayload?: unknown } = {}) {
 		return {
 			id: 'run-99',
 			tenantId: 't1',
@@ -216,8 +216,8 @@ describe('Approve — delegated-identity re-check at fire time', () => {
 			startedAt: '2026-05-13T00:00:00Z',
 			triggeredBy: { kind: 'queue-message', chainDepth: 0, idempotencyKey: 'k1' },
 			pendingApproval: {
-				intent: 'TRIGGER_AUTO_ASSIGNMENT',
-				actionPayload: { orderIds: ['o-1'] },
+				intent: overrides.intent ?? 'TRIGGER_AUTO_ASSIGNMENT',
+				actionPayload: overrides.actionPayload ?? { orderIds: ['o-1'] },
 				proposedAt: '2026-05-13T00:00:00Z',
 				approverPolicy: 'approve' as const,
 			},
@@ -228,9 +228,11 @@ describe('Approve — delegated-identity re-check at fire time', () => {
 		sponsorResolve: () =>
 			| { ok: true; tenantId: string; userId: string; role: string; isInternal?: boolean }
 			| { ok: false; reason: 'sponsor-missing' | 'sponsor-inactive' | 'tenant-mismatch'; message: string },
+		runOverrides: { intent?: string; actionPayload?: unknown } = {},
+		promptResolver?: { parseIntent: ReturnType<typeof vi.fn> } | null,
 	) {
 		const cosmos = {
-			queryItems: vi.fn(async () => ({ success: true, data: [awaitingRun()] })),
+			queryItems: vi.fn(async () => ({ success: true, data: [awaitingRun(runOverrides)] })),
 			createItem: vi.fn(async (_c: string, doc: unknown) => ({ success: true, data: doc })),
 			upsertItem: vi.fn(async (_c: string, doc: unknown) => ({ success: true, data: doc })),
 		};
@@ -246,7 +248,18 @@ describe('Approve — delegated-identity re-check at fire time', () => {
 			next();
 		});
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		app.use('/api/ai/autopilot', createAiAutopilotRouter(cosmos as any, stubSponsorIdentity as any));
+		app.use(
+			'/api/ai/autopilot',
+			createAiAutopilotRouter(
+				cosmos as any,
+				stubSponsorIdentity as any,
+				// `null` ⇒ no resolver wired (simulates missing OPENAI key).
+				// `undefined` ⇒ omitted, controller falls back to its own AiParserService.
+				// We always pass an explicit value (stub or null) in these tests so
+				// the controller never tries to construct a live AiParserService.
+				(promptResolver ?? { parseIntent: vi.fn() }) as any,
+			),
+		);
 		return { app, cosmos, stubSponsorIdentity };
 	}
 
@@ -315,5 +328,140 @@ describe('Approve — delegated-identity re-check at fire time', () => {
 			expect(successAudit).toBeDefined();
 			expect(successAudit!.triggeredBy!.sponsorRole).toBe('analyst');
 		}
+	});
+});
+
+describe('Approve — PROMPT_DRIVEN resolution (v3)', () => {
+	function awaitingPromptRun(prompt: string) {
+		return {
+			id: 'run-99',
+			tenantId: 't1',
+			entityType: 'autopilot-run',
+			recipeId: 'recipe-1',
+			sponsorUserId: 'sponsor-1',
+			status: 'awaiting-approval',
+			startedAt: '2026-05-13T00:00:00Z',
+			triggeredBy: { kind: 'queue-message', chainDepth: 0, idempotencyKey: 'k1' },
+			pendingApproval: {
+				intent: 'PROMPT_DRIVEN',
+				actionPayload: { prompt },
+				proposedAt: '2026-05-13T00:00:00Z',
+				approverPolicy: 'approve' as const,
+			},
+		};
+	}
+
+	function mountPromptApprove(
+		parseImpl: () => {
+			intent: string;
+			confidence: number;
+			actionPayload: unknown;
+			presentationSchema: unknown;
+		},
+		promptText = 'Run auto-assignment on stuck Texas orders.',
+		opts: { resolverWired?: boolean } = { resolverWired: true },
+	) {
+		const cosmos = {
+			queryItems: vi.fn(async () => ({ success: true, data: [awaitingPromptRun(promptText)] })),
+			createItem: vi.fn(async (_c: string, doc: unknown) => ({ success: true, data: doc })),
+			upsertItem: vi.fn(async (_c: string, doc: unknown) => ({ success: true, data: doc })),
+		};
+		const stubSponsorIdentity = {
+			resolve: vi.fn(async () => ({
+				ok: true as const,
+				tenantId: 't1',
+				userId: 'sponsor-1',
+				role: 'analyst' as const,
+			})),
+		};
+		// `null` → explicit opt-out so the controller skips the AiParserService
+		// fallback construction (which would otherwise either succeed against
+		// real env vars and hit the network, or throw — both indeterminate in
+		// CI).  See createAiAutopilotRouter's `promptResolver` param doc.
+		const stubResolver = opts.resolverWired
+			? { parseIntent: vi.fn(async () => parseImpl()) }
+			: null;
+		const app = express();
+		app.use(express.json());
+		app.use((req, _res, next) => {
+			(req as unknown as { user: { tenantId: string; id: string; role: string } }).user = {
+				tenantId: 't1',
+				id: 'admin-1',
+				role: 'admin',
+			};
+			next();
+		});
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		app.use(
+			'/api/ai/autopilot',
+			createAiAutopilotRouter(cosmos as any, stubSponsorIdentity as any, stubResolver as any),
+		);
+		return { app, cosmos, stubResolver };
+	}
+
+	it('resolves to TRIGGER_AUTO_ASSIGNMENT and dispatches via existing switch', async () => {
+		const { app, stubResolver } = mountPromptApprove(() => ({
+			intent: 'TRIGGER_AUTO_ASSIGNMENT',
+			confidence: 0.9,
+			actionPayload: { orderIds: ['o-1', 'o-2'] },
+			presentationSchema: {},
+		}));
+		const res = await request(app).post('/api/ai/autopilot/runs/run-99/approve');
+		// Dispatch may 500 because the test cosmos lacks findOrderById,
+		// but the parser MUST have been called and the dispatch path
+		// MUST have been entered (not the prompt-not-executable refusal).
+		expect([200, 500]).toContain(res.status);
+		expect(stubResolver!.parseIntent).toHaveBeenCalledTimes(1);
+		const callArgs = stubResolver!.parseIntent.mock.calls[0][0] as { text: string; tools: unknown };
+		expect(callArgs.text).toMatch(/auto-assignment/i);
+		expect(Array.isArray(callArgs.tools)).toBe(true);
+	});
+
+	it('refuses (400 PROMPT_NOT_EXECUTABLE) when parser returns INFO', async () => {
+		const { app } = mountPromptApprove(() => ({
+			intent: 'INFO',
+			confidence: 0.8,
+			actionPayload: {},
+			presentationSchema: { title: 'Looks like a status question.' },
+		}));
+		const res = await request(app).post('/api/ai/autopilot/runs/run-99/approve');
+		expect(res.status).toBe(400);
+		expect(res.body.code).toBe('PROMPT_NOT_EXECUTABLE');
+		expect(res.body.parsedIntent).toBe('INFO');
+	});
+
+	it('refuses (400 PROMPT_NOT_EXECUTABLE) when parser returns TOOL_CALL', async () => {
+		const { app } = mountPromptApprove(() => ({
+			intent: 'TOOL_CALL',
+			confidence: 0.7,
+			actionPayload: { toolName: 'searchBackendOrders', toolArgs: {} },
+			presentationSchema: {},
+		}));
+		const res = await request(app).post('/api/ai/autopilot/runs/run-99/approve');
+		expect(res.status).toBe(400);
+		expect(res.body.code).toBe('PROMPT_NOT_EXECUTABLE');
+	});
+
+	it('refuses (400 PROMPT_EMPTY) when the stored prompt is whitespace', async () => {
+		const { app } = mountPromptApprove(
+			() => ({ intent: 'TRIGGER_AUTO_ASSIGNMENT', confidence: 1, actionPayload: {}, presentationSchema: {} }),
+			'   ',
+		);
+		const res = await request(app).post('/api/ai/autopilot/runs/run-99/approve');
+		expect(res.status).toBe(400);
+		expect(res.body.code).toBe('PROMPT_EMPTY');
+	});
+
+	it('refuses (503 PROMPT_PARSER_UNAVAILABLE) when no resolver is wired', async () => {
+		const { app } = mountPromptApprove(
+			() => ({ intent: 'TRIGGER_AUTO_ASSIGNMENT', confidence: 1, actionPayload: {}, presentationSchema: {} }),
+			'Run auto-assignment on stuck orders.',
+			{ resolverWired: false },
+		);
+		const res = await request(app).post('/api/ai/autopilot/runs/run-99/approve');
+		// Without OPENAI keys in test env, controller's fallback construction
+		// of AiParserService throws and parser stays null → 503.
+		expect(res.status).toBe(503);
+		expect(res.body.code).toBe('PROMPT_PARSER_UNAVAILABLE');
 	});
 });

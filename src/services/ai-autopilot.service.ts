@@ -247,9 +247,10 @@ export class AiAutopilotService {
 	 * context.  On success/failure update the Run row + emit audit.
 	 *
 	 * For prompt-driven recipes (no pre-resolved intent), the autopilot
-	 * v2 MVP defers to the FE function-calling path: we record the run
-	 * as 'awaiting-approval' instead of executing a free-form prompt.
-	 * The v3 follow-up calls parse-intent directly here.
+	 * orchestrator parks the run as 'awaiting-approval' with intent
+	 * PROMPT_DRIVEN.  v3 (2026-05-13) the approve endpoint now resolves
+	 * that prompt to an executable intent via AiParserService before
+	 * dispatch — see ai-autopilot.controller.ts approve handler.
 	 */
 	private async dispatch(
 		run: AutopilotRun,

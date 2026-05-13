@@ -29,6 +29,11 @@ import { AutopilotRunRepository } from '../services/autopilot-run.repository.js'
 import { AiAuditServerEmitter } from '../services/ai-audit-server.service.js';
 import { AiActionDispatcherService } from '../services/ai-action-dispatcher.service.js';
 import { AutopilotSponsorIdentity } from '../services/autopilot-sponsor-identity.service.js';
+import { AiParserService } from '../services/ai-parser.service.js';
+import {
+	AUTOPILOT_PROMPT_TOOLS,
+	isAutopilotExecutableIntent,
+} from '../services/ai-autopilot-prompt-tools.js';
 import type { AutopilotRecipe } from '../types/autopilot-recipe.types.js';
 
 const logger = new Logger('AiAutopilotController');
@@ -66,9 +71,20 @@ function canManageRecipe(
 	};
 }
 
+export interface AutopilotPromptResolver {
+	parseIntent: AiParserService['parseIntent'];
+}
+
 export function createAiAutopilotRouter(
 	cosmos: CosmosDbService,
 	sponsorIdentity?: AutopilotSponsorIdentity,
+	/**
+	 * `undefined` → controller constructs its own AiParserService (production default).
+	 * Stub object → use injected resolver (tests with mock).
+	 * `null` → explicitly disable PROMPT_DRIVEN approval; returns 503.
+	 *          Lets tests assert the no-parser path without env juggling.
+	 */
+	promptResolver?: AutopilotPromptResolver | null,
 ): Router {
 	const router = Router();
 	const recipes = new AutopilotRecipeRepository(cosmos);
@@ -80,6 +96,28 @@ export function createAiAutopilotRouter(
 	// instead of dispatching with stale authority.  Optional ctor param
 	// keeps tests + alternate wiring overrideable.
 	const sponsors = sponsorIdentity ?? new AutopilotSponsorIdentity();
+	// Phase 14 v3 (2026-05-13): when a PROMPT_DRIVEN run lands in the
+	// approval queue, the approve handler resolves the prompt to a
+	// concrete executable intent via the parser.  Optional dep so tests
+	// can inject a stub without spinning up Azure OpenAI.  Constructor
+	// catches the "no OPENAI key" case and leaves resolver null — the
+	// approve handler then returns a typed 503 instead of crashing.
+	let parser: AutopilotPromptResolver | null;
+	if (promptResolver === null) {
+		// Explicit opt-out — leave parser disabled.
+		parser = null;
+	} else if (promptResolver !== undefined) {
+		parser = promptResolver;
+	} else {
+		try {
+			parser = new AiParserService(cosmos);
+		} catch (err) {
+			parser = null;
+			logger.warn('AiParserService unavailable — PROMPT_DRIVEN approvals will return 503', {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
 
 	// ── Recipes ──────────────────────────────────────────────────────────
 
@@ -330,8 +368,80 @@ export function createAiAutopilotRouter(
 			});
 		}
 
-		const intent = run.pendingApproval.intent;
-		const payload = run.pendingApproval.actionPayload;
+		let intent: string = run.pendingApproval.intent;
+		let payload: unknown = run.pendingApproval.actionPayload;
+		let parsedFromPrompt = false;
+
+		// Phase 14 v3 (2026-05-13): resolve PROMPT_DRIVEN runs through the
+		// parser at approve time, then fall through to the existing
+		// dispatch switch as if the recipe had carried a concrete intent.
+		if (intent === 'PROMPT_DRIVEN') {
+			if (!parser) {
+				return res.status(503).json({
+					success: false,
+					error: 'PROMPT_DRIVEN approvals require AI parser (OPENAI key) which is not configured on this instance.',
+					code: 'PROMPT_PARSER_UNAVAILABLE',
+				});
+			}
+			const promptText = typeof (payload as { prompt?: unknown })?.prompt === 'string'
+				? ((payload as { prompt: string }).prompt)
+				: '';
+			if (!promptText.trim()) {
+				return res.status(400).json({
+					success: false,
+					error: 'PROMPT_DRIVEN run has no prompt text to resolve.',
+					code: 'PROMPT_EMPTY',
+				});
+			}
+			try {
+				const parseResult = await parser.parseIntent(
+					{
+						text: promptText,
+						tools: AUTOPILOT_PROMPT_TOOLS,
+						context: { currentPage: 'autopilot-approval' },
+					},
+					{ tenantId: run.tenantId, userId: run.sponsorUserId },
+				);
+				if (!isAutopilotExecutableIntent(parseResult.intent)) {
+					logger.warn('PROMPT_DRIVEN approval refused — parser returned non-executable intent', {
+						runId, parsedIntent: parseResult.intent, confidence: parseResult.confidence,
+					});
+					await runs.update(user.tenantId, runId, {
+						status: 'failed',
+						completedAt: new Date().toISOString(),
+						error: {
+							code: 'PROMPT_NOT_EXECUTABLE',
+							message: `Parser resolved to non-executable intent '${parseResult.intent}'. Autopilot can only dispatch CREATE_ORDER, CREATE_ENGAGEMENT, ASSIGN_VENDOR, or TRIGGER_AUTO_ASSIGNMENT from a prompt.`,
+						},
+					});
+					return res.status(400).json({
+						success: false,
+						error: `Parser returned '${parseResult.intent}' — autopilot can't dispatch that from a prompt. Edit the recipe to use one of the 4 executable intents, or recreate it with a deterministic action payload.`,
+						code: 'PROMPT_NOT_EXECUTABLE',
+						parsedIntent: parseResult.intent,
+					});
+				}
+				intent = parseResult.intent;
+				payload = parseResult.actionPayload;
+				parsedFromPrompt = true;
+				logger.info('PROMPT_DRIVEN approval resolved to executable intent', {
+					runId, resolvedIntent: intent, confidence: parseResult.confidence,
+				});
+			} catch (parseErr) {
+				const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+				logger.warn('PROMPT_DRIVEN approval — parser call failed', { runId, error: msg });
+				await runs.update(user.tenantId, runId, {
+					status: 'failed',
+					completedAt: new Date().toISOString(),
+					error: { code: 'PROMPT_PARSE_FAILED', message: msg },
+				});
+				return res.status(500).json({
+					success: false,
+					error: `Failed to resolve prompt to an executable intent: ${msg}`,
+					code: 'PROMPT_PARSE_FAILED',
+				});
+			}
+		}
 
 		try {
 			// Re-use the dispatcher with the SPONSOR's identity, not the
@@ -375,7 +485,9 @@ export function createAiAutopilotRouter(
 				name: intent,
 				scopes: [],
 				sideEffect: 'write',
-				description: `Autopilot run ${runId} approved by ${user.id} and dispatched.`,
+				description: parsedFromPrompt
+					? `Autopilot run ${runId} approved by ${user.id} — prompt resolved to ${intent}, dispatched.`
+					: `Autopilot run ${runId} approved by ${user.id} and dispatched.`,
 				success: true,
 				source: 'autopilot',
 				timestamp: new Date().toISOString(),
