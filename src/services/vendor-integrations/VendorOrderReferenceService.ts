@@ -68,6 +68,21 @@ function ensureIsoDate(value: string | undefined, fieldName: string, vendorOrder
 }
 
 /**
+ * Adds N business days (Mon–Fri) to a date, skipping weekends.
+ * Used when a vendor omits due_date on inbound OrderRequest.
+ */
+function addBusinessDays(from: Date, days: number): Date {
+  const result = new Date(from);
+  let added = 0;
+  while (added < days) {
+    result.setDate(result.getDate() + 1);
+    const dow = result.getDay();
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return result;
+}
+
+/**
 /**
  * Resolves one vendor product entry to an internal ProductType string.
  *
@@ -287,7 +302,20 @@ export class VendorOrderReferenceService {
       };
     }
 
-    const dueDate = ensureIsoDate(payload.dueDate, 'payload.dueDate', event.vendorOrderId);
+    const dueDate = payload.dueDate
+      ? ensureIsoDate(payload.dueDate, 'payload.dueDate', event.vendorOrderId)
+      : (() => {
+          // AIM Port does not always supply due_date on OrderRequest.
+          // Default to T+10 business days from receipt so internal order
+          // creation can proceed. The lender should update the due date
+          // if a different deadline applies.
+          const fallback = addBusinessDays(new Date(), 10);
+          this.logger.warn(
+            'Inbound OrderRequest missing due_date — defaulting to T+10 business days',
+            { vendorOrderId: event.vendorOrderId, defaultDueDate: fallback.toISOString() },
+          );
+          return fallback.toISOString();
+        })();
     const { primaryProductType: productType, specs: vendorOrderSpecs } = await this.composeAllProductSpecs(
       payload.products,
       event.vendorOrderId,
