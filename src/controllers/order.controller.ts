@@ -624,6 +624,7 @@ export class OrderController {
               loanAmount,
               priority,
               dueDate: (created as any).dueDate ? new Date((created as any).dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              ...((created as any).productId ? { productId: (created as any).productId as string } : {})
             },
           }).catch((err) =>
             logger.error('Failed to publish engagement.order.created event', {
@@ -2304,6 +2305,22 @@ export class OrderController {
             ? `${addr.streetAddress}, ${addr.city ?? ''}, ${addr.state ?? ''} ${addr.zipCode ?? ''}`.trim()
             : '';
 
+      // Merge requiredCapabilities: order-level wins; fall back to product.requiredCapabilities
+      // so capabilities defined at the product level are automatically enforced during matching
+      // without requiring the order creator to re-specify them on every order.
+      const orderCaps: string[] = Array.isArray(order.requiredCapabilities) ? order.requiredCapabilities as string[] : [];
+      let effectiveCaps: string[] = orderCaps;
+      if (effectiveCaps.length === 0 && order.productId) {
+        try {
+          const productResult = await this.dbService.findProductById(order.productId as string, tenantId);
+          if (productResult.success && Array.isArray(productResult.data?.requiredCapabilities) && productResult.data.requiredCapabilities.length > 0) {
+            effectiveCaps = productResult.data.requiredCapabilities as string[];
+          }
+        } catch (productErr) {
+          logger.warn('Failed to load product for requiredCapabilities merge — proceeding without them', { productId: order.productId, error: productErr });
+        }
+      }
+
       await this.orchestrator.triggerVendorAssignment({
         orderId: order.id,
         orderNumber: order.orderNumber ?? '',
@@ -2318,9 +2335,7 @@ export class OrderController {
         dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         // Eligibility gates — carried from the order record into the event envelope
         ...(order.productId ? { productId: order.productId as string } : {}),
-        ...(Array.isArray(order.requiredCapabilities) && order.requiredCapabilities.length
-          ? { requiredCapabilities: order.requiredCapabilities as string[] }
-          : {}),
+        ...(effectiveCaps.length ? { requiredCapabilities: effectiveCaps } : {}),
       });
 
       res.json({ success: true, message: 'Auto-assignment triggered — vendor ranking and bid dispatch initiated' });

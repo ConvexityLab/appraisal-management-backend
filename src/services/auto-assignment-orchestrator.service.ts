@@ -364,7 +364,8 @@ export class AutoAssignmentOrchestratorService {
    */
   private async onEngagementOrderCreated(event: EngagementOrderCreatedEvent): Promise<void> {
     const { orderId, orderNumber, tenantId, propertyAddress, productType, dueDate, priority, clientId,
-      productId, requiredCapabilities } = event.data;
+      productId } = event.data;
+    let requiredCapabilities: string[] | undefined = event.data.requiredCapabilities;
 
     // Phase 5 T37: capture wall-clock for the trace's rankingLatencyMs.
     const triggerStart = Date.now();
@@ -394,6 +395,14 @@ export class AutoAssignmentOrchestratorService {
     }
 
     const maxAttempts = tenantConfig.maxVendorAttempts;
+
+    // --- Enrich requiredCapabilities from product doc if not provided in the event ---
+    if (productId && !requiredCapabilities?.length) {
+      const productResult = await this.dbService.findProductById(productId, tenantId);
+      if (productResult.success && productResult.data?.requiredCapabilities?.length) {
+        requiredCapabilities = productResult.data.requiredCapabilities;
+      }
+    }
 
     // --- Rank vendors (T6: also collect denied vendors for FSM audit trail) ---
     let rankedVendors: RankedVendorEntry[] = [];
