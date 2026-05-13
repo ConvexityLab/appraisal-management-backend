@@ -37,6 +37,7 @@ vi.mock('../../src/services/vendor-matching-engine.service.js', () => ({
     findMatchingVendors: vi.fn(),
     findMatchingVendorsAndDenied: vi.fn(),
   })),
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 vi.mock('../../src/services/axiom.service.js', () => ({

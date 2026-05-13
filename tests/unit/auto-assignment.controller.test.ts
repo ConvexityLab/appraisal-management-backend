@@ -26,6 +26,7 @@ vi.mock('../../src/services/vendor-matching-engine.service.js', () => ({
   VendorMatchingEngine: vi.fn().mockImplementation(() => ({
     findMatchingVendors: findMatchingVendorsMock,
   })),
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 vi.mock('../../src/services/service-bus-publisher.js', () => ({

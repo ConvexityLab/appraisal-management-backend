@@ -78,6 +78,9 @@ vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
     });
     return instance;
   }),
+  // See sibling mock fixes (e.g. tests/auto-assignment-orchestrator.test.ts):
+  // production imports `inferNoMatchReason` from this module.
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 vi.mock('../src/services/qc-review-queue.service.js', () => ({

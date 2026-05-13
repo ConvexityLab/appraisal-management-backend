@@ -42,6 +42,12 @@ vi.mock('../src/services/vendor-matching-engine.service.js', () => ({
     findMatchingVendors: vi.fn(),
     findMatchingVendorsAndDenied: vi.fn(),
   })),
+  // Production code now imports `inferNoMatchReason` from this module
+  // (added alongside the per-vendor product-weight overlay feature in
+  // commit 34b28db). Stub returns a generic reason so the orchestrator's
+  // import resolves at runtime; escalation-path tests only need the
+  // function to exist, not a specific return value.
+  inferNoMatchReason: vi.fn(() => 'no-matching-vendors'),
 }));
 
 const mockAnalyzeVendorBid = vi.fn();
