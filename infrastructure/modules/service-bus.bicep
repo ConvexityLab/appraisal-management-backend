@@ -289,6 +289,24 @@ resource notificationServiceSubscription 'Microsoft.ServiceBus/namespaces/topics
   }
 }
 
+// QC Issue Recorder Subscription (consumed by QCIssueRecorderService —
+// converts qc.issue.detected events into aiInsights qc-issue rows that
+// the FE's AI Issues panel reads).
+// Pre-fix the recorder shared the notification-service subscription due
+// to a constructor-arg slot mistake; events were therefore handled by
+// the wrong subscriber and never persisted. See
+// src/services/qc-issue-recorder.service.ts.
+resource qcIssueRecorderSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
+  parent: appraisalEventsTopic
+  name: 'qc-issue-recorder'
+  properties: {
+    maxDeliveryCount: 5
+    lockDuration: 'PT1M'
+    defaultMessageTimeToLive: 'P7D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 // Auto-Assignment Service Subscription (consumed by AutoAssignmentOrchestratorService)
 resource autoAssignmentServiceSubscription 'Microsoft.ServiceBus/namespaces/topics/subscriptions@2023-01-01-preview' = if (config.sku != 'Basic') {
   parent: appraisalEventsTopic

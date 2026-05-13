@@ -65,7 +65,20 @@ export class QCIssueRecorderService {
   private isStarted = false;
 
   constructor(private readonly dbService: CosmosDbService) {
-    this.subscriber = new ServiceBusEventSubscriber('qc-issue-recorder');
+    // ServiceBusEventSubscriber's signature is (namespace?, topicName?,
+    // subscriptionName?). The previous call passed 'qc-issue-recorder' as
+    // FIRST arg — which treated the literal string as the SB namespace FQDN
+    // and the runtime then tried to DNS-resolve "qc-issue-recorder" as a
+    // hostname (ENOTFOUND). Net effect: this service has never received
+    // any qc.issue.detected events on a real deployment — they all
+    // published successfully and went nowhere.
+    //
+    // Pass undefined as the namespace (fall back to AZURE_SERVICE_BUS_NAMESPACE
+    // env var, same as every other subscriber) and put 'qc-issue-recorder'
+    // in the SUBSCRIPTION-NAME slot. Requires the 'qc-issue-recorder'
+    // subscription to exist on the appraisal-events topic — see
+    // infrastructure/modules/service-bus.bicep follow-up.
+    this.subscriber = new ServiceBusEventSubscriber(undefined, undefined, 'qc-issue-recorder');
   }
 
   async start(): Promise<void> {
