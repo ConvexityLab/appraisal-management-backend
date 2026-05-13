@@ -98,3 +98,5 @@ DEPLOYMENT_QUICKSTART.md
 .credentials
 *.key
 *.pem
+# Client CSV drops (PII; ingest only — never commit raw data)
+data/*.csv
