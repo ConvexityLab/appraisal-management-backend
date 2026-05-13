@@ -158,6 +158,30 @@ export function inferNoMatchReason(
   };
 }
 
+/**
+ * Resolve the per-vendor product-weight overlay for a given product type.
+ * Returns 1.0 (no adjustment) when:
+ *   - vendor has no productWeights array
+ *   - request has no productId
+ *   - no entry matches the productId
+ * Clamps the returned weight to [0.0, 2.0] so a single overlay can't fully
+ * zero a vendor (use eligibleProductIds for hard gates) or 10x them past
+ * the rest of the candidate pool.
+ */
+export function lookupProductWeight(
+  vendor: { productWeights?: Array<{ productType: string; weight: number }> },
+  productId: string | undefined,
+): number {
+  if (!productId || !vendor.productWeights || vendor.productWeights.length === 0) {
+    return 1.0;
+  }
+  const entry = vendor.productWeights.find((e) => e.productType === productId);
+  if (!entry || typeof entry.weight !== 'number' || Number.isNaN(entry.weight)) {
+    return 1.0;
+  }
+  return Math.max(0.0, Math.min(2.0, entry.weight));
+}
+
 function extractStateHint(request: VendorMatchRequest): string | undefined {
   // The request carries propertyAddress as a single string; try to pull a
   // two-letter state code from the tail.
@@ -731,13 +755,23 @@ export class VendorMatchingEngine {
       ? computeEffectiveWeights(criteriaProfile)
       : this.WEIGHTS;
 
-    const baseScore = Math.round(
+    let baseScore = Math.round(
       performanceScore * effectiveWeights.performance +
       availabilityScore * effectiveWeights.availability +
       proximityScore.score * effectiveWeights.proximity +
       experienceScore * effectiveWeights.experience +
       costScore * effectiveWeights.cost
     );
+
+    // Per-vendor product weight (David/Doug meeting: "each vendor can be
+    // weighted by each product"). Multiplies the base score by the vendor's
+    // per-product weight when present, clamped to [0.0, 2.0] so a single
+    // overlay can't either zero a vendor (use eligibleProductIds instead) or
+    // 10x them past the rest of the pack. Default 1.0 = no adjustment.
+    const productWeight = lookupProductWeight(vendor, request.productId);
+    if (productWeight !== 1.0) {
+      baseScore = Math.round(Math.min(100, Math.max(0, baseScore * productWeight)));
+    }
 
     // T5: apply rules-engine score adjustments (boost / reduce), clamped to [0, 100].
     // Clamp is documented (D6 in the review doc); revisit when scoring becomes

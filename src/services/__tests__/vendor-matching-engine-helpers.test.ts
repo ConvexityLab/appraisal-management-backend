@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import {
   computeEffectiveWeights,
   inferNoMatchReason,
+  lookupProductWeight,
 } from '../vendor-matching-engine.service';
 import type { VendorMatchingCriteriaProfile } from '../../types/vendor-marketplace.types';
 
@@ -101,6 +102,66 @@ describe('computeEffectiveWeights', () => {
     const w = computeEffectiveWeights(doubled);
     const sum = w.performance + w.availability + w.proximity + w.experience + w.cost;
     expect(sum).toBeCloseTo(1.0, 5);
+  });
+});
+
+describe('lookupProductWeight', () => {
+  it('returns 1.0 when the vendor has no productWeights array', () => {
+    expect(lookupProductWeight({}, 'FULL_APPRAISAL')).toBe(1.0);
+  });
+
+  it('returns 1.0 when no productId is provided', () => {
+    expect(
+      lookupProductWeight(
+        { productWeights: [{ productType: 'FULL_APPRAISAL', weight: 1.5 }] },
+        undefined,
+      ),
+    ).toBe(1.0);
+  });
+
+  it('returns 1.0 when no entry matches the productId', () => {
+    expect(
+      lookupProductWeight(
+        { productWeights: [{ productType: 'BPO', weight: 1.5 }] },
+        'FULL_APPRAISAL',
+      ),
+    ).toBe(1.0);
+  });
+
+  it('returns the configured weight when an entry matches', () => {
+    expect(
+      lookupProductWeight(
+        { productWeights: [{ productType: 'FULL_APPRAISAL', weight: 1.5 }] },
+        'FULL_APPRAISAL',
+      ),
+    ).toBe(1.5);
+  });
+
+  it('clamps weight > 2.0 to 2.0', () => {
+    expect(
+      lookupProductWeight(
+        { productWeights: [{ productType: 'FULL_APPRAISAL', weight: 5 }] },
+        'FULL_APPRAISAL',
+      ),
+    ).toBe(2.0);
+  });
+
+  it('clamps negative weight to 0.0', () => {
+    expect(
+      lookupProductWeight(
+        { productWeights: [{ productType: 'FULL_APPRAISAL', weight: -3 }] },
+        'FULL_APPRAISAL',
+      ),
+    ).toBe(0.0);
+  });
+
+  it('returns 1.0 when the entry has a non-numeric weight', () => {
+    expect(
+      lookupProductWeight(
+        { productWeights: [{ productType: 'FULL_APPRAISAL', weight: NaN }] },
+        'FULL_APPRAISAL',
+      ),
+    ).toBe(1.0);
   });
 });
 

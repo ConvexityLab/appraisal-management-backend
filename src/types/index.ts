@@ -387,6 +387,18 @@ export interface Vendor {
    */
   productGrades?: ProductGrade[];
 
+  /**
+   * Per-vendor per-product score weights (David/Doug meeting: "each vendor
+   * can be weighted by each product"). The matcher multiplies the base
+   * match score by this factor when scoring the vendor against an order of
+   * the given productType. Missing entry → 1.0 (no adjustment).
+   *
+   * Use sparingly — this is the lever operators reach for when one vendor
+   * is dramatically stronger or weaker on a specific product than their
+   * overall grade suggests. Values clamped to [0.0, 2.0] in the matcher.
+   */
+  productWeights?: Array<{ productType: ProductType; weight: number }>;
+
   // ── Confidential fields (David/Doug meeting — Phase C) ────────────────────
   //
   // STRIPPED FROM API RESPONSES for users without the `confidential:read`
