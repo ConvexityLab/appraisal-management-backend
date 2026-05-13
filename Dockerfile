@@ -53,8 +53,14 @@ WORKDIR /usr/src/app
 RUN addgroup -g 1001 -S appuser && \
     adduser -S appuser -u 1001 -G appuser
 
-# Copy package files and install production dependencies only
-COPY package.json pnpm-lock.yaml ./
+# Copy package files + workspace config and install production
+# dependencies only.  Workspace yaml + packages/ MUST be copied before
+# `pnpm install` so the @l1/shared-types workspace link resolves —
+# without these, the runtime fails with `Cannot find module
+# '@l1/shared-types'` because pnpm has no idea the workspace exists
+# at Stage 2.  Stage 1 (builder) had them; Stage 2 was missing them.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/ ./packages/
 RUN pnpm install --frozen-lockfile --prod && \
     pnpm store prune
 
