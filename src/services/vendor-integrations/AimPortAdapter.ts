@@ -48,6 +48,15 @@ function definedProps<T extends Record<string, unknown>>(value: T): T {
   ) as T;
 }
 
+// AIM-Port sends login.client_id as either a string or an integer depending on
+// the calling system. Normalise to a trimmed string so connection lookup and
+// authentication work regardless of the JSON type.
+function coerceClientId(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
 function booleanValue(value: unknown): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
@@ -211,7 +220,7 @@ export class AimPortAdapter implements VendorAdapter {
     const login = envelope?.login;
     if (!login || typeof login !== 'object') return null;
 
-    return stringValue((login as Record<string, unknown>).client_id) ?? null;
+    return coerceClientId((login as Record<string, unknown>).client_id) ?? null;
   }
 
   async authenticateInbound(
@@ -227,7 +236,7 @@ export class AimPortAdapter implements VendorAdapter {
 
     const envelope = getAimPortEnvelope(body, requestType);
     const login = asRecord(envelope?.login);
-    const clientId = stringValue(login?.client_id);
+    const clientId = coerceClientId(login?.client_id);
     const apiKey = stringValue(login?.api_key);
 
     if (!clientId || !apiKey) {

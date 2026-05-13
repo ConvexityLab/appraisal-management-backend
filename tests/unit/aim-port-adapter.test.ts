@@ -301,4 +301,32 @@ describe('AimPortAdapter', () => {
     });
     expect(result.ack.statusCode).toBe(200);
   });
+
+  it('identifyInboundConnection accepts login.client_id as an integer (AIM-Port real-world payloads)', () => {
+    const adapter = new AimPortAdapter();
+    // AIM-Port's production API sends client_id as a JSON number, not a string.
+    const body = {
+      OrderRequest: {
+        login: { client_id: 495735, api_key: 'some-key' },
+        order: { order_id: 1900811, order_type: 'residential', address: '505 SW 44th St', city: 'OKC', state: 'OK', zip_code: '73160', property_type: 'sfr', borrower: { name: 'John Smith' }, reports: [{ id: 48952, name: 'SFR 1004/70' }] },
+      },
+    };
+    expect(adapter.identifyInboundConnection(body, {})).toBe('495735');
+  });
+
+  it('authenticateInbound accepts login.client_id as an integer and matches string inboundIdentifier', async () => {
+    const adapter = new AimPortAdapter();
+    const body = {
+      OrderRequest: {
+        login: { client_id: 495735, api_key: 'secret-key' },
+        order: { order_id: 1900811, order_type: 'residential', address: '505 SW 44th St', city: 'OKC', state: 'OK', zip_code: '73160', property_type: 'sfr', borrower: { name: 'John Smith' }, reports: [{ id: 48952, name: 'SFR 1004/70' }] },
+      },
+    };
+    await expect(adapter.authenticateInbound(body, {}, {
+      ...connection,
+      inboundIdentifier: '495735',
+    }, {
+      resolveSecret: async () => 'secret-key',
+    })).resolves.toBeUndefined();
+  });
 });
