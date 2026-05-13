@@ -74,6 +74,7 @@ Set-GhSecret "AZURE_OPENAI_DEPLOYMENT" $openAiDeployment
 
 Set-GhSecret "GOOGLE_GEMINI_API_KEY" "AIzaSyA4ruodrY3GSipv0fNovAtMHwiXDLlhiiQ"
 Set-GhSecret "SAMBANOVA_API_KEY"     "e601b0a9-c260-4f03-9387-ce50c2bf33a1"
+Set-GhSecret "AIM_PORT_API_KEY"      "42b564a8-8749-4dc5-b787-7acc4aeb0f99"
 
 Write-Host ""
 Write-Host "Backend secrets done." -ForegroundColor Cyan
