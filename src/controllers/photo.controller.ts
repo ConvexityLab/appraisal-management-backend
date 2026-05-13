@@ -42,6 +42,9 @@ export class PhotoController {
     this.router.post('/upload', upload.single('photo'), this.uploadPhoto.bind(this));
 
     // Read
+    this.router.get('/order/:orderId/coverage', this.getCoverage.bind(this));
+    this.router.get('/order/:orderId/quality-report', this.getQualityReport.bind(this));
+    this.router.get('/duplicates/:orderId', this.getDuplicates.bind(this));
     this.router.get('/inspection/:inspectionId', this.getPhotosByInspection.bind(this));
     this.router.get('/order/:orderId', this.getPhotosByOrder.bind(this));
     this.router.get('/:id', this.getPhoto.bind(this));
@@ -52,11 +55,6 @@ export class PhotoController {
 
     // Delete
     this.router.delete('/:id', this.deletePhoto.bind(this));
-
-    // Analysis
-    this.router.get('/inspection/:inspectionId/coverage', this.getCoverage.bind(this));
-    this.router.get('/inspection/:inspectionId/quality-report', this.getQualityReport.bind(this));
-    this.router.get('/duplicates/:orderId', this.getDuplicates.bind(this));
   }
 
   /**
@@ -71,18 +69,19 @@ export class PhotoController {
       }
 
       const uploadRequest: PhotoUploadRequest = {
-        inspectionId: req.body.inspectionId,
         orderId: req.body.orderId,
-        category: req.body.category,
-        caption: req.body.caption,
+        ...(req.body.inspectionId && { inspectionId: req.body.inspectionId }),
+        ...(req.body.category && { category: req.body.category }),
+        ...(req.body.reportPhotoType && { reportPhotoType: req.body.reportPhotoType }),
+        ...(req.body.caption && { caption: req.body.caption }),
         ...(req.body.sequenceNumber && { sequenceNumber: parseInt(req.body.sequenceNumber) }),
         ...(req.body.propertyLat && { propertyLat: parseFloat(req.body.propertyLat) }),
         ...(req.body.propertyLon && { propertyLon: parseFloat(req.body.propertyLon) }),
         ...(req.body.inspectionDate && { inspectionDate: req.body.inspectionDate })
       };
 
-      if (!uploadRequest.inspectionId || !uploadRequest.orderId) {
-        res.status(400).json({ success: false, error: 'inspectionId and orderId are required' });
+      if (!uploadRequest.orderId) {
+        res.status(400).json({ success: false, error: 'orderId is required' });
         return;
       }
 
@@ -223,18 +222,13 @@ export class PhotoController {
   }
 
   /**
-   * GET /api/photos/inspection/:inspectionId/coverage
-   * Query params: orderId (required), productType (optional)
+   * GET /api/photos/order/:orderId/coverage
+   * Query param: productType (optional)
    */
   private async getCoverage(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const { inspectionId } = req.params;
-      const { orderId, productType = 'BPO' } = req.query as { orderId?: string; productType?: string };
-
-      if (!orderId) {
-        res.status(400).json({ success: false, error: 'orderId query parameter is required' });
-        return;
-      }
+      const { orderId } = req.params;
+      const { productType = 'BPO' } = req.query as { productType?: string };
 
       const config: PhotoCoverageConfig = (req.body && req.body.requirements)
         ? (req.body as PhotoCoverageConfig)
@@ -249,7 +243,7 @@ export class PhotoController {
             ]
           };
 
-      const result = await this.photoService.getCoverage(inspectionId!, orderId, config);
+      const result = await this.photoService.getCoverage(orderId!, config);
       res.json({ success: true, data: result });
     } catch (error) {
       this.logger.error('Error getting coverage', {
@@ -260,20 +254,12 @@ export class PhotoController {
   }
 
   /**
-   * GET /api/photos/inspection/:inspectionId/quality-report
-   * Query params: orderId (required)
+   * GET /api/photos/order/:orderId/quality-report
    */
   private async getQualityReport(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
-      const { inspectionId } = req.params;
-      const { orderId } = req.query as { orderId?: string };
-
-      if (!orderId) {
-        res.status(400).json({ success: false, error: 'orderId query parameter is required' });
-        return;
-      }
-
-      const report = await this.photoService.getQualityReport(inspectionId!, orderId);
+      const { orderId } = req.params;
+      const report = await this.photoService.getQualityReport(orderId!);
       res.json({ success: true, data: report });
     } catch (error) {
       this.logger.error('Error getting quality report', {

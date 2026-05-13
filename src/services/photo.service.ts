@@ -28,8 +28,10 @@ import type {
   PhotoCoverageResult,
   PhotoQualityReport,
   PhotoComparisonResult,
-  PhotoCategory
+  PhotoCategory,
+  ReportPhotoType,
 } from '../types/photo.types.js';
+import { CATEGORY_TO_REPORT_TYPE } from '../types/photo.types.js';
 
 export class PhotoService {
   private cosmosService: CosmosDbService;
@@ -63,34 +65,43 @@ export class PhotoService {
     const thumbnails = await generateThumbnails(processed.buffer);
 
     const photoId = `photo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const containerName = 'inspection-photos';
-    const basePath = `inspections/${request.inspectionId}/${photoId}`;
-    const baseName = fileName.replace(/\.[^.]+$/, '');
+    // All order photos live in the shared 'orders' blob container so the report
+    // engine's PhotoResolverService can enumerate them without a separate container.
+    const containerName = 'orders';
+    // reportPhotoType drives the blob path segment — the report engine resolves photos
+    // by listing orders/{orderId}/photos/{REPORT_TYPE}/*.jpg.
+    const reportPhotoType: ReportPhotoType =
+      request.reportPhotoType ??
+      CATEGORY_TO_REPORT_TYPE[request.category ?? 'other'];
+    const mainBlobName  = `orders/${request.orderId}/photos/${reportPhotoType}/${photoId}.jpg`;
+    const thumbGalleryBlobName = `orders/${request.orderId}/photo-thumbs/${photoId}-gallery.jpg`;
+    const thumbSmallBlobName   = `orders/${request.orderId}/photo-thumbs/${photoId}-small.jpg`;
 
     // Upload processed image + thumbnails in parallel
     const [uploadResult, thumbGalleryResult, thumbSmallResult] = await Promise.all([
       this.blobService.uploadBlob({
         containerName,
-        blobName: `${basePath}-${baseName}.jpg`,
+        blobName: mainBlobName,
         data: processed.buffer,
         contentType: 'image/jpeg',
         metadata: {
-          inspectionId: request.inspectionId,
+          ...(request.inspectionId && { inspectionId: request.inspectionId }),
           orderId: request.orderId,
           uploadedBy: userId,
-          category: request.category ?? 'other'
+          reportPhotoType,
+          category: request.category ?? 'other',
         }
       }),
       this.blobService.uploadBlob({
         containerName,
-        blobName: `${basePath}-thumb-gallery.jpg`,
+        blobName: thumbGalleryBlobName,
         data: thumbnails.gallery,
         contentType: 'image/jpeg',
         metadata: { type: 'thumbnail-gallery' }
       }),
       this.blobService.uploadBlob({
         containerName,
-        blobName: `${basePath}-thumb-small.jpg`,
+        blobName: thumbSmallBlobName,
         data: thumbnails.small,
         contentType: 'image/jpeg',
         metadata: { type: 'thumbnail-small' }
@@ -129,13 +140,16 @@ export class PhotoService {
       id: photoId,
       type: 'photo',
       tenantId,
-      inspectionId: request.inspectionId,
+      ...(request.inspectionId && { inspectionId: request.inspectionId }),
       orderId: request.orderId,
+      reportPhotoType,
       blobUrl: uploadResult.url,
       blobName: uploadResult.blobName,
       containerName: uploadResult.containerName,
       thumbnailUrl: thumbGalleryResult.url,
+      thumbnailBlobName: thumbGalleryBlobName,
       thumbnailSmallUrl: thumbSmallResult.url,
+      thumbnailSmallBlobName: thumbSmallBlobName,
       fileName,
       fileSize: fileBuffer.length,
       mimeType: 'image/jpeg',
@@ -163,7 +177,8 @@ export class PhotoService {
 
     this.logger.info('Photo uploaded and processed', {
       photoId,
-      inspectionId: request.inspectionId,
+      ...(request.inspectionId && { inspectionId: request.inspectionId }),
+      reportPhotoType,
       quality: processed.qualityScore,
       geoVerified,
       isAutoRotated: processed.isAutoRotated
@@ -302,15 +317,11 @@ export class PhotoService {
     // Delete blobs: main image + thumbnails (thumbnail deletes are best-effort)
     await Promise.all([
       this.blobService.deleteBlob(photo.containerName, photo.blobName),
-      photo.thumbnailUrl
-        ? this.blobService
-            .deleteBlob(photo.containerName, photo.blobName.replace(/\.jpg$/, '-thumb-gallery.jpg'))
-            .catch(() => {})
+      photo.thumbnailBlobName
+        ? this.blobService.deleteBlob(photo.containerName, photo.thumbnailBlobName).catch(() => {})
         : Promise.resolve(),
-      photo.thumbnailSmallUrl
-        ? this.blobService
-            .deleteBlob(photo.containerName, photo.blobName.replace(/\.jpg$/, '-thumb-small.jpg'))
-            .catch(() => {})
+      photo.thumbnailSmallBlobName
+        ? this.blobService.deleteBlob(photo.containerName, photo.thumbnailSmallBlobName).catch(() => {})
         : Promise.resolve()
     ]);
 
@@ -323,15 +334,14 @@ export class PhotoService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Evaluate photo coverage against a configuration for a given inspection.
+   * Evaluate photo coverage against a configuration for an order.
    */
   async getCoverage(
-    inspectionId: string,
     orderId: string,
     config: PhotoCoverageConfig,
     tenantId: string = 'test-tenant-123'
   ): Promise<PhotoCoverageResult> {
-    const photos = await this.getPhotosByInspection(inspectionId, tenantId);
+    const photos = await this.getPhotosByOrder(orderId, tenantId);
 
     const countByCategory = photos.reduce<Record<string, number>>((acc, p) => {
       const cat = p.category ?? 'other';
@@ -353,7 +363,6 @@ export class PhotoService {
 
     return {
       orderId,
-      inspectionId,
       totalPhotos: photos.length,
       coverageByCategory,
       overallMet: missingCategories.length === 0,
@@ -366,11 +375,10 @@ export class PhotoService {
   // ---------------------------------------------------------------------------
 
   async getQualityReport(
-    inspectionId: string,
     orderId: string,
     tenantId: string = 'test-tenant-123'
   ): Promise<PhotoQualityReport> {
-    const photos = await this.getPhotosByInspection(inspectionId, tenantId);
+    const photos = await this.getPhotosByOrder(orderId, tenantId);
 
     const photoReports = photos.map((p) => {
       const issues: string[] = [];
@@ -385,7 +393,6 @@ export class PhotoService {
     const totalQuality = photoReports.reduce((sum, p) => sum + p.qualityScore, 0);
 
     return {
-      inspectionId,
       orderId,
       totalPhotos: photos.length,
       averageQualityScore:
