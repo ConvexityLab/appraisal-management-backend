@@ -17,6 +17,14 @@ COPY packages/ ./packages/
 # Install all dependencies including dev dependencies for build
 RUN pnpm install --frozen-lockfile
 
+# Build the @l1/shared-types workspace FIRST so its dist/ exists before
+# Stage 2 starts.  shared-types' package.json points `main` at
+# ./dist/index.js, so without this prebuild step Node fails at runtime
+# with ERR_MODULE_NOT_FOUND.  The BE's own tsc compilation works
+# regardless (it resolves via TS paths mapping to source files),
+# but the runtime require() resolution needs real built JS.
+RUN pnpm --filter @l1/shared-types build
+
 # Copy source code and build scripts
 COPY src/ ./src/
 COPY scripts/copy-assets.cjs ./scripts/
@@ -63,6 +71,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/ ./packages/
 RUN pnpm install --frozen-lockfile --prod && \
     pnpm store prune
+
+# Copy the built shared-types dist/ from Stage 1 so the workspace
+# link resolves to real JS files at runtime (package.json `main`
+# points at `./dist/index.js`).  Without this, pnpm install in
+# Stage 2 sets up the workspace symlink but the `dist/` it points
+# into is empty.
+COPY --from=builder /usr/src/app/packages/shared-types/dist ./packages/shared-types/dist
 
 # Copy built application from builder stage
 COPY --from=builder /usr/src/app/dist ./dist

@@ -4,25 +4,27 @@
   "description": "Shared TypeScript types for L1 Valuation Platform (canonical schema, report config, UAD 3.6)",
   "private": true,
   "license": "UNLICENSED",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./property-record": {
-      "types": "./src/property-record.types.ts",
-      "default": "./src/property-record.types.ts"
+      "types": "./dist/property-record.types.d.ts",
+      "default": "./dist/property-record.types.js"
     }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
   },
   "files": [
-    "src"
+    "src",
+    "dist"
   ]
 }
