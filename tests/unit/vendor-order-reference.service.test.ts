@@ -181,19 +181,40 @@ describe('VendorOrderReferenceService', () => {
     await expect(service.createOrGetOrderReference(connection, event)).rejects.toThrow('Cosmos error');
   });
 
-  it('throws when dueDate is missing', async () => {
+  it('defaults to T+10 business days when dueDate is missing (no throw)', async () => {
+    // Behavior change per 15793cd: AIM Port doesn't always supply
+    // order.due_date in the inbound OrderRequest.  Previously this
+    // threw VENDOR_INTEGRATION_INBOUND_FAILED; now it defaults to
+    // T+10 business days and logs a warning.  Test was originally
+    // written for the throw-path; updated here to match the new
+    // graceful-default contract.
     const db = {
       queryItems: vi.fn().mockResolvedValue({ success: true, data: [] }),
     };
+    const engagementService = {
+      createEngagement: vi.fn().mockResolvedValue(makeEngagementResult()),
+    } as any;
+    const clientOrderService = {
+      placeClientOrder: vi.fn().mockResolvedValue({
+        clientOrder: { id: 'co-1', tenantId: 'tenant-1' },
+        vendorOrders: [{ id: 'vo-new', orderNumber: 'VND-NEW-1', productType: 'FULL_APPRAISAL' }],
+      }),
+    } as any;
     const badEvent: VendorDomainEvent = {
       ...event,
       payload: { ...(event.payload as any), dueDate: '' },
     };
-    const service = new VendorOrderReferenceService(db as any, {} as any, {} as any, undefined, noRuleDecompositionService);
-
-    await expect(service.createOrGetOrderReference(connection, badEvent)).rejects.toThrow(
-      'payload.dueDate is required',
+    const service = new VendorOrderReferenceService(
+      db as any,
+      engagementService,
+      clientOrderService,
+      undefined,
+      noRuleDecompositionService,
     );
+
+    await expect(
+      service.createOrGetOrderReference(connection, badEvent),
+    ).resolves.toBeDefined();
   });
 
   it('calls triggerVendorAssignment for the created VendorOrder when an orchestrator ref is provided', async () => {
