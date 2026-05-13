@@ -66,6 +66,12 @@ export class VendorOrderScorecardSuggester {
     const order = orderResp.data as Order;
     const suggestions: SuggestedScores = {};
 
+    // QC findings live in the qc-reviews container (one or more review docs
+    // per order), not denormalized on Order. Fetch the latest review and use
+    // its `criticalIssuesCount` + `majorIssuesCount` summary — falls back to
+    // counting `findings[].severity` if the rollup fields aren't populated.
+    const qcSummary = await this.fetchLatestQCFindingSummary(orderId);
+
     // ── turnTime ──
     const due = (order as any).dueDate ? new Date((order as any).dueDate) : null;
     const delivered = (order as any).deliveredDate ?? (order as any).completedDate;
@@ -90,12 +96,9 @@ export class VendorOrderScorecardSuggester {
     else if (revisionCount <= 3) suggestions.communication = 3;
     else suggestions.communication = 2;
 
-    // ── report + quality ── (from QC findings, if available on the order)
-    const qcFindings = ((order as any).qcFindings ?? []) as Array<{
-      severity?: string;
-    }>;
-    const critical = qcFindings.filter((f) => f.severity === 'CRITICAL').length;
-    const major = qcFindings.filter((f) => f.severity === 'MAJOR').length;
+    // ── report + quality ── (from QC findings on the latest qc-reviews doc)
+    const critical = qcSummary.critical;
+    const major = qcSummary.major;
     let qualityScore: ScoreValue;
     if (critical > 0) qualityScore = 1;
     else if (major >= 4) qualityScore = 2;
@@ -109,5 +112,47 @@ export class VendorOrderScorecardSuggester {
     // professionalism: no automated signal — leave undefined.
 
     return suggestions;
+  }
+
+  /**
+   * Pull the latest QC review for an order and summarise findings by severity.
+   * Returns zeroes when no review exists. Prefers the review's pre-rolled
+   * counts (`criticalIssuesCount` / `majorIssuesCount`) and falls back to
+   * counting `results.findings[].severity` if those aren't populated.
+   */
+  private async fetchLatestQCFindingSummary(
+    orderId: string,
+  ): Promise<{ critical: number; major: number }> {
+    try {
+      const query =
+        "SELECT TOP 1 * FROM c WHERE c.orderId = @orderId ORDER BY c.completedAt DESC, c.updatedAt DESC";
+      const result = await this.dbService.queryItems<{
+        results?: {
+          criticalIssuesCount?: number;
+          majorIssuesCount?: number;
+          findings?: Array<{ severity?: string }>;
+        };
+      }>('qc-reviews', query, [{ name: '@orderId', value: orderId }]);
+      const review = result.success && result.data && result.data.length > 0
+        ? result.data[0]
+        : null;
+      if (!review || !review.results) return { critical: 0, major: 0 };
+      const r = review.results;
+      const fallback = r.findings ?? [];
+      return {
+        critical: typeof r.criticalIssuesCount === 'number'
+          ? r.criticalIssuesCount
+          : fallback.filter((f) => f.severity === 'CRITICAL').length,
+        major: typeof r.majorIssuesCount === 'number'
+          ? r.majorIssuesCount
+          : fallback.filter((f) => f.severity === 'MAJOR').length,
+      };
+    } catch (err) {
+      this.logger.warn('fetchLatestQCFindingSummary failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { critical: 0, major: 0 };
+    }
   }
 }

@@ -20,6 +20,9 @@ param containerAppPrincipalIds array
 @description('Principal IDs of external vendor clients that should be allowed to write to the `received` container. Empty by default — add entries per environment.')
 param externalClientPrincipalIds array = []
 
+@description('Optional: Developer user principal IDs for local integration testing (principalType=User)')
+param developerPrincipalIds array = []
+
 // ─── Existing resources ───────────────────────────────────────────────────────
 resource intakeStorageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' existing = {
   name: intakeStorageAccountName
@@ -59,6 +62,19 @@ resource externalClientContributorRoleAssignments 'Microsoft.Authorization/roleA
     principalId: principalId
     principalType: 'ServicePrincipal'
     description: 'Allows external vendor client ${i} to write blobs to the received container.'
+  }
+}]
+
+// ─── Developer principals: Storage Blob Data Contributor (received container scope) ─
+// Allows developer identities to upload blobs for integration testing.
+resource developerContributorRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (principalId, i) in developerPrincipalIds: if (!empty(developerPrincipalIds)) {
+  name: guid(receivedContainer.id, principalId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe-developer')
+  scope: receivedContainer
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
+    principalId: principalId
+    principalType: 'User'
+    description: 'Allows developer ${i} to write blobs to the received container for integration testing.'
   }
 }]
 

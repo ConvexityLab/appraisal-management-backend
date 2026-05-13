@@ -23,6 +23,7 @@ import type {
   EventHandler,
   QCCompletedEvent,
   VendorPerformanceUpdatedEvent,
+  VendorScorecardCreatedEvent,
 } from '../types/events.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 
@@ -58,6 +59,16 @@ export class VendorPerformanceUpdaterService {
       this.makeHandler('qc.completed', this.onQCCompleted.bind(this)),
     );
 
+    // Phase A — recompute vendor metrics whenever a reviewer scorecard lands
+    // (initial QC scoring or a post-release re-score). Without this the
+    // trailing-25 blend on VendorPerformanceMetrics goes stale between
+    // scorecards and the matcher sees outdated overallScore until some
+    // unrelated event re-triggers calculateVendorMetrics.
+    await this.subscriber.subscribe<VendorScorecardCreatedEvent>(
+      'vendor-scorecard.created',
+      this.makeHandler('vendor-scorecard.created', this.onScorecardCreated.bind(this)),
+    );
+
     this.isStarted = true;
     this.logger.info('VendorPerformanceUpdaterService started');
   }
@@ -65,6 +76,7 @@ export class VendorPerformanceUpdaterService {
   async stop(): Promise<void> {
     if (!this.isStarted) return;
     await this.subscriber.unsubscribe('qc.completed').catch(() => {});
+    await this.subscriber.unsubscribe('vendor-scorecard.created').catch(() => {});
     this.isStarted = false;
     this.logger.info('VendorPerformanceUpdaterService stopped');
   }
@@ -160,6 +172,126 @@ export class VendorPerformanceUpdaterService {
       previousScore,
       newScore,
       orderId,
+    });
+  }
+
+  /**
+   * Handler for vendor-scorecard.created. The scorecard service stamps the
+   * vendorId on the event when the order has an assignedVendorId; load the
+   * order anyway for tenantId + name (events carry minimal context).
+   */
+  private async onScorecardCreated(event: VendorScorecardCreatedEvent): Promise<void> {
+    const { orderId, scorecardId } = event.data;
+    const orderResult = await this.dbService.findOrderById(orderId);
+    if (!orderResult.success || !orderResult.data) {
+      this.logger.warn('VendorPerformanceUpdater: order not found for scorecard event', {
+        orderId,
+        scorecardId,
+      });
+      return;
+    }
+    const order = orderResult.data as unknown as Record<string, unknown>;
+    const vendorId =
+      event.data.vendorId ??
+      (order['assignedVendorId'] as string | undefined) ??
+      (order['vendorId'] as string | undefined);
+    const tenantId = order['tenantId'] as string | undefined;
+    if (!vendorId || !tenantId) {
+      this.logger.warn('VendorPerformanceUpdater: scorecard event missing vendorId or tenantId', {
+        orderId,
+        vendorId,
+        tenantId,
+      });
+      return;
+    }
+    await this.recomputeAndStamp(
+      vendorId,
+      tenantId,
+      (order['vendorName'] as string | undefined) ?? (order['assignedVendorName'] as string | undefined),
+      `scorecard ${scorecardId} on order ${orderId}`,
+    );
+  }
+
+  /**
+   * Shared recompute path. Loads previous score, runs the calculator, stamps
+   * the new score onto the vendor doc, publishes vendor.performance.updated.
+   * Used by both QC-completion and scorecard-created handlers so the two
+   * paths can't diverge.
+   */
+  private async recomputeAndStamp(
+    vendorId: string,
+    tenantId: string,
+    vendorName: string | undefined,
+    trigger: string,
+  ): Promise<void> {
+    const vendorContainer = this.dbService.getContainer('vendors');
+    const vendorLookup = await vendorContainer.items.query<Record<string, unknown>>({
+      query: `SELECT c.overallScore FROM c WHERE c.id = @id AND c.tenantId = @tid`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parameters: [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { name: '@id', value: vendorId } as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { name: '@tid', value: tenantId } as any,
+      ],
+    }).fetchAll();
+    const previousScore =
+      (vendorLookup.resources[0]?.['overallScore'] as number | undefined) ?? 0;
+
+    let metrics: Awaited<ReturnType<VendorPerformanceCalculatorService['calculateVendorMetrics']>>;
+    try {
+      metrics = await this.performanceCalc.calculateVendorMetrics(vendorId, tenantId);
+    } catch (err) {
+      this.logger.error('VendorPerformanceUpdater: recompute failed', {
+        vendorId,
+        trigger,
+        error: (err as Error).message,
+      });
+      return;
+    }
+
+    await this.stampVendorScore(
+      vendorId,
+      tenantId,
+      metrics.overallScore,
+      metrics.tier,
+      metrics.totalOrdersCompleted,
+    ).catch((err) =>
+      this.logger.warn('VendorPerformanceUpdater: failed to stamp vendor score', {
+        vendorId,
+        trigger,
+        error: (err as Error).message,
+      }),
+    );
+
+    const updateEvent: VendorPerformanceUpdatedEvent = {
+      id: uuidv4(),
+      type: 'vendor.performance.updated',
+      timestamp: new Date(),
+      source: 'vendor-performance-updater-service',
+      version: '1.0',
+      category: EventCategory.VENDOR,
+      data: {
+        vendorId,
+        vendorName: vendorName ?? vendorId,
+        previousScore,
+        newScore: metrics.overallScore,
+        ordersCompleted: metrics.totalOrdersCompleted ?? 0,
+        averageDeliveryTime: metrics.avgTurnaroundTime ?? 0,
+        priority: EventPriority.LOW,
+      },
+    };
+    await this.publisher.publish(updateEvent).catch((err) =>
+      this.logger.warn('VendorPerformanceUpdater: failed to publish vendor.performance.updated', {
+        error: (err as Error).message,
+      }),
+    );
+
+    this.logger.info('Vendor performance recomputed', {
+      vendorId,
+      previousScore,
+      newScore: metrics.overallScore,
+      trigger,
     });
   }
 

@@ -527,7 +527,7 @@ export class VendorController {
    * Per-vendor scorecards rollup: trailing-25 active scorecards with per-
    * category averages plus the contributing entries (newest first).
    */
-  private async getVendorScorecards(req: UnifiedAuthRequest, res: Response): Promise<void> {
+  private async getVendorScorecards(req: AuthorizedRequest, res: Response): Promise<void> {
     try {
       const vendorId = req.params.vendorId!;
       const tenantId =
@@ -539,7 +539,15 @@ export class VendorController {
         });
         return;
       }
-      const rollup = await this.scorecardsRollup.buildRollup(vendorId, tenantId);
+      // ABAC: pass the auth-middleware-supplied filter so order-rows the
+      // caller can't see don't leak through the rollup. authorizeResource
+      // (vendor read) gates entry; this filter narrows visible orders by
+      // ownership / assignment / team.
+      const rollup = await this.scorecardsRollup.buildRollup(
+        vendorId,
+        tenantId,
+        req.authorizationFilter,
+      );
       res.json({ success: true, data: rollup });
     } catch (error) {
       this.logger.error('Failed to build vendor scorecards rollup', {

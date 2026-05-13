@@ -51,6 +51,9 @@
         "72.66.11.53"
       ]
     },
+    "developerPrincipalIds": {
+      "value": ["d14de96e-1d1b-43d4-8250-7086f0a386b9"]
+    },
     "appConfigValues": {
       "value": {
         "services.axiom-api.base-url": "https://axiom-dev-api.ambitioushill-a89e4aa0.eastus.azurecontainerapps.io",

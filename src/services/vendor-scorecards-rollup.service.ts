@@ -26,6 +26,7 @@ import type {
   ScorecardCategoryKey,
   VendorOrderScorecardEntry,
 } from '../types/vendor-order.types.js';
+import type { QueryFilter } from '../types/authorization.types.js';
 
 const TRAILING_WINDOW_SIZE = 25;
 
@@ -65,8 +66,19 @@ export class VendorScorecardsRollupService {
 
   constructor(private dbService: CosmosDbService) {}
 
-  async buildRollup(vendorId: string, tenantId: string): Promise<VendorScorecardRollup> {
-    const orders = await this.fetchVendorCompletedOrders(vendorId, tenantId);
+  async buildRollup(
+    vendorId: string,
+    tenantId: string,
+    /**
+     * Optional ABAC filter from the auth middleware. Constrains the rollup
+     * query to orders the caller can actually see (team scope, owner
+     * scope, etc.). Tenant-only scoping is NOT sufficient — without this,
+     * any user with vendor:read in the tenant could read any vendor's
+     * scorecards.
+     */
+    authorizationFilter?: QueryFilter,
+  ): Promise<VendorScorecardRollup> {
+    const orders = await this.fetchVendorCompletedOrders(vendorId, tenantId, authorizationFilter);
     const items: VendorScorecardRollupItem[] = [];
 
     for (const order of orders) {
@@ -137,21 +149,26 @@ export class VendorScorecardsRollupService {
   private async fetchVendorCompletedOrders(
     vendorId: string,
     tenantId: string,
+    authorizationFilter?: QueryFilter,
   ): Promise<Order[]> {
-    const query = `
-      SELECT * FROM c
-      WHERE c.tenantId = @tenantId
-        AND c.assignedVendorId = @vendorId
-        AND (c.status = @completed OR c.status = @delivered)
-        AND IS_DEFINED(c.scorecards)
-      ORDER BY c._ts DESC
+    const baseWhere = `
+      c.tenantId = @tenantId
+      AND c.assignedVendorId = @vendorId
+      AND (c.status = @completed OR c.status = @delivered)
+      AND IS_DEFINED(c.scorecards)
     `;
-    const result = await this.dbService.queryItems<Order>('orders', query, [
+    const where = authorizationFilter?.sql
+      ? `${baseWhere} AND (${authorizationFilter.sql})`
+      : baseWhere;
+    const params: Array<{ name: string; value: unknown }> = [
       { name: '@tenantId', value: tenantId },
       { name: '@vendorId', value: vendorId },
       { name: '@completed', value: OrderStatus.COMPLETED },
       { name: '@delivered', value: OrderStatus.DELIVERED },
-    ]);
+      ...(authorizationFilter?.parameters ?? []),
+    ];
+    const query = `SELECT * FROM c WHERE ${where} ORDER BY c._ts DESC`;
+    const result = await this.dbService.queryItems<Order>('orders', query, params);
     if (!result.success) {
       this.logger.warn('fetchVendorCompletedOrders failed', { vendorId, tenantId });
       return [];

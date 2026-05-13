@@ -196,6 +196,25 @@ export interface QCCompletedEvent extends BaseEvent {
 }
 
 /**
+ * Published by VendorOrderScorecardService.appendScorecard after a reviewer
+ * scores a vendor order (initial scoring in the QC approval flow OR a
+ * post-release re-score). VendorPerformanceUpdaterService subscribes and
+ * recomputes the vendor's blended metrics so the matcher picks up the new
+ * signal immediately.
+ */
+export interface VendorScorecardCreatedEvent extends BaseEvent {
+  type: 'vendor-scorecard.created';
+  category: EventCategory.VENDOR;
+  data: {
+    orderId: string;
+    scorecardId: string;
+    vendorId?: string;
+    overallScore: number;
+    priority: EventPriority;
+  };
+}
+
+/**
  * Published by AxiomService#fetchAndStorePipelineResults for each criterion that
  * fails or warns. Consumed by QCIssueRecorderService (persists qc-issue records),
  * audit-event-sink.service (writes engagement audit row), and
@@ -1457,6 +1476,7 @@ export type AppEvent =
   | QCIssueDetectedEvent
   | QCAIScoredEvent
   | VendorPerformanceUpdatedEvent
+  | VendorScorecardCreatedEvent
   | VendorAvailabilityChangedEvent
   | VendorIntegrationEvent
   | SystemAlertEvent

@@ -752,6 +752,7 @@ module blobIntakeStorageRoleAssignments 'modules/storage-blob-intake-role-assign
     intakeStorageAccountName: blobIntakeStorage.outputs.storageAccountName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
     externalClientPrincipalIds: externalBlobIntakeClientPrincipalIds
+    developerPrincipalIds: developerPrincipalIds
   }
 }
 
@@ -773,6 +774,7 @@ module serviceBusRoleAssignments 'modules/servicebus-role-assignments.bicep' = {
   params: {
     serviceBusNamespaceName: serviceBus.outputs.namespaceName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    developerPrincipalIds: developerPrincipalIds
   }
 }
 
