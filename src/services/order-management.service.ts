@@ -6,6 +6,7 @@ import { VendorManagementService } from './vendor-management.service.js';
 import { NotificationService } from './notification.service.js';
 import { AuditService } from './audit.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
+import { TenantAutomationConfigService } from './tenant-automation-config.service.js';
 import { EventCategory, EventPriority } from '../types/events.js';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger.js';
@@ -74,6 +75,7 @@ export class OrderManagementService extends SimpleEventEmitter {
   private notificationService: NotificationService;
   private auditService: AuditService;
   private publisher: ServiceBusEventPublisher;
+  private tenantConfigService: TenantAutomationConfigService;
   private logger: Logger;
   // private workflowAgent: WorkflowAgent;
   // private routingAgent: RoutingAgent;
@@ -91,6 +93,7 @@ export class OrderManagementService extends SimpleEventEmitter {
     this.notificationService = notificationService;
     this.auditService = auditService;
     this.publisher = new ServiceBusEventPublisher();
+    this.tenantConfigService = new TenantAutomationConfigService();
     this.logger = logger;
   }
 
@@ -154,6 +157,27 @@ export class OrderManagementService extends SimpleEventEmitter {
         createdAt: now,
         updatedAt: now
       };
+
+      // Inherit Axiom program defaults from the per-tenant automation config
+      // when the order didn't already carry them. Without these fields the
+      // FE's QCReviewContent skips `useGetLatestResultsQuery` entirely —
+      // verdicts never reach the UI even though Axiom evaluated them.
+      // Best-effort: if the lookup throws or the config has no axiomProgramId,
+      // leave the order's value as-is rather than blocking creation.
+      if (!(order as any).axiomProgramId && order.clientId) {
+        try {
+          const cfg = await this.tenantConfigService.getConfig(order.clientId, order.subClientId);
+          if (cfg.axiomProgramId) {
+            (order as any).axiomProgramId = cfg.axiomProgramId;
+            (order as any).axiomProgramVersion = cfg.axiomProgramVersion ?? '1.0.0';
+          }
+        } catch (cfgErr) {
+          this.logger.warn('createOrder: tenant axiom-program lookup failed; leaving order without program defaults', {
+            orderId, clientId: order.clientId, subClientId: order.subClientId,
+            error: cfgErr instanceof Error ? cfgErr.message : String(cfgErr),
+          });
+        }
+      }
 
       // Validate order data
       await this.validateOrderData(order);
