@@ -126,6 +126,10 @@ param axiomWebhookSecret string = ''
 @description('Service-to-service auth token AMS sends to MOP as the X-Service-Auth header for vendor-matching evaluation. Mirror of sentinel KV secret "sentinel-mop-webhook-secret". CI populates from a deploy-time secret; bicep wires it to the appraisal-api Container App as both an inline secret (mop-rules-service-auth-token) and an env var (MOP_RULES_SERVICE_AUTH_TOKEN). Empty value disables MOP auth for AMS — set RULES_PROVIDER=homegrown in that case.')
 param mopServiceAuthToken string = ''
 
+@secure()
+@description('AIM Port API key used for both inbound authentication (verifying requests AIM Port sends us) and outbound calls (authenticating requests we send to AIM Port). Stored in Key Vault as "aim-port-api-key". Pass via pipeline secret; leave empty to skip KV secret creation.')
+param aimPortApiKey string = ''
+
 // IVUEIT_API_KEY and IVUEIT_SECRET are sourced via Container App keyVaultUrl
 // secret refs — Managed Identity reads them from Key Vault at runtime. Bicep
 // does NOT receive them as params. The KV secrets must exist before the
@@ -819,6 +823,7 @@ module keyVaultSecrets 'modules/key-vault-secrets.bicep' = {
     fluidRelayTenantKey: fluidRelay.outputs.fluidRelayPrimaryKey
     axiomWebhookSecret: axiomWebhookSecret
     mopServiceAuthToken: mopServiceAuthToken
+    aimPortApiKey: aimPortApiKey
   }
 }
 

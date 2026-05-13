@@ -71,6 +71,10 @@ param axiomWebhookSecret string = ''
 @description('Service-to-service auth token AMS sends to MOP as the X-Service-Auth header for vendor-matching evaluation. Mirror of sentinel KV secret "sentinel-mop-webhook-secret". Stored in AMS KV as "mop-rules-service-auth-token" and surfaced as MOP_RULES_SERVICE_AUTH_TOKEN env var on the appraisal-api Container App.')
 param mopServiceAuthToken string = ''
 
+@secure()
+@description('AIM Port API key — shared secret used for both inbound auth (verifying requests AIM Port sends us) and outbound calls (authenticating our requests to AIM Port). Stored in KV as "aim-port-api-key". Referenced by VendorConnection.credentials.{inbound,outbound}ApiKeySecretName.')
+param aimPortApiKey string = ''
+
 // Reference existing resources to get their secrets
 // cosmosAccount and serviceBusNamespace removed - using managed identity instead of keys
 
@@ -371,6 +375,24 @@ resource mopServiceAuthTokenSecretResource 'Microsoft.KeyVault/vaults/secrets@20
   }
 }
 
+// AIM Port shared API key — used for both directions:
+//   inbound:  VendorConnectionService.resolveSecret('aim-port-api-key') verifies
+//             the api_key value AIM Port sends in login.api_key on each POST.
+//   outbound: AimPortAdapter.buildOutboundCall() reads it and sends it back to
+//             AIM Port in login.api_key when we call their clientReceiveWS endpoint.
+// Referenced by VendorConnection.credentials.{inbound,outbound}ApiKeySecretName = 'aim-port-api-key'.
+resource aimPortApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(aimPortApiKey)) {
+  parent: keyVault
+  name: 'aim-port-api-key'
+  properties: {
+    value: aimPortApiKey
+    contentType: 'api-key'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
 // Outputs
 output secretNames array = concat(
   [
@@ -400,5 +422,6 @@ output secretNames array = concat(
   // outputs-should-not-contain-secrets rule; suppress because the rule
   // misfires here (same pattern as axiomWebhookSecret directly above).
   #disable-next-line outputs-should-not-contain-secrets
-  !empty(mopServiceAuthToken) ? [mopServiceAuthTokenSecretResource.name] : []
+  !empty(mopServiceAuthToken) ? [mopServiceAuthTokenSecretResource.name] : [],
+  !empty(aimPortApiKey) ? [aimPortApiKeySecret.name] : []
 )

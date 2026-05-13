@@ -56,6 +56,7 @@ import { module as constructionCatalogModule } from './modules/construction-cata
 import { module as reportTemplatesModule } from './modules/report-templates.js';
 import { module as auditEventsModule } from './modules/audit-events.js';
 import { module as quickbooksModule } from './modules/quickbooks.js';
+import { module as vendorConnectionsModule } from './modules/vendor-connections.js';
 
 /** Ordered list — phases run top-to-bottom. */
 const ALL_MODULES: SeedModule[] = [
@@ -90,6 +91,7 @@ const ALL_MODULES: SeedModule[] = [
   reportTemplatesModule,        // Phase 26
   auditEventsModule,            // Phase 27
   quickbooksModule,             // Phase 28 (External Sync)
+  vendorConnectionsModule,       // Phase 29 (Vendor Integration Config)
 ];
 
 // ─── CLI argument parsing ─────────────────────────────────────────────────────
@@ -161,6 +163,7 @@ const CONTAINER_PARTITION_KEYS: Record<string, string> = {
   'engagement-audit-events':  '/engagementId',
   'appraisal-drafts':         '/orderId',
   'integrations':             '/tenantId',
+  'vendor-connections':       '/tenantId',
 };
 
 async function main(): Promise<void> {
