@@ -416,6 +416,31 @@ export class EvaluationEnvelopeAssembler {
       if (cd.provenance) walkAndEmit(fields, 'provenance', cd.provenance, contributedAt);
     }
 
+    // Path-alias bridge: the canonical schema uses URAR-historical field
+    // names (`subject.occupant`, `subject.address.streetAddress`/`zipCode`)
+    // but Axiom v2 criteria reference Axiom-canonical paths
+    // (`subject.occupancy`, `subject.propertyAddress.street`/`zip`).
+    // Mirror each canonical-bucket field under its Axiom-expected path so
+    // criteria find their bindings without forcing every downstream
+    // consumer to migrate. Same EnvelopeFieldEntry reference is reused, so
+    // both keys point at identical values — no data duplication on the
+    // wire (the Axiom prefetcher reads by-key).
+    const CANONICAL_TO_AXIOM_PATH_ALIASES: Record<string, string> = {
+      'subject.occupant': 'subject.occupancy',
+      'subject.address.streetAddress': 'subject.propertyAddress.street',
+      'subject.address.unit': 'subject.propertyAddress.unit',
+      'subject.address.city': 'subject.propertyAddress.city',
+      'subject.address.state': 'subject.propertyAddress.state',
+      'subject.address.zipCode': 'subject.propertyAddress.zip',
+      'subject.address.county': 'subject.propertyAddress.county',
+    };
+    for (const [canonicalPath, axiomPath] of Object.entries(CANONICAL_TO_AXIOM_PATH_ALIASES)) {
+      const entry = fields[canonicalPath];
+      if (entry && !fields[axiomPath]) {
+        fields[axiomPath] = entry;
+      }
+    }
+
     // ── Order metadata ──────────────────────────────────────────────────
     // Limited set of order fields that criteria commonly bind against.
     // (`order.X` is one of the legacy prefixes recognised by
