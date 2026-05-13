@@ -1334,6 +1334,25 @@ export class AxiomController {
         });
       }
 
+      // Fire qc.issue.detected events for each fail/warning verdict.  The
+      // QCIssueRecorderService subscribes to that topic and upserts an
+      // aiInsights row per issue, which is what the AI Issues panel reads.
+      // The async pipeline path (fetchAndStorePipelineResults) does this
+      // already; the sync v2-evaluate path was silently leaving the panel
+      // empty for every real fail verdict.  Best-effort — publish failures
+      // are logged but don't block the response.
+      try {
+        await this.axiomService.publishIssuesFromRunResponse(summary, {
+          tenantId,
+          orderId: scopeId,
+        });
+      } catch (publishErr) {
+        this.logger.warn('v2 evaluateScope: failed to publish qc.issue.detected', {
+          scopeId,
+          error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+        });
+      }
+
       res.status(200).json({ success: true, data: summary });
     } catch (error) {
       this.logger.error('v2 evaluateScope failed', {

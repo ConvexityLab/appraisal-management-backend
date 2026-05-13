@@ -2936,6 +2936,70 @@ export class AxiomService {
   }
 
   /**
+   * Publish a `qc.issue.detected` event for each fail/warning verdict in an
+   * evaluation run.  Idempotent at the QCIssueRecorderService layer (it
+   * upserts by deterministic id), so re-running an evaluation that produces
+   * the same verdicts won't duplicate issue records.
+   *
+   * Use from any code path that produces a v2 run response — the synchronous
+   * `evaluateScopeV2` controller path needs this because the pipeline-based
+   * `fetchAndStorePipelineResults` path is async and only fires for the
+   * legacy webhook flow.  Without it, the AI Issues panel stays empty even
+   * when Axiom returns real fail verdicts.
+   */
+  async publishIssuesFromRunResponse(
+    run: import('../types/axiom.types.js').AxiomEvaluationRunResponse,
+    actor: { tenantId: string; orderId?: string },
+  ): Promise<void> {
+    if (!run.results || run.results.length === 0) return;
+    const orderId = actor.orderId ?? run.orderId ?? run.scopeId;
+    const linkage = buildQCIssueLinkage({
+      mapped: {
+        ...(run.programId ? { programId: run.programId } : {}),
+        ...(run.programVersion ? { programVersion: run.programVersion } : {}),
+      },
+      meta: { runId: run.evaluationRunId },
+    });
+    for (const criterion of run.results) {
+      if (criterion.evaluation !== 'fail' && criterion.evaluation !== 'warning') continue;
+      try {
+        const evt: QCIssueDetectedEvent = {
+          id: uuidv4(),
+          type: 'qc.issue.detected',
+          timestamp: new Date(),
+          source: 'axiom-service',
+          version: '1.0',
+          category: EventCategory.QC,
+          data: {
+            orderId,
+            tenantId: actor.tenantId,
+            criterionId: criterion.criterionId,
+            issueSummary: criterion.criterionName,
+            issueType: criterion.evaluation === 'fail' ? 'criterion-fail' : 'criterion-warning',
+            severity: criterion.evaluation === 'fail' ? 'CRITICAL' : 'MAJOR',
+            ...(criterion.confidence !== undefined ? { confidence: criterion.confidence } : {}),
+            ...(criterion.reasoning !== undefined ? { reasoning: criterion.reasoning } : {}),
+            ...(criterion.remediation !== undefined ? { remediation: criterion.remediation } : {}),
+            ...(Array.isArray(criterion.documentReferences) && criterion.documentReferences.length > 0
+              ? { documentReferences: criterion.documentReferences }
+              : {}),
+            evaluationId: run.evaluationRunId,
+            ...linkage,
+            priority: criterion.evaluation === 'fail' ? EventPriority.HIGH : EventPriority.NORMAL,
+          },
+        };
+        await this.publisher.publish(evt);
+      } catch (err) {
+        this.logger.warn('Failed to publish qc.issue.detected (sync path)', {
+          orderId,
+          criterionId: criterion.criterionId,
+          error: (err as Error).message,
+        });
+      }
+    }
+  }
+
+  /**
    * Fetch a single v2 evaluation run.
    * Calls Axiom's `GET /api/criterion/scopes/:scopeId/runs/:runId`.
    */
