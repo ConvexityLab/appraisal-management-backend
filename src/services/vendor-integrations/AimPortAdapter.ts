@@ -438,17 +438,19 @@ export class AimPortAdapter implements VendorAdapter {
     envelope: Record<string, unknown> | null,
     login: Record<string, unknown> | null,
   ): string | undefined {
-    const loginOrderId = stringValue(login?.order_id) ?? stringValue(login?.aimport_order_id);
+    // AIM-Port sends order_id as a string in sandbox but as an integer in
+    // production payloads — coerce both forms to a string.
+    const loginOrderId = coerceClientId(login?.order_id) ?? coerceClientId(login?.aimport_order_id);
     if (loginOrderId) return loginOrderId;
 
     if (requestType === 'OrderRequest') {
       const order = asRecord(envelope?.order);
-      return stringValue(order?.order_id);
+      return coerceClientId(order?.order_id);
     }
 
     if (requestType === 'OrderUpdateRequest') {
       const order = asRecord(envelope?.order);
-      return stringValue(order?.aimport_order_id) ?? stringValue(order?.tracking_num);
+      return coerceClientId(order?.aimport_order_id) ?? coerceClientId(order?.tracking_num);
     }
 
     return undefined;

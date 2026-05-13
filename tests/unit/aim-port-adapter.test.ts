@@ -329,4 +329,25 @@ describe('AimPortAdapter', () => {
       resolveSecret: async () => 'secret-key',
     })).resolves.toBeUndefined();
   });
+
+  it('handleInbound resolves vendorOrderId from integer order.order_id (real AIM-Port production payload)', async () => {
+    const adapter = new AimPortAdapter();
+    // login has no order_id — AIM-Port production new-order payloads put the
+    // vendor's order number only in order.order_id (as an integer).
+    const body = {
+      OrderRequest: {
+        login: { client_id: 495735, api_key: 'secret-key' },
+        order: { order_id: 1900811, order_type: 'residential', address: '741 Cattle Drive', city: 'Dallas', state: 'TX', zip_code: '75001', property_type: 'sfr', borrower: { name: 'Jim Bow' }, reports: [{ id: 49079, name: '1004' }] },
+      },
+    };
+    const result = await adapter.handleInbound(body, {}, {
+      ...connection,
+      inboundIdentifier: '495735',
+    }, {
+      resolveSecret: async () => 'secret-key',
+      createOrGetOrderReference: async () => ({ orderId: 'order-456', orderNumber: 'VND-123', existed: false }),
+    });
+    expect(result.domainEvents[0]?.vendorOrderId).toBe('1900811');
+    expect(result.ack.statusCode).toBe(200);
+  });
 });
