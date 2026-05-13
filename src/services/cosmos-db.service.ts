@@ -1005,7 +1005,7 @@ export class CosmosDbService {
       return { success: false, error: createApiError('PRODUCT_NOT_FOUND', `Product ${id} not found`) };
     }
     const deactivated = await this.updateProduct(id, tenantId, { status: 'INACTIVE' });
-    if (!deactivated.success) return { success: false, error: deactivated.error };
+    if (!deactivated.success) return { success: false, ...(deactivated.error !== undefined && { error: deactivated.error }) };
     return { success: true, data: undefined };
   }
 
