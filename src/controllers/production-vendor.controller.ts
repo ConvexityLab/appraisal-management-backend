@@ -17,8 +17,11 @@ import { Vendor, VendorStatus, OrderStatus } from '../types/index.js';
 import {
   stripConfidentialVendorFields,
   stripConfidentialFieldsFromVendorList,
+  stripConfidentialFieldsDeep,
 } from '../utils/confidential-fields.js';
 import { VendorScorecardsRollupService } from '../services/vendor-scorecards-rollup.service.js';
+import { AuditTrailService } from '../services/audit-trail.service.js';
+import { InAppNotificationService } from '../services/in-app-notification.service.js';
 
 export class VendorController {
   public router: Router;
@@ -26,12 +29,16 @@ export class VendorController {
   private logger: Logger;
 
   private scorecardsRollup: VendorScorecardsRollupService;
+  private auditTrail: AuditTrailService;
+  private notificationService: InAppNotificationService;
 
   constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.dbService = dbService;
     this.logger = new Logger('VendorController');
     this.scorecardsRollup = new VendorScorecardsRollupService(dbService);
+    this.auditTrail = new AuditTrailService(dbService);
+    this.notificationService = new InAppNotificationService();
     this.initializeRoutes(authzMiddleware);
   }
 
@@ -68,6 +75,11 @@ export class VendorController {
     // and the contributing scorecards). Distinct from /performance which
     // returns the BLENDED metrics that feed the matcher.
     this.router.get('/:vendorId/scorecards',   ...readResource,    ...this.validateVendorIdParam(), this.getVendorScorecards.bind(this));
+    // Audit trail for the vendor — surfaces who changed trustedVendor /
+    // confidentialClassifications / status / contact info. The metadata
+    // payload is run through stripConfidentialFieldsDeep so callers without
+    // confidential:read don't learn the secret-flag transitions.
+    this.router.get('/:vendorId/audit-trail',  ...readResource,    ...this.validateVendorIdParam(), this.getVendorAuditTrail.bind(this));
     this.router.post('/assign/:orderId',       ...updateOrderResource,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
 
     this.router.get('/',                       ...readQuery,    this.getVendors.bind(this));
@@ -298,6 +310,15 @@ export class VendorController {
   private async updateVendor(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const vendorId = req.params.vendorId!; // validated by middleware
+
+      // Capture the "before" state for the audit trail. Compare against the
+      // post-update snapshot so the audit row carries a per-field diff —
+      // especially important for trustedVendor / confidentialClassifications
+      // since those have outsized assignment-decision impact and operators
+      // need a paper trail for who flipped them and when.
+      const beforeResp = await this.dbService.findVendorById(vendorId);
+      const before = (beforeResp.success && beforeResp.data) ? beforeResp.data : null;
+
       const updateData = {
         ...req.body,
         updatedBy: req.user?.id,
@@ -309,6 +330,53 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor updated', { vendorId });
         const profile = this.transformVendorToProfile(result.data);
+
+        // Audit the change. Compute changed fields up front so the audit row
+        // is self-describing; future "who changed Vendor X's trustedVendor?"
+        // queries don't need a separate before/after lookup.
+        const changes = before
+          ? diffVendorFields(
+              before as unknown as Record<string, unknown>,
+              result.data as unknown as Record<string, unknown>,
+              req.body,
+            )
+          : [];
+        if (changes.length > 0) {
+          await this.auditTrail.log({
+            actor: { userId: req.user?.id ?? 'unknown', ...(req.user?.email ? { email: req.user.email } : {}) },
+            action: 'vendor.update',
+            resource: { type: 'vendor', id: vendorId, name: (result.data as { businessName?: string }).businessName ?? vendorId },
+            changes,
+            metadata: {
+              touchedConfidential: changes.some((c) =>
+                c.field === 'trustedVendor' || c.field === 'confidentialClassifications',
+              ),
+            },
+          }).catch((err) => {
+            this.logger.warn('Audit log failed for vendor update', {
+              vendorId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+
+        // Notify every confidential:read holder in this tenant whenever the
+        // trustedVendor flag flips. Doug specifically asked to know when
+        // David flipped it (and vice versa) — the in-app inbox is the path
+        // of least friction. Best-effort: never blocks the response.
+        const trustedChange = changes.find((c) => c.field === 'trustedVendor');
+        if (trustedChange && req.user?.tenantId) {
+          void this.notifyConfidentialReadHolders({
+            tenantId: req.user.tenantId,
+            actorId: req.user.id ?? 'unknown',
+            actorEmail: req.user.email,
+            vendorId,
+            vendorName: (result.data as { businessName?: string }).businessName ?? vendorId,
+            oldValue: trustedChange.oldValue,
+            newValue: trustedChange.newValue,
+          });
+        }
+
         // Phase C: strip Doug-and-David-only fields when caller lacks scope.
         const visible = stripConfidentialVendorFields(profile, req.user);
         res.json(visible);
@@ -671,4 +739,128 @@ export class VendorController {
       productGrades: vendor.productGrades
     };
   }
+
+  /**
+   * Fan out an in-app notification to every user with confidential:read in
+   * this tenant when a trustedVendor flag flips. Queries the users container
+   * by accessScope.extraScopes membership. Excludes the actor themselves
+   * (they obviously know what they just did).
+   */
+  private async notifyConfidentialReadHolders(opts: {
+    tenantId: string;
+    actorId: string;
+    actorEmail?: string;
+    vendorId: string;
+    vendorName: string;
+    oldValue: unknown;
+    newValue: unknown;
+  }): Promise<void> {
+    try {
+      const usersContainer = this.dbService.getContainer('users');
+      const { resources: recipients } = await usersContainer.items.query<{
+        id: string;
+        accessScope?: { extraScopes?: string[] };
+      }>({
+        query: `SELECT c.id, c.accessScope FROM c WHERE c.tenantId = @tid AND c.isActive = true AND ARRAY_CONTAINS(c.accessScope.extraScopes, 'confidential:read')`,
+        parameters: [{ name: '@tid', value: opts.tenantId }],
+      }).fetchAll();
+
+      const transition = `${opts.oldValue === true ? 'true' : 'false'} → ${opts.newValue === true ? 'true' : 'false'}`;
+      await Promise.all(
+        recipients
+          .filter((r) => r.id && r.id !== opts.actorId)
+          .map((r) =>
+            this.notificationService.createNotification({
+              tenantId: opts.tenantId,
+              userId: r.id,
+              title: `Trusted-vendor flag changed: ${opts.vendorName}`,
+              message: `${opts.actorEmail ?? opts.actorId} flipped trustedVendor ${transition} on ${opts.vendorName}.`,
+              category: 'vendor' as never,
+              priority: 'normal',
+              actionUrl: `/vendors/${opts.vendorId}`,
+              metadata: {
+                vendorId: opts.vendorId,
+                field: 'trustedVendor',
+                oldValue: opts.oldValue,
+                newValue: opts.newValue,
+              },
+              sourceEventType: 'vendor.trustedVendor.changed',
+            }).catch((err) => {
+              this.logger.warn('Trusted-vendor notification dispatch failed', {
+                recipientId: r.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }),
+          ),
+      );
+    } catch (err) {
+      this.logger.warn('notifyConfidentialReadHolders failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * GET /api/vendors/:vendorId/audit-trail
+   * Recent audit events touching this vendor. The audit-trail container
+   * carries per-field diffs (changes[]) so the FE can render a row like
+   * "Doug Reid flipped trustedVendor false → true at 2026-05-13 10:42:11".
+   * Metadata + changes are run through stripConfidentialFieldsDeep for
+   * callers without confidential:read so they don't learn what they
+   * shouldn't from the audit log either.
+   */
+  private async getVendorAuditTrail(req: AuthorizedRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!;
+      const limit = Math.min(Number(req.query['limit'] ?? '50') || 50, 200);
+      const container = this.dbService.getContainer('audit-trail');
+      const querySpec = {
+        query:
+          'SELECT TOP @lim * FROM c WHERE c.resource.type = @type AND c.resource.id = @id ORDER BY c.timestamp DESC',
+        parameters: [
+          { name: '@lim', value: limit },
+          { name: '@type', value: 'vendor' },
+          { name: '@id', value: vendorId },
+        ],
+      };
+      const { resources } = await container.items.query(querySpec).fetchAll();
+      const safe = stripConfidentialFieldsDeep(resources, req.user);
+      res.json({ success: true, data: safe, count: Array.isArray(safe) ? safe.length : 0 });
+    } catch (error) {
+      this.logger.error('Failed to fetch vendor audit trail', {
+        error,
+        vendorId: req.params.vendorId,
+      });
+      res.status(500).json({
+        error: 'Failed to fetch vendor audit trail',
+        code: 'VENDOR_AUDIT_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+}
+
+/**
+ * Diff the persisted vendor "before" and "after" snapshots into the
+ * AuditTrailService.changes[] shape. Limited to fields a human-edit can
+ * touch (skips Cosmos system fields, performance metrics computed by
+ * other services, etc.). Body-only filter ensures we don't flag fields
+ * that the system mutated incidentally (`updatedAt`, `updatedBy`).
+ */
+function diffVendorFields(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  body: Record<string, unknown>,
+): Array<{ field: string; oldValue: unknown; newValue: unknown }> {
+  const out: Array<{ field: string; oldValue: unknown; newValue: unknown }> = [];
+  const skip = new Set(['_rid', '_self', '_etag', '_attachments', '_ts', 'updatedAt', 'updatedBy']);
+  for (const key of Object.keys(body)) {
+    if (skip.has(key)) continue;
+    const oldVal = before[key];
+    const newVal = after[key];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      out.push({ field: key, oldValue: oldVal, newValue: newVal });
+    }
+  }
+  return out;
 }

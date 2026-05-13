@@ -119,6 +119,13 @@ export class VendorOrderScorecardSuggester {
    * Returns zeroes when no review exists. Prefers the review's pre-rolled
    * counts (`criticalIssuesCount` / `majorIssuesCount`) and falls back to
    * counting `results.findings[].severity` if those aren't populated.
+   *
+   * KNOWN LIMITATION (2026-05-13): qc-execution.engine currently sets only
+   * `criticalIssuesCount` and does NOT populate `findings[]` or
+   * `majorIssuesCount`. Until the engine is extended, MAJOR-finding counts
+   * read 0 here and quality/report suggestions skew toward 5 even when the
+   * report had multiple major findings. The reviewer can still override —
+   * suggestions are advisory, not binding.
    */
   private async fetchLatestQCFindingSummary(
     orderId: string,
