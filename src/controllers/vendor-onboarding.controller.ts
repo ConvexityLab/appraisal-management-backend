@@ -8,6 +8,8 @@ import { body, param, query, validationResult } from 'express-validator';
 import { Logger } from '../utils/logger.js';
 import { VendorOnboardingService } from '../services/vendor-onboarding.service.js';
 import { OnboardingStatus, OnboardingStepType } from '../types/onboarding.types.js';
+import { stripConfidentialFieldsDeep } from '../utils/confidential-fields.js';
+import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 
 const logger = new Logger();
 const onboardingService = new VendorOnboardingService();
@@ -88,13 +90,13 @@ export const createVendorOnboardingRouter = (): Router => {
 
         res.json({
           success: true,
-          data: {
+          data: stripConfidentialFieldsDeep({
             ...application,
             completionPercentage,
             pendingSteps: application.steps.filter(s => s.status === 'PENDING').length,
             completedSteps: application.completedSteps.length,
             totalSteps: application.steps.length
-          }
+          }, (req as UnifiedAuthRequest).user)
         });
 
       } catch (error) {
@@ -130,7 +132,7 @@ export const createVendorOnboardingRouter = (): Router => {
 
         res.json({
           success: true,
-          data: applications,
+          data: stripConfidentialFieldsDeep(applications, (req as UnifiedAuthRequest).user),
           summary,
           count: applications.length
         });
@@ -228,7 +230,7 @@ export const createVendorOnboardingRouter = (): Router => {
 
         res.json({
           success: true,
-          data: application,
+          data: stripConfidentialFieldsDeep(application, (req as UnifiedAuthRequest).user),
           message: 'Step completed successfully'
         });
 
@@ -274,7 +276,7 @@ export const createVendorOnboardingRouter = (): Router => {
         if (result.success) {
           res.json({
             success: true,
-            data: result,
+            data: stripConfidentialFieldsDeep(result, (req as UnifiedAuthRequest).user),
             message: result.message
           });
         } else {
@@ -331,7 +333,7 @@ export const createVendorOnboardingRouter = (): Router => {
         if (result.success) {
           res.json({
             success: true,
-            data: result,
+            data: stripConfidentialFieldsDeep(result, (req as UnifiedAuthRequest).user),
             message: 'Background check completed successfully'
           });
         } else {

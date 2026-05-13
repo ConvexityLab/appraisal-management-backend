@@ -8,6 +8,7 @@ import {
   VendorConnectionNotFoundError,
   VendorConnectionValidationError,
 } from '../services/vendor-integrations/VendorIntegrationErrors.js';
+import { stripConfidentialFieldsDeep } from '../utils/confidential-fields.js';
 
 const logger = new Logger('VendorConnectionController');
 
@@ -62,7 +63,11 @@ export function createVendorConnectionAdminRouter(
         activeOnly,
       };
       const connections = await service.listConnections(tenantId, filters);
-      res.status(200).json({ success: true, data: connections, count: connections.length });
+      res.status(200).json({
+        success: true,
+        data: stripConfidentialFieldsDeep(connections, req.user),
+        count: connections.length,
+      });
     } catch (error) {
       respondError(res, error);
     }
@@ -81,7 +86,7 @@ export function createVendorConnectionAdminRouter(
         res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `Vendor connection not found: id=${req.params['id']} tenantId=${tenantId}` } });
         return;
       }
-      res.status(200).json({ success: true, data: connection });
+      res.status(200).json({ success: true, data: stripConfidentialFieldsDeep(connection, req.user) });
     } catch (error) {
       respondError(res, error);
     }
@@ -97,7 +102,7 @@ export function createVendorConnectionAdminRouter(
 
     try {
       const connection = await service.createConnection(tenantId, req.body, actorId);
-      res.status(201).json({ success: true, data: connection });
+      res.status(201).json({ success: true, data: stripConfidentialFieldsDeep(connection, req.user) });
     } catch (error) {
       respondError(res, error);
     }
@@ -113,7 +118,7 @@ export function createVendorConnectionAdminRouter(
 
     try {
       const connection = await service.updateConnection(req.params['id'] ?? '', tenantId, req.body, actorId);
-      res.status(200).json({ success: true, data: connection });
+      res.status(200).json({ success: true, data: stripConfidentialFieldsDeep(connection, req.user) });
     } catch (error) {
       respondError(res, error);
     }
@@ -129,7 +134,7 @@ export function createVendorConnectionAdminRouter(
 
     try {
       const connection = await service.deactivateConnection(req.params['id'] ?? '', tenantId, actorId);
-      res.status(200).json({ success: true, data: connection });
+      res.status(200).json({ success: true, data: stripConfidentialFieldsDeep(connection, req.user) });
     } catch (error) {
       respondError(res, error);
     }
@@ -145,7 +150,7 @@ export function createVendorConnectionAdminRouter(
 
     try {
       const connection = await service.patchProductMappings(req.params['id'] ?? '', tenantId, req.body, actorId);
-      res.status(200).json({ success: true, data: connection });
+      res.status(200).json({ success: true, data: stripConfidentialFieldsDeep(connection, req.user) });
     } catch (error) {
       respondError(res, error);
     }

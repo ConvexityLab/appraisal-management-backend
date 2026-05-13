@@ -66,3 +66,40 @@ export function stripConfidentialFieldsFromVendorList<T extends Partial<Vendor>>
   if (callerHasConfidentialRead(user)) return vendors;
   return vendors.map((v) => stripConfidentialVendorFields(v, user));
 }
+
+/**
+ * Recursive, defense-in-depth stripper for payloads with opaque shape that
+ * MIGHT contain nested vendor objects (e.g. vendor-bid-analysis caches
+ * `rankedCandidates: Array<Record<string, unknown>>`).
+ *
+ * Walks the object/array tree and deletes any property whose KEY matches
+ * one of the confidential field names. Short-circuits (returns the input
+ * unchanged) when the caller holds `confidential:read`. Returns a deep
+ * clone on the strip path so the source data is not mutated.
+ *
+ * Use this on response payloads where you can't guarantee the shape
+ * doesn't carry a raw Vendor anywhere down the tree. The cost is one
+ * deep clone per response; only paid when scope is missing.
+ */
+export function stripConfidentialFieldsDeep<T>(
+  payload: T,
+  user: UserLike | null | undefined,
+): T {
+  if (payload === null || payload === undefined) return payload;
+  if (callerHasConfidentialRead(user)) return payload;
+  return walk(payload) as T;
+}
+
+function walk(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(walk);
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (CONFIDENTIAL_VENDOR_FIELDS.includes(k as never)) continue;
+      out[k] = walk(v);
+    }
+    return out;
+  }
+  return value;
+}

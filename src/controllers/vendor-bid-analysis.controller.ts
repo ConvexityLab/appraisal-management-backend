@@ -2,6 +2,7 @@ import express, { Request, Response, Router } from 'express';
 import { param, validationResult } from 'express-validator';
 import { CosmosDbService } from '../services/cosmos-db.service.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
+import { stripConfidentialFieldsDeep } from '../utils/confidential-fields.js';
 
 export function createVendorBidAnalysisRouter(dbService: CosmosDbService): Router {
   const router = express.Router();
@@ -48,11 +49,16 @@ export function createVendorBidAnalysisRouter(dbService: CosmosDbService): Route
           });
         }
 
+        // Phase C defense-in-depth: rankedCandidates etc. is opaque
+        // (Record<string, unknown>) — strip any trustedVendor /
+        // confidentialClassifications keys anywhere in the tree when caller
+        // lacks confidential:read.
+        const safeAnalysis = stripConfidentialFieldsDeep(analysis, authReq.user);
         return res.json({
           success: true,
           data: {
             orderId,
-            analysis,
+            analysis: safeAnalysis,
           },
         });
       } catch (error) {
