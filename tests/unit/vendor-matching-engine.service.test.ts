@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { VendorMatchingEngine } from '../../src/services/vendor-matching-engine.service.js';
+import type { GradeLevel } from '../../src/types/index.js';
 import type {
   VendorAvailability,
   VendorPerformanceMetrics,
 } from '../../src/types/vendor-marketplace.types.js';
 
 const engine = new VendorMatchingEngine();
+
+const DEFAULT_GRADE_LEVELS: GradeLevel[] = [
+  { key: 'trainee', label: 'Trainee', scoreBonus: 0 },
+  { key: 'proficient', label: 'Proficient', scoreBonus: 5 },
+  { key: 'expert', label: 'Expert', scoreBonus: 10 },
+  { key: 'lead', label: 'Lead', scoreBonus: 15 },
+];
 
 // Type-bypass helpers — the scoring methods are private (correctly so) but pure;
 // testing them directly gives precise band-edge coverage without needing to mock
@@ -373,32 +381,32 @@ describe('VendorMatchingEngine.calculateExperienceScore', () => {
   describe('product grade bonus', () => {
     it('adds +0 for trainee', () => {
       const v = { productGrades: [{ productId: 'p1', grade: 'trainee' }] };
-      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1')).toBe(50);
+      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1', DEFAULT_GRADE_LEVELS)).toBe(50);
     });
 
     it('adds +5 for proficient', () => {
       const v = { productGrades: [{ productId: 'p1', grade: 'proficient' }] };
-      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1')).toBe(55);
+      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1', DEFAULT_GRADE_LEVELS)).toBe(55);
     });
 
     it('adds +10 for expert', () => {
       const v = { productGrades: [{ productId: 'p1', grade: 'expert' }] };
-      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1')).toBe(60);
+      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1', DEFAULT_GRADE_LEVELS)).toBe(60);
     });
 
     it('adds +15 for lead', () => {
       const v = { productGrades: [{ productId: 'p1', grade: 'lead' }] };
-      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1')).toBe(65);
+      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1', DEFAULT_GRADE_LEVELS)).toBe(65);
     });
 
     it('adds 0 for unknown grade', () => {
       const v = { productGrades: [{ productId: 'p1', grade: 'unknown-grade' }] };
-      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1')).toBe(50);
+      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1', DEFAULT_GRADE_LEVELS)).toBe(50);
     });
 
     it('does not add grade bonus when productId differs', () => {
       const v = { productGrades: [{ productId: 'other', grade: 'lead' }] };
-      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1')).toBe(50);
+      expect(e.calculateExperienceScore(v, 'sfr', null, 'p1', DEFAULT_GRADE_LEVELS)).toBe(50);
     });
 
     it('caps total at 100', () => {
@@ -407,7 +415,7 @@ describe('VendorMatchingEngine.calculateExperienceScore', () => {
         productGrades: [{ productId: 'p1', grade: 'lead' }],       // +15 → 95
       };
       const perf = makePerformance({ propertyTypeExpertise: { sfr: 50 } }); // +20 → 115 → cap 100
-      expect(e.calculateExperienceScore(v, 'sfr', perf, 'p1')).toBe(100);
+      expect(e.calculateExperienceScore(v, 'sfr', perf, 'p1', DEFAULT_GRADE_LEVELS)).toBe(100);
     });
   });
 });

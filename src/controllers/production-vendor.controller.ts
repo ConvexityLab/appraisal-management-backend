@@ -135,7 +135,6 @@ export class VendorController {
   }
 
   private validateProductEligibilityUpdate() {
-    const VALID_GRADES = ['trainee', 'proficient', 'expert', 'lead'] as const;
     return [
       body('eligibleProductIds')
         .isArray().withMessage('eligibleProductIds must be an array')
@@ -152,8 +151,9 @@ export class VendorController {
             if (typeof g.productId !== 'string' || !g.productId.trim()) {
               throw new Error('each productGrade must have a non-empty productId string');
             }
-            if (!VALID_GRADES.includes(g.grade as typeof VALID_GRADES[number])) {
-              throw new Error(`productGrade.grade must be one of: ${VALID_GRADES.join(', ')}`);
+            // grade key validity is data-driven per product — validate only that it is a non-empty string
+            if (typeof g.grade !== 'string' || !g.grade.trim()) {
+              throw new Error('each productGrade must have a non-empty grade string');
             }
           }
           return true;

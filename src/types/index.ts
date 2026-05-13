@@ -657,13 +657,31 @@ export type VendorCapability =
   | 'desktop_qualified'
   | 'hybrid_qualified';
 
-/** Proficiency level for a specific product type, certified by a supervisor. */
-export type ProductGradeLevel = 'trainee' | 'proficient' | 'expert' | 'lead';
+/**
+ * A single grade level defined on a Product document.
+ * Products carry their own set of levels so valid keys / bonuses are data-driven,
+ * not hard-coded in the matching engine or validation layer.
+ */
+export interface GradeLevel {
+  /** Machine key used in ProductGrade.grade (e.g. 'trainee', 'proficient'). */
+  key: string;
+  /** Human-readable label rendered in the UI. */
+  label: string;
+  /** Score bonus applied by the matching engine for vendors at this level. */
+  scoreBonus: number;
+}
+
+/** Proficiency level for a specific product type, certified by a supervisor.
+ * @deprecated Use GradeLevel.key instead — grade values are now data-driven from Product.gradeLevels.
+ * Widened to string so any key from the product document is valid.
+ */
+export type ProductGradeLevel = string;
 
 export interface ProductGrade {
   /** ID from the Product catalog. */
   productId: string;
-  grade: ProductGradeLevel;
+  /** Grade key — must match one of the product's GradeLevel.key values (data-driven). Typed as string because valid keys are data-driven. */
+  grade: string;
   /** userId of the supervisor who certified this grade. */
   certifiedBy: string;
   /** ISO 8601 timestamp. */
@@ -1176,6 +1194,12 @@ export interface Product {
   matchingCriteriaSets?: string[];
   /** When true the first bid accepted on an RFB is auto-awarded without coordinator review. */
   autoAwardFirstBid?: boolean;
+  /**
+   * Per-product proficiency grade level definitions.
+   * Drives the vendor matching engine's score bonus and the UI grade selector.
+   * When absent, the matching engine skips the grade bonus for this product.
+   */
+  gradeLevels?: GradeLevel[];
   createdAt: string;
   updatedAt: string;
   createdBy: string;

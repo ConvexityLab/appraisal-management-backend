@@ -223,6 +223,14 @@ export class VendorMatchingEngine {
       // Get property coordinates
       const propertyCoords = await this.geocodeAddress(request.propertyAddress);
 
+      // Fetch product once so gradeBonus values come from the product document,
+      // not hardcoded constants. Absent/null gracefully degrades (no grade bonus).
+      let productGradeLevels: import('../types/index.js').GradeLevel[] | undefined;
+      if (request.productId) {
+        const productResult = await this.dbService.findProductById(request.productId, request.tenantId);
+        productGradeLevels = productResult.data?.gradeLevels ?? undefined;
+      }
+
       // Get eligible vendors (with precomputed per-vendor distance — see T3 in
       // docs/AUTO_ASSIGNMENT_REVIEW.md). Distance is computed once here so it is
       // available to both the rules engine (T4, max_distance_miles rule) and the
@@ -237,7 +245,7 @@ export class VendorMatchingEngine {
       // Score each vendor (T4: ruleResult collected here, applied to score in T5)
       const scoredVendors = await Promise.all(
         eligibleVendors.map(({ vendor, distance, ruleResult }) =>
-          this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult)
+          this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult, undefined, productGradeLevels)
         )
       );
 
@@ -304,9 +312,16 @@ export class VendorMatchingEngine {
       return { matches: [], denied, evaluationsSnapshot: [] };
     }
 
+    // Fetch product once so gradeBonus values come from the product document.
+    let productGradeLevels: import('../types/index.js').GradeLevel[] | undefined;
+    if (request.productId) {
+      const productResult = await this.dbService.findProductById(request.productId, request.tenantId);
+      productGradeLevels = productResult.data?.gradeLevels ?? undefined;
+    }
+
     const scoredVendors = await Promise.all(
       eligible.map(({ vendor, distance, ruleResult }) =>
-        this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult, criteriaProfile)
+        this.scoreVendor(vendor, request, propertyCoords, distance, ruleResult, criteriaProfile, productGradeLevels)
       )
     );
 
@@ -593,6 +608,12 @@ export class VendorMatchingEngine {
      * identical to the legacy fixed-weight scorer.
      */
     criteriaProfile?: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
+    /**
+     * Grade levels fetched from the Product document, keyed by level key.
+     * When provided, gradeBonus values come from the product, not hardcoded constants.
+     * When absent, no grade bonus is applied.
+     */
+    productGradeLevels?: import('../types/index.js').GradeLevel[],
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
@@ -657,7 +678,8 @@ export class VendorMatchingEngine {
       vendor,
       request.propertyType,
       performance,
-      request.productId
+      request.productId,
+      productGradeLevels,
     );
     const costScore = this.calculateCostScore(
       vendor,
@@ -881,7 +903,8 @@ export class VendorMatchingEngine {
     vendor: any,
     propertyType: string,
     performance: VendorPerformanceMetrics | null,
-    productId?: string
+    productId?: string,
+    productGradeLevels?: import('../types/index.js').GradeLevel[],
   ): number {
     let score = 50; // Base score
 
@@ -903,13 +926,14 @@ export class VendorMatchingEngine {
       score += 10; // Some experience
     }
 
-    // Product grade bonus: reward vendors with proven competency on this product
-    if (productId) {
+    // Product grade bonus: reward vendors with proven competency on this product.
+    // Score bonus values come from the product document (data-driven), not hardcoded constants.
+    if (productId && productGradeLevels && productGradeLevels.length > 0) {
       const gradeEntry = (vendor.productGrades as Array<{ productId: string; grade: string }> | undefined)
         ?.find(g => g.productId === productId);
       if (gradeEntry) {
-        const gradeBonus: Record<string, number> = { trainee: 0, proficient: 5, expert: 10, lead: 15 };
-        score += gradeBonus[gradeEntry.grade] ?? 0;
+        const levelDef = productGradeLevels.find(gl => gl.key === gradeEntry.grade);
+        score += levelDef?.scoreBonus ?? 0;
       }
     }
 
