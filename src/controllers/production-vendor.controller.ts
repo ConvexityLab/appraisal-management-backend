@@ -735,6 +735,7 @@ export class VendorController {
       workSchedule: vendor.workSchedule,
       geographicCoverage: vendor.geographicCoverage,
       capabilities: vendor.capabilities,
+      capabilityTags: vendor.capabilityTags,
       eligibleProductIds: vendor.eligibleProductIds,
       productGrades: vendor.productGrades
     };

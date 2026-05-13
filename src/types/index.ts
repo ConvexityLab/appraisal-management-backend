@@ -378,6 +378,12 @@ export interface Vendor {
    */
   capabilities?: VendorCapability[];
   /**
+   * Free-form capability tags declared by the operator. Matched against
+   * VendorMatchRequest.requiredCapabilities (string[]) at assignment time.
+   * Complements the structured VendorCapability enum for custom product requirements.
+   */
+  capabilityTags?: string[];
+  /**
    * Explicit list of Product catalog IDs this vendor / staff member can be
    * assigned to.  The matching engine uses this as a hard gate.
    */

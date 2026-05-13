@@ -641,7 +641,7 @@ export class VendorMatchingEngine {
   ): Promise<VendorMatchResult> {
     // Hard gate: required capabilities — vendor scored 0 if any are missing
     if (request.requiredCapabilities?.length) {
-      const vendorCaps: string[] = vendor.capabilities ?? [];
+      const vendorCaps: string[] = [...(vendor.capabilities ?? []), ...(vendor.capabilityTags ?? [])];
       const missing = request.requiredCapabilities.filter(c => !vendorCaps.includes(c));
       if (missing.length > 0) {
         const zeroComponents = { performance: 0, availability: 0, proximity: 0, experience: 0, cost: 0 };
