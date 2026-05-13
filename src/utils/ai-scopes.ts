@@ -26,7 +26,8 @@ export type AiScope =
 	| 'negotiation:propose'
 	| 'negotiation:accept'
 	| 'document:read'
-	| 'audit:read';
+	| 'audit:read'
+	| 'confidential:read';
 
 const ALL_SCOPES: AiScope[] = [
 	'order:read',
@@ -39,10 +40,17 @@ const ALL_SCOPES: AiScope[] = [
 	'negotiation:accept',
 	'document:read',
 	'audit:read',
+	'confidential:read',
 ];
 
 interface UserLike {
 	role?: string | string[] | null;
+	/**
+	 * Optional per-user scope grants applied IN ADDITION to role defaults.
+	 * Lives on UserProfile.accessScope.extraScopes; surfaced here so the
+	 * shared `getScopesForUser` helper picks them up everywhere.
+	 */
+	accessScope?: { extraScopes?: string[] } | null;
 }
 
 export function normaliseRoles(
@@ -103,6 +111,12 @@ export function getScopesForUser(user: UserLike | null | undefined): AiScope[] {
 	const roles = normaliseRoles(user?.role);
 	const union = new Set<AiScope>();
 	for (const r of roles) for (const s of getScopesForRole(r)) union.add(s);
+	const extras = user?.accessScope?.extraScopes ?? [];
+	for (const s of extras) {
+		if ((ALL_SCOPES as readonly string[]).includes(s)) {
+			union.add(s as AiScope);
+		}
+	}
 	return Array.from(union);
 }
 
