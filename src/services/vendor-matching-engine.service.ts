@@ -55,7 +55,7 @@ const WEIGHTS_VERSION = 'v1-30/25/20/15/10';
  * existing calculators, while letting Doug toggle proximity off for DVR
  * without re-implementing the scorer.
  */
-function computeEffectiveWeights(
+export function computeEffectiveWeights(
   criteria: import('../types/vendor-marketplace.types.js').VendorMatchingCriteriaProfile['criteria'],
 ): { performance: number; availability: number; proximity: number; experience: number; cost: number } {
   const raw = {
@@ -95,7 +95,7 @@ function withMaxDistance(
   };
 }
 
-function inferNoMatchReason(
+export function inferNoMatchReason(
   denied: DeniedVendorEntry[],
   ctx: { radiusUsed: number; productState?: string },
 ): NoMatchReason {

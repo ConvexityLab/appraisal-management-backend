@@ -4,7 +4,7 @@ import { VendorConnectionService } from './VendorConnectionService.js';
 import type { VendorAdapter } from './VendorAdapter.js';
 import { AimPortAdapter } from './AimPortAdapter.js';
 import { ClassValuationWebhookAdapter } from './ClassValuationWebhookAdapter.js';
-import { AimPortClient } from './AimPortClient.js';
+import { VendorHttpClient } from './VendorHttpClient.js';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 1_000;   // 1 s
@@ -38,11 +38,11 @@ export class VendorOutboundDispatcher {
   private readonly logger = new Logger('VendorOutboundDispatcher');
   private readonly adapters: Map<string, VendorAdapter>;
   private readonly connectionService: VendorConnectionService;
-  private readonly aimPortClient: AimPortClient;
+  private readonly httpClient: VendorHttpClient;
 
   constructor(connectionService?: VendorConnectionService) {
     this.connectionService = connectionService ?? new VendorConnectionService();
-    this.aimPortClient = new AimPortClient();
+    this.httpClient = new VendorHttpClient();
     const aimPortAdapter = new AimPortAdapter();
     const classValuationAdapter = new ClassValuationWebhookAdapter();
     this.adapters = new Map<string, VendorAdapter>([
@@ -57,10 +57,16 @@ export class VendorOutboundDispatcher {
       throw new Error(`No outbound adapter registered for vendorType=${event.vendorType}`);
     }
 
-    const connection = await this.connectionService.getActiveConnectionByInboundIdentifier(
-      connectionIdOrIdentifier,
-      event.vendorType,
-    );
+    // connectionIdOrIdentifier is the Cosmos document ID stored in the outbox document —
+    // NOT the inboundIdentifier (e.g. AIM-Port client_id). Use getConnectionById.
+    const connection = await this.connectionService.getConnectionById(connectionIdOrIdentifier);
+
+    if (connection.vendorType !== event.vendorType) {
+      throw new Error(
+        `Outbound dispatch vendorType mismatch: outbox event has vendorType=${event.vendorType} but ` +
+        `connection ${connection.id} has vendorType=${connection.vendorType}. This indicates a data integrity problem.`,
+      );
+    }
 
     const call = await adapter.buildOutboundCall(event, connection, {
       resolveSecret: (secretName) => this.connectionService.resolveSecret(secretName),
@@ -78,7 +84,7 @@ export class VendorOutboundDispatcher {
     let lastError: Error | undefined;
     for (let attempt = 0; attempt < DEFAULT_MAX_ATTEMPTS; attempt++) {
       try {
-        const response = await this.aimPortClient.send(call);
+        const response = await this.httpClient.send(call);
         if (!response.ok) {
           throw new Error(
             `Outbound vendor call failed for eventType=${event.eventType} vendorOrderId=${event.vendorOrderId}. ` +

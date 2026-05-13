@@ -258,6 +258,14 @@ var containerApps = [
         name: 'MOP_RULES_SERVICE_AUTH_TOKEN'
         secretRef: 'mop-rules-service-auth-token'
       }
+      // Blob-sync intake worker — name of the Service Bus queue that Event Grid
+      // delivers blob-created notifications to. Requires Standard or Premium SB
+      // tier; this env var must be absent (or the worker not registered) on dev
+      // where the Basic-tier bus cannot receive Event Grid deliveries.
+      {
+        name: 'BLOB_SYNC_SERVICE_BUS_QUEUE'
+        value: 'blob-sync-events'
+      }
     ]
     scaleRule: {
       name: 'api-http-scaling'

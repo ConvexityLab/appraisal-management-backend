@@ -64,7 +64,17 @@ export class ProductController {
   public async listProducts(req: UnifiedAuthRequest, res: Response): Promise<void> {
     try {
       const tenantId = this.resolveTenantId(req);
-      const result = await this.dbService.findProducts(tenantId);
+      const { clientId } = req.query as { clientId?: string };
+
+      let result;
+      if (clientId === '__platform__') {
+        result = await this.dbService.findPlatformProducts(tenantId);
+      } else if (clientId) {
+        result = await this.dbService.findProductsForClient(tenantId, clientId);
+      } else {
+        result = await this.dbService.findProducts(tenantId);
+      }
+
       if (!result.success) {
         res.status(500).json({ error: 'Failed to retrieve products', details: result.error });
         return;

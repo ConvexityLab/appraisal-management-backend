@@ -149,6 +149,35 @@ resource aiAutopilotTasksQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-0
   }
 }
 
+// Blob-Sync Events Queue
+// Fan-in queue for all blob-drop vendor integrations (Data Share completions,
+// BlobCreated notifications). Each external vendor storage account has its own
+// Event Grid subscription that routes here; the vendorType application property
+// (stamped by the subscription) lets BlobSyncWorkerService route to the correct
+// VendorConnection without parsing message bodies.
+//
+// ⚠️  Event Grid → Service Bus queue delivery requires Standard or Premium tier.
+//    This queue is defined unconditionally so it is available in all environments,
+//    but Event Grid subscriptions (in blob-sync-integration.bicep) must only be
+//    deployed against Standard/Premium namespaces (staging and prod).
+resource blobSyncEventsQueue 'Microsoft.ServiceBus/namespaces/queues@2023-01-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'blob-sync-events'
+  properties: {
+    maxSizeInMegabytes: 2048
+    // 10 attempts: adapter catches transient errors and abandons; 10 broker-level
+    // retries give enough runway for intermittent storage/Cosmos failures before
+    // the message moves to the dead-letter queue for alerting.
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    defaultMessageTimeToLive: 'P14D'
+    deadLetteringOnMessageExpiration: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    requiresDuplicateDetection: config.sku != 'Basic'
+    enablePartitioning: config.sku != 'Premium'
+  }
+}
+
 // QC Events Topic (for publishing QC workflow events)
 resource qcEventsTopic 'Microsoft.ServiceBus/namespaces/topics@2023-01-01-preview' = if (config.sku != 'Basic') {
   parent: serviceBusNamespace
@@ -498,6 +527,7 @@ output queueNames array = [
   vendorAssignmentQueue.name
   notificationsQueue.name
   aiAutopilotTasksQueue.name
+  blobSyncEventsQueue.name
 ]
 output topicNames array = config.sku != 'Basic' ? [
   qcEventsTopic.name

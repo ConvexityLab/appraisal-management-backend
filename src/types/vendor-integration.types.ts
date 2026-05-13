@@ -12,12 +12,56 @@
 
 export type VendorType = 'aim-port' | 'mercury' | 'remoteVal' | 'class-valuation' | string;
 
-export type InboundTransport = 'sync-post' | 'webhook' | 'polling' | 'none';
+export type InboundTransport = 'sync-post' | 'webhook' | 'polling' | 'blob-sync' | 'none';
 export type OutboundTransport = 'sync-post' | 'webhook' | 'none';
 
 // ─── Vendor Connection Record ─────────────────────────────────────────────────
 // Stored in Cosmos DB container: vendor-connections
 // Credentials are Key Vault secret NAMES — never the actual secrets.
+
+// ─── Blob Drop Config ────────────────────────────────────────────────────────
+// Optional block on VendorConnection for clients that deliver files via blob
+// storage rather than HTTP. Absent on HTTP-only vendors.
+
+export interface VendorConnectionBlobConfig {
+  /** Azure Storage account name (platform-controlled) where synced blobs land */
+  storageAccountName: string;
+  /** Container name where the client's incoming files arrive */
+  receivedContainerName: string;
+  /** Optional container for writing results back to the client */
+  resultsContainerName?: string;
+  /**
+   * Blob path pattern with named tokens.
+   * Supported tokens: {year} {month} {day} {subClientRef} {filename}
+   * Example: "{year}/{month}/{day}/{subClientRef}/{filename}"
+   *
+   * {subClientRef} becomes subClientId on every downstream event and job.
+   * It represents a sub-division of the client: a loan ID, fund name,
+   * portfolio ID, etc. Mandatory — if the client has no subdivision concept,
+   * use a fixed literal (e.g. "submissions/{year}/{month}/{day}/{filename}"
+   * and set subClientRef to a constant in their path).
+   */
+  blobPathPattern: string;
+  /**
+   * The processing pipeline that should handle these files.
+   * Becomes taskType on VendorDomainEvent — Service Bus subscribers filter on it.
+   * Open-ended string; no code change required for new pipeline types.
+   * Examples: "underwriting-review" | "pool-tape-ingestion" | "appraisal-extraction"
+   */
+  taskType: string;
+  /** File extensions to process. Others are silently skipped. Example: [".pdf"] */
+  acceptedExtensions: string[];
+  /**
+   * Maximum retries before a BlobIntakeJobDocument is dead-lettered.
+   * Defaults to 3 if absent.
+   */
+  maxRetries?: number;
+  /**
+   * Optional webhook URL to notify the client when a subClientRef batch
+   * completes processing. If absent, client must poll the status API.
+   */
+  completionWebhookUrl?: string;
+}
 
 export interface VendorConnectionCredentials {
   /** Key Vault secret name for the API key they send us (we verify inbound) */
@@ -59,6 +103,11 @@ export interface VendorConnection {
    * time — no redeploy required.
    */
   productMappings?: Record<string, string>;
+  /**
+   * Present only on blob-drop vendor connections (inboundTransport === 'blob-sync').
+   * Absent on HTTP-only vendors (AIM-Port, Class Valuation, etc.).
+   */
+  blobConfig?: VendorConnectionBlobConfig;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
@@ -114,7 +163,18 @@ export type VendorEventType =
   | 'vendor.fha_case_number.updated'
   | 'vendor.products.listed'
   // Internal alert events published by VendorOrderStuckCheckerJob (not from vendor push):
-  | 'vendor.order.stalled';
+  | 'vendor.order.stalled'
+  /**
+   * Emitted when AIM-Port sends a GetOrderRequest (status poll).
+   * Downstream services react by reading current order state — the ACK itself
+   * carries only the order ID; status enrichment requires a service-layer lookup.
+   */
+  | 'vendor.order.status_queried'
+  /**
+   * Emitted when AIM-Port sends an OrderUpdateRequest carrying lender-side
+   * edits to a previously placed order (address change, product change, etc.).
+   */
+  | 'vendor.order.updated';
 
 export interface VendorDomainEvent {
   id: string;                      // uuid — for idempotency
@@ -126,6 +186,23 @@ export interface VendorDomainEvent {
   tenantId: string;
   occurredAt: string;              // ISO-8601
   payload: VendorEventPayload;
+  /**
+   * External party identifier — equals VendorConnection.inboundIdentifier.
+   * Duplicated here so downstream consumers never need the connection record.
+   */
+  clientId?: string;
+  /**
+   * Sub-division within the client: loan ID, fund name, portfolio ID, etc.
+   * Parsed from the blob path {subClientRef} token. Populated for blob-drop
+   * events only; undefined on HTTP-vendor events.
+   */
+  subClientId?: string;
+  /**
+   * Processing pipeline routing key — from VendorConnectionBlobConfig.taskType.
+   * Downstream Service Bus subscribers filter on this field.
+   * Populated for blob-drop events only; undefined on HTTP-vendor events.
+   */
+  taskType?: string;
 }
 
 // ─── Event Payloads ───────────────────────────────────────────────────────────
@@ -148,7 +225,9 @@ export type VendorEventPayload =
   | VendorRevisionRequestedPayload
   | VendorLoanNumberUpdatedPayload
   | VendorFhaCaseNumberUpdatedPayload
-  | VendorProductsListedPayload;
+  | VendorProductsListedPayload
+  | VendorOrderStatusQueriedPayload
+  | VendorOrderUpdatedPayload;
 
 export interface VendorOrderReceivedPayload {
   orderType: 'residential' | 'commercial';
@@ -276,7 +355,17 @@ export interface VendorOrderCompletedPayload {
 }
 
 export interface VendorFileReceivedPayload {
-  files: VendorFile[];
+  /**
+   * Inline base64-encoded files — used by HTTP-path vendors (AIM-Port, etc.).
+   * Exactly one of `files` or `fileRefs` is populated, never both.
+   */
+  files?: VendorFile[];
+  /**
+   * Blob storage references — used by blob-drop vendors (large files, Data Share).
+   * Downstream processors stream the blob at processing time via Managed Identity.
+   * Exactly one of `files` or `fileRefs` is populated, never both.
+   */
+  fileRefs?: VendorFileRef[];
 }
 
 export interface VendorMessageReceivedPayload {
@@ -295,6 +384,36 @@ export interface VendorLoanNumberUpdatedPayload {
 
 export interface VendorFhaCaseNumberUpdatedPayload {
   caseNumber: string;
+}
+
+export interface VendorOrderStatusQueriedPayload {
+  /** The vendor's order ID that AIM-Port is polling. */
+  vendorOrderId: string;
+}
+
+export interface VendorOrderUpdatedPayload {
+  /** Changed loan number, if present in the update. */
+  loanNumber?: string;
+  /** Changed FHA case number, if present. */
+  caseNumber?: string;
+  /** Updated property address fields, if present. */
+  address?: string;
+  address2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  county?: string;
+  /** Updated financial fields, if present. */
+  purchasePrice?: number;
+  loanAmount?: number;
+  disclosedFee?: number;
+  anticipatedValue?: number;
+  /** Updated due date, if present. */
+  dueDate?: string;
+  /** Updated fee, if present. */
+  fee?: number;
+  /** Any files attached to the update. */
+  files?: VendorFile[];
 }
 
 export interface VendorProductsListedPayload {
@@ -316,6 +435,98 @@ export interface VendorFile {
   description?: string;
   /** Base64-encoded content */
   content: string;
+}
+
+/**
+ * A reference to a large file stored in Azure Blob Storage.
+ * Used by blob-drop vendors instead of inline base64 content.
+ * Downstream processors stream the blob via DefaultAzureCredential at
+ * processing time — no content is embedded in the event payload.
+ */
+export interface VendorFileRef {
+  /** SHA-256(storageAccountName + containerName + blobPath + eTag) */
+  fileId: string;
+  filename: string;
+  /** Inferred from file extension or path convention */
+  category: string;
+  storageAccountName: string;
+  containerName: string;
+  blobPath: string;
+  eTag: string;
+  contentLengthBytes?: number;
+  /** The {subClientRef} token parsed from the blob path (e.g. loan ID, fund ID) */
+  subClientId: string;
+  /** Task type from the connection config — pipeline routing key */
+  taskType: string;
+}
+
+// ─── Blob Intake Job / Cursor ─────────────────────────────────────────────────
+// Stored in Cosmos container: blob-intake-jobs
+
+export type BlobIntakeJobStatus =
+  | 'received'
+  | 'queued'
+  | 'processing'
+  | 'complete'
+  | 'failed'
+  | 'dead-lettered';
+
+/**
+ * One document per unique blob (keyed by content hash/eTag).
+ * Provides idempotency, status tracking, and result path storage
+ * for every file ingested via the blob-drop pathway.
+ */
+export interface BlobIntakeJobDocument {
+  /** SHA-256(storageAccountName + containerName + blobPath + eTag) */
+  id: string;
+  /** Partition key */
+  tenantId: string;
+  type: 'blob-intake-job';
+  /** Platform tenant (lender using our platform) */
+  clientId: string;
+  /** Sub-division within client: loan ID, fund name, portfolio ID, etc. */
+  subClientId: string;
+  /** Processing pipeline — from VendorConnectionBlobConfig.taskType */
+  taskType: string;
+  /** VendorConnection.id — traces back to the full config */
+  connectionId: string;
+  storageAccountName: string;
+  containerName: string;
+  blobPath: string;
+  eTag: string;
+  contentLengthBytes?: number;
+  filename: string;
+  /** The sync run that brought this blob in (Data Share syncRunId or 'blob-created') */
+  syncRunId: string;
+  status: BlobIntakeJobStatus;
+  retryCount: number;
+  receivedAt: string;       // ISO-8601
+  completedAt?: string;
+  resultPaths?: {
+    json?: string;
+    xlsx?: string;
+    csv?: string;
+  };
+  lastError?: string;
+}
+
+/**
+ * One cursor document per VendorConnection.
+ * Tracks the high-water mark for blob enumeration so incremental
+ * Data Share syncs only process new/changed blobs.
+ * Stored in the same `blob-intake-jobs` container as BlobIntakeJobDocument.
+ */
+export interface BlobSyncCursorDocument {
+  /** "cursor:{connectionId}" */
+  id: string;
+  /** Same partition key strategy as BlobIntakeJobDocument */
+  tenantId: string;
+  type: 'blob-sync-cursor';
+  connectionId: string;
+  clientId: string;
+  lastSyncRunId: string;
+  /** Blobs with lastModified BEFORE this timestamp are skipped on next enumeration */
+  lastSyncCompletedAt: string;  // ISO-8601
 }
 
 // ─── Outbound Call ────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import type { VendorOrder } from '../types/vendor-order.types.js';
 import { Logger } from '../utils/logger.js';
 import type { UnifiedAuthRequest } from '../middleware/unified-auth.middleware.js';
 import type { PropertyAddress, WorkScheduleBlock } from '../types/index.js';
+import { getScopesForUser } from '../utils/ai-scopes.js';
 
 // ---------------------------------------------------------------------------
 // Response shape
@@ -69,6 +70,12 @@ export interface StaffRosterEntry {
   overallScore?: number;
   averageTurnaroundDays?: number;
   status: string;
+
+  // Confidential — only present when caller holds `confidential:read`.
+  // Populated by toRosterEntry; the controller passes `includeConfidential`
+  // based on the caller's scope set.
+  trustedVendor?: boolean;
+  confidentialClassifications?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +163,7 @@ function isAvailableNow(vendor: any): boolean {
 }
 
 /** Map a raw Cosmos vendor document to a StaffRosterEntry. */
-function toRosterEntry(vendor: any): StaffRosterEntry {
+function toRosterEntry(vendor: any, includeConfidential: boolean = false): StaffRosterEntry {
   const active = vendor.activeOrderCount ?? vendor.currentActiveOrders ?? 0;
   const max = vendor.maxConcurrentOrders ?? vendor.maxActiveOrders ?? 10;
 
@@ -196,7 +203,16 @@ function toRosterEntry(vendor: any): StaffRosterEntry {
         ? Math.round(vendor.performance.averageTurnTime / 24)
         : undefined),
 
-    status: (vendor.status ?? 'ACTIVE').toUpperCase()
+    status: (vendor.status ?? 'ACTIVE').toUpperCase(),
+
+    // Confidential fields are spread only when the caller has the scope;
+    // otherwise they're omitted from the JSON entirely (not just hidden in the UI).
+    ...(includeConfidential && vendor.trustedVendor ? { trustedVendor: true } : {}),
+    ...(includeConfidential &&
+    Array.isArray(vendor.confidentialClassifications) &&
+    vendor.confidentialClassifications.length > 0
+      ? { confidentialClassifications: vendor.confidentialClassifications }
+      : {}),
   };
 }
 
@@ -377,7 +393,10 @@ export class StaffRosterController {
       }
 
       // --- Transform ---
-      const entries: StaffRosterEntry[] = vendors.map(toRosterEntry);
+      // Phase C — gate confidential fields on the caller's scope set.
+      const scopes = getScopesForUser(req.user as never);
+      const includeConfidential = scopes.includes('confidential:read');
+      const entries: StaffRosterEntry[] = vendors.map((v: any) => toRosterEntry(v, includeConfidential));
 
       this.logger.info('Staff roster returned', {
         total: entries.length,

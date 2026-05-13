@@ -29,22 +29,36 @@ export interface AccessScope {
   // Organizational hierarchy
   teamIds: string[];
   departmentIds: string[];
-  
+
   // Client/vendor relationships
   managedClientIds?: string[];
   managedVendorIds?: string[];
-  
+
   // User management
   managedUserIds?: string[];
-  
+
   // Geographic scope
   regionIds?: string[];
   statesCovered?: string[];
-  
+
   // Special permissions
   canViewAllOrders?: boolean;
   canViewAllVendors?: boolean;
   canOverrideQC?: boolean;
+
+  // ── Per-user scope grants ────────────────────────────────────────────────
+  /**
+   * Scopes granted to this user IN ADDITION to whatever their role provides.
+   * Used for capabilities that are deliberately narrow — e.g. Doug & David
+   * carry `confidential:read` for the trusted-vendor surface, but managers
+   * as a class do NOT. String literals so the FE and BE can reference the
+   * same vocabulary without a cross-package dep; see frontend
+   * src/types/aiScopes.ts for the canonical list.
+   *
+   * Scopes are ADDITIVE: a role's default set + extraScopes = effective set.
+   * Never used to REVOKE — if a role shouldn't have something, fix the role.
+   */
+  extraScopes?: string[];
 }
 
 export interface AccessControl {

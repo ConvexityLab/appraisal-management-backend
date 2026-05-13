@@ -18,16 +18,20 @@ import {
   stripConfidentialVendorFields,
   stripConfidentialFieldsFromVendorList,
 } from '../utils/confidential-fields.js';
+import { VendorScorecardsRollupService } from '../services/vendor-scorecards-rollup.service.js';
 
 export class VendorController {
   public router: Router;
   private dbService: CosmosDbService;
   private logger: Logger;
 
+  private scorecardsRollup: VendorScorecardsRollupService;
+
   constructor(dbService: CosmosDbService, authzMiddleware?: AuthorizationMiddleware) {
     this.router = Router();
     this.dbService = dbService;
     this.logger = new Logger('VendorController');
+    this.scorecardsRollup = new VendorScorecardsRollupService(dbService);
     this.initializeRoutes(authzMiddleware);
   }
 
@@ -60,6 +64,10 @@ export class VendorController {
 
     // Order matters: specific paths before parameterized paths
     this.router.get('/performance/:vendorId', ...analyticsForVendor,  ...this.validateVendorIdParam(), this.getVendorPerformance.bind(this));
+    // Per-vendor scorecards rollup (trailing-25 with per-category averages
+    // and the contributing scorecards). Distinct from /performance which
+    // returns the BLENDED metrics that feed the matcher.
+    this.router.get('/:vendorId/scorecards',   ...readResource,    ...this.validateVendorIdParam(), this.getVendorScorecards.bind(this));
     this.router.post('/assign/:orderId',       ...updateOrderResource,     ...this.validateOrderIdParam(),  this.assignVendor.bind(this));
 
     this.router.get('/',                       ...readQuery,    this.getVendors.bind(this));
@@ -263,7 +271,9 @@ export class VendorController {
       if (result.success && result.data) {
         this.logger.info('Vendor created', { vendorId: result.data.id });
         const profile = this.transformVendorToProfile(result.data);
-        res.status(201).json(profile);
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const visible = stripConfidentialVendorFields(profile, req.user);
+        res.status(201).json(visible);
       } else {
         res.status(500).json({
           error: 'Vendor creation failed',
@@ -484,9 +494,14 @@ export class VendorController {
       } as any);
 
       if (updateResult.success) {
+        // Phase C: strip Doug-and-David-only fields when caller lacks scope.
+        const assignedVendor = stripConfidentialVendorFields(
+          this.transformVendorToProfile(selectedVendor),
+          req.user,
+        );
         res.json({
           orderId,
-          assignedVendor: this.transformVendorToProfile(selectedVendor),
+          assignedVendor,
           assignmentScore: 95.5,
           assignedAt: new Date()
         });
@@ -503,6 +518,38 @@ export class VendorController {
         error: 'Vendor assignment failed',
         code: 'VENDOR_ASSIGNMENT_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  /**
+   * GET /api/vendors/:vendorId/scorecards
+   * Per-vendor scorecards rollup: trailing-25 active scorecards with per-
+   * category averages plus the contributing entries (newest first).
+   */
+  private async getVendorScorecards(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    try {
+      const vendorId = req.params.vendorId!;
+      const tenantId =
+        req.user?.tenantId ?? (req.headers['x-tenant-id'] as string | undefined);
+      if (!tenantId) {
+        res.status(400).json({
+          error: 'tenantId is required (x-tenant-id header).',
+          code: 'TENANT_REQUIRED',
+        });
+        return;
+      }
+      const rollup = await this.scorecardsRollup.buildRollup(vendorId, tenantId);
+      res.json({ success: true, data: rollup });
+    } catch (error) {
+      this.logger.error('Failed to build vendor scorecards rollup', {
+        error,
+        vendorId: req.params.vendorId,
+      });
+      res.status(500).json({
+        error: 'Failed to build vendor scorecards rollup',
+        code: 'VENDOR_SCORECARDS_ROLLUP_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }

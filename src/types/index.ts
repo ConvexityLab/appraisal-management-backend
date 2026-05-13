@@ -1195,6 +1195,12 @@ export interface Product {
   /** When true the first bid accepted on an RFB is auto-awarded without coordinator review. */
   autoAwardFirstBid?: boolean;
   /**
+   * Capability keys that a vendor MUST have to be eligible for orders of this product type.
+   * Feeds VendorMatchRequest.requiredCapabilities when auto-assigning.
+   * Example: ['can_sign_reports', 'uad36_compliant']
+   */
+  requiredCapabilities?: string[];
+  /**
    * Per-product proficiency grade level definitions.
    * Drives the vendor matching engine's score bonus and the UI grade selector.
    * When absent, the matching engine skips the grade bonus for this product.
@@ -1223,6 +1229,7 @@ export interface CreateProductRequest {
   rushTurnTimeDays?: number;
   matchingCriteriaSets?: string[];
   autoAwardFirstBid?: boolean;
+  requiredCapabilities?: string[];
   gradeLevels?: GradeLevel[];
 }
 

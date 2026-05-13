@@ -14,11 +14,11 @@ import type {
   VendorFile,
   VendorInspectionPropertyAccess,
   VendorInspectionRequestedBy,
-  VendorOrderAcceptedPayload,
   VendorOrderHeldPayload,
   VendorOrderReceivedPayload,
   VendorOrderScheduledPayload,
   VendorOrderResumedPayload,
+  VendorOrderUpdatedPayload,
   VendorProductsListedPayload,
 } from '../../types/vendor-integration.types.js';
 import type { InboundAdapterContext, OutboundAdapterContext, VendorAdapter } from './VendorAdapter.js';
@@ -392,6 +392,9 @@ export class AimPortAdapter implements VendorAdapter {
         return this.outbound(connection.outboundEndpointUrl, 'OrderFilesRequest', { login, files: 'files' in event.payload ? event.payload.files.map(this.fromVendorFile) : [] }, event.eventType, vendorOrderId);
       case 'vendor.message.received':
         return this.outbound(connection.outboundEndpointUrl, 'MessageRequest', { login, message: { subject: 'subject' in event.payload ? event.payload.subject : '', content: 'content' in event.payload ? event.payload.content : '' } }, event.eventType, vendorOrderId);
+      // NOTE: vendor.revision.requested is NOT valid outbound — RevisionRequest is documented as
+      // "Client to Vendor" only in the AIM-Port spec (v2.9 p.11). It is an inbound-only event.
+      // To notify AIM-Port of a revision from our QC side, use MessageRequest instead.
       default:
         return null;
     }
@@ -559,25 +562,12 @@ export class AimPortAdapter implements VendorAdapter {
         return [{ ...baseEvent, eventType: 'vendor.products.listed', payload: { products } }];
       }
       case 'OrderAssignedRequest':
-        return [{ ...baseEvent, eventType: 'vendor.order.assigned', payload: { vendorOrderId: baseEvent.vendorOrderId } }];
-      case 'OrderAcceptedRequest': {
-        const order = asRecord(envelope?.order);
-        const vendorFirstName = stringValue(order?.vendor_first_name);
-        const vendorLastName = stringValue(order?.vendor_last_name);
-        const vendorLicenseNumber = stringValue(order?.vendor_license_number);
-        const vendorLicenseExpiration = stringValue(order?.vendor_license_expiration);
-        const payload: VendorOrderAcceptedPayload = {
-          ...(vendorFirstName ? { vendorFirstName } : {}),
-          ...(vendorLastName ? { vendorLastName } : {}),
-          ...(vendorLicenseNumber ? { vendorLicenseNumber } : {}),
-          ...(vendorLicenseExpiration ? { vendorLicenseExpiration } : {}),
-        };
-        return [{
-          ...baseEvent,
-          eventType: 'vendor.order.accepted',
-          payload,
-        }];
-      }
+      case 'OrderAcceptedRequest':
+        // These are "Vendor to Client" events per the AIM-Port spec (v2.9).
+        // We are the vendor — we SEND these outbound; AIM-Port never sends them to us.
+        // If received (data error, test harness, etc.) produce no domain events so we
+        // cannot accidentally trigger a second assignment/acceptance cycle.
+        return [];
       case 'OrderHoldRequest': {
         const order = asRecord(envelope?.order);
         const message = stringValue(order?.hold_message);
@@ -622,8 +612,50 @@ export class AimPortAdapter implements VendorAdapter {
         const files = toVendorFiles((envelope?.files as AimPortFile[] | undefined) ?? []);
         return [{ ...baseEvent, eventType: 'vendor.order.completed', payload: { files } }];
       }
-      case 'GetOrderRequest':
-      case 'OrderUpdateRequest':
+      case 'GetOrderRequest': {
+        // AIM-Port is polling the current status of this order.
+        // We emit a domain event so downstream services can react (e.g. enriching
+        // the ACK with live order state via a service-layer lookup).
+        return [{ ...baseEvent, eventType: 'vendor.order.status_queried', payload: { vendorOrderId: baseEvent.vendorOrderId } }];
+      }
+      case 'OrderUpdateRequest': {
+        // AIM-Port is notifying us of lender-side edits to a placed order
+        // (address change, product change, financial update, etc.).
+        const order = asRecord(envelope?.order);
+        const files = toVendorFiles((envelope?.files as AimPortFile[] | undefined) ?? []);
+        const loanNumber = stringValue(order?.loan_number);
+        const caseNumber = stringValue(order?.case_number);
+        const address = stringValue(order?.address);
+        const address2 = stringValue(order?.address2);
+        const city = stringValue(order?.city);
+        const state = stringValue(order?.state);
+        const zipCode = stringValue(order?.zip_code);
+        const county = stringValue(order?.county);
+        const dueDate = stringValue(order?.due_date);
+        const purchasePrice = numberValue(order?.purchase_price);
+        const loanAmount = numberValue(order?.loan_amount);
+        const disclosedFee = numberValue(order?.disclosed_fee);
+        const anticipatedValue = numberValue(order?.anticipated_value);
+        const fee = numberValue(order?.fee);
+        const payload: VendorOrderUpdatedPayload = {
+          ...(loanNumber !== undefined ? { loanNumber } : {}),
+          ...(caseNumber !== undefined ? { caseNumber } : {}),
+          ...(address !== undefined ? { address } : {}),
+          ...(address2 !== undefined ? { address2 } : {}),
+          ...(city !== undefined ? { city } : {}),
+          ...(state !== undefined ? { state } : {}),
+          ...(zipCode !== undefined ? { zipCode } : {}),
+          ...(county !== undefined ? { county } : {}),
+          ...(purchasePrice !== undefined ? { purchasePrice } : {}),
+          ...(loanAmount !== undefined ? { loanAmount } : {}),
+          ...(disclosedFee !== undefined ? { disclosedFee } : {}),
+          ...(anticipatedValue !== undefined ? { anticipatedValue } : {}),
+          ...(dueDate !== undefined ? { dueDate } : {}),
+          ...(fee !== undefined ? { fee } : {}),
+          ...(files.length > 0 ? { files } : {}),
+        };
+        return [{ ...baseEvent, eventType: 'vendor.order.updated', payload }];
+      }
       default:
         return [];
     }
@@ -645,6 +677,17 @@ export class AimPortAdapter implements VendorAdapter {
         success: 'true',
         order_id: ourOrderId ?? vendorOrderId,
         fee: numberValue(order?.disclosed_fee) ?? 0,
+      }) as AimPortAckResponse;
+    }
+
+    if (requestType === 'GetOrderRequest') {
+      // AIM-Port is polling order status. Return our internal order ID for correlation.
+      // Callers that need to enrich `order_status` should do so in the service layer
+      // after this ACK is returned (adapter has no DB access).
+      return definedProps({
+        client_id: clientId,
+        success: 'true',
+        order_id: ourOrderId ?? vendorOrderId,
       }) as AimPortAckResponse;
     }
 

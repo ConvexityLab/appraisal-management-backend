@@ -367,7 +367,7 @@ function validateProfilePayload(
 
 // ─── Merge ───────────────────────────────────────────────────────────────────
 
-function mergeCriteria(
+export function mergeCriteria(
   base: VendorMatchingCriteriaProfile['criteria'],
   overlay: VendorMatchingCriteriaProfile['criteria'],
 ): void {

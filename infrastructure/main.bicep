@@ -105,6 +105,15 @@ param statebridgeClientName string = 'Statebridge'
 @description('Tenant ID for all Statebridge Cosmos documents (partition key). Set to your Statebridge tenant GUID.')
 param statebridge_tenantId string
 
+@description('Blob-sync client configurations. Each entry creates one Event Grid system topic + subscription routing that vendor\'s blob events to the shared blob-sync-events Service Bus queue. Requires Standard or Premium Service Bus (staging + prod only). Schema: [{ vendorStorageAccountId, vendorStorageAccountName, vendorType, containerName?, blobPathPrefix? }]')
+param blobSyncClients array = []
+
+@description('vendorType value stamped on events originating from the internal blob-intake storage account. Must match the inboundIdentifier of a VendorConnection document in Cosmos. Unused on dev (Basic SB tier cannot receive Event Grid).')
+param blobIntakeVendorType string = 'internal-blob-intake'
+
+@description('Object IDs of external vendor service principals / managed identities that should receive Storage Blob Data Contributor on the `received` container of the blob-intake account. Add per environment in parameters files.')
+param externalBlobIntakeClientPrincipalIds array = []
+
 // AXIOM_API_BASE_URL, AXIOM_CLIENT_ID, AXIOM_SUB_CLIENT_ID, AXIOM_PIPELINE_ID_SCHEMA_EXTRACT
 // are non-secret service-discovery values — resolved at runtime from Azure App Configuration
 // via appConfigLoader.ts. They are intentionally NOT bicep params.
@@ -275,6 +284,17 @@ module cosmosMatchingRfbArvContainers 'modules/cosmos-matching-rfb-arv-container
 // module entry keeps future deploys idempotent.
 module cosmosVendorMatchingRulePackContainers 'modules/cosmos-vendor-matching-rule-pack-containers.bicep' = {
   name: 'cosmos-vendor-matching-rule-pack-containers-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Vendor Matching Criteria Profiles — per-tenant toggleable
+// matching criteria profiles (David/Doug overlay model).
+module cosmosVendorMatchingCriteriaProfiles 'modules/cosmos-vendor-matching-criteria-profiles-container.bicep' = {
+  name: 'cosmos-vendor-matching-criteria-profiles-deployment'
   scope: resourceGroup
   params: {
     cosmosAccountName: cosmosDb.outputs.cosmosAccountName
@@ -453,6 +473,19 @@ module cosmosVendorMarketplaceContainers 'modules/vendor-marketplace-containers.
   }
 }
 
+// Cosmos DB Blob-Intake-Jobs Container
+// Stores BlobIntakeJobDocument (per-blob ingestion tracking) and BlobSyncCursorDocument
+// (per-connection cursor for Data Share delta enumeration). Partitioned by /tenantId.
+// Consumed by DataShareBlobSyncAdapter and BlobCreatedBlobSyncAdapter.
+module cosmosBlobIntakeJobsContainer 'modules/cosmos-blob-intake-jobs-container.bicep' = {
+  name: 'cosmos-blob-intake-jobs-container-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Service Bus (deployed early for local testing)
 module serviceBus 'modules/service-bus.bicep' = {
   name: 'service-bus-deployment'
@@ -514,6 +547,21 @@ module sftpStorage 'modules/storage-sftp.bicep' = {
   }
 }
 
+// Blob-intake Storage Account (vendor blob-drop zone + live-fire test target)
+// Plain StorageV2 — no HNS. External vendor clients receive Storage Blob Data
+// Contributor on the `received` container only. The appraisal-api Container App
+// reads from this account via Managed Identity (Storage Blob Data Reader).
+// Event Grid → SB wiring is provisioned below for staging + prod.
+module blobIntakeStorage 'modules/storage-blob-intake.bicep' = {
+  name: 'blob-intake-storage-deployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+  }
+}
+
 // Event Grid subscription: SFTP BlobCreated → sftp-order-events queue
 // Routes uploads/ blob events to the queue so the functions container app can process them.
 module sftpEventGrid 'modules/eventgrid-sftp.bicep' = {
@@ -544,6 +592,53 @@ module bulkUploadEventGrid 'modules/eventgrid-bulk-upload.bicep' = {
   dependsOn: [
     storage
   ]
+}
+
+// Event Grid subscriptions: vendor blob-drop accounts → blob-sync-events Service Bus queue
+// One system topic + subscription per blob-sync client. All events route to the shared
+// blob-sync-events queue; the vendorType application property stamps the routing key.
+//
+// ⚠️  Requires Standard or Premium Service Bus. Only populate blobSyncClients in
+//    staging and prod parameters files (not dev, which uses the Basic namespace).
+//
+// Parameters file entry shape:
+//   { "vendorStorageAccountId": "/subscriptions/.../storageAccounts/<name>",
+//     "vendorStorageAccountName": "<name>",
+//     "vendorType": "<inboundIdentifier — must match VendorConnection in Cosmos>",
+//     "containerName": "received",        // optional — omit for Data Share accounts
+//     "blobPathPrefix": "" }              // optional
+module blobSyncIntegration 'modules/blob-sync-integration.bicep' = [for (client, i) in blobSyncClients: {
+  name: 'blob-sync-integration-${client.vendorType}-deployment'
+  scope: resourceGroup
+  params: {
+    vendorStorageAccountId: client.vendorStorageAccountId
+    vendorStorageAccountName: client.vendorStorageAccountName
+    vendorType: client.vendorType
+    serviceBusNamespaceName: serviceBus.outputs.namespaceName
+    serviceBusQueueName: 'blob-sync-events'
+    containerName: client.?containerName ?? ''
+    blobPathPrefix: client.?blobPathPrefix ?? ''
+    tags: tags
+  }
+}]
+
+// Event Grid subscription: internal blob-intake account → blob-sync-events queue
+// Wired for staging and prod only — dev uses Basic SB tier which cannot receive
+// Event Grid deliveries. Set blobIntakeVendorType in parameters files to match
+// the VendorConnection inboundIdentifier you create in Cosmos for this account.
+module blobSyncIntegrationInternal 'modules/blob-sync-integration.bicep' = if (environment != 'dev') {
+  name: 'blob-sync-integration-internal-deployment'
+  scope: resourceGroup
+  params: {
+    vendorStorageAccountId: blobIntakeStorage.outputs.storageAccountId
+    vendorStorageAccountName: blobIntakeStorage.outputs.storageAccountName
+    vendorType: blobIntakeVendorType
+    serviceBusNamespaceName: serviceBus.outputs.namespaceName
+    serviceBusQueueName: 'blob-sync-events'
+    containerName: 'received'
+    blobPathPrefix: ''
+    tags: tags
+  }
 }
 
 // Container Apps and Container Registry (deployed after data services)
@@ -640,6 +735,19 @@ module storageRoleAssignments 'modules/storage-role-assignments.bicep' = {
   params: {
     storageAccountName: storage.outputs.storageAccountName
     containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+  }
+}
+
+// Blob-intake storage role assignments:
+//   • Container App MIs → Storage Blob Data Reader (account scope, all envs)
+//   • External client principals → Storage Blob Data Contributor (received container, per-env)
+module blobIntakeStorageRoleAssignments 'modules/storage-blob-intake-role-assignments.bicep' = {
+  name: 'blob-intake-storage-role-assignments-deployment'
+  scope: resourceGroup
+  params: {
+    intakeStorageAccountName: blobIntakeStorage.outputs.storageAccountName
+    containerAppPrincipalIds: appServices.outputs.containerAppPrincipalIds
+    externalClientPrincipalIds: externalBlobIntakeClientPrincipalIds
   }
 }
 

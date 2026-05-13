@@ -52,6 +52,27 @@ export class VendorConnectionService {
     return connection;
   }
 
+  /**
+   * Look up a vendor connection by its Cosmos document ID.
+   * Used by VendorOutboundDispatcher to resolve the connection from an outbox document's
+   * connectionId field, which stores the Cosmos doc ID — NOT the inboundIdentifier.
+   */
+  async getConnectionById(id: string): Promise<VendorConnection> {
+    const response = await this.db.queryItems<VendorConnection>(
+      'vendor-connections',
+      'SELECT * FROM c WHERE c.id = @id',
+      [{ name: '@id', value: id }],
+    );
+
+    if (!response.success || !response.data || response.data.length === 0 || !response.data[0]) {
+      throw new VendorConnectionConfigurationError(
+        `No vendor connection found with id=${id}. It may have been deleted.`,
+      );
+    }
+
+    return response.data[0];
+  }
+
   async resolveSecret(secretName: string): Promise<string> {
     const client = this.getSecretClient();
     const secret = await client.getSecret(secretName);

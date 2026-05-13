@@ -71,6 +71,48 @@ function buildUserProfiles(tenantId: string): Record<string, unknown>[] {
       updatedAt: daysAgo(2),
     },
 
+    // ── David Russo + Doug Reid (real users) ────────────────────────────────
+    // Both carry the `confidential:read` extra scope so they see the trusted-
+    // vendor + confidential-classifications fields that the BE vendor
+    // serializer strips for everyone else. Other managers do NOT get this
+    // scope — it's a deliberately narrow grant per the David/Doug meeting
+    // ("we can add a field or two that will only be seen by David and Doug").
+    {
+      id: 'platform-user-david-russo',
+      email: 'david@visionvmc.com',
+      name: 'David Russo',
+      tenantId,
+      role: 'manager',
+      portalDomain: 'platform',
+      boundEntityIds: [],
+      isActive: true,
+      accessScope: scope({
+        canViewAllOrders: true,
+        canViewAllVendors: true,
+        extraScopes: ['confidential:read'],
+      }),
+      createdAt: daysAgo(1),
+      updatedAt: daysAgo(1),
+    },
+
+    {
+      id: 'platform-user-doug-reid',
+      email: 'doug@visionvmc.com',
+      name: 'Doug Reid',
+      tenantId,
+      role: 'manager',
+      portalDomain: 'platform',
+      boundEntityIds: [],
+      isActive: true,
+      accessScope: scope({
+        canViewAllOrders: true,
+        canViewAllVendors: true,
+        extraScopes: ['confidential:read'],
+      }),
+      createdAt: daysAgo(1),
+      updatedAt: daysAgo(1),
+    },
+
     {
       id: USER_IDS.PLATFORM_QC_ANALYST,
       email: 'qc.analyst@internal.visionvmc.com',

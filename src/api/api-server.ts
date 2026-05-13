@@ -205,6 +205,7 @@ import { AppraiserController } from '../controllers/appraiser.controller';
 
 // Import Vendor Controller (Phase A - Live Data)
 import { VendorController } from '../controllers/production-vendor.controller';
+import { VendorMatchingCriteriaController } from '../controllers/vendor-matching-criteria.controller.js';
 
 // Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
 import { StaffRosterController } from '../controllers/staff-roster.controller';
@@ -243,6 +244,7 @@ import { BulkIngestionExtractionWorkerService } from '../services/bulk-ingestion
 import { BulkIngestionCriteriaWorkerService } from '../services/bulk-ingestion-criteria-worker.service.js';
 import { BulkIngestionFinalizerService } from '../services/bulk-ingestion-finalizer.service.js';
 import { VendorOutboxWorkerService } from '../services/vendor-integrations/VendorOutboxWorkerService.js';
+import { BlobSyncWorkerService } from '../services/vendor-integrations/BlobSyncWorkerService.js';
 import { VendorOutboundDispatcher } from '../services/vendor-integrations/VendorOutboundDispatcher.js';
 import { VendorOutboundOutboxService } from '../services/vendor-integrations/VendorOutboundOutboxService.js';
 import { VendorOutboundWorkerService } from '../services/vendor-integrations/VendorOutboundWorkerService.js';
@@ -411,6 +413,7 @@ export class AppraisalManagementAPIServer {
   private bulkIngestionFinalizerService?: BulkIngestionFinalizerService;
   private vendorOutboxWorkerService?: VendorOutboxWorkerService;
   private vendorOutboundWorkerService?: VendorOutboundWorkerService;
+  private blobSyncWorkerService?: BlobSyncWorkerService;
   private propertyOutboxWorkerService?: PropertyOutboxWorkerService;
   private axiomMissedTriggerJob?: AxiomMissedTriggerJob;
   private engagementLetterAutoSendService?: EngagementLetterAutoSendService;
@@ -966,6 +969,18 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/vendors',
       this.unifiedAuth.authenticate(),
       vendorController.router
+    );
+
+    // Phase B — Vendor Matching Criteria Profiles. Doug/David toggle the
+    // per-product matching criteria here; the matcher resolves the active
+    // profile at decision time.
+    const vendorMatchingCriteriaController = new VendorMatchingCriteriaController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/vendor-matching-criteria-profiles',
+      this.unifiedAuth.authenticate(),
+      vendorMatchingCriteriaController.router,
     );
 
     // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)
@@ -5621,6 +5636,20 @@ export class AppraisalManagementAPIServer {
       });
     }
 
+    // Start Blob Sync Worker Service (consumes blob-sync-events Service Bus queue for file-drop clients)
+    try {
+      this.blobSyncWorkerService = new BlobSyncWorkerService();
+      this.blobSyncWorkerService.start().catch(err => {
+        this.logger.warn('BlobSyncWorkerService failed to start', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    } catch (err) {
+      this.logger.warn('BlobSyncWorkerService could not be created', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Start Vendor Outbound Worker Service (delivers outbound vendor HTTP calls from durable outbox)
     try {
       this.vendorOutboundWorkerService = new VendorOutboundWorkerService(this.dbService);
@@ -5905,6 +5934,9 @@ export class AppraisalManagementAPIServer {
     }
     if (this.vendorOutboxWorkerService) {
       this.vendorOutboxWorkerService.stop().catch(() => {});
+    }
+    if (this.blobSyncWorkerService) {
+      this.blobSyncWorkerService.stop().catch(() => {});
     }
     if (this.vendorOutboundWorkerService) {
       this.vendorOutboundWorkerService.stop().catch(() => {});

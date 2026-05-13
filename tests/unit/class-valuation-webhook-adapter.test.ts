@@ -67,6 +67,40 @@ describe('ClassValuationWebhookAdapter', () => {
     });
   });
 
+  it('builds outbound order.assigned webhook with HMAC signature', async () => {
+    const adapter = new ClassValuationWebhookAdapter();
+    const call = await adapter.buildOutboundCall({
+      id: 'evt-assign-1',
+      eventType: 'vendor.order.assigned',
+      vendorType: 'class-valuation',
+      vendorOrderId: 'CV-2001',
+      ourOrderId: 'order-987',
+      lenderId: 'lender-1',
+      tenantId: 'tenant-1',
+      occurredAt: '2026-05-12T00:00:00.000Z',
+      payload: { vendorOrderId: 'CV-2001' },
+    }, connection, {
+      resolveSecret: async () => 'outbound-secret',
+    });
+
+    expect(call).not.toBeNull();
+    expect(call?.rawBody).toBeDefined();
+    expect(call?.headers['x-class-valuation-signature']).toBe(
+      `sha256=${createHmac('sha256', 'outbound-secret').update(call?.rawBody ?? '').digest('hex')}`,
+    );
+    expect(call?.body).toMatchObject({
+      accountId: 'acct-42',
+      event: 'order.assigned',
+      occurredAt: '2026-05-12T00:00:00.000Z',
+      data: {
+        externalOrderId: 'CV-2001',
+        orderId: 'order-987',
+      },
+    });
+    expect(call?.eventType).toBe('vendor.order.assigned');
+    expect(call?.vendorOrderId).toBe('CV-2001');
+  });
+
   it('builds outbound webhook payloads with an HMAC signature header', async () => {
     const adapter = new ClassValuationWebhookAdapter();
     const call = await adapter.buildOutboundCall({

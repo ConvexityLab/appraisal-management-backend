@@ -280,6 +280,12 @@ export interface AimPortAckResponse {
   order_id?: string;
   message?: string;
   fee?: number;
+  /**
+   * Returned in response to GetOrderRequest — the current status string for the order.
+   * Not populated by the adapter itself (which has no DB access); a higher-layer service
+   * can enrich this by looking up the order before returning the HTTP response.
+   */
+  order_status?: string;
   /** Returned in response to ProductListRequest — lists products supported by this connection. */
   products?: Array<{ id: number; name: string }>;
 }

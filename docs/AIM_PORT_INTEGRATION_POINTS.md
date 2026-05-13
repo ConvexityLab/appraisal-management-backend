@@ -379,6 +379,8 @@ The following outbound AIM-Port request types are implemented when our platform 
 | `vendor.order.completed` | `OrderFilesRequest` |
 | `vendor.message.received` | `MessageRequest` |
 
+> **Revision requests:** `RevisionRequest` is documented in the AIM-Port spec (v2.9) as "Client to Vendor" direction only — i.e. AIM-Port/lender sends it TO us (inbound). There is no "Vendor to Client" revision event. To surface a revision request from our QC team back through AIM-Port, use `MessageRequest` (which IS bi-directional per spec p.8).
+
 ---
 
 ## Required Scheduling Contract For `OrderScheduledRequest`

@@ -223,4 +223,82 @@ describe('AimPortAdapter', () => {
       ),
     ).rejects.toThrow(/missing required scheduling fields/i);
   });
+
+  it('emits vendor.order.status_queried and returns ourOrderId in ACK for GetOrderRequest', async () => {
+    const adapter = new AimPortAdapter();
+    const result = await adapter.handleInbound(
+      {
+        GetOrderRequest: {
+          login: {
+            client_id: 'client-123',
+            api_key: 'secret',
+            order_id: 'AP-1001',
+          },
+        },
+      },
+      {},
+      { ...connection, inboundIdentifier: 'client-123' },
+      {
+        resolveSecret: async () => 'secret',
+        createOrGetOrderReference: async () => ({
+          orderId: 'order-999',
+          orderNumber: 'VND-20260423-XYZ',
+          existed: true,
+        }),
+      },
+    );
+
+    expect(result.domainEvents).toHaveLength(1);
+    expect(result.domainEvents[0]?.eventType).toBe('vendor.order.status_queried');
+    expect(result.domainEvents[0]?.payload).toMatchObject({ vendorOrderId: 'AP-1001' });
+    // ACK should carry our internal order ID for correlation.
+    // For GetOrderRequest the legacyOrderId is aim-port:<vendorOrderId>.
+    expect(result.ack.statusCode).toBe(200);
+    expect(result.ack.body).toMatchObject({
+      success: 'true',
+      order_id: 'aim-port:AP-1001',
+    });
+  });
+
+  it('normalizes OrderUpdateRequest into a vendor.order.updated event with changed fields', async () => {
+    const adapter = new AimPortAdapter();
+    const result = await adapter.handleInbound(
+      {
+        OrderUpdateRequest: {
+          login: {
+            client_id: 'client-123',
+            api_key: 'secret',
+            order_id: 'AP-1001',
+          },
+          order: {
+            aimport_order_id: 'AP-1001',
+            loan_number: 'LN-9999',
+            address: '456 Oak Ave',
+            city: 'Houston',
+            state: 'TX',
+            zip_code: '77001',
+            due_date: '2026-05-30',
+            purchase_price: '320000',
+          },
+        },
+      },
+      {},
+      { ...connection, inboundIdentifier: 'client-123' },
+      { resolveSecret: async () => 'secret' },
+    );
+
+    expect(result.domainEvents).toHaveLength(1);
+    expect(result.domainEvents[0]?.eventType).toBe('vendor.order.updated');
+    expect(result.domainEvents[0]?.vendorOrderId).toBe('AP-1001');
+    expect(result.domainEvents[0]?.payload).toMatchObject({
+      loanNumber: 'LN-9999',
+      address: '456 Oak Ave',
+      city: 'Houston',
+      state: 'TX',
+      zipCode: '77001',
+      dueDate: '2026-05-30',
+      purchasePrice: 320000,
+    });
+    expect(result.ack.statusCode).toBe(200);
+  });
 });

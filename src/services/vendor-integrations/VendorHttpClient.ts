@@ -8,8 +8,13 @@ export interface VendorHttpResponse<T = unknown> {
   rawText: string;
 }
 
-export class AimPortClient {
-  private readonly logger = new Logger('AimPortClient');
+/**
+ * Generic HTTP client for synchronous POST-based vendor integrations.
+ * Formerly called AimPortClient — renamed because it is used for every
+ * vendor adapter, not solely AIM-Port.
+ */
+export class VendorHttpClient {
+  private readonly logger = new Logger('VendorHttpClient');
 
   async send(call: OutboundCall): Promise<VendorHttpResponse> {
     const response = await fetch(call.url, {
@@ -28,7 +33,7 @@ export class AimPortClient {
       }
     }
 
-    this.logger.info('AIM-Port outbound call completed', {
+    this.logger.info('Vendor outbound call completed', {
       url: call.url,
       eventType: call.eventType,
       vendorOrderId: call.vendorOrderId,

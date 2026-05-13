@@ -82,6 +82,11 @@ import { PropertyRecordService } from '../services/property-record.service.js';
 import { AddressServiceGeocoder } from '../services/address-service.geocoder.js';
 import { AccessControlHelper } from '../services/access-control-helper.service.js';
 import { ClientOrderService, type VendorOrderSpec } from '../services/client-order.service.js';
+import {
+  VendorOrderScorecardService,
+  ScorecardError,
+} from '../services/vendor-order-scorecard.service.js';
+import { VendorOrderScorecardSuggester } from '../services/vendor-order-scorecard-suggester.service.js';
 
 const logger = new Logger('OrderController');
 const accessControlHelper = new AccessControlHelper();
@@ -191,6 +196,8 @@ export class OrderController {
   private enrichmentService: PropertyEnrichmentService;
   private contextLoader: OrderContextLoader;
   private clientOrderService: ClientOrderService;
+  private scorecardService: VendorOrderScorecardService;
+  private scorecardSuggester: VendorOrderScorecardSuggester;
 
   /** Lazy-init: DocumentService requires Cosmos DB to be initialized, which
    *  happens after the constructor runs during app startup. */
@@ -225,6 +232,11 @@ export class OrderController {
       this.complianceService = new ComplianceService(dbService);
     this.contextLoader = new OrderContextLoader(dbService);
     this.clientOrderService = new ClientOrderService(dbService);
+    this.scorecardService = new VendorOrderScorecardService(
+      dbService,
+      new AuditTrailService(dbService),
+    );
+    this.scorecardSuggester = new VendorOrderScorecardSuggester(dbService);
     this.setupRoutes(authzMiddleware);
   }
 
@@ -396,6 +408,14 @@ export class OrderController {
     this.router.post('/:orderId/vendor-bid/:bidId/accept',  ...approveRes, this.acceptVendorBid.bind(this));
     this.router.post('/:orderId/vendor-bid/:bidId/decline', ...rejectRes,  this.declineVendorBid.bind(this));
     this.router.post('/:orderId/acknowledge-attention',     ...updateRes,  this.acknowledgeAttention.bind(this));
+    // Scorecard re-score / history (Phase A standalone routes). The primary
+    // scorecard write path is the QC decision endpoint; this exists for
+    // re-scoring after release and for the vendor-detail history view.
+    this.router.post('/:orderId/scorecards',                ...updateRes,  this.appendOrderScorecard.bind(this));
+    this.router.get('/:orderId/scorecards',                 ...readRes,    this.listOrderScorecards.bind(this));
+    // Phase D — data-driven suggested scores (read-only). The QC dialog
+    // pre-fills the rubric form from this so reviewers start from defaults.
+    this.router.get('/:orderId/scorecard-suggestions',      ...readRes,    this.getScorecardSuggestions.bind(this));
     this.router.get('/:orderId/property-enrichment',        ...readRes,    this.getOrderPropertyEnrichment.bind(this));
     this.router.post('/:orderId/property-enrichment/refresh', ...execRes,  this.refreshOrderPropertyEnrichment.bind(this));
     this.router.get('/:orderId/property-record',             ...readRes,    this.getOrderPropertyRecord.bind(this));
@@ -2648,6 +2668,94 @@ export class OrderController {
         error: message,
       });
       res.status(500).json({ error: 'Failed to retrieve property record' });
+    }
+  }
+
+  // ─── Scorecard routes ────────────────────────────────────────────────────
+  //
+  // The QC decision endpoint is still the primary write path for scoring on
+  // approval (it gates the COMPLETED transition). These standalone routes
+  // exist for two cases that aren't part of the QC approval flow:
+  //   1. RE-SCORING after release. Pass `supersedes` with the prior entry id;
+  //      the service marks the old one supersededBy and appends a new entry.
+  //   2. History view. The vendor-detail "Scorecards" tab reads from
+  //      GET /api/orders/:id/scorecards to assemble the rollup.
+
+  public async appendOrderScorecard(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const orderId = req.params['orderId'] as string;
+    const userId = req.user?.id ?? 'unknown';
+    const body = (req.body ?? {}) as {
+      scores?: unknown;
+      generalComments?: string;
+      supersedes?: string;
+    };
+
+    if (!body.scores || typeof body.scores !== 'object') {
+      res.status(400).json({
+        success: false,
+        error: 'Request body must include a `scores` object with all five categories.',
+        code: 'SCORECARD_REQUIRED',
+      });
+      return;
+    }
+
+    try {
+      const entry = await this.scorecardService.appendScorecard(
+        orderId,
+        {
+          scores: body.scores as never,
+          ...(body.generalComments ? { generalComments: body.generalComments } : {}),
+          ...(body.supersedes ? { supersedes: body.supersedes } : {}),
+        },
+        userId,
+      );
+      res.status(201).json({ success: true, data: entry });
+    } catch (err) {
+      if (err instanceof ScorecardError) {
+        res.status(err.statusCode).json({
+          success: false,
+          error: err.message,
+          code: err.statusCode === 400 ? 'SCORECARD_INVALID' : 'SCORECARD_REJECTED',
+        });
+        return;
+      }
+      logger.error('appendOrderScorecard failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ success: false, error: 'Failed to append scorecard' });
+    }
+  }
+
+  public async listOrderScorecards(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const orderId = req.params['orderId'] as string;
+    try {
+      const scorecards = await this.scorecardService.listScorecards(orderId);
+      res.json({ success: true, data: scorecards });
+    } catch (err) {
+      if (err instanceof ScorecardError) {
+        res.status(err.statusCode).json({ success: false, error: err.message });
+        return;
+      }
+      logger.error('listOrderScorecards failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ success: false, error: 'Failed to list scorecards' });
+    }
+  }
+
+  public async getScorecardSuggestions(req: UnifiedAuthRequest, res: Response): Promise<void> {
+    const orderId = req.params['orderId'] as string;
+    try {
+      const suggestions = await this.scorecardSuggester.suggestForOrder(orderId);
+      res.json({ success: true, data: suggestions });
+    } catch (err) {
+      logger.error('getScorecardSuggestions failed', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(500).json({ success: false, error: 'Failed to compute scorecard suggestions' });
     }
   }
 }

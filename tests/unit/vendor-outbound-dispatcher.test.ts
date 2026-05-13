@@ -3,16 +3,16 @@ import type { VendorDomainEvent } from '../../src/types/vendor-integration.types
 
 // ── Module mocks (must be hoisted above imports) ──────────────────────────────
 
-const { sendMock, buildOutboundCallMock, getActiveConnectionMock, resolveSecretMock } =
+const { sendMock, buildOutboundCallMock, getConnectionByIdMock, resolveSecretMock } =
   vi.hoisted(() => ({
     sendMock: vi.fn(),
     buildOutboundCallMock: vi.fn(),
-    getActiveConnectionMock: vi.fn(),
+    getConnectionByIdMock: vi.fn(),
     resolveSecretMock: vi.fn(),
   }));
 
-vi.mock('../../src/services/vendor-integrations/AimPortClient.js', () => ({
-  AimPortClient: vi.fn().mockImplementation(() => ({ send: sendMock })),
+vi.mock('../../src/services/vendor-integrations/VendorHttpClient.js', () => ({
+  VendorHttpClient: vi.fn().mockImplementation(() => ({ send: sendMock })),
 }));
 
 vi.mock('../../src/services/vendor-integrations/AimPortAdapter.js', () => ({
@@ -31,7 +31,7 @@ vi.mock('../../src/services/vendor-integrations/ClassValuationWebhookAdapter.js'
 
 vi.mock('../../src/services/vendor-integrations/VendorConnectionService.js', () => ({
   VendorConnectionService: vi.fn().mockImplementation(() => ({
-    getActiveConnectionByInboundIdentifier: getActiveConnectionMock,
+    getConnectionById: getConnectionByIdMock,
     resolveSecret: resolveSecretMock,
   })),
 }));
@@ -80,7 +80,7 @@ describe('VendorOutboundDispatcher.dispatch()', () => {
     vi.clearAllMocks();
     // Fast timer to avoid real delays in retry tests.
     vi.useFakeTimers();
-    getActiveConnectionMock.mockResolvedValue({ id: 'conn-1', vendorType: 'aim-port' });
+    getConnectionByIdMock.mockResolvedValue({ id: 'conn-1', vendorType: 'aim-port' });
     buildOutboundCallMock.mockResolvedValue(STUB_CALL);
     dispatcher = new VendorOutboundDispatcher();
   });
