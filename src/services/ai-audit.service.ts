@@ -71,6 +71,14 @@ export interface AiAuditDoc {
 		kind: 'cron' | 'webhook' | 'user-rule' | 'ai-chain' | 'queue';
 		recipeId?: string;
 		sponsorUserId?: string;
+		/**
+		 * Sponsor's role at fire time (delegated-identity attribution).
+		 * Resolved by AutopilotSponsorIdentity before dispatch; stamped
+		 * here so the /ai-audit inspector can show "ran as <role>" without
+		 * a re-lookup against the users container (which may have changed
+		 * since the row was written).
+		 */
+		sponsorRole?: string;
 		parentRunId?: string;
 	};
 	/**

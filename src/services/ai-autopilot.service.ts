@@ -209,7 +209,7 @@ export class AiAutopilotService {
 				error: { code: 'AUTONOMY_NEVER', message: 'Recipe policy.mode=never refuses autonomous fires.' },
 			});
 			await this.recipes.recordFire(msg.tenantId, recipe.id, false, 'policy-never');
-			await this.emitAudit(run, recipe, false, 'policy-never');
+			await this.emitAudit(run, recipe, false, 'policy-never', {}, sponsor.role);
 			return { ok: false, status: 'cancelled', runId: run.id, reason: 'policy-never' };
 		}
 
@@ -225,7 +225,7 @@ export class AiAutopilotService {
 					approverPolicy: decision,
 				},
 			});
-			await this.emitAudit(run, recipe, true, 'queued-for-approval');
+			await this.emitAudit(run, recipe, true, 'queued-for-approval', {}, sponsor.role);
 			return {
 				ok: true,
 				status: 'awaiting-approval',
@@ -234,8 +234,11 @@ export class AiAutopilotService {
 			};
 		}
 
-		// decision === 'always' → fire it.
-		return this.dispatch(run, recipe);
+		// decision === 'always' → fire it.  Pass the sponsor's role through
+		// so dispatch-time audit rows carry the same attribution and the
+		// approve-path re-resolution doesn't need to happen on the cron
+		// fast-path (re-resolution is the approve endpoint's job).
+		return this.dispatch(run, recipe, sponsor.role);
 	}
 
 	/**
@@ -251,6 +254,7 @@ export class AiAutopilotService {
 	private async dispatch(
 		run: AutopilotRun,
 		recipe: AutopilotRecipe,
+		sponsorRole?: string,
 	): Promise<AutopilotProcessResult> {
 		const request = recipe.request;
 		if (!request.intent || !request.actionPayload) {
@@ -264,7 +268,7 @@ export class AiAutopilotService {
 					approverPolicy: 'approve',
 				},
 			});
-			await this.emitAudit(run, recipe, true, 'prompt-deferred');
+			await this.emitAudit(run, recipe, true, 'prompt-deferred', {}, sponsorRole);
 			return {
 				ok: true,
 				status: 'awaiting-approval',
@@ -300,7 +304,7 @@ export class AiAutopilotService {
 				metrics: { wallSeconds: this.wallSecondsSince(run.startedAt) },
 			});
 			await this.recipes.recordFire(run.tenantId, recipe.id, true);
-			await this.emitAudit(run, recipe, true, undefined, { dispatchResult: result });
+			await this.emitAudit(run, recipe, true, undefined, { dispatchResult: result }, sponsorRole);
 			// AI-chain emission — only on success.  Failed / cancelled /
 			// awaiting-approval runs never spawn children (prevents
 			// chains amplifying transient failures).  The depth check
@@ -316,7 +320,7 @@ export class AiAutopilotService {
 				metrics: { wallSeconds: this.wallSecondsSince(run.startedAt) },
 			});
 			await this.recipes.recordFire(run.tenantId, recipe.id, false, errorMessage);
-			await this.emitAudit(run, recipe, false, errorMessage);
+			await this.emitAudit(run, recipe, false, errorMessage, {}, sponsorRole);
 			return { ok: false, status: 'failed', runId: run.id, reason: errorMessage };
 		}
 	}
@@ -403,6 +407,7 @@ export class AiAutopilotService {
 		success: boolean,
 		errorMessage?: string,
 		_extras: Record<string, unknown> = {},
+		sponsorRole?: string,
 	): Promise<void> {
 		// Map the AutopilotTriggerKind union ('queue-message', 'cron', …)
 		// onto the audit row's narrower triggeredBy.kind ('queue', 'cron',
@@ -426,6 +431,7 @@ export class AiAutopilotService {
 				kind: auditTriggerKind,
 				recipeId: recipe.id,
 				sponsorUserId: recipe.sponsorUserId,
+				...(sponsorRole !== undefined && { sponsorRole }),
 				...(run.triggeredBy.parentRunId !== undefined && {
 					parentRunId: run.triggeredBy.parentRunId,
 				}),

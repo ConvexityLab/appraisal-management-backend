@@ -28,6 +28,7 @@ import { AutopilotRecipeRepository } from '../services/autopilot-recipe.reposito
 import { AutopilotRunRepository } from '../services/autopilot-run.repository.js';
 import { AiAuditServerEmitter } from '../services/ai-audit-server.service.js';
 import { AiActionDispatcherService } from '../services/ai-action-dispatcher.service.js';
+import { AutopilotSponsorIdentity } from '../services/autopilot-sponsor-identity.service.js';
 import type { AutopilotRecipe } from '../types/autopilot-recipe.types.js';
 
 const logger = new Logger('AiAutopilotController');
@@ -65,12 +66,20 @@ function canManageRecipe(
 	};
 }
 
-export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
+export function createAiAutopilotRouter(
+	cosmos: CosmosDbService,
+	sponsorIdentity?: AutopilotSponsorIdentity,
+): Router {
 	const router = Router();
 	const recipes = new AutopilotRecipeRepository(cosmos);
 	const runs = new AutopilotRunRepository(cosmos);
 	const audit = new AiAuditServerEmitter(cosmos);
 	const dispatcher = new AiActionDispatcherService(cosmos);
+	// Delegated-identity re-check at approve time: if the sponsor was
+	// deactivated or removed between proposal and approval, fail closed
+	// instead of dispatching with stale authority.  Optional ctor param
+	// keeps tests + alternate wiring overrideable.
+	const sponsors = sponsorIdentity ?? new AutopilotSponsorIdentity();
 
 	// ── Recipes ──────────────────────────────────────────────────────────
 
@@ -279,6 +288,48 @@ export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 			});
 		}
 
+		// Delegated-identity re-check: between the moment this run was
+		// parked as awaiting-approval and the admin's click here, the
+		// sponsor may have been offboarded or deactivated.  Re-resolving
+		// at approve time fails closed (run flips to 'failed' with the
+		// typed reason) instead of dispatching with stale authority.
+		const sponsorAtApprove = await sponsors.resolve(run.tenantId, run.sponsorUserId);
+		if (!sponsorAtApprove.ok) {
+			await runs.update(user.tenantId, runId, {
+				status: 'failed',
+				completedAt: new Date().toISOString(),
+				error: {
+					code: 'SPONSOR_UNRESOLVABLE_AT_APPROVAL',
+					message: sponsorAtApprove.message,
+				},
+			});
+			const auditTriggerKind: 'cron' | 'webhook' | 'user-rule' | 'ai-chain' | 'queue' =
+				run.triggeredBy.kind === 'queue-message' ? 'queue' : run.triggeredBy.kind;
+			await audit.emit({
+				tenantId: run.tenantId,
+				userId: run.sponsorUserId,
+				kind: 'intent',
+				name: run.pendingApproval.intent,
+				scopes: [],
+				sideEffect: 'read',
+				description: `Autopilot run ${runId} approval refused: ${sponsorAtApprove.message}`,
+				success: false,
+				errorMessage: sponsorAtApprove.reason,
+				source: 'autopilot',
+				timestamp: new Date().toISOString(),
+				triggeredBy: {
+					kind: auditTriggerKind,
+					recipeId: run.recipeId,
+					sponsorUserId: run.sponsorUserId,
+				},
+			});
+			return res.status(409).json({
+				success: false,
+				error: sponsorAtApprove.message,
+				code: 'SPONSOR_UNRESOLVABLE_AT_APPROVAL',
+			});
+		}
+
 		const intent = run.pendingApproval.intent;
 		const payload = run.pendingApproval.actionPayload;
 
@@ -332,6 +383,7 @@ export function createAiAutopilotRouter(cosmos: CosmosDbService): Router {
 					kind: auditTriggerKind,
 					recipeId: run.recipeId,
 					sponsorUserId: run.sponsorUserId,
+					sponsorRole: sponsorAtApprove.role,
 				},
 			});
 			return res.json({ success: true, data: { runId, result } });
