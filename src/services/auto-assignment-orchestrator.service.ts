@@ -38,7 +38,18 @@ import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service.js';
 import { ServiceBusEventPublisher } from './service-bus-publisher.js';
 import { ServiceBusEventSubscriber } from './service-bus-subscriber.js';
-import { VendorMatchingEngine } from './vendor-matching-engine.service.js';
+import { VendorMatchingEngine, inferNoMatchReason } from './vendor-matching-engine.service.js';
+
+/**
+ * Local helper — pull a 2-letter state code from a flat propertyAddress string
+ * for the no-match-reason message ("No vendor licensed in FL within 50 mi.").
+ * Mirrors the matcher's internal extractStateHint without exporting it.
+ */
+function extractStateHint(propertyAddress: string | undefined): string | undefined {
+  if (!propertyAddress) return undefined;
+  const match = propertyAddress.match(/\b([A-Z]{2})\b/);
+  return match?.[1];
+}
 import {
   AxiomService,
   type AxiomVendorBidAnalysisResult,
@@ -139,6 +150,13 @@ export interface AutoVendorAssignmentState {
    * so they can answer "why didn't vendor X get considered?".
    */
   deniedVendors?: DeniedVendorEntry[];
+  /**
+   * Populated by the orchestrator when matching produces zero candidates
+   * (status will be EXHAUSTED in that case). Sanitised category — drives the
+   * FE EXHAUSTED Alert's "Couldn't find a vendor: ..." body per Doug's
+   * meeting note. Inferred by inferNoMatchReason from the denied list.
+   */
+  noMatchReason?: import('../types/vendor-marketplace.types.js').NoMatchReason;
 }
 
 export interface RankedReviewerEntry {
@@ -450,8 +468,19 @@ export class AutoAssignmentOrchestratorService {
     }
 
     if (rankedVendors.length === 0) {
-      // No vendors at all — immediately escalate to human
-      this.logger.warn('No matching vendors found — escalating immediately', { orderId });
+      // No vendors at all — immediately escalate to human.
+      // Compute the sanitised "why no match" category so the FE assigner sees
+      // a one-line reason (Doug's meeting-note ask).
+      const stateHint = extractStateHint(propertyAddress);
+      const noMatchReason = inferNoMatchReason(deniedVendors, {
+        radiusUsed:
+          (tenantConfig as { defaultMaxDistanceMiles?: number }).defaultMaxDistanceMiles ?? 50,
+        ...(stateHint ? { productState: stateHint } : {}),
+      });
+      this.logger.warn('No matching vendors found — escalating immediately', {
+        orderId,
+        noMatchReasonCode: noMatchReason.code,
+      });
       await this.recordAssignmentTrace({
         tenantId, orderId, initiatedAt, triggerStart,
         propertyAddress, productType,
@@ -466,7 +495,7 @@ export class AutoAssignmentOrchestratorService {
         outcome: 'escalated',
         selectedVendorId: null,
       });
-      await this.escalateVendorAssignment(order, tenantId, []);
+      await this.escalateVendorAssignment(order, tenantId, [], noMatchReason);
       return;
     }
 
@@ -1298,11 +1327,19 @@ export class AutoAssignmentOrchestratorService {
     order: any,
     tenantId: string,
     vendorsContacted: string[],
+    /**
+     * Optional NoMatchReason inferred from the denied list. When the no-match
+     * path triggered the escalation (zero ranked vendors), the caller passes
+     * this through so the FE EXHAUSTED Alert can show "Couldn't find a vendor:
+     * no vendor licensed in FL within 50 miles" instead of just "exhausted".
+     */
+    noMatchReason?: import('../types/vendor-marketplace.types.js').NoMatchReason,
   ): Promise<void> {
     const exhausedState: Partial<AutoVendorAssignmentState> = {
       status: 'EXHAUSTED',
       currentBidId: null,
       currentBidExpiresAt: null,
+      ...(noMatchReason ? { noMatchReason } : {}),
     };
 
     await this.dbService.updateItem(
