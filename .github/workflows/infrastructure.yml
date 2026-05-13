@@ -94,6 +94,7 @@ jobs:
     #   BATCHDATA_KEY, GOOGLE_MAPS_API_KEY, AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT
     #   GOOGLE_GEMINI_API_KEY, CENSUS_API_KEY, BRIDGE_SERVER_TOKEN, NPS_API_KEY
     #   SAMBANOVA_API_KEY, AZURE_COMMUNICATION_API_KEY
+    #   AIM_PORT_API_KEY                    – Shared secret for AIM Port inbound/outbound integration (written to KV as 'aim-port-api-key')
     env:
       BATCHDATA_KEY: ${{ secrets.BATCHDATA_KEY }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -105,6 +106,7 @@ jobs:
       NPS_API_KEY: ${{ secrets.NPS_API_KEY }}
       SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
       AZURE_COMMUNICATION_API_KEY: ${{ secrets.AZURE_COMMUNICATION_API_KEY }}
+      AIM_PORT_API_KEY: ${{ secrets.AIM_PORT_API_KEY }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -234,6 +236,7 @@ jobs:
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         [ -n "$MOP_SERVICE_AUTH_TOKEN" ] && PARAM_ARGS+=("mopServiceAuthToken=$MOP_SERVICE_AUTH_TOKEN")
+        [ -n "$AIM_PORT_API_KEY" ] && PARAM_ARGS+=("aimPortApiKey=$AIM_PORT_API_KEY")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
         # Grant the CI service principal Cosmos DB Data Contributor role so post-deploy
         # smoke checks (verify-seeded-users) can read from Cosmos via DefaultAzureCredential.
@@ -272,6 +275,7 @@ jobs:
         [ -n "$AZURE_CLIENT_SECRET" ] && PARAM_ARGS+=("azureClientSecret=$AZURE_CLIENT_SECRET")
         [ -n "$AXIOM_WEBHOOK_SECRET" ] && PARAM_ARGS+=("axiomWebhookSecret=$AXIOM_WEBHOOK_SECRET")
         [ -n "$MOP_SERVICE_AUTH_TOKEN" ] && PARAM_ARGS+=("mopServiceAuthToken=$MOP_SERVICE_AUTH_TOKEN")
+        [ -n "$AIM_PORT_API_KEY" ] && PARAM_ARGS+=("aimPortApiKey=$AIM_PORT_API_KEY")
         [ -n "$SP_OBJECT_ID" ] && PARAM_ARGS+=("azureServicePrincipalObjectId=$SP_OBJECT_ID")
         # Grant the CI service principal Cosmos DB Data Contributor role so post-deploy
         # smoke checks (verify-seeded-users) can read from Cosmos via DefaultAzureCredential.
