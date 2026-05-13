@@ -625,6 +625,65 @@ jobs:
     - name: Run post-deploy auth smoke tests
       run: bash scripts/smoke-test-auth.sh "https://${{ steps.verify.outputs.app-url }}"
 
+    # Container Apps in Single revision mode is supposed to auto-deactivate
+    # the previous revision when a new one becomes Healthy.  Real behaviour
+    # observed 2026-05-12: prior Healthy revisions stayed Active alongside
+    # the new one, and Unhealthy revisions stuck around too — meaning
+    # `az containerapp revision list` showed multiple Active rows for the
+    # same app, only the latest of which served traffic.  Explicit cleanup
+    # closes this drift.
+    #
+    # Runs AFTER the auth smoke test so the old revision stays available as
+    # a rollback target until the new one has cleared smoke.  Idempotent —
+    # a re-run on an already-clean app is a no-op.
+    - name: Deactivate stale Container App revisions
+      run: |
+        set -euo pipefail
+
+        deactivate_stale() {
+          local app_name="$1"
+          local rg="$2"
+
+          echo "Cleaning stale revisions on $app_name..."
+
+          local latest
+          latest=$(az containerapp show \
+            --name "$app_name" \
+            --resource-group "$rg" \
+            --query 'properties.latestRevisionName' -o tsv)
+
+          if [[ -z "$latest" ]]; then
+            echo "  WARN: could not resolve latestRevisionName — skipping"
+            return 0
+          fi
+          echo "  Latest (keep): $latest"
+
+          # JMESPath: every revision currently Active whose name != latest.
+          local stale
+          stale=$(az containerapp revision list \
+            --name "$app_name" \
+            --resource-group "$rg" \
+            --query "[?properties.active==\`true\` && name!='$latest'].name" \
+            -o tsv)
+
+          if [[ -z "$stale" ]]; then
+            echo "  No stale active revisions."
+            return 0
+          fi
+
+          for rev in $stale; do
+            echo "  Deactivating $rev"
+            az containerapp revision deactivate \
+              --name "$app_name" \
+              --resource-group "$rg" \
+              --revision "$rev" \
+              --output none
+          done
+        }
+
+        deactivate_stale "${{ steps.get-app.outputs.api-name }}" "${{ steps.get-app.outputs.resource-group }}"
+        deactivate_stale "${{ steps.get-app.outputs.functions-name }}" "${{ steps.get-app.outputs.resource-group }}"
+
   verify-seeded-users:
     name: Verify Seeded User Profiles
     needs: [determine-environment, deploy-container-app]
