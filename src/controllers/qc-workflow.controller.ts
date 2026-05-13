@@ -1389,6 +1389,36 @@ router.post(
           status: 'COMPLETED' as any,
         });
         logger.info('Order transitioned to COMPLETED after QC approval', { orderId: result.orderId });
+
+        // Phase 8e: auto-generate report if the order has it enabled
+        try {
+          const orderResp = await dbService.getItem<any>('orders', result.orderId, (result as any).tenantId ?? result.orderId);
+          const orderDoc = orderResp?.data;
+          if (orderDoc?.autoGenerateReport && orderDoc?.defaultReportTemplateId) {
+            logger.info('Auto-generating report after QC approval', {
+              orderId: result.orderId,
+              templateId: orderDoc.defaultReportTemplateId,
+            });
+            // Fire-and-forget with its own error boundary — approval must not roll back
+            const autoFinalReportService = new FinalReportService(dbService);
+            autoFinalReportService.generateReport({
+              orderId: result.orderId,
+              templateId: orderDoc.defaultReportTemplateId,
+              requestedBy: reviewedBy,
+              notes: 'Auto-generated on QC approval',
+            }).catch((autoErr: unknown) => {
+              logger.error('Auto-report generation failed after QC approval', {
+                orderId: result.orderId,
+                error: autoErr,
+              });
+            });
+          }
+        } catch (lookupErr) {
+          logger.error('Failed to look up order for auto-report check', {
+            orderId: result.orderId,
+            error: lookupErr,
+          });
+        }
       }
 
       if (outcome === 'CONDITIONAL') {
