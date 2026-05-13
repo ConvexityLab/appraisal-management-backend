@@ -256,10 +256,6 @@ var containerApps = [
       // services.mop-api.external-url. See:
       //   src/services/vendor-matching-rules/factory.ts
       //   docs/AUTO_ASSIGNMENT_REVIEW.md §12
-      {
-        name: 'MOP_RULES_SERVICE_AUTH_TOKEN'
-        secretRef: 'mop-rules-service-auth-token'
-      }
       // Blob-sync intake worker — name of the Service Bus queue that Event Grid
       // delivers blob-created notifications to. Requires Standard or Premium SB
       // tier; this env var must be absent (or the worker not registered) on dev
@@ -267,6 +263,12 @@ var containerApps = [
       {
         name: 'BLOB_SYNC_SERVICE_BUS_QUEUE'
         value: 'blob-sync-events'
+      }
+    ],
+    empty(mopServiceAuthToken) ? [] : [
+      {
+        name: 'MOP_RULES_SERVICE_AUTH_TOKEN'
+        secretRef: 'mop-rules-service-auth-token'
       }
     ])
     scaleRule: {
