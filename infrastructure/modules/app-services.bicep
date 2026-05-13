@@ -189,7 +189,7 @@ var containerApps = [
     // at runtime via appConfigLoader.ts. The QC controllers no longer
     // instantiate at module-top-level (commit ea0b923) so loadAppConfig
     // populates process.env before any service constructor fires.
-    env: [
+    env: concat([
       {
         name: 'NODE_ENV'
         value: environment == 'prod' ? 'production' : 'development'
@@ -222,11 +222,13 @@ var containerApps = [
         name: 'APP_CONFIG_LABEL'
         value: environment
       }
+    ], empty(axiomWebhookSecret) ? [] : [
       {
         // HMAC secret for inbound Axiom webhook signature verification.
         name: 'AXIOM_WEBHOOK_SECRET'
         secretRef: 'axiom-webhook-secret'
       }
+    ], [
       {
         name: 'AZURE_OPENAI_API_KEY'
         secretRef: 'azure-openai-api-key'
@@ -266,7 +268,7 @@ var containerApps = [
         name: 'BLOB_SYNC_SERVICE_BUS_QUEUE'
         value: 'blob-sync-events'
       }
-    ]
+    ])
     scaleRule: {
       name: 'api-http-scaling'
       http: {

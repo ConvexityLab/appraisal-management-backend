@@ -95,7 +95,7 @@ resource receivedContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   properties: {
     publicAccess: 'None'
     metadata: {
-      purpose: 'Vendor blob-drop intake zone — BlobCreated events route to blob-sync-events queue'
+      purpose: 'Vendor blob-drop intake zone - BlobCreated events route to blob-sync-events queue'
       environment: environment
     }
   }
