@@ -8,10 +8,35 @@
 import { describe, it, expect } from 'vitest';
 import { VendorOrderScorecardSuggester } from '../vendor-order-scorecard-suggester.service';
 
-function makeDb(order: any) {
+/**
+ * Build a minimal mock DbService that returns `order` for findOrderById and
+ * a single QCReview-shaped doc for queryItems('qc-reviews', ...) so the
+ * suggester sees the supplied critical/major findings.
+ */
+function makeDb(
+  order: any,
+  findings: { critical?: number; major?: number; rawFindings?: Array<{ severity?: string }> } = {},
+) {
   return {
     async findOrderById() {
       return { success: true, data: order };
+    },
+    async queryItems(container: string) {
+      if (container !== 'qc-reviews') return { success: true, data: [] };
+      const review = {
+        orderId: order?.id,
+        completedAt: new Date().toISOString(),
+        results: {
+          ...(typeof findings.critical === 'number'
+            ? { criticalIssuesCount: findings.critical }
+            : {}),
+          ...(typeof findings.major === 'number'
+            ? { majorIssuesCount: findings.major }
+            : {}),
+          ...(findings.rawFindings ? { findings: findings.rawFindings } : {}),
+        },
+      };
+      return { success: true, data: [review] };
     },
   } as never;
 }
@@ -77,46 +102,71 @@ describe('VendorOrderScorecardSuggester.suggestForOrder', () => {
     expect(s.communication).toBe(2);
   });
 
-  it('zero-floors quality/report on a CRITICAL finding', async () => {
+  it('zero-floors quality/report on a CRITICAL finding (from qc-reviews container)', async () => {
     const dueDate = dayShift(now, 5);
     const svc = new VendorOrderScorecardSuggester(
-      makeDb({
-        id: 'o-4',
-        dueDate: dueDate.toISOString(),
-        deliveredDate: dueDate.toISOString(),
-        revisionCount: 0,
-        qcFindings: [{ severity: 'CRITICAL' }],
-      }),
+      makeDb(
+        {
+          id: 'o-4',
+          dueDate: dueDate.toISOString(),
+          deliveredDate: dueDate.toISOString(),
+          revisionCount: 0,
+        },
+        { critical: 1, major: 0 },
+      ),
     );
     const s = await svc.suggestForOrder('o-4');
     expect(s.quality).toBe(1);
     expect(s.report).toBe(1);
   });
 
-  it('scales quality with MAJOR-finding count', async () => {
+  it('scales quality with MAJOR-finding count from QC review', async () => {
     const dueDate = dayShift(now, 5);
     const svc = new VendorOrderScorecardSuggester(
-      makeDb({
-        id: 'o-5',
-        dueDate: dueDate.toISOString(),
-        deliveredDate: dueDate.toISOString(),
-        revisionCount: 0,
-        qcFindings: [
-          { severity: 'MAJOR' },
-          { severity: 'MAJOR' },
-          { severity: 'MAJOR' },
-          { severity: 'MAJOR' },
-        ],
-      }),
+      makeDb(
+        {
+          id: 'o-5',
+          dueDate: dueDate.toISOString(),
+          deliveredDate: dueDate.toISOString(),
+          revisionCount: 0,
+        },
+        { critical: 0, major: 4 },
+      ),
     );
     const s = await svc.suggestForOrder('o-5');
     expect(s.quality).toBe(2);
+  });
+
+  it('falls back to counting findings[].severity when rollup counts are absent', async () => {
+    const dueDate = dayShift(now, 5);
+    const svc = new VendorOrderScorecardSuggester(
+      makeDb(
+        {
+          id: 'o-6',
+          dueDate: dueDate.toISOString(),
+          deliveredDate: dueDate.toISOString(),
+          revisionCount: 0,
+        },
+        {
+          rawFindings: [
+            { severity: 'MAJOR' },
+            { severity: 'MAJOR' },
+            { severity: 'INFO' },
+          ],
+        },
+      ),
+    );
+    const s = await svc.suggestForOrder('o-6');
+    expect(s.quality).toBe(3); // 2 majors → 3
   });
 
   it('returns {} when the order is not found', async () => {
     const svc = new VendorOrderScorecardSuggester({
       async findOrderById() {
         return { success: true, data: null };
+      },
+      async queryItems() {
+        return { success: true, data: [] };
       },
     } as never);
     const s = await svc.suggestForOrder('missing');
