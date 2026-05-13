@@ -149,6 +149,14 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
+    # Build workspace packages BEFORE type-check + tests + build.
+    # @l1/shared-types' package.json `main` points at ./dist/index.js
+    # (built JS), so any code that imports @l1/shared-types at test or
+    # runtime fails with ERR_MODULE_NOT_FOUND when dist/ isn't built yet.
+    # This step is the explicit gate that makes the workspace usable.
+    - name: Build workspace packages
+      run: pnpm run build:workspace
+
     - name: Type check
       run: pnpm run type-check
 
@@ -187,13 +195,18 @@ jobs:
         
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
-      
+
+    # Build workspace packages BEFORE type-check + tests + build.
+    # See the build-and-test job comment for full rationale.
+    - name: Build workspace packages
+      run: pnpm run build:workspace
+
     - name: Run type checking
       run: pnpm run type-check
-      
+
     - name: Run tests
       run: pnpm run test
-      
+
     - name: Build application
       run: pnpm run build
 
