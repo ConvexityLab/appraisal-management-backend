@@ -2943,16 +2943,21 @@ export class AxiomService {
   }
 
   /**
-   * Publish a `qc.issue.detected` event for each fail/warning verdict in an
-   * evaluation run.  Idempotent at the QCIssueRecorderService layer (it
-   * upserts by deterministic id), so re-running an evaluation that produces
-   * the same verdicts won't duplicate issue records.
+   * Publish a `qc.issue.detected` event for each fail / needs_review verdict
+   * in an evaluation run.  Idempotent at the QCIssueRecorderService layer
+   * (it upserts by deterministic id), so re-running an evaluation that
+   * produces the same verdicts won't duplicate issue records.
    *
    * Use from any code path that produces a v2 run response — the synchronous
    * `evaluateScopeV2` controller path needs this because the pipeline-based
    * `fetchAndStorePipelineResults` path is async and only fires for the
    * legacy webhook flow.  Without it, the AI Issues panel stays empty even
    * when Axiom returns real fail verdicts.
+   *
+   * v2 verdicts (AxiomCriterionStatus) have no `'warning'` — `'needs_review'`
+   * is the soft-warning equivalent.  `'cannot_evaluate'` is treated as a
+   * data-quality issue separate from criterion verdicts and is not published
+   * here.
    */
   async publishIssuesFromRunResponse(
     run: import('../types/axiom.types.js').AxiomEvaluationRunResponse,
@@ -2968,7 +2973,7 @@ export class AxiomService {
       meta: { runId: run.evaluationRunId },
     });
     for (const criterion of run.results) {
-      if (criterion.evaluation !== 'fail' && criterion.evaluation !== 'warning') continue;
+      if (criterion.evaluation !== 'fail' && criterion.evaluation !== 'needs_review') continue;
       try {
         const evt: QCIssueDetectedEvent = {
           id: uuidv4(),

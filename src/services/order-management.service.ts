@@ -166,14 +166,17 @@ export class OrderManagementService extends SimpleEventEmitter {
       // leave the order's value as-is rather than blocking creation.
       if (!(order as any).axiomProgramId && order.clientId) {
         try {
-          const cfg = await this.tenantConfigService.getConfig(order.clientId, order.subClientId);
+          // Order has no subClientId today, so this resolves to client-level
+          // platform defaults inside tenantConfigService (its fallback path
+          // when subClientId is undefined).
+          const cfg = await this.tenantConfigService.getConfig(order.clientId);
           if (cfg.axiomProgramId) {
             (order as any).axiomProgramId = cfg.axiomProgramId;
             (order as any).axiomProgramVersion = cfg.axiomProgramVersion ?? '1.0.0';
           }
         } catch (cfgErr) {
           this.logger.warn('createOrder: tenant axiom-program lookup failed; leaving order without program defaults', {
-            orderId, clientId: order.clientId, subClientId: order.subClientId,
+            orderId, clientId: order.clientId,
             error: cfgErr instanceof Error ? cfgErr.message : String(cfgErr),
           });
         }
