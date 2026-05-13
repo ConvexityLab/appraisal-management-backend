@@ -1238,6 +1238,7 @@ export interface UpdateProductRequest {
   status?: ProductStatus;
   matchingCriteriaSets?: string[];
   autoAwardFirstBid?: boolean;
+  gradeLevels?: GradeLevel[];
 }
 export * from './ai-parser.types';
 
