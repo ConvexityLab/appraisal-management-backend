@@ -1223,6 +1223,7 @@ export interface CreateProductRequest {
   rushTurnTimeDays?: number;
   matchingCriteriaSets?: string[];
   autoAwardFirstBid?: boolean;
+  gradeLevels?: GradeLevel[];
 }
 
 export interface UpdateProductRequest {

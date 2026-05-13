@@ -883,6 +883,7 @@ export class CosmosDbService {
       ...(product.techFee !== undefined && { techFee: product.techFee }),
       ...(product.feeSplitPercent !== undefined && { feeSplitPercent: product.feeSplitPercent }),
       ...(product.rushTurnTimeDays !== undefined && { rushTurnTimeDays: product.rushTurnTimeDays }),
+      ...(product.gradeLevels !== undefined && { gradeLevels: product.gradeLevels }),
     } satisfies import('../types/index.js').Product;
     const { resource } = await this.productsContainer.items.create(doc);
     return { success: true, data: resource as unknown as import('../types/index.js').Product };
@@ -893,6 +894,21 @@ export class CosmosDbService {
     const { resources } = await this.productsContainer.items
       .query<import('../types/index.js').Product>({
         query: 'SELECT * FROM c WHERE c.tenantId = @tenantId ORDER BY c.name ASC',
+        parameters: [{ name: '@tenantId', value: tenantId }],
+      })
+      .fetchAll();
+    return { success: true, data: resources };
+  }
+
+  /** Returns only platform-default products (clientId IS NULL or not defined). */
+  async findPlatformProducts(tenantId: string): Promise<ApiResponse<import('../types/index.js').Product[]>> {
+    if (!this.productsContainer) throw new Error('Products container not initialized');
+    const { resources } = await this.productsContainer.items
+      .query<import('../types/index.js').Product>({
+        query:
+          'SELECT * FROM c WHERE c.tenantId = @tenantId ' +
+          'AND (NOT IS_DEFINED(c.clientId) OR c.clientId = null) ' +
+          'ORDER BY c.name ASC',
         parameters: [{ name: '@tenantId', value: tenantId }],
       })
       .fetchAll();
