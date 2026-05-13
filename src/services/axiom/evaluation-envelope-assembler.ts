@@ -106,6 +106,23 @@ export interface EvaluationDataEnvelope {
 
 // ─── Inputs ────────────────────────────────────────────────────────────────
 
+export interface InlineExtractedDocument {
+  /** Stable id for the document so its sourceId is reproducible. */
+  documentId: string;
+  /** Document-type slug or alias (resolved by Axiom's registry). */
+  documentType: string;
+  /** Extractor confidence (0..1) — propagated onto every emitted field. */
+  confidence?: number;
+  /** Provider that produced the extraction (e.g. "diya", "manual-probe"). */
+  providerName?: string;
+  /**
+   * Path-keyed extracted values. Nested objects are walked into envelope
+   * fields using the same `walkAndEmit` flattener as the canonical
+   * snapshot path.
+   */
+  extractedData?: Record<string, unknown>;
+}
+
 export interface AssembleEnvelopeInput {
   scopeId: string;
   programId: string;
@@ -114,6 +131,13 @@ export interface AssembleEnvelopeInput {
   schemaId?: string;
   /** Identity for ReviewContext load (tenant scoping + correlation/audit). */
   actor: AnalysisSubmissionActorContext;
+  /**
+   * Pattern B — caller-supplied extracted documents. When present they are
+   * folded into the envelope alongside (or in place of) any data assembled
+   * from the order's prior canonical snapshot. Allows callers to evaluate
+   * against extractions that haven't been persisted yet.
+   */
+  extractedDocuments?: InlineExtractedDocument[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -172,6 +196,7 @@ function walkAndEmit(
   prefix: string,
   value: unknown,
   contributedAt: string,
+  extra?: { sources?: string[]; confidence?: number },
 ): void {
   if (!isMeaningful(value)) return;
 
@@ -189,18 +214,18 @@ function walkAndEmit(
       // sane path. Skip silently; the criterion will treat the field as
       // not-provided.
       if (!prefix) return;
-      addField(fields, prefix, value, { contributedAt });
+      addField(fields, prefix, value, { contributedAt, ...(extra ?? {}) });
       return;
     }
     value.forEach((item, idx) => {
-      walkAndEmit(fields, joinPath(prefix, idx), item, contributedAt);
+      walkAndEmit(fields, joinPath(prefix, idx), item, contributedAt, extra);
     });
     return;
   }
 
   if (typeof value === 'object') {
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      walkAndEmit(fields, joinPath(prefix, key), child, contributedAt);
+      walkAndEmit(fields, joinPath(prefix, key), child, contributedAt, extra);
     }
     return;
   }
@@ -208,7 +233,7 @@ function walkAndEmit(
   // Scalar leaf — top-level scalars at empty prefix are skipped for the
   // same reason as scalar arrays above (no sane path to assign them).
   if (!prefix) return;
-  addField(fields, prefix, value, { contributedAt });
+  addField(fields, prefix, value, { contributedAt, ...(extra ?? {}) });
 }
 
 /**
@@ -297,6 +322,30 @@ export class EvaluationEnvelopeAssembler {
       ...(context.identity.clientId && { clientId: context.identity.clientId }),
       ...(context.identity.subClientId && { subClientId: context.identity.subClientId }),
     };
+
+    // Pattern B fold-in: caller-supplied inline extractions become both
+    // envelope.sources entries and walked fields. Each emitted field carries
+    // the document's sourceId in its `sources` array so Axiom can attribute
+    // values back to the originating doc.
+    if (input.extractedDocuments && input.extractedDocuments.length > 0) {
+      for (const doc of input.extractedDocuments) {
+        const sourceId = `extracted:${doc.documentId}`;
+        sources[sourceId] = {
+          type: 'document',
+          documentType: String(doc.documentType ?? 'document').toLowerCase().replace(/_/g, '-'),
+          documentRef: { blobPath: doc.documentId },
+          ...(doc.providerName ? { providerName: doc.providerName } : {}),
+        };
+        if (doc.extractedData && typeof doc.extractedData === 'object') {
+          for (const [topKey, topVal] of Object.entries(doc.extractedData)) {
+            walkAndEmit(fields, topKey, topVal, assembledAt, {
+              sources: [sourceId],
+              ...(typeof doc.confidence === 'number' ? { confidence: doc.confidence } : {}),
+            });
+          }
+        }
+      }
+    }
 
     const envelope: EvaluationDataEnvelope = {
       schemaId,

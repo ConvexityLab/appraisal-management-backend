@@ -2897,11 +2897,17 @@ export class AxiomService {
      * and audit attribution (`assembledBy`, `correlationId`).
      */
     actor: import('../types/analysis-submission.types.js').AnalysisSubmissionActorContext;
+    /**
+     * Pattern B — caller-supplied extracted documents. Folded into the
+     * envelope alongside (or in place of) any data assembled from the
+     * order's prior canonical snapshot.
+     */
+    extractedDocuments?: import('./axiom/evaluation-envelope-assembler.js').InlineExtractedDocument[];
   }): Promise<import('../types/axiom.types.js').AxiomEvaluationRunResponse> {
     if (!this.enabled) {
       throw new Error('Axiom not configured — cannot evaluate scope');
     }
-    const { scopeId, programId, programVersion, schemaId, actor } = input;
+    const { scopeId, programId, programVersion, schemaId, actor, extractedDocuments } = input;
     const resolvedSchemaId = schemaId ?? programId;
 
     // Phase 5: assemble an EvaluationDataEnvelope from the canonical
@@ -2920,6 +2926,7 @@ export class AxiomService {
       programVersion,
       schemaId: resolvedSchemaId,
       actor,
+      ...(extractedDocuments && extractedDocuments.length > 0 ? { extractedDocuments } : {}),
     });
 
     const url = `/api/criterion/loans/${encodeURIComponent(scopeId)}/programs/${encodeURIComponent(programId)}/evaluate`;

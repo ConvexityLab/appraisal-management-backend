@@ -1238,6 +1238,37 @@ export class AxiomController {
       const programVersion =
         typeof body.programVersion === 'string' ? body.programVersion : undefined;
       const schemaId = typeof body.schemaId === 'string' ? body.schemaId : undefined;
+      // Pattern B inline extractions. Validated as an array; each entry must
+      // carry at least documentId + documentType — anything else is permissive
+      // (the assembler walks extractedData defensively).
+      const rawExtracted = body.extractedDocuments;
+      let extractedDocuments:
+        | import('../services/axiom/evaluation-envelope-assembler.js').InlineExtractedDocument[]
+        | undefined;
+      if (rawExtracted !== undefined) {
+        if (!Array.isArray(rawExtracted)) {
+          res.status(400).json({
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'extractedDocuments must be an array when present' },
+          });
+          return;
+        }
+        for (const d of rawExtracted) {
+          if (!d || typeof d !== 'object'
+            || typeof (d as any).documentId !== 'string'
+            || typeof (d as any).documentType !== 'string') {
+            res.status(400).json({
+              success: false,
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Each extractedDocuments entry must include string documentId and documentType',
+              },
+            });
+            return;
+          }
+        }
+        extractedDocuments = rawExtracted as typeof extractedDocuments;
+      }
 
       if (!programId || !programVersion) {
         res.status(400).json({
@@ -1279,6 +1310,9 @@ export class AxiomController {
         actor,
       };
       if (schemaId !== undefined) evaluateInput.schemaId = schemaId;
+      if (extractedDocuments && extractedDocuments.length > 0) {
+        evaluateInput.extractedDocuments = extractedDocuments;
+      }
       const summary = await this.axiomService.evaluateScope(evaluateInput);
 
       // Stamp order + write lifecycle event so the FE timeline + order
