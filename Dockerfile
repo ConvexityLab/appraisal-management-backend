@@ -87,5 +87,12 @@ ENV NODE_OPTIONS="--max-old-space-size=1024"
 # Use dumb-init to handle signals properly in containers
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application
-CMD ["node", "dist/app-production.js"]
+# Start the application.
+#
+# `dist/src/app-production.js` (not `dist/app-production.js`):
+# tsconfig.json has `rootDir: "."` so tsc preserves source-tree structure
+# under dist/.  After the @l1/shared-types workspace import was added,
+# the emit root expanded to project root → `src/app-production.ts` now
+# compiles to `dist/src/app-production.js`.  Crash-loop on the
+# 0000841 revision was the symptom; this CMD path is the fix.
+CMD ["node", "dist/src/app-production.js"]

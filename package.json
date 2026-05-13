@@ -19,7 +19,7 @@
   "scripts": {
     "build": "npx tsc && node scripts/copy-assets.cjs",
     "build:production": "npx tsc && node scripts/copy-assets.cjs",
-    "start": "node dist/app-production.js",
+    "start": "node dist/src/app-production.js",
     "start:dev": "node dist/server.js",
     "start:minimal": "node dist/minimal-server.js",
     "dev": "tsx --env-file .env --watch src/app-production.ts",
