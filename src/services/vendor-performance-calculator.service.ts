@@ -7,6 +7,8 @@ import type { VendorOrder as Order } from "../types/vendor-order.types.js";
 import type { VendorOrderScorecardEntry } from '../types/vendor-order.types.js';
 import { Logger } from '../utils/logger.js';
 import { CosmosDbService } from './cosmos-db.service';
+import { ScorecardRollupProfileService } from './scorecard-rollup-profile.service.js';
+import { AuditTrailService } from './audit-trail.service.js';
 import {
   VendorPerformanceMetrics,
   VendorTier,
@@ -34,19 +36,18 @@ export class VendorPerformanceCalculatorService {
   private logger: Logger;
   private dbService: CosmosDbService;
   /**
-   * Optional rollup-profile service. When supplied, calculateVendorMetrics
-   * resolves the active per-tenant profile and uses its category weights,
-   * window, blend ratio, gates, penalties, and tier thresholds. When absent
-   * (legacy callers), falls back to the hard-coded SCORECARD_WINDOW_SIZE /
-   * SCORECARD_BLEND_WEIGHT / TIER_THRESHOLDS so existing behaviour is
-   * unchanged.
+   * Rollup-profile service. calculateVendorMetrics resolves the active
+   * per-tenant profile through this and uses its category weights, window,
+   * blend ratio, gates, penalties, and tier thresholds. Default-constructed
+   * so every call site picks up David's algorithm automatically; tests can
+   * substitute via setRollupProfileService.
    *
-   * The constructor accepts it through a field setter rather than a
-   * required constructor arg to keep all existing `new
-   * VendorPerformanceCalculatorService()` call sites working without
-   * cascade edits.
+   * For unprofiled tenants the resolver returns DEFAULT_BASE_PROFILE — the
+   * legacy hard-coded constants (SCORECARD_WINDOW_SIZE / SCORECARD_BLEND_WEIGHT
+   * / TIER_THRESHOLDS) are retained below only as a paranoia fallback for the
+   * narrow case where resolve itself throws.
    */
-  private rollupProfileService?: import('./scorecard-rollup-profile.service.js').ScorecardRollupProfileService;
+  private rollupProfileService: ScorecardRollupProfileService;
 
   // Scoring weights (must sum to 1.0)
   private readonly WEIGHTS = {
@@ -68,16 +69,17 @@ export class VendorPerformanceCalculatorService {
   constructor() {
     this.logger = new Logger();
     this.dbService = new CosmosDbService();
+    this.rollupProfileService = new ScorecardRollupProfileService(
+      this.dbService,
+      new AuditTrailService(this.dbService),
+    );
   }
 
   /**
-   * Wire in the rollup profile service after construction. Call sites that
-   * want David's algorithm-driven scoring pass it in once at app startup;
-   * sites that don't are unaffected (legacy 25-window / 50-blend behaviour).
+   * Override the rollup profile service — used by tests to substitute a stub.
+   * Production code should rely on the default-constructed instance.
    */
-  public setRollupProfileService(
-    svc: import('./scorecard-rollup-profile.service.js').ScorecardRollupProfileService,
-  ): void {
+  public setRollupProfileService(svc: ScorecardRollupProfileService): void {
     this.rollupProfileService = svc;
   }
 
@@ -98,22 +100,24 @@ export class VendorPerformanceCalculatorService {
     this.logger.info('Calculating vendor performance metrics', { vendorId, tenantId });
 
     try {
-      // Resolve David's rollup profile if a profile service is wired in.
-      // Falls back to hard-coded constants for tenants without a profile.
-      const profile = this.rollupProfileService
-        ? await this.rollupProfileService.resolveProfile({
-            tenantId,
-            ...(profileInput?.clientId ? { clientId: profileInput.clientId } : {}),
-            ...(profileInput?.productType ? { productType: profileInput.productType } : {}),
-            ...(profileInput?.phase ? { phase: profileInput.phase } : {}),
-          }).catch((err) => {
-            this.logger.warn('Rollup profile resolve failed; using defaults', {
-              vendorId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            return undefined;
-          })
-        : undefined;
+      // Resolve David's rollup profile. resolveProfile always returns at
+      // least the in-memory DEFAULT_BASE_PROFILE — undefined only when the
+      // resolve call itself throws (Cosmos outage etc.), in which case we
+      // fall back to the legacy hard-coded constants further down.
+      const profile = await this.rollupProfileService
+        .resolveProfile({
+          tenantId,
+          ...(profileInput?.clientId ? { clientId: profileInput.clientId } : {}),
+          ...(profileInput?.productType ? { productType: profileInput.productType } : {}),
+          ...(profileInput?.phase ? { phase: profileInput.phase } : {}),
+        })
+        .catch((err) => {
+          this.logger.warn('Rollup profile resolve failed; using defaults', {
+            vendorId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return undefined;
+        });
 
       // Fetch all completed orders for this vendor
       const orders = await this.getVendorOrders(vendorId, tenantId);
