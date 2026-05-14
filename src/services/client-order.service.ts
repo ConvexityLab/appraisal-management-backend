@@ -320,7 +320,68 @@ export class ClientOrderService {
     // persisted and is the source of truth.
     await this.publishClientOrderCreated(finalClientOrder);
 
+    // Also publish `engagement.order.created` per child VendorOrder so the
+    // AutoAssignmentOrchestrator (which subscribes only to that event,
+    // matching what the legacy POST /api/orders path emits) can rank
+    // vendors and send bids. Was the gap J16 surfaced — without this,
+    // the new ClientOrder/VendorOrder split skipped auto-assignment.
+    for (const vo of vendorOrders) {
+      await this.publishEngagementOrderCreated(finalClientOrder, vo);
+    }
+
     return { clientOrder: finalClientOrder, vendorOrders };
+  }
+
+  /**
+   * Publish `engagement.order.created` for a single VendorOrder. Mirrors
+   * the shape order.controller.ts emits on the legacy POST /api/orders
+   * path, so AutoAssignmentOrchestrator handles both paths identically.
+   * Publish failures are logged but never rethrown — the VendorOrder is
+   * already persisted.
+   */
+  private async publishEngagementOrderCreated(
+    clientOrder: ClientOrder,
+    vendorOrder: VendorOrder,
+  ): Promise<void> {
+    const propAddr = (clientOrder as unknown as { propertyDetails?: { address?: string; city?: string; state?: string; zipCode?: string } }).propertyDetails;
+    const addrString = propAddr
+      ? [propAddr.address, propAddr.city, propAddr.state, propAddr.zipCode]
+          .filter((s): s is string => typeof s === 'string' && s.length > 0)
+          .join(', ')
+      : '';
+    const event = {
+      id: `eoc-${vendorOrder.id}-${Date.now()}`,
+      type: 'engagement.order.created' as const,
+      timestamp: new Date(),
+      source: 'ClientOrderService',
+      version: '1.0',
+      category: EventCategory.ASSIGNMENT,
+      data: {
+        engagementId: clientOrder.engagementId,
+        orderId: vendorOrder.id,
+        orderNumber: (vendorOrder as unknown as { orderNumber?: string }).orderNumber ?? '',
+        tenantId: clientOrder.tenantId,
+        productType: clientOrder.productType,
+        propertyAddress: addrString,
+        propertyState: propAddr?.state ?? '',
+        clientId: (clientOrder as unknown as { clientId?: string }).clientId ?? '',
+        loanAmount: 0,
+        priority: 'STANDARD' as const,
+        dueDate: (vendorOrder as unknown as { dueDate?: string | Date }).dueDate
+          ? new Date((vendorOrder as unknown as { dueDate: string | Date }).dueDate)
+          : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    };
+    try {
+      await this.publisher.publish(event as never);
+    } catch (err) {
+      this.logger.warn('Failed to publish engagement.order.created — VendorOrder already persisted', {
+        vendorOrderId: vendorOrder.id,
+        clientOrderId: clientOrder.id,
+        tenantId: clientOrder.tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
