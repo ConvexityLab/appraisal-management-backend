@@ -43,6 +43,12 @@ export {
   ORDER_DECOMPOSITION_CATEGORY_ID,
 } from './categories/order-decomposition.category.js';
 
+export {
+  buildUadComplianceCategory,
+  UAD_COMPLIANCE_CATEGORY_ID,
+  buildConfigMap as buildUadComplianceConfigMap,
+} from './categories/uad-compliance.category.js';
+
 /**
  * Wire each registered category's `push` method into the
  * DecisionRulePackService as a per-category onNewActivePack hook.

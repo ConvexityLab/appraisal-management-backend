@@ -66,6 +66,7 @@ import {
   buildFiringRulesCategory,
   buildAxiomCriteriaCategory,
   buildOrderDecompositionCategory,
+  buildUadComplianceCategory,
   wireRegistryHooks,
 } from '../services/decision-engine/index.js';
 import { AssignmentTracesController } from '../controllers/assignment-traces.controller.js';
@@ -1722,6 +1723,11 @@ export class AppraisalManagementAPIServer {
       registry.register(buildFiringRulesCategory({ db: this.dbService }));
       registry.register(buildAxiomCriteriaCategory({ db: this.dbService }));
       registry.register(buildOrderDecompositionCategory({ db: this.dbService }));
+      // UAD-3.6 compliance — in-process category. The pack carries per-rule
+      // config overrides (enable/severity/messageOverride) keyed to the
+      // built-in rule catalogue; UadComplianceController resolves the active
+      // pack at request time so a save takes effect on the next read.
+      registry.register(buildUadComplianceCategory());
 
       // Register each category's `push` as an onNewActivePack hook so saves
       // automatically notify the upstream evaluator.
