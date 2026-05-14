@@ -264,6 +264,21 @@ var containerApps = [
         name: 'BLOB_SYNC_SERVICE_BUS_QUEUE'
         value: 'blob-sync-events'
       }
+      // Decision Engine background jobs — both off by default in dev,
+      // on in staging+prod. See docs/DECISION_ENGINE_RULES_SURFACE.md
+      // rev 16. FiringRulesEvaluatorJob writes one firing-decision row
+      // per (tenant, vendor, day); DecisionAnalyticsAggregationJob
+      // pre-computes per-(tenant, category, days) analytics summaries
+      // into decision-rule-analytics so /analytics serves a fresh
+      // snapshot before falling back to live compute.
+      {
+        name: 'FIRING_RULES_JOB_ENABLED'
+        value: environment == 'dev' ? 'false' : 'true'
+      }
+      {
+        name: 'DECISION_ANALYTICS_JOB_ENABLED'
+        value: environment == 'dev' ? 'false' : 'true'
+      }
     ],
     empty(mopServiceAuthToken) ? [] : [
       {
