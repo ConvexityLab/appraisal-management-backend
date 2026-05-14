@@ -207,6 +207,7 @@ import { AppraiserController } from '../controllers/appraiser.controller';
 import { VendorController } from '../controllers/production-vendor.controller';
 import { VendorMatchingCriteriaController } from '../controllers/vendor-matching-criteria.controller.js';
 import { ScorecardRollupProfileController } from '../controllers/scorecard-rollup-profile.controller.js';
+import { PropertyFieldDiffController } from '../controllers/property-field-diff.controller.js';
 
 // Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
 import { StaffRosterController } from '../controllers/staff-roster.controller';
@@ -997,6 +998,18 @@ export class AppraisalManagementAPIServer {
       scorecardRollupProfileController.router,
     );
 
+    // Property field diff — compares the report's claimed subject-property
+    // values to the latest public-records enrichment for the order.
+    // GET /api/orders/:orderId/property-field-diff
+    const propertyFieldDiffController = new PropertyFieldDiffController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      propertyFieldDiffController.router,
+    );
+
     // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)
     // GET /api/staff/roster — merged internal+external vendor roster enriched with schedule/workload
     const staffRosterController = new StaffRosterController(this.dbService);
@@ -1716,7 +1729,7 @@ export class AppraisalManagementAPIServer {
       const impactSimulator = vendorMatchingPusher
         ? new DecisionImpactSimulatorService(this.dbService, vendorMatchingPusher)
         : null;
-      const packDiff = new PackVersionDiffService(this.dbService, packs);
+      const packDiff = new PackVersionDiffService(packs);
 
       this.app.use('/api/decision-engine/rules/:category',
         this.unifiedAuth.authenticate(),

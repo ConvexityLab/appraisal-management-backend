@@ -488,6 +488,33 @@ export class CanonicalSnapshotService {
     return result.data[0] ?? null;
   }
 
+  /**
+   * Fetch the most recent ready snapshot for an order. Used by surfaces
+   * that want the latest canonical projection without re-running the
+   * extraction pipeline (e.g., property field diff endpoint).
+   */
+  async getLatestSnapshotByOrderId(
+    orderId: string,
+    tenantId: string,
+  ): Promise<CanonicalSnapshotRecord | null> {
+    const query = `
+      SELECT TOP 1 * FROM c
+      WHERE c.type = @type
+        AND c.orderId = @orderId
+        AND c.tenantId = @tenantId
+        AND c.status = 'ready'
+      ORDER BY c.createdAt DESC`;
+    const result = await this.dbService.queryItems<CanonicalSnapshotRecord>(this.runContainerName, query, [
+      { name: '@type', value: 'canonical-snapshot' },
+      { name: '@orderId', value: orderId },
+      { name: '@tenantId', value: tenantId },
+    ]);
+    if (!result.success || !result.data || result.data.length === 0) {
+      return null;
+    }
+    return result.data[0] ?? null;
+  }
+
   private async loadSourceArtifacts(extractionRun: RunLedgerRecord): Promise<{
     document: DocumentMetadata | null;
     extractionData: Record<string, unknown> | null;
