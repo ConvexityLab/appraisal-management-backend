@@ -14,6 +14,9 @@ import { describe, it, expect } from 'vitest';
 import {
   UadComplianceEvaluatorService,
   UAD_COMPLIANCE_RULE_IDS,
+  UAD_COMPLIANCE_DEFAULT_RULE_CONFIGS,
+  UAD_COMPLIANCE_RULE_METADATA,
+  type UadRuleConfigMap,
 } from '../uad-compliance-evaluator.service';
 import type { CanonicalReportDocument } from '@l1/shared-types';
 
@@ -254,5 +257,133 @@ describe('UadComplianceEvaluatorService.evaluate — score weighting', () => {
     const r = svc.evaluate('o', doc);
     expect(r.overallScore).toBeLessThan(90);
     expect(r.overallScore).toBeGreaterThan(0);
+  });
+});
+
+describe('UadComplianceEvaluatorService.evaluate — pack config overlay', () => {
+  it('drops a rule from output entirely when enabled=false', () => {
+    const doc = compliantDoc();
+    // Force the rule into a fail state so it would normally show up.
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+
+    const map: UadRuleConfigMap = {
+      'subject-parcel-number': { id: 'subject-parcel-number', enabled: false },
+    };
+    const r = svc.evaluate('o', doc, map);
+    expect(r.rules.find((x) => x.id === 'subject-parcel-number')).toBeUndefined();
+  });
+
+  it('drops disabled rules from the score denominator (does not penalize)', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+
+    const enabled = svc.evaluate('o', doc).overallScore; // 1 MEDIUM fails
+    const disabled = svc.evaluate('o', doc, {
+      'subject-parcel-number': { id: 'subject-parcel-number', enabled: false },
+    }).overallScore;
+    // With the rule disabled, the failure no longer subtracts from total → 100.
+    expect(disabled).toBe(100);
+    expect(enabled).toBeLessThan(100);
+  });
+
+  it('severityOverride: lower CRITICAL → MEDIUM, failure stops blocking', () => {
+    const doc = compliantDoc();
+    (doc.valuation as { estimatedValue: number }).estimatedValue = 0;
+
+    const baseline = svc.evaluate('o', doc);
+    expect(baseline.blockers).toContain('valuation-final-value');
+
+    const overlay = svc.evaluate('o', doc, {
+      'valuation-final-value': {
+        id: 'valuation-final-value',
+        enabled: true,
+        severityOverride: 'MEDIUM',
+      },
+    });
+    expect(overlay.blockers).not.toContain('valuation-final-value');
+    // The rule still shows up in the rule list (just at the overridden severity).
+    const ruleResult = overlay.rules.find((x) => x.id === 'valuation-final-value');
+    expect(ruleResult?.severity).toBe('MEDIUM');
+    expect(ruleResult?.passed).toBe(false);
+  });
+
+  it('severityOverride: raise MEDIUM → CRITICAL, failure starts blocking', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+
+    const overlay = svc.evaluate('o', doc, {
+      'subject-parcel-number': {
+        id: 'subject-parcel-number',
+        enabled: true,
+        severityOverride: 'CRITICAL',
+      },
+    });
+    expect(overlay.blockers).toContain('subject-parcel-number');
+  });
+
+  it('messageOverride replaces the default failure message', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const overlay = svc.evaluate('o', doc, {
+      'subject-parcel-number': {
+        id: 'subject-parcel-number',
+        enabled: true,
+        messageOverride: 'Per Acme Bank policy, APN is mandatory before sign-off.',
+      },
+    });
+    const rule = overlay.rules.find((x) => x.id === 'subject-parcel-number');
+    expect(rule?.message).toBe('Per Acme Bank policy, APN is mandatory before sign-off.');
+  });
+
+  it('empty-string messageOverride falls back to the code-side default', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const overlay = svc.evaluate('o', doc, {
+      'subject-parcel-number': {
+        id: 'subject-parcel-number',
+        enabled: true,
+        messageOverride: '   ',
+      },
+    });
+    const rule = overlay.rules.find((x) => x.id === 'subject-parcel-number');
+    expect(rule?.message).toMatch(/APN/i);
+  });
+
+  it('unknown rule ids in configMap are silently ignored', () => {
+    const doc = compliantDoc();
+    const overlay = svc.evaluate('o', doc, {
+      'made-up-rule': { id: 'made-up-rule', enabled: false },
+    });
+    expect(overlay.overallScore).toBe(100); // unaffected
+  });
+
+  it('passing absent configMap is identical to passing empty map', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const noMap = svc.evaluate('o', doc);
+    const emptyMap = svc.evaluate('o', doc, {});
+    expect(emptyMap.overallScore).toBe(noMap.overallScore);
+    expect(emptyMap.rules.length).toBe(noMap.rules.length);
+  });
+});
+
+describe('UAD compliance — exported rule catalogue helpers', () => {
+  it('DEFAULT_RULE_CONFIGS covers every rule id and defaults enabled=true', () => {
+    expect(UAD_COMPLIANCE_DEFAULT_RULE_CONFIGS).toHaveLength(UAD_COMPLIANCE_RULE_IDS.length);
+    for (const cfg of UAD_COMPLIANCE_DEFAULT_RULE_CONFIGS) {
+      expect(UAD_COMPLIANCE_RULE_IDS).toContain(cfg.id);
+      expect(cfg.enabled).toBe(true);
+      expect(cfg.severityOverride).toBeUndefined();
+      expect(cfg.messageOverride).toBeUndefined();
+    }
+  });
+
+  it('RULE_METADATA mirrors the rule catalogue with stable shape', () => {
+    expect(UAD_COMPLIANCE_RULE_METADATA).toHaveLength(UAD_COMPLIANCE_RULE_IDS.length);
+    for (const meta of UAD_COMPLIANCE_RULE_METADATA) {
+      expect(meta.id.length).toBeGreaterThan(0);
+      expect(meta.label.length).toBeGreaterThan(0);
+      expect(['CRITICAL', 'HIGH', 'MEDIUM']).toContain(meta.defaultSeverity);
+    }
   });
 });

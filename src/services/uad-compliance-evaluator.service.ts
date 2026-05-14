@@ -280,16 +280,63 @@ const WEIGHTS: Record<UadComplianceSeverity, number> = {
   MEDIUM: 1,
 };
 
+/**
+ * Per-rule pack configuration. Admins author one of these per built-in
+ * rule via the Decision Engine workspace; the evaluator layers the
+ * config on top of the code-side defaults at compute time.
+ *
+ * Why config-only and not full JSONLogic predicates: the predicates
+ * are typed against CanonicalReportDocument, so field-name typos get
+ * caught at compile time. UAD 3.6 is a federal spec — "new rules" are
+ * rare. Admins overwhelmingly need to turn rules off (per-client
+ * carve-outs), re-weight (push a critical-to-this-tenant rule higher),
+ * or rewrite the remediation message in the tenant's vocabulary.
+ *
+ * Unknown rule ids are filtered out by the category's validateRules
+ * before the pack is persisted — so the resolver here can assume every
+ * config keys to a real rule.
+ */
+export interface UadRuleConfig {
+  id: string;
+  /** When false the rule is skipped entirely (not present in output). */
+  enabled: boolean;
+  /** Override the code-side default severity (e.g., bump APN to HIGH per-client). */
+  severityOverride?: UadComplianceSeverity;
+  /** Custom remediation message shown to the reviewer when the rule fails. */
+  messageOverride?: string;
+}
+
+/**
+ * Resolved rule configs map — produced by the per-tenant overlay
+ * resolver and handed to evaluate(). One entry per rule id. Absent
+ * entries fall back to the code-side defaults (enabled=true, severity
+ * as declared above, no message override).
+ */
+export type UadRuleConfigMap = Record<string, UadRuleConfig>;
+
 export class UadComplianceEvaluatorService {
   /**
    * Evaluate a canonical report against the rule set. Pure function:
-   * same input always produces the same verdict.
+   * same (doc, config) inputs always produce the same verdict.
    *
    * Returns an empty/zero report with snapshotAvailable=false when the
    * caller passes null — lets the controller distinguish "extraction
    * pending" from "extraction done, fails everything" cleanly.
+   *
+   * The optional `configMap` is the resolved overlay (BASE → CLIENT)
+   * from the Decision Engine pack. Rules with `enabled: false` are
+   * dropped entirely; severityOverride bumps a rule between
+   * CRITICAL/HIGH/MEDIUM (affecting score weight + blocker
+   * classification); messageOverride replaces the code-default
+   * remediation text on failure. Absent configs fall back to the
+   * code-side defaults so callers without a pack still get the MVP
+   * behaviour.
    */
-  evaluate(orderId: string, doc: CanonicalReportDocument | null): UadComplianceReport {
+  evaluate(
+    orderId: string,
+    doc: CanonicalReportDocument | null,
+    configMap?: UadRuleConfigMap,
+  ): UadComplianceReport {
     if (!doc) {
       return {
         orderId,
@@ -303,26 +350,30 @@ export class UadComplianceEvaluatorService {
       };
     }
 
-    const rules: UadComplianceRuleResult[] = RULES.map((rule) => {
+    const rules: UadComplianceRuleResult[] = [];
+    for (const rule of RULES) {
+      const cfg = configMap?.[rule.id];
+      if (cfg && cfg.enabled === false) continue;
+      const severity: UadComplianceSeverity = cfg?.severityOverride ?? rule.severity;
       const failure = rule.check(doc);
       const result: UadComplianceRuleResult = failure
         ? {
             id: rule.id,
             label: rule.label,
-            severity: rule.severity,
+            severity,
             passed: false,
-            message: failure,
+            message: cfg?.messageOverride?.trim() || failure,
           }
         : {
             id: rule.id,
             label: rule.label,
-            severity: rule.severity,
+            severity,
             passed: true,
             message: '',
           };
       if (rule.fieldPath) result.fieldPath = rule.fieldPath;
-      return result;
-    });
+      rules.push(result);
+    }
 
     const passCount = rules.filter((r) => r.passed).length;
     const failCount = rules.length - passCount;
@@ -351,5 +402,37 @@ export class UadComplianceEvaluatorService {
   }
 }
 
-/** Exposed for tests that need to iterate the rule catalogue directly. */
+/** Exposed for tests + the category's validateRules — every config in a pack must key to one of these. */
 export const UAD_COMPLIANCE_RULE_IDS: string[] = RULES.map((r) => r.id);
+
+/**
+ * Code-side defaults for the rule catalogue. Returned by the category's
+ * `getSeed` so the FE workspace can render "all enabled at default
+ * severity" as the starting point when an admin authors their first
+ * tenant pack.
+ */
+export const UAD_COMPLIANCE_DEFAULT_RULE_CONFIGS: UadRuleConfig[] = RULES.map((r) => ({
+  id: r.id,
+  enabled: true,
+}));
+
+/**
+ * Code-side rule metadata exposed for the FE workspace (label + default
+ * severity + fieldPath). Static; doesn't change per tenant or per pack.
+ */
+export interface UadComplianceRuleMetadata {
+  id: string;
+  label: string;
+  defaultSeverity: UadComplianceSeverity;
+  fieldPath?: string;
+}
+
+export const UAD_COMPLIANCE_RULE_METADATA: UadComplianceRuleMetadata[] = RULES.map((r) => {
+  const meta: UadComplianceRuleMetadata = {
+    id: r.id,
+    label: r.label,
+    defaultSeverity: r.severity,
+  };
+  if (r.fieldPath) meta.fieldPath = r.fieldPath;
+  return meta;
+});
