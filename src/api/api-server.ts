@@ -206,6 +206,7 @@ import { AppraiserController } from '../controllers/appraiser.controller';
 // Import Vendor Controller (Phase A - Live Data)
 import { VendorController } from '../controllers/production-vendor.controller';
 import { VendorMatchingCriteriaController } from '../controllers/vendor-matching-criteria.controller.js';
+import { ScorecardRollupProfileController } from '../controllers/scorecard-rollup-profile.controller.js';
 
 // Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
 import { StaffRosterController } from '../controllers/staff-roster.controller';
@@ -981,6 +982,19 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/vendor-matching-criteria-profiles',
       this.unifiedAuth.authenticate(),
       vendorMatchingCriteriaController.router,
+    );
+
+    // Scorecard Rollup Profiles — David's algorithm (category weights,
+    // window, decay, gates, penalties, tier thresholds). The performance
+    // calculator resolves these at compute time; admins author via
+    // /admin/scorecard-rollup.
+    const scorecardRollupProfileController = new ScorecardRollupProfileController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/scorecard-rollup-profiles',
+      this.unifiedAuth.authenticate(),
+      scorecardRollupProfileController.router,
     );
 
     // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)

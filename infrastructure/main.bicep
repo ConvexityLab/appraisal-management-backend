@@ -306,6 +306,31 @@ module cosmosVendorMatchingCriteriaProfiles 'modules/cosmos-vendor-matching-crit
   }
 }
 
+// Cosmos DB Scorecard Rollup Profiles — David's algorithm parameters
+// (category weights, window, decay, gates, tier thresholds, penalties,
+// + optional JSONLogic override). Overlay BASE → CLIENT → PRODUCT →
+// CLIENT_PRODUCT × phase × version.
+module cosmosScorecardRollupProfiles 'modules/cosmos-scorecard-rollup-profiles-container.bicep' = {
+  name: 'cosmos-scorecard-rollup-profiles-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
+// Cosmos DB Scorecard Events — append-only ML feed. Every scorecard
+// recorded (initial or re-score) emits a row with full context for
+// future model training.
+module cosmosScorecardEvents 'modules/cosmos-scorecard-events-container.bicep' = {
+  name: 'cosmos-scorecard-events-deployment'
+  scope: resourceGroup
+  params: {
+    cosmosAccountName: cosmosDb.outputs.cosmosAccountName
+    databaseName: 'appraisal-management'
+  }
+}
+
 // Cosmos DB Engagements Container (LenderEngagement aggregate root domain)
 module cosmosEngagementsContainer 'modules/cosmos-engagements-container.bicep' = {
   name: 'cosmos-engagements-container-deployment'

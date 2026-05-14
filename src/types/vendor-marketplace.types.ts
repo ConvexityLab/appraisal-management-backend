@@ -388,8 +388,164 @@ export interface NoMatchReason {
   hints?: string[];
 }
 
-export type NegotiationStatus = 
-  | 'PENDING_VENDOR' 
+// ─── Scorecard Rollup Profiles ───────────────────────────────────────────────
+//
+// David's algorithm — how individual per-order scorecards aggregate into a
+// vendor's blended overallScore. Authored by admins via /admin/scorecard-rollup,
+// resolved at compute time, consumed by VendorPerformanceCalculatorService.
+//
+// Hybrid shape: a fixed parameter set covers the common case; an optional
+// customFormulaOverride (JSONLogic) covers exotic algorithms David might
+// invent later. ML targets the fixed parameters (sweep-able), the override
+// is a power-user escape hatch.
+//
+// Overlay hierarchy: BASE → CLIENT → PRODUCT → CLIENT_PRODUCT × phase × version.
+// categoryWeights is replaced WHOLE on each overlay (preserves sum-to-1
+// invariant); every other field merges field-by-field.
+
+/** Window mode for "what counts as 'recent' scorecards." */
+export type ScorecardWindowMode = 'TRAILING_ORDERS' | 'TIME_WINDOW' | 'BOTH';
+
+export interface ScorecardWindowConfig {
+  mode: ScorecardWindowMode;
+  /** Max number of scorecards to include when mode is TRAILING_ORDERS or BOTH. */
+  size: number;
+  /** Max age in days when mode is TIME_WINDOW or BOTH. Ignored otherwise. */
+  days?: number;
+  /**
+   * Below this sample count, the calculator returns null overallScore and the
+   * vendor's tier defaults to "insufficient data" — prevents single bad scores
+   * from defining a vendor before they have a real track record.
+   */
+  minSampleSize: number;
+}
+
+export interface ScorecardTimeDecayConfig {
+  enabled: boolean;
+  /** Each older scorecard contributes weight `0.5 ^ (age_days / halfLifeDays)`. */
+  halfLifeDays: number;
+}
+
+export interface ScorecardCategoryWeights {
+  report: number;
+  quality: number;
+  communication: number;
+  turnTime: number;
+  professionalism: number;
+}
+
+/** Hard gate: a vendor failing this constraint can't reach the tier listed. */
+export interface ScorecardGate {
+  type: 'min_in_category';
+  category: ScorecardCategoryKey;
+  minScore: 0 | 1 | 2 | 3 | 4 | 5;
+  /** If the gate fails, the vendor's tier is clamped to this. */
+  clampToTier: VendorTier;
+}
+
+/** Shave points for specific operational signals (revisions, late deliveries). */
+export interface ScorecardPenalty {
+  signal: 'revision_count' | 'late_delivery_days' | 'reassignment_count';
+  /** Points to deduct per unit of the signal (e.g. -5 per revision). */
+  perUnit: number;
+  /** Optional cap on total deduction from this penalty. */
+  cap?: number;
+}
+
+export interface ScorecardTierThresholds {
+  PLATINUM: number;
+  GOLD: number;
+  SILVER: number;
+  BRONZE: number;
+  // Anything below BRONZE → PROBATION.
+}
+
+/**
+ * The category keys this scorecard system understands. Mirrors the rubric in
+ * l1-valuation-platform-ui/src/components/vendor-scorecard/vendorScorecardRubric.ts.
+ * Keeping the union here so BE rollup types don't import from FE.
+ */
+export type ScorecardCategoryKey =
+  | 'report'
+  | 'quality'
+  | 'communication'
+  | 'turnTime'
+  | 'professionalism';
+
+/**
+ * A scorecard-rollup profile — one doc per (tenant, scope, phase, version).
+ * Versioning is CRUD-N (same as matching-criteria profiles): every save makes
+ * a new version, prior is deactivated, history retained for replay.
+ */
+export interface ScorecardRollupProfile {
+  id: string;
+  tenantId: string;
+  type: 'scorecard-rollup-profile';
+
+  scope: {
+    kind: 'BASE' | 'CLIENT' | 'PRODUCT' | 'CLIENT_PRODUCT';
+    clientId?: string;
+    productType?: string;
+  };
+  phase: 'ORIGINAL' | 'REVIEW' | 'ANY';
+  version: number;
+  active: boolean;
+
+  /**
+   * Five weights summing to 1.0 (renormalized at resolve time if they don't).
+   * Replaced WHOLE on overlay merge — partial weight overrides would silently
+   * break the invariant.
+   */
+  categoryWeights: ScorecardCategoryWeights;
+
+  window: ScorecardWindowConfig;
+  timeDecay: ScorecardTimeDecayConfig;
+
+  /**
+   * What fraction (0..1) of a vendor's blended overallScore comes from the
+   * human scorecard rollup vs. derived signals (on-time rate, revision rate).
+   * Today's default is 0.5; David may want 0.7 for some clients.
+   */
+  derivedSignalBlendWeight: number;
+
+  gates: ScorecardGate[];
+  penalties: ScorecardPenalty[];
+  tierThresholds: ScorecardTierThresholds;
+
+  /**
+   * Optional JSONLogic expression that, when present, replaces the entire
+   * fixed-shape compute. Inputs: { categoryAverages, sampleCount, derivedSignals }.
+   * Output: a number 0..100 that's then mapped to a tier via tierThresholds.
+   * Only authored by power users via /admin/scorecard-rollup; the BE
+   * evaluates it through a safe-list JSONLogic interpreter.
+   */
+  customFormulaOverride?: Record<string, unknown>;
+
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+/**
+ * The result of resolving the overlay chain — what the calculator actually
+ * consumes. All fields are guaranteed present (no partial state).
+ */
+export interface ResolvedScorecardRollupProfile {
+  categoryWeights: ScorecardCategoryWeights;
+  window: ScorecardWindowConfig;
+  timeDecay: ScorecardTimeDecayConfig;
+  derivedSignalBlendWeight: number;
+  gates: ScorecardGate[];
+  penalties: ScorecardPenalty[];
+  tierThresholds: ScorecardTierThresholds;
+  customFormulaOverride?: Record<string, unknown>;
+  /** The profile docs (oldest-overlay-first) that contributed. */
+  appliedProfileIds: string[];
+}
+
+export type NegotiationStatus =
+  | 'PENDING_VENDOR'
   | 'VENDOR_COUNTERED' 
   | 'CLIENT_COUNTERED' 
   | 'ACCEPTED' 
