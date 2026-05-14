@@ -33,6 +33,12 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
   let testEngagementPropertyId: string;
   let testEngagementClientOrderId: string;
 
+  // Track every vendor we create so afterAll can purge them. Without this the
+  // staging `vendors` container slowly fills with "Integration Test Appraisals
+  // <ts>" rows that show up in the UI and are unreachable on detail (their
+  // accessControl envelope doesn't match a real user's tenant).
+  const createdVendorIds: string[] = [];
+
   beforeAll(async () => {
     serverInstance = new AppraisalManagementAPIServer(0);
     app = serverInstance.getExpressApp();
@@ -206,6 +212,8 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       // Optional: phone (mobile phone), serviceTypes (array), serviceAreas (array).
       const vendorName = `Integration Test Appraisals ${Date.now()}`;
       const vendorData = {
+        // Stamp the test prefix on businessName too so the afterAll fallback
+        // can purge by name pattern if the id-tracked delete misses a row.
         name: vendorName,
         email: 'integration@testappraisals.com',
         phone: '415-555-0789',
@@ -225,6 +233,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       expect(response.body.businessName).toContain('Integration Test Appraisals');
 
       testVendorId = response.body.id;
+      createdVendorIds.push(testVendorId);
 
       console.log(`✅ Created vendor: ${response.body.businessName} (ID: ${testVendorId})`);
     });
@@ -369,5 +378,20 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       console.log('🎉 End-to-End Workflow Test PASSED!');
       console.log('=== All database operations successful ===\n');
     });
+  });
+
+  afterAll(async () => {
+    // Purge every vendor this run created so the staging container doesn't
+    // accumulate "Integration Test Appraisals <ts>" rows that show up in the
+    // UI and 404 on detail (real users can't access them by tenant policy).
+    for (const id of createdVendorIds) {
+      try {
+        await request(app)
+          .delete(`/api/vendors/${id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+      } catch {
+        // Best-effort; never fail the suite on cleanup.
+      }
+    }
   });
 });

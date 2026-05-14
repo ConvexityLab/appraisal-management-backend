@@ -24,6 +24,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
   let adminToken: string;
   let testOrderId: string;
   let testVendorId: string;
+  const createdVendorIds: string[] = [];
   // Phase B engagement-primacy: every VendorOrder must reference an existing
   // EngagementClientOrder. beforeAll places an Engagement and captures the
   // resulting ids so the order tests below can attach to it.
@@ -255,6 +256,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       expect(response.body.businessName).toBe('Test Appraisal Services');
 
       testVendorId = response.body.id;
+      createdVendorIds.push(testVendorId);
 
       console.log(`✅ Created vendor with ID: ${testVendorId}`);
       console.log('Vendor details:', {
@@ -402,5 +404,19 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
       console.log('✅ Complete appraisal workflow simulation successful!');
       console.log('=== Workflow Complete ===\n');
     });
+  });
+
+  afterAll(async () => {
+    // Purge vendors we created so they don't accumulate in staging and
+    // show up in the UI as unreachable "Test Appraisal Services" rows.
+    for (const id of createdVendorIds) {
+      try {
+        await request(app)
+          .delete(`/api/vendors/${id}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+      } catch {
+        // Best-effort; never fail the suite on cleanup.
+      }
+    }
   });
 });

@@ -31,7 +31,25 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
     await dbSvc.initialize();
   }, 30_000);
 
+  // Track every vendor created by ANY test in this file so the afterAll
+  // sweep can purge them. Without this, each run accumulates more
+  // "Test Appraisal Services" rows in the staging vendors container that
+  // the UI shows but cannot navigate to (no proper tenant envelope for
+  // a real user).
+  const createdVendorIds: string[] = [];
+
   afterAll(async () => {
+    // Best-effort cleanup of vendors this run created. Direct container
+    // delete instead of going through the controller — the test app is
+    // gone by this point (per-test recreated in beforeEach).
+    for (const id of createdVendorIds) {
+      try {
+        const container = dbSvc.getContainer('vendors');
+        await container.item(id, undefined).delete().catch(() => undefined);
+      } catch {
+        // Swallow; cleanup must never fail the suite.
+      }
+    }
     if (dbSvc?.isDbConnected()) {
       await dbSvc.disconnect();
     }
@@ -321,6 +339,7 @@ describe.skipIf(process.env.VITEST_INTEGRATION !== 'true', 'AZURE_COSMOS_ENDPOIN
 
       // VendorController returns unwrapped VendorProfile
       createdVendorId = vendorResponse.body.id;
+      createdVendorIds.push(createdVendorId);
     });
 
     it('should create a new order', async () => {
