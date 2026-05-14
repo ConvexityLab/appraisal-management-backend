@@ -230,6 +230,40 @@ async function seedFiringDecisions(container: Container, cfg: SeedConfig): Promi
 	return ids;
 }
 
+/**
+ * Seed a tenant-default DecompositionRule that emits exactly ONE VendorOrder
+ * for productType=DESKTOP_APPRAISAL. Required for J16 — without it,
+ * `OrderDecompositionService.findRule` returns null and the engagement
+ * creation path produces zero VendorOrders, so the engagement.order.created
+ * event never fires and the AutoAssignmentOrchestrator has nothing to do.
+ *
+ * Idempotent — uses a deterministic id keyed on tenant + productType.
+ */
+async function seedDecompositionRule(container: Container, cfg: SeedConfig): Promise<string> {
+	const id = `rule-${cfg.tenantId}-DESKTOP_APPRAISAL`;
+	const now = new Date().toISOString();
+	const doc = {
+		id,
+		tenantId: cfg.tenantId,
+		type: 'decomposition-rule',
+		productType: 'DESKTOP_APPRAISAL',
+		// No clientId → tenant-default rule. Matches every client under
+		// this tenant for DESKTOP_APPRAISAL ClientOrders.
+		vendorOrders: [
+			{
+				vendorWorkType: 'DESKTOP_APPRAISAL',
+				instructions: 'J16 live-fire fixture — placeholder vendor order to exercise auto-assignment.',
+				templateKey: 'primary',
+			},
+		],
+		createdAt: now,
+		updatedAt: now,
+		description: 'J16 live-fire — auto-seeded by scripts/live-fire/seed-decision-engine-fixtures.ts',
+	};
+	await container.items.upsert(doc);
+	return id;
+}
+
 async function main(): Promise<void> {
 	const cfg = loadConfig();
 	const client = new CosmosClient({
@@ -244,8 +278,9 @@ async function main(): Promise<void> {
 	console.log('Database:       ', cfg.databaseName);
 	console.log('');
 
-	const tracesContainer  = await ensureContainer(client, cfg.databaseName, 'assignment-traces');
-	const firingContainer  = await ensureContainer(client, cfg.databaseName, 'firing-decisions');
+	const tracesContainer       = await ensureContainer(client, cfg.databaseName, 'assignment-traces');
+	const firingContainer       = await ensureContainer(client, cfg.databaseName, 'firing-decisions');
+	const decompositionContainer = await ensureContainer(client, cfg.databaseName, 'decomposition-rules');
 
 	if (cfg.mode === 'check-only') {
 		const probeTraces = await tracesContainer.items
@@ -267,9 +302,11 @@ async function main(): Promise<void> {
 
 	const traceId = await seedAssignmentTrace(tracesContainer, cfg);
 	const firingIds = await seedFiringDecisions(firingContainer, cfg);
+	const decompositionRuleId = await seedDecompositionRule(decompositionContainer, cfg);
 
-	console.log('✅ Assignment trace upserted:', traceId);
-	for (const id of firingIds) console.log('✅ Firing decision upserted:', id);
+	console.log('✅ Assignment trace upserted:        ', traceId);
+	for (const id of firingIds) console.log('✅ Firing decision upserted:         ', id);
+	console.log('✅ Decomposition rule upserted:      ', decompositionRuleId);
 	console.log('\nNow run the live-fire suite with both gates set:');
 	console.log(`  LIVE_UI_ORDER_ID=${cfg.orderId} LIVE_UI_FIRING_ENABLED=true \\`);
 	console.log('    pnpm exec playwright test e2e/live-fire/decision-engine-suite.live-fire.spec.ts');

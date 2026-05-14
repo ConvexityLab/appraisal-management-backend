@@ -60,8 +60,17 @@ export interface CategoryReplayInput {
   rules: unknown[];
   /** Look back this many days of decisions. Default 7. Capped server-side. */
   sinceDays?: number;
-  /** Optional explicit list of decision ids/orderIds to replay (overrides sinceDays). */
+  /** Optional explicit list of decision ids/orderIds to replay (overrides sinceDays).
+   *  For vendor-matching, the implementation queries by orderId and takes the
+   *  MOST RECENT trace per order. Use `traceIds` instead when you need to pin
+   *  the replay to a specific historical trace (e.g. the simulator targets
+   *  in-flight `pending_bid` traces that may not be the most recent for that
+   *  order). */
   ids?: string[];
+  /** Optional explicit list of trace Cosmos doc ids. Wins over `ids` + `sinceDays`.
+   *  Used by the simulator to evaluate the EXACT in-flight traces, not whatever
+   *  trace happens to be most-recent for an order. */
+  traceIds?: string[];
   /** 1-100, percentage of in-window traces to sub-sample. Default 100. */
   samplePercent?: number;
   /** Caller-supplied pack id for trace/debug labelling. */
@@ -211,6 +220,22 @@ export interface CategoryDefinition {
    * trace store; later phases can swap in a pre-aggregated container.
    */
   analytics?: (input: CategoryAnalyticsInput) => Promise<CategoryAnalyticsSummary>;
+
+  /**
+   * Project the effect of publishing a proposed rule pack against IN-FLIGHT
+   * decisions (rev 16 scope expansion). Categories that don't expose the
+   * Sandbox "Simulate impact" surface simply omit this method and the
+   * controller surfaces 501. The shape mirrors `replay`'s contract; the
+   * caller (DecisionImpactSimulatorService for vendor-matching) is free
+   * to extend the result with category-specific fields.
+   *
+   * Why on the interface and not hardcoded in the controller: previously
+   * the controller had `if (category !== 'vendor-matching')` which made
+   * adding a simulator to firing-rules / review-program a controller edit
+   * instead of a category-level change. The plugin pattern is what every
+   * other Decision Engine surface uses.
+   */
+  simulate?: (input: CategoryReplayInput) => Promise<unknown>;
 }
 
 /**

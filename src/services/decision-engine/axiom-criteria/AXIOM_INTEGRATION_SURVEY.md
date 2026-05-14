@@ -90,6 +90,38 @@ This requires NEW Axiom-side work (the "register criteria set" endpoint).
 Until that ships, the Decision Engine workspace for axiom-criteria
 remains "edit-only" with no live evaluator path.
 
+## ⚠️ Tenant trust boundary — read carefully
+
+`AxiomCriteriaPusher` (L3) authenticates to Axiom with a **single shared
+bearer token** (`AXIOM_API_KEY`) and sends `tenantId` as a body field.
+That means **AMS is trusting Axiom to enforce the tenant boundary** —
+there is no per-tenant credential and no signed assertion AMS could
+verify on its side.
+
+If Axiom is misconfigured (e.g. ignores the body `tenantId`, or routes
+all callers to the same tenant scope), AMS cannot detect the failure:
+the push returns 2xx with whatever `(programId, programVersion)` Axiom
+assigns, and downstream evaluations may run against the wrong tenant's
+criteria without any AMS-visible signal.
+
+Required mitigations before L3 goes to production:
+
+1. **Axiom-side contract test** that demonstrates body `tenantId` is
+   honored (per-tenant rows in `evaluation-results`, per-tenant
+   visibility rules on `GET /api/criteria-sets/:id`). The Axiom team
+   owns this test; AMS reviews it before turning on push.
+2. **Per-tenant scoped tokens (preferred)** OR **HMAC of the criteria
+   payload + tenantId, signed with a per-tenant key the receiver
+   verifies**. Either approach moves the enforcement from "Axiom
+   trusts the body" to "the wire format itself binds payload to tenant".
+3. **AMS-side audit row** (`decision-rule-audit`, `action: 'axiom-push'`)
+   stamped on every push outcome — including the returned
+   `(programId, programVersion)` — so cross-tenant routing can be
+   detected after the fact by reconciliation against Axiom's own logs.
+
+Until #1 lands the pusher should run in dev/staging only. Production
+turn-on is gated on the contract test passing.
+
 ## Phase L delivery plan (in order)
 
 1. ✅ **L0 — Survey commit (this doc).**

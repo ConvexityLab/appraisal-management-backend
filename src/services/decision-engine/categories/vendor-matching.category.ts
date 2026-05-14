@@ -24,6 +24,7 @@ import type { MopRulePackPusher } from '../../mop-rule-pack-pusher.service.js';
 import type { RulePackDocument } from '../../../types/decision-rule-pack.types.js';
 import { VendorMatchingReplayService } from '../replay/vendor-matching-replay.service.js';
 import { VendorMatchingAnalyticsService } from '../analytics/vendor-matching-analytics.service.js';
+import { DecisionImpactSimulatorService } from '../simulator/decision-impact-simulator.service.js';
 import { validatePrioRulePack } from '../shared/prio-rule-validator.js';
 import type { CosmosDbService } from '../../cosmos-db.service.js';
 
@@ -103,6 +104,16 @@ export function buildVendorMatchingCategory(opts: {
     if (db) {
       const replayer = new VendorMatchingReplayService(db, pusher);
       definition.replay = async (input) => replayer.replay(input);
+
+      // Simulator (rev 16) — projects pack-change effect on in-flight
+      // (pending_bid / broadcast) decisions. Same upstream dependencies
+      // as replay, so wires under the same gate.
+      const simulator = new DecisionImpactSimulatorService(db, pusher);
+      definition.simulate = async (input) => simulator.simulate({
+        tenantId: input.tenantId,
+        rules: input.rules,
+        ...(input.packId ? { packId: input.packId } : {}),
+      });
     }
   }
 

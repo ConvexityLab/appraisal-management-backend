@@ -14,7 +14,6 @@
  */
 
 import { Logger } from '../../../utils/logger.js';
-import type { CosmosDbService } from '../../cosmos-db.service.js';
 import type { DecisionRulePackService } from '../../decision-rule-pack.service.js';
 import type { RulePackDocument } from '../../../types/decision-rule-pack.types.js';
 import type { CategoryReplayDiff, CategoryReplayInput } from '../category-definition.js';
@@ -62,7 +61,6 @@ export class PackVersionDiffService {
 	private readonly logger = new Logger('PackVersionDiffService');
 
 	constructor(
-		private readonly _db: CosmosDbService,
 		private readonly packs: DecisionRulePackService,
 	) {}
 
@@ -71,7 +69,11 @@ export class PackVersionDiffService {
 			this.loadVersion(input, input.versionA),
 			this.loadVersion(input, input.versionB),
 		]);
+		return this.diffFromPacks(input, packA, packB);
+	}
 
+	/** Compute the diff from two already-loaded pack docs. Pure (no I/O). */
+	private diffFromPacks(input: DiffInput, packA: RulePackDocument, packB: RulePackDocument): PackVersionDiff {
 		const rulesA = (Array.isArray(packA.rules) ? packA.rules : []) as unknown[];
 		const rulesB = (Array.isArray(packB.rules) ? packB.rules : []) as unknown[];
 		const byNameA = indexByName(rulesA);
@@ -124,11 +126,14 @@ export class PackVersionDiffService {
 		input: BehavioralDiffInput,
 		replayer: (replayInput: CategoryReplayInput) => Promise<CategoryReplayDiff>,
 	): Promise<BehavioralDiff> {
-		const pack = await this.diff(input);
+		// Load both packs ONCE, then compute the rule diff from those in-memory
+		// copies instead of re-running listVersions a second time inside .diff().
+		// Was 4 list-versions calls; now 2.
 		const [packA, packB] = await Promise.all([
 			this.loadVersion(input, input.versionA),
 			this.loadVersion(input, input.versionB),
 		]);
+		const pack = this.diffFromPacks(input, packA, packB);
 
 		const replayBase = {
 			tenantId: input.tenantId,

@@ -91,6 +91,9 @@ export class ReviewProgramReplayService {
 	async replay(input: CategoryReplayInput): Promise<CategoryReplayDiff> {
 		if (!input.tenantId) throw new Error('replay: tenantId is required');
 
+		// The controller already validates `sinceDays > 0`; this guard is a
+		// belt-and-suspenders against direct service callers (tests, future
+		// internal jobs).
 		const sinceDays = clampDays(input.sinceDays ?? 7);
 		const samplePercent = clampPercent(input.samplePercent ?? 100);
 		const fragments = collectFragments(input.rules);
@@ -169,7 +172,7 @@ export class ReviewProgramReplayService {
 			return skipRow(dec, 'no-supported-fragments');
 		}
 
-		const baseProgram = await this.loadProgram(dec.reviewProgramId, programCache);
+		const baseProgram = await this.loadProgram(dec.reviewProgramId, dec.tenantId, programCache);
 		if (!baseProgram) {
 			return skipRow(dec, 'program-not-found');
 		}
@@ -187,7 +190,10 @@ export class ReviewProgramReplayService {
 
 		// Re-fetch the raw ReviewTapeResult to recover the full RiskTapeItem
 		// fact bundle. The NormalizedReviewDecision shape strips most of it.
-		const raw = await this.loadRawResult(dec.jobId, dec.id);
+		// Prefer the source row stashed by the reader (no extra Cosmos round-trip).
+		// Falls back to `loadRawResult` only for callers that constructed
+		// NormalizedReviewDecision manually without `rawResult` set.
+		const raw = dec.rawResult ?? await this.loadRawResult(dec.jobId, dec.id, dec.tenantId);
 		if (!raw) {
 			return skipRow(dec, 'raw-result-not-found');
 		}
@@ -252,38 +258,61 @@ export class ReviewProgramReplayService {
 
 	private async loadProgram(
 		programId: string,
+		tenantId: string,
 		cache: Map<string, ReviewProgram | null>,
 	): Promise<ReviewProgram | null> {
-		if (cache.has(programId)) return cache.get(programId) ?? null;
+		const cacheKey = `${tenantId}__${programId}`;
+		if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
+		// Tenant-scoped: programs are partitioned by /clientId and program ids
+		// can collide across tenants. A cross-partition `WHERE c.id = @id`
+		// would silently load some other tenant's program and replay against
+		// it. Filter on both tenantId (when present on the doc) AND a
+		// platform-default sentinel so platform-wide programs still resolve.
 		const docs = await this.db.queryDocuments<ReviewProgram>(
 			REVIEW_PROGRAMS_CONTAINER,
-			'SELECT * FROM c WHERE c.id = @id',
-			[{ name: '@id', value: programId }],
+			`SELECT * FROM c
+			 WHERE c.id = @id
+			   AND (c.tenantId = @tenantId
+			        OR NOT IS_DEFINED(c.tenantId)
+			        OR c.tenantId = null)`,
+			[
+				{ name: '@id', value: programId },
+				{ name: '@tenantId', value: tenantId },
+			],
 		);
 		const program = docs[0] ?? null;
-		cache.set(programId, program);
+		cache.set(cacheKey, program);
 		return program;
 	}
 
-	private async loadRawResult(jobId: string, resultId: string): Promise<ReviewTapeResult | null> {
+	private async loadRawResult(jobId: string, resultId: string, tenantId: string): Promise<ReviewTapeResult | null> {
 		// review-results is partitioned by /jobId. The bulk path stores results
 		// as inline `items[]` on the parent job (no row in review-results); in
 		// that case the result id is `${jobId}__${loanNumber|rowIndex}`. Fall
 		// back to scanning the parent job's inline items.
 		const docs = await this.db.queryDocuments<ReviewTapeResult>(
 			REVIEW_RESULTS_CONTAINER,
-			'SELECT * FROM c WHERE c.id = @id AND c.jobId = @jobId',
+			`SELECT * FROM c
+			 WHERE c.id = @id
+			   AND c.jobId = @jobId
+			   AND (c.tenantId = @tenantId OR NOT IS_DEFINED(c.tenantId))`,
 			[
 				{ name: '@id', value: resultId },
 				{ name: '@jobId', value: jobId },
+				{ name: '@tenantId', value: tenantId },
 			],
 		);
 		if (docs[0]) return docs[0];
 
+		// jobs are partitioned by /tenantId; filter explicitly to avoid the
+		// cross-tenant id-collision risk.
 		const job = await this.db.queryDocuments<{ items?: unknown[] }>(
 			'bulk-portfolio-jobs',
-			'SELECT c.items FROM c WHERE c.id = @id',
-			[{ name: '@id', value: jobId }],
+			'SELECT c.items FROM c WHERE c.id = @id AND c.tenantId = @tenantId',
+			[
+				{ name: '@id', value: jobId },
+				{ name: '@tenantId', value: tenantId },
+			],
 		);
 		const items = job[0]?.items;
 		if (!Array.isArray(items)) return null;
@@ -414,8 +443,16 @@ function skipRow(dec: NormalizedReviewDecision, reason: string): CategoryReplayD
 	};
 }
 
+/**
+ * Clamp `sinceDays` into [1, MAX_SINCE_DAYS]. Rejects non-finite / negative /
+ * zero inputs by throwing — previously silently returned the default 7,
+ * which is exactly the CLAUDE.md anti-pattern ("no silent fallbacks").
+ * Callers that want the default should pass `?? 7` at the call site.
+ */
 function clampDays(d: number): number {
-	if (!Number.isFinite(d) || d <= 0) return 7;
+	if (!Number.isFinite(d) || d <= 0) {
+		throw new Error(`sinceDays must be a positive number, got ${d}`);
+	}
 	return Math.min(Math.floor(d), MAX_SINCE_DAYS);
 }
 

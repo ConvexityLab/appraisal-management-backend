@@ -59,10 +59,13 @@ resource analyticsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
         paths: ['/tenantId']
         kind: 'Hash'
       }
-      // 30-day TTL on snapshot rows — they're recomputed nightly, so
-      // there's no value in keeping historical aggregations indefinitely.
-      // Operators wanting longer history get it from the raw trace stores.
-      defaultTtl: 2592000
+      // 180-day TTL on snapshot rows. The original 30d-only choice meant
+      // operators couldn't compare "this week vs last month" — every old
+      // snapshot expired before its data was useful for trend analysis.
+      // 180d is cheap and lets the workspace surface week-over-week / MoM
+      // comparisons without re-running aggregation against the raw trace
+      // stores. Per-doc `ttl` may still override (e.g. lease docs short).
+      defaultTtl: 15552000
       indexingPolicy: {
         indexingMode: 'consistent'
         automatic: true
@@ -86,13 +89,15 @@ resource analyticsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
           ]
         ]
       }
-      uniqueKeyPolicy: {
-        uniqueKeys: [
-          // Synthetic id enforces same-day uniqueness, but the unique key
-          // is belt + suspenders against bypassing composeId.
-          { paths: ['/category', '/days', '/computedDate'] }
-        ]
-      }
+      // No uniqueKeyPolicy — unique keys in Cosmos are scoped PER PARTITION
+      // KEY VALUE, so a key on (/category, /days, /computedDate) would be
+      // enforced inside each tenant's partition (where the synthetic id
+      // already prevents duplicates) but would also FAIL container creation
+      // against any environment that already has multiple snapshot rows
+      // (e.g. when re-running this Bicep against a tenant that captured a
+      // snapshot before the constraint was added). The synthetic id
+      // `${tenantId}__${category}__${days}d__${computedDate}` is the only
+      // uniqueness contract we need.
     }
   }
 }

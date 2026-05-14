@@ -91,6 +91,7 @@ export class VendorMatchingReplayService {
 			input.tenantId,
 			sinceDays,
 			input.ids,
+			input.traceIds,
 		);
 		const sampled = subsample(traces, sincePercent, MAX_REPLAYED_TRACES);
 
@@ -154,9 +155,32 @@ export class VendorMatchingReplayService {
 		tenantId: string,
 		sinceDays: number,
 		ids?: string[],
+		traceIds?: string[],
 	): Promise<AssignmentTraceDocument[]> {
+		// Explicit trace doc ids (preferred when the caller needs to pin to a
+		// specific historical trace, e.g. the simulator targets in-flight
+		// `pending_bid` traces). Single tenant-scoped IN-list query.
+		if (traceIds && traceIds.length > 0) {
+			return this.db.queryDocuments<AssignmentTraceDocument>(
+				TRACES_CONTAINER,
+				`SELECT * FROM c
+				 WHERE c.type = 'assignment-trace'
+				   AND c.tenantId = @tenantId
+				   AND ARRAY_CONTAINS(@traceIds, c.id)
+				 ORDER BY c.initiatedAt DESC`,
+				[
+					{ name: '@tenantId', value: tenantId },
+					{ name: '@traceIds', value: traceIds },
+				],
+			);
+		}
+
 		if (ids && ids.length > 0) {
-			// Explicit ids: read each by orderId. Batched by partition.
+			// Explicit order ids: read each by orderId and take the most recent.
+			// CAVEAT — when an order has multiple traces, this returns the
+			// most-recent one even if it's not the one the caller had in mind.
+			// Callers that need a specific historical trace must pass
+			// `traceIds` instead (see CategoryReplayInput JSDoc).
 			const results: AssignmentTraceDocument[] = [];
 			for (const orderId of ids) {
 				const docs = await this.db.queryDocuments<AssignmentTraceDocument>(

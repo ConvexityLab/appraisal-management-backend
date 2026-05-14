@@ -70,6 +70,13 @@ export interface NormalizedReviewDecision {
 	triggerSource?: 'order-created' | 'bulk-portfolio' | 'document-uploaded' | 'axiom-completed' | 'manual';
 	/** Order id when the result is order-scoped (Phase K). */
 	orderId?: string;
+	/**
+	 * Optional source `ReviewTapeResult` row, attached when replay needs the
+	 * full RiskTapeItem source fields without re-querying Cosmos. Stashed
+	 * here to kill the N+1 in `ReviewProgramReplayService.loadRawResult`.
+	 * Analytics callers ignore this field.
+	 */
+	rawResult?: ReviewTapeResult;
 }
 
 export class ReviewProgramResultsReader {
@@ -157,6 +164,7 @@ export class ReviewProgramResultsReader {
 			...(r.axiomDecision ? { axiomDecision: r.axiomDecision } : {}),
 			triggerSource: r.triggerSource ?? 'bulk-portfolio',
 			...(r.orderId ? { orderId: r.orderId } : {}),
+			rawResult: r,
 		};
 	}
 
@@ -213,6 +221,7 @@ export class ReviewProgramResultsReader {
 				...(r.axiomDecision ? { axiomDecision: r.axiomDecision } : {}),
 				triggerSource: r.triggerSource ?? 'order-created',
 				...(r.orderId ? { orderId: r.orderId } : {}),
+				rawResult: r,
 			};
 		});
 

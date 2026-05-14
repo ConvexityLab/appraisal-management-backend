@@ -449,17 +449,37 @@ export class DecisionEngineRulesController {
     if (!tenantId) return;
     const category = req.params['category']!;
     if (await this.refuseIfKilled(tenantId, category, res)) return;
-    if (category !== 'vendor-matching' || !this.simulator) {
+    const def = this.resolveCategory(category);
+
+    // Dispatch via CategoryDefinition (extension point) rather than the old
+    // hardcoded `category !== 'vendor-matching'` check. Adding a simulator
+    // to a new category is now a category-file change, not a controller edit.
+    if (!def.simulate) {
+      // Distinguish "category doesn't support simulate at all" (501) from
+      // "vendor-matching's simulate needs MOP and MOP isn't configured"
+      // (503 with explicit hint). The latter is a deploy-config issue, not
+      // a feature gap, and a generic 501 sends operators on a wild chase.
+      if (category === 'vendor-matching' && !this.simulator) {
+        res.status(503).json({
+          success: false,
+          error:
+            "Decision Impact Simulator for 'vendor-matching' requires the MOP pusher to be configured. " +
+            'Set MOP_RULES_BASE_URL (and MOP_RULES_SERVICE_AUTH_TOKEN if MOP requires it) and redeploy.',
+          kind: 'mop-not-configured',
+        });
+        return;
+      }
       this.notImplemented(res, category, 'simulate');
       return;
     }
+
     const body = req.body as { rules?: unknown[]; packId?: string };
     if (!Array.isArray(body.rules) || body.rules.length === 0) {
       res.status(400).json({ success: false, error: '`rules` (non-empty array) is required' });
       return;
     }
     try {
-      const result = await this.simulator.simulate({
+      const result = await def.simulate({
         tenantId,
         rules: body.rules,
         ...(body.packId ? { packId: body.packId } : {}),
@@ -485,11 +505,15 @@ export class DecisionEngineRulesController {
     }
     const vA = Number(req.query['versionA']);
     const vB = Number(req.query['versionB']);
-    if (!Number.isFinite(vA) || vA <= 0 || !Number.isFinite(vB) || vB <= 0) {
+    if (!Number.isInteger(vA) || vA <= 0 || !Number.isInteger(vB) || vB <= 0) {
       res.status(400).json({ success: false, error: '`versionA` and `versionB` query params must be positive integers' });
       return;
     }
     const behavioral = req.query['behavioral'] === 'true';
+    // Behavioral diff invokes def.replay() → MOP /preview. Honor the kill
+    // switch on that path; the plain (read-only Cosmos) diff is safe to run
+    // even when the kill switch is on.
+    if (behavioral && await this.refuseIfKilled(tenantId, category, res)) return;
     const sinceDaysRaw = req.query['sinceDays'];
     const sinceDays = sinceDaysRaw !== undefined ? Number(sinceDaysRaw) : undefined;
     if (sinceDays !== undefined && (!Number.isFinite(sinceDays) || sinceDays <= 0)) {

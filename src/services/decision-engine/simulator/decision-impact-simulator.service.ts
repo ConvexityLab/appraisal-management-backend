@@ -77,10 +77,15 @@ export class DecisionImpactSimulatorService {
 			};
 		}
 
+		// CRITICAL: use `traceIds` (not `ids`/orderIds). When an order has more
+		// than one trace, `ids` returns the most-recent trace per order, which
+		// may not be the in-flight one we want to simulate against — and the
+		// `decisionId` in the diff would then miss our pending-map lookup.
+		// `traceIds` pins the replay to the exact trace docs in `pending`.
 		const replayInput: CategoryReplayInput = {
 			tenantId: input.tenantId,
 			rules: input.rules,
-			ids: pending.map(t => t.orderId),
+			traceIds: pending.map(t => t.id),
 			...(input.packId ? { packId: input.packId } : {}),
 		};
 		const diff = await this.replayer.replay(replayInput);

@@ -120,19 +120,59 @@ export class AxiomCriteriaPusher {
 			});
 			return { programId, programVersion };
 		} catch (err: unknown) {
-			const status = (err as { response?: { status?: number } })?.response?.status;
-			if (status === 404) {
+			const status = (err as { response?: { status?: number; data?: unknown } })?.response?.status;
+			const respBody = (err as { response?: { data?: unknown } })?.response?.data;
+
+			// Classify so observability can distinguish "endpoint pending"
+			// from "auth broken" from "Axiom outage" from "we sent bad data".
+			// Previously every non-404 looked identical, which silently hid
+			// 401/403/422/5xx from operators.
+			const errorClass: 'endpoint-missing' | 'auth' | 'validation' | 'upstream-5xx' | 'network' | 'unknown' =
+				status === 404 ? 'endpoint-missing'
+				: status === 401 || status === 403 ? 'auth'
+				: status === 400 || status === 422 ? 'validation'
+				: status !== undefined && status >= 500 && status < 600 ? 'upstream-5xx'
+				: status === undefined ? 'network'
+				: 'unknown';
+
+			const logCtx = {
+				packId: pack.id,
+				tenantId: pack.tenantId,
+				status: status ?? null,
+				errorClass,
+				responseBodyPreview: typeof respBody === 'string'
+					? respBody.slice(0, 200)
+					: respBody
+						? JSON.stringify(respBody).slice(0, 200)
+						: null,
+				error: err instanceof Error ? err.message : String(err),
+			};
+
+			// `endpoint-missing` is expected when Axiom's L2 endpoint isn't
+			// live yet — log at info, don't alarm. Everything else is a real
+			// problem an operator should see.
+			if (errorClass === 'endpoint-missing') {
+				this.logger.info(
+					'AxiomCriteriaPusher: /api/criteria-sets returned 404 — Axiom endpoint not yet shipped. Pack saved AMS-side only.',
+					logCtx,
+				);
+			} else if (errorClass === 'auth') {
+				this.logger.error(
+					'AxiomCriteriaPusher: AUTH failure (' + status + ') — bearer token rejected. Pack saved AMS-side only.',
+					logCtx,
+				);
+			} else if (errorClass === 'validation') {
+				this.logger.error(
+					'AxiomCriteriaPusher: VALIDATION failure (' + status + ') — Axiom rejected the criteria payload. Pack saved AMS-side only.',
+					logCtx,
+				);
+			} else if (errorClass === 'upstream-5xx') {
 				this.logger.warn(
-					'AxiomCriteriaPusher: /api/criteria-sets returned 404 — endpoint not yet shipped on Axiom side. Pack saved AMS-side only.',
-					{ packId: pack.id, tenantId: pack.tenantId },
+					'AxiomCriteriaPusher: UPSTREAM 5xx — Axiom returned a server error, may be transient. Pack saved AMS-side only.',
+					logCtx,
 				);
 			} else {
-				this.logger.warn('AxiomCriteriaPusher: push failed (best-effort, pack saved AMS-side only)', {
-					packId: pack.id,
-					tenantId: pack.tenantId,
-					status: status ?? null,
-					error: err instanceof Error ? err.message : String(err),
-				});
+				this.logger.warn('AxiomCriteriaPusher: push failed (best-effort, pack saved AMS-side only)', logCtx);
 			}
 			return null;
 		}
