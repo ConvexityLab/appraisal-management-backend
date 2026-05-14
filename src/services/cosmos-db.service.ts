@@ -1497,8 +1497,17 @@ export class CosmosDbService {
         throw new Error('Vendors container not initialized');
       }
 
-      // Exclude appraiser records that share the same container
-      let query = 'SELECT * FROM c WHERE NOT IS_DEFINED(c.type) OR c.type != \'appraiser\'';
+      // Exclude appraiser records that share the same container, and require
+      // a well-formed vendor (businessName + tenantId present) so malformed
+      // test fixtures or partially-written docs don't show up in the list.
+      // Otherwise the FE shows a vendor it can't navigate to (the detail
+      // endpoint's ABAC check rejects docs without proper access envelopes,
+      // producing a confusing 404 after the click).
+      let query =
+        "SELECT * FROM c " +
+        "WHERE (NOT IS_DEFINED(c.type) OR c.type != 'appraiser') " +
+        "AND IS_DEFINED(c.businessName) AND c.businessName != '' " +
+        "AND IS_DEFINED(c.tenantId) AND c.tenantId != ''";
       const parameters: NonNullable<SqlQuerySpec['parameters']> = [];
 
       if (options?.authorizationFilter) {
