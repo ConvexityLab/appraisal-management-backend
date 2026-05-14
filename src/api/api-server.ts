@@ -208,6 +208,7 @@ import { VendorController } from '../controllers/production-vendor.controller';
 import { VendorMatchingCriteriaController } from '../controllers/vendor-matching-criteria.controller.js';
 import { ScorecardRollupProfileController } from '../controllers/scorecard-rollup-profile.controller.js';
 import { PropertyFieldDiffController } from '../controllers/property-field-diff.controller.js';
+import { UadComplianceController } from '../controllers/uad-compliance.controller.js';
 
 // Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
 import { StaffRosterController } from '../controllers/staff-roster.controller';
@@ -1008,6 +1009,18 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/orders',
       this.unifiedAuth.authenticate(),
       propertyFieldDiffController.router,
+    );
+
+    // UAD-3.6 compliance — per-rule check over the latest canonical
+    // extraction snapshot for an order.
+    // GET /api/orders/:orderId/uad-compliance
+    const uadComplianceController = new UadComplianceController(
+      this.dbService,
+      this.authzMiddleware,
+    );
+    this.app.use('/api/orders',
+      this.unifiedAuth.authenticate(),
+      uadComplianceController.router,
     );
 
     // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)
