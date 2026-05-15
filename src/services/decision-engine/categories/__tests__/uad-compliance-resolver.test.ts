@@ -19,11 +19,32 @@ import {
 	UAD_BASE_PACK_ID,
 } from '../uad-compliance-resolver.service';
 import { UAD_COMPLIANCE_CATEGORY_ID } from '../uad-compliance.category';
-import type { UadRuleConfig } from '../../../uad-compliance-evaluator.service';
+import type { UadCustomRule, UadPackRule, UadRuleConfig } from '../../../uad-compliance-evaluator.service';
 
 interface FakePack {
 	id: string;
-	rules: UadRuleConfig[];
+	rules: UadPackRule[];
+}
+
+function makeCustom(overrides: Partial<UadCustomRule>): UadCustomRule {
+	return {
+		kind: 'custom',
+		id: 'tenant-rule',
+		enabled: true,
+		label: 'Tenant rule',
+		severity: 'HIGH',
+		condition: { '==': [1, 1] },
+		message: 'Tenant rule failed.',
+		...overrides,
+	};
+}
+
+function makeOverride(overrides: Partial<UadRuleConfig>): UadRuleConfig {
+	return {
+		id: 'subject-parcel-number',
+		enabled: true,
+		...overrides,
+	};
 }
 
 function makeStubPacks(packs: Array<{ tenantId: string; packId: string; pack: FakePack | null }>) {
@@ -157,5 +178,92 @@ describe('clientPackId helper', () => {
 	it('encodes clientId into the client-scoped packId', () => {
 		expect(clientPackId('acme')).toBe('client:acme');
 		expect(clientPackId('123')).toBe('client:123');
+	});
+});
+
+describe('UadCompliancePackResolver.resolve — custom-rule overlay', () => {
+	it('BASE-only custom rules flow through to resolution.customRules', async () => {
+		const basePack: FakePack = {
+			id: 'pack-base-v1',
+			rules: [makeCustom({ id: 'base-rule-1', message: 'BASE msg' })],
+		};
+		const { svc } = makeStubPacks([{ tenantId: 't', packId: UAD_BASE_PACK_ID, pack: basePack }]);
+		const resolver = new UadCompliancePackResolver(svc);
+
+		const out = await resolver.resolve({ tenantId: 't' });
+		expect(out.customRules).toHaveLength(1);
+		expect(out.customRules[0]!.id).toBe('base-rule-1');
+		expect(out.customRules[0]!.message).toBe('BASE msg');
+	});
+
+	it('CLIENT custom rules are unioned with BASE; same-id CLIENT replaces BASE whole', async () => {
+		const basePack: FakePack = {
+			id: 'pack-base-v1',
+			rules: [
+				makeCustom({ id: 'shared-rule', message: 'BASE shared', severity: 'MEDIUM' }),
+				makeCustom({ id: 'base-only-rule', message: 'BASE only' }),
+			],
+		};
+		const clientPack: FakePack = {
+			id: 'pack-client-acme-v1',
+			rules: [
+				makeCustom({ id: 'shared-rule', message: 'CLIENT shared', severity: 'CRITICAL' }),
+				makeCustom({ id: 'client-only-rule', message: 'CLIENT only' }),
+			],
+		};
+		const { svc } = makeStubPacks([
+			{ tenantId: 't', packId: UAD_BASE_PACK_ID, pack: basePack },
+			{ tenantId: 't', packId: clientPackId('acme'), pack: clientPack },
+		]);
+		const resolver = new UadCompliancePackResolver(svc);
+
+		const out = await resolver.resolve({ tenantId: 't', clientId: 'acme' });
+		expect(out.customRules).toHaveLength(3);
+		const shared = out.customRules.find((r) => r.id === 'shared-rule')!;
+		expect(shared.message).toBe('CLIENT shared');
+		expect(shared.severity).toBe('CRITICAL');
+		const baseOnly = out.customRules.find((r) => r.id === 'base-only-rule')!;
+		expect(baseOnly.message).toBe('BASE only');
+		const clientOnly = out.customRules.find((r) => r.id === 'client-only-rule')!;
+		expect(clientOnly.message).toBe('CLIENT only');
+	});
+
+	it('mixed override + custom rules split correctly across layers', async () => {
+		const basePack: FakePack = {
+			id: 'pack-base-v1',
+			rules: [
+				makeOverride({ id: 'subject-parcel-number', enabled: false }),
+				makeCustom({ id: 'tenant-rule', message: 'BASE tenant msg' }),
+			],
+		};
+		const clientPack: FakePack = {
+			id: 'pack-client-v1',
+			rules: [
+				makeOverride({ id: 'subject-quality-rating', enabled: true, severityOverride: 'CRITICAL' }),
+				makeCustom({ id: 'client-rule', message: 'CLIENT-only tenant msg' }),
+			],
+		};
+		const { svc } = makeStubPacks([
+			{ tenantId: 't', packId: UAD_BASE_PACK_ID, pack: basePack },
+			{ tenantId: 't', packId: clientPackId('c'), pack: clientPack },
+		]);
+		const resolver = new UadCompliancePackResolver(svc);
+
+		const out = await resolver.resolve({ tenantId: 't', clientId: 'c' });
+		// Overrides: BASE disables APN, CLIENT raises quality severity.
+		expect(out.configMap['subject-parcel-number']?.enabled).toBe(false);
+		expect(out.configMap['subject-quality-rating']?.severityOverride).toBe('CRITICAL');
+		// Custom rules: both flow through.
+		const customIds = out.customRules.map((r) => r.id).sort();
+		expect(customIds).toEqual(['client-rule', 'tenant-rule']);
+		// appliedPackIds carries both pack docs.
+		expect(out.appliedPackIds).toEqual(['pack-base-v1', 'pack-client-v1']);
+	});
+
+	it('returns empty customRules when no packs exist', async () => {
+		const { svc } = makeStubPacks([]);
+		const resolver = new UadCompliancePackResolver(svc);
+		const out = await resolver.resolve({ tenantId: 't' });
+		expect(out.customRules).toEqual([]);
 	});
 });

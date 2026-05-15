@@ -81,7 +81,12 @@ export class UadComplianceController {
       // document (e.g., extraction done but valuation pending) just fails
       // the rules that depend on the missing sections.
       const doc = (snapshot?.normalizedData?.canonical ?? null) as CanonicalReportDocument | null;
-      const report = this.evaluator.evaluate(orderId, doc, resolution.configMap);
+      const report = this.evaluator.evaluate(
+        orderId,
+        doc,
+        resolution.configMap,
+        resolution.customRules,
+      );
 
       res.json({
         success: true,

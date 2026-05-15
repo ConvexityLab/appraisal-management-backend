@@ -46,8 +46,14 @@ export {
 export {
   buildUadComplianceCategory,
   UAD_COMPLIANCE_CATEGORY_ID,
-  buildConfigMap as buildUadComplianceConfigMap,
 } from './categories/uad-compliance.category.js';
+
+// Partition helper moved to the evaluator service when custom-rule support
+// landed (it now returns BOTH the built-in configMap AND the custom rule
+// list from a mixed pack-rules array). Re-export under the same name as
+// `buildUadComplianceConfigMap` for code that only needs the configMap;
+// new callers should use `partitionPackRules` directly to get both halves.
+export { partitionPackRules as partitionUadCompliancePackRules } from '../uad-compliance-evaluator.service.js';
 
 /**
  * Wire each registered category's `push` method into the

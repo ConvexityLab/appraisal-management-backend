@@ -5,17 +5,29 @@
  * snapshot for an order and emits a 0-100 score plus a list of blockers
  * the QC reviewer should resolve before signing off.
  *
- * Scope (MVP): the most load-bearing required fields per Fannie Mae UAD
- * 3.6 / URAR v1.3 — subject identification, key property characteristics,
- * the sales-comparison grid backbone, and the value reconciliation.
+ * Scope: a curated set of built-in rules covering the most load-bearing
+ * required fields per Fannie Mae UAD 3.6 / URAR v1.3 — subject
+ * identification, key property characteristics, the sales-comparison
+ * grid backbone, and the value reconciliation. Predicates reference
+ * canonical-schema fields by name so field-name typos surface at
+ * compile time.
  *
- * Why hard-coded rules instead of a Decision Engine pack: the rule set is
- * tight (~15 rules), each rule references canonical-schema fields by
- * name (compile-time-checked), and the catalogue isn't supposed to
- * differ per tenant the way matching criteria do. When admin authoring
- * is genuinely needed we'll lift this into a Decision Engine category
- * — the rule shape (id, severity, predicate, message) is already
- * Decision-Engine-shaped to make that migration straightforward.
+ * Pack overlay: the Decision Engine `uad-compliance` category lets
+ * admins layer two kinds of rule on top of the built-ins:
+ *
+ *   UadOverrideRule — references a BUILT-IN rule id and changes its
+ *     enabled state, severity, or remediation message. The predicate
+ *     stays in code. This is the 90% case (federal-spec changes are
+ *     rare; per-tenant policy nuance is common).
+ *
+ *   UadCustomRule   — admin-authored rule with its OWN JSONLogic
+ *     predicate against the canonical document. Lets tenants enforce
+ *     rules outside the federal-spec catalogue (e.g., "require pool
+ *     description on every report" for a tenant with a pool-finance
+ *     line of business) without a code change. Evaluated via the
+ *     shared decision-engine JSONLogic evaluator; throws are caught
+ *     and surfaced as rule failures so a broken predicate becomes an
+ *     admin task instead of a silent error.
  *
  * Why "stateless compute" instead of persisting: the canonical snapshot
  * already lives in Cosmos. Re-evaluating on demand keeps the verdict in
@@ -23,6 +35,8 @@
  */
 
 import type { CanonicalReportDocument } from '@l1/shared-types';
+import { Logger } from '../utils/logger.js';
+import { evaluate as evaluateJsonLogic } from './decision-engine/shared/jsonlogic-evaluator.js';
 
 export type UadComplianceSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
 
@@ -281,22 +295,29 @@ const WEIGHTS: Record<UadComplianceSeverity, number> = {
 };
 
 /**
- * Per-rule pack configuration. Admins author one of these per built-in
- * rule via the Decision Engine workspace; the evaluator layers the
- * config on top of the code-side defaults at compute time.
+ * Per-rule pack configuration for a BUILT-IN rule. Admins author one of
+ * these per existing rule via the Decision Engine workspace; the
+ * evaluator layers the config on top of the code-side defaults at
+ * compute time.
  *
  * Why config-only and not full JSONLogic predicates: the predicates
- * are typed against CanonicalReportDocument, so field-name typos get
- * caught at compile time. UAD 3.6 is a federal spec — "new rules" are
- * rare. Admins overwhelmingly need to turn rules off (per-client
- * carve-outs), re-weight (push a critical-to-this-tenant rule higher),
- * or rewrite the remediation message in the tenant's vocabulary.
+ * for built-in rules are typed against CanonicalReportDocument, so
+ * field-name typos get caught at compile time. UAD 3.6 is a federal
+ * spec — built-in "new rules" are rare. Admins overwhelmingly need to
+ * turn rules off (per-client carve-outs), re-weight (push a
+ * critical-to-this-tenant rule higher), or rewrite the remediation
+ * message in the tenant's vocabulary.
  *
- * Unknown rule ids are filtered out by the category's validateRules
- * before the pack is persisted — so the resolver here can assume every
- * config keys to a real rule.
+ * For genuinely new tenant-specific rules (outside the federal-spec
+ * catalogue), use UadCustomRule instead — that one DOES carry a
+ * JSONLogic predicate.
+ *
+ * `kind: 'override'` is optional for back-compat with packs persisted
+ * before custom rules shipped (those entries have no kind field).
+ * Absence is treated as 'override'.
  */
 export interface UadRuleConfig {
+  kind?: 'override';
   id: string;
   /** When false the rule is skipped entirely (not present in output). */
   enabled: boolean;
@@ -307,35 +328,132 @@ export interface UadRuleConfig {
 }
 
 /**
- * Resolved rule configs map — produced by the per-tenant overlay
- * resolver and handed to evaluate(). One entry per rule id. Absent
- * entries fall back to the code-side defaults (enabled=true, severity
- * as declared above, no message override).
+ * Admin-authored compliance rule with its OWN JSONLogic predicate. The
+ * predicate runs against the canonical report document; a truthy result
+ * means the rule FAILED (the predicate is a "matches-when-broken"
+ * expression so it reads naturally: e.g., `{"missing": ["subject.pool"]}`
+ * fails when the pool description is absent).
+ *
+ * Evaluation errors (malformed JSONLogic, unsupported operator, etc.)
+ * are caught and surfaced as a failure with a system-error message —
+ * never propagate to the order-level compliance call. The pack's
+ * validateRules catches obvious shape errors before persistence; this
+ * is a runtime safety net for cases that slip through (e.g., a
+ * field-path typo that's only invalid against this specific doc).
+ *
+ * Pack validation enforces:
+ *   - id is unique within the pack and does not collide with built-in ids
+ *   - label, message are non-empty strings
+ *   - severity is a valid UadComplianceSeverity
+ *   - condition is a plain JSON value (object/array/scalar)
+ *   - condition depth <= MAX_CONDITION_DEPTH (DoS guard against deeply
+ *     nested expressions that could stack-overflow the recursive
+ *     evaluator)
+ */
+export interface UadCustomRule {
+  kind: 'custom';
+  id: string;
+  enabled: boolean;
+  label: string;
+  severity: UadComplianceSeverity;
+  /**
+   * JSONLogic AST. Truthy ⇒ rule fails. The shared evaluator at
+   * decision-engine/shared/jsonlogic-evaluator handles a curated
+   * operator set; unsupported operators throw, which we catch.
+   */
+  condition: unknown;
+  /** Remediation copy shown when the rule fails. */
+  message: string;
+  /**
+   * Optional dotted-path hint surfaced in the FE for deep-linking. Has
+   * no effect on evaluation; informational only.
+   */
+  fieldPath?: string;
+}
+
+/** Discriminated union of pack rules. */
+export type UadPackRule = UadRuleConfig | UadCustomRule;
+
+/**
+ * Resolved BUILT-IN rule configs map — produced by the per-tenant overlay
+ * resolver and handed to evaluate(). One entry per built-in rule id.
+ * Absent entries fall back to the code-side defaults (enabled=true,
+ * severity as declared, no message override).
+ *
+ * Custom rules are not part of this map — they're carried alongside
+ * via the `customRules` parameter on evaluate().
  */
 export type UadRuleConfigMap = Record<string, UadRuleConfig>;
 
+/**
+ * Maximum nesting depth allowed in a custom rule's condition AST.
+ * 32 is comfortably above any condition the FE editor would ever
+ * produce; deeper than that is almost certainly a malformed payload.
+ * Enforced by the category validator before write so the evaluator
+ * runtime never sees the malformed input.
+ */
+export const MAX_CONDITION_DEPTH = 32;
+
+/**
+ * Partition a mixed pack rules array into (configMap, customRules).
+ * Entries without an explicit `kind` field default to 'override' for
+ * back-compat with packs persisted before custom rules shipped.
+ *
+ * Exported so the controller can run the resolver's layered rule list
+ * through here once and hand the two halves to evaluate().
+ */
+export function partitionPackRules(rules: UadPackRule[]): {
+  configMap: UadRuleConfigMap;
+  customRules: UadCustomRule[];
+} {
+  const configMap: UadRuleConfigMap = {};
+  const customRules: UadCustomRule[] = [];
+  for (const r of rules) {
+    if (!r || typeof r !== 'object') continue;
+    if (r.kind === 'custom') {
+      customRules.push(r);
+    } else if (typeof (r as UadRuleConfig).id === 'string') {
+      configMap[(r as UadRuleConfig).id] = r as UadRuleConfig;
+    }
+  }
+  return { configMap, customRules };
+}
+
 export class UadComplianceEvaluatorService {
+  private readonly logger = new Logger('UadComplianceEvaluatorService');
+
   /**
    * Evaluate a canonical report against the rule set. Pure function:
-   * same (doc, config) inputs always produce the same verdict.
+   * same (doc, configMap, customRules) inputs always produce the same
+   * verdict (modulo `generatedAt`).
    *
    * Returns an empty/zero report with snapshotAvailable=false when the
    * caller passes null — lets the controller distinguish "extraction
    * pending" from "extraction done, fails everything" cleanly.
    *
-   * The optional `configMap` is the resolved overlay (BASE → CLIENT)
-   * from the Decision Engine pack. Rules with `enabled: false` are
-   * dropped entirely; severityOverride bumps a rule between
-   * CRITICAL/HIGH/MEDIUM (affecting score weight + blocker
-   * classification); messageOverride replaces the code-default
-   * remediation text on failure. Absent configs fall back to the
-   * code-side defaults so callers without a pack still get the MVP
-   * behaviour.
+   * Inputs:
+   *   - `configMap`   — per-built-in-rule overrides from the resolved
+   *                     Decision Engine pack (BASE → CLIENT layered).
+   *                     Disabled rules drop out of the output entirely;
+   *                     severityOverride bumps the rule's contribution
+   *                     to score + blocker list; messageOverride
+   *                     replaces the code-default remediation copy.
+   *   - `customRules` — tenant-authored rules with their own JSONLogic
+   *                     predicates. Each appended to the rules array
+   *                     with `kind: 'custom'` rule.id namespacing. A
+   *                     predicate that throws is caught and treated as
+   *                     a failure with a system-error message so a
+   *                     malformed admin rule never blocks the
+   *                     compliance call.
+   *
+   * Both inputs are optional; calling with neither preserves the MVP
+   * code-default behaviour for tenants that haven't authored a pack.
    */
   evaluate(
     orderId: string,
     doc: CanonicalReportDocument | null,
     configMap?: UadRuleConfigMap,
+    customRules?: UadCustomRule[],
   ): UadComplianceReport {
     if (!doc) {
       return {
@@ -351,6 +469,8 @@ export class UadComplianceEvaluatorService {
     }
 
     const rules: UadComplianceRuleResult[] = [];
+
+    // ─── Built-in rules (configurable via overrides) ─────────────────────────
     for (const rule of RULES) {
       const cfg = configMap?.[rule.id];
       if (cfg && cfg.enabled === false) continue;
@@ -373,6 +493,51 @@ export class UadComplianceEvaluatorService {
           };
       if (rule.fieldPath) result.fieldPath = rule.fieldPath;
       rules.push(result);
+    }
+
+    // ─── Custom (admin-authored JSONLogic) rules ────────────────────────────
+    if (customRules && customRules.length > 0) {
+      for (const custom of customRules) {
+        if (custom.enabled === false) continue;
+        // Defensive — partitionPackRules already filtered malformed rows,
+        // but evaluate() is also called directly from tests + the preview
+        // path so guard one more time here.
+        if (!custom.id || typeof custom.id !== 'string') continue;
+
+        let passed = true;
+        let failureMessage = '';
+        try {
+          const matched = evaluateJsonLogic(custom.condition, doc as unknown as Record<string, unknown>);
+          // Truthy ⇒ the FAILURE predicate matched ⇒ rule failed.
+          passed = !this.truthy(matched);
+          if (!passed) {
+            failureMessage = custom.message?.trim()
+              || `${custom.label || custom.id} failed (no message configured).`;
+          }
+        } catch (err) {
+          passed = false;
+          const errMsg = err instanceof Error ? err.message : String(err);
+          this.logger.warn('Custom UAD compliance rule evaluation failed', {
+            orderId,
+            ruleId: custom.id,
+            error: errMsg,
+          });
+          // Surface the error in the report so admins see it instead of
+          // silently passing the rule. The reviewer sees this and pings
+          // the platform admin to fix the predicate.
+          failureMessage = `Custom rule evaluation error: ${errMsg}. Edit this rule in /admin/decision-engine.`;
+        }
+
+        const result: UadComplianceRuleResult = {
+          id: custom.id,
+          label: custom.label || custom.id,
+          severity: custom.severity,
+          passed,
+          message: passed ? '' : failureMessage,
+        };
+        if (custom.fieldPath) result.fieldPath = custom.fieldPath;
+        rules.push(result);
+      }
     }
 
     const passCount = rules.filter((r) => r.passed).length;
@@ -400,6 +565,48 @@ export class UadComplianceEvaluatorService {
       snapshotAvailable: true,
     };
   }
+
+  /**
+   * Mirror of jsonlogic-evaluator's `truthy` semantics so callers don't
+   * need to import a private helper. Kept private; tests exercise it
+   * through evaluate().
+   */
+  private truthy(v: unknown): boolean {
+    if (v === null || v === undefined) return false;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0 && !Number.isNaN(v);
+    if (typeof v === 'string') return v.length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    return true;
+  }
+}
+
+/**
+ * Walk a JSONLogic AST and return its maximum nesting depth. Used by
+ * the category validator to enforce MAX_CONDITION_DEPTH before the
+ * pack is persisted. Pure function; no side effects.
+ *
+ * Depth counts the AST node nesting (object/array nodes), not raw
+ * Object.keys() — a node like `{"and": [...]}` is depth 1 + max
+ * depth of its operands.
+ */
+export function conditionDepth(node: unknown, current = 1): number {
+  if (current > MAX_CONDITION_DEPTH + 1) return current; // short-circuit; caller treats overflow as invalid
+  if (node === null || typeof node !== 'object') return current;
+  if (Array.isArray(node)) {
+    let max = current;
+    for (const item of node) {
+      const d = conditionDepth(item, current + 1);
+      if (d > max) max = d;
+    }
+    return max;
+  }
+  let max = current;
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    const d = conditionDepth(value, current + 1);
+    if (d > max) max = d;
+  }
+  return max;
 }
 
 /** Exposed for tests + the category's validateRules — every config in a pack must key to one of these. */

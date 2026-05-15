@@ -387,3 +387,187 @@ describe('UAD compliance — exported rule catalogue helpers', () => {
     }
   });
 });
+
+// ── Custom-rule (JSONLogic predicate) evaluation ────────────────────────────
+
+import type { UadCustomRule } from '../uad-compliance-evaluator.service';
+
+describe('UadComplianceEvaluatorService.evaluate — custom rules (JSONLogic)', () => {
+  function customRule(overrides: Partial<UadCustomRule> = {}): UadCustomRule {
+    return {
+      kind: 'custom',
+      id: 'tenant-test-rule',
+      enabled: true,
+      label: 'Tenant test rule',
+      severity: 'HIGH',
+      // Default predicate is truthy (rule fails) when subject.parcelNumber
+      // is null/empty. Note the operand is passed directly, not array-wrapped
+      // — our shared JSONLogic evaluator treats arrays as map-and-collect.
+      condition: { '!': { var: 'subject.parcelNumber' } },
+      message: 'Tenant requires subject APN on every report.',
+      ...overrides,
+    };
+  }
+
+  it('truthy condition ⇒ rule failed; appears in the rules array with the configured message', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const r = svc.evaluate('o', doc, undefined, [customRule()]);
+    const rule = r.rules.find((x) => x.id === 'tenant-test-rule');
+    expect(rule).toBeDefined();
+    expect(rule!.passed).toBe(false);
+    expect(rule!.message).toBe('Tenant requires subject APN on every report.');
+    expect(rule!.severity).toBe('HIGH');
+    expect(rule!.label).toBe('Tenant test rule');
+  });
+
+  it('falsy condition ⇒ rule passes', () => {
+    const doc = compliantDoc(); // parcelNumber populated
+    const r = svc.evaluate('o', doc, undefined, [customRule()]);
+    const rule = r.rules.find((x) => x.id === 'tenant-test-rule');
+    expect(rule?.passed).toBe(true);
+    expect(rule?.message).toBe('');
+  });
+
+  it('CRITICAL custom-rule failure populates the blockers list', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const r = svc.evaluate('o', doc, undefined, [customRule({ severity: 'CRITICAL' })]);
+    expect(r.blockers).toContain('tenant-test-rule');
+  });
+
+  it('HIGH custom-rule failure does NOT populate blockers (CRITICAL-only)', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const r = svc.evaluate('o', doc, undefined, [customRule({ severity: 'HIGH' })]);
+    expect(r.blockers).not.toContain('tenant-test-rule');
+  });
+
+  it('enabled=false drops the custom rule from output entirely', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const r = svc.evaluate('o', doc, undefined, [customRule({ enabled: false })]);
+    expect(r.rules.find((x) => x.id === 'tenant-test-rule')).toBeUndefined();
+  });
+
+  it('malformed JSONLogic ⇒ rule treated as failed with a system-error message', () => {
+    const doc = compliantDoc();
+    const broken = customRule({
+      // 'totally-fake-operator' is not in the evaluator's operator set.
+      condition: { 'totally-fake-operator': [1, 2] },
+    });
+    const r = svc.evaluate('o', doc, undefined, [broken]);
+    const rule = r.rules.find((x) => x.id === 'tenant-test-rule');
+    expect(rule?.passed).toBe(false);
+    expect(rule?.message).toMatch(/evaluation error/i);
+  });
+
+  it('custom rules contribute to the score weighting alongside built-ins', () => {
+    const doc = compliantDoc();
+    const baselineScore = svc.evaluate('o', doc).overallScore; // 100
+    // Custom CRITICAL rule that always fails → drops score below 100.
+    const alwaysFail = customRule({ severity: 'CRITICAL', condition: true });
+    const r = svc.evaluate('o', doc, undefined, [alwaysFail]);
+    expect(baselineScore).toBe(100);
+    expect(r.overallScore).toBeLessThan(100);
+  });
+
+  it('falls back to built-in label when custom rule label is empty', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const r = svc.evaluate('o', doc, undefined, [customRule({ label: '' })]);
+    const rule = r.rules.find((x) => x.id === 'tenant-test-rule');
+    expect(rule?.label).toBe('tenant-test-rule'); // falls back to id
+  });
+
+  it('provides a default failure message when the custom rule has empty message', () => {
+    const doc = compliantDoc();
+    (doc.subject as { parcelNumber: string | null }).parcelNumber = null;
+    const r = svc.evaluate('o', doc, undefined, [customRule({ message: '' })]);
+    const rule = r.rules.find((x) => x.id === 'tenant-test-rule');
+    expect(rule?.passed).toBe(false);
+    expect(rule?.message.length).toBeGreaterThan(0);
+  });
+
+  it('mixed built-ins + custom rules: both flow through to the final report', () => {
+    const doc = compliantDoc();
+    (doc.subject as { yearBuilt: number | null }).yearBuilt = null; // built-in HIGH rule fails
+    const r = svc.evaluate(
+      'o',
+      doc,
+      { 'subject-parcel-number': { id: 'subject-parcel-number', enabled: false } },
+      [customRule({ severity: 'MEDIUM', condition: { '==': [1, 1] } })], // always-fail MEDIUM custom
+    );
+    // Built-in yearBuilt rule still fails (HIGH).
+    expect(r.rules.some((x) => x.id === 'subject-year-built' && !x.passed)).toBe(true);
+    // APN built-in rule was disabled, so not in output.
+    expect(r.rules.find((x) => x.id === 'subject-parcel-number')).toBeUndefined();
+    // Custom rule fired and is in output.
+    expect(r.rules.some((x) => x.id === 'tenant-test-rule' && !x.passed)).toBe(true);
+  });
+});
+
+describe('partitionPackRules', () => {
+  it('back-compat: rules without `kind` are treated as overrides', async () => {
+    const { partitionPackRules } = await import('../uad-compliance-evaluator.service');
+    const r = partitionPackRules([
+      { id: 'subject-parcel-number', enabled: false },
+    ]);
+    expect(r.configMap['subject-parcel-number']?.enabled).toBe(false);
+    expect(r.customRules).toEqual([]);
+  });
+
+  it('splits a mixed array into configMap + customRules', async () => {
+    const { partitionPackRules } = await import('../uad-compliance-evaluator.service');
+    const r = partitionPackRules([
+      { id: 'subject-parcel-number', enabled: false },
+      {
+        kind: 'custom',
+        id: 'tenant-rule',
+        enabled: true,
+        label: 'Tenant rule',
+        severity: 'HIGH',
+        condition: {},
+        message: 'Tenant rule failed.',
+      },
+    ]);
+    expect(r.configMap['subject-parcel-number']?.enabled).toBe(false);
+    expect(r.customRules).toHaveLength(1);
+    expect(r.customRules[0]!.id).toBe('tenant-rule');
+  });
+
+  it('drops malformed entries silently (defensive — validator catches them upstream)', async () => {
+    const { partitionPackRules } = await import('../uad-compliance-evaluator.service');
+    const r = partitionPackRules([
+      null as never,
+      'not-an-object' as never,
+      { id: 'subject-parcel-number', enabled: true },
+    ]);
+    expect(r.configMap['subject-parcel-number']?.enabled).toBe(true);
+    expect(r.customRules).toEqual([]);
+  });
+});
+
+describe('conditionDepth (DoS guard helper)', () => {
+  it('returns 1 for a primitive node', async () => {
+    const { conditionDepth } = await import('../uad-compliance-evaluator.service');
+    expect(conditionDepth(true)).toBe(1);
+    expect(conditionDepth('hello')).toBe(1);
+    expect(conditionDepth(42)).toBe(1);
+  });
+
+  it('counts AST nesting depth for object + array nodes', async () => {
+    const { conditionDepth } = await import('../uad-compliance-evaluator.service');
+    // {"==": [{"var": "x"}, 1]} → root(1) → "==" array(2) → object {"var": "x"}(3) → "x"(4)
+    const node = { '==': [{ var: 'x' }, 1] };
+    expect(conditionDepth(node)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('short-circuits beyond MAX_CONDITION_DEPTH + 1', async () => {
+    const { conditionDepth, MAX_CONDITION_DEPTH } = await import('../uad-compliance-evaluator.service');
+    let cond: unknown = 1;
+    for (let i = 0; i < MAX_CONDITION_DEPTH * 2; i++) cond = { and: [cond] };
+    const d = conditionDepth(cond);
+    expect(d).toBeGreaterThan(MAX_CONDITION_DEPTH);
+  });
+});

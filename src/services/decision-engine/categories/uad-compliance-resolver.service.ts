@@ -2,19 +2,23 @@
  * UadCompliancePackResolver
  *
  * Layers BASE → CLIENT UAD-compliance packs into a single resolved
- * UadRuleConfigMap that the evaluator consumes. Mirrors the BASE/CLIENT
- * overlay pattern from ScorecardRollupProfileService — but stays inside
- * the generic Decision Engine pack store rather than introducing a new
- * container.
+ * (configMap, customRules) pair that the evaluator consumes. Mirrors
+ * the BASE/CLIENT overlay pattern from ScorecardRollupProfileService —
+ * but stays inside the generic Decision Engine pack store rather than
+ * introducing a new container.
  *
  * Scope encoding via packId convention:
  *   - BASE pack:     packId = 'BASE'                — tenant-wide default
  *   - CLIENT pack:   packId = `client:${clientId}`  — per-client carve-out
  *
- * Overlay semantics: the resolved map merges by rule id, with CLIENT
- * entries replacing BASE entries WHOLE (we don't field-merge the per-rule
- * config — admins authoring a CLIENT override are stating the complete
- * config for that rule, including enabled/severityOverride/messageOverride).
+ * Overlay semantics:
+ *   - configMap (built-in overrides): CLIENT entries replace BASE entries
+ *     whole by rule id (we don't field-merge — admins authoring a CLIENT
+ *     override are stating the complete config for that rule).
+ *   - customRules: CLIENT-defined custom rules are unioned with BASE
+ *     custom rules. A CLIENT custom rule with the same id as a BASE
+ *     custom rule replaces the BASE one whole (same WHOLE-replace
+ *     semantics; no per-field merge).
  *
  * Why packId convention rather than a new "scope" column on the pack
  * doc: zero schema changes, audit/replay/versioning all work out of the
@@ -24,11 +28,13 @@
  */
 
 import type { DecisionRulePackService } from '../../decision-rule-pack.service.js';
-import type {
-	UadRuleConfig,
-	UadRuleConfigMap,
+import {
+	partitionPackRules,
+	type UadCustomRule,
+	type UadPackRule,
+	type UadRuleConfigMap,
 } from '../../uad-compliance-evaluator.service.js';
-import { UAD_COMPLIANCE_CATEGORY_ID, buildConfigMap } from './uad-compliance.category.js';
+import { UAD_COMPLIANCE_CATEGORY_ID } from './uad-compliance.category.js';
 import { Logger } from '../../../utils/logger.js';
 
 export const UAD_BASE_PACK_ID = 'BASE';
@@ -39,8 +45,10 @@ export function clientPackId(clientId: string): string {
 }
 
 export interface UadCompliancePackResolution {
-	/** Configs to hand to evaluator.evaluate(). Empty when neither pack exists. */
+	/** Built-in-rule overrides to hand to evaluator.evaluate(). Empty when neither pack exists. */
 	configMap: UadRuleConfigMap;
+	/** Admin-authored custom rules (JSONLogic predicates), unioned across BASE + CLIENT. */
+	customRules: UadCustomRule[];
 	/** Doc ids of every pack that contributed, BASE first then CLIENT. */
 	appliedPackIds: string[];
 }
@@ -61,25 +69,33 @@ export class UadCompliancePackResolver {
 
 		const appliedPackIds: string[] = [];
 		let configMap: UadRuleConfigMap = {};
+		const customByRuleId = new Map<string, UadCustomRule>();
 
 		if (basePack && Array.isArray(basePack.rules)) {
-			configMap = buildConfigMap(basePack.rules);
+			const parts = partitionPackRules(basePack.rules);
+			configMap = parts.configMap;
+			for (const rule of parts.customRules) customByRuleId.set(rule.id, rule);
 			appliedPackIds.push(basePack.id);
 		}
 		if (clientPack && Array.isArray(clientPack.rules)) {
-			// CLIENT entries replace BASE entries whole — admins authoring a
-			// CLIENT override are stating the complete config for that rule.
-			const clientMap = buildConfigMap(clientPack.rules);
-			configMap = { ...configMap, ...clientMap };
+			const parts = partitionPackRules(clientPack.rules);
+			// Built-in override entries: CLIENT replaces BASE whole per rule id.
+			configMap = { ...configMap, ...parts.configMap };
+			// Custom rules: CLIENT replaces BASE whole per rule id.
+			for (const rule of parts.customRules) customByRuleId.set(rule.id, rule);
 			appliedPackIds.push(clientPack.id);
 		}
 
-		return { configMap, appliedPackIds };
+		return {
+			configMap,
+			customRules: Array.from(customByRuleId.values()),
+			appliedPackIds,
+		};
 	}
 
 	private async loadActive(tenantId: string, packId: string) {
 		try {
-			return await this.packs.getActive<UadRuleConfig>(
+			return await this.packs.getActive<UadPackRule>(
 				UAD_COMPLIANCE_CATEGORY_ID,
 				tenantId,
 				packId,

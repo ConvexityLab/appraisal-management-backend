@@ -16,11 +16,11 @@ import { describe, it, expect } from 'vitest';
 import {
   buildUadComplianceCategory,
   UAD_COMPLIANCE_CATEGORY_ID,
-  buildConfigMap,
 } from '../uad-compliance.category';
 import {
   UAD_COMPLIANCE_DEFAULT_RULE_CONFIGS,
   UAD_COMPLIANCE_RULE_IDS,
+  partitionPackRules,
 } from '../../../uad-compliance-evaluator.service';
 
 describe('buildUadComplianceCategory.validateRules', () => {
@@ -79,6 +79,130 @@ describe('buildUadComplianceCategory.validateRules', () => {
     ]);
     expect(r.errors).toEqual([]);
   });
+
+  // ── Custom-rule (kind: 'custom', JSONLogic predicate) validation ──────────
+
+  it('accepts a well-formed custom rule', () => {
+    const r = cat.validateRules([
+      {
+        kind: 'custom',
+        id: 'tenant-pool-required',
+        enabled: true,
+        label: 'Pool description required for pool-finance products',
+        severity: 'HIGH',
+        condition: { '==': [{ var: 'subject.hasPool' }, true] },
+        message: 'Pool field must be populated for this product.',
+      },
+    ]);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('rejects custom rule with id colliding with a built-in', () => {
+    const r = cat.validateRules([
+      {
+        kind: 'custom',
+        id: UAD_COMPLIANCE_RULE_IDS[0]!,
+        enabled: true,
+        label: 'X',
+        severity: 'HIGH',
+        condition: {},
+        message: 'X',
+      },
+    ]);
+    expect(r.errors.some((e) => e.includes('collides with a built-in rule id'))).toBe(true);
+  });
+
+  it('rejects custom rule with non-slug id', () => {
+    const r = cat.validateRules([
+      {
+        kind: 'custom',
+        id: 'has space and !!! chars',
+        enabled: true,
+        label: 'X',
+        severity: 'HIGH',
+        condition: {},
+        message: 'X',
+      },
+    ]);
+    expect(r.errors.some((e) => e.includes('must match'))).toBe(true);
+  });
+
+  it('rejects custom rule missing required fields', () => {
+    const r = cat.validateRules([
+      {
+        kind: 'custom',
+        id: 'incomplete-rule',
+        enabled: true,
+        // label, severity, condition, message all missing
+      } as unknown,
+    ]);
+    expect(r.errors.some((e) => e.includes('.label:'))).toBe(true);
+    expect(r.errors.some((e) => e.includes('.severity:'))).toBe(true);
+    expect(r.errors.some((e) => e.includes('.condition:'))).toBe(true);
+    expect(r.errors.some((e) => e.includes('.message:'))).toBe(true);
+  });
+
+  it('rejects custom rule with deeply-nested condition (DoS guard)', () => {
+    // Build an AST nested 40 levels deep — well beyond MAX_CONDITION_DEPTH (32).
+    let cond: unknown = { '==': [{ var: 'a' }, 1] };
+    for (let i = 0; i < 40; i++) {
+      cond = { and: [cond] };
+    }
+    const r = cat.validateRules([
+      {
+        kind: 'custom',
+        id: 'too-deep',
+        enabled: true,
+        label: 'Too deep',
+        severity: 'HIGH',
+        condition: cond,
+        message: 'X',
+      },
+    ]);
+    expect(r.errors.some((e) => e.includes('nesting depth'))).toBe(true);
+  });
+
+  it('rejects custom rule with non-JSON-serialisable condition (circular ref)', () => {
+    const circ: Record<string, unknown> = {};
+    circ['self'] = circ;
+    const r = cat.validateRules([
+      {
+        kind: 'custom',
+        id: 'circular-ref',
+        enabled: true,
+        label: 'Circular',
+        severity: 'HIGH',
+        condition: circ,
+        message: 'X',
+      },
+    ]);
+    expect(r.errors.some((e) => e.includes('JSON-serialisable'))).toBe(true);
+  });
+
+  it('rejects duplicate ids across override + custom shapes', () => {
+    const r = cat.validateRules([
+      { id: 'tenant-rule', kind: 'custom', enabled: true, label: 'X', severity: 'HIGH', condition: {}, message: 'X' },
+      // Second entry with same id (treated as override by default) — collision should still fire.
+      { id: 'tenant-rule', enabled: true },
+    ]);
+    expect(r.errors.some((e) => e.includes('duplicate rule id'))).toBe(true);
+  });
+
+  it('accepts mixed override + custom rules in the same pack', () => {
+    const r = cat.validateRules([
+      { id: UAD_COMPLIANCE_RULE_IDS[0]!, enabled: false },
+      {
+        kind: 'custom',
+        id: 'tenant-rule',
+        enabled: true,
+        label: 'Tenant rule',
+        severity: 'MEDIUM',
+        condition: { '==': [1, 1] },
+        message: 'Tenant rule failed.',
+      },
+    ]);
+    expect(r.errors).toEqual([]);
+  });
 });
 
 describe('buildUadComplianceCategory.preview', () => {
@@ -131,18 +255,36 @@ describe('buildUadComplianceCategory.getSeed', () => {
   });
 });
 
-describe('buildConfigMap helper', () => {
-  it('keys rules by id', () => {
-    const map = buildConfigMap([
+describe('partitionPackRules helper', () => {
+  it('keys override rules by id', () => {
+    const { configMap, customRules } = partitionPackRules([
       { id: 'subject-parcel-number', enabled: false },
       { id: UAD_COMPLIANCE_RULE_IDS[0]!, enabled: true },
     ]);
-    expect(map['subject-parcel-number']?.enabled).toBe(false);
-    expect(map[UAD_COMPLIANCE_RULE_IDS[0]!]?.enabled).toBe(true);
+    expect(configMap['subject-parcel-number']?.enabled).toBe(false);
+    expect(configMap[UAD_COMPLIANCE_RULE_IDS[0]!]?.enabled).toBe(true);
+    expect(customRules).toEqual([]);
   });
 
-  it('returns empty map for empty input', () => {
-    expect(buildConfigMap([])).toEqual({});
+  it('returns empty configMap + empty customRules for empty input', () => {
+    expect(partitionPackRules([])).toEqual({ configMap: {}, customRules: [] });
+  });
+
+  it('routes kind:custom into customRules and leaves configMap empty for that entry', () => {
+    const result = partitionPackRules([
+      {
+        kind: 'custom',
+        id: 'tenant-pool-required',
+        enabled: true,
+        label: 'Pool description required',
+        severity: 'HIGH',
+        condition: { '==': [{ var: 'subject.hasPool' }, true] },
+        message: 'Pool field must be populated.',
+      },
+    ]);
+    expect(result.configMap).toEqual({});
+    expect(result.customRules).toHaveLength(1);
+    expect(result.customRules[0]!.id).toBe('tenant-pool-required');
   });
 });
 
