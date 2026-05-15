@@ -210,6 +210,7 @@ import { VendorMatchingCriteriaController } from '../controllers/vendor-matching
 import { ScorecardRollupProfileController } from '../controllers/scorecard-rollup-profile.controller.js';
 import { PropertyFieldDiffController } from '../controllers/property-field-diff.controller.js';
 import { UadComplianceController } from '../controllers/uad-compliance.controller.js';
+import { UadComplianceCatalogueController } from '../controllers/uad-compliance-catalogue.controller.js';
 
 // Import Staff Roster Controller (Increment 2 - Supervisor Visibility)
 import { StaffRosterController } from '../controllers/staff-roster.controller';
@@ -1022,6 +1023,15 @@ export class AppraisalManagementAPIServer {
     this.app.use('/api/orders',
       this.unifiedAuth.authenticate(),
       uadComplianceController.router,
+    );
+
+    // UAD-3.6 compliance catalogue — static rule list consumed by the
+    // admin workspace editor (drops the FE hand-mirror).
+    // GET /api/uad-compliance/catalogue
+    const uadCatalogueController = new UadComplianceCatalogueController(this.authzMiddleware);
+    this.app.use('/api/uad-compliance',
+      this.unifiedAuth.authenticate(),
+      uadCatalogueController.router,
     );
 
     // Staff Roster - Supervisory visibility into workloads, schedules, capabilities (Increment 2)
